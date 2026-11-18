@@ -19,7 +19,7 @@ pub(crate) fn run(
         .map_err(|error| invalid(&error.to_string()))?;
     let output = runtime
         .block_on(scenario::run_scenario(input))
-        .map_err(|message| invalid(&message))?;
+        .map_err(|error| invalid(&error.to_string()))?;
     Ok(ProbeOutput::RoutingState(output))
 }
 

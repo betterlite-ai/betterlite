@@ -1,20 +1,27 @@
 use std::collections::BTreeMap;
+use std::io;
+use std::num::TryFromIntError;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
+use betterlite_config::loader::ConfigError;
 use betterlite_config::sections::Section as _;
 use betterlite_config::sections::routing_state as sync_config;
 use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
+use betterlite_router::router_observations::counter::CounterError;
 use betterlite_router::routing_state::Settings as RouterSettings;
 use betterlite_router::routing_state::counter::RouterCounters;
+use betterlite_router::routing_state::error::RoutingStateError;
+use betterlite_router::routing_state_store::error::StateStoreError;
 use betterlite_router::routing_state_store::test_support::FakeRedis;
 use betterlite_router::routing_state_store::{
     BreakerClock, RedisSettings, RoutingStateStore, Settings as RedisStoreSettings,
 };
-use betterlite_router::routing_value_store::{Clock, RoutingValueStore, StoreSettings};
+use betterlite_router::routing_value_store::{Clock, RoutingValueStore, StoreError, StoreSettings};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 mod counters;
 mod lifecycle;
@@ -103,6 +110,60 @@ pub enum Observation {
     },
 }
 
+// the adapter's own failures, each holding the error it came from until the probe boundary renders it
+#[derive(Debug, Error)]
+pub(super) enum ScenarioError {
+    #[error("the fake redis server did not start")]
+    Redis {
+        #[source]
+        source: io::Error,
+    },
+    #[error("the routing state section is invalid")]
+    Config {
+        #[from]
+        source: ConfigError,
+    },
+    #[error("the routing store failed")]
+    Store {
+        #[from]
+        source: StateStoreError,
+    },
+    #[error("the in-memory value store is invalid")]
+    Local {
+        #[from]
+        source: StoreError,
+    },
+    #[error("a routing window increment failed")]
+    Increment {
+        #[from]
+        source: RoutingStateError,
+    },
+    #[error("a routing outcome counter failed")]
+    Counter {
+        #[from]
+        source: CounterError,
+    },
+    #[error("a routing key is invalid")]
+    Key {
+        #[source]
+        source: StoreError,
+    },
+    #[error("the channels object is invalid")]
+    Channels {
+        #[from]
+        source: serde_json::Error,
+    },
+    #[error("the step needs {what}")]
+    Missing { what: &'static str },
+    #[error("the stored routing value is not finite")]
+    NonFinite,
+    #[error("the step duration does not fit the millis output")]
+    Duration {
+        #[from]
+        source: TryFromIntError,
+    },
+}
+
 struct Context<'a> {
     counters: &'a RouterCounters<RoutingStateStore>,
     server: &'a FakeRedis,
@@ -110,25 +171,22 @@ struct Context<'a> {
     settings: &'a RouterSettings,
 }
 
-pub async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput, String> {
+pub(super) async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput, ScenarioError> {
     let server = FakeRedis::try_start()
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|source| ScenarioError::Redis { source })?;
     let clock = Arc::new(AtomicU64::new(0));
-    let section = sync_config::Raw::default()
-        .convert(&input.env)
-        .map_err(|error| error.to_string())?;
+    let section = sync_config::Raw::default().convert(&input.env)?;
     let settings = RouterSettings {
         sync_interval: None,
         default_sync_interval: section.default_sync_interval,
         should_batch_redis_writes: true,
     };
-    let store = Arc::new(
-        RoutingStateStore::new(&redis_settings(&server), breaker_clock(&clock))
-            .map_err(|error| error.to_string())?,
-    );
-    let local = RoutingValueStore::new(local_settings(), value_clock(&clock))
-        .map_err(|error| error.to_string())?;
+    let store = Arc::new(RoutingStateStore::new(
+        &redis_settings(&server),
+        breaker_clock(&clock),
+    )?);
+    let local = RoutingValueStore::new(local_settings(), value_clock(&clock))?;
     let counters = RouterCounters::new(settings.clone(), Arc::new(local), Some(Arc::clone(&store)));
     let context = Context {
         counters: &counters,
@@ -192,25 +250,49 @@ async fn apply(
     index: usize,
     step: &ScenarioStep,
     context: &Context<'_>,
-) -> Result<Observation, String> {
+) -> Result<Observation, ScenarioError> {
     match step.kind {
         StepKind::PreCall => counters::pre_call(index, step, context).await,
-        StepKind::Success => counters::success(index, step, context),
-        StepKind::Failure => counters::failure(index, step, context),
-        StepKind::Outcomes => counters::outcomes(index, step, context),
+        StepKind::Success => counters::outcome(index, step, context, counters::Outcome::Success),
+        StepKind::Failure => counters::outcome(index, step, context, counters::Outcome::Failure),
+        // track_deployment_metrics.get_deployment_successes_for_current_minute / failures
+        StepKind::Outcomes => {
+            let deployment = required(&step.deployment_id, "a deployment id")?;
+            Ok(Observation::Outcomes {
+                step: index,
+                successes: context.counters.successes_for_minute(deployment),
+                failures: context.counters.failures_for_minute(deployment),
+            })
+        }
         StepKind::Tracked => counters::tracked(index, context),
         StepKind::Sync => lifecycle::sync(index, context).await,
         StepKind::Retire => lifecycle::retire(index, context).await,
         StepKind::Down => lifecycle::switch(index, context, true),
         StepKind::Up => lifecycle::switch(index, context, false),
-        StepKind::Resolve => lifecycle::resolve(index, step, context),
+        StepKind::Resolve => resolved_interval(index, step, context.settings.default_sync_interval),
         StepKind::Metadata => lifecycle::metadata(index, step),
         StepKind::Redis => lifecycle::redis(index, step, context).await,
     }
 }
 
-fn required<'a>(value: &'a Option<String>, what: &str) -> Result<&'a str, String> {
-    value
-        .as_deref()
-        .ok_or_else(|| format!("the step needs {what}"))
+fn required<'a>(value: &'a Option<String>, what: &'static str) -> Result<&'a str, ScenarioError> {
+    value.as_deref().ok_or(ScenarioError::Missing { what })
+}
+
+// the step's own interval wins, then the configured default, then LiteLLM's constant
+fn resolved_interval(
+    index: usize,
+    step: &ScenarioStep,
+    default_sync_interval: Option<Duration>,
+) -> Result<Observation, ScenarioError> {
+    let settings = RouterSettings {
+        sync_interval: step.sync_interval_millis.map(Duration::from_millis),
+        default_sync_interval,
+        should_batch_redis_writes: false,
+    };
+    let millis = u64::try_from(settings.resolved_sync_interval().as_millis())?;
+    Ok(Observation::Millis {
+        step: index,
+        millis,
+    })
 }

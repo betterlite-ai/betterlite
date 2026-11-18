@@ -8,6 +8,7 @@ probes:
         env: {}
         steps:
           - {kind: pre_call, now_millis: 0, deployment_id: dep-a, model: gpt-4o, repeat: 1025}
+          - {kind: redis, now_millis: 0, key: dep-a:gpt-4o:rpm:00-00}
           - {kind: tracked, now_millis: 0}
           - {kind: sync, now_millis: 0}
           - {kind: redis, now_millis: 0, key: dep-a:gpt-4o:rpm:00-00}
@@ -15,4 +16,11 @@ probes:
           - {kind: sync, now_millis: 60000}
           - {kind: redis, now_millis: 60000, key: dep-a:gpt-4o:rpm:00-01}
           - {kind: redis, now_millis: 60000, key: dep-a:gpt-4o:rpm:00-00}
-compare: {ignore: []}
+compare:
+  expected_difference:
+    - pointer: /output/routing_state/steps/1/value
+      reference: "0"
+      rust: "1024"
+      why: the queue is capped at 1024 deltas and the 1025th increment flushes it inside the caller deadline, so the store already holds the first batch; LiteLLM's queue is unbounded and nothing reaches redis before the sync
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L63-L66
+  ignore: []

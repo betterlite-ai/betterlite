@@ -1,16 +1,20 @@
 import asyncio
-from collections.abc import Awaitable, Callable, Mapping
-from contextlib import suppress
+import importlib
+import os
+import warnings
+from collections.abc import Awaitable, Callable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Annotated, Final, Literal, NoReturn
-from unittest.mock import AsyncMock, patch
 
+from litellm import constants as litellm_constants
 from litellm.caching.caching import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_cache import RedisCache
 from litellm.router import Router
+from litellm.router_strategy import base_routing_strategy, lowest_tpm_rpm_v2
 from litellm.router_strategy.lowest_tpm_rpm_v2 import LowestTPMLoggingHandler_v2
 from litellm.router_utils.router_callbacks.track_deployment_metrics import (
     find_deployment_metadata,
@@ -29,7 +33,15 @@ from probes.protocol import Millis, Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
 
-CHANNELS: Final[TypeAdapter[dict[str, object]]] = TypeAdapter(dict[str, object])
+CHANNELS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+SYNC_INTERVAL_ENV: Final = "DEFAULT_REDIS_SYNC_INTERVAL"
+MODEL_LIST: Final[list[dict[str, JsonValue]]] = [
+    {
+        "model_name": "gpt",
+        "litellm_params": {"model": "openai/gpt-4o-mini"},
+        "model_info": {"id": "dep-a"},
+    }
+]
 
 
 class Step(Strict):
@@ -120,12 +132,22 @@ class StepClock:
         self.millis: int = 0
 
     def wall(self) -> float:
-        seconds = self.millis / 1000
-        return seconds
+        return self.millis / 1000
 
     def utc(self) -> datetime:
-        moment = datetime.fromtimestamp(self.millis / 1000, tz=timezone.utc)
-        return moment
+        return datetime.fromtimestamp(self.millis / 1000, tz=timezone.utc)
+
+
+class SleepInterruptedError(BaseException):
+    def __init__(self, delay: float) -> None:
+        super().__init__(delay)
+        self.delay: float = delay
+
+
+# asyncio.sleep's overloads are satisfied by one never-returning signature: NoReturn fits both results
+async def recorded_sleep(delay: float, result: object = None) -> NoReturn:
+    _ = result
+    raise SleepInterruptedError(delay)
 
 
 class FakeStore(RedisCache):
@@ -149,15 +171,6 @@ class FakeStore(RedisCache):
         return results
 
 
-class Recorder:
-    def __init__(self) -> None:
-        self.delays: list[float] = []
-
-    def __call__(self, delay: float) -> NoReturn:
-        self.delays.append(delay)
-        raise asyncio.CancelledError
-
-
 @dataclass
 class Context:
     strategy: LowestTPMLoggingHandler_v2
@@ -171,7 +184,9 @@ class RoutingState(Operation):
 
     @override
     def run(self) -> Strict:
-        return asyncio.run(run_scenario(self))
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return asyncio.run(run_scenario(self))
 
 
 def required(value: str | None, what: str) -> str:
@@ -189,7 +204,7 @@ async def pre_call(index: int, step: Step, context: Context) -> Observation:
     }
     repeat = 1 if step.repeat is None else step.repeat
     for _run in range(repeat):
-        _checked = await context.strategy.async_pre_call_check(deployment, None)
+        await context.strategy.async_pre_call_check(deployment, None)
     return ObservedRecorded(step=index)
 
 
@@ -201,7 +216,7 @@ def success(index: int, step: Step, context: Context) -> Observation:
 
 def failure(index: int, step: Step, context: Context) -> Observation:
     deployment_id = required(step.deployment_id, "a deployment id")
-    _counted = increment_deployment_failures_for_current_minute(context.router, deployment_id)
+    increment_deployment_failures_for_current_minute(context.router, deployment_id)
     return ObservedRecorded(step=index)
 
 
@@ -217,16 +232,21 @@ def tracked(index: int, _step: Step, context: Context) -> Observation:
     return ObservedKeys(step=index, keys=sorted(keys))
 
 
+async def sleep_once(strategy: LowestTPMLoggingHandler_v2, interval: float | None) -> float:
+    original = asyncio.sleep
+    asyncio.sleep = recorded_sleep
+    try:
+        await strategy.periodic_sync_in_memory_spend_with_redis(default_sync_interval=interval)
+    except SleepInterruptedError as error:
+        return error.delay
+    finally:
+        asyncio.sleep = original
+    raise ProbeError("invalid_request", "the periodic sync returned without sleeping")
+
+
 async def sync(index: int, _step: Step, context: Context) -> Observation:
     _delay = await sleep_once(context.strategy, None)
     return ObservedRecorded(step=index)
-
-
-async def sleep_once(strategy: LowestTPMLoggingHandler_v2, interval: float | None) -> float:
-    recorder = Recorder()
-    with patch("asyncio.sleep", AsyncMock(side_effect=recorder)), suppress(asyncio.CancelledError):
-        await strategy.periodic_sync_in_memory_spend_with_redis(default_sync_interval=interval)
-    return recorder.delays[0]
 
 
 async def retire(index: int, _step: Step, context: Context) -> Observation:
@@ -236,8 +256,7 @@ async def retire(index: int, _step: Step, context: Context) -> Observation:
 
 
 def switch(index: int, step: Step, context: Context) -> Observation:
-    down = step.kind == "down"
-    context.store.down = down
+    context.store.down = step.kind == "down"
     return ObservedRecorded(step=index)
 
 
@@ -249,12 +268,14 @@ async def resolve(index: int, step: Step, context: Context) -> Observation:
 
 def metadata(index: int, step: Step, _context: Context) -> Observation:
     channels = CHANNELS.validate_json(required(step.channels, "a channels object"))
-    channel = channel_name(channels)
-    tokens = get_counted_usage_tokens(channels)
-    return ObservedChannel(step=index, channel=channel, tokens=tokens)
+    return ObservedChannel(
+        step=index,
+        channel=channel_name(channels),
+        tokens=get_counted_usage_tokens(channels),
+    )
 
 
-def channel_name(channels: Mapping[str, object]) -> str | None:
+def channel_name(channels: Mapping[str, JsonValue]) -> str | None:
     found = find_deployment_metadata(channels)
     if found is None:
         return None
@@ -296,32 +317,49 @@ async def apply_step(index: int, step: Step, context: Context) -> Observation:
     return SYNC_STEPS[step.kind](index, step, context)
 
 
+@contextmanager
+def interval_environment(text: str | None) -> Iterator[None]:
+    saved = os.environ.get(SYNC_INTERVAL_ENV)
+    if not text:
+        _ = os.environ.pop(SYNC_INTERVAL_ENV, None)
+    else:
+        os.environ[SYNC_INTERVAL_ENV] = text
+    try:
+        reload_interval()
+        yield
+    finally:
+        if saved is None:
+            _ = os.environ.pop(SYNC_INTERVAL_ENV, None)
+        else:
+            os.environ[SYNC_INTERVAL_ENV] = saved
+        reload_interval()
+
+
+def reload_interval() -> None:
+    try:
+        _ = importlib.reload(litellm_constants)
+        _ = importlib.reload(base_routing_strategy)
+    except ValueError as error:
+        raise ProbeError("invalid_request", str(error)) from error
+
+
 async def run_scenario(operation: RoutingState) -> ScenarioOutput:
     clock = StepClock()
     store = FakeStore()
-    cache = DualCache(in_memory_cache=InMemoryCache(clock=clock.wall), redis_cache=store)
-    strategy = LowestTPMLoggingHandler_v2(router_cache=cache, routing_args=dict[str, object]())
-    strategy.cancel_sync_task()
-    router = object.__new__(Router)
-    object.__setattr__(router, "cache", cache)
-    context = Context(strategy=strategy, router=router, store=store)
     observations: list[Observation] = []
-    default = sync_default(operation.env)
-    with (
-        patch("litellm.router_strategy.base_routing_strategy.DEFAULT_REDIS_SYNC_INTERVAL", default),
-        patch("litellm.router_strategy.lowest_tpm_rpm_v2.get_utc_datetime", clock.utc),
-    ):
-        for index, step in enumerate(operation.steps):
-            clock.millis = step.now_millis
-            observations.append(await apply_step(index, step, context))
+    with interval_environment(operation.env.get(SYNC_INTERVAL_ENV)):
+        cache = DualCache(in_memory_cache=InMemoryCache(clock=clock.wall), redis_cache=store)
+        strategy = LowestTPMLoggingHandler_v2(router_cache=cache, routing_args={})
+        strategy.cancel_sync_task()
+        router = Router(model_list=MODEL_LIST)
+        router.cache = cache
+        original = lowest_tpm_rpm_v2.get_utc_datetime
+        lowest_tpm_rpm_v2.get_utc_datetime = clock.utc
+        try:
+            context = Context(strategy=strategy, router=router, store=store)
+            for index, step in enumerate(operation.steps):
+                clock.millis = step.now_millis
+                observations.append(await apply_step(index, step, context))
+        finally:
+            lowest_tpm_rpm_v2.get_utc_datetime = original
     return ScenarioOutput(steps=observations)
-
-
-def sync_default(env: dict[str, str]) -> int:
-    text = env.get("DEFAULT_REDIS_SYNC_INTERVAL")
-    if text is None or text == "":
-        return 1
-    try:
-        return int(text)
-    except ValueError as error:
-        raise ProbeError("invalid_request", str(error)) from error
