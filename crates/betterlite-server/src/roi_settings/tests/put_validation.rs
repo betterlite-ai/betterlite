@@ -1,11 +1,14 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
+use crate::roi_settings::route::parse_update_body;
 use crate::roi_settings::support::MemoryRepository;
 use crate::roi_settings::support::admin_caller;
 use crate::roi_settings::support::call;
@@ -243,4 +246,21 @@ async fn put_validation_reports_the_first_bad_field_only() {
     let issues = reply.issues();
     assert_eq!(issues.len(), 1);
     assert_eq!(loc_names(&issues[0]), ["body", "backfill_days"]);
+}
+
+#[test]
+fn replays_the_roi_settings_body_corpus() {
+    assert!(replay_roi_settings_body_corpus() > 0);
+}
+
+fn replay_roi_settings_body_corpus() -> usize {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/roi_settings_body");
+    let entries = fs::read_dir(&root).expect("the corpus directory");
+    let mut replayed = 0_usize;
+    for entry in entries {
+        let bytes = fs::read(entry.expect("a corpus entry").path()).expect("a corpus file");
+        drop(parse_update_body(&bytes));
+        replayed = replayed.saturating_add(1);
+    }
+    replayed
 }
