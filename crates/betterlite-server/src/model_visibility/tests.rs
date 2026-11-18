@@ -16,6 +16,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
+use betterlite_router::wildcard_catalog::Candidate;
 use indexmap::IndexMap;
 use serde_json::Number;
 use tokio::runtime::Builder;
@@ -103,6 +104,21 @@ impl Fixture {
     // the production wiring answers get_llm_provider, whose None the source's f-string turns into a "None/" prefix
     fn with_unresolved_provider(mut self) -> Self {
         self.provider = Box::new(|_model: &str| Some("None".to_owned()));
+        self
+    }
+
+    // a pattern whose registration no deployment followed, which a lookup of its names fails on
+    fn with_broken_pattern(mut self, pattern: &str) -> Self {
+        self.catalog
+            .pattern_router
+            .add_pattern(
+                pattern,
+                Candidate {
+                    model_id: None,
+                    model: "openai/gpt-4o".to_owned(),
+                },
+            )
+            .unwrap();
         self
     }
 
@@ -312,6 +328,17 @@ fn no_hidden_rows_stop_the_lookup() {
             None
         )
         .is_empty()
+    );
+}
+
+#[test]
+fn only_candidates_are_looked_up() {
+    let fixture = Fixture::new(&[hidden("hidden", "h1")]).with_broken_pattern("broken-*");
+    // the pattern is nobody's hidden row, so the filter never resolves its names and its broken row cannot fail the listing
+    assert!(hidden_names(&fixture, &["broken-x"], Some("internal_user"), None).is_empty());
+    assert_eq!(
+        hidden_names(&fixture, &["hidden"], Some("internal_user"), None),
+        ["hidden"]
     );
 }
 
