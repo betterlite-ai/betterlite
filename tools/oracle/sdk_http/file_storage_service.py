@@ -66,7 +66,7 @@ async def execute(call: FileStorageServiceCall, api_base: str) -> FileStorageRun
     try:
         match call:
             case FactoryCall():
-                get_storage_backend(call.backend_type, prisma_client=None)
+                _ = get_storage_backend(call.backend_type, prisma_client=None)
                 value = {"url": None, "downloaded": None, "error": None}
             case UploadCall():
                 value = await upload_view(call, api_base)
