@@ -9,20 +9,22 @@ use serde::Deserialize;
 pub(crate) enum Input {
     EmbeddingFamilySelection(Case),
     OrderedMultiInputResult(Case),
-    CohereBatchedInput(Case),
-    TitanPerItemInput(Case),
+    #[serde(rename = "cohere_batched_input")]
+    CohereBatched(Case),
+    #[serde(rename = "titan_per_item_input")]
+    TitanPerItem(Case),
     NovaAsyncInvokeStart(Case),
     SigningAuthIsolation(Case),
     EmbeddingTransportError(Case),
 }
 
 impl Input {
-    pub(crate) fn case(&self) -> &Case {
+    pub(crate) const fn case(&self) -> &Case {
         match self {
             Self::EmbeddingFamilySelection(case)
             | Self::OrderedMultiInputResult(case)
-            | Self::CohereBatchedInput(case)
-            | Self::TitanPerItemInput(case)
+            | Self::CohereBatched(case)
+            | Self::TitanPerItem(case)
             | Self::NovaAsyncInvokeStart(case)
             | Self::SigningAuthIsolation(case)
             | Self::EmbeddingTransportError(case) => case,

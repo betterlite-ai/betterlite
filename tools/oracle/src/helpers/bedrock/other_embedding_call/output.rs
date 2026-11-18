@@ -1,3 +1,5 @@
+use std::io::Error as IoError;
+
 use betterlite_bedrock::embedding_call::EmbeddingCallResponse;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_openai::embedding::EmbeddingVector;
@@ -19,7 +21,7 @@ pub(crate) enum AdapterError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] IoError),
     #[error(transparent)]
     Logging(#[from] LoggingStateError),
     #[error(transparent)]
@@ -66,8 +68,8 @@ pub(crate) fn probe(case: &Case) -> Result<Value, AdapterError> {
     }))
 }
 
-fn response_value(reply: &EmbeddingCallResponse) -> Result<Value, AdapterError> {
-    match reply {
+fn response_value(response: &EmbeddingCallResponse) -> Result<Value, AdapterError> {
+    match response {
         EmbeddingCallResponse::Batch(reply) => Ok(json!({
             "object": reply.object,
             "data": records(&reply.data, |record| {

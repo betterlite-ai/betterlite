@@ -67,12 +67,11 @@ pub(crate) fn env<'env>(
 pub(crate) struct Capture(Arc<Mutex<Vec<Json>>>);
 
 impl Capture {
-    pub(crate) fn push(&self, details: &Json) -> Result<(), PrePostError> {
+    pub(crate) fn push(&self, details: &Json) {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(details.clone());
-        Ok(())
     }
 
     pub(crate) fn phases(&self) -> Vec<String> {
