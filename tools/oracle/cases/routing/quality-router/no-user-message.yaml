@@ -1,0 +1,55 @@
+kind: probe
+name: quality-router-no-user-message
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  default_model: fb
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1}
+        messages:
+          - role: system
+            content: sys
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  default_model: fb
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1}
+        messages: []
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  default_model: fb
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1}
