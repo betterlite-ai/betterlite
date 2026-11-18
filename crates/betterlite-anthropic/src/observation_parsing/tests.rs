@@ -236,6 +236,7 @@ fn parse_observed_cache_rejects_unsupported_bodies(#[case] body: &str) {
 #[case::over_prompt_with_reads(BODY, 1_001, 0, None)]
 #[case::creation_without_split(BODY, 0, 100, None)]
 #[case::split_mismatch(BODY, 0, 100, Some((50, 40)))]
+#[case::split_mismatch_without_one_hour(BODY, 0, 100, Some((50, 0)))]
 #[case::five_minute_prefix_with_one_hour_split(BODY, 0, 100, Some((0, 100)))]
 #[case::one_hour_prefix_with_five_minute_split(ONE_HOUR_BODY, 0, 100, Some((100, 0)))]
 #[case::negative_one_hour_split(BODY, 0, 100, Some((101, -1)))]
@@ -300,6 +301,22 @@ fn parse_observed_cache_accepts_the_full_prompt_budget() {
     let found = observed.unwrap();
     assert_eq!(found.cached_tokens, 1_000);
     assert_eq!(found.cache_creation_tokens, 0);
+}
+
+#[test]
+fn parse_observed_cache_ignores_fields_outside_the_response_model() {
+    let url = Url::parse(NATIVE_URL).unwrap();
+    let headers = headers();
+    let wire = WireRequest {
+        url: &url,
+        headers: &headers,
+        body: BODY.as_bytes(),
+    };
+    let observed = json(
+        r#"{"id":"msg_1","object":"chat.completion","model":"claude-3-5-sonnet","usage":{"prompt_tokens":1000,"completion_tokens":10,"prompt_tokens_details":{"cached_tokens":100,"cache_creation_tokens":0,"vendor_detail":true}},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"hi"}}]}"#,
+    );
+    let found = parse_observed_cache(&wire, &observed, "caller", "deployment").unwrap();
+    assert_eq!(found.cached_tokens, 100);
 }
 
 #[rstest]

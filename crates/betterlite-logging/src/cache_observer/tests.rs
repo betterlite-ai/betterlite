@@ -801,6 +801,19 @@ async fn storage_copies_locally_only_with_redis(#[case] redis: bool) {
 }
 
 #[tokio::test]
+async fn storage_drops_an_observation_with_a_non_finite_clock() {
+    let fake = Arc::new(FakeCache::new(false));
+    let observer = build_observer(&fake, Some(evidence(500)), f64::NAN);
+    let logged = payload();
+    let url = Url::parse(NATIVE_URL).unwrap();
+    let headers = HeaderMap::new();
+    let response = Json::Null;
+    let success = event(&logged, &url, &headers, &response, BODY.as_bytes());
+    observer.async_log_success_event(&success).await;
+    assert_eq!(fake.write_count(), 0);
+}
+
+#[tokio::test]
 async fn storage_scopes_the_key_with_the_parsed_scope() {
     let fake = Arc::new(FakeCache::new(false));
     let observer = PromptCacheObserver {
