@@ -1,14 +1,14 @@
 id: B4030
 milestone: M7 observability
 title: Model deprecation, management and fallback alerts
-status: todo
+status: done
 depends_on: [B002, B193, B843, B1690, B3888, B4020, B4024]
 file: tasks/B4030-model-alerts.yaml
 covers:
   - "litellm/integrations/SlackAlerting/slack_alerting.py"
 parent: B116
 split_from: B116
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2444
