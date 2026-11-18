@@ -49,16 +49,16 @@ pub fn apply_context_placement(
     signals: Vec<String>,
     placement: Option<&Placement>,
 ) -> AppliedPlacement {
-    let Some(placement) = placement else {
+    let Some(chosen) = placement else {
         return AppliedPlacement {
             tier,
             signals,
             original_tier: None,
         };
     };
-    if placement.tier.name() == tier.name() {
+    if chosen.tier.name() == tier.name() {
         return AppliedPlacement {
-            tier: placement.tier.clone(),
+            tier: chosen.tier.clone(),
             signals,
             original_tier: None,
         };
@@ -66,7 +66,7 @@ pub fn apply_context_placement(
     let mut escalated = signals;
     escalated.push("context_escalation".to_owned());
     AppliedPlacement {
-        tier: placement.tier.clone(),
+        tier: chosen.tier.clone(),
         signals: escalated,
         original_tier: Some(tier),
     }
@@ -97,9 +97,9 @@ pub(super) fn placement_for_tokens(
         });
     };
     for name in names.iter().skip(position.saturating_add(1)) {
-        let proven = proven_models(input, *name, buffer);
+        let proven = proven_models(input, name, buffer);
         if !proven.is_empty() {
-            let tier = match ComplexityTier::built_in(*name) {
+            let tier = match ComplexityTier::built_in(name) {
                 Some(built_in) if input.set.definitions.is_none() => Tier::BuiltIn(built_in),
                 _ => Tier::Named((*name).to_owned()),
             };

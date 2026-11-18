@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::context_placement as section;
+use betterlite_openai::chat::ChatMessage;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::complexity_math::window_holds;
@@ -80,7 +81,7 @@ impl ContextPlacement<'_> {
         let buffer = self.config.buffer;
         if request.compaction_pending
             || !self.config.enabled
-            || request.messages.is_none_or(|messages| messages.is_empty())
+            || request.messages.is_none_or(<[ChatMessage]>::is_empty)
         {
             return ContextFit {
                 facts: BTreeMap::new(),
@@ -101,7 +102,7 @@ impl ContextPlacement<'_> {
         for name in names {
             facts.insert(name.to_owned(), self.group_window_facts(name));
         }
-        let smallest = facts.values().filter_map(|facts| facts.window).min();
+        let smallest = facts.values().filter_map(|entry| entry.window).min();
         let bound = request_byte_upper_bound(request.messages, &request.out_of_band);
         let needed = self.needed_tokens(smallest, bound, buffer, request).await;
         ContextFit {
@@ -119,9 +120,7 @@ impl ContextPlacement<'_> {
         buffer: f64,
         request: &RequestFacts<'_>,
     ) -> Option<u64> {
-        let Some(window) = smallest else {
-            return None;
-        };
+        let window = smallest?;
         if window_holds(Some(window), Some(bound), buffer) {
             return None;
         }
@@ -147,10 +146,7 @@ impl ContextPlacement<'_> {
     ) -> Result<Option<Placement>, PlacementError> {
         if input.request.compaction_pending
             || !self.config.enabled
-            || input
-                .request
-                .messages
-                .is_none_or(|messages| messages.is_empty())
+            || input.request.messages.is_none_or(<[ChatMessage]>::is_empty)
         {
             return Ok(None);
         }
@@ -158,41 +154,49 @@ impl ContextPlacement<'_> {
         if pool.is_empty() {
             return Ok(None);
         }
-        let computed;
-        let fit = match context_fit {
-            Some(fit) => fit,
-            None => {
-                computed = self
-                    .request_context_fit(input.set, input.default_model, &input.request)
-                    .await;
-                &computed
-            }
-        };
-        let Some(needed) = fit.needed else {
-            return Ok(None);
-        };
-        let tokens = TokenInput {
-            set: input.set,
-            tier: input.tier,
-            pool: &pool,
-            facts: &fit.facts,
-            needed,
-        };
-        placement_for_tokens(self.config, &tokens)
+        if let Some(fit) = context_fit {
+            return placement_for_fit(self.config, input, &pool, fit);
+        }
+        let computed = self
+            .request_context_fit(input.set, input.default_model, &input.request)
+            .await;
+        placement_for_fit(self.config, input, &pool, &computed)
     }
+}
+
+// the placement a fit yields over the decided pool
+fn placement_for_fit(
+    config: &section::Config,
+    input: &PlacementRequest<'_>,
+    pool: &[String],
+    fit: &ContextFit,
+) -> Result<Option<Placement>, PlacementError> {
+    let Some(needed) = fit.needed else {
+        return Ok(None);
+    };
+    let tokens = TokenInput {
+        set: input.set,
+        tier: input.tier,
+        pool,
+        facts: &fit.facts,
+        needed,
+    };
+    placement_for_tokens(config, &tokens)
 }
 
 // the decided tier's pool, with a pool override replacing it when the caller sets one
 fn tier_pool(input: &PlacementRequest<'_>) -> Vec<String> {
-    match input.pool_override {
-        Some(overridden) => overridden.to_vec(),
-        None => match input.set.pools.get(input.tier.name()) {
-            Some(pool) => pool
-                .models()
-                .iter()
-                .map(|entry| entry.model_name.clone())
-                .collect(),
-            None => Vec::new(),
-        },
-    }
+    let Some(overridden) = input.pool_override else {
+        return input
+            .set
+            .pools
+            .get(input.tier.name())
+            .map_or_else(Vec::new, |pool| {
+                pool.models()
+                    .iter()
+                    .map(|entry| entry.model_name.clone())
+                    .collect()
+            });
+    };
+    overridden.to_vec()
 }

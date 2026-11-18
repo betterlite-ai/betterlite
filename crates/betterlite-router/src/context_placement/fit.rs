@@ -16,20 +16,19 @@ impl ContextFit {
     // _RequestContextFit.accepts: a group with no declared window accepts, as does a fit with no count
     #[must_use]
     pub fn accepts(&self, model: &str) -> bool {
-        match self.needed {
-            None => true,
-            Some(needed) => window_holds(
+        self.needed.map_or(true, |needed| {
+            window_holds(
                 window_facts(&self.facts, model).window,
                 Some(needed),
                 self.buffer,
-            ),
-        }
+            )
+        })
     }
 }
 
 pub(super) fn window_facts(facts: &BTreeMap<String, WindowFacts>, group: &str) -> WindowFacts {
-    match facts.get(group) {
-        Some(found) => *found,
-        None => WindowFacts::UNKNOWN,
-    }
+    let Some(found) = facts.get(group) else {
+        return WindowFacts::UNKNOWN;
+    };
+    *found
 }

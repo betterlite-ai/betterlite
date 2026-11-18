@@ -45,12 +45,12 @@ struct ProbeCounter {
 #[async_trait]
 impl RequestCounter for ProbeCounter {
     async fn count(&self, _messages: &[ChatMessage], _text: &str) -> Result<u64, PlacementError> {
-        match self.count {
-            Some(count) => Ok(count),
-            None => Err(PlacementError::Count {
+        let Some(count) = self.count else {
+            return Err(PlacementError::Count {
                 message: "the probe count is unavailable".to_owned(),
-            }),
-        }
+            });
+        };
+        Ok(count)
     }
 }
 
@@ -132,10 +132,10 @@ fn config(input: Option<&ConfigInput>) -> Result<section::Config, OperationError
 }
 
 fn tier(name: &str) -> Tier {
-    match ComplexityTier::built_in(name) {
-        Some(built_in) => Tier::BuiltIn(built_in),
-        None => Tier::Named(name.to_owned()),
-    }
+    let Some(built_in) = ComplexityTier::built_in(name) else {
+        return Tier::Named(name.to_owned());
+    };
+    Tier::BuiltIn(built_in)
 }
 
 fn tier_set(pools: &IndexMap<String, Vec<String>>) -> TierSet {

@@ -119,7 +119,7 @@ pub fn deployment_limit(
     model_info.limit(group, deployment, key)
 }
 
-fn text<'json>(value: Option<&'json Json>) -> Option<&'json str> {
+fn text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(text)) => Some(text),
         _ => None,

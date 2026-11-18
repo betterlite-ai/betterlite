@@ -9,10 +9,12 @@ use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
 use indexmap::IndexMap;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
+use crate::complexity_scoring::tier::Tier;
 use crate::context_placement::ContextPlacement;
 use crate::context_placement::error::PlacementError;
-use crate::context_placement::facts::{ModelLimitKey, RouterModelInfo};
-use crate::context_placement::request::RequestCounter;
+use crate::context_placement::facts::{ModelLimitKey, RouterModelInfo, WindowFacts};
+use crate::context_placement::placement::PlacementRequest;
+use crate::context_placement::request::{OutOfBand, RequestCounter, RequestFacts};
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
 
@@ -33,6 +35,39 @@ pub(super) fn message(content: &str) -> ChatMessage {
 
 pub(super) fn json(raw: &str) -> Json {
     serde_json::from_str(raw).unwrap()
+}
+
+pub(super) fn request_facts<'a>(
+    messages: Option<&'a [ChatMessage]>,
+    out_of_band: OutOfBand<'a>,
+    compaction_pending: bool,
+) -> RequestFacts<'a> {
+    RequestFacts {
+        messages,
+        out_of_band,
+        compaction_pending,
+    }
+}
+
+pub(super) fn placement_request<'a>(
+    tier: &'a Tier,
+    set: &'a TierSet,
+    request: RequestFacts<'a>,
+) -> PlacementRequest<'a> {
+    PlacementRequest {
+        tier,
+        set,
+        default_model: None,
+        pool_override: None,
+        request,
+    }
+}
+
+pub(super) fn known_window(window: u64) -> WindowFacts {
+    WindowFacts {
+        window: Some(window),
+        has_unknown: false,
+    }
 }
 
 pub(super) fn deployment(

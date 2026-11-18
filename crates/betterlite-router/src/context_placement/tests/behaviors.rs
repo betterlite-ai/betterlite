@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_models::decisions::Json;
+use betterlite_openai::chat::ChatMessage;
 
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::context_placement::ContextPlacement;
@@ -11,8 +12,8 @@ use crate::context_placement::request::{OutOfBand, RequestFacts};
 use crate::tier_definitions::model::TierSet;
 
 use super::support::{
-    ExtraModelInfo, FixedCounter, RecordingCounter, catalog, config, deployment, message, service,
-    tier_set, with_router,
+    ExtraModelInfo, FixedCounter, RecordingCounter, catalog, config, deployment, known_window,
+    message, placement_request, request_facts, service, tier_set, with_router,
 };
 
 fn fit(service: &ContextPlacement<'_>, set: &TierSet, request: &RequestFacts<'_>) -> ContextFit {
@@ -52,6 +53,12 @@ pub(super) fn run(name: &str) {
         "unknown_windows_are_holdable_but_not_provable" => {
             unknown_windows_are_holdable_but_not_provable();
         }
+        _ => run_rest(name),
+    }
+}
+
+fn run_rest(name: &str) {
+    match name {
         "a_pool_override_replaces_the_tier_pool" => a_pool_override_replaces_the_tier_pool(),
         "an_empty_pool_returns_no_placement" => an_empty_pool_returns_no_placement(),
         "a_named_tier_can_hold_a_partial_pool" => a_named_tier_can_hold_a_partial_pool(),
@@ -71,7 +78,7 @@ pub(super) fn run(name: &str) {
             a_custom_provider_overrides_the_model_prefix();
         }
         "a_match_by_name_returns_the_placement_tier" => {
-            a_match_by_name_returns_the_placement_tier()
+            a_match_by_name_returns_the_placement_tier();
         }
         "no_placement_leaves_the_tier_and_signals" => no_placement_leaves_the_tier_and_signals(),
         "the_fit_accepts_an_unknown_group" => the_fit_accepts_an_unknown_group(),
@@ -127,8 +134,8 @@ fn an_early_return_skips_the_fit_and_placement() {
     let placement_service = service(&config, &deployments, &info, &counter);
     let set = tier_set(&[("SIMPLE", &["small"])]);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
-    let messages: &[betterlite_openai::chat::ChatMessage] = &[message(&"x".repeat(400))];
-    let empty: &[betterlite_openai::chat::ChatMessage] = &[];
+    let messages: &[ChatMessage] = &[message(&"x".repeat(400))];
+    let empty: &[ChatMessage] = &[];
     let out_of_band = OutOfBand::default();
     let instructions = Json::Text("y".repeat(100));
     let over_window = OutOfBand {
@@ -138,32 +145,14 @@ fn an_early_return_skips_the_fit_and_placement() {
         request_tools: None,
     };
     for request in [
-        RequestFacts {
-            messages: Some(messages),
-            out_of_band,
-            compaction_pending: true,
-        },
-        RequestFacts {
-            messages: Some(empty),
-            out_of_band,
-            compaction_pending: false,
-        },
-        RequestFacts {
-            messages: None,
-            out_of_band: over_window,
-            compaction_pending: false,
-        },
+        request_facts(Some(messages), out_of_band, true),
+        request_facts(Some(empty), out_of_band, false),
+        request_facts(None, over_window, false),
     ] {
         let computed = fit(&placement_service, &set, &request);
         assert!(computed.facts.is_empty());
         assert_eq!(computed.needed, None);
-        let input = PlacementRequest {
-            tier: &tier,
-            set: &set,
-            default_model: None,
-            pool_override: None,
-            request,
-        };
+        let input = placement_request(&tier, &set, request);
         assert_eq!(place(&placement_service, &input), None);
     }
     assert!(counter.seen().is_empty());
@@ -257,19 +246,8 @@ fn escalation_moves_to_the_first_provable_tier() {
     let set = tier_set(&[("SIMPLE", &["small"]), ("MEDIUM", &["large"])]);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
     let messages = [message(&"x".repeat(200))];
-    let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
-        out_of_band,
-        compaction_pending: false,
-    };
-    let input = PlacementRequest {
-        tier: &tier,
-        set: &set,
-        default_model: None,
-        pool_override: None,
-        request,
-    };
+    let request = request_facts(Some(&messages), OutOfBand::default(), false);
+    let input = placement_request(&tier, &set, request);
     let placement = place(&placement_service, &input).unwrap();
     assert_eq!(placement.tier, Tier::BuiltIn(ComplexityTier::Medium));
     assert_eq!(placement.allowed_models, vec!["large".to_owned()]);
@@ -395,15 +373,10 @@ fn a_pool_override_replaces_the_tier_pool() {
     let info = ExtraModelInfo;
     let counter = FixedCounter { value: 60 };
     let placement_service = service(&config, &deployments, &info, &counter);
-    let set = tier_set(&[("SIMPLE", &["small"])]);
+    let set = tier_set(&[("SIMPLE", &["small"]), ("MEDIUM", &["tiny"])]);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
     let messages = [message(&"x".repeat(200))];
-    let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
-        out_of_band,
-        compaction_pending: false,
-    };
+    let request = request_facts(Some(&messages), OutOfBand::default(), false);
     let overridden = ["small".to_owned(), "tiny".to_owned()];
     let input = PlacementRequest {
         tier: &tier,
@@ -418,13 +391,7 @@ fn a_pool_override_replaces_the_tier_pool() {
         vec!["small".to_owned()],
         "the decided tier's own pool holds fully and would return no placement"
     );
-    let plain = PlacementRequest {
-        tier: &tier,
-        set: &set,
-        default_model: None,
-        pool_override: None,
-        request,
-    };
+    let plain = placement_request(&tier, &set, request);
     assert_eq!(place(&placement_service, &plain), None);
 }
 
@@ -742,39 +709,16 @@ fn a_disabled_gate_ignores_a_supplied_fit() {
     let set = tier_set(&[("SIMPLE", &["small"]), ("MEDIUM", &["large"])]);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
     let messages = [message(&"x".repeat(200))];
-    let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
-        out_of_band,
-        compaction_pending: false,
-    };
+    let request = request_facts(Some(&messages), OutOfBand::default(), false);
     let supplied = ContextFit {
         facts: BTreeMap::from([
-            (
-                "small".to_owned(),
-                WindowFacts {
-                    window: Some(100),
-                    has_unknown: false,
-                },
-            ),
-            (
-                "large".to_owned(),
-                WindowFacts {
-                    window: Some(10_000),
-                    has_unknown: false,
-                },
-            ),
+            ("small".to_owned(), known_window(100)),
+            ("large".to_owned(), known_window(10_000)),
         ]),
         needed: Some(96),
         buffer: 0.95,
     };
-    let input = PlacementRequest {
-        tier: &tier,
-        set: &set,
-        default_model: None,
-        pool_override: None,
-        request,
-    };
+    let input = placement_request(&tier, &set, request);
     let outcome = super::runtime()
         .block_on(placement_service.context_window_placement(&input, Some(&supplied)));
     assert_eq!(outcome.unwrap(), None);

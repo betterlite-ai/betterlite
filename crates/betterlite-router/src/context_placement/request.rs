@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::{ChatMessage, MessageContent};
-use serde::Serialize;
 
 use super::error::PlacementError;
 
@@ -34,16 +33,20 @@ pub fn out_of_band_text(out_of_band: &OutOfBand<'_>) -> String {
     if let Some(Json::Text(instructions)) = out_of_band.instructions {
         text.push_str(instructions);
     }
-    if let Some(system) = out_of_band.system
-        && !matches!(system, Json::Null)
-    {
+    if let Some(system) = out_of_band.system {
         match system {
-            Json::Text(system) => text.push_str(system),
-            other => text.push_str(&compact_json(other)),
+            Json::Null => {}
+            Json::Text(value) => text.push_str(value),
+            other @ Json::Bool(_)
+            | other @ Json::Number(_)
+            | other @ Json::List(_)
+            | other @ Json::Object(_) => {
+                text.push_str(&serde_json::to_string(other).unwrap_or_default());
+            }
         }
     }
     if let Some(tools) = selected_tools(out_of_band) {
-        text.push_str(&compact_json(tools));
+        text.push_str(&serde_json::to_string(tools).unwrap_or_default());
     }
     text
 }
@@ -65,7 +68,7 @@ fn content_bytes(message: &ChatMessage) -> usize {
         None => 0,
         Some(MessageContent::Text(text)) => text.len(),
         Some(MessageContent::Parts(parts)) if parts.is_empty() => 0,
-        Some(content) => compact_json(content).len(),
+        Some(content) => serde_json::to_string(content).unwrap_or_default().len(),
     }
 }
 
@@ -76,9 +79,4 @@ fn selected_tools<'request>(out_of_band: &OutOfBand<'request>) -> Option<&'reque
         Some(tools) => Some(tools),
     };
     declared.filter(|tools| !matches!(*tools, Json::Null))
-}
-
-// a Json value always serializes; the empty fallback keeps the byte estimate total
-fn compact_json<T: Serialize>(value: &T) -> String {
-    serde_json::to_string(value).unwrap_or_default()
 }
