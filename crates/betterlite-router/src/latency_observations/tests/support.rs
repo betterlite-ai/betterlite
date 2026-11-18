@@ -111,7 +111,7 @@ pub(crate) struct Failure<'event> {
     pub(crate) failure: FailureClass,
 }
 
-const DEFAULT_FAILURE: Failure<'static> = Failure {
+pub(crate) const DEFAULT_FAILURE: Failure<'static> = Failure {
     call_type: None,
     channels: RequestChannels {
         litellm_metadata: Channel::Absent,
