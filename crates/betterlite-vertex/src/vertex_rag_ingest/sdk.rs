@@ -38,15 +38,15 @@ pub enum VertexRagDataImport {
 impl VertexRagDataImport {
     #[must_use]
     pub fn new(endpoint: &str, credentials: Option<Credentials>) -> Self {
-        match credentials {
-            Some(provided) => Self::Credentials {
+        credentials.map_or_else(
+            || Self::Adc {
+                endpoint: endpoint.to_owned(),
+            },
+            |provided| Self::Credentials {
                 endpoint: endpoint.to_owned(),
                 credentials: provided,
             },
-            None => Self::Adc {
-                endpoint: endpoint.to_owned(),
-            },
-        }
+        )
     }
 
     async fn open(&self) -> Result<VertexRagDataService, ImportError> {
@@ -129,15 +129,12 @@ type Submitted = (
 impl CorpusImport for VertexRagDataImport {
     type Handle = Submitted;
 
-    fn submit<'request>(
-        &'request self,
-        request: ImportRequest,
-    ) -> SubmitFuture<'request, Self::Handle> {
+    fn submit(&self, request: ImportRequest) -> SubmitFuture<'_, Self::Handle> {
         Box::pin(self.start_import(request))
     }
 
-    fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request> {
-        Box::pin(VertexRagDataImport::finish_import(handle))
+    fn wait(&self, handle: Self::Handle) -> ImportFuture<'_> {
+        Box::pin(Self::finish_import(handle))
     }
 }
 

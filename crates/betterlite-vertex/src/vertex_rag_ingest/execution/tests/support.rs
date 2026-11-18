@@ -106,7 +106,7 @@ pub(super) struct FakeUpload {
 }
 
 impl NativeFileUpload for FakeUpload {
-    fn upload<'request>(&'request self, request: UploadRequest) -> UploadFuture<'request> {
+    fn upload(&self, request: UploadRequest) -> UploadFuture<'_> {
         let filename = request.file.filename.clone().unwrap_or_default();
         let uri = format!("gs://{}/{filename}", request.bucket);
         self.recorder
@@ -165,10 +165,7 @@ impl CorpusImport for FakeImport {
     // the count the submitted operation completes with, or None for one that never completes
     type Handle = Option<i64>;
 
-    fn submit<'request>(
-        &'request self,
-        request: ImportRequest,
-    ) -> SubmitFuture<'request, Self::Handle> {
+    fn submit(&self, request: ImportRequest) -> SubmitFuture<'_, Self::Handle> {
         self.recorder
             .steps
             .lock()
@@ -200,7 +197,7 @@ impl CorpusImport for FakeImport {
         })
     }
 
-    fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request> {
+    fn wait(&self, handle: Self::Handle) -> ImportFuture<'_> {
         self.recorder
             .steps
             .lock()
@@ -300,7 +297,10 @@ pub(super) fn provider_from_settings(
 }
 
 // the paused clock must show the future pending until its deadline and resolving exactly at it
-pub(super) async fn resolve_at_deadline<F: Future>(future: F, deadline: Duration) -> F::Output {
+pub(super) async fn resolve_at_deadline<F>(future: F, deadline: Duration) -> F::Output
+where
+    F: Future,
+{
     let started = Instant::now();
     let mut pinned = std::pin::pin!(future);
     if deadline > Duration::ZERO {

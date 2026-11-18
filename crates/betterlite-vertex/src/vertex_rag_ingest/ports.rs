@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use betterlite_openai::files::records::{CreatePurpose, FileObject, FileUpload};
+use google_cloud_gax::{client_builder, error};
 use secrecy::SecretString;
 use thiserror::Error;
 
@@ -22,7 +23,7 @@ pub type UploadFuture<'request> =
     Pin<Box<dyn Future<Output = Result<FileObject, VertexFilesError>> + Send + 'request>>;
 
 pub trait NativeFileUpload: Send + Sync {
-    fn upload<'request>(&'request self, request: UploadRequest) -> UploadFuture<'request>;
+    fn upload(&self, request: UploadRequest) -> UploadFuture<'_>;
 }
 
 pub struct ImportRequest {
@@ -45,11 +46,8 @@ pub type ImportFuture<'request> =
 // vertexai.rag.import_files: the submission starts the operation, and only the wait after it takes the timeout
 pub trait CorpusImport: Send + Sync {
     type Handle: Send + 'static;
-    fn submit<'request>(
-        &'request self,
-        request: ImportRequest,
-    ) -> SubmitFuture<'request, Self::Handle>;
-    fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request>;
+    fn submit(&self, request: ImportRequest) -> SubmitFuture<'_, Self::Handle>;
+    fn wait(&self, handle: Self::Handle) -> ImportFuture<'_>;
 }
 
 #[derive(Debug, Error)]
@@ -57,12 +55,12 @@ pub enum ImportError {
     #[error("the Vertex RAG client could not be created: {source}")]
     Client {
         #[source]
-        source: google_cloud_gax::client_builder::Error,
+        source: client_builder::Error,
     },
     #[error("the import operation failed: {source}")]
     Rpc {
         #[source]
-        source: google_cloud_gax::error::Error,
+        source: error::Error,
     },
     #[error("the import submission timed out after {seconds} seconds")]
     SubmitTimeout { seconds: u64 },

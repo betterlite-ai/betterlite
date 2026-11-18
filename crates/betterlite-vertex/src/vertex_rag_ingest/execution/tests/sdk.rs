@@ -172,10 +172,12 @@ async fn an_out_of_range_chunk_value_is_refused(
 ) {
     let capture = CaptureImport::default();
     let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
-    let error = port
+    let Err(error) = port
         .submit(import_request(fixed_length(chunk_size, chunk_overlap)))
         .await
-        .unwrap_err();
+    else {
+        panic!("the out-of-range chunk value is accepted");
+    };
     assert_eq!(
         error.to_string(),
         format!("the {field} value 9223372036854775807 does not fit the Vertex RAG integer field")
