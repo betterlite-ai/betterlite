@@ -61,6 +61,7 @@ pub mod trusted_network;
 pub mod virtual_key_auth;
 pub mod virtual_key_routes;
 
+use crate::routing::routing_state::RoutingState;
 use crate::state::shared::Shared;
 use betterlite_config::types::Config;
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -69,6 +70,7 @@ use std::sync::Arc;
 pub struct ServerState {
     pub config: Config,
     pub executor: Arc<ChatExecutor>,
+    pub routing: RoutingState,
     pub shared: Arc<Shared>,
     pub adaptive_persistence: adaptive_persistence::Slot,
     pub auth_admission: auth_admission::Slot,
@@ -141,6 +143,8 @@ impl ServerState {
         Self {
             config: config.clone(),
             executor,
+            // the loaded config's fallback_generalizations rules, which every route reads through the routing state
+            routing: RoutingState::new(config),
             adaptive_persistence: adaptive_persistence::Slot::new(config, &shared),
             auth_admission: auth_admission::Slot::new(config, &shared),
             auth_backend_dispatch: auth_backend_dispatch::Slot::new(config, &shared),
