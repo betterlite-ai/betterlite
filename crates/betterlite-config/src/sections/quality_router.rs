@@ -4,7 +4,7 @@ use std::fmt;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use serde::de::{Deserializer, EnumAccess, VariantAccess, Visitor};
+use serde::de::{Deserializer, EnumAccess, VariantAccess as _, Visitor};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
