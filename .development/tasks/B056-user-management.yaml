@@ -31,7 +31,8 @@ description: >-
   caller, then return. Background hook work is not awaited here. Preserve partial writes: object
   permission, generated user/key, team enrollment and organization enrollment occur in that order;
   a later failure never rolls earlier work back. The route's broad except logs /user/new and delegates
-  to B124 handle_exception_on_proxy: HTTP status/detail retained with internal_server_error, existing
+  to B2400's handle_exception_on_proxy (betterlite-server api::proxy_endpoint_support): HTTP
+  status/detail retained with internal_server_error, existing
   ProxyException preserved, other errors status_code or500 and internal_server_error. Match all fields.
 
   At server assembly, install B1226's default-team enrollment into the DefaultTeamEnrollment port of
