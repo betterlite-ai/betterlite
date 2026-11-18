@@ -111,6 +111,28 @@ enum Behavior {
     request_type: RequestType::General,
     expected: "general|short|code=0|math=0|mc=0|intl=1",
 })]
+// a fenced block sets the code flag on its own, and an "=" sets the math flag on its own
+#[case::code_fence(Behavior::CohortFlags {
+    prompt: "```\nlet x\n```",
+    request_type: RequestType::General,
+    expected: "general|short|code=1|math=0|mc=0|intl=0",
+})]
+#[case::math_symbol(Behavior::CohortFlags {
+    prompt: "1 + 1 = 2",
+    request_type: RequestType::General,
+    expected: "general|short|code=0|math=1|mc=0|intl=0",
+})]
+// Python's \b needs a non-word character on both sides, so these letter runs stay unflagged
+#[case::embedded_keyword(Behavior::CohortFlags {
+    prompt: "decode the message",
+    request_type: RequestType::General,
+    expected: "general|short|code=0|math=0|mc=0|intl=0",
+})]
+#[case::underscore_keyword(Behavior::CohortFlags {
+    prompt: "call_function now",
+    request_type: RequestType::General,
+    expected: "general|short|code=0|math=0|mc=0|intl=0",
+})]
 #[case::combining_mark_selects_simple(Behavior::UnicodeSelection {
     prompt: "code\u{301}",
     expected: TierNumber::One,
