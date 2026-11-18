@@ -6,7 +6,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 // The config side of a rollup scan: B844's deployments cloned once, so a catalog reload never changes a run's inputs.
 #[derive(Default)]
 pub struct CatalogSnapshot {
-    entries: Vec<RouterEntry>,
+    pub entries: Vec<RouterEntry>,
 }
 
 impl CatalogSnapshot {
@@ -15,11 +15,6 @@ impl CatalogSnapshot {
         Self {
             entries: specs.iter().map(entry_of).collect(),
         }
-    }
-
-    #[must_use]
-    pub fn entries(&self) -> &[RouterEntry] {
-        &self.entries
     }
 }
 

@@ -2,6 +2,7 @@
 mod ptu_job {
     use std::collections::BTreeMap;
     use std::error::Error as StdError;
+    use std::fs;
     use std::future::{Future, ready};
     use std::path::{Path, PathBuf};
     use std::sync::{Arc, Mutex};
@@ -53,7 +54,7 @@ mod ptu_job {
     use tokio::net::UnixStream;
     use tokio::process::{Child, Command};
     use tokio::task::yield_now;
-    use tokio::time::sleep;
+    use tokio::time::{sleep, timeout};
     use tokio_postgres::NoTls;
     use tokio_postgres::types::Json;
     use tokio_util::task::TaskTracker;
@@ -126,13 +127,43 @@ mod ptu_job {
         fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn StdError + Send + Sync)) {}
     }
 
-    async fn lock_cache(url: String) -> RedisLockCache {
-        let overrides = RedisOverrides {
+    fn unix_overrides(url: String) -> RedisOverrides {
+        RedisOverrides {
+            host: None,
+            port: None,
+            db: None,
+            username: None,
+            password: None,
             url: Some(Some(SecretString::from(url))),
+            ssl: None,
             socket_timeout: Some(FloatOrText::Value(1.0)),
             socket_connect_timeout: Some(FloatOrText::Value(1.0)),
-            ..RedisOverrides::default()
-        };
+            socket_keepalive: None,
+            max_connections: None,
+            health_check_interval: None,
+            credential_provider: false,
+            startup_nodes: None,
+            sentinel_nodes: None,
+            sentinel_password: None,
+            service_name: None,
+            ssl_password: None,
+            gcp_service_account: None,
+            gcp_ssl_ca_certs: None,
+            azure_redis_ad_token: None,
+            azure_client_id: None,
+            azure_tenant_id: None,
+            azure_client_secret: None,
+            aws_iam_auth: None,
+            aws_iam_user_name: None,
+            aws_iam_cache_name: None,
+            aws_iam_region: None,
+            aws_iam_serverless: None,
+            passthrough: BTreeMap::new(),
+        }
+    }
+
+    async fn lock_cache(url: String) -> RedisLockCache {
+        let overrides = unix_overrides(url);
         let options = RedisCacheOptions {
             overrides,
             family: RedisCacheFamily::Standalone,
@@ -171,42 +202,78 @@ mod ptu_job {
     }
 
     struct Redis {
-        _child: Child,
+        child: Child,
         socket: PathBuf,
         _directory: TempDir,
     }
 
     impl Redis {
         async fn start() -> Self {
-            let directory = tempfile::tempdir().unwrap();
-            let socket = directory.path().join("redis.sock");
-            let child = Command::new("redis-server")
-                .arg("--port")
-                .arg("0")
-                .arg("--unixsocket")
-                .arg(&socket)
-                .arg("--save")
-                .arg("")
-                .arg("--appendonly")
-                .arg("no")
-                .arg("--dir")
-                .arg(directory.path())
-                .arg("--logfile")
-                .arg(directory.path().join("redis.log"))
-                .kill_on_drop(true)
-                .spawn()
-                .unwrap();
+            let (child, directory, socket) = spawn_redis();
             wait_for_redis(&socket).await;
             Self {
-                _child: child,
+                child,
                 socket,
                 _directory: directory,
             }
         }
 
+        fn pid(&self) -> u32 {
+            self.child.id().expect("the redis-server child is running")
+        }
+
         fn url(&self) -> String {
             format!("redis+unix://{}", self.socket.display())
         }
+    }
+
+    // setpriv execs redis-server in place, so kill_on_drop and the death signal reach the server itself.
+    fn spawn_redis() -> (Child, TempDir, PathBuf) {
+        let directory = tempfile::tempdir().unwrap();
+        let socket = directory.path().join("redis.sock");
+        let child = Command::new("setpriv")
+            .args(["--pdeathsig", "KILL", "--"])
+            .arg("redis-server")
+            .arg("--port")
+            .arg("0")
+            .arg("--unixsocket")
+            .arg(&socket)
+            .arg("--save")
+            .arg("")
+            .arg("--appendonly")
+            .arg("no")
+            .arg("--dir")
+            .arg(directory.path())
+            .arg("--logfile")
+            .arg(directory.path().join("redis.log"))
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        (child, directory, socket)
+    }
+
+    fn redis_exited(pid: u32) -> bool {
+        let Ok(stat) = fs::read_to_string(format!("/proc/{pid}/stat")) else {
+            return true;
+        };
+        stat.split_whitespace().nth(2) == Some("Z")
+    }
+
+    async fn wait_for_exit(pid: u32) {
+        let mut attempts = 0_u32;
+        while attempts < 500_u32 && !redis_exited(pid) {
+            attempts = attempts.saturating_add(1);
+            sleep(Duration::from_millis(10)).await;
+        }
+        assert!(redis_exited(pid), "redis-server {pid} outlived the fixture");
+    }
+
+    #[tokio::test]
+    async fn a_dropped_redis_fixture_takes_its_server_with_it() {
+        let redis = Redis::start().await;
+        let pid = redis.pid();
+        drop(redis);
+        wait_for_exit(pid).await;
     }
 
     async fn wait_for_redis(socket: &Path) {
@@ -335,24 +402,29 @@ mod ptu_job {
         }
     }
 
-    fn job<A: OperatorAlert>(
+    fn job<A>(
         database: &Database,
         lock: PodLockManager<RedisLockCache>,
         deployments: Arc<CatalogSnapshot>,
         alerts: Option<Arc<A>>,
-    ) -> Arc<ScheduledPtuRollup<RedisLockCache, A>> {
-        Arc::new(ScheduledPtuRollup::new(PtuRollupInputs {
-            store: database.store(),
-            deployments,
-            lock: Arc::new(lock),
-            alerts,
-            attribution: Arc::new(AlwaysOn),
-            clock: Arc::new(FixedClock(
-                DateTime::parse_from_rfc3339("2026-03-01T12:00:00Z")
-                    .unwrap()
-                    .with_timezone(&Utc),
-            )),
-        }))
+    ) -> Arc<ScheduledPtuRollup<RedisLockCache, A>>
+    where
+        A: OperatorAlert,
+    {
+        Arc::new(ScheduledPtuRollup {
+            inputs: PtuRollupInputs {
+                store: database.store(),
+                deployments,
+                lock: Arc::new(lock),
+                alerts,
+                attribution: Arc::new(AlwaysOn),
+                clock: Arc::new(FixedClock(
+                    DateTime::parse_from_rfc3339("2026-03-01T12:00:00Z")
+                        .unwrap()
+                        .with_timezone(&Utc),
+                )),
+            },
+        })
     }
 
     struct Running<A: OperatorAlert> {
@@ -368,11 +440,14 @@ mod ptu_job {
         running_job_with_alerts(database, deployments, None).await
     }
 
-    async fn running_job_with_alerts<A: OperatorAlert>(
+    async fn running_job_with_alerts<A>(
         database: &Database,
         deployments: Arc<CatalogSnapshot>,
         alerts: Option<Arc<A>>,
-    ) -> Running<A> {
+    ) -> Running<A>
+    where
+        A: OperatorAlert,
+    {
         let redis = Redis::start().await;
         let cache = Arc::new(lock_cache(redis.url()).await);
         let job = job(
@@ -394,24 +469,9 @@ mod ptu_job {
         (database, client)
     }
 
-    async fn seed_ptu_model(client: &Client, model: &str, team: &str, from: &str) {
-        insert_model(
-            client,
-            model,
-            &format!("name-{model}"),
-            &ptu_info(team, from),
-        )
-        .await;
-    }
-
-    async fn seed_ended_model(client: &Client, model: &str, team: &str, from: &str, to: &str) {
-        insert_model(
-            client,
-            model,
-            &format!("name-{model}"),
-            &ended_info(team, from, to),
-        )
-        .await;
+    async fn seed_model(client: &Client, model: &str, team: &str, from: &str, to: Option<&str>) {
+        let info = to.map_or_else(|| ptu_info(team, from), |end| ended_info(team, from, end));
+        insert_model(client, model, &format!("name-{model}"), &info).await;
     }
 
     fn date(text: &str) -> NaiveDate {
@@ -445,8 +505,8 @@ mod ptu_job {
         .unwrap()
     }
 
-    async fn insert_model(client: &Client, id: &str, name: &str, info: &JsonData) {
-        let info = Json(info);
+    async fn insert_model(client: &Client, id: &str, name: &str, model_info: &JsonData) {
+        let info = Json(model_info);
         client
             .execute(
                 "INSERT INTO \"LiteLLM_ProxyModelTable\" \
@@ -485,60 +545,44 @@ mod ptu_job {
         Some(row.get(0))
     }
 
-    // Every attempt for one model fails, so both the daily pass and the catch-up pass report its charge as lost.
-    async fn failing_upserts(client: &Client, model: &str) {
+    // Every attempt for one model fails, or every attempt stalls, so a run can be failed or cancelled mid-write.
+    async fn block_writes(client: &Client, model: &str, stalling: bool) {
+        let action = if stalling {
+            "PERFORM pg_sleep(5);"
+        } else {
+            "IF nextval('ptu_upsert_attempts') <= 1000 THEN RAISE EXCEPTION 'transient upsert failure'; END IF;"
+        };
         client
             .batch_execute(&format!(
                 "CREATE SEQUENCE ptu_upsert_attempts; \
-                 CREATE FUNCTION ptu_flaky_upsert() RETURNS trigger LANGUAGE plpgsql AS $$ \
+                 CREATE FUNCTION ptu_block_write() RETURNS trigger LANGUAGE plpgsql AS $$ \
                  BEGIN \
                    IF NEW.model = '{model}' THEN \
-                     IF nextval('ptu_upsert_attempts') <= 1000 THEN \
-                       RAISE EXCEPTION 'transient upsert failure'; \
-                     END IF; \
+                     {action} \
                    END IF; \
                    RETURN NEW; \
                  END; \
                  $$; \
-                 CREATE TRIGGER ptu_flaky_upsert_trigger BEFORE INSERT OR UPDATE \
-                 ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_flaky_upsert();"
+                 CREATE TRIGGER ptu_block_write_trigger BEFORE INSERT OR UPDATE \
+                 ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_block_write();"
             ))
             .await
             .unwrap();
     }
 
-    async fn slow_upserts(client: &Client, model: &str) {
-        client
-            .batch_execute(&format!(
-                "CREATE FUNCTION ptu_slow_upsert() RETURNS trigger LANGUAGE plpgsql AS $$ \
-                 BEGIN \
-                   IF NEW.model = '{model}' THEN \
-                     PERFORM pg_sleep(5); \
-                   END IF; \
-                   RETURN NEW; \
-                 END; \
-                 $$; \
-                 CREATE TRIGGER ptu_slow_upsert_trigger BEFORE INSERT OR UPDATE \
-                 ON \"LiteLLM_DailyTeamSpend\" FOR EACH ROW EXECUTE FUNCTION ptu_slow_upsert();"
-            ))
-            .await
-            .unwrap();
-    }
-
-    async fn wait_for_row(client: &Client, day: &str, model: &str) {
-        for _attempt in 0..500_u32 {
-            if cost_of(client, day, model).await.is_some() {
-                return;
+    async fn wait_for_row(client: &Client, model: &str) {
+        let landed = timeout(Duration::from_secs(5), async {
+            while cost_of(client, "2026-02-28", model).await.is_none() {
+                sleep(Duration::from_millis(10)).await;
             }
-            sleep(Duration::from_millis(10)).await;
-        }
-        panic!("the charge for {model} on {day} never landed");
+        });
+        landed.await.expect("the charge never landed");
     }
 
     #[tokio::test]
     async fn a_held_lease_skips_the_day() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
         let running = running_job(&database, Arc::new(CatalogSnapshot::default())).await;
         let other = lock_manager(Arc::clone(&running.cache));
         assert_eq!(
@@ -555,7 +599,7 @@ mod ptu_job {
     #[tokio::test]
     async fn an_expired_lease_lets_the_run_through() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
         let running = running_job(&database, Arc::new(CatalogSnapshot::default())).await;
         let other = lock_manager(Arc::clone(&running.cache));
         assert_eq!(
@@ -584,13 +628,13 @@ mod ptu_job {
     #[tokio::test]
     async fn an_unreadable_redis_runs_the_day_without_pruning() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
-        seed_ended_model(
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
+        seed_model(
             &client,
             "model-z",
             "team-1",
             "2026-02-20T00:00:00Z",
-            "2026-02-24T00:00:00Z",
+            Some("2026-02-24T00:00:00Z"),
         )
         .await;
         seed_sentinel(&client, "2026-02-28", "model-z", "3.5").await;
@@ -600,7 +644,7 @@ mod ptu_job {
             directory.path().join("absent.sock").display()
         );
         let cache = Arc::new(lock_cache(url).await);
-        let job = job(
+        let job = job::<NoAlert>(
             &database,
             lock_manager(Arc::clone(&cache)),
             Arc::new(CatalogSnapshot::default()),
@@ -627,7 +671,7 @@ mod ptu_job {
     #[tokio::test]
     async fn a_deployment_outside_the_stored_catalog_is_priced() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
         let specs = [deployment("cfg-name", "team-2", "2026-02-26T00:00:00Z")];
         let running = running_job(&database, Arc::new(CatalogSnapshot::from_specs(&specs))).await;
         let result = running
@@ -654,7 +698,7 @@ mod ptu_job {
     #[tokio::test]
     async fn a_scan_failure_stops_the_day_and_releases_the_lease() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
         client
             .batch_execute("DROP TABLE \"LiteLLM_ProxyModelTable\"")
             .await
@@ -674,9 +718,9 @@ mod ptu_job {
     #[tokio::test]
     async fn a_failed_charge_keeps_the_landed_rows_and_the_daily_result() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
-        seed_ptu_model(&client, "model-b", "team-1", "2026-02-26T00:00:00Z").await;
-        failing_upserts(&client, "model-a").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
+        seed_model(&client, "model-b", "team-1", "2026-02-26T00:00:00Z", None).await;
+        block_writes(&client, "model-a", false).await;
         let running = running_job(&database, Arc::new(CatalogSnapshot::default())).await;
         let result = running
             .job
@@ -699,9 +743,9 @@ mod ptu_job {
     #[tokio::test]
     async fn a_failing_alert_channel_keeps_the_daily_result() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
-        seed_ptu_model(&client, "model-b", "team-1", "2026-02-26T00:00:00Z").await;
-        failing_upserts(&client, "model-a").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
+        seed_model(&client, "model-b", "team-1", "2026-02-26T00:00:00Z", None).await;
+        block_writes(&client, "model-a", false).await;
         let slack = Arc::new(RecordingSlack::default());
         let alerts = failing_sentry_alerts(Arc::clone(&slack));
         let running = running_job_with_alerts(
@@ -738,14 +782,14 @@ mod ptu_job {
     #[tokio::test]
     async fn a_cancelled_run_keeps_the_rows_it_landed() {
         let (database, client) = seed_database().await;
-        seed_ptu_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z").await;
-        seed_ptu_model(&client, "model-b", "team-1", "2026-02-26T00:00:00Z").await;
-        slow_upserts(&client, "model-b").await;
+        seed_model(&client, "model-a", "team-1", "2026-02-26T00:00:00Z", None).await;
+        seed_model(&client, "model-b", "team-1", "2026-02-26T00:00:00Z", None).await;
+        block_writes(&client, "model-b", true).await;
         let running = running_job(&database, Arc::new(CatalogSnapshot::default())).await;
         let job = Arc::clone(&running.job);
         let tracker = TaskTracker::new();
         let spawned = tracker.spawn(async move { job.run::<TokioSleeper>().await });
-        wait_for_row(&client, "2026-02-28", "model-a").await;
+        wait_for_row(&client, "model-a").await;
         spawned.abort();
         let joined = spawned.await;
         assert!(tracker.close());

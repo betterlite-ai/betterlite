@@ -26,15 +26,10 @@ pub struct PtuRollupInputs<L: LockCache, A: OperatorAlert> {
 
 // _scheduled_ptu_rollup: one uncancelled call per tick, borrowing the handles it was built with so no tick mints another lock owner.
 pub struct ScheduledPtuRollup<L: LockCache, A: OperatorAlert> {
-    inputs: PtuRollupInputs<L, A>,
+    pub inputs: PtuRollupInputs<L, A>,
 }
 
 impl<L: LockCache + 'static, A: OperatorAlert + 'static> ScheduledPtuRollup<L, A> {
-    #[must_use]
-    pub const fn new(inputs: PtuRollupInputs<L, A>) -> Self {
-        Self { inputs }
-    }
-
     pub async fn run<S>(&self) -> Result<Option<RollupResult>, RollupError>
     where
         S: Sleeper + Default + Send,
@@ -42,7 +37,7 @@ impl<L: LockCache + 'static, A: OperatorAlert + 'static> ScheduledPtuRollup<L, A
         let mut sleeper = S::default();
         run_scheduled_ptu_rollup(ScheduledRun {
             store: &self.inputs.store,
-            entries: self.inputs.deployments.entries(),
+            entries: self.inputs.deployments.entries.as_slice(),
             clock: self.inputs.clock.as_ref(),
             sleeper: &mut sleeper,
             lock: Some(self.inputs.lock.as_ref()),
@@ -64,9 +59,9 @@ impl<L: LockCache + 'static, A: OperatorAlert + 'static> ScheduledPtuRollup<L, A
         );
         let job = Arc::clone(self);
         let run: JobTick = Arc::new(move || -> BoxFuture<'static, ()> {
-            let job = Arc::clone(&job);
+            let tick = Arc::clone(&job);
             Box::pin(async move {
-                if let Err(error) = job.run::<TokioSleeper>().await {
+                if let Err(error) = tick.run::<TokioSleeper>().await {
                     tracing::error!(error = %error, "PTU rollup: the scheduled run failed");
                 }
             })

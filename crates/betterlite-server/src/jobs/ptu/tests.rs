@@ -23,6 +23,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 };
 use chrono::{DateTime, FixedOffset, Utc};
 use futures_util::future::BoxFuture;
+use rstest::rstest;
 use secrecy::SecretString;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
@@ -138,14 +139,16 @@ fn job(
     lease: &Arc<RecordingLease>,
     attribution: bool,
 ) -> Arc<ScheduledPtuRollup<RecordingLease, NoAlert>> {
-    Arc::new(ScheduledPtuRollup::new(PtuRollupInputs {
-        store: PostgresStore { pool: None },
-        deployments: Arc::new(CatalogSnapshot::default()),
-        lock: Arc::new(manager(lease)),
-        alerts: None,
-        attribution: Arc::new(AlwaysAttribution(attribution)),
-        clock: Arc::new(FixedWallClock),
-    }))
+    Arc::new(ScheduledPtuRollup {
+        inputs: PtuRollupInputs {
+            store: PostgresStore { pool: None },
+            deployments: Arc::new(CatalogSnapshot::default()),
+            lock: Arc::new(manager(lease)),
+            alerts: None,
+            attribution: Arc::new(AlwaysAttribution(attribution)),
+            clock: Arc::new(FixedWallClock),
+        },
+    })
 }
 
 #[tokio::test]
@@ -191,7 +194,7 @@ fn the_snapshot_dumps_a_deployment_spec_as_a_router_entry() {
     )
     .unwrap();
     let snapshot = CatalogSnapshot::from_specs(&[spec]);
-    let entries = snapshot.entries();
+    let entries = snapshot.entries;
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].model_name, "cfg-name");
     let expected: JsonData = serde_json::from_str(
@@ -201,25 +204,24 @@ fn the_snapshot_dumps_a_deployment_spec_as_a_router_entry() {
     assert_eq!(entries[0].model_info, expected);
 }
 
-#[test]
-fn the_flag_reads_exactly_true_from_the_configured_environment() {
-    let cases = [
-        (Some("true"), true),
-        (Some("TRUE"), true),
-        (Some(" false "), false),
-        (Some("1"), false),
-        (Some(""), false),
-        (None, false),
-    ];
-    for (value, expected) in cases {
-        let attribution = EnvironmentAttribution {
-            configured: BTreeMap::from([(
-                FLAG.to_owned(),
-                value.map(|text| SecretString::from(text.to_owned())),
-            )]),
-        };
-        assert_eq!(attribution.enabled(), expected, "{value:?}");
-    }
+#[rstest]
+#[case::exact(Some("true"), true)]
+#[case::uppercase(Some("TRUE"), true)]
+#[case::padded_false(Some(" false "), false)]
+#[case::one(Some("1"), false)]
+#[case::empty(Some(""), false)]
+#[case::absent(None, false)]
+fn the_flag_reads_exactly_true_from_the_configured_environment(
+    #[case] value: Option<&str>,
+    #[case] expected: bool,
+) {
+    let attribution = EnvironmentAttribution {
+        configured: BTreeMap::from([(
+            FLAG.to_owned(),
+            value.map(|text| SecretString::from(text.to_owned())),
+        )]),
+    };
+    assert_eq!(attribution.enabled(), expected, "{value:?}");
 }
 
 #[test]
