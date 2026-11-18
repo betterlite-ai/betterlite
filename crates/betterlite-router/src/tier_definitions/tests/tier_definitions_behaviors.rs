@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::tier_definitions as section;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
@@ -11,6 +12,7 @@ use crate::tier_definitions::error::TierDefinitionsError;
 use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet, label_for};
 use crate::tier_definitions::tests::{
     base_checks, blank, checked, custom, detailed, error, labels, ladder, llm, pool, pools, single,
+    stored,
 };
 
 fn names(set: &TierSet) -> Vec<String> {
@@ -246,6 +248,10 @@ fn a_pool_keeps_every_entry_with_its_own_params() {
                     "opus",
                     &[("reasoning_effort", Json::Text("xhigh".to_owned()))],
                 ),
+                detailed(
+                    "sonnet",
+                    &[("max_tokens", Json::Number(Number::from(1024_u64)))],
+                ),
                 section::TierEntry::Model("abc".to_owned()),
             ]),
         )]),
@@ -254,10 +260,30 @@ fn a_pool_keeps_every_entry_with_its_own_params() {
     let set = checked(config, &TierChecks::default());
     let reasoning = set.pools.get("REASONING").unwrap();
     assert!(!matches!(reasoning, TierPool::Single(_)));
-    assert_eq!(reasoning.models().len(), 2);
-    assert_eq!(reasoning.models()[0].model_name, "opus");
-    assert_eq!(reasoning.models()[1].model_name, "abc");
-    assert!(reasoning.models()[1].params.is_empty());
+    let models = reasoning.models();
+    assert_eq!(models.len(), 3);
+    assert_eq!(
+        models
+            .iter()
+            .map(|entry| entry.model_name.as_str())
+            .collect::<Vec<_>>(),
+        ["opus", "sonnet", "abc"]
+    );
+    assert_eq!(
+        models[0].params,
+        IndexMap::from([(
+            "reasoning_effort".to_owned(),
+            stored(&Json::Text("xhigh".to_owned())),
+        )])
+    );
+    assert_eq!(
+        models[1].params,
+        IndexMap::from([(
+            "max_tokens".to_owned(),
+            stored(&Json::Number(Number::from(1024_u64))),
+        )])
+    );
+    assert!(models[2].params.is_empty());
 }
 
 #[test]

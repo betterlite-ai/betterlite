@@ -262,7 +262,7 @@ fn references_resolve_once_from_the_environment() {
                 "items",
                 Json::List(vec![
                     object(&[("key", text("object-value"))]),
-                    text("literal-value"),
+                    text("os.environ/LITERAL"),
                 ]),
             ),
         ],
@@ -414,7 +414,7 @@ fn an_unknown_field_inside_a_parameter_entry_is_ignored() {
     let config = only(keys, &[]).unwrap().unwrap();
     assert_eq!(
         &config.tier_models.unwrap()["SIMPLE"],
-        &TierPool::Single(model("small"))
+        &TierPool::Single(entry("small", &[]))
     );
 }
 
