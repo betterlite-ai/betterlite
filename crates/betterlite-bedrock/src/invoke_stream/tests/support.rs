@@ -71,8 +71,8 @@ pub(super) const BASE: &str = "https://bedrock-runtime.us-east-1.amazonaws.com/m
 // {"outputText":"first"} in a chunk event: what the base projection decodes for a Titan model.
 pub(super) const TITAN: &str = r#"{"outputText":"first"}"#;
 
-// The buffered reply a fake stream reads when ai21 appears in the api_base.
-pub(super) const BUFFERED: &str = r#"{"choices":[{"finish_reason":"stop","message":{"content":"hello"}}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
+// The Converse reply a fake stream reads when ai21 appears in the api_base; _transform_response takes this shape.
+pub(super) const BUFFERED: &str = r#"{"output":{"message":{"content":[{"text":"hello"}],"role":"assistant"}},"stopReason":"end_turn","usage":{"inputTokens":1,"outputTokens":1,"totalTokens":2}}"#;
 
 pub(super) struct Quiet;
 
