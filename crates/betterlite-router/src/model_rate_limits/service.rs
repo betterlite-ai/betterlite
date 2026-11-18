@@ -7,7 +7,7 @@ use betterlite_tokenizer::reservation::RequestBody;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::io_token_reservations::clock::{IoClock, minute_label};
 use crate::io_token_reservations::error::IoPreCallError;
-use crate::io_token_reservations::limits::{IoDeployment, IoLimits};
+use crate::io_token_reservations::limits::IoDeployment;
 use crate::io_token_reservations::reservation::IoReservation;
 
 use super::cache::{RateLimitCache, RemoteRead};
