@@ -13,7 +13,6 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use uuid::Uuid;
 
 use super::services_realtime_session::FixedIds;
@@ -56,9 +55,23 @@ enum Step {
     },
     Ack(AckStep),
     ShouldLog {
-        configured: serde_json::Value,
+        configured: Option<ConfiguredEventTypes>,
         event: IndexMap<String, Json>,
     },
+}
+
+// litellm.logged_real_time_event_types is "*", a list of event names or None
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ConfiguredEventTypes {
+    All(AllEventTypes),
+    Only(Vec<String>),
+}
+
+#[derive(Debug, Deserialize)]
+enum AllEventTypes {
+    #[serde(rename = "*")]
+    Star,
 }
 
 #[derive(Debug, Deserialize)]
@@ -78,11 +91,79 @@ struct Steps {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum StepOutput {
-    Dispatch {
-        response: Option<RealtimeResponseTypedDict>,
-        raised: Option<&'static str>,
-    },
-    Other(serde_json::Value),
+    Dispatch(DispatchOutput),
+    ClientMessages(ClientMessagesOutput),
+    ParseClientMessage(ParseClientMessageOutput),
+    Pending(PendingOutput),
+    Provider(ProviderOutput),
+    Ack(AckOutput),
+    ShouldLog(ShouldLogOutput),
+}
+
+#[derive(Serialize)]
+struct DispatchOutput {
+    response: Option<RealtimeResponseTypedDict>,
+    raised: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct ClientMessagesOutput {
+    messages: Vec<String>,
+    receive_calls: u32,
+    after_end: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ParseClientMessageOutput {
+    parsed: IndexMap<String, Json>,
+}
+
+#[derive(Serialize)]
+struct PendingOutput {
+    pending: Option<String>,
+    status: Option<u16>,
+}
+
+#[derive(Serialize)]
+struct ProviderOutput {
+    status: Option<u16>,
+    recorded: bool,
+    unchanged: bool,
+}
+
+#[derive(Serialize)]
+struct AckOutput {
+    acked: Option<bool>,
+    raised: Option<&'static str>,
+    scope: EventScope,
+    sent: Option<SentSessionEvent>,
+}
+
+// The session.updated payload the bridge sends back to the client
+#[derive(Debug, Deserialize, Serialize)]
+struct SentSessionEvent {
+    event_id: String,
+    session: SentSession,
+    #[serde(rename = "type")]
+    event_type: SentEventType,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SentSession {
+    id: String,
+    modalities: Vec<String>,
+    model: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+enum SentEventType {
+    #[serde(rename = "session.updated")]
+    Updated,
+}
+
+#[derive(Serialize)]
+struct ShouldLogOutput {
+    logged: bool,
 }
 
 pub(crate) struct Op;
@@ -128,18 +209,18 @@ fn dispatch_step(
     session: &mut RealtimeSession,
     ids: &FixedIds,
     redactor: &Redactor,
-) -> StepOutput {
+) -> DispatchOutput {
     let mut events = RealtimeEvents {
         session: &mut *session,
         ids,
         redactor,
     };
     match events.transform_realtime_response(message.as_bytes(), state) {
-        Ok(response) => StepOutput::Dispatch {
+        Ok(response) => DispatchOutput {
             response: Some(response),
             raised: None,
         },
-        Err(error) => StepOutput::Dispatch {
+        Err(error) => DispatchOutput {
             response: None,
             raised: Some(raised(&error)),
         },
@@ -153,27 +234,32 @@ fn run_step(
     redactor: &Redactor,
 ) -> Result<StepOutput, Box<HelperError>> {
     match step {
-        Step::Dispatch { message, state } => {
-            Ok(dispatch_step(message, state, session, ids, redactor))
-        }
+        Step::Dispatch { message, state } => Ok(StepOutput::Dispatch(dispatch_step(
+            message, state, session, ids, redactor,
+        ))),
         Step::ClientMessages { initial, received } => {
             handlers::client_messages(initial.clone(), received.clone(), redactor)
+                .map(StepOutput::ClientMessages)
         }
-        Step::ParseClientMessage { message } => Ok(StepOutput::Other(json!({
-            "parsed": decode_realtime_client_preface(message.as_bytes()),
-        }))),
-        Step::Pending { scope } => Ok(handlers::pending(scope)),
+        Step::ParseClientMessage { message } => {
+            Ok(StepOutput::ParseClientMessage(ParseClientMessageOutput {
+                parsed: decode_realtime_client_preface(message.as_bytes()),
+            }))
+        }
+        Step::Pending { scope } => Ok(StepOutput::Pending(handlers::pending(scope))),
         Step::ProviderFailure {
             class_name,
             message,
             scope,
-        } => Ok(handlers::provider(class_name, message, scope, redactor)),
-        Step::Ack(ack) => handlers::ack(ack, ids, redactor),
+        } => Ok(StepOutput::Provider(handlers::provider(
+            class_name, message, scope, redactor,
+        ))),
+        Step::Ack(ack) => handlers::ack(ack, ids, redactor).map(StepOutput::Ack),
         Step::ShouldLog { configured, event } => {
-            let types = handlers::logged_types(configured);
-            Ok(StepOutput::Other(
-                json!({ "logged": should_log_event(&types, event) }),
-            ))
+            let types = handlers::logged_types(configured.as_ref());
+            Ok(StepOutput::ShouldLog(ShouldLogOutput {
+                logged: should_log_event(&types, event),
+            }))
         }
     }
 }

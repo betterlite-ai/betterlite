@@ -76,8 +76,8 @@ def pending_step(step: PendingStep) -> JsonObject:
     try:
         pending = bedrock_handler._pending_session_update(scope)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L178-L190
     except BedrockError as error:
-        return {"pending": None, "status": error.status_code, "message": str(error)}
-    return {"pending": pending, "status": None, "message": None}
+        return {"pending": None, "status": error.status_code}
+    return {"pending": pending, "status": None}
 
 
 def provider_step(step: ProviderStep) -> JsonObject:
@@ -88,15 +88,13 @@ def provider_step(step: ProviderStep) -> JsonObject:
     except BedrockError as error:
         return {
             "status": error.status_code,
-            "message": str(error),
-            "recorded": scope.get(FAILURE_KEY),
+            "recorded": scope.get(FAILURE_KEY) is not None,
             "unchanged": False,
         }
-    except ProviderError as error:
+    except ProviderError:
         return {
             "status": None,
-            "message": str(error),
-            "recorded": scope.get(FAILURE_KEY),
+            "recorded": scope.get(FAILURE_KEY) is not None,
             "unchanged": True,
         }
 
