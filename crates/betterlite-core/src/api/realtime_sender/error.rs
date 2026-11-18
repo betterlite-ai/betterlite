@@ -57,6 +57,8 @@ where
     SessionUpdateNotObject,
     #[error("the realtime session update is nested past the depth the sender enforces")]
     SessionUpdateTooDeep,
+    #[error("the realtime session update carries JSON this sender cannot decode")]
+    SessionUpdateUnreadable,
     #[error("the realtime session update cannot be read")]
     SessionUpdateInvalid {
         #[source]

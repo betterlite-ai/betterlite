@@ -6,4 +6,7 @@ deviations:
   - what: 'Duplicate modeled keys in forced transcription updates are rejected.'
     why: 'Reject ambiguous authorization fields rather than allowing typed parse failures to bypass enforcement.'
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L497-L546'
+  - what: 'A frame that Python json.loads decodes but serde_json refuses (a lone \uD800-\uDFFF escape in a string, or a bare NaN, Infinity or -Infinity token at a value position) is rejected instead of forwarded; a frame both decoders refuse is still forwarded unchanged.'
+    why: 'LiteLLM decodes such a frame with json.loads, rewrites the transcription model and sends the rewritten frame; betterlite holds neither a lone surrogate nor a non-finite number in its JSON values, so it rejects the frame rather than pass the client model through unrewritten.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L498-L501'
 kept_bugs: []

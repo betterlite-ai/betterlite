@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 
 use super::error::RealtimeSenderError;
 
+mod python_json;
+
 type Map = IndexMap<String, Json>;
 
 // LiteLLM's json.loads reads deeper frames than serde_json, so a frame past this depth is refused before any parse
@@ -156,7 +158,14 @@ where
     match serde_json::from_str::<Json>(message) {
         Ok(Json::Object(_)) => {}
         Ok(_) => return Err(RealtimeSenderError::SessionUpdateNotObject),
-        Err(_) => return Ok(message.to_owned()),
+        // Forwarding a frame Python decodes would carry the client's model past the rewrite below
+        Err(_) => {
+            return match python_json::python_decoded(message) {
+                Some(Json::Object(_)) => Err(RealtimeSenderError::SessionUpdateUnreadable),
+                Some(_) => Err(RealtimeSenderError::SessionUpdateNotObject),
+                None => Ok(message.to_owned()),
+            };
+        }
     }
     let envelope = serde_json::from_str::<Envelope>(message)
         .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;

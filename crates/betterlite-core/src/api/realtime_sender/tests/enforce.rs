@@ -275,6 +275,85 @@ fn replays_the_realtime_enforcement_corpus(
 }
 
 #[rstest]
+#[case::lone_high_surrogate(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"note":"\ud800"}}"#)]
+#[case::lone_low_surrogate(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"note":"\udc00"}}"#)]
+#[case::surrogate_key(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"\ud800":1}}"#)]
+#[case::not_a_number(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":NaN}}"#)]
+#[case::infinity(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":Infinity}}"#)]
+#[case::negative_infinity(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":-Infinity}}"#)]
+#[case::not_a_number_after_space(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature": NaN}}"#)]
+#[case::not_a_number_with_space(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":NaN }}"#)]
+#[case::not_a_number_in_array(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"values":[NaN]}}"#)]
+#[case::negative_infinity_after_comma(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"values":[0,-Infinity]}}"#)]
+#[case::transcription_session(r#"{"type":"transcription_session.update","session":{"type":"transcription","input_audio_transcription":{"model":"forbidden"},"note":"\ud800"}}"#)]
+fn enforce_rejects_a_frame_python_decodes(#[case] message: &str) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    assert!(matches!(
+        sender.enforce_session_model(message),
+        Err(RealtimeSenderError::SessionUpdateUnreadable)
+    ));
+    assert!(!state.is_transcription_session.0);
+}
+
+#[test]
+fn enforce_rewrites_a_frame_with_a_surrogate_pair() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let pair = format!(r"\u{:04x}\u{:04x}", 0xD83D_u32, 0xDE00_u32);
+    let message = format!(
+        r#"{{"type":"session.update","session":{{"input_audio_transcription":{{"model":"forbidden"}}}},"note":"{pair}"}}"#
+    );
+    let expected = format!(
+        r#"{{"type":"session.update","session":{{"input_audio_transcription":{{"model":"allowed"}}}},"note":"{pair}"}}"#
+    );
+    assert_eq!(
+        parsed(&sender.enforce_session_model(&message).unwrap()),
+        parsed(&expected)
+    );
+}
+
+#[rstest]
+#[case::truncated(r#"{"type":"session.update","session":{"note":"\ud800"}"#)]
+#[case::trailing_comma(r#"{"type":"session.update","session":{"note":"\ud800",}}"#)]
+#[case::unquoted_key(r#"{NaN:1}"#)]
+#[case::number_then_constant(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":1NaN}}"#)]
+#[case::constant_with_fraction(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":NaN.0}}"#)]
+#[case::constant_then_digit(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":Infinity0}}"#)]
+#[case::invalid_escape(r#"{"type":"session.update","session":{"note":"\q"}}"#)]
+fn enforce_keeps_a_frame_python_cannot_decode(#[case] message: &str) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    assert_eq!(sender.enforce_session_model(message).unwrap(), message);
+}
+
+#[test]
+fn enforce_rejects_a_python_only_json_nonobject() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    assert!(matches!(
+        sender.enforce_session_model(r#""\ud800""#),
+        Err(RealtimeSenderError::SessionUpdateNotObject)
+    ));
+    assert!(matches!(
+        sender.enforce_session_model("NaN"),
+        Err(RealtimeSenderError::SessionUpdateNotObject)
+    ));
+}
+
+#[rstest]
 #[case::null("null")]
 #[case::boolean("true")]
 #[case::integer("42")]
