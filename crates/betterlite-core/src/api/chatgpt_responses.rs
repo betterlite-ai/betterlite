@@ -114,13 +114,12 @@ impl ChatGptResponsesError {
             Self::Request(source) => source.http_status(),
             Self::InstructionsNotText { .. } | Self::IncludeNotList { .. } => Some(400),
             Self::Transform(OpenAiError::Provider(error)) => Some(error.status_code),
-            Self::Transform(_) => None,
             Self::Recovery { source } => match source {
                 ResponsesSseRecoveryError::Limit(error) => Some(error.fields().status),
                 ResponsesSseRecoveryError::Utf8(_) => None,
             },
             Self::ReplyTooLarge { .. } => Some(502),
-            Self::CreatedAt(_) | Self::Encode { .. } => None,
+            Self::Transform(_) | Self::CreatedAt(_) | Self::Encode { .. } => None,
         }
     }
 }

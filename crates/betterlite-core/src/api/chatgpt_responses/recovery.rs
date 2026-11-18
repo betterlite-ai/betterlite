@@ -75,7 +75,7 @@ pub(super) fn extract_completed(
                 .map_err(|source| ChatGptResponsesError::Recovery { source })?,
             Some(OUTPUT_TEXT_DONE) => {
                 record_output_text_chunk(&parsed, &output_items, &mut text_only_items, limits)
-                    .map_err(|source| ChatGptResponsesError::Recovery { source })?
+                    .map_err(|source| ChatGptResponsesError::Recovery { source })?;
             }
             Some(RESPONSE_FAILED | ERROR) => {
                 if let Some(failure) = error_message_of(&parsed) {
@@ -162,7 +162,10 @@ fn error_message_of(parsed: &IndexMap<String, Json>) -> Option<String> {
             Some(Json::Null) | None => Some(value_text(value)),
             Some(message) => Some(value_text(message)),
         },
-        value => Some(value_text(value)),
+        value @ Json::Bool(_)
+        | value @ Json::Number(_)
+        | value @ Json::Text(_)
+        | value @ Json::List(_) => Some(value_text(value)),
     }
 }
 
