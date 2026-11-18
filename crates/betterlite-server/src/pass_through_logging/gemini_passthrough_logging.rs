@@ -74,5 +74,13 @@ impl From<assembly::CollectedStreamError> for GeminiPassthroughError {
 }
 
 pub struct GeminiPassthroughLogger {
-    pub cost: Arc<dyn PassthroughCompletionCost>,
+    cost: Arc<dyn PassthroughCompletionCost>,
+}
+
+impl GeminiPassthroughLogger {
+    // ast-grep-ignore: no-one-line-functions - B8931 constructs the logger through this fixed name
+    #[must_use]
+    pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
+        Self { cost }
+    }
 }

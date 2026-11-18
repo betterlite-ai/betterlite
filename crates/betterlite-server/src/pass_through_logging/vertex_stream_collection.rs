@@ -24,7 +24,7 @@ use super::gemini_passthrough_logging::relay::{relay_kwargs, relay_logging, writ
 const VERTEX_LOCATION: &str = "vertex_location";
 
 pub struct VertexStreamCollector {
-    pub cost: Arc<dyn PassthroughCompletionCost>,
+    cost: Arc<dyn PassthroughCompletionCost>,
 }
 
 impl CollectedChunksHandler for VertexStreamCollector {
@@ -64,6 +64,12 @@ impl CollectedChunksHandler for VertexStreamCollector {
 }
 
 impl VertexStreamCollector {
+    // ast-grep-ignore: no-one-line-functions - B8931 constructs the collector through this fixed name
+    #[must_use]
+    pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
+        Self { cost }
+    }
+
     // B3638's factory is written against its own logging object and cost trait, so the assembled body is projected onto both.
     fn log_response(
         &self,

@@ -127,31 +127,25 @@ impl Helper for Op {
                 let bytes = serde_json::to_vec(&input.body).or_value_error()?;
                 let empty = Map::new();
                 let request_body = input.request_body.as_ref().unwrap_or(&empty);
-                GeminiPassthroughLogger {
-                    cost: Arc::clone(&cost),
-                }
-                .gemini_passthrough_handler(GeminiPassthroughInput {
-                    logging_obj: &logging_obj,
-                    url_route: &input.url_route,
-                    response_headers: &http::HeaderMap::new(),
-                    response_body: &bytes,
-                    request_body,
-                    start_time: fixture::timestamp()?,
-                    end_time: fixture::timestamp()?,
-                    kwargs: PassThroughLoggingKwargs::default(),
-                })
-                .map_err(|error| error.to_string())
+                GeminiPassthroughLogger::new(Arc::clone(&cost))
+                    .gemini_passthrough_handler(GeminiPassthroughInput {
+                        logging_obj: &logging_obj,
+                        url_route: &input.url_route,
+                        response_headers: &http::HeaderMap::new(),
+                        response_body: &bytes,
+                        request_body,
+                        start_time: fixture::timestamp()?,
+                        end_time: fixture::timestamp()?,
+                        kwargs: PassThroughLoggingKwargs::default(),
+                    })
+                    .map_err(|error| error.to_string())
             }
-            Operation::GeminiChunks => GeminiPassthroughLogger {
-                cost: Arc::clone(&cost),
-            }
-            .handle(&call)
-            .map_err(|error| error.to_string()),
-            Operation::VertexChunks => VertexStreamCollector {
-                cost: Arc::clone(&cost),
-            }
-            .handle(&call)
-            .map_err(|error| error.to_string()),
+            Operation::GeminiChunks => GeminiPassthroughLogger::new(Arc::clone(&cost))
+                .handle(&call)
+                .map_err(|error| error.to_string()),
+            Operation::VertexChunks => VertexStreamCollector::new(Arc::clone(&cost))
+                .handle(&call)
+                .map_err(|error| error.to_string()),
         };
         outcome.map_or_else(
             |_error| Ok(json!({ "failed": true })),
