@@ -8,14 +8,13 @@ use async_trait::async_trait;
 use betterlite_bedrock::realtime_bridge::client::ClientForward;
 use betterlite_bedrock::realtime_bridge::end::ForwardEnd;
 use betterlite_bedrock::realtime_bridge::error::{ClientForwardError, ProviderForwardError};
-use betterlite_bedrock::realtime_bridge::provider::ProviderForward;
+use betterlite_bedrock::realtime_bridge::provider::{LoggedEventSink, ProviderForward};
 use betterlite_bedrock::realtime_events::client::{ClientError, RealtimeClientWebSocket};
 use betterlite_bedrock::realtime_events::scope::EventScope;
 use betterlite_bedrock::realtime_events::stream::{
     BedrockBidirectionalStream, BedrockInputStream, BedrockOutputChunk, BedrockOutputStream,
     BedrockPayloadPart, StreamError,
 };
-use betterlite_bedrock::realtime_input::RealtimeInput;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_models::decisions::Json;
@@ -25,7 +24,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use super::{
-    BridgeView, Chunk, ClosedClient, Input, Kind, Run, ScopeView, empty_state, failure,
+    BridgeView, Chunk, ChunkKind, ClosedClient, Input, Kind, Run, ScopeView, empty_state, failure,
     session_input,
 };
 use crate::services_realtime_session::FixedIds;
@@ -40,18 +39,15 @@ struct ClientState {
     receives: AtomicUsize,
 }
 
-impl ClientState {
-    fn new(run: &Run) -> Self {
-        Self {
-            frames: Mutex::new(run.frames.iter().cloned().collect()),
-            block: run.block,
-            client_send_failures: run.client_send_failures.clone(),
-            sent: Mutex::new(Vec::new()),
-            closes: Mutex::new(Vec::new()),
-            receives: AtomicUsize::new(0),
-        }
-    }
+// Records the value and answers the index when the case asked this send to fail
+fn push_sent<T>(sent: &Mutex<Vec<T>>, failures: &[usize], value: T) -> Option<usize> {
+    let mut sent = sent.lock().unwrap_or_else(PoisonError::into_inner);
+    let index = sent.len();
+    sent.push(value);
+    failures.contains(&index).then_some(index)
+}
 
+impl ClientState {
     fn sent(&self) -> Vec<String> {
         self.sent
             .lock()
@@ -83,35 +79,26 @@ impl RealtimeClientWebSocket for TransportClient {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        match frame {
-            Some(Some(text)) => Ok(text),
-            Some(None) | None if !self.state.block => Err(ClientError {
-                message: "the client is gone".to_owned(),
-                source: None,
-            }),
-            Some(None) | None => pending().await,
+        if let Some(Some(text)) = frame {
+            return Ok(text);
         }
+        if self.state.block {
+            return pending().await;
+        }
+        Err(ClientError {
+            message: "the client is gone".to_owned(),
+            source: None,
+        })
     }
 
     async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
-        let index = self
-            .state
-            .sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len();
-        self.state
-            .sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(data);
-        if self.state.client_send_failures.contains(&index) {
-            return Err(ClientError {
+        let failed = push_sent(&self.state.sent, &self.state.client_send_failures, data);
+        failed.map_or(Ok(()), |_index| {
+            Err(ClientError {
                 message: "the client send failed".to_owned(),
                 source: None,
-            });
-        }
-        Ok(())
+            })
+        })
     }
 
     async fn close(&self, code: u16, reason: Option<String>) {
@@ -136,29 +123,11 @@ struct StreamState {
 }
 
 impl StreamState {
-    fn new(run: &Run) -> Self {
-        Self {
-            sent: Mutex::new(Vec::new()),
-            bedrock_send_failures: run.bedrock_send_failures.clone(),
-            closed: AtomicBool::new(false),
-            close_error: run.bedrock_close_error,
-            await_error: run.await_error.clone(),
-            chunks: Mutex::new(run.chunks.iter().cloned().collect()),
-            receives: AtomicUsize::new(0),
-            receive_failures: run.receive_failures.clone(),
-            block: run.block,
-        }
-    }
-
     fn sent(&self) -> Vec<Json> {
         self.sent
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    fn closed(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
     }
 }
 
@@ -171,24 +140,13 @@ impl BedrockInputStream for TransportInput {
     type Error = io::Error;
 
     async fn send(&self, event: Json) -> Result<(), StreamError<io::Error>> {
-        let index = self
-            .state
-            .sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len();
-        self.state
-            .sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(event);
-        if self.state.bedrock_send_failures.contains(&index) {
-            return Err(StreamError {
-                message: "the input send failed".to_owned(),
-                source: None,
-            });
+        if push_sent(&self.state.sent, &self.state.bedrock_send_failures, event).is_none() {
+            return Ok(());
         }
-        Ok(())
+        Err(StreamError {
+            message: "the input send failed".to_owned(),
+            source: None,
+        })
     }
 
     async fn close(&self) -> Result<(), StreamError<io::Error>> {
@@ -243,14 +201,18 @@ impl BedrockOutputStream for TransportOutput {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         match chunk {
-            Some(Chunk::End) => Ok(None),
-            Some(Chunk::MissingValue) => Ok(Some(Box::new(WireChunk(None)))),
-            Some(Chunk::MissingBytes) => Ok(Some(Box::new(WireChunk(Some(Part(None)))))),
-            Some(Chunk::Empty) => Ok(Some(Box::new(WireChunk(Some(Part(Some(Vec::new()))))))),
-            Some(Chunk::Bytes { text }) => Ok(Some(Box::new(WireChunk(Some(Part(Some(
-                text.into_bytes(),
-            ))))))),
-            Some(Chunk::InvalidUtf8) => Ok(Some(Box::new(WireChunk(Some(Part(Some(vec![0xff]))))))),
+            Some(chunk) => match chunk.kind {
+                ChunkKind::End => Ok(None),
+                ChunkKind::MissingValue => Ok(Some(Box::new(WireChunk(None)))),
+                ChunkKind::MissingBytes => Ok(Some(Box::new(WireChunk(Some(Part(None)))))),
+                ChunkKind::Empty => Ok(Some(Box::new(WireChunk(Some(Part(Some(Vec::new()))))))),
+                ChunkKind::Bytes => Ok(Some(Box::new(WireChunk(Some(Part(Some(
+                    chunk.text.into_bytes(),
+                ))))))),
+                ChunkKind::InvalidUtf8 => {
+                    Ok(Some(Box::new(WireChunk(Some(Part(Some(vec![0xff])))))))
+                }
+            },
             None if self.state.block => pending().await,
             None => Ok(None),
         }
@@ -300,6 +262,18 @@ impl BedrockBidirectionalStream for TransportStream {
     }
 }
 
+#[derive(Default)]
+struct CollectedLog {
+    events: Vec<Json>,
+}
+
+#[async_trait]
+impl LoggedEventSink for CollectedLog {
+    async fn record(&mut self, event: Json) {
+        self.events.push(event);
+    }
+}
+
 fn runtime() -> Result<Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .enable_all()
@@ -339,145 +313,29 @@ fn scope_view(scope: &EventScope) -> ScopeView {
     }
 }
 
-const fn client_outcome(
-    result: &Result<ForwardEnd, ClientForwardError<io::Error>>,
-) -> (&'static str, Option<&'static str>) {
+enum PumpResult<'a> {
+    Client(&'a Result<ForwardEnd, ClientForwardError<io::Error>>),
+    Provider(&'a Result<ForwardEnd, ProviderForwardError<io::Error>>),
+}
+
+fn pump_outcome(result: PumpResult<'_>) -> (&'static str, Option<&'static str>) {
     match result {
-        Ok(ForwardEnd::Ended) => ("ended", None),
-        Ok(ForwardEnd::Cancelled) => ("cancelled", None),
-        Err(ClientForwardError::Input(_)) => ("error", Some("input")),
-        Err(ClientForwardError::Ack(_)) => ("error", Some("ack")),
-        Err(ClientForwardError::Send(_)) => ("error", Some("stream")),
-        Err(ClientForwardError::Encode { .. }) => ("error", Some("encode")),
+        PumpResult::Client(result) => match result {
+            Ok(ForwardEnd::Ended) => ("ended", None),
+            Ok(ForwardEnd::Cancelled) => ("cancelled", None),
+            Err(ClientForwardError::Input(_)) => ("error", Some("input")),
+            Err(ClientForwardError::Ack(_)) => ("error", Some("ack")),
+            Err(ClientForwardError::Send(_)) => ("error", Some("stream")),
+            Err(ClientForwardError::Encode { .. }) => ("error", Some("encode")),
+        },
+        PumpResult::Provider(result) => match result {
+            Ok(ForwardEnd::Ended) => ("ended", None),
+            Ok(ForwardEnd::Cancelled) => ("cancelled", None),
+            Err(ProviderForwardError::Stream(_)) => ("error", Some("stream")),
+            Err(ProviderForwardError::Utf8 { .. }) => ("error", Some("utf8")),
+            Err(ProviderForwardError::Transform(_)) => ("error", Some("transform")),
+        },
     }
-}
-
-const fn provider_outcome(
-    result: &Result<ForwardEnd, ProviderForwardError<io::Error>>,
-) -> (&'static str, Option<&'static str>) {
-    match result {
-        Ok(ForwardEnd::Ended) => ("ended", None),
-        Ok(ForwardEnd::Cancelled) => ("cancelled", None),
-        Err(ProviderForwardError::Stream(_)) => ("error", Some("stream")),
-        Err(ProviderForwardError::Utf8 { .. }) => ("error", Some("utf8")),
-        Err(ProviderForwardError::Transform(_)) => ("error", Some("transform")),
-    }
-}
-
-async fn client_view(
-    run: &Run,
-    name_ids: &[Uuid],
-    events: &FixedIds,
-    redactor: &Redactor,
-    model: &str,
-) -> Result<BridgeView, Box<HelperError>> {
-    let shared = Mutex::new(session_input(name_ids));
-    let mut scope = EventScope::default();
-    let client = Arc::new(ClientState::new(run));
-    let wire = Arc::new(StreamState::new(run));
-    let stream = TransportStream::new(Arc::clone(&wire));
-    let transport = TransportClient {
-        state: Arc::clone(&client),
-    };
-    let token = CancellationToken::new();
-    let result = {
-        let mut forward: ClientForward<'_, io::Error, io::Error> = ClientForward {
-            client: &transport,
-            stream: &stream,
-            shared: &shared,
-            scope: &mut scope,
-            model,
-            trace_id: run.trace_id.as_deref(),
-            ids: events,
-            redactor,
-            initial: run.initial.clone(),
-            cancel: &token,
-        };
-        if run.cancel {
-            let canceller = cancel_at(&client.receives, threshold(run), &token);
-            let pump = forward.forward_client_to_bedrock();
-            tokio::pin!(pump);
-            tokio::pin!(canceller);
-            tokio::select! {
-                result = &mut pump => result,
-                () = &mut canceller => pump.await,
-            }
-        } else {
-            forward.forward_client_to_bedrock().await
-        }
-    };
-    let (outcome, error) = client_outcome(&result);
-    Ok(BridgeView {
-        outcome,
-        error,
-        sent_to_bedrock: wire.sent(),
-        sent_to_client: parse_sent(client.sent())?,
-        closed_input: wire.closed(),
-        closed_client: None,
-        scope: Some(scope_view(&scope)),
-        state: None,
-        logged: Vec::new(),
-    })
-}
-
-async fn provider_view(
-    run: &Run,
-    name_ids: &[Uuid],
-    events: &FixedIds,
-    redactor: &Redactor,
-) -> Result<BridgeView, Box<HelperError>> {
-    let shared = Mutex::new(session_input(name_ids));
-    let mut state: RealtimeResponseTransformInput = empty_state();
-    let mut logged = Vec::new();
-    let types = LoggedEventTypes::Default;
-    let client = Arc::new(ClientState::new(run));
-    let wire = Arc::new(StreamState::new(run));
-    let stream = TransportStream::new(Arc::clone(&wire));
-    let transport = TransportClient {
-        state: Arc::clone(&client),
-    };
-    let token = CancellationToken::new();
-    let result = {
-        let mut forward: ProviderForward<'_, io::Error, io::Error> = ProviderForward {
-            stream: &stream,
-            client: &transport,
-            shared: &shared,
-            state: &mut state,
-            logged: &mut logged,
-            logged_types: &types,
-            ids: events,
-            redactor,
-            cancel: &token,
-        };
-        if run.cancel {
-            let canceller = cancel_at(&wire.receives, threshold(run), &token);
-            let pump = forward.forward_bedrock_to_client();
-            tokio::pin!(pump);
-            tokio::pin!(canceller);
-            tokio::select! {
-                result = &mut pump => result,
-                () = &mut canceller => pump.await,
-            }
-        } else {
-            forward.forward_bedrock_to_client().await
-        }
-    };
-    let (outcome, error) = provider_outcome(&result);
-    let closed = client.closes();
-    Ok(BridgeView {
-        outcome,
-        error,
-        sent_to_bedrock: Vec::new(),
-        sent_to_client: parse_sent(client.sent())?,
-        closed_input: false,
-        closed_client: closed.first().map(|(code, reason)| ClosedClient {
-            code: *code,
-            reason: reason.clone(),
-        }),
-        scope: None,
-        state: Some(state),
-        logged,
-    })
 }
 
 async fn view(
@@ -487,9 +345,115 @@ async fn view(
     redactor: &Redactor,
     model: &str,
 ) -> Result<BridgeView, Box<HelperError>> {
+    let shared = Mutex::new(session_input(name_ids));
+    let client = Arc::new(ClientState {
+        frames: Mutex::new(run.frames.iter().cloned().collect()),
+        block: run.block,
+        client_send_failures: run.client_send_failures.clone(),
+        sent: Mutex::new(Vec::new()),
+        closes: Mutex::new(Vec::new()),
+        receives: AtomicUsize::new(0),
+    });
+    let wire = Arc::new(StreamState {
+        sent: Mutex::new(Vec::new()),
+        bedrock_send_failures: run.bedrock_send_failures.clone(),
+        closed: AtomicBool::new(false),
+        close_error: run.bedrock_close_error,
+        await_error: run.await_error.clone(),
+        chunks: Mutex::new(run.chunks.iter().cloned().collect()),
+        receives: AtomicUsize::new(0),
+        receive_failures: run.receive_failures.clone(),
+        block: run.block,
+    });
+    let stream = TransportStream::new(Arc::clone(&wire));
+    let transport = TransportClient {
+        state: Arc::clone(&client),
+    };
+    let token = CancellationToken::new();
     match run.kind {
-        Kind::Client => client_view(run, name_ids, events, redactor, model).await,
-        Kind::Provider => provider_view(run, name_ids, events, redactor).await,
+        Kind::Client => {
+            let mut scope = EventScope::default();
+            let mut forward: ClientForward<'_, io::Error, io::Error> = ClientForward {
+                client: &transport,
+                stream: &stream,
+                shared: &shared,
+                scope: &mut scope,
+                model,
+                trace_id: run.trace_id.as_deref(),
+                ids: events,
+                redactor,
+                initial: run.initial.clone(),
+                cancel: &token,
+            };
+            let result = if run.cancel {
+                let canceller = cancel_at(&client.receives, threshold(run), &token);
+                let pump = forward.forward_client_to_bedrock();
+                tokio::pin!(pump);
+                tokio::pin!(canceller);
+                tokio::select! {
+                    result = &mut pump => result,
+                    () = &mut canceller => pump.await,
+                }
+            } else {
+                forward.forward_client_to_bedrock().await
+            };
+            let (outcome, error) = pump_outcome(PumpResult::Client(&result));
+            Ok(BridgeView {
+                outcome,
+                error,
+                sent_to_bedrock: wire.sent(),
+                sent_to_client: parse_sent(client.sent())?,
+                closed_input: wire.closed.load(Ordering::SeqCst),
+                closed_client: None,
+                scope: Some(scope_view(&scope)),
+                state: None,
+                logged: Vec::new(),
+            })
+        }
+        Kind::Provider => {
+            let mut state: RealtimeResponseTransformInput = empty_state();
+            let mut log = CollectedLog::default();
+            let types = LoggedEventTypes::Default;
+            let mut forward: ProviderForward<'_, io::Error, io::Error> = ProviderForward {
+                stream: &stream,
+                client: &transport,
+                shared: &shared,
+                state: &mut state,
+                logged: &mut log,
+                logged_types: &types,
+                ids: events,
+                redactor,
+                cancel: &token,
+            };
+            let result = if run.cancel {
+                let canceller = cancel_at(&wire.receives, threshold(run), &token);
+                let pump = forward.forward_bedrock_to_client();
+                tokio::pin!(pump);
+                tokio::pin!(canceller);
+                tokio::select! {
+                    result = &mut pump => result,
+                    () = &mut canceller => pump.await,
+                }
+            } else {
+                forward.forward_bedrock_to_client().await
+            };
+            let (outcome, error) = pump_outcome(PumpResult::Provider(&result));
+            let closed = client.closes();
+            Ok(BridgeView {
+                outcome,
+                error,
+                sent_to_bedrock: Vec::new(),
+                sent_to_client: parse_sent(client.sent())?,
+                closed_input: false,
+                closed_client: closed.first().map(|(code, reason)| ClosedClient {
+                    code: *code,
+                    reason: reason.clone(),
+                }),
+                scope: None,
+                state: Some(state),
+                logged: log.events,
+            })
+        }
     }
 }
 

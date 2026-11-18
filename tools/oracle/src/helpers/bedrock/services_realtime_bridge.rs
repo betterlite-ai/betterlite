@@ -59,11 +59,19 @@ enum Kind {
     Provider,
 }
 
-// One provider output chunk; every arm is a value the SDK can hand the bridge
+// One provider output chunk; kind names which SDK value the fake stream hands the bridge
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-enum Chunk {
-    Bytes { text: String },
+#[serde(deny_unknown_fields)]
+struct Chunk {
+    kind: ChunkKind,
+    #[serde(default)]
+    text: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ChunkKind {
+    Bytes,
     InvalidUtf8,
     MissingValue,
     MissingBytes,
