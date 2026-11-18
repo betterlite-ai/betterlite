@@ -270,6 +270,15 @@ fn stays_disabled_without_a_general_settings_mapping() {
     ));
 }
 
+#[test]
+fn decodes_a_check_without_an_environment() {
+    let source = format!("{PRESENT}    lookback_days: 3\n");
+    let decoded = decode_capture_rate_settings(&source).unwrap().unwrap();
+    assert_eq!(decoded.providers, vec![SpendCaptureProvider::Openai]);
+    assert_eq!(decoded.lookback_days, 3);
+    assert!(decode_capture_rate_settings("{}").unwrap().is_none());
+}
+
 #[rstest]
 fn replays_the_capture_rate_settings_corpus(
     #[files("fuzz/corpus/capture_rate_settings/*")] path: PathBuf,
