@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
@@ -127,30 +127,20 @@ impl AgentOpsCallback {
 
     #[must_use]
     pub fn otel_config(&self, env: &BTreeMap<String, String>) -> OpenTelemetryConfig {
-        let mut config = OpenTelemetryConfig {
-            exporter: Exporter::Named(OTLP_HTTP_EXPORTER.to_owned()),
-            endpoint: Some(self.config.endpoint.clone()),
-            headers: self
-                .auth
-                .as_ref()
-                .and_then(|auth| auth.token.as_ref())
-                .map(|token| format!("Authorization=Bearer {}", token.expose_secret())),
-            signals: Signals {
-                enable_metrics: false,
-                enable_events: false,
-            },
-            service_name: String::new(),
-            deployment_environment: String::new(),
-            model_id: String::new(),
-            ignore_context_propagation: false,
-            skip_set_global: false,
-            capture_message_content: None,
-            semconv_stability_opt_in: BTreeSet::new(),
-            baggage_team_metadata_keys: Vec::new(),
-            baggage_metadata_keys: Vec::new(),
-            attributes: None,
+        let mut config = OpenTelemetryConfig::from_env(env);
+        config.exporter = Exporter::Named(OTLP_HTTP_EXPORTER.to_owned());
+        config.endpoint = Some(self.config.endpoint.clone());
+        config.headers = self
+            .auth
+            .as_ref()
+            .and_then(|auth| auth.token.as_ref())
+            .map(|token| format!("Authorization=Bearer {}", token.expose_secret()));
+        // the Python dataclass leaves both signal switches false whatever the environment says
+        config.signals = Signals {
+            enable_metrics: false,
+            enable_events: false,
         };
-        // Python's dataclass constructor fills the service identity from the OTEL_* variables
+        // __post_init__ fills the remaining identity fields from the OTEL_* variables
         config.normalize(env);
         config
     }

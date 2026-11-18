@@ -170,14 +170,14 @@ fn response_fields(
         Some(Json::Null) | None => Json::Object(IndexMap::new()),
         Some(usage) => usage.clone(),
     };
-    IndexMap::from([
-        ("response".to_owned(), Json::Object(response.clone())),
-        ("usage".to_owned(), usage),
-        (
-            "metadata".to_owned(),
-            clean_metadata(litellm_metadata, redact),
-        ),
-    ])
+    let mut fields = IndexMap::new();
+    fields.insert("response".to_owned(), Json::Object(response.clone()));
+    fields.insert("usage".to_owned(), usage);
+    fields.insert(
+        "metadata".to_owned(),
+        clean_metadata(litellm_metadata, redact),
+    );
+    fields
 }
 
 // LiteLLM logs the request's litellm_params metadata, minus the three keys it strips
