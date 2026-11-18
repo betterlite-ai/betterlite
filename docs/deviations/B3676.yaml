@@ -12,7 +12,7 @@ deviations:
   - what: A stream chunk is B3673's SseChunk (bytes, parsed event, other). A Python str chunk is not read, build_streaming_usage_response keeps only bytes chunks, and an Other chunk contributes nothing.
     why: SseChunk is the one Anthropic stream item type; LiteLLM's other readers also ignore str items, and an Other item has no representation it could read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L316
-  - what: "A parsed event chunk is assembled into the ended-stream response by rebuilding a `data: {json}` line and taking the first `data:` line, since the assembly reads SSE bytes."
+  - what: A parsed event chunk is assembled into the ended-stream response by rebuilding a data line that holds the event and taking the first data line, since the assembly reads SSE bytes.
     why: LiteLLM's assembly parses dict items directly; betterlite's assembler takes SSE bytes, so the event is re-serialized first.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1517-L1536
   - what: The ended-stream rebuild runs with a silent usage counter, silent costs and no logging object, so no token counts or costs are produced while assembling.
