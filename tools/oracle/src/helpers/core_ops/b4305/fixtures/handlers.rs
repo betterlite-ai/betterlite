@@ -150,10 +150,12 @@ pub(crate) struct Resolution {
 
 impl Resolution {
     pub(crate) fn new() -> Result<Self, Box<HelperError>> {
+        let catalog =
+            ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).or_config_error()?;
+        let names = [MODEL.to_owned(), EMBEDDING_MODEL.to_owned()];
         Ok(Self {
-            catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
-                .or_config_error()?,
-            known: BTreeSet::from([MODEL.to_owned(), EMBEDDING_MODEL.to_owned()]),
+            catalog,
+            known: names.into_iter().collect(),
             custom: BTreeSet::new(),
             environment: BTreeMap::new(),
         })

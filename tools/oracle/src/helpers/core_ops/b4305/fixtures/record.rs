@@ -15,8 +15,11 @@ use betterlite_logging::logging_success::ports::{
 };
 use betterlite_logging::logging_success::types::{SuccessMode, SuccessResult};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
+
+use super::handlers::helper_error;
 
 // The logging object's cache-hit view after the call, which the Python helper reads off its Logging object
 #[derive(Clone, Debug)]
@@ -36,6 +39,25 @@ impl Logged {
             caching_details: state.model_call_details.get(CACHING_DETAILS).cloned(),
         }
     }
+}
+
+// A hit queues its logging on the worker, so the payload builder's snapshot is the state's only reader; a skipped log keeps the state here
+pub(crate) fn logged_from(
+    snapshots: &Mutex<Vec<Logged>>,
+    fallback: Option<&LoggingState>,
+) -> Result<Logged, Box<HelperError>> {
+    let recorded = snapshots.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(snapshot) = recorded.last() {
+        return Ok(snapshot.clone());
+    }
+    fallback.map_or_else(
+        || {
+            Err(helper_error(
+                "the cache hit logging state was not recorded".to_owned(),
+            ))
+        },
+        |state| Ok(Logged::from_state(state)),
+    )
 }
 
 pub(crate) struct SnapshotBuilder {

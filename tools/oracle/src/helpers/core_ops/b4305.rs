@@ -1,16 +1,11 @@
-mod cache;
 mod fixtures;
-mod input;
-mod record;
 mod scenario;
-
 use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use tokio::runtime::Builder;
 
-use input::Input;
+use fixtures::Input;
 use scenario::scenarios;
-
 pub(crate) struct Op;
 
 impl Helper for Op {

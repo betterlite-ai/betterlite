@@ -1,6 +1,6 @@
 import asyncio
 import datetime as dt
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, NotRequired, TypedDict, cast
 
 import litellm
 from litellm.caching.caching import Cache
@@ -9,7 +9,7 @@ from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.s3_cache import S3Cache
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.caching import CachingSupportedCallTypes, LiteLLMCacheType
-from litellm.types.utils import CachingDetails, EmbeddingResponse, ModelResponse
+from litellm.types.utils import CachingDetails, EmbeddingResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
@@ -19,10 +19,10 @@ SUPPORTED: Final = TypeAdapter(list[CachingSupportedCallTypes] | None)
 JSON: Final = TypeAdapter(JsonValue)
 
 
-class Seed(TypedDict, total=False):
-    key: str
-    input: JsonValue
+class Seed(TypedDict):
     value: JsonValue
+    key: NotRequired[str]
+    input: NotRequired[JsonValue]
 
 
 class Scenario(TypedDict):
@@ -51,8 +51,6 @@ class NamedFunction:
 
 
 class Params(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
     acompletion: bool | None = None
     custom_llm_provider: str | None = None
     preset_cache_key: str | None = None
@@ -125,10 +123,11 @@ def seed_key(cache: Cache, scenario: Scenario, entry: Seed) -> str:
     key = entry.get("key")
     if key is not None:
         return key
+    kwargs = scenario["kwargs"]
     request = entry.get("input")
     if request is not None:
-        return cache.get_cache_key(**{**scenario["kwargs"], "input": request})
-    return cache.get_cache_key(**scenario["kwargs"])
+        kwargs = {**kwargs, "input": request}
+    return cache.get_cache_key(**kwargs)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358
 
 
 def scenario_cache(scenario: Scenario) -> Cache:
@@ -143,7 +142,8 @@ def scenario_cache(scenario: Scenario) -> Cache:
 
 def scenario_handler(scenario: Scenario) -> LLMCachingHandler:
     function = NamedFunction(scenario["original_function"])
-    return LLMCachingHandler(function, scenario["kwargs"], FIXED_TIME)
+    request = cast("dict[str, object]", scenario["kwargs"])  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L209
+    return LLMCachingHandler(function, request, FIXED_TIME)
 
 
 def scenario_logging(scenario: Scenario) -> Logging:
@@ -177,7 +177,7 @@ def logging_report(logging_obj: Logging) -> dict[str, JsonValue]:
     }
 
 
-def hidden_fields(result: object) -> HiddenFields | None:
+def hidden_fields(result: JsonValue | BaseModel) -> HiddenFields | None:
     try:
         return Hidden.model_validate(result).params
     except ValidationError:
@@ -185,26 +185,19 @@ def hidden_fields(result: object) -> HiddenFields | None:
 
 
 def reply_report(reply: EmbeddingResponse) -> dict[str, JsonValue]:
-    hidden = hidden_fields(reply) or {}
+    hidden = hidden_fields(reply)
+    rendered = JSON.validate_python(EMBEDDING.validate_json(reply.model_dump_json()))
     return {
-        "reply": EMBEDDING.validate_json(reply.model_dump_json()),
-        "cache_hit": hidden.get("cache_hit"),
-        "cache_key": hidden.get("cache_key"),
+        "reply": rendered,
+        "cache_hit": None if hidden is None else hidden.get("cache_hit"),
+        "cache_key": None if hidden is None else hidden.get("cache_key"),
     }
-
-
-def cached_report(cached_result: object | None) -> tuple[str, JsonValue, HiddenFields]:
-    hidden = None if cached_result is None else hidden_fields(cached_result)
-    if hidden is not None:
-        return "converted", None, hidden
-    if cached_result is None:
-        return "none", None, {}
-    return "raw", JSON.validate_python(cached_result), {}
 
 
 def response_report(
     response: CachingHandlerResponse | None, logging_obj: Logging
 ) -> dict[str, JsonValue]:
+    logging = logging_report(logging_obj)
     if response is None:
         return {
             "returned": False,
@@ -215,20 +208,22 @@ def response_report(
             "embedding": None,
             "all_cached": False,
             "uncached_input": None,
-            "logging": logging_report(logging_obj),
+            "logging": logging,
         }
-    kind, raw, hidden = cached_report(response.cached_result)
+    stored = cast("JsonValue | BaseModel | None", response.cached_result)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L78
+    hidden = None if stored is None else hidden_fields(stored)
+    raw = None if hidden is not None else JSON.validate_python(stored)
     reply = response.final_embedding_cached_response
     return {
         "returned": True,
-        "cached": kind,
+        "cached": "none" if stored is None else ("converted" if hidden is not None else "raw"),
         "raw": raw,
-        "cache_hit": hidden.get("cache_hit"),
-        "cache_key": hidden.get("cache_key"),
+        "cache_hit": None if hidden is None else hidden.get("cache_hit"),
+        "cache_key": None if hidden is None else hidden.get("cache_key"),
         "embedding": None if reply is None else reply_report(reply),
         "all_cached": response.embedding_all_elements_cache_hit,
-        "uncached_input": response.embedding_uncached_input,
-        "logging": logging_report(logging_obj),
+        "uncached_input": JSON.validate_python(response.embedding_uncached_input),
+        "logging": logging,
     }
 
 
@@ -236,7 +231,7 @@ async def async_scenario(scenario: Scenario) -> dict[str, JsonValue]:
     litellm.cache = scenario_cache(scenario) if scenario["cache_configured"] else None
     handler = scenario_handler(scenario)
     logging_obj = scenario_logging(scenario)
-    response = await handler._async_get_cache(  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L228
+    response = await handler._async_get_cache(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L228
         model=scenario["model"],
         original_function=NamedFunction(scenario["original_function"]),
         logging_obj=logging_obj,
@@ -252,7 +247,7 @@ def sync_scenario(scenario: Scenario) -> dict[str, JsonValue]:
     litellm.cache = scenario_cache(scenario) if scenario["cache_configured"] else None
     handler = scenario_handler(scenario)
     logging_obj = scenario_logging(scenario)
-    response = handler._sync_get_cache(  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L368
+    response = handler._sync_get_cache(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L368
         model=scenario["model"],
         original_function=NamedFunction(scenario["original_function"]),
         logging_obj=logging_obj,
