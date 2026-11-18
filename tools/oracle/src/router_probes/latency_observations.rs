@@ -12,12 +12,13 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
-// a wall-clock second as the case spells it, compared bit for bit so both sides answer the same JSON number
+// a wall-clock second as the case spells it, compared bit for bit, and read through Number because the tagged reply buffers an arbitrary_precision float as its private number map
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct Seconds(pub f64);
 
-// the reply is an internally tagged enum, so serde buffers it and arbitrary_precision hands a float back as its private number map; Number reads either shape
+// ast-grep-ignore: no-custom-serde
 impl<'de> Deserialize<'de> for Seconds {
+    // ast-grep-ignore: no-custom-serde
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
