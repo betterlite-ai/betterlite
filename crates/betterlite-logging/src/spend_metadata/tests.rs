@@ -30,7 +30,7 @@ fn object(text: &str) -> JsonObject {
     r#"{"standard_logging_object":"std-1","litellm_call_id":"call-1"}"#,
     Some("call-1")
 )]
-#[case::no_candidates(r#"{"id":null}"#, r#"{}"#, None)]
+#[case::no_candidates(r#"{"id":null}"#, "{}", None)]
 fn takes_the_first_nonempty_id(
     #[case] response: &str,
     #[case] kwargs: &str,
@@ -63,7 +63,7 @@ fn appends_the_batch_cost_suffix_only_for_batch_retrieval() {
 #[rstest]
 #[case::exact_failure(r#"{"status":"failure"}"#, SpendLogStatus::Failure)]
 #[case::capitalized_is_success(r#"{"status":"Failure"}"#, SpendLogStatus::Success)]
-#[case::missing_is_success(r#"{}"#, SpendLogStatus::Success)]
+#[case::missing_is_success("{}", SpendLogStatus::Success)]
 #[case::nonstring_is_success(r#"{"status":5}"#, SpendLogStatus::Success)]
 fn reports_failure_only_for_the_exact_text(#[case] metadata: &str, #[case] status: SpendLogStatus) {
     assert_eq!(status_for_spend_log(&object(metadata)), status);

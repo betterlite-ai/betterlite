@@ -67,22 +67,22 @@ const EMPTY: &str =
     Some(r#"{"pages_processed":3}"#),
     r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
 )]
-#[case::truthy_list(Some(r#"[1]"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::truthy_list(Some("[1]"), Some(r#"{"pages_processed":3}"#), EMPTY)]
 #[case::empty_list_fallback(
-    Some(r#"[]"#),
+    Some("[]"),
     Some(r#"{"pages_processed":3}"#),
     r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
 )]
-#[case::true_usage(Some(r#"true"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::true_usage(Some("true"), Some(r#"{"pages_processed":3}"#), EMPTY)]
 #[case::false_usage(
-    Some(r#"false"#),
+    Some("false"),
     Some(r#"{"pages_processed":3}"#),
     r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
 )]
-#[case::truthy_number_fallback(Some(r#"2"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
-#[case::tiny_number(Some(r#"1e-999"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::truthy_number_fallback(Some("2"), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::tiny_number(Some("1e-999"), Some(r#"{"pages_processed":3}"#), EMPTY)]
 #[case::zero_with_exponent(
-    Some(r#"0e99"#),
+    Some("0e99"),
     Some(r#"{"pages_processed":3}"#),
     r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
 )]

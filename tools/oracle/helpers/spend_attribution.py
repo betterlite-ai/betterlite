@@ -211,7 +211,7 @@ def providers(input_value: ProvidersInput) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    # resolving an unknown model prints the provider list to sys.stdout, which carries the oracle's JSON line
+    # resolving an unknown model prints the provider list to stdout, where the answer line goes
     with redirect_stdout(io.StringIO()):
         if input_value["function"] == "redact":
             return redact(input_value)
