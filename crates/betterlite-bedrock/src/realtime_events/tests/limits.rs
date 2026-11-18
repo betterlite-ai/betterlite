@@ -3,7 +3,7 @@ use crate::realtime_events::decode::{
     DecodedEvent, MAX_MESSAGE_BYTES, NativeEvent, decode_realtime_client_preface,
     decode_realtime_native_event,
 };
-use crate::realtime_events::dispatch::{MAX_DELTA_BYTES, MAX_DELTA_CHUNKS};
+use crate::realtime_events::dispatch::{MAX_DELTA_BYTES, MAX_DELTA_CHUNKS, RealtimeEvents};
 use crate::realtime_events::error::EventError;
 use betterlite_models::decisions::Json;
 
@@ -20,9 +20,18 @@ pub(super) fn delta_accumulator_limits() {
 fn repeated_small_frames() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
+    // Compiling the redaction patterns belongs to session setup, not each of its 4096 frames.
+    let redactor = support::redactor();
+    let mut events = RealtimeEvents {
+        session: &mut session,
+        ids: &ids,
+        redactor: &redactor,
+    };
     let mut input = support::input_with_ids("item", "resp", "conv");
     for count in 1..=MAX_DELTA_CHUNKS {
-        let response = support::transform(&mut session, &ids, TEXT, &input).expect("within cap");
+        let response = events
+            .transform_realtime_response(TEXT.as_bytes(), &input)
+            .expect("within cap");
         assert_eq!(
             response.current_delta_chunks.as_ref().map(Vec::len),
             Some(count)
@@ -30,7 +39,7 @@ fn repeated_small_frames() {
         input.current_delta_chunks = response.current_delta_chunks;
     }
     assert!(matches!(
-        support::transform(&mut session, &ids, TEXT, &input),
+        events.transform_realtime_response(TEXT.as_bytes(), &input),
         Err(EventError::ExceedsLimit {
             subject: "response delta chunks",
             limit: MAX_DELTA_CHUNKS

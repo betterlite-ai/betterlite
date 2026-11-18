@@ -19,10 +19,10 @@ pub(super) async fn session_update_first() {
 async fn client_messages() {
     let (log, _guard) = support::capture();
     let client = transport::FakeClient::new();
-    let mut received = client.received.lock().unwrap();
-    received.push_back(transport::Received::Text("first".to_owned()));
-    received.push_back(transport::Received::Error(format!("{SECRET} died")));
-    drop(received);
+    client.received.lock().unwrap().extend([
+        transport::Received::Text("first".to_owned()),
+        transport::Received::Error(format!("{SECRET} died")),
+    ]);
     let redactor = support::redactor();
     let mut messages: ClientMessages<'_, io::Error> = ClientMessages {
         client: &client,

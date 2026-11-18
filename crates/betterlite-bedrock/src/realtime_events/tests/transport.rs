@@ -40,8 +40,8 @@ impl RealtimeClientWebSocket for FakeClient {
     type Error = io::Error;
 
     async fn receive_text(&self) -> Result<String, ClientError<io::Error>> {
-        let mut received = self.received.lock().unwrap();
-        match received.pop_front() {
+        let received = self.received.lock().unwrap().pop_front();
+        match received {
             Some(Received::Text(text)) => Ok(text),
             Some(Received::Error(message)) => Err(ClientError {
                 message,

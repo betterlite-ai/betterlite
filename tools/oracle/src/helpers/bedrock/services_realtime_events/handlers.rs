@@ -43,8 +43,13 @@ impl RealtimeClientWebSocket for Transport {
 
     async fn receive_text(&self) -> Result<String, ClientError<io::Error>> {
         self.receive_calls.fetch_add(1, Ordering::SeqCst);
-        let mut frames = self.frames.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(frame) = frames.pop_front().flatten() else {
+        let received = self
+            .frames
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .flatten();
+        let Some(frame) = received else {
             return Err(ClientError {
                 message: "the client sent no more frames".to_owned(),
                 source: None,
@@ -178,15 +183,15 @@ pub(super) fn provider(
         message: message.to_owned(),
         source: None,
     };
-    let mut scope = scope.clone();
-    let error = raise_provider_failure(&mut scope, failure, redactor);
+    let mut updated_scope = scope.clone();
+    let error = raise_provider_failure(&mut updated_scope, failure, redactor);
     let (status, unchanged) = match error {
         ProviderStreamError::Bedrock { status_code, .. } => (Some(status_code), false),
         ProviderStreamError::Unchanged(_) => (None, true),
     };
     ProviderOutput {
         status,
-        recorded: !matches!(scope.committed_failure, Json::Null),
+        recorded: !matches!(updated_scope.committed_failure, Json::Null),
         unchanged,
     }
 }
@@ -215,7 +220,7 @@ pub(super) fn ack(
         redactor,
     };
     let result = current_runtime()?.block_on(session.ack_session_update());
-    let (acked, raised) = outcome(result);
+    let (acked, raised) = outcome(&result);
     Ok(AckOutput {
         acked,
         raised,
@@ -224,9 +229,11 @@ pub(super) fn ack(
     })
 }
 
-fn outcome(result: Result<bool, AckError<io::Error>>) -> (Option<bool>, Option<&'static str>) {
+const fn outcome(
+    result: &Result<bool, AckError<io::Error>>,
+) -> (Option<bool>, Option<&'static str>) {
     match result {
-        Ok(acked) => (Some(acked), None),
+        Ok(acked) => (Some(*acked), None),
         Err(AckError::Stream(_)) => (None, Some("stream")),
         Err(AckError::Modalities) => (None, Some("modalities")),
         Err(AckError::Encode { .. }) => (None, Some("encode")),
