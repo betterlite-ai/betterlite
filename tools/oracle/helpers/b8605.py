@@ -52,7 +52,8 @@ def run(input_value: Input) -> JsonValue:
         case "record_disconnect":
             answer = _JSON.validate_python(asyncio.run(record_answers(input_value["requests"])))
         case "model_checks":
-            answer = _JSON.validate_python(
-                [model_answer(check) for check in input_value["checks"]]
-            )
+            answers: list[JsonObject] = [
+                model_answer(check) for check in input_value["checks"]
+            ]
+            answer = _JSON.validate_python(answers)
     return answer
