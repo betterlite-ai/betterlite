@@ -17,6 +17,7 @@ use crate::otel::v2_callback::callback::{
     CallbackParts, EmitterParts, MetricSettings, ProviderBuild, ProviderSources, V2Callback,
     V2CallbackAssembly,
 };
+use crate::otel::v2_callback::error::CallbackError;
 use crate::otel::v2_callback::live_span::RootSpans;
 use crate::otel::v2_callback::span_error::ErrorInformationConfig;
 
