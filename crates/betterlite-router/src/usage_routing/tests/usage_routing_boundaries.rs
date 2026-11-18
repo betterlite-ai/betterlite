@@ -1,6 +1,6 @@
-use std::future::{Future as _, poll_fn};
+use std::future::Future as _;
 use std::pin::pin;
-use std::task::Poll;
+use std::task::{Context, Poll, Waker};
 
 use betterlite_models::decisions::Json;
 use rand::SeedableRng as _;
@@ -328,7 +328,7 @@ async fn usage_routing_boundaries_cancel_a_strategy_call_without_state() {
             context,
             &mut random
         ));
-        let first = poll_fn(|poll_context| call.as_mut().poll(poll_context)).await;
+        let first = call.as_mut().poll(&mut Context::from_waker(Waker::noop()));
         assert!(matches!(first, Poll::Ready(Ok(0))));
     }
     let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
