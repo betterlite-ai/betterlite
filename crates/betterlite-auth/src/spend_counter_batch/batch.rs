@@ -62,15 +62,6 @@ impl BatchState {
         }
         asked
     }
-
-    fn forget(&mut self, counter_key: &str) {
-        self.keys.remove(counter_key);
-        self.fetched.remove(counter_key);
-        self.loaded.remove(counter_key);
-        // a reply asked for before this forget must not refill the key
-        let generation = self.generations.entry(counter_key.to_owned()).or_default();
-        *generation = generation.wrapping_add(1);
-    }
 }
 
 mod load;
@@ -151,7 +142,12 @@ impl SpendCounterBatch {
 
     pub fn forget(&self, counter_key: &str) {
         let mut state = lock(&self.state);
-        state.forget(counter_key);
+        // a reply asked for before this forget must not refill the key
+        let generation = state.generations.entry(counter_key.to_owned()).or_default();
+        *generation = generation.wrapping_add(1);
+        state.keys.remove(counter_key);
+        state.fetched.remove(counter_key);
+        state.loaded.remove(counter_key);
     }
 
     pub(super) fn declare_pending(&self) {
