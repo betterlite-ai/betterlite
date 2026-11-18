@@ -28,7 +28,7 @@ NOT_PORTED: Final = frozenset({"HttpxBinaryResponseContent"})
 
 
 def public_names(module: ModuleType) -> set[str]:
-    members: list[tuple[str, JsonValue]] = inspect.getmembers(module)
+    members: list[tuple[str, JsonValue | ModuleType]] = inspect.getmembers(module)
     names: set[str] = set()
     for name, member in members:
         if name.startswith("_"):
