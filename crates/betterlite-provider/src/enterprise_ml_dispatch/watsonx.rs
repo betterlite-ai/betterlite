@@ -1,6 +1,5 @@
 use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
-use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 use uuid::Uuid;
@@ -9,7 +8,6 @@ use crate::data_cloud_dispatch::call::CompletionCall;
 use crate::data_cloud_dispatch::context::{DispatchContext, EnvironmentSource};
 use crate::watsonx_rerank::WatsonxRerankConfig;
 
-use super::call::convert;
 use super::context::{ChatContext, ReplacedCall, handler_call};
 use super::error::EnterpriseError;
 
@@ -40,30 +38,27 @@ pub fn environment(source: &EnvironmentSource<'_>) -> Result<WatsonxEnvironment,
 }
 
 // the popped text: an absent or null key takes the next default, and an explicit text is used as given, empty included
-fn pop_text(
-    params: &mut WatsonxParams,
-    field: &'static str,
-) -> Result<Option<String>, EnterpriseError> {
-    match params.remove(field) {
+fn pop_text(params: &mut Object, field: &'static str) -> Result<Option<String>, EnterpriseError> {
+    match params.shift_remove(field) {
         None | Some(Json::Null) => Ok(None),
-        Some(value) => match value.as_str() {
-            Some(text) => Ok(Some(text.to_owned())),
-            None => Err(EnterpriseError::FieldType { field }),
-        },
+        Some(Json::Text(text)) => Ok(Some(text)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            Err(EnterpriseError::FieldType { field })
+        }
     }
 }
 
 // an absent or null credentials key takes the other name, and a present object is read as the overrides
 fn take_object(
-    params: &mut WatsonxParams,
+    params: &mut Object,
     field: &'static str,
 ) -> Result<Option<Object>, EnterpriseError> {
-    match params.remove(field) {
+    match params.shift_remove(field) {
         None | Some(Json::Null) => Ok(None),
-        Some(value) => match serde_json::from_value::<Object>(value) {
-            Ok(fields) => Ok(Some(fields)),
-            Err(_error) => Err(EnterpriseError::FieldType { field }),
-        },
+        Some(Json::Object(fields)) => Ok(Some(fields)),
+        Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Err(EnterpriseError::FieldType { field })
+        }
     }
 }
 
@@ -84,7 +79,7 @@ fn credential_text(
 // api_key or popped apikey or WATSONX_APIKEY, WATSONX_API_KEY, WX_API_KEY
 fn text_api_key(
     base: &DispatchContext<'_>,
-    params: &mut WatsonxParams,
+    params: &mut Object,
 ) -> Result<Option<SecretString>, EnterpriseError> {
     if let Some(stored) = base.api_key {
         return Ok(Some(SecretString::from(stored.expose_secret().to_owned())));
@@ -103,7 +98,7 @@ fn text_api_key(
 // api_base or the three pops, else WATSONX_API_BASE, WATSONX_URL, WX_URL, WML_URL
 fn text_api_base(
     base: &DispatchContext<'_>,
-    params: &mut WatsonxParams,
+    params: &mut Object,
 ) -> Result<Option<String>, EnterpriseError> {
     if let Some(value) = base.api_base {
         return Ok(Some(value.to_owned()));
@@ -125,7 +120,7 @@ fn text_api_base(
 
 // both credential names are popped, and a present wx_credentials keeps watsonx_credentials from winning
 fn text_credentials(
-    params: &mut WatsonxParams,
+    params: &mut Object,
     api_key: &mut Option<SecretString>,
     api_base: &mut Option<String>,
 ) -> Result<(), EnterpriseError> {
@@ -149,9 +144,7 @@ fn text_credentials(
         None => credential_text(&fields, "watsonx_token")?,
     };
     if let Some(token) = token {
-        let stored =
-            serde_json::to_value(token).map_err(|source| EnterpriseError::Encode { source })?;
-        params.insert(String::from("token"), stored);
+        params.insert(String::from("token"), Json::Text(token));
     }
     Ok(())
 }
@@ -159,15 +152,14 @@ fn text_credentials(
 // _complete_watsonx_text: the key, base and credentials chains, popping the keys it reads like the dict pops
 pub fn text_call(context: &ChatContext<'_>) -> Result<CompletionCall, EnterpriseError> {
     let base = &context.base;
-    let mut params: WatsonxParams = convert(base.optional_params)?;
+    let mut params: Object = base.optional_params.clone();
     let mut api_key = text_api_key(base, &mut params)?;
     let mut api_base = text_api_base(base, &mut params)?;
     text_credentials(&mut params, &mut api_key, &mut api_base)?;
-    let optional_params: Object = convert(&params)?;
     Ok(handler_call(
         base,
         ReplacedCall {
-            optional_params,
+            optional_params: params,
             api_key,
             api_base,
             provider: "watsonx_text",
