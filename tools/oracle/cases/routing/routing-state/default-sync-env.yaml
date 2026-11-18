@@ -1,0 +1,36 @@
+kind: probe
+name: routing-state-default-sync-env
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {}
+        steps:
+          - {kind: resolve, now_millis: 0}
+          - {kind: resolve, now_millis: 0, sync_interval_millis: 250}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {DEFAULT_REDIS_SYNC_INTERVAL: "7"}
+        steps:
+          - {kind: resolve, now_millis: 0}
+          - {kind: resolve, now_millis: 0, sync_interval_millis: 0}
+          - {kind: resolve, now_millis: 0, sync_interval_millis: 100}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {DEFAULT_REDIS_SYNC_INTERVAL: "0"}
+        steps:
+          - {kind: resolve, now_millis: 0}
+          - {kind: resolve, now_millis: 0, sync_interval_millis: 250}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {DEFAULT_REDIS_SYNC_INTERVAL: ""}
+        steps:
+          - {kind: resolve, now_millis: 0}
+compare: {ignore: []}

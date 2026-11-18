@@ -1,0 +1,106 @@
+kind: helper
+name: ack-session-update-order
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    steps:
+    - method: ack
+      trace_id: null
+      client_message: {}
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: '{"type": "session.update"}'
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-default
+      client_message: {}
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: '{"type": "session.update"}'
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-text
+      client_message:
+        session:
+          modalities:
+          - text
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-empty
+      client_message:
+        session:
+          modalities: []
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-stream
+      client_message: {}
+      stream_error: bedrock stream closed
+      send_error: null
+      scope:
+        pending_session_update: replay
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-send
+      client_message: {}
+      stream_error: null
+      send_error: client gone
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-modalities
+      client_message:
+        session:
+          modalities: audio
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: trace-modalities-item
+      client_message:
+        session:
+          modalities:
+          - 3
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: ack
+      trace_id: null
+      client_message: {}
+      stream_error: null
+      send_error: null
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,18 @@
+kind: helper
+name: b5840-signed-request-corpus-seed
+call:
+  b5840:
+    function: signed_request
+    model: endpoint-seed
+    region: us-west-2
+    headers: {Content-Type: application/json}
+    optional_params: {}
+    messages: [{role: user, content: hi}]
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    bearer: null
+    now: 1767225600
+env: {}
+compare: {ignore: []}

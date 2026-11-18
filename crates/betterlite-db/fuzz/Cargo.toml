@@ -166,3 +166,10 @@ path = "fuzz_targets/mcp_user_env_vars.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "pod_owner"
+path = "fuzz_targets/pod_owner.rs"
+test = false
+doc = false
+bench = false

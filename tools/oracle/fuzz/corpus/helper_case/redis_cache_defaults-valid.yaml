@@ -1,0 +1,9 @@
+kind: helper
+name: redis-cache-defaults-corpus-valid
+call:
+  b5630:
+    function: cache_defaults
+    default_redis_ttl: 60.9
+    redis_flush_size: 50
+env: {}
+compare: {ignore: []}
