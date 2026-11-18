@@ -44,7 +44,7 @@ pub enum StoredSettingsError {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub(super) struct StoredSettings {
+pub struct StoredSettings {
     pub(super) github_api_url: String,
     pub(super) github_token: String,
     pub(super) estimator_key: String,
@@ -143,7 +143,7 @@ where
         .map_err(invalid)
 }
 
-pub(super) async fn load_stored(
+pub async fn load_stored(
     repository: &dyn SettingsRepository,
 ) -> Result<StoredSettings, RoiSettingsError> {
     let Some(parameter) = stored_param(repository, SETTINGS_KEY).await? else {
@@ -176,7 +176,7 @@ pub(super) fn validate_settings(settings: ROISettings) -> Result<ROISettings, Ro
         .map_err(|source| RoiSettingsError::StoredSettings(StoredSettingsError::Validate(source)))
 }
 
-pub(super) async fn load_settings(
+pub async fn load_settings(
     repository: &dyn SettingsRepository,
     cipher: &dyn SettingsCipher,
 ) -> Result<ROISettings, RoiSettingsError> {
@@ -185,7 +185,7 @@ pub(super) async fn load_settings(
     validate_settings(settings)
 }
 
-pub(super) async fn save_settings(
+pub async fn save_settings(
     repository: &dyn SettingsRepository,
     stored: &StoredSettings,
 ) -> Result<(), RoiSettingsError> {
