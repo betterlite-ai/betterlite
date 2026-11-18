@@ -29,9 +29,10 @@ pub enum LoggedEventTypes {
     Only(Vec<String>),
 }
 
+// boxed so the section adds a pointer to Sections, which sits near clippy's large_futures limit (B9972)
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
-    pub logged_real_time_event_types: LoggedEventTypes,
+    pub logged_real_time_event_types: Box<LoggedEventTypes>,
 }
 
 impl Section for Raw {
@@ -42,10 +43,10 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            logged_real_time_event_types: logged_event_types(
+            logged_real_time_event_types: Box::new(logged_event_types(
                 self.litellm_settings.logged_real_time_event_types,
                 lookup,
-            )?,
+            )?),
         })
     }
 }

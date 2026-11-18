@@ -40,13 +40,11 @@ fn load(source: &str) -> Result<Config, ConfigError> {
 )]
 fn loads_realtime_logged_events(#[case] source: &str, #[case] expected: LoggedEventTypes) {
     let config = load(source).expect("the event selection is a supported configuration key");
-    assert_eq!(
-        config
-            .sections
-            .realtime_session_state
-            .logged_real_time_event_types,
-        expected
-    );
+    let selected = config
+        .sections
+        .realtime_session_state
+        .logged_real_time_event_types;
+    assert_eq!(*selected, expected);
 }
 
 #[rstest]
@@ -109,13 +107,11 @@ fn reads_environment_references_in_logged_events(
     let config = ConfigLoader { lookup }
         .load(&source)
         .expect("the event selection loads");
-    assert_eq!(
-        config
-            .sections
-            .realtime_session_state
-            .logged_real_time_event_types,
-        expected
-    );
+    let selected = config
+        .sections
+        .realtime_session_state
+        .logged_real_time_event_types;
+    assert_eq!(*selected, expected);
 }
 
 #[test]
