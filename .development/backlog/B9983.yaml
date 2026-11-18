@@ -1,0 +1,13 @@
+id: B9983
+milestone: R2 bug fixes
+title: SageMaker stream JSON buffer is capped and a skipped failure clears it
+status: done
+depends_on: [B5961]
+file: tasks/B9983-sagemaker-stream-buffer.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2381

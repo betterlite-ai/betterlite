@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock_embedding_io-signed-embedding-request-seed
+call:
+  bedrock_embedding_io:
+    function: signed_embedding_request
+    credentials: {access_key_id: AKIDEXAMPLE, secret_access_key: SECRETEXAMPLE}
+    url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+    headers: {Content-Type: application/json}
+    region: us-west-2
+    now: 1700000000
+env: {}
+compare: {ignore: []}
