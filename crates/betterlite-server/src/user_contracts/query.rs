@@ -15,6 +15,7 @@ pub fn is_valid_user_id(user_id: &str) -> bool {
 }
 
 // The unanchored `user_id=([^&]*)` search: the first occurrence anywhere wins, even inside another value.
+#[must_use]
 pub fn user_id_from_query(query: &str) -> Option<String> {
     let (_, captured) = query.split_once("user_id=")?;
     let value = match captured.split_once('&') {

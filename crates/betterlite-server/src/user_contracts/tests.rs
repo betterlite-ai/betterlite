@@ -3,6 +3,7 @@
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use betterlite_auth::user_roles::UserRole;
 use betterlite_config::sections::settings::JsonValue;
@@ -158,23 +159,23 @@ fn update_valid_selection() {
             .supplied,
         BTreeSet::new()
     );
+}
+
+#[test]
+fn update_blank_budgets_and_role() {
     let blank_row = update(r#"{"users": [{"user_id": "alice", "max_budget": ""}]}"#)
         .expect("a blank row budget becomes null");
-    assert!(
-        blank_row.users.expect("the users list")[0]
-            .fields
-            .max_budget
-            .is_none()
+    let rows = blank_row.users.expect("the users list");
+    assert!(rows[0].fields.max_budget.is_none());
+    assert_eq!(
+        rows[0].fields.supplied,
+        BTreeSet::from(["max_budget".to_owned()])
     );
     let blank_updates = update(r#"{"all_users": true, "user_updates": {"max_budget": ""}}"#)
         .expect("a blank updates budget becomes null");
-    assert!(
-        blank_updates
-            .user_updates
-            .expect("the decoded updates")
-            .max_budget
-            .is_none()
-    );
+    let updates = blank_updates.user_updates.expect("the decoded updates");
+    assert!(updates.max_budget.is_none());
+    assert_eq!(updates.supplied, BTreeSet::from(["max_budget".to_owned()]));
     let forbidden = update(r#"{"users": [{"user_id": "alice", "user_role": "customer"}]}"#)
         .expect_err("the literal rejects the customer role");
     assert_eq!(
@@ -221,7 +222,13 @@ fn update_response_defaults() {
     assert!(result.success);
     assert_eq!(result.error, None);
     assert_eq!(result.updated_user, None);
-    assert!(serde_json::from_str::<UserUpdateResult>(r#"{"user_id": "u"}"#).is_err());
+    let missing_success = serde_json::from_str::<UserUpdateResult>(r#"{"user_id": "u"}"#)
+        .expect_err("success is required");
+    assert!(
+        missing_success
+            .to_string()
+            .contains("missing field `success`")
+    );
     let response: BulkUpdateUserResponse = serde_json::from_str(
         r#"{"results": [{"success": true, "user_id": "u"}], "total_requested": 1, "successful_updates": 1, "failed_updates": 0}"#,
     )
@@ -229,9 +236,13 @@ fn update_response_defaults() {
     assert_eq!(response.results.len(), 1);
     assert_eq!(response.total_requested, 1);
     assert_eq!(response.failed_updates, 0);
-    assert!(
+    let missing_counters =
         serde_json::from_str::<BulkUpdateUserResponse>(r#"{"results": [], "total_requested": 0}"#)
-            .is_err()
+            .expect_err("the counters are required");
+    assert!(
+        missing_counters
+            .to_string()
+            .contains("missing field `successful_updates`")
     );
 }
 
@@ -428,12 +439,17 @@ fn new_response_nulls() {
     .expect("a bulk new response");
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.meta.created, 1);
-    assert!(serde_json::from_str::<BulkNewUserResponse>(r#"{"data": []}"#).is_err());
+    let missing_meta = serde_json::from_str::<BulkNewUserResponse>(r#"{"data": []}"#)
+        .expect_err("meta is required");
+    assert!(missing_meta.to_string().contains("missing field `meta`"));
+    let missing_failed = serde_json::from_str::<BulkNewUserResponse>(
+        r#"{"data": [], "meta": {"total_requested": 0, "created": 0}}"#,
+    )
+    .expect_err("every meta counter is required");
     assert!(
-        serde_json::from_str::<BulkNewUserResponse>(
-            r#"{"data": [], "meta": {"total_requested": 0, "created": 0}}"#
-        )
-        .is_err()
+        missing_failed
+            .to_string()
+            .contains("missing field `failed`")
     );
 }
 
@@ -453,8 +469,8 @@ fn id_character_boundaries() {
     assert!(is_valid_user_id(""));
     assert!(is_valid_user_id(&"a".repeat(MAX_USER_ID_LENGTH)));
     assert!(!is_valid_user_id(&"a".repeat(MAX_USER_ID_LENGTH + 1)));
-    assert!(is_valid_user_id(&"é".repeat(MAX_USER_ID_LENGTH)));
-    assert!(!is_valid_user_id(&"é".repeat(MAX_USER_ID_LENGTH + 1)));
+    assert!(is_valid_user_id(&"\u{e9}".repeat(MAX_USER_ID_LENGTH)));
+    assert!(!is_valid_user_id(&"\u{e9}".repeat(MAX_USER_ID_LENGTH + 1)));
     assert!(is_valid_user_id("\u{7f}"));
     assert!(is_valid_user_id("with space"));
     assert!(!is_valid_user_id("\u{0}"));
@@ -599,6 +615,10 @@ fn user_contract_input_limits() {
         depth_error,
         UserContractsError::Bounded(PrivateJsonError::TooDeep(..))
     ));
+}
+
+#[test]
+fn user_contract_malformed_body() {
     let malformed = decode_bulk_user_request(b"{", BulkDeleteUserRequest::from_value)
         .expect_err("a truncated body");
     assert!(matches!(
@@ -608,16 +628,11 @@ fn user_contract_input_limits() {
 }
 
 #[test]
-fn search_where_and_list_rows() {
+fn search_where_terms() {
     let where_clause = UserSearchWhere::from_value(&contract(
         r#"{"OR": [{"user_id": {"contains": "Al", "mode": "insensitive"}}, {"user_email": {"contains": "ex", "mode": "insensitive"}}]}"#,
     ))
     .expect("a search filter");
-    let extra = UserSearchWhere::from_value(&contract(
-        r#"{"OR": [{"user_id": {"contains": "Al", "mode": "insensitive"}, "extra": 1}]}"#,
-    ))
-    .expect_err("the mapping admits only user_id and user_email");
-    assert_contract_decode_rejected(&extra);
     assert_eq!(where_clause.or.len(), 2);
     let first: &UserSearchTerm = &where_clause.or[0];
     let contains = first.user_id.as_ref().expect("the user_id term");
@@ -631,7 +646,17 @@ fn search_where_and_list_rows() {
             .contains,
         "ex"
     );
-    assert!(serde_json::from_str::<UserSearchWhere>(r#"{"OR": []}"#).is_ok());
+    let empty_or: UserSearchWhere = serde_json::from_str(r#"{"OR": []}"#).expect("OR may be empty");
+    assert!(empty_or.or.is_empty());
+}
+
+#[test]
+fn search_where_rejections() {
+    let extra = UserSearchWhere::from_value(&contract(
+        r#"{"OR": [{"user_id": {"contains": "Al", "mode": "insensitive"}, "extra": 1}]}"#,
+    ))
+    .expect_err("the mapping admits only user_id and user_email");
+    assert_contract_decode_rejected(&extra);
     let wrong_mode = UserSearchWhere::from_value(&contract(
         r#"{"OR": [{"user_id": {"contains": "Al", "mode": "sensitive"}}]}"#,
     ))
@@ -646,6 +671,10 @@ fn search_where_and_list_rows() {
     let list_body =
         UserSearchWhere::from_value(&contract("[]")).expect_err("the filter is an object");
     assert_contract_decode_rejected(&list_body);
+}
+
+#[test]
+fn search_where_ignores_extra_keys() {
     let junk = UserSearchWhere::from_value(&contract(
         r#"{"OR": [{"user_id": {"contains": "Al", "mode": "insensitive", "junk": 1}}], "AND": []}"#,
     ))
@@ -654,6 +683,10 @@ fn search_where_and_list_rows() {
         serde_json::to_value(&junk).expect("a serialized filter"),
         contract(r#"{"OR": [{"user_id": {"contains": "Al", "mode": "insensitive"}}]}"#)
     );
+}
+
+#[test]
+fn user_list_rows() {
     let list: UserListResponse = serde_json::from_str(
         r#"{"users": [{"user_id": "u"}], "total": 1, "page": 1, "page_size": 25, "total_pages": 1}"#,
     )
@@ -667,16 +700,21 @@ fn search_where_and_list_rows() {
     )
     .expect("a row with a key count");
     assert_eq!(keyed.users[0].key_count, 3);
-    assert!(serde_json::from_str::<UserListResponse>(r#"{"users": []}"#).is_err());
-    assert!(
-        serde_json::from_str::<UserListResponse>(
-            r#"{"users": [], "total": 9223372036854775808, "page": 1, "page_size": 25, "total_pages": 1}"#
-        )
-        .is_err()
-    );
     let row_value: LiteLLMUserTable = serde_json::from_str(r#"{"user_id": "u", "key_count": 1}"#)
         .expect("a row ignores key_count");
     assert_eq!(row_value.user_id, "u");
+}
+
+#[test]
+fn user_list_rejections() {
+    let missing_total = serde_json::from_str::<UserListResponse>(r#"{"users": []}"#)
+        .expect_err("total is required");
+    assert!(missing_total.to_string().contains("missing field `total`"));
+    let overflow = serde_json::from_str::<UserListResponse>(
+        r#"{"users": [], "total": 9223372036854775808, "page": 1, "page_size": 25, "total_pages": 1}"#,
+    )
+    .expect_err("a counter above i64 is rejected");
+    assert!(overflow.to_string().contains("expected i64"));
 }
 
 #[rstest]
@@ -695,7 +733,7 @@ fn replays_the_user_contracts_corpus(#[files("fuzz/corpus/user_contracts/*")] pa
         &bytes,
         BulkNewUserRequest::from_value,
     ));
-    let Ok(query) = std::str::from_utf8(&bytes) else {
+    let Ok(query) = from_utf8(&bytes) else {
         return;
     };
     drop(user_id_from_query(query));

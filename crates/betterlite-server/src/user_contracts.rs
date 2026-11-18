@@ -28,10 +28,9 @@ pub fn decode_bulk_user_request<T>(
 }
 
 // LiteLLM recovers from the raw query only when the query-map value decoded a literal plus as a space.
+#[must_use]
 pub fn decode_user_info_query(query: &str, supplied: Option<&str>) -> Option<String> {
-    let Some(user_id) = supplied else {
-        return None;
-    };
+    let user_id = supplied?;
     if user_id.contains(' ') {
         return user_id_from_query(query);
     }
