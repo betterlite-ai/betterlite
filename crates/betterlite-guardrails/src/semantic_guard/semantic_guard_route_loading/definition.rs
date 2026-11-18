@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
+use std::sync::OnceLock;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use regex::Regex;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -125,166 +127,29 @@ fn reclassify_scalar(value: &mut GuardrailValue, text: &str) {
     }
 }
 
-// PyYAML reads a plain scalar as text unless its boolean, integer or float resolver matches; null
-// and timestamps already arrive from the typed parse as a null or a text, so they never get here.
+// The implicit resolvers of PyYAML 6.0.2's yaml/resolver.py for bool, float, int and null, in one
+// pattern with the re.X whitespace kept for reading; a plain scalar matching one is not text.
+const PYYAML_NON_TEXT_SCALAR: &str = r"(?x)^(?:
+    yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF
+  | [-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
+  | \.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
+  | [-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
+  | [-+]?\.(?:inf|Inf|INF)
+  | \.(?:nan|NaN|NAN)
+  | [-+]?0b[0-1_]+
+  | [-+]?0[0-7_]+
+  | [-+]?(?:0|[1-9][0-9_]*)
+  | [-+]?0x[0-9a-fA-F_]+
+  | [-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+
+  | ~|null|Null|NULL|
+)$";
+
+// PyYAML reads a plain scalar as text unless one of those resolvers matches. A timestamp needs no
+// resolver here, because serde already reads one as text and the typed parse never calls this.
 fn pyyaml_resolves_scalar_non_text(text: &str) -> bool {
-    if pyyaml_boolean(text) {
-        return true;
-    }
-    pyyaml_integer(text) || pyyaml_float(text)
-}
-
-// PyYAML's bool resolver, whose forms are the only spellings it reads as a boolean.
-fn pyyaml_boolean(text: &str) -> bool {
-    matches!(
-        text,
-        "yes"
-            | "Yes"
-            | "YES"
-            | "no"
-            | "No"
-            | "NO"
-            | "true"
-            | "True"
-            | "TRUE"
-            | "false"
-            | "False"
-            | "FALSE"
-            | "on"
-            | "On"
-            | "ON"
-            | "off"
-            | "Off"
-            | "OFF"
-    )
-}
-
-fn pyyaml_integer(text: &str) -> bool {
-    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
-    pyyaml_binary_integer(unsigned)
-        || pyyaml_octal_integer(unsigned)
-        || unsigned == "0"
-        || pyyaml_positive_decimal(unsigned)
-        || pyyaml_hex_integer(unsigned)
-        || pyyaml_sexagesimal_integer(unsigned)
-}
-
-fn pyyaml_binary_integer(unsigned: &str) -> bool {
-    unsigned.strip_prefix("0b").is_some_and(|digits| {
-        !digits.is_empty()
-            && digits
-                .bytes()
-                .all(|byte| matches!(byte, b'0' | b'1' | b'_'))
-    })
-}
-
-fn pyyaml_octal_integer(unsigned: &str) -> bool {
-    unsigned.len() > 1
-        && unsigned.starts_with('0')
-        && unsigned
-            .bytes()
-            .all(|byte| matches!(byte, b'0'..=b'7' | b'_'))
-}
-
-fn pyyaml_positive_decimal(digits: &str) -> bool {
-    let Some(first) = digits.as_bytes().first() else {
-        return false;
-    };
-    (b'1'..=b'9').contains(first)
-        && digits
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
-}
-
-fn pyyaml_hex_integer(unsigned: &str) -> bool {
-    unsigned.strip_prefix("0x").is_some_and(|digits| {
-        !digits.is_empty()
-            && digits
-                .bytes()
-                .all(|byte| byte.is_ascii_hexdigit() || byte == b'_')
-    })
-}
-
-fn pyyaml_sexagesimal_integer(unsigned: &str) -> bool {
-    let Some((head, rest)) = unsigned.split_once(':') else {
-        return false;
-    };
-    pyyaml_positive_decimal(head) && rest.split(':').all(pyyaml_sexagesimal_part)
-}
-
-fn pyyaml_sexagesimal_part(part: &str) -> bool {
-    let mut bytes = part.bytes();
-    let Some(tens) = bytes.next() else {
-        return false;
-    };
-    if !tens.is_ascii_digit() {
-        return false;
-    }
-    let Some(units) = bytes.next() else {
-        return true;
-    };
-    tens <= b'5' && units.is_ascii_digit() && bytes.next().is_none()
-}
-
-fn pyyaml_float(text: &str) -> bool {
-    matches!(text, ".nan" | ".NaN" | ".NAN")
-        || pyyaml_decimal_float(text)
-        || pyyaml_sexagesimal_float(text)
-        || matches!(
-            text.strip_prefix(['+', '-']).unwrap_or(text),
-            ".inf" | ".Inf" | ".INF"
-        )
-}
-
-fn pyyaml_decimal_float(text: &str) -> bool {
-    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
-    let Some((mantissa, exponent)) = unsigned.split_once(['e', 'E']) else {
-        return pyyaml_float_mantissa(unsigned);
-    };
-    pyyaml_signed_exponent(exponent) && pyyaml_float_mantissa(mantissa)
-}
-
-fn pyyaml_signed_exponent(exponent: &str) -> bool {
-    let Some(digits) = exponent.strip_prefix(['+', '-']) else {
-        return false;
-    };
-    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn pyyaml_float_mantissa(mantissa: &str) -> bool {
-    let Some((whole, fraction)) = mantissa.split_once('.') else {
-        return false;
-    };
-    if whole.is_empty() {
-        return pyyaml_digits(fraction);
-    }
-    pyyaml_digits(whole)
-        && fraction
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
-}
-
-fn pyyaml_sexagesimal_float(text: &str) -> bool {
-    let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
-    let Some((whole, fraction)) = unsigned.rsplit_once('.') else {
-        return false;
-    };
-    let Some((head, rest)) = whole.split_once(':') else {
-        return false;
-    };
-    pyyaml_digits(head)
-        && rest.split(':').all(pyyaml_sexagesimal_part)
-        && fraction
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
-}
-
-fn pyyaml_digits(value: &str) -> bool {
-    let Some(first) = value.as_bytes().first() else {
-        return false;
-    };
-    first.is_ascii_digit()
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    static PATTERN: OnceLock<Option<Regex>> = OnceLock::new();
+    let pattern = PATTERN.get_or_init(|| Regex::new(PYYAML_NON_TEXT_SCALAR).ok());
+    pattern
+        .as_ref()
+        .is_none_or(|pattern| pattern.is_match(text))
 }
