@@ -73,18 +73,14 @@ fn environment_region(
     environment: &BTreeMap<String, String>,
     secrets: &SecretLookup,
 ) -> Result<String, EmbeddingIoError> {
-    let mut selected = read_region(environment, secrets, REGION_NAME_VARIABLE)?;
-    if let Some(standard) = read_region(environment, secrets, REGION_VARIABLE)? {
-        selected = Some(standard);
+    let mut selected = secrets
+        .get_secret_str(environment, REGION_NAME_VARIABLE, None)?
+        .map(|value| value.expose_secret().to_owned());
+    let standard = secrets
+        .get_secret_str(environment, REGION_VARIABLE, None)?
+        .map(|value| value.expose_secret().to_owned());
+    if standard.is_some() {
+        selected = standard;
     }
     Ok(selected.unwrap_or_else(|| DEFAULT_AWS_REGION.to_owned()))
-}
-
-fn read_region(
-    environment: &BTreeMap<String, String>,
-    secrets: &SecretLookup,
-    name: &str,
-) -> Result<Option<String>, EmbeddingIoError> {
-    let value = secrets.get_secret_str(environment, name, None)?;
-    Ok(value.map(|selected| selected.expose_secret().to_owned()))
 }

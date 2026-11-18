@@ -3,7 +3,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
 use serde_json::Number;
 
-use super::convert::{encode_json, parse_list, parse_one, parse_optional};
+use super::convert::{encode_json, parse_list, parse_one};
 use super::error::EmbeddingIoError;
 use crate::aws_endpoints::provider::BedrockEmbeddingProvider;
 use crate::image_models::params::{Field, Params};
@@ -69,16 +69,29 @@ fn async_reply(
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
     match provider {
         BedrockEmbeddingProvider::Twelvelabs => {
-            let params = parse_one::<Params>(reply)?;
-            marengo_embedding_reply(marengo::transform_async_response(&params, model))
+            provider_embedding_reply(ProviderResponse::Marengo(
+                marengo::transform_async_response(&parse_one::<Params>(reply)?, model),
+            ))
         }
-        BedrockEmbeddingProvider::Nova => {
-            let params = parse_one::<Params>(reply)?;
-            nova_embedding_reply(nova::transform_invoke_response(&params, model))
-        }
-        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
-            Ok(placeholder(reply, model))
-        }
+        BedrockEmbeddingProvider::Nova => provider_embedding_reply(ProviderResponse::Nova(
+            nova::transform_invoke_response(&parse_one::<Params>(reply)?, model),
+        )),
+        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => Ok(EmbeddingReply {
+            object: RESPONSE_OBJECT,
+            data: vec![EmbeddingRecord {
+                object: EMBEDDING_OBJECT.to_owned(),
+                embedding: EmbeddingVector::Floats(Vec::new()),
+                index: 0,
+            }],
+            model: model.to_owned(),
+            usage: EmbeddingUsage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                prompt_tokens_details: None,
+            },
+            invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
+        }),
     }
 }
 
@@ -104,41 +117,23 @@ fn regular_reply(
     match provider {
         BedrockEmbeddingProvider::Twelvelabs => {
             let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
-            let batch = parse_optional::<MarengoBilledRequest>(batch_data)?;
+            let batch = batch_data
+                .map(parse_list::<MarengoBilledRequest>)
+                .transpose()?;
             let response = marengo::transform_response(&replies, model, batch.as_deref())?;
-            marengo_embedding_reply(response)
+            provider_embedding_reply(ProviderResponse::Marengo(response))
         }
         BedrockEmbeddingProvider::Nova => {
             let replies = parse_list::<Params>(response_list)?;
-            let batch = parse_optional::<Params>(batch_data)?;
+            let batch = batch_data.map(parse_list::<Params>).transpose()?;
             let response = nova::transform_response(&replies, model, batch.as_deref())?;
-            nova_embedding_reply(response)
+            provider_embedding_reply(ProviderResponse::Nova(response))
         }
         BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
             Err(EmbeddingIoError::Unmapped {
                 model: model.to_owned(),
             })
         }
-    }
-}
-
-// other providers get one placeholder record that carries the ARN beside the reply
-fn placeholder(reply: &Object, model: &str) -> EmbeddingReply {
-    EmbeddingReply {
-        object: RESPONSE_OBJECT,
-        data: vec![EmbeddingRecord {
-            object: EMBEDDING_OBJECT.to_owned(),
-            embedding: EmbeddingVector::Floats(Vec::new()),
-            index: 0,
-        }],
-        model: model.to_owned(),
-        usage: EmbeddingUsage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-            prompt_tokens_details: None,
-        },
-        invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
     }
 }
 
@@ -164,83 +159,96 @@ fn titan_embedding_reply(response: TitanEmbeddingResponse) -> EmbeddingReply {
     }
 }
 
-fn nova_embedding_reply(
-    response: NovaEmbeddingResponse,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let mut data = Vec::with_capacity(response.data.len());
-    for (position, record) in response.data.into_iter().enumerate() {
-        let index = u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-        data.push(EmbeddingRecord {
-            object: EMBEDDING_OBJECT.to_owned(),
-            embedding: embedding_vector(&record.embedding)?,
-            index,
-        });
-    }
-    let details = response
-        .usage
-        .prompt_tokens_details
-        .map(|counts| PromptTokenCounts {
-            image_count: Some(u64::from(counts.image_count)),
-            query_count: None,
-        });
-    let invocation_arn = match &response.invocation_arn {
-        Some(field) => encode_json(field)?,
-        None => Json::Null,
-    };
-    Ok(EmbeddingReply {
-        object: RESPONSE_OBJECT,
-        data,
-        model: response.model,
-        usage: EmbeddingUsage {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: 0,
-            total_tokens: response.usage.total_tokens,
-            prompt_tokens_details: details,
-        },
-        invocation_arn,
-    })
+enum ProviderResponse {
+    Nova(NovaEmbeddingResponse),
+    Marengo(MarengoEmbeddingResponse),
 }
 
-fn marengo_embedding_reply(
-    response: MarengoEmbeddingResponse,
+fn provider_embedding_reply(
+    response: ProviderResponse,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let mut data = Vec::with_capacity(response.data.len());
-    for record in response.data {
-        let index =
-            u32::try_from(record.index).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-        let mut numbers = Vec::with_capacity(record.embedding.len());
-        for value in record.embedding {
-            let number = Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable)?;
-            numbers.push(number);
+    match response {
+        ProviderResponse::Nova(response) => {
+            let mut data = Vec::with_capacity(response.data.len());
+            for (position, record) in response.data.into_iter().enumerate() {
+                let index =
+                    u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+                data.push(EmbeddingRecord {
+                    object: EMBEDDING_OBJECT.to_owned(),
+                    embedding: embedding_vector(&record.embedding)?,
+                    index,
+                });
+            }
+            let usage = EmbeddingUsage {
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: 0,
+                total_tokens: response.usage.total_tokens,
+                prompt_tokens_details: response.usage.prompt_tokens_details.as_ref().map(
+                    |counts| PromptTokenCounts {
+                        image_count: Some(u64::from(counts.image_count)),
+                        query_count: None,
+                    },
+                ),
+            };
+            provider_reply(
+                response.model,
+                data,
+                usage,
+                response.invocation_arn.as_ref(),
+            )
         }
-        data.push(EmbeddingRecord {
-            object: EMBEDDING_OBJECT.to_owned(),
-            embedding: EmbeddingVector::Floats(numbers),
-            index,
-        });
+        ProviderResponse::Marengo(response) => {
+            let mut data = Vec::with_capacity(response.data.len());
+            for record in response.data {
+                let index = u32::try_from(record.index)
+                    .map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+                let mut numbers = Vec::with_capacity(record.embedding.len());
+                for value in record.embedding {
+                    numbers.push(Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable)?);
+                }
+                data.push(EmbeddingRecord {
+                    object: EMBEDDING_OBJECT.to_owned(),
+                    embedding: EmbeddingVector::Floats(numbers),
+                    index,
+                });
+            }
+            let usage = EmbeddingUsage {
+                prompt_tokens: response.usage.prompt_tokens,
+                completion_tokens: response.usage.completion_tokens,
+                total_tokens: response.usage.total_tokens,
+                prompt_tokens_details: response.usage.prompt_tokens_details.as_ref().map(
+                    |counts| PromptTokenCounts {
+                        image_count: counts.image_count,
+                        query_count: counts.query_count,
+                    },
+                ),
+            };
+            provider_reply(
+                response.model,
+                data,
+                usage,
+                response.invocation_arn.as_ref(),
+            )
+        }
     }
-    let details = response
-        .usage
-        .prompt_tokens_details
-        .map(|counts| PromptTokenCounts {
-            image_count: counts.image_count,
-            query_count: counts.query_count,
-        });
-    let invocation_arn = match &response.invocation_arn {
+}
+
+fn provider_reply(
+    model: String,
+    data: Vec<EmbeddingRecord>,
+    usage: EmbeddingUsage,
+    invocation_arn: Option<&Field>,
+) -> Result<EmbeddingReply, EmbeddingIoError> {
+    let arn = match invocation_arn {
         Some(field) => encode_json(field)?,
         None => Json::Null,
     };
     Ok(EmbeddingReply {
         object: RESPONSE_OBJECT,
         data,
-        model: response.model,
-        usage: EmbeddingUsage {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: response.usage.completion_tokens,
-            total_tokens: response.usage.total_tokens,
-            prompt_tokens_details: details,
-        },
-        invocation_arn,
+        model,
+        usage,
+        invocation_arn: arn,
     })
 }
 
@@ -248,25 +256,26 @@ fn marengo_embedding_reply(
 fn embedding_vector(field: &Field) -> Result<EmbeddingVector, EmbeddingIoError> {
     match field {
         Field::Text(encoded) => Ok(EmbeddingVector::Base64(encoded.clone())),
-        Field::List(items) => {
-            let mut numbers = Vec::with_capacity(items.len());
-            for item in items {
-                numbers.push(item_number(item)?);
-            }
-            Ok(EmbeddingVector::Floats(numbers))
-        }
+        Field::List(items) => Ok(EmbeddingVector::Floats(number_vector(items)?)),
         Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_) | Field::Mapping(_) => {
             Err(EmbeddingIoError::MalformedEmbedding)
         }
     }
 }
 
-fn item_number(field: &Field) -> Result<Number, EmbeddingIoError> {
-    match field {
-        Field::Int(value) => Ok(Number::from(*value)),
-        Field::Float(value) => Number::from_f64(*value).ok_or(EmbeddingIoError::Unrepresentable),
-        Field::Null | Field::Bool(_) | Field::Text(_) | Field::List(_) | Field::Mapping(_) => {
-            Err(EmbeddingIoError::NotANumber)
-        }
+fn number_vector(items: &[Field]) -> Result<Vec<Number>, EmbeddingIoError> {
+    let mut numbers = Vec::with_capacity(items.len());
+    for item in items {
+        let number = match item {
+            Field::Int(value) => Number::from(*value),
+            Field::Float(value) => {
+                Number::from_f64(*value).ok_or(EmbeddingIoError::Unrepresentable)?
+            }
+            Field::Null | Field::Bool(_) | Field::Text(_) | Field::List(_) | Field::Mapping(_) => {
+                return Err(EmbeddingIoError::NotANumber);
+            }
+        };
+        numbers.push(number);
     }
+    Ok(numbers)
 }

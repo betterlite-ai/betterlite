@@ -123,25 +123,13 @@ fn embedding_call(
     }
 }
 
-fn run_sync(
+fn run_direct(
+    asynchronous: bool,
     factory: &Factory,
     data: &Object,
     timeout: Option<Timeout>,
 ) -> Result<Object, EmbeddingIoError> {
-    let call = embedding_call(false, data, timeout);
-    runtime().block_on(post_embedding(
-        &call,
-        None::<SuppliedClient<'_, FixtureClient>>,
-        factory,
-    ))
-}
-
-fn run_async(
-    factory: &Factory,
-    data: &Object,
-    timeout: Option<Timeout>,
-) -> Result<Object, EmbeddingIoError> {
-    let call = embedding_call(true, data, timeout);
+    let call = embedding_call(asynchronous, data, timeout);
     runtime().block_on(post_embedding(
         &call,
         None::<SuppliedClient<'_, FixtureClient>>,
@@ -171,8 +159,8 @@ fn request_body(request: &EmbeddingRequest) -> Json {
 fn built_sync_client_gets_the_timeout() {
     let data = object(BODY);
     let factory = Factory::new(Reply::ok(r#"{"embeddings":[]}"#));
-    let reply =
-        run_sync(&factory, &data, Some(Timeout::Seconds(2.5))).expect("the fixture reply decodes");
+    let reply = run_direct(false, &factory, &data, Some(Timeout::Seconds(2.5)))
+        .expect("the fixture reply decodes");
     assert_eq!(reply, object(r#"{"embeddings":[]}"#));
     assert_eq!(factory.sync_calls(), vec![Some(Timeout::Seconds(2.5))]);
     assert!(factory.async_calls().is_empty());
@@ -185,8 +173,8 @@ fn built_sync_client_gets_the_timeout() {
 fn built_async_client_gets_the_provider_and_timeout() {
     let data = object(BODY);
     let factory = Factory::new(Reply::ok(r#"{"embeddings":[]}"#));
-    let reply =
-        run_async(&factory, &data, Some(Timeout::Seconds(3.0))).expect("the fixture reply decodes");
+    let reply = run_direct(true, &factory, &data, Some(Timeout::Seconds(3.0)))
+        .expect("the fixture reply decodes");
     assert_eq!(reply, object(r#"{"embeddings":[]}"#));
     assert_eq!(
         factory.async_calls(),
@@ -204,7 +192,7 @@ fn timeout_record_is_passed_whole() {
         write: 3.0,
         pool: 4.0,
     };
-    run_sync(&factory, &data, Some(timeout)).expect("the fixture reply decodes");
+    run_direct(false, &factory, &data, Some(timeout)).expect("the fixture reply decodes");
     assert_eq!(factory.sync_calls(), vec![Some(timeout)]);
     assert_eq!(
         timeout.fields().map(f64::to_bits),
@@ -217,27 +205,16 @@ fn timeout_record_is_passed_whole() {
     );
 }
 
-fn supplied_sync_client_is_reused() {
+fn supplied_client_is_reused(kind: ClientKind, asynchronous: bool) {
     let data = object(BODY);
     let factory = Factory::new(Reply::ok(r#"{"factory":true}"#));
     let client = FixtureClient::new(Reply::ok(r#"{"supplied":true}"#));
-    let reply = run_with_supplied(&factory, &client, ClientKind::Sync, false, &data)
+    let reply = run_with_supplied(&factory, &client, kind, asynchronous, &data)
         .expect("the supplied client replies");
     assert_eq!(reply, object(r#"{"supplied":true}"#));
     assert_eq!(client.requests().len(), 1);
     assert!(factory.requests().is_empty());
     assert!(factory.sync_calls().is_empty());
-}
-
-fn supplied_async_client_is_reused() {
-    let data = object(BODY);
-    let factory = Factory::new(Reply::ok(r#"{"factory":true}"#));
-    let client = FixtureClient::new(Reply::ok(r#"{"supplied":true}"#));
-    let reply = run_with_supplied(&factory, &client, ClientKind::Async, true, &data)
-        .expect("the supplied client replies");
-    assert_eq!(reply, object(r#"{"supplied":true}"#));
-    assert_eq!(client.requests().len(), 1);
-    assert!(factory.requests().is_empty());
     assert!(factory.async_calls().is_empty());
 }
 
@@ -256,8 +233,8 @@ fn provider_json_response() {
     built_sync_client_gets_the_timeout();
     built_async_client_gets_the_provider_and_timeout();
     timeout_record_is_passed_whole();
-    supplied_sync_client_is_reused();
-    supplied_async_client_is_reused();
+    supplied_client_is_reused(ClientKind::Sync, false);
+    supplied_client_is_reused(ClientKind::Async, true);
     supplied_client_of_the_other_kind_is_not_used();
 }
 
@@ -268,7 +245,7 @@ fn provider_status_is_a_bedrock_error() {
         &[("X-Amzn-Requestid", "req-1")],
         "bad request text",
     ));
-    let error = run_sync(&factory, &data, None).expect_err("the fixture status fails");
+    let error = run_direct(false, &factory, &data, None).expect_err("the fixture status fails");
     assert_eq!(error.status(), Some(400));
     let EmbeddingIoError::Provider { status, error } = error else {
         panic!("a provider status becomes a bedrock error");
@@ -299,7 +276,7 @@ fn provider_status_is_a_bedrock_error() {
 fn provider_status_on_the_async_path_is_a_bedrock_error() {
     let data = object(BODY);
     let factory = Factory::new(Reply::status(503, &[], "busy"));
-    let error = run_async(&factory, &data, Some(Timeout::Seconds(5.0)))
+    let error = run_direct(true, &factory, &data, Some(Timeout::Seconds(5.0)))
         .expect_err("the fixture status fails");
     let EmbeddingIoError::Provider { status, error } = error else {
         panic!("a provider status becomes a bedrock error");
@@ -316,13 +293,13 @@ fn status_boundaries_are_the_success_range() {
     let data = object(BODY);
     for status in [200, 299] {
         let factory = Factory::new(Reply::status(status, &[], r#"{"embeddings":[]}"#));
-        let reply = run_sync(&factory, &data, None).expect("a 2xx status passes through");
+        let reply = run_direct(false, &factory, &data, None).expect("a 2xx status passes through");
         assert_eq!(reply, object(r#"{"embeddings":[]}"#));
     }
     for status in [300, 399, 400, 599, 600] {
         let factory = Factory::new(Reply::status(status, &[], "failure"));
-        let error =
-            run_sync(&factory, &data, None).expect_err("every status outside 2xx is an error");
+        let error = run_direct(false, &factory, &data, None)
+            .expect_err("every status outside 2xx is an error");
         assert_eq!(error.status(), Some(status));
     }
 }
@@ -342,23 +319,23 @@ fn assert_timeout_error(error: EmbeddingIoError) {
 
 fn timeout_is_a_408_bedrock_error() {
     let data = object(BODY);
-    let sync_error =
-        run_sync(&Factory::new(Reply::Timeout), &data, None).expect_err("the fixture times out");
+    let sync_error = run_direct(false, &Factory::new(Reply::Timeout), &data, None)
+        .expect_err("the fixture times out");
     assert_timeout_error(sync_error);
-    let async_error =
-        run_async(&Factory::new(Reply::Timeout), &data, None).expect_err("the fixture times out");
+    let async_error = run_direct(true, &Factory::new(Reply::Timeout), &data, None)
+        .expect_err("the fixture times out");
     assert_timeout_error(async_error);
 }
 
 fn transport_failure_stays_a_transport_error() {
     let data = object(BODY);
-    let sync_error = run_sync(&Factory::new(Reply::Failed), &data, None)
+    let sync_error = run_direct(false, &Factory::new(Reply::Failed), &data, None)
         .expect_err("the fixture transport fails");
     assert!(matches!(
         sync_error,
         EmbeddingIoError::Transport(TransferError::Failed(_))
     ));
-    let async_error = run_async(&Factory::new(Reply::Failed), &data, None)
+    let async_error = run_direct(true, &Factory::new(Reply::Failed), &data, None)
         .expect_err("the fixture transport fails");
     assert!(matches!(
         async_error,
@@ -369,7 +346,7 @@ fn transport_failure_stays_a_transport_error() {
 fn malformed_success_body_is_a_decode_error() {
     let data = object(BODY);
     let factory = Factory::new(Reply::ok("not json"));
-    let error = run_sync(&factory, &data, None)
+    let error = run_direct(false, &factory, &data, None)
         .expect_err("a body that is not JSON fails after the status check");
     assert!(matches!(error, EmbeddingIoError::Decode { .. }));
 }
@@ -407,20 +384,15 @@ fn transform_async(
     transform_response(&[object(reply)], model, provider, true, None)
 }
 
-fn titan_g1_usage() {
-    let reply = transform(
-        "amazon.titan-embed-text-v1",
-        BedrockEmbeddingProvider::Amazon,
-        &[TITAN_G1_REPLY],
-        None,
-    )
-    .expect("the g1 reply transforms");
-    assert_eq!(
-        reply_json(&reply),
-        json(
-            r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"amazon.titan-embed-text-v1","usage":{"prompt_tokens":7,"completion_tokens":0,"total_tokens":7,"prompt_tokens_details":null},"invocation_arn":null}"#
-        )
-    );
+fn assert_usage_reply(
+    model: &str,
+    provider: BedrockEmbeddingProvider,
+    replies: &[&str],
+    batch: Option<&[&str]>,
+    expected: &str,
+) {
+    let reply = transform(model, provider, replies, batch).expect("the provider reply transforms");
+    assert_eq!(reply_json(&reply), json(expected));
 }
 
 fn titan_legacy_and_v2_models() {
@@ -468,58 +440,6 @@ fn titan_base64_embedding_is_carried_as_a_string() {
     );
 }
 
-fn titan_multimodal_usage() {
-    let reply = transform(
-        "amazon.titan-embed-image-v1",
-        BedrockEmbeddingProvider::Amazon,
-        &[r#"{"embedding":[0.5],"inputTextTokenCount":4}"#],
-        Some(&[r#"{"inputImage":"aW1n"}"#, r#"{"inputText":"hello"}"#]),
-    )
-    .expect("the multimodal reply transforms");
-    assert_eq!(
-        reply_json(&reply),
-        json(
-            r#"{"object":"list","data":[{"object":"embedding","embedding":[0.5],"index":0}],"model":"amazon.titan-embed-image-v1","usage":{"prompt_tokens":4,"completion_tokens":0,"total_tokens":4,"prompt_tokens_details":{"image_count":1,"query_count":null}},"invocation_arn":null}"#
-        )
-    );
-}
-
-fn marengo_usage() {
-    let reply = transform(
-        MARENGO_MODEL,
-        BedrockEmbeddingProvider::Twelvelabs,
-        &[r#"{"data":[{"embedding":[1.5,2.5]}]}"#],
-        Some(&[
-            r#"{"inputType":"text"}"#,
-            r#"{"inputType":"image"}"#,
-            r#"{"inputType":"multi_input","multi_input":{"inputText":"hi","mediaSources":[{},{}]}}"#,
-        ]),
-    )
-    .expect("the marengo reply transforms");
-    assert_eq!(
-        reply_json(&reply),
-        json(
-            r#"{"object":"list","data":[{"object":"embedding","embedding":[1.5,2.5],"index":0}],"model":"twelvelabs.marengo-embed-2-7-v1:0","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"prompt_tokens_details":{"image_count":3,"query_count":2}},"invocation_arn":null}"#
-        )
-    );
-}
-
-fn nova_usage() {
-    let reply = transform(
-        NOVA_MODEL,
-        BedrockEmbeddingProvider::Nova,
-        &[r#"{"embeddings":[{"embedding":[1,2,3,4],"truncatedCharLength":12}]}"#],
-        Some(&[r#"{"singleEmbeddingParams":{"image":{"format":"png"}}}"#]),
-    )
-    .expect("the nova reply transforms");
-    assert_eq!(
-        reply_json(&reply),
-        json(
-            r#"{"object":"list","data":[{"object":"embedding","embedding":[1,2,3,4],"index":0}],"model":"amazon.nova-2-multimodal-embeddings-v1:0","usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3,"prompt_tokens_details":{"image_count":1,"query_count":null}},"invocation_arn":null}"#
-        )
-    );
-}
-
 fn cohere_reply_is_unmapped() {
     let error = transform(
         COHERE_MODEL,
@@ -551,12 +471,40 @@ fn titan_model_is_chosen_before_the_provider() {
 }
 
 fn embedding_usage() {
-    titan_g1_usage();
+    assert_usage_reply(
+        "amazon.titan-embed-text-v1",
+        BedrockEmbeddingProvider::Amazon,
+        &[TITAN_G1_REPLY],
+        None,
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"amazon.titan-embed-text-v1","usage":{"prompt_tokens":7,"completion_tokens":0,"total_tokens":7,"prompt_tokens_details":null},"invocation_arn":null}"#,
+    );
     titan_legacy_and_v2_models();
     titan_base64_embedding_is_carried_as_a_string();
-    titan_multimodal_usage();
-    marengo_usage();
-    nova_usage();
+    assert_usage_reply(
+        "amazon.titan-embed-image-v1",
+        BedrockEmbeddingProvider::Amazon,
+        &[r#"{"embedding":[0.5],"inputTextTokenCount":4}"#],
+        Some(&[r#"{"inputImage":"aW1n"}"#, r#"{"inputText":"hello"}"#]),
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[0.5],"index":0}],"model":"amazon.titan-embed-image-v1","usage":{"prompt_tokens":4,"completion_tokens":0,"total_tokens":4,"prompt_tokens_details":{"image_count":1,"query_count":null}},"invocation_arn":null}"#,
+    );
+    assert_usage_reply(
+        MARENGO_MODEL,
+        BedrockEmbeddingProvider::Twelvelabs,
+        &[r#"{"data":[{"embedding":[1.5,2.5]}]}"#],
+        Some(&[
+            r#"{"inputType":"text"}"#,
+            r#"{"inputType":"image"}"#,
+            r#"{"inputType":"multi_input","multi_input":{"inputText":"hi","mediaSources":[{},{}]}}"#,
+        ]),
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[1.5,2.5],"index":0}],"model":"twelvelabs.marengo-embed-2-7-v1:0","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"prompt_tokens_details":{"image_count":3,"query_count":2}},"invocation_arn":null}"#,
+    );
+    assert_usage_reply(
+        NOVA_MODEL,
+        BedrockEmbeddingProvider::Nova,
+        &[r#"{"embeddings":[{"embedding":[1,2,3,4],"truncatedCharLength":12}]}"#],
+        Some(&[r#"{"singleEmbeddingParams":{"image":{"format":"png"}}}"#]),
+        r#"{"object":"list","data":[{"object":"embedding","embedding":[1,2,3,4],"index":0}],"model":"amazon.nova-2-multimodal-embeddings-v1:0","usage":{"prompt_tokens":3,"completion_tokens":0,"total_tokens":3,"prompt_tokens_details":{"image_count":1,"query_count":null}},"invocation_arn":null}"#,
+    );
     cohere_reply_is_unmapped();
     titan_model_is_chosen_before_the_provider();
 }

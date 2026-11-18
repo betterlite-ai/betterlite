@@ -24,15 +24,6 @@ where
     Ok(parsed)
 }
 
-pub(super) fn parse_optional<T>(
-    objects: Option<&[Object]>,
-) -> Result<Option<Vec<T>>, EmbeddingIoError>
-where
-    T: DeserializeOwned,
-{
-    objects.map(parse_list).transpose()
-}
-
 pub(super) fn encode_json<T>(value: &T) -> Result<Json, EmbeddingIoError>
 where
     T: Serialize,
