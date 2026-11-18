@@ -37,10 +37,12 @@ impl WindowRedis for RecordingStore {
     async fn write_spend(&self, _key: &str, _cost: Decimal, _ttl: Duration) {}
 
     async fn write_increments(&self, operations: &[QueuedIncrement]) -> bool {
-        let mut spends = self.spends.lock().unwrap();
-        for operation in operations {
-            let total = spends.entry(operation.key.clone()).or_default();
-            *total = total.saturating_add(operation.increment_value);
+        {
+            let mut spends = self.spends.lock().unwrap();
+            for operation in operations {
+                let total = spends.entry(operation.key.clone()).or_default();
+                *total = total.saturating_add(operation.increment_value);
+            }
         }
         true
     }
@@ -61,7 +63,7 @@ impl SpendRedis for RecordingStore {
 fn windows() -> BudgetWindows {
     let period = BudgetPeriod {
         spec: "1d".to_owned(),
-        seconds: Duration::from_secs(86_400),
+        seconds: Duration::from_hours(24),
     };
     let providers = IndexMap::from([(
         "openai".to_owned(),
