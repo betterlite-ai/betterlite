@@ -1,6 +1,7 @@
 use crate::cooldown_state::filter::HealthInputs;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::generalization_integration::model_generalizations::ModelGeneralizations;
+use crate::prompt_affinity::service::PromptAffinity;
 use crate::routing_groups::group::RoutingGroup;
 
 // The one failure a route service reports: the caller cancelled while the deployments were filtered.
@@ -37,6 +38,12 @@ pub trait RouteServices: Send + Sync {
         deployments: Vec<DeploymentSpec>,
     ) -> Result<Vec<DeploymentSpec>, Cancelled> {
         Ok(deployments)
+    }
+
+    // Router.add_optional_pre_call_checks leaves PromptCachingDeploymentCheck out unless the config names it
+    #[must_use]
+    fn prompt_affinity(&self) -> Option<&PromptAffinity> {
+        None
     }
 
     // The fallback_generalizations rules a stage fills into each deployment, absent on a router without them

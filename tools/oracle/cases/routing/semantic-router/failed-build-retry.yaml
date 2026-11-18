@@ -1,0 +1,18 @@
+kind: probe
+name: failed-build-retry
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      semantic_router:
+        config: '{"routes": [{"name": "code", "utterances": ["ask"], "score_threshold": 0.3}]}'
+        default_model: fallback-model
+        embedding_model: openai/text-embedding-3-small
+        messages:
+          - {role: user, content: ask}
+        vectors:
+          test: [1, 0]
+          ask: [1, 0]
+        rounds: 2
+        document_failures: 1
+compare: {ignore: []}
