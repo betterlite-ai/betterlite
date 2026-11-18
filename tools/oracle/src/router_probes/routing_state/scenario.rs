@@ -269,11 +269,11 @@ async fn apply(
                 failures: context.counters.failures_for_minute(deployment),
             })
         }
-        StepKind::Tracked => counters::tracked(index, context),
+        StepKind::Tracked => Ok(counters::tracked(index, context)),
         StepKind::Sync => lifecycle::sync(index, context).await,
         StepKind::Retire => lifecycle::retire(index, context).await,
-        StepKind::Down => lifecycle::switch(index, context, true),
-        StepKind::Up => lifecycle::switch(index, context, false),
+        StepKind::Down => Ok(lifecycle::switch(index, context, true)),
+        StepKind::Up => Ok(lifecycle::switch(index, context, false)),
         StepKind::Resolve => resolved_interval(index, step, context.settings.default_sync_interval),
         StepKind::Metadata => lifecycle::metadata(index, step),
         StepKind::Redis => lifecycle::redis(index, step, context).await,

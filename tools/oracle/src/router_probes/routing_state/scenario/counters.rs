@@ -32,9 +32,9 @@ fn window_key(step: &ScenarioStep) -> Result<String, ScenarioError> {
         .model
         .as_deref()
         .ok_or(ScenarioError::Missing { what: "a model" })?;
-    let minutes = step.now_millis / 60_000;
-    let hour = (minutes / 60) % 24;
-    let minute = minutes % 60;
+    let minutes = step.now_millis.div_euclid(60_000);
+    let hour = minutes.div_euclid(60).rem_euclid(24);
+    let minute = minutes.rem_euclid(60);
     Ok(format!("{deployment}:{model}:rpm:{hour:02}-{minute:02}"))
 }
 
@@ -71,10 +71,10 @@ pub(super) fn outcome(
     }
 }
 
-pub(super) fn tracked(index: usize, context: &Context<'_>) -> Result<Observation, ScenarioError> {
+pub(super) fn tracked(index: usize, context: &Context<'_>) -> Observation {
     let keys = context.counters.take_tracked_keys();
-    Ok(Observation::Keys {
+    Observation::Keys {
         step: index,
         keys: keys.into_iter().collect(),
-    })
+    }
 }

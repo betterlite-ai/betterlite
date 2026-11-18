@@ -21,13 +21,9 @@ pub(super) async fn retire(
     Ok(Observation::Recorded { step: index })
 }
 
-pub(super) fn switch(
-    index: usize,
-    context: &Context<'_>,
-    down: bool,
-) -> Result<Observation, ScenarioError> {
+pub(super) fn switch(index: usize, context: &Context<'_>, down: bool) -> Observation {
     context.server.set_down(down);
-    Ok(Observation::Recorded { step: index })
+    Observation::Recorded { step: index }
 }
 
 pub(super) fn metadata(index: usize, step: &ScenarioStep) -> Result<Observation, ScenarioError> {
