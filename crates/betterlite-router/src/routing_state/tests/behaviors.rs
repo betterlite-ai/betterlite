@@ -7,7 +7,7 @@ use rust_decimal::Decimal;
 use crate::router_observations::counter::{CounterSink, Increment};
 use crate::routing_state::counter::RouterCounters;
 use crate::routing_state::metadata::{
-    CallbackChannels, deployment_channel, find_deployment_metadata, get_counted_usage_tokens,
+    CallbackChannels, deployment_channel, get_counted_usage_tokens,
 };
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::test_support::FakeRedis;
@@ -95,8 +95,7 @@ fn tracked_key_accessors() {
     assert_eq!(harness.counters.take_tracked_keys(), set(&["a", "b"]));
     assert!(harness.counters.get_tracked_keys().is_empty());
     harness.counters.track_key("c");
-    harness.counters.reset_tracked_keys();
-    assert!(harness.counters.get_tracked_keys().is_empty());
+    assert_eq!(harness.counters.take_tracked_keys(), set(&["c"]));
 }
 
 fn success_and_failure_counters() {
@@ -298,13 +297,10 @@ fn metadata_bucket_selection() {
     );
     assert_eq!(channel_name(&both), Some("litellm_metadata"));
     assert_eq!(get_counted_usage_tokens(&both), Some(7));
-    assert!(find_deployment_metadata(&both).is_some());
     let fallback = channels(r#"{"metadata": {"model_info": {"id": "b"}}}"#);
     assert_eq!(channel_name(&fallback), Some("metadata"));
     assert_eq!(get_counted_usage_tokens(&fallback), None);
-    assert!(find_deployment_metadata(&fallback).is_some());
     let absent = channels(r#"{"litellm_metadata": "text", "metadata": {"deployment": "x"}}"#);
-    assert!(find_deployment_metadata(&absent).is_none());
     assert_eq!(channel_name(&absent), None);
 }
 

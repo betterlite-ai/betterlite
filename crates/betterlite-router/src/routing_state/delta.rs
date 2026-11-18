@@ -97,7 +97,8 @@ impl<S: DeltaStore> SyncState<S> {
     }
 
     pub(super) fn reset_tracked(&self) -> BTreeSet<RouteKey> {
-        mem::take(&mut *self.tracked.lock().unwrap_or_else(PoisonError::into_inner))
+        let mut tracked = self.tracked.lock().unwrap_or_else(PoisonError::into_inner);
+        mem::take(&mut *tracked)
     }
 
     pub(super) fn queue(&self, delta: Delta) -> bool {
@@ -111,7 +112,8 @@ impl<S: DeltaStore> SyncState<S> {
 }
 
 pub(super) fn take_pending<S: DeltaStore>(state: &SyncState<S>) -> Vec<Delta> {
-    mem::take(&mut *state.pending.lock().unwrap_or_else(PoisonError::into_inner))
+    let mut pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
+    mem::take(&mut *pending)
 }
 
 // BaseRoutingStrategy._push_in_memory_increments_to_redis: compress one batch by key, send it, discard it

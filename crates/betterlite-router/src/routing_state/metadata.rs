@@ -77,13 +77,7 @@ impl CallbackChannels {
     }
 }
 
-// track_deployment_metrics.find_deployment_metadata
-#[must_use]
-pub fn find_deployment_metadata(channels: &CallbackChannels) -> Option<&MetadataBucket> {
-    deployment_channel(channels).map(|(_name, bucket)| bucket)
-}
-
-// the channel find_deployment_metadata picks: the first one whose value is a bucket with a model_info key
+// track_deployment_metrics.find_deployment_metadata picks the first channel whose value is a bucket with a model_info key
 #[must_use]
 pub fn deployment_channel(channels: &CallbackChannels) -> Option<(&'static str, &MetadataBucket)> {
     for (name, bucket) in channels.named_buckets() {
