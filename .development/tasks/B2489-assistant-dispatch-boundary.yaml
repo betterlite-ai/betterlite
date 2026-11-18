@@ -123,7 +123,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
   - id: python-adapter
     why: dispatch comparisons bypass the actual Router or have no checked adapter
-    run: ! grep -q not_built tools/oracle/sdk_http/assistant_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/assistant_dispatch.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/assistant-dispatch/all-operations.yaml
 - tools/oracle/cases/sdk-http/assistant-dispatch/config-overlays-request.yaml

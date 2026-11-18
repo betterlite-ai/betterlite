@@ -92,7 +92,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_write_http::tests::write_client_and_logging_contract($|::)/)'
   - id: python-adapter
     why: delete/cancel parity bypasses the provider HTTP exchange
-    run: ! grep -q not_built tools/oracle/sdk_http/responses_write_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_write_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the write transport variant has no committed decoder input
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-write-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

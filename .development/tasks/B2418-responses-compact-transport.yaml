@@ -91,7 +91,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_http::tests::compact_client_timeout($|::)/)'
   - id: python-adapter
     why: compact parity omits the actual HTTP handler
-    run: ! grep -q not_built tools/oracle/sdk_http/responses_compact_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_compact_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: compact transport is absent from the SDK input corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

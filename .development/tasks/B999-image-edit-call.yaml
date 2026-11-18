@@ -94,7 +94,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_edit_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Edit parity requires a real SDK HTTP adapter.
-    run: ! grep -q not_built tools/oracle/sdk_http/image_edit_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_edit_call.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: The edit SDK tag and timeout settings need newly added parser inputs.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-edit-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

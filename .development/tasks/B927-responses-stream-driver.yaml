@@ -98,7 +98,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_driver::/)'
   - id: stream-driver-adapter
     why: live stream behavior is not exercised against independently captured HTTP
-    run: ! grep -q not_built tools/oracle/sdk_http/responses_stream_driver.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/responses-stream-driver)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_stream_driver.py)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/responses-stream-driver)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/responses-stream-driver/live-sse-delivery.yaml
 - tools/oracle/cases/sdk-http/responses-stream-driver/early-stream-end.yaml

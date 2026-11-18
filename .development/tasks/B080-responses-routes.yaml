@@ -195,7 +195,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_routes::tests::public_dispatch_projection($|::)/)'
   - id: python-sdk
     why: public SDK parity does not reach its real provider transport
-    run: ! grep -q not_built tools/oracle/sdk_http/responses_public_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_public_dispatch.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the public SDK operation lacks a newly added decoder seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

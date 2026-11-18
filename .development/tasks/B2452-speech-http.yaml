@@ -74,7 +74,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::speech_http::tests::/)'
   - id: sdk-python
     why: Generic speech must be compared through captured HTTP, not a pure helper result.
-    run: ! grep -q not_built tools/oracle/sdk_http/speech_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/speech_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: Speech HTTP's operation tag must be accepted by the shared SDK parser.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/speech-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

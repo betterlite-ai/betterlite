@@ -75,7 +75,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::image_generation_http::tests::/)'
   - id: sdk-python
     why: The HTTP adapter must invoke the handler and pass strict Python checks.
-    run: ! grep -q not_built tools/oracle/sdk_http/image_generation_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_generation_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: Generation transport must be a recognized SDK variant.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

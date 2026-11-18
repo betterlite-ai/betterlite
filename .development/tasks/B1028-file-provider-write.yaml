@@ -102,7 +102,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_provider_write::tests::/) - test(/replays_/)'
   - id: sdk-python
     why: independent file-write adapter is absent or untyped
-    run: ! grep -q not_built tools/oracle/sdk_http/file_provider_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/file_provider_write.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-seeds
     why: upload/delete operation seeds were not added
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-provider-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

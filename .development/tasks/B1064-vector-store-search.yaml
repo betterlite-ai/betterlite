@@ -96,7 +96,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_search::tests::loads_search_timeout($|::)/)'
   - id: python-adapter
     why: SDK create/search does not execute the independent pinned implementation
-    run: ! grep -q not_built tools/oracle/sdk_http/vector_store_search_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_store_search_create.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: config-corpus
     why: the timeout setting lacks newly committed loader input
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'

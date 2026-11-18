@@ -79,7 +79,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/realtime_sdp)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::realtime_http_transport::tests::replays_corpus$/)'
   - id: sdk-python
     why: Realtime HTTP methods require actual mock-provider requests in their parity adapter.
-    run: ! grep -q not_built tools/oracle/sdk_http/realtime_http_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/realtime_http_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The realtime_http_transport call variant must decode from a newly added seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

@@ -111,7 +111,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_generation_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Provider comparisons must use the SDK HTTP driver with a typed operation adapter.
-    run: ! grep -q not_built tools/oracle/sdk_http/image_generation_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_generation_call.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: New settings and SDK operation tags must have parser seeds.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

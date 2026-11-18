@@ -119,7 +119,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::speech_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Normal SDK speech calls must execute through the HTTP capture driver.
-    run: ! grep -q not_built tools/oracle/sdk_http/speech_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/speech_call.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: Speech controls and SDK invocation need new parser seeds.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/speech-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

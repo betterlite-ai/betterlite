@@ -95,7 +95,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::/)'
   - id: dispatch-adapter
     why: the bridge lacks independently captured SDK provider requests
-    run: ! grep -q not_built tools/oracle/sdk_http/response_chat_dispatch.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/response-chat-dispatch)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/response_chat_dispatch.py)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/response-chat-dispatch)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/response-chat-dispatch/bridge-input-validation.yaml
 - tools/oracle/cases/sdk-http/response-chat-dispatch/prefixed-provider-execution.yaml

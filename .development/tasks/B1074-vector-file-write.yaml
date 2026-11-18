@@ -85,7 +85,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_write::tests::loads_write_timeout($|::)/)'
   - id: python-adapter
     why: the file mutation comparison cannot capture real public SDK HTTP
-    run: ! grep -q not_built tools/oracle/sdk_http/vector_file_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_file_write.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: new mutation/config inputs bypass corpus replay
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'

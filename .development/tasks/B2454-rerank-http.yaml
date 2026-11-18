@@ -72,7 +72,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::rerank_http::tests::/)'
   - id: sdk-python
     why: Rerank provider execution must run in the checked SDK HTTP adapter.
-    run: ! grep -q not_built tools/oracle/sdk_http/rerank_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/rerank_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The rerank_http variant must be covered by a new SDK parser seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/rerank-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
