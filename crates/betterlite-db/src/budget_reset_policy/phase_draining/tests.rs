@@ -97,8 +97,8 @@ fn phase_draining_rejects_a_non_numeric_limit() {
     let configured = environment([(BATCH_SIZE_ENV, "many"), (MAX_CHUNKS_ENV, "7")]);
     let error = ResetLimits::from_environment(&configured).unwrap_err();
     assert!(matches!(
-        error,
-        ResetLimitsError::Environment(EnvError::Number { ref name }) if name == BATCH_SIZE_ENV
+        &error,
+        ResetLimitsError::Environment(EnvError::Number { name }) if name == BATCH_SIZE_ENV
     ));
 }
 

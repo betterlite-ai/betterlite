@@ -104,7 +104,7 @@ async fn invalidation_order_commits_before_dropping_caches() {
         &["k1".to_owned()],
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(
         events.entries(),
         ["commit", "spend counter 1", "user_api_key_cache 1"]
@@ -131,7 +131,7 @@ async fn invalidation_order_skips_empty_cache_lists() {
     let events = Events::default();
     let cache = event_cache(&events, true);
     let result = commit_then_invalidate(&cache, committing(&events), &[], &[]).await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(events.entries(), ["commit"]);
 }
 
@@ -146,7 +146,7 @@ async fn invalidation_order_keeps_the_commit_when_a_cache_drop_fails() {
         &["k1".to_owned()],
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(
         events.entries(),
         ["commit", "spend counter 1", "user_api_key_cache 1"]

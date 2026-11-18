@@ -2,21 +2,22 @@
 
 use super::count_advanced;
 use crate::budget_permission_rows::Timestamp;
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone as _, Utc};
 
 fn cutoff(hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, hour, minute, 0).unwrap()
 }
 
 fn aware(text: &str) -> Option<Timestamp> {
-    Some(Timestamp::Aware(
-        DateTime::parse_from_rfc3339(text).unwrap(),
-    ))
+    DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(Timestamp::Aware)
 }
 
 fn naive(hour: u32, minute: u32) -> Option<Timestamp> {
-    let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
-    Some(Timestamp::Naive(date.and_hms_opt(hour, minute, 0).unwrap()))
+    NaiveDate::from_ymd_opt(2026, 1, 1)
+        .and_then(|date| date.and_hms_opt(hour, minute, 0))
+        .map(Timestamp::Naive)
 }
 
 #[test]

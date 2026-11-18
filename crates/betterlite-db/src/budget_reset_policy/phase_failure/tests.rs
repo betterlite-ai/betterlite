@@ -6,7 +6,7 @@ use super::{
 };
 use crate::budget_reset_policy::tests::logging::{Logs, subscriber};
 use betterlite_models::decisions::Json;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone as _, Utc};
 use serde_json::Number;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};

@@ -2,7 +2,7 @@
 
 use super::{BudgetResetInput, ResetSchedule, reset_budget_values};
 use crate::budget_reset_policy::rollover::RolloverPolicy;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::{DateTime, TimeZone as _, Utc};
 use rust_decimal::Decimal;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -42,12 +42,12 @@ fn schedule() -> FixedSchedule {
     }
 }
 
-const fn input<'row>(
+const fn input(
     spend: Option<Decimal>,
     max_budget: Option<Decimal>,
-    budget_duration: Option<&'row str>,
+    budget_duration: Option<&str>,
     budget_reset_at: Option<DateTime<Utc>>,
-) -> BudgetResetInput<'row> {
+) -> BudgetResetInput<'_> {
     BudgetResetInput {
         spend,
         max_budget,
