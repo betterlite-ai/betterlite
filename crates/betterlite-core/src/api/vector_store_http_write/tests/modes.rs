@@ -78,8 +78,8 @@ pub(super) async fn execution_mode_case(case: ModeCase) {
             assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
         }
         ModeCase::Mismatch => {
-            let mut params = params("http://unused.test");
-            params.ssl_verify = Some(false);
+            let mut unverified = params.clone();
+            unverified.ssl_verify = Some(false);
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
@@ -89,7 +89,7 @@ pub(super) async fn execution_mode_case(case: ModeCase) {
                 }),
             };
             let call = WriteCall::Update(UpdateCall {
-                target: target("vs_a", &params, None, Some(Duration::from_secs(7))),
+                target: target("vs_a", &unverified, None, Some(Duration::from_secs(7))),
                 optional_params: &optional,
                 extra_body: None,
             });
@@ -109,9 +109,10 @@ pub(super) async fn execution_mode_case(case: ModeCase) {
             assert_eq!(requests[0].timeout, Some(Duration::from_secs(7)));
         }
         ModeCase::QueryBase => {
-            let config = RecordingConfig::new("https://mock.test/vector_stores?api-version=v1");
+            let query_config =
+                RecordingConfig::new("https://mock.test/vector_stores?api-version=v1");
             let deps = WriteDeps {
-                config: &config,
+                config: &query_config,
                 source: &source,
                 supplied: None,
             };
