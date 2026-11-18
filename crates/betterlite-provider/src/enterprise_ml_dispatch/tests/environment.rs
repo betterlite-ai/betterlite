@@ -14,31 +14,26 @@ fn watsonx_environment_reads_every_secret() {
 }
 
 fn assert_secrets(filled: &WatsonxEnvironment) {
-    let keys = [
-        (
-            exposed(filled.wx_api_key.as_ref()),
-            Some(String::from("wx-key")),
-        ),
-        (
-            exposed(filled.watsonx_api_key.as_ref()),
-            Some(String::from("api-key")),
-        ),
-        (
-            exposed(filled.watsonx_apikey.as_ref()),
-            Some(String::from("apikey")),
-        ),
-        (
-            exposed(filled.watsonx_zenapikey.as_ref()),
-            Some(String::from("zen")),
-        ),
-        (
-            exposed(filled.watsonx_token.as_ref()),
-            Some(String::from("token")),
-        ),
-    ];
-    for (found, wanted) in keys {
-        assert_eq!(found, wanted);
-    }
+    assert_eq!(
+        exposed(filled.wx_api_key.as_ref()).as_deref(),
+        Some("wx-key")
+    );
+    assert_eq!(
+        exposed(filled.watsonx_api_key.as_ref()).as_deref(),
+        Some("api-key")
+    );
+    assert_eq!(
+        exposed(filled.watsonx_apikey.as_ref()).as_deref(),
+        Some("apikey")
+    );
+    assert_eq!(
+        exposed(filled.watsonx_zenapikey.as_ref()).as_deref(),
+        Some("zen")
+    );
+    assert_eq!(
+        exposed(filled.watsonx_token.as_ref()).as_deref(),
+        Some("token")
+    );
 }
 
 #[test]

@@ -363,37 +363,38 @@ impl Chat {
     }
 
     pub(super) fn context(&self) -> ChatContext<'_> {
-        ChatContext {
-            base: DispatchContext {
-                acompletion: false,
-                api_base: self.api_base.as_deref(),
-                api_key: self.api_key.as_ref(),
-                custom_llm_provider: self.provider,
-                headers: self.headers.as_ref(),
-                litellm_params: &self.litellm_params,
-                messages: &self.messages,
-                model: &self.model,
-                optional_params: &self.optional_params,
-                provider_config: None,
-                stream: None,
-                timeout: Some(Duration::from_secs(600)),
-                globals: DispatchGlobals {
-                    api_base: None,
-                    api_key: None,
-                    databricks_key: None,
-                    headers: self.globals_headers.as_ref(),
-                },
-                env: EnvironmentSource {
-                    secrets: &self.secrets,
-                    environment: &self.environment,
-                },
-            },
-            sagemaker: SagemakerRequest {
-                custom_prompt_dict: self.sagemaker_prompts.as_ref(),
-                global_custom_prompt_dict: None,
-                hf_model_name: None,
-            },
-        }
+        let globals = DispatchGlobals {
+            api_base: None,
+            api_key: None,
+            databricks_key: None,
+            headers: self.globals_headers.as_ref(),
+        };
+        let env = EnvironmentSource {
+            secrets: &self.secrets,
+            environment: &self.environment,
+        };
+        let base = DispatchContext {
+            acompletion: false,
+            api_base: self.api_base.as_deref(),
+            api_key: self.api_key.as_ref(),
+            custom_llm_provider: self.provider,
+            headers: self.headers.as_ref(),
+            litellm_params: &self.litellm_params,
+            messages: &self.messages,
+            model: &self.model,
+            optional_params: &self.optional_params,
+            provider_config: None,
+            stream: None,
+            timeout: Some(Duration::from_secs(600)),
+            globals,
+            env,
+        };
+        let sagemaker = SagemakerRequest {
+            custom_prompt_dict: self.sagemaker_prompts.as_ref(),
+            global_custom_prompt_dict: None,
+            hf_model_name: None,
+        };
+        ChatContext { base, sagemaker }
     }
 }
 
