@@ -11,7 +11,7 @@ description: >-
   Write four self-contained ordinary HTTP transcripts in policies/composition, using the existing steps and
   per-gateway captures. Each starts its own config and database fixture; no case consumes another case's state.
   Set database.seed.dashboard_governance: {} from B9750 to install policy and attachment tables, use B860's
-  identities where required and B5076's pinned Prisma setup. Do not inject database_url or disable schema setup
+  identities where required and B9942's pinned Prisma setup. Do not inject database_url or disable schema setup
   in gateway config. General settings provide a master key; use distinct config/master-key values to prevent
   independent stateful cases sharing a process accidentally. Inference uses an OpenAI deployment with stable
   model_info.id, inert api_key and api_base {{upstream}}. Configure named generic_guardrail_api guards at the

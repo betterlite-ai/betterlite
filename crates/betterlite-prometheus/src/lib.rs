@@ -1,6 +1,7 @@
 pub mod buckets;
 pub mod caller_identity_logic;
 pub mod collector_factory;
+pub mod collector_registry;
 pub mod input_sequence_length;
 pub mod label_names_catalog;
 pub mod label_sanitization;
@@ -8,5 +9,4 @@ pub mod label_value_record;
 pub mod metric_catalog;
 pub mod no_op_metric;
 pub mod scrape_endpoint;
-pub mod service_health;
 pub mod validation;

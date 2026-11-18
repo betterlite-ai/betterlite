@@ -1,7 +1,7 @@
 id: B7890
 title: Python passthrough routes, helpers and timeouts
 description: >-
-  This task adds the passthrough functions: `llm_passthrough_route` and `allm_passthrough_route` (litellm/passthrough/main.py), `BasePassthroughUtils.get_merged_query_parameters`, `forward_headers_from_request` and `CommonUtils.encode_bedrock_runtime_modelid_arn` (passthrough/utils.py), and `resolve_pass_through_request_timeout` and `resolve_llm_passthrough_timeout` (passthrough/timeout_utils.py). Rust runs them (B3571 header, query and timeout policies, B3572 the stream relay).
+  This task adds the passthrough functions: `llm_passthrough_route` and `allm_passthrough_route` (litellm/passthrough/main.py), `BasePassthroughUtils.get_merged_query_parameters`, `forward_headers_from_request` and `CommonUtils.encode_bedrock_runtime_modelid_arn` (passthrough/utils.py), and `resolve_pass_through_request_timeout` and `resolve_llm_passthrough_timeout` (passthrough/timeout_utils.py). Rust runs them. The two route functions call B8690's `allm_passthrough_route` (betterlite-core `api::passthrough_call`, taking `PassthroughCallArgs` and returning `PassthroughReply` or `PassthroughCallError`), and a streamed reply's body is B3572's stream relay (betterlite-core `passthrough_stream`). The helpers wrap B3571's policies in betterlite-models `passthrough_policies`: `merge_query_parameters`, `forward_headers_from_request`, `resolve_passthrough_timeout` (resolve_pass_through_request_timeout) and `resolve_sdk_timeout` (resolve_llm_passthrough_timeout). `encode_bedrock_runtime_modelid_arn` wraps B2203's `encode_runtime_modelid_arn` (betterlite-context `bedrock_model::runtime_arn`). B3571, B3572 and B2203 are on main.
 
 
   Native side, the family `passthrough_calls`: `src/passthrough_calls.rs` with `register` that adds `NativePassthroughSession`, `NativePassthroughStream` and `NativePassthroughError`, and `src/passthrough_calls/convert.rs` with tests `request_*` and `error_*`. The architect writes the `lib.rs` line.
@@ -66,7 +66,7 @@ deviations:
 - what: This task has no helper oracle cases.
   why: The functions call a native session, so pytest compares both packages against one local server.
 out_of_scope:
-- "Provider execution, policies and the stream relay belong to B3571 and B3572."
+- "Provider execution belongs to B8690's `allm_passthrough_route`, the header, query and timeout policies to B3571 and the stream relay to B3572."
 - "The proxy-side pass-through routes are not part of this entry."
 pitfalls:
 - "`json` is a keyword and shadows the module name inside the function, so do not import `json` at that scope."

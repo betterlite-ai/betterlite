@@ -21,7 +21,8 @@ description: >-
   L472-L722). `ContainerRouteInput` holds `has_api_key_or_base: bool` (data has `api_key` or `api_base`) and `user_model: Option<&str>`. `ContainerRoute` is `Router`, `Direct` or
   `NotFound`. Rules, in LiteLLM's order. (1) `has_api_key_or_base`: `Router` with a router, `Direct` without one. (2) A router exists: `Router`, because the container list at L587-L598 has no
   model test. (3) No router: `Direct` when `user_model` is set, else `NotFound`. The branches that LiteLLM tests between these (user_config, router_settings_override, batch completion, the
-  blocked-model check) are B004's and B014's.
+  blocked-model check) are not this task's: B9800 builds the user_config, override and blocked-model branches for /v1/messages only, and
+  nothing builds them for containers or builds the batch completion branch yet.
 
   Router call plan, `plan_container_call(args: ContainerCallArgs, wrapper_provider: Option<&str>, decoder: &dyn ContainerIdDecoder) -> ContainerCallPlan`, which is
   `_init_containers_api_endpoints` (router.py L7050-L7106). `ContainerIdDecoder` is a trait with `decode(&self, container_id: &str) -> DecodedContainerId` (provider and model_id as
@@ -35,7 +36,7 @@ description: >-
   Dispatch entry. The architect adds one core entry for these routes to B014's core-stubs list, `ContainerCall` with module `container_call`
   (operation/container_call.rs and dispatch/container_call.rs). The request holds a `ContainerRouteType` and a `ContainerCallArgs`; the result is a `ContainerReply`. This task replaces the
   NotBuilt stub and its stub test. Its execute function takes the route input and two injected `ContainerCalls` (the router one, which may be absent, and the direct one) and runs the plan:
-  `Router` calls the router implementation, `Direct` calls the direct one, `NotFound` returns the model-not-found error with route name and the model from the args (empty text when none).
+  `Router` calls the router implementation, `Direct` calls the direct one, `NotFound` returns B9964's `ProxyModelNotFoundError` (betterlite_error::proxy_model_not_found) with the route name from B9964's `route_endpoint` for the request's `ContainerRouteType::name` (all nine container route types have an entry), the model from the args (empty text when none) and the retry flag true. The entry's error type wraps it by `#[from]`.
   Leave operation.rs and dispatch.rs as they are.
 
   Sdk side, module `router_container` in betterlite-sdk (files router_container.rs and router_container/**). It plugs the nine calls into B6021's `RouterGeneric`. `ContainerExecutor` is a
@@ -97,7 +98,7 @@ dod:
       plan_container_call returns Generic with passthrough false and model set when the decoded id or the forwarded model_id (trimmed, non-blank) gives one, Generic with passthrough true for a non-blank model argument, and Direct otherwise; model_id stays in the args.
     proof: [plan-model]
   - text: >-
-      The ContainerCall dispatch entry runs the Router, Direct and NotFound results of the plan against the matching collaborator, and a NotFound plan returns the model-not-found error.
+      The ContainerCall dispatch entry runs the Router, Direct and NotFound results of the plan against the matching collaborator, and a NotFound plan returns B9964's model-not-found error with the route type's path.
     proof: [entry-dispatch]
   - text: >-
       The sdk executors read their arguments by the shared key names and call B3368, B3369 or B3370 for their route type; content comes back as Bytes and every other reply as Json.
@@ -144,7 +145,7 @@ deviations:
 out_of_scope:
   - "The synchronous Router.create_container, list_containers, retrieve_container, delete_container, list_container_files, upload_container_file, retrieve_container_file, delete_container_file and retrieve_container_file_content (router.py L2160-L2170 and the sync half of factory_function): no caller at the pin. The proxy only calls the a-prefixed names."
   - "The generic engine (_ageneric_api_call_with_fallbacks, its helper, _dispatch_generic_call_type) is B6021; selection, retries, slots and the refusal check are B016, B017, B303 and B310. This task only plugs executors into it."
-  - "The generic parts of _route_request_single_attempt (user_config, router_settings_override, batch completion, the blocked-model check, mock-testing checks) belong to B004 and B014."
+  - "The generic parts of _route_request_single_attempt (user_config, router_settings_override, batch completion, the blocked-model check, mock-testing checks): B9800 builds the shared steps and the user_config, override and blocked-model branches in betterlite-server's messages_call for /v1/messages only. Nothing runs them for the container routes, and nothing builds the acompletion batch branch yet. B004 and B014 built neither."
   - "The SDK calls the executors reach: B3368 (the five file calls), B3369 (create, list), B3370 (retrieve, delete), B3366 and B3367 (the explicit list and upload functions the direct path uses)."
   - "The ContainerIdDecoder implementation over B903's _decode_container_id, the server implementation of the generic wiring, and the construction of RouterGeneric with container_executors: B8631 (RouterGeneric with container_executors) and B8635 (ContainerIdDecoder and the server wiring), see notes."
   - "The container HTTP routes themselves and the request data maps: B3372 (file routes) and the routes of proxy/container_endpoints/endpoints.py."

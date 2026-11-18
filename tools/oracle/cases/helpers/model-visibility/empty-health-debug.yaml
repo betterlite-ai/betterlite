@@ -1,0 +1,15 @@
+kind: helper
+name: model-visibility-empty-health-debug
+call:
+  model_visibility:
+    function: hidden_unhealthy_model_names
+    model_list: []
+    model_group_alias: {}
+    arguments:
+      healthy_only: false
+      model_list_healthy_only: true
+      health:
+        unhealthy_names: []
+        fails: false
+env: {}
+compare: {ignore: []}

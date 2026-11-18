@@ -1,0 +1,24 @@
+kind: helper
+name: model-visibility-provider-prefix-match
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: openai/*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w1
+          discoverable: false
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      model_names: [gpt-4o, claude-3]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}
