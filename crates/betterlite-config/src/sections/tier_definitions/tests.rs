@@ -294,6 +294,20 @@ fn a_bare_model_inside_a_list_stays_literal() {
 }
 
 #[test]
+fn a_bare_model_name_resolves_its_reference() {
+    let config = only(
+        "        tier_models:\n          SIMPLE: os.environ/MODEL\n",
+        &[("MODEL", "small")],
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        &config.tier_models.unwrap()["SIMPLE"],
+        &TierPool::Single(model("small"))
+    );
+}
+
+#[test]
 fn an_empty_variable_counts_as_unset() {
     let keys = "        tier_definitions:
           - name: ECO
