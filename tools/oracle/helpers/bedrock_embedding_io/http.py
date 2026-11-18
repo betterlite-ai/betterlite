@@ -172,12 +172,14 @@ def provider_json_response(case: HttpRequest) -> JsonValue:
     fixture = Fixture(case)
     configure(fixture)
     value = run_call(case, fixture)
-    factory: list[JsonValue] = [
-        BODY.validate_python(
-            {"kind": call.kind, "provider": call.provider, "timeout": call.timeout}
-        )
-        for call in fixture.factory_calls
-    ]
+    factory: list[JsonValue] = []
+    for call in fixture.factory_calls:
+        record: dict[str, JsonValue] = {
+            "kind": call.kind,
+            "provider": call.provider,
+            "timeout": call.timeout,
+        }
+        factory.append(record)
     return {
         "factory": factory,
         "supplied_requests": fixture.supplied,
