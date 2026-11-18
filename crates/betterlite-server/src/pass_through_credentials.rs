@@ -266,7 +266,7 @@ fn deployment_matches_model(deployment: &PassThroughDeployment, model: &str) -> 
     let upstream = text(&deployment.litellm_params, "model");
     deployment.model_name.as_deref() == Some(model)
         || upstream == Some(model)
-        || upstream.and_then(|name| name.rsplit('/').next()) == Some(model)
+        || upstream.and_then(|name| name.split_once('/').map(|(_, suffix)| suffix)) == Some(model)
 }
 
 fn credential_identity(value: Option<&Json>) -> Option<String> {

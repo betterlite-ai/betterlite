@@ -118,7 +118,7 @@ fn deployment_matching_provider_region_alias_and_order() {
     let alias = deployment(
         None,
         obj(&[
-            ("model", Json::Text("vertex_ai/publisher/model-name".into())),
+            ("model", Json::Text("vertex_ai/model-name".into())),
             ("use_in_pass_through", Json::Bool(true)),
             ("vertex_project", Json::Text("p".into())),
             ("vertex_location", Json::Text("us".into())),
@@ -138,6 +138,38 @@ fn deployment_matching_provider_region_alias_and_order() {
             .vertex_project
             .as_deref(),
         Some("p")
+    );
+    let nested_alias = deployment(
+        None,
+        obj(&[
+            (
+                "model",
+                Json::Text("vertex_ai/publishers/google/model-name".into()),
+            ),
+            ("use_in_pass_through", Json::Bool(true)),
+            ("vertex_project", Json::Text("p".into())),
+            ("vertex_location", Json::Text("us".into())),
+        ]),
+    );
+    let other = deployment(
+        None,
+        obj(&[
+            ("model", Json::Text("vertex_ai/other".into())),
+            ("use_in_pass_through", Json::Bool(true)),
+            ("vertex_project", Json::Text("q".into())),
+            ("vertex_location", Json::Text("us".into())),
+        ]),
+    );
+    let nested_router = router(
+        Source {
+            deployments: vec![nested_alias, other],
+            ..Source::default()
+        },
+        &[],
+    );
+    assert_eq!(
+        nested_router.get_vertex_credentials_from_router_deployments(Some("model-name")),
+        None
     );
 }
 
