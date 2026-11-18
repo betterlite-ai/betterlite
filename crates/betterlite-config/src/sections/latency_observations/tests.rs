@@ -38,7 +38,8 @@ fn rejection(error: &ConfigError) -> Rejection {
         ConfigError::Environment { .. }
         | ConfigError::Yaml { .. }
         | ConfigError::InvalidFloat { .. }
-        | ConfigError::LoadThread { .. } => panic!("unexpected rejection {error:?}"),
+        | ConfigError::LoadThread { .. }
+        | ConfigError::CustomDimensions(_) => panic!("unexpected rejection {error:?}"),
     }
 }
 
