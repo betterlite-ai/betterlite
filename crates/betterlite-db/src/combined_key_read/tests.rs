@@ -296,7 +296,7 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
         Some(String::from("active"))
     );
     assert_eq!(cache.lookup(&hash, now + ttl), None);
-    assert!(cache.is_empty());
+    assert!(cache.entries.is_empty());
     let revoked = KeyHash::from("revoked");
     cache.remember(
         revoked.clone(),
@@ -306,7 +306,7 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
     assert_eq!(cache.lookup(&revoked, now + TimeDelta::seconds(30)), None);
     let mut full = DeprecatedKeyCache::default();
     fill_cache(&mut full, DEPRECATED_CACHE_CAPACITY, now);
-    assert_eq!(full.len(), DEPRECATED_CACHE_CAPACITY);
+    assert_eq!(full.entries.len(), DEPRECATED_CACHE_CAPACITY);
     assert_eq!(full.lookup(&KeyHash::from("cache-key-0"), now), None);
     let newest = KeyHash::from(format!("cache-key-{DEPRECATED_CACHE_CAPACITY}"));
     assert_eq!(full.lookup(&newest, now), Some(String::from("active")));
@@ -329,7 +329,7 @@ async fn writer_bypasses_but_populates_grace_cache() {
     assert!(harness.read(&request).await.unwrap().is_some());
     assert_eq!(harness.database.grace_calls().len(), 1);
     assert!(harness.database.grace_calls()[0].use_writer);
-    assert_eq!(lock(&harness.cache).len(), 1);
+    assert_eq!(lock(&harness.cache).entries.len(), 1);
     harness.database.push_row(Ok(None));
     harness.database.push_row(Ok(view_row("sk-active")));
     let found = harness
@@ -351,13 +351,13 @@ async fn negative_grace_not_cached() {
     harness.database.push_row(Ok(None));
     harness.database.push_grace(Ok(None));
     assert!(harness.read(&request).await.unwrap().is_none());
-    assert!(lock(&harness.cache).is_empty());
+    assert!(lock(&harness.cache).entries.is_empty());
     harness.database.push_row(Ok(None));
     harness
         .database
         .push_grace(Ok(Some(grace_hit("", fixed_now() + TimeDelta::hours(1)))));
     assert!(harness.read(&request).await.unwrap().is_none());
-    assert!(lock(&harness.cache).is_empty());
+    assert!(lock(&harness.cache).entries.is_empty());
     harness.database.push_row(Ok(None));
     harness.database.push_grace(Ok(None));
     assert!(harness.read(&request).await.unwrap().is_none());
@@ -383,7 +383,7 @@ async fn grace_error_debug_drop() {
             .seen()
             .contains(&ObservedDiagnostic::DeprecatedLookupFailed(expected))
     );
-    assert!(lock(&harness.cache).is_empty());
+    assert!(lock(&harness.cache).entries.is_empty());
 }
 
 #[tokio::test]
@@ -441,29 +441,29 @@ async fn native_database_diagnostics_hide_token_and_hash() {
         .unwrap_err();
     assert!(matches!(error, KeyReadError::Database(_)));
     let hash = hash_token(token);
-    let mut messages = harness.diagnostics.seen();
-    messages.retain(|diagnostic| {
-        matches!(
-            diagnostic,
-            ObservedDiagnostic::AttemptFailure(_) | ObservedDiagnostic::FailureTraceback(_)
-        )
-    });
+    let messages: Vec<String> = harness
+        .diagnostics
+        .seen()
+        .into_iter()
+        .filter_map(|diagnostic| match diagnostic {
+            ObservedDiagnostic::AttemptFailure(message)
+            | ObservedDiagnostic::FailureTraceback(message) => Some(message),
+            _ => None,
+        })
+        .collect();
     assert_eq!(messages.len(), 6);
-    for diagnostic in &messages {
-        if let ObservedDiagnostic::AttemptFailure(message)
-        | ObservedDiagnostic::FailureTraceback(message) = diagnostic
-        {
-            assert!(!message.contains(token));
-            assert!(!message.contains(&hash));
-        }
-    }
+    assert!(
+        messages
+            .iter()
+            .all(|message| !message.contains(token) && !message.contains(&hash))
+    );
     let hooks = harness.hook.hooks();
-    for hook in &hooks {
-        assert!(!hook.message.contains(token));
-        assert!(!hook.message.contains(&hash));
-        assert!(!hook.traceback.contains(token));
-        assert!(!hook.traceback.contains(&hash));
-    }
+    assert!(hooks.iter().all(|hook| {
+        !hook.message.contains(token)
+            && !hook.message.contains(&hash)
+            && !hook.traceback.contains(token)
+            && !hook.traceback.contains(&hash)
+    }));
     assert!(hooks[0].message.starts_with(
         "LiteLLM Prisma Client Exception: Error with `get_data`. Args passed in: [redacted] "
     ));
@@ -594,7 +594,7 @@ fn refresh_at_capacity(cache: &mut DeprecatedKeyCache, now: DateTime<Utc>) {
         &grace_hit("active", now + TimeDelta::hours(1)),
         now,
     );
-    assert_eq!(cache.len(), DEPRECATED_CACHE_CAPACITY.saturating_sub(1));
+    assert_eq!(cache.entries.len(), DEPRECATED_CACHE_CAPACITY.saturating_sub(1));
     assert_eq!(cache.lookup(&KeyHash::from("cache-key-1"), now), None);
     assert_eq!(cache.lookup(&newest, now), Some(String::from("active")));
 }

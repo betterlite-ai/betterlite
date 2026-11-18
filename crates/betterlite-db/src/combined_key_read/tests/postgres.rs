@@ -82,6 +82,21 @@ const TOKEN_BARE: &str = "sk-bare";
 const TOKEN_MEMBER: &str = "sk-member";
 const TOKEN_ORG: &str = "sk-org";
 
+const INSERT_ORGANIZATION: &str = r#"INSERT INTO "LiteLLM_OrganizationTable"
+    (organization_id, organization_alias, budget_id, metadata, created_by, updated_by)
+    VALUES ($1, $2, $3, '{"o": 1}'::jsonb, 'test', 'test')"#;
+const INSERT_PROJECT: &str = r#"INSERT INTO "LiteLLM_ProjectTable" (project_id, project_alias, metadata, created_by, updated_by)
+    VALUES ('proj-1', 'Project One', '{"p": 1}'::jsonb, 'test', 'test')"#;
+const INSERT_MEMBERSHIP: &str = r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
+    VALUES ($1, 'team-1', $2, $3)"#;
+const INSERT_FULL_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken"
+    (token, user_id, team_id, organization_id, project_id, budget_id, models,
+     model_max_budget, expires)
+    VALUES ($1, 'u1', 'team-1', 'org-key', 'proj-1', 'budget-key', ARRAY[]::TEXT[],
+     '{}'::jsonb, '2030-01-02 03:04:05')"#;
+const INSERT_BARE_KEY: &str =
+    r#"INSERT INTO "LiteLLM_VerificationToken" (token, models) VALUES ($1, ARRAY[]::TEXT[])"#;
+
 #[derive(clap::Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -248,13 +263,22 @@ impl Fixture {
 
 pub(crate) async fn every_join_alias_and_null(fixture: &Fixture) {
     seed_budgets(fixture).await;
-    seed_organization(fixture, "org-key", "Org Key", "budget-org").await;
+    fixture
+        .execute(
+            INSERT_ORGANIZATION,
+            &[&"org-key", &"Org Key", &"budget-org"],
+        )
+        .await;
     let model_id = seed_model(fixture).await;
     seed_team(fixture, model_id).await;
-    seed_project(fixture).await;
-    seed_membership(fixture, "u1", 3, "budget-tm").await;
-    seed_full_key(fixture).await;
-    seed_bare_key(fixture).await;
+    fixture.execute(INSERT_PROJECT, &[]).await;
+    fixture
+        .execute(INSERT_MEMBERSHIP, &[&"u1", &3.0, &"budget-tm"])
+        .await;
+    let stored_full = hash_token(TOKEN_FULL);
+    fixture.execute(INSERT_FULL_KEY, &[&stored_full]).await;
+    let stored_bare = hash_token(TOKEN_BARE);
+    fixture.execute(INSERT_BARE_KEY, &[&stored_bare]).await;
     let view = fixture.read(TOKEN_FULL).await.unwrap().unwrap();
     assert_team_fields(&view);
     assert_budget_fields(&view);
@@ -328,8 +352,18 @@ pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
             &[],
         )
         .await;
-    seed_organization(fixture, "org-team", "Team Org", "budget-team-org").await;
-    seed_organization(fixture, "org-key", "Key Org", "budget-key-org").await;
+    fixture
+        .execute(
+            INSERT_ORGANIZATION,
+            &[&"org-team", &"Team Org", &"budget-team-org"],
+        )
+        .await;
+    fixture
+        .execute(
+            INSERT_ORGANIZATION,
+            &[&"org-key", &"Key Org", &"budget-key-org"],
+        )
+        .await;
     fixture
         .execute(
             r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, organization_id, members_with_roles)
@@ -380,17 +414,6 @@ async fn seed_budgets(fixture: &Fixture) {
         .await;
 }
 
-async fn seed_organization(fixture: &Fixture, id: &str, alias: &str, budget: &str) {
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_OrganizationTable"
-               (organization_id, organization_alias, budget_id, metadata, created_by, updated_by)
-               VALUES ($1, $2, $3, '{"o": 1}'::jsonb, 'test', 'test')"#,
-            &[&id, &alias, &budget],
-        )
-        .await;
-}
-
 async fn seed_model(fixture: &Fixture) -> i32 {
     fixture
         .execute(
@@ -417,50 +440,6 @@ async fn seed_team(fixture: &Fixture, model_id: i32) {
                 103, ARRAY['gpt-4'], '{"t": 1}'::jsonb, true,
                 '[{"user_id": "u1", "role": "admin", "user_email": "a@x"}]'::jsonb, 'tm-perm', '{"tm": 1}'::jsonb, $1)"#,
             &[&model_id],
-        )
-        .await;
-}
-
-async fn seed_project(fixture: &Fixture) {
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_ProjectTable" (project_id, project_alias, metadata, created_by, updated_by)
-               VALUES ('proj-1', 'Project One', '{"p": 1}'::jsonb, 'test', 'test')"#,
-            &[],
-        )
-        .await;
-}
-
-async fn seed_membership(fixture: &Fixture, user: &str, spend: f64, budget: &str) {
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
-               VALUES ($1, 'team-1', $2, $3)"#,
-            &[&user, &spend, &budget],
-        )
-        .await;
-}
-
-async fn seed_full_key(fixture: &Fixture) {
-    let stored = hash_token(TOKEN_FULL);
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken"
-               (token, user_id, team_id, organization_id, project_id, budget_id, models,
-                model_max_budget, expires)
-               VALUES ($1, 'u1', 'team-1', 'org-key', 'proj-1', 'budget-key', ARRAY[]::TEXT[],
-                '{}'::jsonb, '2030-01-02 03:04:05')"#,
-            &[&stored],
-        )
-        .await;
-}
-
-async fn seed_bare_key(fixture: &Fixture) {
-    let stored = hash_token(TOKEN_BARE);
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" (token, models) VALUES ($1, ARRAY[]::TEXT[])"#,
-            &[&stored],
         )
         .await;
 }

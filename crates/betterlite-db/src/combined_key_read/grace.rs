@@ -35,7 +35,7 @@ impl DeprecatedToken {
 }
 
 #[derive(Debug, Clone)]
-struct CachedDeprecatedKey {
+pub(crate) struct CachedDeprecatedKey {
     active_token_id: String,
     expires_at: DateTime<Utc>,
     revoke_at: DateTime<Utc>,
@@ -44,20 +44,10 @@ struct CachedDeprecatedKey {
 // LiteLLM keeps only positive grace lookups, and treats a cached entry as expired at the boundary
 #[derive(Debug, Default)]
 pub struct DeprecatedKeyCache {
-    entries: IndexMap<KeyHash, CachedDeprecatedKey>,
+    pub(crate) entries: IndexMap<KeyHash, CachedDeprecatedKey>,
 }
 
 impl DeprecatedKeyCache {
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.entries.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-
     pub fn lookup(&mut self, hash: &KeyHash, now: DateTime<Utc>) -> Option<String> {
         let entry = self.entries.get(hash)?;
         if now < entry.expires_at && now < entry.revoke_at {

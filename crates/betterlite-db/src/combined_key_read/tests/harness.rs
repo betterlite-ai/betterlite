@@ -272,6 +272,7 @@ pub(crate) struct RecordedGraceCall {
     pub(crate) use_writer: bool,
 }
 
+#[derive(Default)]
 pub(crate) struct ScriptedDatabase {
     pub(crate) rows: Mutex<VecDeque<Result<Option<JsonData>, DbError>>>,
     pub(crate) deprecated: Mutex<VecDeque<Result<Option<DeprecatedToken>, DbError>>>,
@@ -282,13 +283,9 @@ pub(crate) struct ScriptedDatabase {
 
 impl ScriptedDatabase {
     pub(crate) fn shared(timeline: &Timeline) -> Self {
-        Self {
-            rows: Mutex::new(VecDeque::new()),
-            deprecated: Mutex::new(VecDeque::new()),
-            row_calls: Mutex::new(Vec::new()),
-            grace_calls: Mutex::new(Vec::new()),
-            timeline: Arc::clone(timeline),
-        }
+        let mut database = Self::default();
+        database.timeline = Arc::clone(timeline);
+        database
     }
 }
 
@@ -310,6 +307,11 @@ impl ScriptedDatabase {
     }
 }
 
+fn pop_step<T>(steps: &Mutex<VecDeque<T>>) -> Option<T> {
+    let mut queue = lock(steps);
+    queue.pop_front()
+}
+
 impl KeyReadDatabase for ScriptedDatabase {
     fn read_row<'lookup>(
         &'lookup self,
@@ -322,9 +324,7 @@ impl KeyReadDatabase for ScriptedDatabase {
         };
         lock(&self.row_calls).push(recorded);
         lock(&self.timeline).push(String::from("read"));
-        let next = lock(&self.rows)
-            .pop_front()
-            .unwrap_or(Ok::<Option<JsonData>, DbError>(None));
+        let next = pop_step(&self.rows).unwrap_or(Ok::<Option<JsonData>, DbError>(None));
         Box::pin(async move { next })
     }
 
@@ -334,15 +334,13 @@ impl KeyReadDatabase for ScriptedDatabase {
         _now: DateTime<Utc>,
         use_writer: bool,
     ) -> DeprecatedFuture<'lookup> {
+        let next =
+            pop_step(&self.deprecated).unwrap_or(Ok::<Option<DeprecatedToken>, DbError>(None));
         let recorded = RecordedGraceCall {
             hash: hash.expose_secret().to_owned(),
             use_writer,
         };
         lock(&self.grace_calls).push(recorded);
-        lock(&self.timeline).push(String::from("deprecated"));
-        let next = lock(&self.deprecated)
-            .pop_front()
-            .unwrap_or(Ok::<Option<DeprecatedToken>, DbError>(None));
         Box::pin(async move { next })
     }
 }
@@ -358,6 +356,7 @@ pub(crate) struct RecordedReconnect {
     pub(crate) stale_is_live: bool,
 }
 
+#[derive(Default)]
 pub(crate) struct ScriptedReconnect {
     pub(crate) generation: u64,
     pub(crate) handle: Option<Arc<u64>>,
@@ -369,14 +368,12 @@ pub(crate) struct ScriptedReconnect {
 
 impl ScriptedReconnect {
     pub(crate) fn shared(generation: u64, handle: Option<Arc<u64>>, timeline: &Timeline) -> Self {
-        Self {
-            generation,
-            handle,
-            last_observed: Mutex::new(generation),
-            results: Mutex::new(VecDeque::new()),
-            requests: Mutex::new(Vec::new()),
-            timeline: Arc::clone(timeline),
-        }
+        let mut reconnect = Self::default();
+        reconnect.generation = generation;
+        reconnect.handle = handle;
+        reconnect.last_observed = Mutex::new(generation);
+        reconnect.timeline = Arc::clone(timeline);
+        reconnect
     }
 
     pub(crate) fn requests(&self) -> Vec<RecordedReconnect> {
