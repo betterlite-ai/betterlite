@@ -11,7 +11,7 @@ use tokio_postgres::Row;
 use crate::auth_read::include::{Including, IncludingQuery, SelectingTable, UserInclude};
 use crate::auth_read::jwt_rows::{JwtMappingFilter, JwtRows};
 use crate::auth_read::repository::RepositoryTable;
-use crate::auth_read::table::{AuthTable, Create, FindMany, FindOne, Presence};
+use crate::auth_read::table::{AuthTable as _, Create, FindMany, FindOne, Presence};
 use crate::auth_read::user_rows::{UserCreate, UserEmailFilter, UserRows};
 
 use super::support::{assert_connect, native_key};
@@ -106,7 +106,7 @@ impl Table for RecordingTable {
         }
     }
 
-    fn membership(&self, _column: KeyColumn<Infallible>) -> &str {
+    fn membership(&self, _column: KeyColumn<Infallible>) -> &'static str {
         "membership"
     }
 }
@@ -171,15 +171,30 @@ fn user_create() -> UserCreate {
     }
 }
 
-#[tokio::test]
-async fn native_adapter_forwards_relations_and_first_filter() {
+fn recording_repository() -> (
+    RepositoryTable<deadpool_postgres::Client, RecordingTable>,
+    Arc<Mutex<Vec<Observed>>>,
+) {
     let observed = Arc::new(Mutex::new(Vec::new()));
-    let repository: RepositoryTable<deadpool_postgres::Client, RecordingTable> = RepositoryTable {
+    let repository = RepositoryTable {
         client: None,
         table: RecordingTable {
             observed: Arc::clone(&observed),
         },
     };
+    (repository, observed)
+}
+
+fn observed_calls(observed: &Mutex<Vec<Observed>>) -> Vec<Observed> {
+    observed
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+#[tokio::test]
+async fn native_adapter_forwards_relations_and_first_filter() {
+    let (repository, observed) = recording_repository();
     let include = Presence::Value(UserInclude {
         organization_memberships: true,
     });
@@ -200,6 +215,25 @@ async fn native_adapter_forwards_relations_and_first_filter() {
             })
             .await,
     );
+    assert_eq!(
+        observed_calls(&observed),
+        vec![
+            Observed::Key { memberships: true },
+            Observed::List {
+                filter: Some(filter),
+                take: Some(1),
+                memberships: true,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn native_adapter_forwards_list_take_and_create() {
+    let (repository, observed) = recording_repository();
+    let include = Presence::Value(UserInclude {
+        organization_memberships: true,
+    });
     assert_connect(
         repository
             .find_many(FindMany {
@@ -210,19 +244,9 @@ async fn native_adapter_forwards_relations_and_first_filter() {
             .await,
     );
     assert_connect(repository.create(Create { data: (), include }).await);
-    let calls = observed
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
     assert_eq!(
-        calls,
+        observed_calls(&observed),
         vec![
-            Observed::Key { memberships: true },
-            Observed::List {
-                filter: Some(filter),
-                take: Some(1),
-                memberships: true,
-            },
             Observed::List {
                 filter: None,
                 take: Some(7),
@@ -268,39 +292,48 @@ fn native_user_include_selects_membership_relations() {
     assert!(created.sql.contains("INSERT INTO \"LiteLLM_UserTable\""));
     assert!(created.sql.contains("\"LiteLLM_OrganizationMembership\""));
     assert_eq!(created.parameters.len(), 16);
+}
+
+#[test]
+fn native_user_plain_selection_keeps_statements() {
+    let user_id = "user-1";
     let plain = SelectingTable {
         table: UserRows,
         include: None,
         limit: None,
     };
-    let plain_by_id = plain.keyed(
+    let by_id = plain.keyed(
         KeyAction::Find,
         Key {
             column: KeyColumn::Id,
             value: &user_id,
         },
     );
-    assert!(!plain_by_id.sql.contains("OrganizationMembership"));
+    assert!(!by_id.sql.contains("OrganizationMembership"));
+    let listed = plain.list(RowsFindMany {
+        filter: None,
+        order: None,
+        skip: None,
+        take: None,
+    });
     assert_eq!(
-        plain
-            .list(RowsFindMany {
-                filter: None,
-                order: None,
-                skip: None,
-                take: None,
-            })
-            .sql,
-        "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry LIMIT $1",
+        listed.sql, "SELECT row_to_json(entry)::text FROM \"LiteLLM_UserTable\" AS entry LIMIT $1",
         "no selection keeps the plain list statement"
     );
-    let plain_insert = plain.insert(&data);
-    assert!(!plain_insert.sql.contains("OrganizationMembership"));
-    assert_eq!(plain_insert.parameters.len(), 16);
+    let data = user_create();
+    let inserted = plain.insert(&data);
+    assert!(!inserted.sql.contains("OrganizationMembership"));
+    assert_eq!(inserted.parameters.len(), 16);
     assert_eq!(
         plain.count(None).sql,
         "SELECT count(*) FROM \"LiteLLM_UserTable\""
     );
     assert!(plain.membership(KeyColumn::Id).contains("ANY("));
+}
+
+#[test]
+fn native_user_include_false_is_plain() {
+    let user_id = "user-1";
     let unselected = SelectingTable {
         table: UserRows,
         include: Some(UserInclude {
@@ -308,14 +341,14 @@ fn native_user_include_selects_membership_relations() {
         }),
         limit: None,
     };
-    let unselected_by_id = unselected.keyed(
+    let by_id = unselected.keyed(
         KeyAction::Find,
         Key {
             column: KeyColumn::Id,
             value: &user_id,
         },
     );
-    assert!(!unselected_by_id.sql.contains("OrganizationMembership"));
+    assert!(!by_id.sql.contains("OrganizationMembership"));
 }
 
 #[test]
@@ -325,13 +358,12 @@ fn native_email_filters_choose_the_statement() {
         include: None,
         limit: Some(1),
     };
-    let filter = UserEmailFilter {
+    let insensitive_filters = [UserEmailFilter {
         address: Some("user@example.com".to_owned()),
         insensitive: true,
-    };
-    let filters = [filter];
+    }];
     let insensitive = table.list(RowsFindMany {
-        filter: Some(&filters[..]),
+        filter: Some(&insensitive_filters[..]),
         order: None,
         skip: None,
         take: None,
@@ -343,12 +375,12 @@ fn native_email_filters_choose_the_statement() {
     );
     assert!(insensitive.sql.ends_with("LIMIT $2"));
     assert_eq!(insensitive.parameters.len(), 2);
-    let exact = [UserEmailFilter {
+    let exact_filters = [UserEmailFilter {
         address: Some("user@example.com".to_owned()),
         insensitive: false,
     }];
     let exact_match = table.list(RowsFindMany {
-        filter: Some(&exact[..]),
+        filter: Some(&exact_filters[..]),
         order: None,
         skip: None,
         take: None,
@@ -356,6 +388,15 @@ fn native_email_filters_choose_the_statement() {
     assert!(exact_match.sql.contains("entry.\"user_email\" = $1"));
     assert!(!exact_match.sql.contains("LOWER"));
     assert_eq!(exact_match.parameters.len(), 2);
+}
+
+#[test]
+fn native_email_filter_without_address_is_unfiltered() {
+    let table = SelectingTable {
+        table: UserRows,
+        include: None,
+        limit: Some(1),
+    };
     let matching = [UserEmailFilter {
         address: None,
         insensitive: false,

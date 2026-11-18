@@ -3,6 +3,7 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::rows::KeyColumn;
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -14,7 +15,7 @@ use tokio_postgres::NoTls;
 use crate::auth_read::include::UserInclude;
 use crate::auth_read::jwt_rows::{JwtMappingFilter, JwtRows};
 use crate::auth_read::repository::{NativeKey, RepositoryTable};
-use crate::auth_read::table::{AuthTable, Create, FindMany, FindOne, Presence};
+use crate::auth_read::table::{AuthTable as _, Create, FindMany, FindOne, Presence};
 use crate::auth_read::user_rows::{UserCreate, UserEmailFilter, UserRows};
 
 const SEED: &str = r#"
@@ -99,6 +100,16 @@ fn user_create() -> UserCreate {
     }
 }
 
+fn membership_count(users: &[LiteLLMUserTable], user_id: &str) -> Option<usize> {
+    users
+        .iter()
+        .find(|user| user.user_id == user_id)
+        .expect("the seeded user")
+        .organization_memberships
+        .as_ref()
+        .map(Vec::len)
+}
+
 #[tokio::test]
 async fn native_user_reads_select_requested_memberships() {
     let (fixture, pool) = database().await;
@@ -109,13 +120,12 @@ async fn native_user_reads_select_requested_memberships() {
             client: Some(Arc::new(client)),
             table: UserRows,
         };
-        let include = Presence::Value(UserInclude {
-            organization_memberships: true,
-        });
         let found = repository
             .find_unique(FindOne {
                 filter: key("user-1"),
-                include,
+                include: Presence::Value(UserInclude {
+                    organization_memberships: true,
+                }),
             })
             .await
             .expect("the user read")
@@ -126,39 +136,6 @@ async fn native_user_reads_select_requested_memberships() {
         assert_eq!(memberships.len(), 1);
         assert_eq!(memberships[0].organization_id, "org-1");
         assert_eq!(memberships[0].user_role.as_deref(), Some("admin"));
-        let listed = repository
-            .find_many(FindMany {
-                filter: Presence::Omitted,
-                include,
-                take: Presence::Omitted,
-            })
-            .await
-            .expect("the user list");
-        assert_eq!(listed.len(), 2);
-        let first = listed
-            .iter()
-            .find(|user| user.user_id == "user-1")
-            .expect("the seeded user");
-        assert_eq!(
-            first
-                .organization_memberships
-                .as_ref()
-                .expect("the included memberships")
-                .len(),
-            1
-        );
-        let second = listed
-            .iter()
-            .find(|user| user.user_id == "user-2")
-            .expect("the seeded user");
-        assert_eq!(
-            second
-                .organization_memberships
-                .as_ref()
-                .expect("the empty membership list")
-                .len(),
-            0
-        );
         let plain = repository
             .find_unique(FindOne {
                 filter: key("user-2"),
@@ -167,8 +144,35 @@ async fn native_user_reads_select_requested_memberships() {
             .await
             .expect("the plain read")
             .expect("the stored user");
-        assert!(plain.organization_memberships.is_none());
-    }
+        assert!(plain.organization_memberships.is_none())
+    };
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn native_user_list_selects_requested_memberships() {
+    let (fixture, pool) = database().await;
+    seed(&pool).await;
+    {
+        let client = pool.get().await.expect("the database connection");
+        let repository: RepositoryTable<Client, _> = RepositoryTable {
+            client: Some(Arc::new(client)),
+            table: UserRows,
+        };
+        let listed = repository
+            .find_many(FindMany {
+                filter: Presence::Omitted,
+                include: Presence::Value(UserInclude {
+                    organization_memberships: true,
+                }),
+                take: Presence::Omitted,
+            })
+            .await
+            .expect("the user list");
+        assert_eq!(listed.len(), 2);
+        assert_eq!(membership_count(&listed, "user-1"), Some(1));
+        assert_eq!(membership_count(&listed, "user-2"), Some(0))
+    };
     close(fixture, pool).await;
 }
 
@@ -199,8 +203,8 @@ async fn native_first_returns_one_of_several_rows() {
             .await
             .expect("the keyed read")
             .expect("the stored user");
-        assert_eq!(unique.user_id, "user-2");
-    }
+        assert_eq!(unique.user_id, "user-2")
+    };
     close(fixture, pool).await;
 }
 
@@ -234,7 +238,21 @@ async fn native_email_filter_selects_one_user() {
                 .expect("the included memberships")
                 .len(),
             1
-        );
+        )
+    };
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn native_email_filter_returns_none_when_missing() {
+    let (fixture, pool) = database().await;
+    seed(&pool).await;
+    {
+        let client = pool.get().await.expect("the database connection");
+        let repository: RepositoryTable<Client, _> = RepositoryTable {
+            client: Some(Arc::new(client)),
+            table: UserRows,
+        };
         let missing = repository
             .find_first(FindOne {
                 filter: UserEmailFilter {
@@ -245,8 +263,8 @@ async fn native_email_filter_selects_one_user() {
             })
             .await
             .expect("the missing read");
-        assert!(missing.is_none());
-    }
+        assert!(missing.is_none())
+    };
     close(fixture, pool).await;
 }
 
@@ -281,8 +299,8 @@ async fn native_membership_list_applies_take() {
             })
             .await
             .expect("a zero take keeps its meaning");
-        assert!(empty.is_empty());
-    }
+        assert!(empty.is_empty())
+    };
     close(fixture, pool).await;
 }
 
@@ -324,8 +342,8 @@ async fn native_create_binds_user_and_returns_memberships() {
             .await
             .expect("the stored user read")
             .expect("the stored user");
-        assert_eq!(stored.user_email.as_deref(), Some("third@example.com"));
-    }
+        assert_eq!(stored.user_email.as_deref(), Some("third@example.com"))
+    };
     close(fixture, pool).await;
 }
 
@@ -368,7 +386,7 @@ async fn native_jwt_filter_returns_mapping() {
             })
             .await
             .expect("the inactive read");
-        assert!(inactive.is_none());
-    }
+        assert!(inactive.is_none())
+    };
     close(fixture, pool).await;
 }

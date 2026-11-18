@@ -70,7 +70,7 @@ struct DatabaseFacts<'error> {
     constraint: Option<&'error str>,
 }
 
-fn database_facts<'a>(failure: &'a (dyn Error + 'static)) -> Option<DatabaseFacts<'a>> {
+fn database_facts<'error>(failure: &'error (dyn Error + 'static)) -> Option<DatabaseFacts<'error>> {
     let mut link = failure;
     loop {
         if let Some(error) = link

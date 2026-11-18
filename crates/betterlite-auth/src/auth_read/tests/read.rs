@@ -1,5 +1,5 @@
 use std::error::Error;
-use std::future::{Future, poll_fn};
+use std::future::{Future as _, poll_fn};
 use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
@@ -12,7 +12,7 @@ use tokio::time::timeout;
 use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::repository::RepositoryTable;
 use crate::auth_read::table::{
-    AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, Update,
+    AuthReadError, AuthTable as _, Create, FindMany, FindOne, Presence, Update,
 };
 use crate::auth_read::user_rows::{UserCreate, UserEmailFilter, UserRows};
 
@@ -127,53 +127,67 @@ async fn fixed_lookup_labels(#[case] adapter: AuthReadAdapter, #[case] label: &s
     harness.drain().await;
 }
 
+struct Requests {
+    unique: FindOne<Fields, Fields>,
+    first: FindOne<Fields, Fields>,
+    omitted: FindMany<Fields, Fields>,
+    null: FindMany<Fields, Fields>,
+    values: FindMany<Fields, Fields>,
+}
+
+fn requests() -> Requests {
+    let include = Fields::from([("litellm_budget_table".to_owned(), "true".to_owned())]);
+    Requests {
+        unique: FindOne {
+            filter: filter(),
+            include: Presence::Omitted,
+        },
+        first: FindOne {
+            filter: filter(),
+            include: Presence::Null,
+        },
+        omitted: FindMany {
+            filter: Presence::Omitted,
+            include: Presence::Omitted,
+            take: Presence::Omitted,
+        },
+        null: FindMany {
+            filter: Presence::Null,
+            include: Presence::Null,
+            take: Presence::Null,
+        },
+        values: FindMany {
+            filter: Presence::Value(filter()),
+            include: Presence::Value(include),
+            take: Presence::Value(0),
+        },
+    }
+}
+
 #[tokio::test]
 async fn kwargs_omission_vs_null() {
     let harness = Harness::new();
     let repo = recording_repo(Mode::Row);
     let table = AuthReadAdapter::Tag.open(Arc::clone(&repo), String::new(), harness.context(5.0));
-    let include = Fields::from([("litellm_budget_table".to_owned(), "true".to_owned())]);
-    let unique_request = FindOne {
-        filter: filter(),
-        include: Presence::Omitted,
-    };
-    let first_request = FindOne {
-        filter: filter(),
-        include: Presence::Null,
-    };
-    let omitted_request = FindMany {
-        filter: Presence::Omitted,
-        include: Presence::Omitted,
-        take: Presence::Omitted,
-    };
-    let null_request = FindMany {
-        filter: Presence::Null,
-        include: Presence::Null,
-        take: Presence::Null,
-    };
-    let values_request = FindMany {
-        filter: Presence::Value(filter()),
-        include: Presence::Value(include),
-        take: Presence::Value(0),
-    };
+    let requests = requests();
     let unique = table
-        .find_unique(unique_request.clone())
+        .find_unique(requests.unique.clone())
         .await
         .expect("the tag read succeeds");
     let first = table
-        .find_first(first_request.clone())
+        .find_first(requests.first.clone())
         .await
         .expect("the tag read succeeds");
     let omitted = table
-        .find_many(omitted_request.clone())
+        .find_many(requests.omitted.clone())
         .await
         .expect("the tag read succeeds");
     let null = table
-        .find_many(null_request.clone())
+        .find_many(requests.null.clone())
         .await
         .expect("the tag read succeeds");
     let values = table
-        .find_many(values_request.clone())
+        .find_many(requests.values.clone())
         .await
         .expect("the tag read succeeds");
     assert!(unique.is_some());
@@ -184,11 +198,11 @@ async fn kwargs_omission_vs_null() {
     assert_eq!(
         repo.calls(),
         vec![
-            RecordedCall::FindUnique(unique_request),
-            RecordedCall::FindFirst(first_request),
-            RecordedCall::FindMany(omitted_request),
-            RecordedCall::FindMany(null_request),
-            RecordedCall::FindMany(values_request),
+            RecordedCall::FindUnique(requests.unique),
+            RecordedCall::FindFirst(requests.first),
+            RecordedCall::FindMany(requests.omitted),
+            RecordedCall::FindMany(requests.null),
+            RecordedCall::FindMany(requests.values),
         ]
     );
 }
@@ -297,8 +311,8 @@ async fn read_cancel_propagates() {
         })
         .await;
         yield_now().await;
-        assert!(!repo.dropped());
-    }
+        assert!(!repo.dropped())
+    };
     yield_now().await;
     assert!(repo.dropped());
     harness.drain().await;
@@ -385,6 +399,37 @@ async fn repository_composes_with_native_table() {
     );
     assert_connect(
         table
+            .update(Update {
+                filter: native_key(),
+                data: UserCreate::default(),
+            })
+            .await,
+    );
+    assert_connect(
+        table
+            .create(Create {
+                data: UserCreate::default(),
+                include: Presence::Omitted,
+            })
+            .await,
+    );
+    harness.drain().await;
+}
+
+#[tokio::test]
+async fn repository_composes_with_native_reads() {
+    let harness = Harness::new();
+    let repository: RepositoryTable<deadpool_postgres::Client, _> = RepositoryTable {
+        client: None,
+        table: UserRows,
+    };
+    let table = AuthReadAdapter::Team.open(
+        Arc::new(repository),
+        "team".to_owned(),
+        harness.context(5.0),
+    );
+    assert_connect(
+        table
             .find_unique(FindOne {
                 filter: native_key(),
                 include: Presence::Omitted,
@@ -405,22 +450,6 @@ async fn repository_composes_with_native_table() {
                 filter: Presence::Omitted,
                 include: Presence::Omitted,
                 take: Presence::Omitted,
-            })
-            .await,
-    );
-    assert_connect(
-        table
-            .update(Update {
-                filter: native_key(),
-                data: UserCreate::default(),
-            })
-            .await,
-    );
-    assert_connect(
-        table
-            .create(Create {
-                data: UserCreate::default(),
-                include: Presence::Omitted,
             })
             .await,
     );

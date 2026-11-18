@@ -122,7 +122,6 @@ pub(super) enum RecordedCall {
 pub(super) enum Mode {
     #[default]
     Row,
-    Missing,
     Error,
     Elapsed,
     Pending,
@@ -190,25 +189,16 @@ impl RecordingRepo {
             Mode::Elapsed => Err(AuthReadError::Lookup(DbLookupError::Elapsed(
                 elapsed().await,
             ))),
-            Mode::Row | Mode::Missing => Ok(ready),
+            Mode::Row => Ok(ready),
         }
     }
 
     async fn reply_one(&self) -> Result<Option<RichRow>, AuthReadError<RowDecodeError>> {
-        if matches!(self.mode, Mode::Missing) {
-            return self.reply(None).await;
-        }
         self.reply(Some(self.row.clone())).await
     }
 
     async fn reply_many(&self) -> Result<Vec<RichRow>, AuthReadError<RowDecodeError>> {
-        let ready = match self.mode {
-            Mode::Missing => Vec::new(),
-            Mode::Row | Mode::Error | Mode::Elapsed | Mode::Pending | Mode::Delayed => {
-                self.rows.clone()
-            }
-        };
-        self.reply(ready).await
+        self.reply(self.rows.clone()).await
     }
 
     async fn reply_created(&self) -> Result<RichRow, AuthReadError<RowDecodeError>> {
@@ -394,12 +384,12 @@ impl Logs {
 }
 
 impl io::Write for Logs {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

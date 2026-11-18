@@ -9,7 +9,7 @@ use crate::auth_read::adapter::AuthReadAdapter;
 use crate::auth_read::membership::{
     SharedMembershipLoad, member_allowed_models, membership_from_shared_load,
 };
-use crate::auth_read::table::{AuthTable, FindOne, Presence};
+use crate::auth_read::table::{AuthTable as _, FindOne, Presence};
 
 use super::support::{Fields, Harness, Mode, recording_repo, recording_row_repo, rich_row};
 
