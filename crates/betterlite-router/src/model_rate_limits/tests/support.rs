@@ -1,0 +1,268 @@
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use async_trait::async_trait;
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use betterlite_tokenizer::reservation::RequestBody;
+
+use crate::deployment_identity::spec::DeploymentSpec;
+use crate::io_token_reservations::clock::IoClock;
+use crate::io_token_reservations::error::IoPreCallError;
+use crate::io_token_reservations::limits::IoDeployment;
+use crate::io_token_reservations::reservation::IoReservation;
+use crate::model_rate_limits::cache::{RateLimitCache, RemoteRead};
+use crate::model_rate_limits::error::{ModelRateLimitError, RateLimitExceeded};
+use crate::model_rate_limits::service::{IoTokenReservationHook, ModelRateLimits};
+
+pub(crate) const NOW_MILLIS: u64 = 1_700_000_000_000;
+pub(crate) const MINUTE: &str = "22-13";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RemoteMode {
+    Up,
+    Breaker,
+    Down,
+}
+
+// The in-memory and Redis tiers of LiteLLM's DualCache, each a key-value map the test seeds and reads back
+pub(super) struct FakeCache {
+    pub local: Mutex<BTreeMap<String, i64>>,
+    pub remote: Mutex<BTreeMap<String, i64>>,
+    pub mode: RemoteMode,
+    pub has_remote: bool,
+    pub remote_reads: AtomicUsize,
+}
+
+impl FakeCache {
+    pub fn new() -> Self {
+        Self {
+            local: Mutex::new(BTreeMap::new()),
+            remote: Mutex::new(BTreeMap::new()),
+            mode: RemoteMode::Up,
+            has_remote: true,
+            remote_reads: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn without_remote() -> Self {
+        Self {
+            has_remote: false,
+            ..Self::new()
+        }
+    }
+
+    pub fn seed_local(self, key: &str, value: i64) -> Self {
+        self.local
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
+        self
+    }
+
+    pub fn seed_remote(self, key: &str, value: i64) -> Self {
+        self.remote
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(key.to_owned(), value);
+        self
+    }
+
+    pub fn mode(self, mode: RemoteMode) -> Self {
+        Self { mode, ..self }
+    }
+
+    pub fn local_value(&self, key: &str) -> Option<i64> {
+        self.local
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .copied()
+    }
+
+    pub fn remote_value(&self, key: &str) -> Option<i64> {
+        self.remote
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(key)
+            .copied()
+    }
+}
+
+#[async_trait]
+impl RateLimitCache for FakeCache {
+    fn local(&self, key: &str) -> Option<i64> {
+        self.local_value(key)
+    }
+
+    fn has_remote(&self) -> bool {
+        self.has_remote
+    }
+
+    async fn remote(&self, key: &str) -> RemoteRead {
+        self.remote_reads.fetch_add(1, Ordering::SeqCst);
+        match self.mode {
+            RemoteMode::Up => RemoteRead::Value(self.remote_value(key)),
+            RemoteMode::Breaker => RemoteRead::BreakerOpen,
+            RemoteMode::Down => RemoteRead::Failed,
+        }
+    }
+
+    fn increment_local(&self, key: &str, by: i64, _ttl_seconds: u64) -> Option<i64> {
+        let mut local = self.local.lock().unwrap_or_else(PoisonError::into_inner);
+        let value = local.entry(key.to_owned()).or_insert(0);
+        *value = value.saturating_add(by);
+        Some(*value)
+    }
+
+    async fn increment(&self, key: &str, by: i64, ttl_seconds: u64) -> Option<i64> {
+        let local = self.increment_local(key, by, ttl_seconds);
+        if !self.has_remote || self.mode != RemoteMode::Up {
+            return local;
+        }
+        let mut remote = self.remote.lock().unwrap_or_else(PoisonError::into_inner);
+        let value = remote.entry(key.to_owned()).or_insert(0);
+        *value = value.saturating_add(by);
+        Some(*value)
+    }
+}
+
+#[derive(Debug, Default, Eq, PartialEq)]
+pub(super) struct HookCalls {
+    pub reserved: Vec<IoLimitsSeen>,
+    pub refunds: usize,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct IoLimitsSeen {
+    pub itpm: Option<i64>,
+    pub otpm: Option<i64>,
+}
+
+// The reservation B019's ITPM/OTPM part composes: it records the call and stashes a reservation in the request
+pub(super) struct FakeIo {
+    pub calls: Mutex<HookCalls>,
+}
+
+impl FakeIo {
+    pub fn new() -> Self {
+        Self {
+            calls: Mutex::new(HookCalls::default()),
+        }
+    }
+}
+
+#[async_trait]
+impl IoTokenReservationHook for FakeIo {
+    async fn reserve(
+        &self,
+        deployment: &IoDeployment<'_>,
+        request: &mut RequestBody,
+    ) -> Result<Option<IoReservation>, IoPreCallError> {
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.reserved.push(IoLimitsSeen {
+            itpm: deployment.limits.itpm,
+            otpm: deployment.limits.otpm,
+        });
+        let reservation = IoReservation {
+            itpm_reserved: 1,
+            ..IoReservation::default()
+        };
+        request.insert(String::from("reserved"), Json::Bool(true));
+        Ok(Some(reservation))
+    }
+
+    fn refund(&self, _request: &mut RequestBody) {
+        let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
+        calls.refunds = calls.refunds.saturating_add(1);
+    }
+
+    async fn async_refund(&self, request: &mut RequestBody) {
+        self.refund(request);
+    }
+}
+
+pub(super) fn clock() -> IoClock {
+    Arc::new(|| UNIX_EPOCH + Duration::from_millis(NOW_MILLIS))
+}
+
+pub(super) fn spec(group: &str, id: &str, model: &str) -> DeploymentSpec {
+    let mut params = JsonObject::new();
+    params.insert(String::from("model"), Json::Text(model.to_owned()));
+    let mut info = JsonObject::new();
+    info.insert(String::from("id"), Json::Text(id.to_owned()));
+    DeploymentSpec {
+        model_name: group.to_owned(),
+        litellm_params: params,
+        model_info: info,
+        extra: JsonObject::new(),
+    }
+}
+
+pub(super) fn with_param(
+    mut deployment: DeploymentSpec,
+    field: &str,
+    value: i64,
+) -> DeploymentSpec {
+    deployment
+        .litellm_params
+        .insert(field.to_owned(), Json::Number(value.into()));
+    deployment
+}
+
+pub(super) fn with_info(
+    mut deployment: DeploymentSpec,
+    field: &str,
+    value: Json,
+) -> DeploymentSpec {
+    deployment.model_info.insert(field.to_owned(), value);
+    deployment
+}
+
+pub(super) fn with_extra(
+    mut deployment: DeploymentSpec,
+    field: &str,
+    value: Json,
+) -> DeploymentSpec {
+    deployment.extra.insert(field.to_owned(), value);
+    deployment
+}
+
+pub(super) fn request() -> RequestBody {
+    RequestBody::new()
+}
+
+pub(super) fn service(cache: Arc<FakeCache>, io: Option<Arc<FakeIo>>) -> ModelRateLimits {
+    let hook: Option<Arc<dyn IoTokenReservationHook>> =
+        io.map(|hook| Arc::clone(&hook) as Arc<dyn IoTokenReservationHook>);
+    ModelRateLimits::new(cache, hook, clock())
+}
+
+pub(super) fn tpm_key(model: &str) -> String {
+    format!("a:{model}:tpm:{MINUTE}")
+}
+
+pub(super) fn rpm_key(model: &str) -> String {
+    format!("a:{model}:rpm:{MINUTE}")
+}
+
+pub(super) fn exceeded(error: ModelRateLimitError) -> RateLimitExceeded {
+    match error {
+        ModelRateLimitError::Exceeded(exceeded) => exceeded,
+        other @ (ModelRateLimitError::Limit { .. } | ModelRateLimitError::IoToken(_)) => {
+            panic!("expected a rate limit, got {other}")
+        }
+    }
+}
+
+pub(super) fn run_case_table(name: &str, cases: &[(&'static str, fn())]) {
+    for (case_name, run) in cases {
+        if *case_name == name {
+            run();
+            return;
+        }
+    }
+    panic!("unknown case {name}");
+}
