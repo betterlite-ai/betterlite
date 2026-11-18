@@ -10,7 +10,7 @@ pub enum RoutingStateError {
         #[from]
         source: StateStoreError,
     },
-    #[error("the in-memory routing store failed")]
+    #[error("the in-memory routing store failed: {source}")]
     Local {
         #[from]
         source: StoreError,

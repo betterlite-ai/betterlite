@@ -240,7 +240,7 @@ where
     let route_key = RouteKey::parse(key).ok()?;
     match state.local.get(&route_key) {
         Ok(StoreRead::Value(RouteValue::Counter(value))) => Some(value),
-        Ok(StoreRead::Value(RouteValue::Spend(value))) => value.to_i64(),
+        Ok(StoreRead::Value(RouteValue::Spend(value))) if value.fract().is_zero() => value.to_i64(),
         Ok(StoreRead::Value(_) | StoreRead::Missing) => None,
         Err(error) => {
             tracing::warn!(%error, "a routing counter could not be read");
