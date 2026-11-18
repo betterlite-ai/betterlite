@@ -1,0 +1,10 @@
+model_list:
+  - model_name: usage-v2-model
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: sk-usage-v2
+
+router_settings:
+  routing_strategy: usage-based-routing-v2
+  routing_strategy_args:
+    ttl: 120
