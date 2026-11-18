@@ -11,7 +11,7 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedSender;
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, accept_async};
 
 pub(crate) type Timeline = Arc<Mutex<Vec<String>>>;
@@ -118,8 +118,8 @@ impl RealtimeBackend for WireBackend {
             .locked()
             .begin("the scripted backend send failed")?;
         let frame = match message {
-            RealtimeMessage::Text(text) => Message::Text(text.into()),
-            RealtimeMessage::Binary(data) => Message::Binary(data.into()),
+            RealtimeMessage::Text(text) => Message::Text(Utf8Bytes::from(text)),
+            RealtimeMessage::Binary(data) => Message::Binary(Bytes::from(data)),
         };
         self.socket
             .send(frame)

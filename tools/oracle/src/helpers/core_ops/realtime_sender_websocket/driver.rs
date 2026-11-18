@@ -14,6 +14,7 @@ use betterlite_core::api::realtime_session_state::{
     ConnectionSetup, RealtimeProviderConfig, RealtimeStreaming,
 };
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -182,34 +183,30 @@ where
 {
     match result {
         Ok(sent) => json!({ "ok": sent }),
-        Err(error) => json!({ "error": label(&error) }),
+        Err(error) => {
+            let label = match error {
+                RealtimeSenderError::Backend { .. } => "backend",
+                RealtimeSenderError::Client { .. } => "client",
+                RealtimeSenderError::Transform { .. } => "transform",
+                RealtimeSenderError::Predicate { .. } => "predicate",
+                RealtimeSenderError::SessionUpdateNotObject => "non-object",
+                RealtimeSenderError::GuardrailSetup { .. }
+                | RealtimeSenderError::Disable { .. }
+                | RealtimeSenderError::BackendMissing
+                | RealtimeSenderError::ClientMissing
+                | RealtimeSenderError::Beta { .. }
+                | RealtimeSenderError::Encode { .. } => "other",
+            };
+            json!({ "error": label })
+        }
     }
 }
 
-fn label<ConfigError>(error: &RealtimeSenderError<ConfigError, ScriptError>) -> &'static str
-where
-    ConfigError: std::error::Error + 'static,
-{
-    match error {
-        RealtimeSenderError::Backend { .. } => "backend",
-        RealtimeSenderError::Client { .. } => "client",
-        RealtimeSenderError::Transform { .. } => "transform",
-        RealtimeSenderError::Predicate { .. } => "predicate",
-        RealtimeSenderError::SessionUpdateNotObject => "non-object",
-        RealtimeSenderError::GuardrailSetup { .. }
-        | RealtimeSenderError::Disable { .. }
-        | RealtimeSenderError::BackendMissing
-        | RealtimeSenderError::ClientMissing
-        | RealtimeSenderError::Beta { .. }
-        | RealtimeSenderError::Encode { .. } => "other",
-    }
-}
-
-fn settle(
-    receiver: &mut UnboundedReceiver<Recorded>,
-    received: &mut Vec<Recorded>,
+fn settle<'driver>(
+    receiver: &'driver mut UnboundedReceiver<Recorded>,
+    received: &'driver mut Vec<Recorded>,
     delivered: usize,
-) -> DriverFuture<'_, ()> {
+) -> DriverFuture<'driver, ()> {
     Box::pin(async move {
         while received.len() < delivered {
             let next = timeout(SETTLE, receiver.recv()).await.map_err(|_elapsed| {
