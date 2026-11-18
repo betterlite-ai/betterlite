@@ -16,10 +16,11 @@ deviations:
       reports it on the gateway's tracing instead of leaving it unreported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L56-L66
   - what: >-
-      A lookup that outlives its deadline and later ends in a panic logs at debug, where LiteLLM's
+      A lookup that outlives its deadline and later fails or panics logs at debug, where LiteLLM's
       _consume_abandoned_lookup only retrieves the exception to silence the loop's report.
     why: >-
       Retrieving the exception is how Python suppresses the unhandled-task report; betterlite has no
-      such report, and a panicking lookup is the one abandoned outcome worth a trace at debug.
+      such report, so an abandoned failure or panic is traced at debug instead of being dropped
+      without a trace.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L60-L62
 kept_bugs: []
