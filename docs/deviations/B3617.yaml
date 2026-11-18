@@ -1,0 +1,38 @@
+task: B3617
+deviations:
+  - what: >-
+      A config pass-through endpoint without an id gets a generated UUID on every read, so two reads of the same config
+      file answer different ids. LiteLLM assigns the id once, while registering the endpoint at startup, and every
+      later read returns that same id.
+    why: >-
+      betterlite builds the response from the loaded config on each request and never writes the id back into the
+      config. The route answers an endpoint_id lookup from the database only, so nothing can resolve a config endpoint
+      by the id a read handed out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3261-L3262
+  - what: >-
+      A stored pass_through_endpoints value that is not a JSON list answers 500 with betterlite's internal error body.
+      LiteLLM iterates whatever the value holds: a dict or a string yields keys or characters that are no endpoints, so
+      the answer holds an empty database list, while a number raises an uncaught TypeError.
+    why: >-
+      The write routes store a list, and docs/compatibility.md has betterlite reject a value the shape can't hold
+      instead of copying Python's duck typing. The read reports it as an internal error because the bad value entered
+      through the database, not through a request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3477-L3488
+  - what: >-
+      A team's allowed_passthrough_routes that is not a JSON list answers 500 with betterlite's internal error body.
+      LiteLLM tests membership in whatever the value holds: a string matches endpoint paths as substrings and a dict
+      matches them as keys, so the route answers a filtered list instead.
+    why: >-
+      The key is documented as a list of route paths, and docs/compatibility.md has betterlite reject a value the shape
+      can't hold instead of copying Python's duck typing. The write path that stores the metadata is where the shape
+      should hold; the read reports an internal error when it doesn't.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3537-L3546
+kept_bugs:
+  - what: >-
+      A failed general settings read answers no database endpoints and still returns the config endpoints with 200. The
+      read fails for a caller who is neither a proxy admin nor a proxy admin viewer, so an ordinary virtual key gets the
+      config endpoints only.
+    why: >-
+      LiteLLM wraps the get_config_general_settings call in a bare except and returns an empty list, and a setup whose
+      virtual keys call this route relies on the config list it gets back instead of a 400. B3617 keeps that catch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3464-L3471
