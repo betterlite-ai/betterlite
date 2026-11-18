@@ -238,7 +238,6 @@ fn bulk_add_answer(document: &JsonData) -> HelperResult {
         "max_budget_in_team": request.max_budget_in_team,
     }))
 }
-
 fn member_answer(member: &Member) -> Value {
     json!({"user_id": member.base.user_id, "user_email": member.base.user_email, "role": member.role})
 }

@@ -6,8 +6,10 @@ use rust_decimal::Decimal;
 
 use super::support::{object, parse};
 use crate::key_fields::values::{Amount, IndexPermission};
+use crate::team_request_contracts::bulk_members::TeamMemberRef;
 use crate::team_request_contracts::create::NewTeamRequest;
 use crate::team_request_contracts::shared::RequestProjection;
+use crate::team_request_contracts::team_list::TeamListEntry;
 use crate::team_request_contracts::values::{PositiveInt, ThroughputLimitType};
 
 const CREATE_FIELDS: &str = r#"{
@@ -198,6 +200,16 @@ fn non_object_documents_rejected() {
     let null = NewTeamRequest::from_value(&parse("null")).unwrap_err();
     assert_eq!(
         null.to_string(),
+        "Input should be a valid dictionary or object"
+    );
+    let member = TeamMemberRef::from_value(&parse("[1]")).unwrap_err();
+    assert_eq!(
+        member.to_string(),
+        "Input should be a valid dictionary or object"
+    );
+    let row = TeamListEntry::from_value(&parse("[1]")).unwrap_err();
+    assert_eq!(
+        row.to_string(),
         "Input should be a valid dictionary or object"
     );
 }
