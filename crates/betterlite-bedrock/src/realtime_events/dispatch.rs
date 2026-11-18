@@ -89,9 +89,21 @@ impl TransformState {
     // LiteLLM tests the ids for truth, so an empty one is absent to every completion decision below
     pub(super) fn response_state(&self) -> ResponseState {
         ResponseState {
-            output_item_id: non_empty(self.output_item_id.as_deref()),
-            response_id: non_empty(self.response_id.as_deref()),
-            conversation_id: non_empty(self.conversation_id.as_deref()),
+            output_item_id: self
+                .output_item_id
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned),
+            response_id: self
+                .response_id
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned),
+            conversation_id: self
+                .conversation_id
+                .as_deref()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned),
             delta_type: self.delta_type.map(CompletionDeltaType::from),
             delta_chunks: self
                 .delta_chunks
@@ -106,11 +118,6 @@ impl TransformState {
         self.response_id = state.response_id.clone();
         self.delta_type = state.delta_type.map(AllDeltaType::from);
     }
-}
-
-fn non_empty(value: Option<&str>) -> Option<String> {
-    let present = value.filter(|text| !text.is_empty());
-    present.map(str::to_owned)
 }
 
 fn delta_chunk(chunk: &Json) -> DeltaChunk {

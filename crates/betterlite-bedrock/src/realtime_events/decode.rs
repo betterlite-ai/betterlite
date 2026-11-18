@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::de::DeserializeOwned;
 use serde_json::error::Category;
 use serde_json::value::RawValue;
 
@@ -149,21 +148,39 @@ fn speech_or_end<'a>(event: &EventFields<'a>) -> Option<Branch<'a>> {
 fn payload(branch: Branch<'_>) -> Result<NativeEvent, EventError> {
     match branch {
         Branch::SessionStart => Ok(NativeEvent::SessionStart),
-        Branch::ContentStart(raw) => {
-            decode(raw, "contentStart").map(|event| NativeEvent::ContentStart(Box::new(event)))
-        }
-        Branch::TextOutput(raw) => decode(raw, "textOutput").map(NativeEvent::TextOutput),
-        Branch::AudioOutput(raw) => decode(raw, "audioOutput").map(NativeEvent::AudioOutput),
+        Branch::ContentStart(raw) => serde_json::from_str(raw.get())
+            .map(|event| NativeEvent::ContentStart(Box::new(event)))
+            .map_err(|source| EventError::Payload {
+                field: "contentStart",
+                source,
+            }),
+        Branch::TextOutput(raw) => serde_json::from_str(raw.get())
+            .map(NativeEvent::TextOutput)
+            .map_err(|source| EventError::Payload {
+                field: "textOutput",
+                source,
+            }),
+        Branch::AudioOutput(raw) => serde_json::from_str(raw.get())
+            .map(NativeEvent::AudioOutput)
+            .map_err(|source| EventError::Payload {
+                field: "audioOutput",
+                source,
+            }),
         Branch::ContentEnd(raw) => Ok(NativeEvent::ContentEnd(raw.get().to_owned())),
         Branch::UserSpeechStart => Ok(NativeEvent::UserSpeechStart),
         Branch::UserSpeechEnd => Ok(NativeEvent::UserSpeechEnd),
-        Branch::UsageEvent(raw) => decode(raw, "usageEvent").map(NativeEvent::UsageEvent),
-        Branch::ToolUse(raw) => decode(raw, "toolUse")
-            .map(|tool_use: ToolUse| NativeEvent::ToolUse(Box::new(ToolUseEvent { tool_use }))),
+        Branch::UsageEvent(raw) => serde_json::from_str(raw.get())
+            .map(NativeEvent::UsageEvent)
+            .map_err(|source| EventError::Payload {
+                field: "usageEvent",
+                source,
+            }),
+        Branch::ToolUse(raw) => serde_json::from_str(raw.get())
+            .map(|tool_use: ToolUse| NativeEvent::ToolUse(Box::new(ToolUseEvent { tool_use })))
+            .map_err(|source| EventError::Payload {
+                field: "toolUse",
+                source,
+            }),
         Branch::PromptEnd => Ok(NativeEvent::PromptEnd),
     }
-}
-
-fn decode<T: DeserializeOwned>(raw: &RawValue, field: &'static str) -> Result<T, EventError> {
-    serde_json::from_str(raw.get()).map_err(|source| EventError::Payload { field, source })
 }

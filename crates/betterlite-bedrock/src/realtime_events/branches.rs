@@ -23,7 +23,9 @@ impl RealtimeEvents<'_> {
     ) -> Result<Vec<Json>, EventError> {
         match event {
             NativeEvent::SessionStart => {
-                state.session_configuration_request = Some(session_start_marker());
+                // LiteLLM marks the session update as sent with json.dumps({"configured": True}) and never reads it back
+                let marker = IndexMap::from([("configured".to_owned(), Json::Bool(true))]);
+                state.session_configuration_request = Some(python_json::dumps_object(&marker));
                 Ok(Vec::new())
             }
             NativeEvent::ContentStart(content_start) => self.content_start(state, &content_start),
@@ -203,15 +205,11 @@ impl RealtimeEvents<'_> {
     }
 }
 
-// LiteLLM marks a session update as sent with json.dumps({"configured": True}) and never reads it back
-fn session_start_marker() -> String {
-    let marker = IndexMap::from([("configured".to_owned(), Json::Bool(true))]);
-    python_json::dumps_object(&marker)
-}
-
 fn event_json<T: Serialize>(event: &T) -> Result<Json, EventError> {
-    let value = serde_json::to_value(event).map_err(|source| EventError::Encode { source })?;
-    serde_json::from_value(value).map_err(|source| EventError::Encode { source })
+    serde_json::from_value(
+        serde_json::to_value(event).map_err(|source| EventError::Encode { source })?,
+    )
+    .map_err(|source| EventError::Encode { source })
 }
 
 fn events_json<T: Serialize>(events: &[T]) -> Result<Vec<Json>, EventError> {
