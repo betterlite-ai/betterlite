@@ -1,0 +1,32 @@
+model_list:
+  - model_name: complexity-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        tier_models:
+          SIMPLE: gpt-4o-mini
+          MEDIUM: gpt-4o
+          COMPLEX: claude-sonnet-4-20250514
+          REASONING: claude-sonnet-4-20250514
+        complexity_thresholds:
+          simple: 15
+          complex: 400
+        dimension_weights:
+          tokenCount: 0.1
+          codePresence: 0.3
+          reasoningMarkers: 0.25
+          technicalTerms: 0.25
+          simpleIndicators: 0.05
+          multiStepPatterns: 0.03
+          questionComplexity: 0.02
+        tier_boundaries:
+          simple_medium: 0.15
+          medium_complex: 0.35
+          complex_reasoning: 0.6
+        reasoning_override_min_score: 0.15
+        code_keywords: [function, class, api]
+        reasoning_keywords: [step by step, think through]
+        technical_keywords: [architecture, distributed]
+        custom_technical_keywords: [kubernetes]
+        simple_keywords: [hello, thanks]
+        default_model: gpt-4o
