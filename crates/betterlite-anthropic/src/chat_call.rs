@@ -25,7 +25,6 @@ use crate::usage::ReasoningTokenCounter;
 
 use config::ChatConfig;
 use error::ChatCallError;
-use prepare::Prepared;
 use send::streams::{StreamFacts, open_stream};
 use transport::{ChatTransport, SuppliedChatClient};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

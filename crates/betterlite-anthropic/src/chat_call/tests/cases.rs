@@ -346,11 +346,11 @@ fn unauthenticated_pre_stream_error() {
 
 fn transform_pre_stream_error() {
     pre_send_failures(
-        Setup {
+        &Setup {
             transform_failure: Some("the case's transform refuses"),
             ..Setup::chat()
         },
-        Setup {
+        &Setup {
             style: CallStyle::Async,
             filter_failure: Some("the case's filter refuses"),
             ..Setup::chat()
@@ -358,11 +358,11 @@ fn transform_pre_stream_error() {
     );
 }
 
-fn pre_send_failures(transform_setup: Setup, filter_setup: Setup) {
-    let transformed = execute(&transform_setup);
+fn pre_send_failures(transform_setup: &Setup, filter_setup: &Setup) {
+    let transformed = execute(transform_setup);
     assert_failure_without_post(&transformed, "the case's transform refuses", &["sync"]);
 
-    let filtered = execute(&filter_setup);
+    let filtered = execute(filter_setup);
     assert_failure_without_post(
         &filtered,
         "the case's filter refuses",
