@@ -81,11 +81,14 @@ fn assert_response_state(fixture: &ProviderFixture) {
 }
 
 pub(super) async fn provider_error_close() {
-    provider_stream_failures().await;
+    await_output_failure().await;
+    receive_failure().await;
+    utf8_failure().await;
+    transform_failure().await;
     client_send_failure().await;
 }
 
-async fn provider_stream_failures() {
+async fn await_output_failure() {
     let stream = ScriptedStream::new(Vec::new()).with_await_failure("the provider has no output");
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -95,7 +98,9 @@ async fn provider_stream_failures() {
     assert!(fixture.client.closes().is_empty());
     assert!(fixture.log.events.is_empty());
     assert_eq!(fixture.state, support::input());
+}
 
+async fn receive_failure() {
     let stream = ScriptedStream::new(vec![Chunk::bytes(CONTENT_START)]).with_receive_failure(1);
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -105,7 +110,9 @@ async fn provider_stream_failures() {
     assert!(fixture.client.closes().is_empty());
     assert!(fixture.state.current_response_id.is_some());
     assert!(fixture.log.events.is_empty());
+}
 
+async fn utf8_failure() {
     let stream = ScriptedStream::new(vec![Chunk::Bytes(vec![0xff])]);
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -113,7 +120,9 @@ async fn provider_stream_failures() {
     assert!(matches!(outcome, Err(ProviderForwardError::Utf8 { .. })));
     assert!(fixture.client.sent_events().is_empty());
     assert!(fixture.client.closes().is_empty());
+}
 
+async fn transform_failure() {
     let stream = ScriptedStream::new(vec![Chunk::bytes(r#"{"event":{"contentStart":[]}}"#)]);
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -153,7 +162,7 @@ async fn client_send_failure() {
     assert!(fixture.state.current_conversation_id.is_some());
 }
 
-fn event_field<'a>(event: &'a Json, field: &str) -> Option<&'a str> {
+fn event_field<'event>(event: &'event Json, field: &str) -> Option<&'event str> {
     match event {
         Json::Object(fields) => match fields.get(field) {
             Some(Json::Text(text)) => Some(text.as_str()),

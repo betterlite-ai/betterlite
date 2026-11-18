@@ -6,7 +6,10 @@ use crate::realtime_bridge::error::ClientForwardError;
 use crate::realtime_input::error::InputError;
 
 const SESSION_UPDATE: &str = r#"{"type": "session.update", "session": {}}"#;
-const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":[]}"#;
+// A session that is not an object: LiteLLM's session_config.get raises AttributeError, and the typed
+// decoder rejects it too. An empty array is not used, since every SessionConfig field has a default and
+// serde reads a sequence positionally into the all-default config.
+const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":"invalid"}"#;
 const AUDIO_APPEND: &str = r#"{"type":"input_audio_buffer.append","audio":"AAAA"}"#;
 const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;
 const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
@@ -152,7 +155,7 @@ async fn transform_failure_keeps_the_replay_marker() {
     assert!(fixture.client.closes().is_empty());
 }
 
-fn payload_text<'a>(frame: &'a Json, event: &str, field: &str) -> Option<&'a str> {
+fn payload_text<'frame>(frame: &'frame Json, event: &str, field: &str) -> Option<&'frame str> {
     let Json::Object(fields) = frame else {
         return None;
     };

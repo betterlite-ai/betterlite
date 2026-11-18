@@ -9,6 +9,8 @@ use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use futures_util::future::{Either, select};
+use tokio::task::yield_now;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -120,7 +122,7 @@ struct ClientState {
 
 pub(super) struct ScriptedClient {
     state: Arc<ClientState>,
-    pub receives: Arc<AtomicUsize>,
+    receives: Arc<AtomicUsize>,
 }
 
 impl ScriptedClient {
@@ -300,7 +302,7 @@ impl BedrockOutputChunk for ScriptedChunk {
 
 pub(super) struct OutputState {
     chunks: Mutex<VecDeque<Chunk>>,
-    pub receives: AtomicUsize,
+    receives: AtomicUsize,
     receive_failure: Option<usize>,
     block_receive: bool,
 }
@@ -326,7 +328,6 @@ impl BedrockOutputStream for ScriptedOutput {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
         match chunk {
-            Some(Chunk::End) => Ok(None),
             Some(Chunk::MissingValue) => Ok(Some(Box::new(ScriptedChunk { part: None }))),
             Some(Chunk::MissingBytes) => Ok(Some(Box::new(ScriptedChunk {
                 part: Some(ScriptedPart(None)),
@@ -335,14 +336,14 @@ impl BedrockOutputStream for ScriptedOutput {
                 part: Some(ScriptedPart(Some(bytes))),
             }))),
             None if self.0.block_receive => pending().await,
-            None => Ok(None),
+            Some(Chunk::End) | None => Ok(None),
         }
     }
 }
 
 pub(super) struct ScriptedStream {
     input: ScriptedInput,
-    pub output: Arc<OutputState>,
+    output: Arc<OutputState>,
     await_failure: Option<String>,
 }
 
@@ -542,7 +543,7 @@ impl ProviderFixture {
 // Cancels once the scripted side has been pulled as many times as the case says
 async fn cancel_at(counter: &AtomicUsize, threshold: usize, cancel: &CancellationToken) {
     while counter.load(Ordering::SeqCst) < threshold {
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
     cancel.cancel();
 }
@@ -555,8 +556,8 @@ where
 {
     tokio::pin!(pump);
     tokio::pin!(watching);
-    tokio::select! {
-        result = &mut pump => result,
-        () = &mut watching => pump.await,
+    match select(pump, watching).await {
+        Either::Left((result, _watching)) => result,
+        Either::Right(((), pinned)) => pinned.await,
     }
 }
