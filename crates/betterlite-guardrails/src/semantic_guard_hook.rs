@@ -111,10 +111,10 @@ where
         if text.is_empty() {
             return Ok(());
         }
-        self.check(&text, data).await?.map_or_else(
-            || Ok(()),
-            |failure| Err(SemanticGuardHookError::Blocked(failure)),
-        )
+        if let Some(failure) = self.check(&text, data).await? {
+            return Err(SemanticGuardHookError::Blocked(failure));
+        }
+        Ok(())
     }
 
     pub async fn async_post_call_success_hook(
@@ -126,10 +126,10 @@ where
         if text.is_empty() {
             return Ok(response);
         }
-        self.check(&text, data).await?.map_or_else(
-            || Ok(response),
-            |failure| Err(SemanticGuardHookError::Blocked(failure)),
-        )
+        if let Some(failure) = self.check(&text, data).await? {
+            return Err(SemanticGuardHookError::Blocked(failure));
+        }
+        Ok(response)
     }
 
     fn request_text(
