@@ -125,7 +125,7 @@ impl LeastBusy {
             .local
             .increment(key, &RouteIncrement::Counter(delta), ttl)
         {
-            Ok(value) => increment_outcome(value),
+            Ok(value) => increment_outcome(&value),
             Err(source) => return Some(unwritable(key, UnwrittenCount::Local(source))),
         };
         match local {

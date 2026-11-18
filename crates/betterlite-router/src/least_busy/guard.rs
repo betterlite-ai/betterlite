@@ -55,9 +55,9 @@ pub(super) enum IncrementOutcome {
     NotACount,
 }
 
-pub(super) fn increment_outcome(value: RouteValue) -> IncrementOutcome {
+pub(super) const fn increment_outcome(value: &RouteValue) -> IncrementOutcome {
     match value {
-        RouteValue::Counter(count) if count.is_negative() => IncrementOutcome::Negative(count),
+        RouteValue::Counter(count) if count.is_negative() => IncrementOutcome::Negative(*count),
         RouteValue::Counter(_) => IncrementOutcome::Counted,
         RouteValue::Spend(_)
         | RouteValue::Pin(_)
@@ -77,7 +77,7 @@ pub(super) async fn write_shared(
         .increment(key, &RouteIncrement::Counter(delta), ttl)
         .await
     {
-        Ok(Observed { value, .. }) => increment_outcome(value),
+        Ok(Observed { value, .. }) => increment_outcome(&value),
         Err(source) => return Some(unwritable(key, UnwrittenCount::Shared(source))),
     };
     let failed = match landed {
