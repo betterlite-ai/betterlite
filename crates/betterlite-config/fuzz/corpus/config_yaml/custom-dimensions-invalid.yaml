@@ -5,5 +5,5 @@ model_list:
       complexity_router_config:
         custom_dimensions:
           - name: domain
-            weight: '0.8'
-            keywords: [alpha]
+            weight: 0.8
+            patterns: ['a{65}']

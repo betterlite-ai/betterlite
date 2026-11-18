@@ -9,13 +9,9 @@ pub(super) fn sequence_cost(nodes: &[PyNode], depth: u64) -> Result<Cost, Patter
     if depth > MAX_CUSTOM_PATTERN_DEPTH {
         return Err(PatternProblem::Depth);
     }
-    let mut costs: Vec<Cost> = Vec::with_capacity(nodes.len());
+    let (mut paths, mut steps) = (1_u64, 1_u64);
     for node in nodes {
-        costs.push(node_cost(node, depth)?);
-    }
-    let mut paths = 1_u64;
-    let mut steps = 1_u64;
-    for (node_paths, node_steps) in costs {
+        let (node_paths, node_steps) = node_cost(node, depth)?;
         steps = steps.saturating_add(node_steps.saturating_mul(paths));
         paths = paths.saturating_mul(node_paths);
     }

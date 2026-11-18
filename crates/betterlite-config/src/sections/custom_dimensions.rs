@@ -214,7 +214,10 @@ where
     let mut dimensions = Vec::with_capacity(configured.len());
     for (position, raw) in configured.into_iter().enumerate() {
         let path = format!("model_list.{index}.{PATH_ROOT}.{position}");
-        dimensions.push(raw.resolve(&path, lookup)?);
+        let config = raw.resolve(&path, lookup)?;
+        validate_dimension(&config)
+            .map_err(|_problem| ConfigError::InvalidScalar { path, value: false })?;
+        dimensions.push(config);
     }
     Ok(dimensions)
 }

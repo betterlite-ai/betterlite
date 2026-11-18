@@ -123,8 +123,24 @@ fn every_dimension_text_field_resolves_the_environment_once() {
 #[test]
 fn an_empty_environment_weight_reads_as_zero() {
     let keys = "          - name: domain\n            weight: os.environ/WEIGHT\n            keywords: [alpha]\n";
-    let settings = settings(&deployment(keys), &[("WEIGHT", "")]).unwrap();
-    assert!(settings.deployments[0][0].weight.abs() < f64::EPSILON);
+    let error = settings(&deployment(keys), &[("WEIGHT", "")]).unwrap_err();
+    assert!(error.contains("custom_dimensions.0"), "{error}");
+}
+
+#[rstest]
+#[case::bounded("a{64}", true)]
+#[case::over_repeat_limit("a{65}", false)]
+#[case::unbounded("a+", false)]
+#[case::over_work_limit("a{0,64}b{0,64}", false)]
+fn config_loading_validates_pattern_bounds(#[case] pattern: &str, #[case] accepted: bool) {
+    let keys = format!(
+        "          - name: domain\n            weight: 0.5\n            patterns: ['{pattern}']\n"
+    );
+    let result = settings(&deployment(&keys), &[]);
+    assert_eq!(result.is_ok(), accepted);
+    if let Err(error) = result {
+        assert!(error.contains("custom_dimensions.0"), "{error}");
+    }
 }
 
 #[test]
