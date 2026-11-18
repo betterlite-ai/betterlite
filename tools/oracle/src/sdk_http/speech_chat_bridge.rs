@@ -196,7 +196,7 @@ impl Call {
             headers: Some(&self.headers),
             custom_llm_provider: Some(&provider),
         };
-        let bridge = SpeechToCompletionBridge::new(completions);
+        let bridge = SpeechToCompletionBridge { completions };
         match bridge.speech(arguments, Some(&mut logging)).await {
             Ok(answer) => Ok(SdkResult::SpeechChatBridge {
                 value: Box::new(Outcome::from(answer)),

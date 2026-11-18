@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 
 import openai
 from litellm.endpoints.speech.speech_to_completion_bridge.handler import (
-    SpeechToCompletionBridgeHandler,
+    speech_to_completion_bridge_handler,
 )
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.utils import CallTypes
@@ -76,7 +76,7 @@ def run_speech(call: SpeechChatBridgeCall, api_base: str) -> str:
         "num_retries": 0,
     }
     try:
-        response = SpeechToCompletionBridgeHandler().speech(
+        response = speech_to_completion_bridge_handler.speech(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/endpoints/speech/speech_to_completion_bridge/handler.py#L78-L88
             model=call.model,
             input=call.input,
             voice=call.voice,
@@ -90,10 +90,11 @@ def run_speech(call: SpeechChatBridgeCall, api_base: str) -> str:
         return project_failure(error).model_dump_json(
             by_alias=True, exclude_unset=True
         )
+    headers = response.response.headers
     return project_success(
         response.content,
         response.response.status_code,
-        response.response.headers.get("content-type"),
+        next(iter(headers.get_list("content-type")), None),
     ).model_dump_json(by_alias=True, exclude_unset=True)
 
 
