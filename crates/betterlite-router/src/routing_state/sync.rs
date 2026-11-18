@@ -6,7 +6,7 @@ use crate::routing_value_store::RouteKey;
 
 use super::FLUSH_DEADLINE;
 use super::counter::RouterCounters;
-use super::delta::{self, Delta, DeltaStore, SyncOutcome};
+use super::delta::{self, Delta, DeltaStore, Recorded, SyncOutcome};
 
 impl<S: DeltaStore + 'static> RouterCounters<S> {
     // BaseRoutingStrategy._sync_in_memory_spend_with_redis
@@ -35,8 +35,8 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         );
     }
 
-    // B397's synchronous CounterSink cannot await redis, so the delta joins the batch or waits in the overflow
-    pub(super) fn queue_usage(&self, increment: &Increment) -> Result<(), CounterError> {
+    // both usage paths parse the key and track it so a sync reads its store total back
+    pub(super) fn usage_key(&self, increment: &Increment) -> Result<RouteKey, CounterError> {
         let route_key =
             RouteKey::parse(&increment.key).map_err(|_source| CounterError::Rejected {
                 key: increment.key.clone(),
@@ -44,10 +44,17 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         if self.state.store.is_some() {
             self.state.track(&route_key);
         }
-        if self
-            .state
-            .enqueue_usage(&route_key, increment.value, increment.ttl)?
+        Ok(route_key)
+    }
+
+    // B397's synchronous CounterSink cannot await redis, so the delta joins the batch or waits in the overflow
+    pub(super) fn queue_usage(&self, increment: &Increment) -> Result<(), CounterError> {
+        let route_key = self.usage_key(increment)?;
+        if let Recorded::Saturated(delta) =
+            self.state
+                .enqueue_usage(&route_key, increment.value, increment.ttl)?
         {
+            self.state.queue_overflow(delta);
             self.schedule_usage_flush();
         }
         Ok(())
@@ -64,9 +71,8 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             return;
         }
         let state = Arc::clone(&self.state);
-        self.tasks
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .spawn(delta::flush_usage_overflow(state));
+        let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
+        while tasks.try_join_next().is_some() {}
+        tasks.spawn(delta::flush_usage_overflow(state));
     }
 }

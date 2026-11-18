@@ -6,7 +6,7 @@ use std::time::Duration;
 use rust_decimal::Decimal;
 use tokio::task::JoinSet;
 
-use crate::router_observations::counter::CounterError;
+use crate::router_observations::counter::{CounterError, Increment};
 use crate::router_observations::keys::{ROUTER_COUNTER_TTL, outcome_keys};
 use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
@@ -59,6 +59,20 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             results.push(self.increment_window_value(key, *value, ttl).await?);
         }
         Ok(results)
+    }
+
+    // the awaited callback path: a full queue flushes inside the caller's deadline before its delta is queued
+    pub async fn increment_usage(&self, increments: &[Increment]) -> Result<(), CounterError> {
+        for increment in increments {
+            let route_key = self.usage_key(increment)?;
+            if let Recorded::Saturated(delta) =
+                self.state
+                    .enqueue_usage(&route_key, increment.value, increment.ttl)?
+            {
+                self.flush_or_drop(delta).await;
+            }
+        }
+        Ok(())
     }
 
     // BaseRoutingStrategy.add_to_in_memory_keys_to_update

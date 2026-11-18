@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::mem;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
@@ -63,6 +64,12 @@ pub(crate) async fn run(name: &str) {
         "metadata_bucket_selection" => metadata_bucket_selection(),
         "key_pattern_is_absent" => key_pattern_is_absent(),
         "real_store_smoke" => real_store_smoke().await,
+        "usage_saturation_flushes_before_dropping" => {
+            usage_saturation_flushes_before_dropping().await;
+        }
+        "failure_callback_increment_survives_the_merge" => {
+            failure_callback_increment_survives_the_merge().await;
+        }
         _ => panic!("unknown case {name}"),
     }
 }
@@ -414,6 +421,72 @@ async fn usage_overflow_flushes_within_the_deadline() {
     );
 }
 
+// the awaited callback path flushes a full queue inside its deadline, so healthy storage drops nothing
+async fn usage_saturation_flushes_before_dropping() {
+    let harness = Harness::with_store(settings(false, None));
+    let one = [Increment {
+        key: TPM_KEY.to_owned(),
+        value: 1,
+        ttl: TTL,
+    }];
+    for _step in 0..MAX_PENDING_DELTAS {
+        harness.counters.increment_usage(&one).await.unwrap();
+    }
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    harness.counters.increment_usage(&one).await.unwrap();
+    assert_eq!(harness.store.calls(), 1);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_024_u64))
+    );
+    assert_eq!(harness.pending_len(), 1);
+    for _step in 0..(MAX_PENDING_DELTAS - 1) {
+        harness.counters.increment_usage(&one).await.unwrap();
+    }
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    harness.counters.increment_usage(&one).await.unwrap();
+    assert_eq!(harness.store.calls(), 2);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(2_048_u64))
+    );
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
+    assert_eq!(harness.pending_len(), 1);
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(2_049_u64))
+    );
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
+    assert_eq!(harness.pending_len(), 0);
+    // a failed flush inside the deadline drops only the saturating delta; the local count keeps it
+    let down = Harness::with_store(settings(false, None));
+    down.store.set_down(true);
+    for _step in 0..MAX_PENDING_DELTAS {
+        down.counters.increment_usage(&one).await.unwrap();
+    }
+    down.counters.increment_usage(&one).await.unwrap();
+    assert_eq!(down.pending_len(), 0);
+    assert_eq!(down.store.amount(TPM_KEY), None);
+    assert_eq!(down.counters.read(TPM_KEY), Some(1_025));
+}
+
+// the failure callback's increment runs on another thread while a sync reconciles the same key
+async fn failure_callback_increment_survives_the_merge() {
+    let (counters, store, _local) = racing_counters();
+    store.seed(Decimal::from(100));
+    counters
+        .increment_window_value(RPM_KEY, Decimal::from(7), TTL)
+        .await
+        .unwrap();
+    *store.failure_during_push.lock().unwrap() = true;
+    assert!(counters.sync_with_redis().await);
+    // redis holds 107, and the merge adds its growth to the 8 the callback left behind
+    assert_eq!(store.amount(), Decimal::from(107));
+    assert_eq!(counters.read(RPM_KEY), Some(108));
+    assert_eq!(pending_len(&counters), 0);
+}
+
 async fn sync_compresses_repeated_keys_into_one_operation() {
     let harness = Harness::with_store(settings(false, None));
     let first_ttl = Duration::from_secs(60);
@@ -581,11 +654,13 @@ async fn stored(store: &RoutingStateStore, key: &RouteKey) -> f64 {
         .value
 }
 
-// a store that answers the push and makes one window increment land after the detach, the way a second thread can
+// a store that answers the push and runs one increment the way another thread's callback can, after the detach
 struct RacingStore {
     value: Mutex<Decimal>,
     state: Mutex<Option<Weak<SyncState<RacingStore>>>>,
+    counters: Mutex<Option<Weak<RouterCounters<RacingStore>>>>,
     during_push: Mutex<Option<Decimal>>,
+    failure_during_push: Mutex<bool>,
 }
 
 impl RacingStore {
@@ -593,7 +668,9 @@ impl RacingStore {
         Self {
             value: Mutex::new(Decimal::ZERO),
             state: Mutex::new(None),
+            counters: Mutex::new(None),
             during_push: Mutex::new(None),
+            failure_during_push: Mutex::new(false),
         }
     }
 
@@ -628,6 +705,19 @@ impl DeltaStore for RacingStore {
                 let _recorded = state.record(&key, amount, TTL).unwrap();
             }
         }
+        if mem::take(&mut *self.failure_during_push.lock().unwrap()) {
+            let counters = self
+                .counters
+                .lock()
+                .unwrap()
+                .as_ref()
+                .and_then(Weak::upgrade);
+            if let Some(counters) = counters {
+                std::thread::scope(|scope| {
+                    scope.spawn(move || counters.increment(RPM_KEY, 1, TTL).unwrap());
+                });
+            }
+        }
         Ok(results)
     }
 }
@@ -650,10 +740,15 @@ fn racing_counters() -> (
         .lock()
         .unwrap()
         .replace(Arc::downgrade(&counters.state));
+    let _counters = store
+        .counters
+        .lock()
+        .unwrap()
+        .replace(Arc::downgrade(&counters));
     (counters, store, local)
 }
 
-fn pending_len(counters: &RouterCounters<RacingStore>) -> usize {
+fn pending_len<S: DeltaStore + 'static>(counters: &RouterCounters<S>) -> usize {
     counters.state.batches.lock().unwrap().pending.len()
 }
 

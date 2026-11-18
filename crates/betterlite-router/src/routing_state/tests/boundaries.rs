@@ -40,6 +40,7 @@ pub(crate) async fn run(name: &str) {
         "sync_merges_at_the_equality_boundary" => sync_merges_at_the_equality_boundary().await,
         "sync_interval_resolution_boundaries" => sync_interval_resolution_boundaries(),
         "local_counter_reads_only_whole_values" => local_counter_reads_only_whole_values(),
+        "usage_flush_tasks_do_not_accumulate" => usage_flush_tasks_do_not_accumulate().await,
         _ => panic!("unknown case {name}"),
     }
 }
@@ -112,6 +113,31 @@ async fn usage_overflow_cap_is_1024() {
     assert_eq!(harness.overflow_len(), MAX_OVERFLOW_DELTAS);
     assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
     assert_eq!(harness.store.calls(), 0);
+}
+
+// repeated saturation must not keep finished flush tasks: the set holds at most the one running flush
+async fn usage_flush_tasks_do_not_accumulate() {
+    let harness = Harness::with_store(settings(false, None));
+    for _round in 0..8 {
+        harness
+            .counters
+            .increment_pipeline(&usage_batch(MAX_PENDING_DELTAS))
+            .unwrap();
+        harness
+            .counters
+            .increment_pipeline(&usage_batch(1))
+            .unwrap();
+        for _turn in 0..4 {
+            tokio::task::yield_now().await;
+        }
+        assert_eq!(harness.pending_len(), 0);
+        assert_eq!(harness.overflow_len(), 0);
+    }
+    let retained = harness.counters.tasks.lock().unwrap().len();
+    assert!(
+        retained <= 1,
+        "the flush set retained {retained} finished tasks"
+    );
 }
 
 fn usage_batch(count: usize) -> Vec<Increment> {

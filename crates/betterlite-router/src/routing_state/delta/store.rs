@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem;
 use std::sync::PoisonError;
 
 use async_trait::async_trait;
@@ -6,7 +7,9 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 
 use crate::routing_state_store::RoutingStateStore;
-use crate::routing_value_store::{RouteKey, RouteValue, RoutingValueStore, StoreRead};
+use crate::routing_value_store::{
+    RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
+};
 
 use super::super::error::RoutingStateError;
 use super::{Delta, DeltaStore, SyncState};
@@ -60,7 +63,25 @@ pub(super) async fn send<S: DeltaStore>(
     }
 }
 
-// the merge reads the local value and writes it back under the lock its increments take, so neither loses the other
+// the snapshot of what the store push covers: read and detach share the lock the increments take
+pub(super) fn snapshot<S: DeltaStore>(
+    state: &SyncState<S>,
+    keys: &[RouteKey],
+) -> Option<(Vec<Decimal>, Vec<Delta>)> {
+    let mut batches = state.batches.lock().unwrap_or_else(PoisonError::into_inner);
+    let before = keys
+        .iter()
+        .map(|key| local_amount(&state.local, key))
+        .collect();
+    let mut batch = mem::take(&mut batches.pending);
+    batch.append(&mut batches.overflow);
+    if batch.is_empty() {
+        return None;
+    }
+    Some((before, batch))
+}
+
+// the merge adds the store's post-push growth to the local value in one update, so an increment racing it is kept
 pub(super) fn merge<S: DeltaStore>(
     state: &SyncState<S>,
     keys: &[RouteKey],
@@ -74,8 +95,11 @@ pub(super) fn merge<S: DeltaStore>(
         if after > redis_value {
             continue;
         }
-        let merged = redis_value.saturating_add(after.saturating_sub(*before));
-        if let Err(error) = state.local.set(key, &RouteValue::Spend(merged), None) {
+        let adjustment = redis_value.saturating_sub(*before);
+        if let Err(error) = state
+            .local
+            .increment(key, &RouteIncrement::Spend(adjustment), None)
+        {
             tracing::warn!(%error, "the routing sync could not write the merged value back");
         }
     }

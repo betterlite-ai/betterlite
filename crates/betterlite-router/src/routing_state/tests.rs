@@ -54,6 +54,11 @@ fn runtime(paused: bool) -> Runtime {
 #[case::metadata_bucket_selection("metadata_bucket_selection", false)]
 #[case::key_pattern_is_absent("key_pattern_is_absent", false)]
 #[case::real_store_smoke("real_store_smoke", false)]
+#[case::usage_saturation_flushes_before_dropping("usage_saturation_flushes_before_dropping", false)]
+#[case::failure_callback_increment_survives_the_merge(
+    "failure_callback_increment_survives_the_merge",
+    false
+)]
 fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(behaviors::run(name));
 }
@@ -74,6 +79,7 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 #[case::sync_merges_at_the_equality_boundary("sync_merges_at_the_equality_boundary", false)]
 #[case::sync_interval_resolution_boundaries("sync_interval_resolution_boundaries", false)]
 #[case::local_counter_reads_only_whole_values("local_counter_reads_only_whole_values", false)]
+#[case::usage_flush_tasks_do_not_accumulate("usage_flush_tasks_do_not_accumulate", false)]
 fn routing_state_boundaries(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(boundaries::run(name));
 }

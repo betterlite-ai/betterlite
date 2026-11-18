@@ -1,7 +1,6 @@
 pub(crate) mod store;
 
 use std::collections::BTreeSet;
-use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -15,7 +14,7 @@ use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError,
 };
 
-use self::store::{local_amount, merge, send};
+use self::store::{merge, send, snapshot};
 use super::error::RoutingStateError;
 use super::{FLUSH_DEADLINE, MAX_OVERFLOW_DELTAS, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS};
 
@@ -163,13 +162,13 @@ impl<S: DeltaStore> SyncState<S> {
         Ok((updated, Recorded::Saturated(delta)))
     }
 
-    // the sink's pipeline cannot await, so a full queue hands its delta to the bounded overflow buffer
+    // the usage increment lands locally first; a full queue hands its delta back to the caller
     pub(super) fn enqueue_usage(
         &self,
         key: &RouteKey,
         value: i64,
         ttl: Duration,
-    ) -> Result<bool, CounterError> {
+    ) -> Result<Recorded, CounterError> {
         let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
         self.local
             .increment(
@@ -181,7 +180,7 @@ impl<S: DeltaStore> SyncState<S> {
                 key: key.as_ref().to_owned(),
             })?;
         if self.store.is_none() {
-            return Ok(false);
+            return Ok(Recorded::Queued);
         }
         let delta = Delta {
             key: key.clone(),
@@ -190,17 +189,22 @@ impl<S: DeltaStore> SyncState<S> {
         };
         if batches.pending.len() < MAX_PENDING_DELTAS {
             batches.pending.push(delta);
-            return Ok(false);
+            return Ok(Recorded::Queued);
         }
-        if batches.overflow.len() < MAX_OVERFLOW_DELTAS {
-            batches.overflow.push(delta);
-            return Ok(true);
+        Ok(Recorded::Saturated(delta))
+    }
+
+    // the synchronous sink cannot await, so its delta waits in the overflow for the one background flush
+    pub(super) fn queue_overflow(&self, delta: Delta) {
+        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
+        if batches.overflow.len() >= MAX_OVERFLOW_DELTAS {
+            tracing::warn!(
+                key = delta.key.as_ref(),
+                "the usage overflow buffer is full; the delta is not queued"
+            );
+            return;
         }
-        tracing::warn!(
-            key = key.as_ref(),
-            "the usage queue and its overflow are full; the delta is not queued"
-        );
-        Ok(true)
+        batches.overflow.push(delta);
     }
 
     pub(super) fn queue(&self, delta: Delta) -> bool {
@@ -210,21 +214,6 @@ impl<S: DeltaStore> SyncState<S> {
         }
         batches.pending.push(delta);
         true
-    }
-
-    // the snapshot of what the store push covers: read and detach share the lock the increments take
-    fn snapshot(&self, keys: &[RouteKey]) -> Option<(Vec<Decimal>, Vec<Delta>)> {
-        let mut batches = self.batches.lock().unwrap_or_else(PoisonError::into_inner);
-        let before = keys
-            .iter()
-            .map(|key| local_amount(&self.local, key))
-            .collect();
-        let mut batch = mem::take(&mut batches.pending);
-        batch.append(&mut batches.overflow);
-        if batch.is_empty() {
-            return None;
-        }
-        Some((before, batch))
     }
 }
 
@@ -237,7 +226,7 @@ pub(super) async fn sync_state<S: DeltaStore>(state: &SyncState<S>) -> SyncOutco
         return SyncOutcome::Busy;
     };
     let keys = state.tracked_keys();
-    let Some((before, batch)) = state.snapshot(&keys) else {
+    let Some((before, batch)) = snapshot(state, &keys) else {
         return SyncOutcome::Empty;
     };
     let Some(values) = send(state, &batch).await else {
@@ -257,7 +246,7 @@ pub(super) enum SyncOutcome {
 
 // retire pushes what is queued without merging: the owner is going away, so there is no local value left to update
 pub(super) async fn push_pending<S: DeltaStore>(state: &SyncState<S>) -> bool {
-    let Some((_before, batch)) = state.snapshot(&state.tracked_keys()) else {
+    let Some((_before, batch)) = snapshot(state, &state.tracked_keys()) else {
         return false;
     };
     send(state, &batch).await.is_some()
