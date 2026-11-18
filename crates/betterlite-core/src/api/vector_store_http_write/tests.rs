@@ -546,7 +546,7 @@ async fn transport_failure(#[case] case: FailureCase) {
         }
         FailureCase::TimeoutAsyncUpdate => {
             let serving = serve(
-                reply("200 OK", [("content-type", "application/json")], "{}"),
+                reply("200 OK", &[("content-type", "application/json")], "{}"),
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
@@ -589,7 +589,7 @@ async fn transport_failure(#[case] case: FailureCase) {
         }
         FailureCase::TimeoutSyncUpdate => {
             let serving = serve(
-                reply("200 OK", [("content-type", "application/json")], "{}"),
+                reply("200 OK", &[("content-type", "application/json")], "{}"),
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
@@ -622,7 +622,7 @@ async fn transport_failure(#[case] case: FailureCase) {
         }
         FailureCase::TimeoutAsyncDelete => {
             let serving = serve(
-                reply("200 OK", [("content-type", "application/json")], "{}"),
+                reply("200 OK", &[("content-type", "application/json")], "{}"),
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
@@ -734,7 +734,7 @@ async fn transport_failure(#[case] case: FailureCase) {
         }
         FailureCase::TimeoutAsyncDefault => {
             let serving = serve(
-                reply("200 OK", [("content-type", "application/json")], "{}"),
+                reply("200 OK", &[("content-type", "application/json")], "{}"),
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
@@ -773,7 +773,7 @@ async fn transport_failure(#[case] case: FailureCase) {
         }
         FailureCase::TimeoutSyncDelete => {
             let serving = serve(
-                reply("200 OK", [("content-type", "application/json")], "{}"),
+                reply("200 OK", &[("content-type", "application/json")], "{}"),
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
