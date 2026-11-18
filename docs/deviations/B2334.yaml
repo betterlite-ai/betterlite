@@ -3,6 +3,9 @@ deviations:
   - what: decode_bulk_user_request bounds the request at 1048576 bytes and JSON depth 64 through betterlite-logging's safe_json_loads, and returns a typed TooLarge or TooDeep; LiteLLM hands the body to Starlette and pydantic, which carry no such bound.
     why: README bounded parsing; user_contract_input_limits proves both boundaries on the decoder the routes will call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L42-L72
+  - what: user_id_from_query rejects a raw capture longer than 6144 bytes before percent-decoding, where LiteLLM's unquote decodes the whole match; the bound admits every identity of at most 512 code points, so the value the function returns is unchanged.
+    why: README bounded parsing; id_encoded_length_bound pins the encoded length of a 512 code-point identity and the captures just past it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L744
   - what: A rejected record returns a typed ContractError carrying betterlite's sentence, not pydantic's error list with its loc, input, ctx and url fields.
     why: The routes that turn it into a 422 own the error body, as on B8411; the rejection and the message a caller reads stay.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L42-L72
