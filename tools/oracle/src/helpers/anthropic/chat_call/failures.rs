@@ -21,17 +21,19 @@ pub(super) struct FailureShape {
 impl FailureShape {
     pub(super) fn of(error: &ChatCallError<FixtureFailure, Infallible>) -> Self {
         let class = match error {
-            ChatCallError::Anthropic { .. } => "AnthropicError",
+            ChatCallError::Anthropic { .. }
+            | ChatCallError::Response(ResponseError::Anthropic { .. })
+            | ChatCallError::Open(_) => "AnthropicError",
             ChatCallError::Headers(HeadersError::Authentication { .. }) => "AuthenticationError",
             ChatCallError::Headers(_) => "HeadersError",
-            ChatCallError::Prepare { .. } | ChatCallError::Filter { .. } => "ValueError",
-            ChatCallError::PreCall(_) => "PreCallError",
-            ChatCallError::Response(ResponseError::Anthropic { .. }) => "AnthropicError",
-            ChatCallError::Response(_) | ChatCallError::Parameter(_) => "ValueError",
-            ChatCallError::Open(_) => "AnthropicError",
-            ChatCallError::Endpoint(_)
+            ChatCallError::Prepare { .. }
+            | ChatCallError::Filter { .. }
+            | ChatCallError::Response(_)
+            | ChatCallError::Parameter(_)
+            | ChatCallError::Endpoint(_)
             | ChatCallError::HeaderName(_)
             | ChatCallError::HeaderValue(_) => "ValueError",
+            ChatCallError::PreCall(_) => "PreCallError",
         };
         Self {
             class,
