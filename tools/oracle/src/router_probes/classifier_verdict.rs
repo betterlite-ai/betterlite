@@ -53,7 +53,7 @@ pub(crate) fn run(
         Function::BuiltInPrompt => fields.prompt = Some(render_built_in_prompt(payload)?),
         Function::CustomPrompt => fields.prompt = Some(render_custom_prompt(payload)?),
         Function::CalibrationExamples => {
-            fields.examples = Some(render_calibration_examples(payload)?)
+            fields.examples = Some(render_calibration_examples(payload)?);
         }
         Function::ResponseFormat => fields.response_format = Some(render_response_format()?),
         Function::ResolveLabel => fields.resolved = resolve_label(payload)?,
@@ -72,23 +72,30 @@ fn required<'value, T>(value: Option<&'value T>, name: &str) -> Result<&'value T
     })
 }
 
-fn invalid<T, E: Display>(result: Result<T, E>) -> Result<T, OperationError> {
+fn invalid<T, E>(result: Result<T, E>) -> Result<T, OperationError>
+where
+    E: Display,
+{
     result.map_err(|source| OperationError::InvalidRequest {
         message: source.to_string(),
     })
 }
 
 fn labeled_tiers(payload: &Payload) -> Vec<(ComplexityTier, &str)> {
-    match &payload.labeled_tiers {
-        Some(items) => items
-            .iter()
-            .map(|item| (item.tier, item.label.as_str()))
-            .collect(),
-        None => tier_severity_order(false)
-            .iter()
-            .map(|tier| (*tier, tier.name()))
-            .collect(),
-    }
+    payload.labeled_tiers.as_ref().map_or_else(
+        || {
+            tier_severity_order(false)
+                .iter()
+                .map(|tier| (*tier, tier.name()))
+                .collect()
+        },
+        |items| {
+            items
+                .iter()
+                .map(|item| (item.tier, item.label.as_str()))
+                .collect()
+        },
+    )
 }
 
 fn render_built_in_prompt(payload: &Payload) -> Result<String, OperationError> {

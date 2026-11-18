@@ -88,6 +88,15 @@ fn a_schema_mismatch_is_rejected(#[case] reply: &str) {
 }
 
 #[test]
+fn a_duplicate_tier_key_is_a_schema_rejection() {
+    // Python keeps the last duplicate key; the derived typed decoder refuses the reply and fails closed
+    assert!(matches!(
+        parse_class_reply(br#"{"tier":"SIMPLE","tier":"COMPLEX"}"#, &blank_tiers()),
+        Err(ClassifierVerdictError::VerdictSchema { .. })
+    ));
+}
+
+#[test]
 fn an_unrecognized_tier_keeps_the_raw_label() {
     match parse_class_reply(br#"{"tier": "  nope  "}"#, &blank_tiers()) {
         Err(ClassifierVerdictError::UnknownTier { label }) => assert_eq!(label, "  nope  "),
