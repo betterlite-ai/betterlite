@@ -667,6 +667,36 @@ async fn a_failed_permission_read_keeps_the_new_tool_maps_without_initializing()
 }
 
 #[tokio::test]
+async fn a_failed_permission_read_keeps_the_previous_blocked_tools() {
+    let db = Db::start().await;
+    db.batch(
+        "INSERT INTO \"LiteLLM_ObjectPermissionTable\" (\"object_permission_id\", \"blocked_tools\") \
+         VALUES ('perm-1', ARRAY['other'])",
+    )
+    .await;
+    let registry = Mutex::new(ToolPolicyRegistry::default());
+    sync(&db, &registry).await.expect("a loaded registry");
+    store_trusted(&db, "added", instant()).await;
+    db.batch(
+        "ALTER TABLE \"LiteLLM_ObjectPermissionTable\" RENAME TO \"LiteLLM_ObjectPermissionTable_moved\"",
+    )
+    .await;
+    assert!(sync(&db, &registry).await.is_err());
+    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(state.initialized);
+    assert_eq!(
+        state.input_policies.get("added"),
+        Some(&ToolInputPolicy::Trusted)
+    );
+    assert_eq!(
+        state.blocked_tools_by_permission.get("perm-1"),
+        Some(&vec!["other".to_owned()])
+    );
+    drop(state);
+    db.close().await;
+}
+
+#[tokio::test]
 async fn refresh_does_not_reconnect_for_a_missing_table() {
     let db = Db::start().await;
     db.batch("ALTER TABLE \"LiteLLM_ToolTable\" RENAME TO \"LiteLLM_ToolTable_moved\"")
