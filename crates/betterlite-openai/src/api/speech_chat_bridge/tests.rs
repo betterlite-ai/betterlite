@@ -87,6 +87,26 @@ fn decodes_chat_audio_base64() {
     assert_eq!(decoded("===="), b"");
     assert_eq!(decoded("ABCD"), [0x00, 0x10, 0x83]);
     assert_eq!(decoded("QR=="), [0x41]);
+    assert_eq!(decoded("aGVsbG8="), b"hello");
+    assert_eq!(decoded("MDEy"), b"012");
+    assert_eq!(decoded("+w=="), [0xFB]);
+    assert_eq!(decoded("/w=="), [0xFF]);
+}
+
+#[test]
+fn sniff_media_type_honors_the_byte_limit() {
+    let body = b"RIFF\x00\x00\x00\x00WAVE";
+    let exact = AudioDecodeLimits {
+        max_bytes: body.len(),
+        ..AudioDecodeLimits::default()
+    };
+    assert_eq!(sniff_speech_audio(body, &exact), Some("audio/wav"));
+    let short = AudioDecodeLimits {
+        max_bytes: body.len().saturating_sub(1),
+        ..AudioDecodeLimits::default()
+    };
+    assert_eq!(sniff_speech_audio(body, &short), None);
+    assert_eq!(sniffed(b"RIFF"), None);
 }
 
 #[test]
