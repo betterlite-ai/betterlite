@@ -20,26 +20,34 @@ use crate::queues::memory::EnqueueObserver;
 // One queued entry of the daily buffer: the transactional key of the row and its payload as litellm/proxy/_types.py declares it, kept as it arrived so an absent metric stays absent.
 pub type DailySpendUpdate = BTreeMap<String, SpendRow>;
 
-const REQUIRED_COUNTER_FIELDS: [&str; 5] = [
-    "prompt_tokens",
-    "completion_tokens",
-    "api_requests",
-    "successful_requests",
-    "failed_requests",
-];
-const OPTIONAL_COUNTER_FIELDS: [&str; 5] = [
-    "cache_read_input_tokens",
-    "cache_creation_input_tokens",
-    "compression_saved_tokens",
-    "total_response_time_ms",
-    "timed_requests",
-];
-const REQUIRED_MONEY_FIELDS: [&str; 1] = ["spend"];
-const OPTIONAL_MONEY_FIELDS: [&str; 4] = [
-    "compression_savings_spend",
-    "prompt_caching_savings_spend",
-    "gateway_injected_caching_savings_spend",
-    "autorouter_savings_spend",
+#[derive(Clone, Copy)]
+enum Metric {
+    RequiredCounter,
+    OptionalCounter,
+    RequiredMoney,
+    OptionalMoney,
+}
+
+// The merge order of get_aggregated_daily_spend_update_transactions, so the first metric a payload cannot add is the one the source raises on.
+const METRICS: [(&str, Metric); 15] = [
+    ("spend", Metric::RequiredMoney),
+    ("prompt_tokens", Metric::RequiredCounter),
+    ("completion_tokens", Metric::RequiredCounter),
+    ("api_requests", Metric::RequiredCounter),
+    ("successful_requests", Metric::RequiredCounter),
+    ("failed_requests", Metric::RequiredCounter),
+    ("cache_read_input_tokens", Metric::OptionalCounter),
+    ("cache_creation_input_tokens", Metric::OptionalCounter),
+    ("compression_saved_tokens", Metric::OptionalCounter),
+    ("compression_savings_spend", Metric::OptionalMoney),
+    ("prompt_caching_savings_spend", Metric::OptionalMoney),
+    (
+        "gateway_injected_caching_savings_spend",
+        Metric::OptionalMoney,
+    ),
+    ("autorouter_savings_spend", Metric::OptionalMoney),
+    ("total_response_time_ms", Metric::OptionalCounter),
+    ("timed_requests", Metric::OptionalCounter),
 ];
 
 // get_aggregated_daily_spend_update_transactions: one payload per daily transaction key, the first payload kept whole and every later one added onto it.
@@ -60,19 +68,15 @@ pub fn aggregate_daily_spend_update_transactions(
     Ok(aggregated)
 }
 
-// The six required counters of the source are summed as integers, the five optional ones read an absent or falsey incoming value as zero, and an existing null keeps the source's invalid addition.
+// The six required counters of the source are summed as integers, the nine optional metrics read an absent or falsey incoming value as zero, and an existing null keeps the source's invalid addition.
 fn merge_daily_row(existing: &mut SpendRow, incoming: &SpendRow) -> Result<(), SpendQueueError> {
-    for field in REQUIRED_COUNTER_FIELDS {
-        add_counter(existing, incoming, field, true)?;
-    }
-    for field in OPTIONAL_COUNTER_FIELDS {
-        add_counter(existing, incoming, field, false)?;
-    }
-    for field in REQUIRED_MONEY_FIELDS {
-        add_money(existing, incoming, field, true)?;
-    }
-    for field in OPTIONAL_MONEY_FIELDS {
-        add_money(existing, incoming, field, false)?;
+    for (field, metric) in METRICS {
+        match metric {
+            Metric::RequiredCounter => add_counter(existing, incoming, field, true)?,
+            Metric::OptionalCounter => add_counter(existing, incoming, field, false)?,
+            Metric::RequiredMoney => add_money(existing, incoming, field, true)?,
+            Metric::OptionalMoney => add_money(existing, incoming, field, false)?,
+        }
     }
     Ok(())
 }

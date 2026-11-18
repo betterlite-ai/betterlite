@@ -296,6 +296,18 @@ fn a_missing_required_existing_money_field_is_reported() {
 }
 
 #[test]
+fn the_first_missing_metric_the_source_raises_on_is_reported() {
+    let second = update(
+        "k",
+        without_field(without_field(daily_row("1.0"), "spend"), "prompt_tokens"),
+    );
+    assert!(matches!(
+        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        Err(SpendQueueError::MissingField { field: "spend" })
+    ));
+}
+
+#[test]
 fn a_null_required_incoming_value_is_reported() {
     let second = update(
         "k",
