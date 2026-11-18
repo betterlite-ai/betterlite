@@ -101,7 +101,7 @@ def logged_call_value(recorder: Recorder) -> JsonValue:
     match recorder.post_body:
         case str() as body:
             parsed_body = JSON.validate_json(body)
-        case int() | float() | bool() | None | dict() | list():
+        case int() | float() | None | dict() | list():
             pass
     answer: JsonObject = {
         "input": recorder.post_input,
