@@ -110,32 +110,27 @@ pub fn deployment_failure_labels(
             sources,
             LabelKey::ApiKeyAlias,
             auth.and_then(|facts| facts.key_alias.as_deref()),
-        )
-        .map(str::to_owned),
+        ),
         user_email: merged(
             sources,
             LabelKey::UserEmail,
             auth.and_then(|facts| facts.user_email.as_deref()),
-        )
-        .map(str::to_owned),
+        ),
         team: merged(
             sources,
             LabelKey::TeamId,
             auth.and_then(|facts| facts.team_id.as_deref()),
-        )
-        .map(str::to_owned),
+        ),
         team_alias: merged(
             sources,
             LabelKey::TeamAlias,
             auth.and_then(|facts| facts.team_alias.as_deref()),
-        )
-        .map(str::to_owned),
+        ),
         hashed_api_key: merged(
             sources,
             LabelKey::HashedApiKey,
             auth.and_then(hashed_from_auth),
-        )
-        .map(str::to_owned),
+        ),
         client_ip: preferred(sources, LabelKey::ClientIp).map(str::to_owned),
         user_agent: preferred(sources, LabelKey::UserAgent).map(str::to_owned),
     }
@@ -150,32 +145,40 @@ fn hashed_from_auth(auth: &UserApiKeyFacts) -> Option<&str> {
 }
 
 // Each getter ends at the first source that is not None, so an empty payload value still stops the cascade.
-fn merged<'s>(
-    sources: &'s DeploymentFailureSources<'_>,
+fn merged(
+    sources: &DeploymentFailureSources<'_>,
     key: LabelKey,
-    auth_value: Option<&'s str>,
-) -> Option<&'s str> {
-    payload_text(sources, key)
-        .or_else(|| params_text(sources, key))
-        .or(auth_value)
+    auth_value: Option<&str>,
+) -> Option<String> {
+    payload(sources, key)
+        .map(str::to_owned)
+        .or_else(|| params(sources, key).map(str::to_owned))
+        .or_else(|| auth_value.map(str::to_owned))
 }
 
-fn payload_text<'s>(sources: &'s DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'s str> {
-    sources
-        .payload_metadata
-        .as_ref()
-        .and_then(|metadata| metadata.text(key))
+fn payload<'src>(sources: &'src DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'src str> {
+    match sources.payload_metadata.as_ref() {
+        Some(metadata) => metadata.text(key),
+        None => None,
+    }
 }
 
-fn params_text<'s>(sources: &'s DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'s str> {
-    sources
-        .litellm_params_metadata
-        .and_then(|metadata| text_field(metadata, key.metadata_name()))
+fn params<'src>(sources: &'src DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'src str> {
+    match sources.litellm_params_metadata {
+        Some(metadata) => text_field(metadata, key.metadata_name()),
+        None => None,
+    }
 }
 
 // requester_ip_address and user_agent merge with Python's `or`, so only a non-empty payload value stops the cascade.
-fn preferred<'s>(sources: &'s DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'s str> {
-    payload_text(sources, key)
-        .filter(|value| !value.is_empty())
-        .or_else(|| params_text(sources, key))
+fn preferred<'src>(
+    sources: &'src DeploymentFailureSources<'_>,
+    key: LabelKey,
+) -> Option<&'src str> {
+    if let Some(value) = payload(sources, key)
+        && !value.is_empty()
+    {
+        return Some(value);
+    }
+    params(sources, key)
 }
