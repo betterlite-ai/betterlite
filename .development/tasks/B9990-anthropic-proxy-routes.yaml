@@ -166,7 +166,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - >-
-  The adapter, the runtime, the frames, the Delta fields and the OperationError arms are B9986.
+  The adapter, the runtime, the frames and the OperationError arms are B9986; the Delta fields are B9989.
 - >-
   Anthropic chat through the /v1/completions bridge in routes/completions.rs. It passes None for the runtime, so an
   anthropic/ deployment there keeps answering UnavailableAdapter, and its bridge reads only ChatCompletion::OpenAi.

@@ -1,9 +1,10 @@
 id: B9989
-title: Shared stream wrapper, file blocks and chat field split
+title: Shared stream wrapper, file blocks, chat field split and reasoning delta fields
 description: >-
   Move four pieces of existing code to the module each later caller already depends on, so the Anthropic gateway
-  adapter (B9986) can call them instead of copying them. Nothing a client sees changes: every moved function keeps its
-  behavior and every current caller keeps its output.
+  adapter (B9986) can call them instead of copying them, and widen the stream Delta it relays. Every moved function
+  keeps its behavior and every current caller keeps its output. The only change a client sees is that the relay now
+  accepts a stream delta with reasoning_content and thinking_blocks, as LiteLLM's Delta does.
 
 
   Stream wrapper, in betterlite-streaming. crates/betterlite-openai/src/text_completion_transport/stream.rs holds the
@@ -54,6 +55,20 @@ description: >-
   the rest of mapping.rs stay private.
 
 
+  Reasoning delta fields, in betterlite-openai. Every relayed stream frame is parsed into
+  betterlite_openai::stream::chunk::Chunk, whose Delta denies unknown fields and today has only role, content,
+  refusal, tool_calls and function_call, so a frame carrying reasoning_content or thinking_blocks fails to parse.
+  LiteLLM's Delta carries both (types/utils.py L1521-L1522 at the pin). Add pub reasoning_content: Option<String> and
+  pub thinking_blocks: Option<Vec<ThinkingBlock>> to Delta in crates/betterlite-openai/src/stream/chunk.rs, with pub
+  struct ThinkingBlock { pub kind: ThinkingKind (serde rename type), pub thinking: Option<String>, pub signature:
+  Option<String>, pub data: Option<String> } and pub enum ThinkingKind { Thinking, RedactedThinking } (snake_case),
+  with skip_serializing_none and deny_unknown_fields on the struct. Every Delta literal sets the two new fields to
+  None: oci_chat_wire/generic/reply.rs, oci_chat_wire/cohere/reply.rs, langgraph_stream/iterator.rs and
+  adapters/vertex_agent_stream/chunks.rs in betterlite-provider, chatgpt/chat/normalizer/tests.rs in
+  betterlite-openai, mock/stream.rs in betterlite-core, and sagemaker_stream/project.rs and agentcore_stream.rs in
+  betterlite-bedrock.
+
+
   Tests. Write rstest function stream_wrapper_cases in
   crates/betterlite-streaming/src/provider_chunk_decode/wrapper/tests.rs, declared by mod tests; in wrapper.rs, with
   named cases closing_finish_reason (finish sends the finish_reason chunk once after a content chunk),
@@ -63,8 +78,11 @@ description: >-
   listed; at the end of params/tests.rs, with named cases unsupported_rejected (a name outside the list answers
   ParameterError::Unsupported with that name), drop_params_drops (the same name with policy.drop_params lands in
   dropped_fields), allowed_openai_params_pass (a name in policy.allowed_openai_params lands in standard) and
-  provider_field_passes (an unknown passthrough name lands in provider_fields). The existing text completion,
-  snowflake, chat dispatch and params tests run unchanged.
+  provider_field_passes (an unknown passthrough name lands in provider_fields). Add the test function
+  stream_parses_reasoning_delta_fields to crates/betterlite-openai/src/stream/chunk/tests.rs: Chunk::parse reads a
+  frame whose delta carries reasoning_content and a thinking block with thinking and signature, and serializing the
+  chunk gives both back. The existing text completion, snowflake, chat dispatch, params and Delta literal tests run
+  unchanged.
 scope:
   paths:
   - crates/betterlite-streaming/src/provider_chunk_decode.rs
@@ -78,6 +96,16 @@ scope:
   - crates/betterlite-models/src/params.rs
   - crates/betterlite-models/src/params/tests.rs
   - crates/betterlite-models/src/params/tests/**
+  - crates/betterlite-openai/src/stream/chunk.rs
+  - crates/betterlite-openai/src/stream/chunk/tests.rs
+  - crates/betterlite-openai/src/chatgpt/chat/normalizer/tests.rs
+  - crates/betterlite-provider/src/oci_chat_wire/generic/reply.rs
+  - crates/betterlite-provider/src/oci_chat_wire/cohere/reply.rs
+  - crates/betterlite-provider/src/langgraph_stream/iterator.rs
+  - crates/betterlite-provider/src/adapters/vertex_agent_stream/chunks.rs
+  - crates/betterlite-core/src/mock/stream.rs
+  - crates/betterlite-bedrock/src/sagemaker_stream/project.rs
+  - crates/betterlite-bedrock/src/agentcore_stream.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1978-L2100
@@ -88,6 +116,10 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4560
   why: _check_valid_arg, the unsupported check map_listed_parameters exposes, runs against the provider's supported
     list.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1507-L1522
+  why: LiteLLM's stream Delta carries reasoning_content and thinking_blocks next to the OpenAI delta fields.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L646-L656
+  why: A thinking block is type thinking with thinking and signature, or type redacted_thinking with data.
 dod:
 - text: >-
     shared wrapper: the CustomStreamWrapper loop lives once in betterlite-streaming's StreamWrapper, and the text
@@ -109,6 +141,11 @@ dod:
     built from it is unchanged.
   proof:
   - body-split
+- text: >-
+    reasoning delta: the relay's Chunk parses and writes back a delta with reasoning_content and thinking_blocks, and
+    every stream that builds a Delta keeps its output.
+  proof:
+  - reasoning-delta
 checks:
   optional:
   - mutants
@@ -126,17 +163,21 @@ checks:
   - id: body-split
     why: chat_request_fields is missing, or the OpenAI chat body changed when chat_fields started calling it.
     run: grep -q 'pub(crate) fn chat_request_fields' crates/betterlite-provider/src/prepared/body.rs && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::/) | test(/^aiohttp_openai_dispatch::/)'
+  - id: reasoning-delta
+    why: Chunk::parse rejects a delta with reasoning_content or thinking_blocks, or a Delta literal changed a
+      stream's output.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^stream::chunk::tests::stream_parses_reasoning_delta_fields$/)' && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^stream::/) | test(/^chatgpt::/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^oci_chat_wire::/) | test(/^langgraph_stream::/) | test(/^adapters::vertex_agent_stream::/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^mock::/)' && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^sagemaker_stream::/) | test(/^agentcore_stream::/)'
 oracle_cases: []
 deviations: []
 out_of_scope:
 - >-
   Every caller that is not already here: the Anthropic gateway adapter calls StreamWrapper, RemoteFileBlocks,
-  chat_request_fields and map_listed_parameters in B9986.
+  chat_request_fields and map_listed_parameters, and fills the new Delta fields, in B9986.
 - >-
   prefetch_file_data and tool_result_from_parts stay in snowflake/messages/files.rs; only the two types move.
 - >-
-  The chat_chunk projection in betterlite-openai's text_completion_stream.rs is B9986's change; this task leaves it
-  as it is.
+  The chat_chunk projection in betterlite-openai's text_completion_stream.rs, and the new Delta fields it writes, are
+  B9986's change; this task leaves it as it is.
 pitfalls:
 - >-
   Dispatched runs cannot compile, so check each moved import by hand: StreamSetup's fields use StreamOptions,
@@ -153,8 +194,11 @@ pitfalls:
   snowflake/messages/tests.rs matches FileBlockError::Fetch and FileBlockError::Pending through
   files::FileBlockError, so files.rs keeps a pub use of the moved enum.
 - >-
+  Dispatched runs cannot compile, so search for Delta { followed by refusal: before handing in; a missed Delta literal
+  only shows in CI. The scope lists the eight on main.
+- >-
   File sizes. Every file stays at or under 300 lines. stream.rs is 232 lines today and shrinks;
-  crates/betterlite-models/src/params.rs is 194.
+  crates/betterlite-models/src/params.rs is 194. crates/betterlite-openai/src/stream/chunk.rs is 137.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0
