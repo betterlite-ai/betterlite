@@ -175,6 +175,7 @@ calls:
         - *large_send
         - *large_send
         - *large_send
-        - *large_send
+        - kind: cache
+          text: '{"setup":null}'
 env: {}
 compare: {ignore: []}
