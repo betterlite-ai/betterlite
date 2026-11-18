@@ -279,6 +279,15 @@ fn a_root_sequence_does_not_quote_non_route_scalars() {
 }
 
 #[test]
+fn a_route_text_scalar_is_quoted_before_yaml_inference() {
+    let source = b"- route_name: x\n  utterances: [1e309]\n";
+    assert_eq!(
+        quote_pyyaml_text_scalars(source).as_ref(),
+        b"- route_name: 'x'\n  utterances: ['1e309']\n"
+    );
+}
+
+#[test]
 fn a_file_case_variant_null_stays_text() {
     let (_folder, path) =
         routes_file("- route_name: nUll\n  description: nULL\n  utterances: [NuLL, nuLL]\n");
