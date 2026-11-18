@@ -218,9 +218,13 @@ async fn zero_negative_explicit_deadline() {
         "zero lookup did not answer within 0s"
     );
     let negative = request("negative", Some(-1.0), 10.0, &tracker);
-    let expired_negative = bounded_db_lookup(pending_lookup(), negative, &tasks)
-        .await
-        .expect_err("a negative deadline expires at once");
+    let expired_negative = tokio::time::timeout(
+        Duration::from_secs(2),
+        bounded_db_lookup(pending_lookup(), negative, &tasks),
+    )
+    .await
+    .expect("a negative deadline does not wait forever")
+    .expect_err("a negative deadline expires at once");
     assert_deadline(&expired_negative, "negative", -1.0);
     assert_eq!(
         expired_negative.to_string(),
