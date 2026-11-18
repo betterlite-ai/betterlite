@@ -270,7 +270,7 @@ pub(crate) async fn seed(db: &Client, sql: &str, parameters: &[&(dyn ToSql + Syn
 }
 
 pub(crate) fn at(seconds: i64) -> Timestamp {
-    let moment = chrono::DateTime::from_timestamp(seconds, 0).expect("the timestamp is in range");
+    let moment = DateTime::from_timestamp(seconds, 0).expect("the timestamp is in range");
     Timestamp::Naive(moment.naive_utc())
 }
 
@@ -318,7 +318,7 @@ impl Ports {
 
     fn table_ports(&self) -> TablePorts<'_, Infallible> {
         TablePorts {
-            clock: &self.clock,
+            clock: self.clock.as_ref(),
             jitter: &self.jitter,
             pause: &self.pause,
             sink: &self.sink,
@@ -342,4 +342,15 @@ pub(crate) async fn text_column(db: &Client, sql: &str, parameter: &str) -> Opti
         .await
         .expect("the column query runs")
         .map(|row| row.get(0))
+}
+
+pub(crate) async fn wait_for_idle(client: &Client, sql: &str) {
+    let poll = async {
+        while client.query_one(sql, &[]).await.unwrap().get::<_, i64>(0) != 0 {
+            tokio::task::yield_now().await;
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(2), poll)
+        .await
+        .expect("server execution stops while the blocking lock remains held");
 }

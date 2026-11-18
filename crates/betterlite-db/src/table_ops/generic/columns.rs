@@ -36,12 +36,12 @@ pub struct ColumnFilter<'value, Column> {
     pub value: &'value TokenValue,
 }
 
-impl<'value, Column: GenericColumn> GenericFilter<'value> for ColumnFilter<'value, Column> {
+impl<Column: GenericColumn> GenericFilter for ColumnFilter<'_, Column> {
     type Row = Column::Row;
     const ATTRIBUTE: &'static str = Column::ATTRIBUTE;
     const TABLE: &'static str = Column::TABLE;
 
-    fn parts(self) -> (&'static str, FilterValue<'value>) {
+    fn parts(&self) -> (&'static str, FilterValue<'_>) {
         let (name, kind) = self.column.sql_definition();
         (name, FilterValue::Typed(kind, self.value))
     }

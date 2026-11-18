@@ -19,35 +19,41 @@ fn settings(variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
 #[test]
 fn ttl_defaults_to_sixty_seconds() {
     let settings = settings(&[]).expect("the default loads");
-    assert_eq!(settings.ttl_seconds, DEFAULT_TTL_SECONDS);
-    assert_eq!(settings.ttl_seconds, 60.0_f64);
+    assert_eq!(
+        settings.ttl_seconds.to_bits(),
+        DEFAULT_TTL_SECONDS.to_bits()
+    );
+    assert_eq!(settings.ttl_seconds.to_bits(), 60.0_f64.to_bits());
 }
 
 #[test]
 fn ttl_reads_the_environment() {
     let settings = settings(&[(TTL_VARIABLE, "15")]).expect("the value loads");
-    assert_eq!(settings.ttl_seconds, 15.0_f64);
+    assert_eq!(settings.ttl_seconds.to_bits(), 15.0_f64.to_bits());
 }
 
 #[test]
 fn ttl_keeps_an_explicit_zero() {
     let settings = settings(&[(TTL_VARIABLE, "0")]).expect("an explicit zero loads");
-    assert_eq!(settings.ttl_seconds, 0.0_f64);
+    assert_eq!(settings.ttl_seconds.to_bits(), 0.0_f64.to_bits());
 }
 
 #[test]
 fn empty_ttl_counts_as_unset() {
     let settings = settings(&[(TTL_VARIABLE, "  ")]).expect("an empty value falls back");
-    assert_eq!(settings.ttl_seconds, DEFAULT_TTL_SECONDS);
+    assert_eq!(
+        settings.ttl_seconds.to_bits(),
+        DEFAULT_TTL_SECONDS.to_bits()
+    );
 }
 
 #[test]
 fn invalid_ttl_names_the_variable() {
     let error = settings(&[(TTL_VARIABLE, "sixty")]).expect_err("a word is not a number");
-    match error {
+    assert!(matches!(
+        error,
         ConfigError::Environment {
             source: betterlite_env::EnvError::Number { name },
-        } => assert_eq!(name, TTL_VARIABLE),
-        other => panic!("unexpected error: {other:?}"),
-    }
+        } if name == TTL_VARIABLE
+    ));
 }

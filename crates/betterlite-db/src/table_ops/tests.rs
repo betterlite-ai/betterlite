@@ -80,7 +80,7 @@ fn backoff_doubles_each_try_and_stops_at_the_budget() {
     let operations: TableOps<'_, TableClient> = TableOps {
         database: None,
         ports: TablePorts {
-            clock: &ports.clock,
+            clock: ports.clock.as_ref(),
             jitter: &jitter,
             pause: &ports.pause,
             sink: &ports.sink,

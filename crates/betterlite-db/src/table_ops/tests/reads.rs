@@ -842,6 +842,6 @@ async fn generic_key_boolean_filter_binds_true_and_false(#[case] flag: bool, #[c
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(row.token.expose_secret(), token);
+    assert_eq!(row.token.as_ref().unwrap().expose_secret(), token);
     harness.close().await;
 }

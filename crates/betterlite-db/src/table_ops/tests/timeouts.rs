@@ -6,7 +6,7 @@ use crate::table_ops::updates::batches::BatchUpdates as _;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use super::support::{Harness, Ports, TableClient};
+use super::support::{Harness, Ports, TableClient, wait_for_idle};
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::table_ops::{
@@ -49,13 +49,7 @@ async fn a_read_waiting_on_a_lock_times_out_and_names_the_deadline() {
         "a timed-out connection is discarded"
     );
     let fresh = limited.get().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let pending: i64 = fresh.query_one("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", &[]).await.unwrap().get(0);
-            if pending == 0 { break; }
-            tokio::task::yield_now().await;
-        }
-    }).await.expect("the timed-out query stops waiting before the lock is released");
+    wait_for_idle(&fresh, "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'").await;
     drop(fresh);
     db.batch_execute("ROLLBACK")
         .await
@@ -115,13 +109,7 @@ async fn a_batch_statement_waiting_on_a_lock_times_out() {
         "a timed-out connection is discarded"
     );
     let fresh = limited.get().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(1), async {
-        loop {
-            let pending: i64 = fresh.query_one("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'", &[]).await.unwrap().get(0);
-            if pending == 0 { break; }
-            tokio::task::yield_now().await;
-        }
-    }).await.expect("the timed-out query stops waiting before the lock is released");
+    wait_for_idle(&fresh, "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'").await;
     drop(fresh);
     db.batch_execute("ROLLBACK")
         .await

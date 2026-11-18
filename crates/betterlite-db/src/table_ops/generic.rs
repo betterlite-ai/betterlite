@@ -50,50 +50,50 @@ pub enum FilterValue<'value> {
 }
 
 // LiteLLM picks the table and key column at runtime; each filter type names both, and its row type
-pub trait GenericFilter<'value> {
+pub trait GenericFilter {
     type Row: RowDecoder + Send;
     const ATTRIBUTE: &'static str;
     const TABLE: &'static str;
-    fn parts(self) -> (&'static str, FilterValue<'value>);
+    fn parts(&self) -> (&'static str, FilterValue<'_>);
 }
 
-impl<'value> GenericFilter<'value> for UserFilter<'value> {
+impl GenericFilter for UserFilter<'_> {
     type Row = LiteLLMUserTable;
     const ATTRIBUTE: &'static str = USER_ATTRIBUTE;
     const TABLE: &'static str = USER_TABLE;
 
-    fn parts(self) -> (&'static str, FilterValue<'value>) {
+    fn parts(&self) -> (&'static str, FilterValue<'_>) {
         let (column, value) = self.column();
         (column, FilterValue::Text(value))
     }
 }
 
-impl<'value> GenericFilter<'value> for KeyFilter<'value> {
+impl GenericFilter for KeyFilter<'_> {
     type Row = LiteLLMVerificationToken;
     const ATTRIBUTE: &'static str = KEY_ATTRIBUTE;
     const TABLE: &'static str = KEY_TABLE;
 
-    fn parts(self) -> (&'static str, FilterValue<'value>) {
+    fn parts(&self) -> (&'static str, FilterValue<'_>) {
         match self {
             Self::Token(token) => ("token", FilterValue::Text(token.expose_secret())),
             Self::UserId(user_id) => ("user_id", FilterValue::Text(user_id)),
             Self::TeamId(team_id) => ("team_id", FilterValue::Text(team_id)),
             Self::KeyAlias(alias) => ("key_alias", FilterValue::Text(alias)),
-            Self::Blocked(flag) => ("blocked", FilterValue::Boolean(flag)),
+            Self::Blocked(flag) => ("blocked", FilterValue::Boolean(*flag)),
         }
     }
 }
 
-impl<'value> GenericFilter<'value> for ConfigFilter<'value> {
+impl GenericFilter for ConfigFilter<'_> {
     type Row = ConfigParamRow;
     const ATTRIBUTE: &'static str = CONFIG_ATTRIBUTE;
     const TABLE: &'static str = CONFIG_TABLE;
 
-    fn parts(self) -> (&'static str, FilterValue<'value>) {
+    fn parts(&self) -> (&'static str, FilterValue<'_>) {
         match self {
             Self::ParamName(name) => ("param_name", FilterValue::Text(name)),
             Self::LastRunAt(timestamp) => ("last_run_at", FilterValue::Timestamp(timestamp)),
-            Self::ReloadRevision(revision) => ("reload_revision", FilterValue::Integer(revision)),
+            Self::ReloadRevision(revision) => ("reload_revision", FilterValue::Integer(*revision)),
         }
     }
 }
@@ -103,12 +103,12 @@ where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    fn generic_row<'value, Filter>(
+    fn generic_row<Filter>(
         &self,
         filter: Filter,
     ) -> impl Future<Output = Result<Option<Filter::Row>, TableOpsError<Client::Error>>> + Send
     where
-        Filter: GenericFilter<'value> + Send;
+        Filter: GenericFilter + Send + Sync;
     fn generic_spend(
         &self,
         column: SpendFilterColumn,
@@ -131,12 +131,12 @@ where
     Client: DatabaseClient,
     Client::Attribute: TablePoolAccess,
 {
-    async fn generic_row<'value, Filter>(
+    async fn generic_row<Filter>(
         &self,
         filter: Filter,
     ) -> Result<Option<Filter::Row>, TableOpsError<Client::Error>>
     where
-        Filter: GenericFilter<'value> + Send,
+        Filter: GenericFilter + Send + Sync,
     {
         let (column, value) = filter.parts();
         let (kind, payload) = value.binding();

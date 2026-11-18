@@ -44,7 +44,7 @@ async fn generic_key_columns_use_typed_equality(
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(row.token.expose_secret(), "matching");
+    assert_eq!(row.token.as_ref().unwrap().expose_secret(), "matching");
     harness.close().await;
 }
 

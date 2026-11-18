@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use rstest::rstest;
 
-use super::support::{Harness, Ports, TableClient};
+use super::support::{Harness, Ports, TableClient, wait_for_idle};
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::table_ops::generic::{GenericReads as _, KeyFilter};
@@ -65,13 +65,7 @@ async fn tls_timeout_stops_server_work_while_the_lock_stays_held(#[case] batch: 
     );
     assert_eq!(front.pool.status().size, 0);
     let observer = harness.pool.get().await.unwrap();
-    tokio::time::timeout(Duration::from_secs(2), async {
-        loop {
-            let active: i64 = observer.query_one("SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name = 'table-ops-tls' AND state = 'active'", &[]).await.unwrap().get(0);
-            if active == 0 { break; }
-            tokio::task::yield_now().await;
-        }
-    }).await.expect("the TLS query stops before the blocking transaction is released");
+    wait_for_idle(&observer, "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name = 'table-ops-tls' AND state = 'active'").await;
     db.batch_execute("ROLLBACK").await.unwrap();
     let alias: String = observer
         .query_one(
