@@ -9,19 +9,9 @@ impl Walker<'_> {
         };
         match probe.next() {
             Some('#') => self.comment_group(),
-            Some('<') => match probe.next() {
-                Some('=' | '!') => self.open_group(),
-                _ => Err(PatternProblem::Syntax),
-            },
+            Some('<') => Err(PatternProblem::Syntax),
             Some('P') => self.python_group(),
-            Some(first)
-                if matches!(
-                    first,
-                    'a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-'
-                ) =>
-            {
-                self.flags_group()
-            }
+            Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-') => self.flags_group(),
             _ => self.open_group(),
         }
     }

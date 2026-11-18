@@ -231,6 +231,7 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::named_group_non_ascii("(?P<é>a)", 3)]
 #[case::named_group_underscore("(?P<_a>a)", 3)]
 #[case::verbose_comment_to_newline("(?x)a#c\nb", 3)]
+#[case::verbose_long_comment("(?x)a#cd\nb", 3)]
 #[case::verbose_escaped_hash("(?x)a\\#b", 4)]
 #[case::verbose_escaped_space("(?x)a\\ b", 4)]
 #[case::verbose_only_comment("(?x)(?#c)", 1)]
