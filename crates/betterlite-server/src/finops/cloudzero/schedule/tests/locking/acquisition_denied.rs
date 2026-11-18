@@ -7,7 +7,7 @@ async fn cloudzero_schedule() {
         settings(),
         datastore(),
         FakeTransport::default(),
-        leased(&lease),
+        Some(leased(&lease)),
     );
     initialize_export_job(&assembled)
         .await

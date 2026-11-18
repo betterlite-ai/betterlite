@@ -14,7 +14,7 @@ async fn cloudzero_schedule() {
         settings(),
         clone_store(&store),
         transport.clone(),
-        leased(&lease),
+        Some(leased(&lease)),
     ));
     let mut scheduler = FakeScheduler::default();
     init_cloudzero_background_job(&mut scheduler, &[assembled]);

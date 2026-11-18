@@ -27,7 +27,7 @@ fn cloudzero_schedule() {
     assert_eq!(preview.len(), 5);
     assert_eq!(preview["none"], JsonData::Null);
     assert_eq!(preview["text"], JsonData::String("hello".to_owned()));
-    assert_eq!(preview["integer"], JsonData::Number(Number::from(7)));
+    assert_eq!(preview["integer"], JsonData::Number(Number::from(7_i64)));
     assert_eq!(
         preview["money"],
         JsonData::Number(serde_json::from_str("1.23").expect("a number"))

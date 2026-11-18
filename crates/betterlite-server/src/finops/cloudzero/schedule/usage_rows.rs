@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::finops::cloudzero::UsageRow;
 use betterlite_logging::finops::cloudzero::records::UsageRecord;
@@ -82,5 +80,8 @@ pub(crate) fn decimal_field(row: &UsageRow, field: &'static str) -> Result<Decim
         Some(JsonData::Number(number)) => number,
         Some(_) => return Err(UsageRowError::NotDecimal { field }),
     };
-    Decimal::from_str(number.as_str()).map_err(|source| UsageRowError::Decimal { field, source })
+    number
+        .as_str()
+        .parse::<Decimal>()
+        .map_err(|source| UsageRowError::Decimal { field, source })
 }

@@ -9,7 +9,22 @@ use betterlite_logging::finops::cloudzero::records::cbf::CbfTransformer;
 
 use super::error::CloudZeroExportError;
 use super::usage_rows::{UsageRowError, usage_record};
-use super::{CloudZeroLogger, EXPORT_JOB_NAME, ExportOperation};
+use super::{CloudZeroLogger, CloudZeroSettings, EXPORT_JOB_NAME, ExportOperation};
+
+fn export_credentials(settings: &CloudZeroSettings) -> Option<Credentials> {
+    let api_key = settings
+        .api_key
+        .as_ref()
+        .filter(|api_key| !api_key.expose_secret().is_empty())?;
+    let connection_id = settings
+        .connection_id
+        .as_ref()
+        .filter(|connection_id| !connection_id.expose_secret().is_empty())?;
+    Some(Credentials {
+        api_key: api_key.clone(),
+        connection_id: connection_id.clone(),
+    })
+}
 
 pub async fn export_usage_data<Sender, Time>(
     logger: &CloudZeroLogger<Sender, Time>,
@@ -22,17 +37,8 @@ where
     Sender: BillingTransport + Clone + Sync,
     Time: Clock + Clone,
 {
-    let credentials = match (&logger.settings.api_key, &logger.settings.connection_id) {
-        (Some(api_key), Some(connection_id))
-            if !api_key.expose_secret().is_empty() && !connection_id.expose_secret().is_empty() =>
-        {
-            Credentials {
-                api_key: api_key.clone(),
-                connection_id: connection_id.clone(),
-            }
-        }
-        _ => return Err(CloudZeroExportError::MissingConfiguration),
-    };
+    let credentials =
+        export_credentials(&logger.settings).ok_or(CloudZeroExportError::MissingConfiguration)?;
     let usage = get_usage_data(&logger.pipeline.store, limit, start_time_utc, end_time_utc).await?;
     if usage.is_empty() {
         tracing::debug!("CloudZero Logger: no usage data found to export");

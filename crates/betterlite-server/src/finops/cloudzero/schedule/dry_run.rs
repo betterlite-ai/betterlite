@@ -19,7 +19,7 @@ pub const SAMPLE_LIMIT: usize = 50;
 
 pub type PreviewRecord = BTreeMap<String, JsonData>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct DryRunSummary {
     pub total_records: usize,
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
@@ -52,7 +52,7 @@ pub async fn dry_run_export_usage_data<Sender, Time>(
     limit: Option<i64>,
 ) -> Result<DryRunExport, CloudZeroExportError<Sender::Error>>
 where
-    Sender: BillingTransport,
+    Sender: BillingTransport + Sync,
     Time: Clock,
 {
     let requested_limit = limit.unwrap_or(DEFAULT_DRY_RUN_LIMIT);
@@ -62,13 +62,7 @@ where
         return Ok(DryRunExport {
             usage_data: Vec::new(),
             cbf_data: Vec::new(),
-            summary: DryRunSummary {
-                total_records: 0,
-                total_cost: Decimal::ZERO,
-                total_tokens: 0,
-                unique_accounts: 0,
-                unique_services: 0,
-            },
+            summary: DryRunSummary::default(),
         });
     }
     let usage_data: Vec<UsageRow> = usage.iter().take(SAMPLE_LIMIT).cloned().collect();
@@ -146,15 +140,15 @@ pub(crate) fn cbf_summary(records: &[CbfRecord]) -> Result<DryRunSummary, DryRun
                     field: "total_tokens",
                 })?;
         }
-        if let Some(CbfValue::Text(account)) = record.get("resource/account") {
-            if !account.is_empty() {
-                accounts.insert(account.as_str());
-            }
+        if let Some(CbfValue::Text(account)) = record.get("resource/account")
+            && !account.is_empty()
+        {
+            accounts.insert(account.as_str());
         }
-        if let Some(CbfValue::Text(service)) = record.get("resource/service") {
-            if !service.is_empty() {
-                services.insert(service.as_str());
-            }
+        if let Some(CbfValue::Text(service)) = record.get("resource/service")
+            && !service.is_empty()
+        {
+            services.insert(service.as_str());
         }
     }
     Ok(DryRunSummary {

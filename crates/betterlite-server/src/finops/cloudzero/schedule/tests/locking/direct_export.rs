@@ -14,7 +14,7 @@ async fn cloudzero_schedule() {
         settings(),
         clone_store(&store),
         unavailable_transport.clone(),
-        leased(&unavailable),
+        Some(leased(&unavailable)),
     );
     initialize_export_job(&unavailable_logger)
         .await

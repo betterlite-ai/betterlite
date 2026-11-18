@@ -26,10 +26,10 @@ impl LockCache for FakeCache {
         &self,
         key: &str,
     ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
-        match self.owners.lock().expect("an unsplit lock").get(key) {
-            Some(owner) => ready(Ok(Some(owner.clone()))),
-            None => ready(Ok(None)),
-        }
+        let owners = self.owners.lock().expect("an unsplit lock");
+        let owner = owners.get(key).cloned();
+        drop(owners);
+        ready(Ok(owner))
     }
 
     fn set_owner_if_absent(
@@ -45,6 +45,7 @@ impl LockCache for FakeCache {
             owners.insert(key.to_owned(), owner.as_bytes().to_vec());
             true
         };
+        drop(owners);
         ready(Ok(inserted))
     }
 

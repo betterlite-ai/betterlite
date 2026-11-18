@@ -220,9 +220,8 @@ pub(crate) fn logger(
     }
 }
 
-pub(crate) fn leased(lease: &Arc<FakeLease>) -> Option<Arc<dyn UsageExportLease>> {
-    let held = Arc::clone(lease);
-    Some(held)
+pub(crate) fn leased(lease: &Arc<FakeLease>) -> Arc<dyn UsageExportLease> {
+    Arc::clone(lease)
 }
 
 pub(crate) fn lease_events(job: &str) -> Vec<String> {

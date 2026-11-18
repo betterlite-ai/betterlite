@@ -23,18 +23,18 @@ async fn cloudzero_schedule() {
         FakeTransport::default(),
         None,
     );
-    let error = export_usage_data(&empty_key, None, None, None, None)
+    let empty_key_error = export_usage_data(&empty_key, None, None, None, None)
         .await
         .expect_err("an empty API key is refused");
-    assert_missing_configuration(&error);
+    assert_missing_configuration(&empty_key_error);
     let empty_connection = logger(
         literal("key", ""),
         datastore(),
         FakeTransport::default(),
         None,
     );
-    let error = export_usage_data(&empty_connection, None, None, None, None)
+    let empty_connection_error = export_usage_data(&empty_connection, None, None, None, None)
         .await
         .expect_err("an empty connection ID is refused");
-    assert_missing_configuration(&error);
+    assert_missing_configuration(&empty_connection_error);
 }

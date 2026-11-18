@@ -104,7 +104,7 @@ where
     Sender: BillingTransport + Send + Sync,
     Time: Clock,
 {
-    fn callback_name(&self) -> &str {
+    fn callback_name(&self) -> &'static str {
         "cloudzero"
     }
 }

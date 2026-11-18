@@ -19,10 +19,10 @@ impl<Cache: LockCache> UsageExportLease for PodLockManager<Cache> {
     }
 
     async fn acquire_lock(&self, cronjob_id: &str) -> Option<bool> {
-        PodLockManager::acquire_lock(self, cronjob_id, None, true).await
+        Self::acquire_lock(self, cronjob_id, None, true).await
     }
 
     async fn release_lock(&self, cronjob_id: &str) {
-        PodLockManager::release_lock(self, cronjob_id).await;
+        Self::release_lock(self, cronjob_id).await;
     }
 }

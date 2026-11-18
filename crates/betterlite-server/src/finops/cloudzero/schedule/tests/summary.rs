@@ -49,9 +49,9 @@ fn cloudzero_schedule() {
         entry(Decimal::ZERO, i64::MAX, "", ""),
         entry(Decimal::ZERO, 1, "", ""),
     ];
-    let error = cbf_summary(&token_overflow).expect_err("a token overflow");
+    let token_error = cbf_summary(&token_overflow).expect_err("a token overflow");
     assert_eq!(
-        error.to_string(),
+        token_error.to_string(),
         "the dry run total for total_tokens overflowed"
     );
 }

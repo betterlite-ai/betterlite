@@ -14,8 +14,11 @@ async fn cloudzero_schedule() {
     );
     let too_long = settings_from(&[("CLOUDZERO_EXPORT_INTERVAL_MINUTES", "4611686018427387903")]);
     let too_long_logger = logger(too_long, datastore(), FakeTransport::default(), None);
-    let error = hourly_usage_data_export(&too_long_logger)
+    let too_long_error = hourly_usage_data_export(&too_long_logger)
         .await
         .expect_err("the lookback exceeds the duration range");
-    assert!(matches!(error, CloudZeroExportError::WindowOutOfRange));
+    assert!(matches!(
+        too_long_error,
+        CloudZeroExportError::WindowOutOfRange
+    ));
 }
