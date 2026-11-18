@@ -234,12 +234,11 @@ impl LockCache for FakeCache {
             if delayed {
                 pending::<()>().await;
             }
-            {
-                let mut lease = store.lock().unwrap_or_else(PoisonError::into_inner);
-                if let Some(owner) = lease.lease.take() {
-                    lease.deleted_owners.push(owner);
-                }
+            let mut lease = store.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(owner) = lease.lease.take() {
+                lease.deleted_owners.push(owner);
             }
+            drop(lease);
             outcome
         }
     }
@@ -273,14 +272,16 @@ impl LockScript for FakeScript {
         Box::pin(async move {
             let mut lease = self.store.lock().unwrap_or_else(PoisonError::into_inner);
             lease.script_arguments.push(owner_json.to_owned());
-            match self.mode {
+            let result = match self.mode {
                 ScriptMode::Fail => Err(LockCacheError::UnexpectedReply { operation: "run" }),
                 ScriptMode::Compare if lease.stored_json.as_deref() == Some(owner_json) => {
                     lease.stored_json = None;
                     Ok(true)
                 }
                 ScriptMode::Compare => Ok(false),
-            }
+            };
+            drop(lease);
+            result
         })
     }
 }

@@ -86,20 +86,19 @@ impl<T: Send> MemoryUpdateQueue<T> {
     #[must_use]
     pub fn drain_updates(&self) -> Vec<T> {
         let mut updates = Vec::new();
-        {
-            let mut receiver = self.receiver.lock().unwrap_or_else(PoisonError::into_inner);
-            while !receiver.is_empty() {
-                // Circuit breaker: the source stops a pass at MAX_IN_MEMORY_QUEUE_FLUSH_COUNT, and a nonpositive value therefore drains nothing.
-                if i64::try_from(updates.len()).unwrap_or(i64::MAX) >= self.flush_count {
-                    tracing::debug!("Max in memory queue flush count reached, stopping flush");
-                    break;
-                }
-                let Ok(update) = receiver.try_recv() else {
-                    break;
-                };
-                updates.push(update);
+        let mut receiver = self.receiver.lock().unwrap_or_else(PoisonError::into_inner);
+        while !receiver.is_empty() {
+            // Circuit breaker: the source stops a pass at MAX_IN_MEMORY_QUEUE_FLUSH_COUNT, and a nonpositive value therefore drains nothing.
+            if i64::try_from(updates.len()).unwrap_or(i64::MAX) >= self.flush_count {
+                tracing::debug!("Max in memory queue flush count reached, stopping flush");
+                break;
             }
+            let Ok(update) = receiver.try_recv() else {
+                break;
+            };
+            updates.push(update);
         }
+        drop(receiver);
         updates
     }
 
