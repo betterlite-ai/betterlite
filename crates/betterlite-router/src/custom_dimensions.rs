@@ -19,7 +19,8 @@ const BUILT_IN_DIMENSIONS: [&str; 7] = [
     "questionComplexity",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString)]
+#[strum(serialize_all = "snake_case")]
 pub enum ClassifierType {
     Heuristic,
     HeuristicV2,
@@ -30,24 +31,6 @@ pub enum ClassifierType {
     HeuristicFirst,
     Hybrid,
     Jev,
-}
-
-impl ClassifierType {
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "heuristic" => Some(Self::Heuristic),
-            "heuristic_v2" => Some(Self::HeuristicV2),
-            "llm" => Some(Self::Llm),
-            "capability" => Some(Self::Capability),
-            "llm_v2" => Some(Self::LlmV2),
-            "custom" => Some(Self::Custom),
-            "heuristic_first" => Some(Self::HeuristicFirst),
-            "hybrid" => Some(Self::Hybrid),
-            "jev" => Some(Self::Jev),
-            _ => None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -70,7 +53,7 @@ pub enum DimensionsError {
     Count { count: usize, limit: usize },
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Validated {
     pub dimensions: Vec<CustomDimension>,
     pub work: u64,
@@ -91,15 +74,13 @@ pub fn validate(
             limit: MAX_CUSTOM_DIMENSIONS,
         });
     }
-    let classifier_type =
-        ClassifierType::parse(classifier).ok_or_else(|| DimensionsError::ClassifierType {
+    let classifier_type = classifier.parse::<ClassifierType>().map_err(|_source| {
+        DimensionsError::ClassifierType {
             value: classifier.to_owned(),
-        })?;
+        }
+    })?;
     if checked.is_empty() {
-        return Ok(Validated {
-            dimensions: Vec::new(),
-            work: 0,
-        });
+        return Ok(Validated::default());
     }
     if !matches!(classifier_type, Heuristic | HeuristicFirst | Hybrid) {
         return Err(DimensionsError::Classifier);

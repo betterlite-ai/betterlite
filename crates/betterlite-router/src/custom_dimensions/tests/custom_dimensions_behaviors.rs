@@ -126,7 +126,7 @@ fn every_classifier_type_parses_to_its_name(
     #[case] name: &str,
     #[case] expected: Option<ClassifierType>,
 ) {
-    assert_eq!(ClassifierType::parse(name), expected, "{name}");
+    assert_eq!(name.parse::<ClassifierType>().ok(), expected, "{name}");
 }
 
 #[test]
