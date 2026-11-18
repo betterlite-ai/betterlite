@@ -46,7 +46,7 @@ deviations:
       LiteLLM, so keeping the deadline on the wait alone preserves that outcome. The 60 second
       submission cap matches the SDK's default request timeout and bounds the RPC betterlite sends.
     link: >-
-      https://github.com/googleapis/python-aiplatform/blob/v1.133.0/vertexai/rag/rag_data.py#L616-L626
+      https://github.com/googleapis/python-aiplatform/blob/v1.133.0/vertexai/rag/rag_data.py#L622-L626
   - what: >-
       A store request whose content is over 512 MiB, whose filename is over 1024 bytes or whose
       content type is over 255 bytes is refused with an error that names the field, before the bytes
