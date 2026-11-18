@@ -1,0 +1,156 @@
+id: B9991
+title: The realtime relay futures are Send
+description: >-
+  The realtime WebSocket route (B1125) runs the relay inside axum's WebSocketUpgrade::on_upgrade, and on_upgrade
+  only takes a Send future. The relay's futures are not Send today. RealtimeSend in
+  crates/betterlite-core/src/api/realtime_sender.rs and its impl for RealtimeSender in realtime_sender/methods.rs are
+  #[async_trait(?Send)], SenderFuture is a local boxed future, and deliver_frame, deliver_text (methods.rs) and
+  send_client_frame (realtime_sender/client.rs) box with boxed_local. The cause is the connection state.
+  RealtimeStreaming in crates/betterlite-core/src/api/realtime_session_state.rs holds six trait objects. RealtimeBackend
+  is already Send, and RealtimeLogging, RealtimeSuccessQueue and RealtimeProviderConfig are already Send + Sync, but
+  ClientWebSocket and RealtimeEventNormalizer have no Send bound. RealtimeSender also holds
+  &dyn RealtimeGuardrailCallback, and RealtimeGuardrailCallback has no Sync bound. B9984 lands first. It bans
+  LocalBoxFuture in clippy.toml and leaves the alias as pub type SenderFuture =
+  futures_util::future::LocalBoxFuture<...> under one #[expect(clippy::disallowed_types, reason = "the realtime relay
+  state holds connection trait objects that are not Send yet")]. Max chose Send provider and logging futures, with
+  the trait objects they hold bound on the trait (decision 2026-11-18). This task does the same for the relay.
+
+
+  Add the bounds as supertraits on the trait definitions. In crates/betterlite-core/src/api/realtime_contracts/transport.rs,
+  ClientWebSocket becomes pub trait ClientWebSocket: ScopedWebSocket + Send, and RealtimeEventNormalizer becomes
+  pub trait RealtimeEventNormalizer: Send + Sync. In crates/betterlite-core/src/api/realtime_guardrail_policy.rs,
+  RealtimeGuardrailCallback becomes pub trait RealtimeGuardrailCallback: Send + Sync. In realtime_sender.rs, RealtimeSend
+  becomes pub trait RealtimeSend: Send, so relay code that is generic over a sender can hold it across an await. The
+  two socket traits get Send and not Sync. The relay only reaches a socket through &mut, so Send is all its futures
+  need, and the client socket B1125 wraps, axum::extract::ws::WebSocket, is not Sync, because hyper's Upgraded holds a
+  Box<dyn Io + Send>. RealtimeStreaming is then Send but not Sync, so RealtimeSend stops at Send. The other four trait
+  objects already carry their bounds; leave them and realtime_session_state.rs as they are.
+
+
+  The new bounds reach 15 implementations in crates and tools: 5 of ClientWebSocket, 2 of RealtimeEventNormalizer,
+  7 of RealtimeGuardrailCallback and RealtimeSender's 1 of RealtimeSend. None holds an Rc, RefCell or Cell. They hold
+  Arc<Mutex<...>>, a Mutex, plain data or nothing, so all of them are Send and Sync already. The one that needs an
+  edit is the generic test impl RealtimeGuardrailCallback for Raising<Make> in
+  crates/betterlite-core/src/api/realtime_guardrail_policy/tests.rs. Its where clause adds + Send + Sync to the Fn
+  bound on Make, since the closures its tests pass capture nothing. If the compiler names another type or
+  parameter these futures hold, bound it where it is declared, never at a single use. No unsafe, and no wrapper type
+  that asserts Send.
+
+
+  Then remove the workarounds. Both #[async_trait(?Send)] attributes become #[async_trait]. SenderFuture becomes
+  pub type SenderFuture<'sender, Output, ConfigError, CallbackError> = futures_util::future::BoxFuture<'sender,
+  Result<Output, RealtimeSenderError<ConfigError, CallbackError>>>, and B9984's expect on it goes; an expect that no
+  longer fires fails the build. The three .boxed_local() calls become .boxed(). Delete the comments that give the
+  missing Send as the reason for a shape, or reword them to a reason that still holds: the comment above SenderFuture
+  ("share the same local future"), the one above RealtimeSend ("its futures stay local because connection callbacks
+  are not Send") and the one above send_backend in realtime_sender/backend.rs ("the rest of the non-Send connection
+  state"). No behavior changes.
+
+
+  Tests. Add crates/betterlite-core/src/api/realtime_sender/tests/send.rs and declare it with mod send; in
+  realtime_sender/tests.rs next to mod setup;, so its tests run as api::realtime_sender::tests::send::. Each test is a
+  plain #[test]. It builds the RealtimeSender inside an async block with the module's Fixture and make, moves that
+  block to a second thread with std::thread::scope, builds a tokio current-thread runtime on that thread, blocks on
+  the block there, and asserts on the first thread what the existing test with the same script asserts. The block
+  holds the sender across the await the way a relay will, so a sender that is not Send does not compile there. One
+  test per RealtimeSend method. send_to_backend reuses the realtime_backend_send_order script in tests/backend.rs and
+  checks the true result, the timeline entries and the cached setup frame. send_event_to_client reuses
+  normalizer_drops_and_renames_before_sending in tests/client.rs, so a boxed RealtimeEventNormalizer crosses the
+  thread, and checks the dropped and renamed events. maybe_disable_auto_response reuses
+  ga_disable_update_nests_turn_detection in tests/setup.rs with AudioGuardrail and checks the
+  turn_detection_update_sent flag and the GA_DISABLE frame the provider saw.
+scope:
+  paths:
+  - crates/betterlite-core/src/api/realtime_contracts/transport.rs
+  - crates/betterlite-core/src/api/realtime_guardrail_policy.rs
+  - crates/betterlite-core/src/api/realtime_guardrail_policy/tests.rs
+  - crates/betterlite-core/src/api/realtime_sender.rs
+  - crates/betterlite-core/src/api/realtime_sender/methods.rs
+  - crates/betterlite-core/src/api/realtime_sender/client.rs
+  - crates/betterlite-core/src/api/realtime_sender/backend.rs
+  - crates/betterlite-core/src/api/realtime_sender/tests.rs
+  - crates/betterlite-core/src/api/realtime_sender/tests/send.rs
+  lint_tables: false
+references:
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/.development/decisions/2026-11-18-provider-futures-send.md
+  why: Max's decision that provider and logging futures are Send and the trait objects they hold carry the bound.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_session_state.rs#L41-L64
+  why: RealtimeStreaming and its six trait-object fields, which decide whether the relay state is Send.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_contracts/transport.rs#L14-L44
+  why: ClientWebSocket with no Send bound, RealtimeBackend already Send and RealtimeEventNormalizer with no bound.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_guardrail_policy.rs#L14-L25
+  why: RealtimeGuardrailCallback, which RealtimeSender borrows as a trait object and which has no Sync bound.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_sender.rs#L21-L48
+  why: SenderFuture, RealtimeSender and the ?Send RealtimeSend trait as they are before B9984 adds its expect.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_sender/methods.rs#L22-L81
+  why: deliver_frame and deliver_text, the two boxed_local futures in the sender impl; the ?Send impl starts at L144.
+- url: https://github.com/betterlite-ai/betterlite/blob/aaf027816b/crates/betterlite-core/src/api/realtime_sender/client.rs#L26-L55
+  why: send_client_frame, the third boxed_local future, which borrows the boxed ClientWebSocket across its send.
+- url: https://github.com/tokio-rs/axum/blob/axum-v0.8.9/axum/src/extract/ws.rs#L347-L351
+  why: on_upgrade requires a Send + 'static future, which is why B1125 needs this task.
+- url: https://github.com/tokio-rs/axum/blob/axum-v0.8.9/axum/src/extract/ws.rs#L546-L549
+  why: axum's WebSocket holds hyper's Upgraded, so it is Send and not Sync.
+- url: https://github.com/hyperium/hyper/blob/v1.12.0/src/upgrade.rs#L66-L68
+  why: Upgraded holds Box<dyn Io + Send>, the reason ClientWebSocket gets Send and not Sync.
+dod:
+- text: >-
+    ClientWebSocket requires Send, RealtimeEventNormalizer and RealtimeGuardrailCallback require Send + Sync, and
+    RealtimeSend requires Send. The sender's source files hold no async_trait(?Send), LocalBoxFuture, boxed_local or
+    disallowed_types expect, SenderFuture is a BoxFuture, and no comment there blames a missing Send.
+  proof: [no-local-futures]
+- text: >-
+    Each RealtimeSend method runs on a second thread inside a block that holds the sender, and gives the result its
+    existing test expects for the same script.
+  proof: [send-tests]
+- text: >-
+    The existing tests of the realtime sender, guardrail policy, contracts and session state, and the oracle's realtime
+    sender driver tests, still pass, so no behavior changed.
+  proof: [existing-tests, oracle-sender]
+checks:
+  optional: []
+  commands:
+  - id: no-local-futures
+    why: A ?Send attribute, a local future, the B9984 expect or a comment blaming a missing Send is left, or a bound is missing.
+    run: >-
+      ! git grep -n -E 'LocalBoxFuture|boxed_local|async_trait\(\?Send\)|disallowed_types|not Send|non-Send|local future'
+      -- crates/betterlite-core/src/api/realtime_sender.rs crates/betterlite-core/src/api/realtime_sender/methods.rs
+      crates/betterlite-core/src/api/realtime_sender/client.rs crates/betterlite-core/src/api/realtime_sender/backend.rs
+      && grep -q -F 'futures_util::future::BoxFuture' crates/betterlite-core/src/api/realtime_sender.rs
+      && grep -q -E 'pub trait RealtimeSend: Send \{' crates/betterlite-core/src/api/realtime_sender.rs
+      && grep -q -E 'pub trait ClientWebSocket: ScopedWebSocket \+ Send \{' crates/betterlite-core/src/api/realtime_contracts/transport.rs
+      && grep -q -E 'pub trait RealtimeEventNormalizer: Send \+ Sync \{' crates/betterlite-core/src/api/realtime_contracts/transport.rs
+      && grep -q -E 'pub trait RealtimeGuardrailCallback: Send \+ Sync \{' crates/betterlite-core/src/api/realtime_guardrail_policy.rs
+  - id: send-tests
+    why: A RealtimeSend future still cannot move to another thread with its sender, or gives a different result there.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::realtime_sender::tests::send::/)'
+  - id: existing-tests
+    why: The new bounds or the BoxFuture alias changed what the sender, the guardrail policy or the connection state does.
+    run: >-
+      cargo nextest run --locked -p betterlite-core --no-tests=fail
+      -E 'test(/^api::(realtime_sender|realtime_guardrail_policy|realtime_contracts|realtime_session_state)::tests::/)'
+  - id: oracle-sender
+    why: The oracle's realtime sender driver, which runs RealtimeSender over a real loopback WebSocket, broke.
+    run: >-
+      cargo nextest run --locked -p betterlite-oracle-core-ops --no-tests=fail -E 'test(/^realtime_sender_websocket::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Sync on ClientWebSocket, RealtimeBackend and RealtimeSend. The relay owns each socket and reaches it through &mut, and axum's WebSocket, which B1125 wraps, cannot be Sync.
+- The relay modules that are not on main at aaf027816b, realtime_setup_buffer (B1124), realtime_backend_relay (B1008), realtime_client_relay (B1009), realtime_backend_transport (B2457) and realtime_connect (B1011). They build on the Send traits. The route itself is B1125.
+- The oracle driver's DriverFuture in tools/oracle/src/helpers/core_ops/realtime_sender_websocket/driver.rs. It boxes its own futures without Send on a current-thread runtime, and a Send future still fits it.
+- The implementors that already meet the new bounds and need no edit, in realtime_contracts/tests.rs, realtime_sender/tests.rs, tools/oracle/src/helpers/core_ops/realtime_sender_websocket/provider.rs and transport.rs, tools/oracle/src/helpers/core_ops/realtime_guardrail_policy.rs, tools/oracle/src/helpers/openai/realtime/probe.rs and tools/oracle/src/helpers/provider/openai_assistant_dispatch/realtime.rs.
+- The second RealtimeEventNormalizer trait in crates/betterlite-openai/src/realtime/normalizer.rs, added by B528 and already Send + Sync. Merging it with the core trait is separate work.
+- LoggingWorker in transport.rs, which has no implementor and already takes Send work, and BaseRealtimeHttpConfig, which is already Send + Sync and is not part of the relay state.
+pitfalls:
+- 'Put the bound on the trait definition, as in pub trait ClientWebSocket: ScopedWebSocket + Send, and never write Box<dyn ClientWebSocket + Send> in RealtimeStreaming or ConnectionSetup. A supertrait makes every implementor prove it once.'
+- Do not add Sync to ClientWebSocket, RealtimeBackend or RealtimeSend. B1125 implements ClientWebSocket over axum's WebSocket, and that type is not Sync.
+- 'If .boxed() or #[async_trait] reports a type that is not Send, bound that type''s own trait. Going back to boxed_local or to a Pin<Box<dyn Future>> without Send defeats the task.'
+- 'B9984 lands first, so the alias is written with the full path futures_util::future::LocalBoxFuture under #[expect(clippy::disallowed_types, ...)] when this task starts. Remove both; the expect fails the build once nothing fires it.'
+- If a relay task merged after aaf027816b, such as B1124's realtime_setup_buffer, returns SenderFuture through boxed_local or uses async_trait(?Send), the alias change breaks a file outside this scope. Answer blocked and name the file and line.
+- 'Run each send test as a plain #[test] that builds its runtime on the second thread. A block_on on the thread of a #[tokio::test] panics, since that thread already runs a runtime.'
+- Keep the words the no-local-futures check looks for out of the comments in realtime_sender.rs, methods.rs, client.rs and backend.rs.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0
