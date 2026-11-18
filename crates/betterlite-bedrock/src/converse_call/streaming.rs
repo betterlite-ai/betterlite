@@ -21,6 +21,8 @@ use super::error::ConverseCallError;
 use super::prepare::CallPlan;
 use super::transport::{ConverseClientFactory, StreamClient, SuppliedStream};
 
+mod projection;
+
 pub struct StreamParts<'parts, 'supplied> {
     pub route: ClientKind,
     pub timeout: Option<Duration>,
@@ -38,6 +40,7 @@ pub struct WrappedStream<'deps> {
     pub custom_llm_provider: &'static str,
     pub response_headers: IndexMap<String, String>,
     pub stream_chunk_size: Option<u64>,
+    redactor: &'deps Redactor,
 }
 
 pub struct PendingStream<'deps> {
@@ -96,6 +99,7 @@ pub(super) fn finish_stream<'deps>(
         model: call.model.to_owned(),
         custom_llm_provider: "bedrock",
         stream_chunk_size: plan.stream_chunk_size,
+        redactor: pending.deps.redactor,
     })
 }
 

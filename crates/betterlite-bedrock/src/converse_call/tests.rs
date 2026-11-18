@@ -2,6 +2,8 @@
 
 use crate::model_routes::ParamValue;
 use crate::rerank::transport::ClientKind;
+use betterlite_error::envelope::WireField;
+use betterlite_error::error::ErrorClass;
 use betterlite_models::controls::control_options::ControlOptions;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -148,6 +150,7 @@ fn converse_call_cases(#[case] source: &str, #[case] scenario: &str) {
         "eof" => {
             assert!(output.stream);
             assert_eq!(output.status, Some(502));
+            assert!(output.error.as_deref().unwrap().contains("no events"));
         }
         "beta" => {
             assert!(!output.headers.contains_key("anthropic-beta"));
@@ -302,7 +305,7 @@ fn pre_call_logging_suppression(#[case] routing: (bool, bool), #[case] logs: usi
 #[case::model(include_str!("tests/fixtures/modelStreamErrorException-before.json"), 424, 0)]
 #[case::model_after(include_str!("tests/fixtures/modelStreamErrorException-after.json"), 424, 1)]
 #[case::validation(include_str!("tests/fixtures/validationException-before.json"), 400, 0)]
-#[case::internal(include_str!("tests/fixtures/internalServerException-after.json"), 500, 1)]
+#[case::internal(include_str!("tests/fixtures/internalServerException-after.json"), 503, 1)]
 #[case::unavailable(include_str!("tests/fixtures/serviceUnavailableException-before.json"), 503, 0)]
 #[case::timeout(include_str!("tests/fixtures/modelTimeoutException-after.json"), 408, 1)]
 fn modeled_stream_errors_cancel_body(
@@ -324,6 +327,46 @@ fn modeled_stream_errors_cancel_body(
             .unwrap()
             .contains(&status.to_string())
     );
+}
+
+#[rstest::rstest]
+#[case::sync_before(include_str!("tests/fixtures/internalServerException-before.json"), false)]
+#[case::sync_after(include_str!("tests/fixtures/internalServerException-after.json"), false)]
+#[case::async_before(include_str!("tests/fixtures/internalServerException-before.json"), true)]
+#[case::async_after(include_str!("tests/fixtures/internalServerException-after.json"), true)]
+fn internal_stream_error_uses_shared_class(#[case] json: &str, #[case] asynchronous: bool) {
+    let mut input: fixture::Input = serde_json::from_str(json).unwrap();
+    input.asynchronous = asynchronous;
+    let output = fixture::run(&input).unwrap();
+    let class = output.mapped_error.unwrap();
+    assert!(matches!(class, ErrorClass::ServiceUnavailable(_)));
+    let metadata = class.metadata();
+    assert_eq!(metadata.status_code, 503);
+    assert_eq!(metadata.model.as_deref(), Some(input.model.as_str()));
+    assert_eq!(metadata.provider.as_deref(), Some("bedrock"));
+    assert_eq!(metadata.error_type, WireField::Null);
+    assert_eq!(metadata.param, WireField::Null);
+    assert_eq!(metadata.openai_code, None);
+    assert_eq!(output.reads, input.frames.len().checked_sub(1).unwrap());
+    assert_eq!(output.chunks, output.reads.checked_sub(1).unwrap());
+    assert_eq!(output.drops, 1);
+}
+
+#[test]
+fn malformed_stream_frame_uses_shared_connection_error() {
+    let mut input: fixture::Input =
+        serde_json::from_str(include_str!("tests/fixtures/streaming-first-chunk.json")).unwrap();
+    input.frames = vec![vec![0; 12]];
+    input.consume = true;
+    let output = fixture::run(&input).unwrap();
+    assert!(matches!(
+        output.mapped_error,
+        Some(ErrorClass::ApiConnection(_))
+    ));
+    assert_eq!(output.status, Some(500));
+    assert!(output.error.as_deref().unwrap().contains("checksum"));
+    assert_eq!(output.chunks, 0);
+    assert_eq!(output.drops, 1);
 }
 
 #[test]

@@ -269,12 +269,14 @@ async fn collect_stream(
     if !consume {
         return;
     }
-    while let Some(chunk) = stream.completion_stream.next().await {
+    while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(_) => observed.chunks = observed.chunks.saturating_add(1),
             Err(error) => {
-                observed.status = error.status();
-                observed.error = Some(format!("{error:?}: {error}"));
+                let metadata = error.metadata();
+                observed.status = Some(metadata.status_code);
+                observed.error = Some(format!("{metadata:?}: {error:?}"));
+                observed.mapped_error = Some(error);
             }
         }
     }

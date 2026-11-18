@@ -1,3 +1,4 @@
+use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 use std::collections::BTreeMap;
 
@@ -43,6 +44,7 @@ pub(crate) struct Observation {
     pub(crate) chunk_size: Option<u64>,
     pub(crate) logs: Vec<Json>,
     pub(crate) error: Option<String>,
+    pub(crate) mapped_error: Option<ErrorClass>,
     pub(crate) reasoning_tokens: Option<i64>,
 }
 
