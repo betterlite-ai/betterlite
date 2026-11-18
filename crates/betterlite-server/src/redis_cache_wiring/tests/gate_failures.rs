@@ -12,9 +12,11 @@ use crate::redis_cache_wiring::gate::classify;
 
 use super::support::{
     Broken, FakeClock, bare_busy_loading_error, bare_cluster_down_error, bare_command_error,
-    bare_connection_error, bare_timeout_error, busy_loading_error, chained_timeout_error,
-    cluster_down_error, command_error, connect_timeout_error, connection_error, decode_error,
-    described_connection_error, gate_with, settings, status, timeout_error,
+    bare_connection_error, bare_master_down_error, bare_max_clients_error, bare_no_auth_error,
+    bare_timeout_error, busy_loading_error, chained_timeout_error, cluster_down_error,
+    command_error, connect_timeout_error, connection_error, decode_error,
+    described_connection_error, gate_with, master_down_error, max_clients_error, no_auth_error,
+    reply_error, settings, status, timeout_error,
 };
 
 #[test]
@@ -135,6 +137,119 @@ fn a_bare_cluster_down_reply_counts_as_a_health_failure() {
     assert_eq!(observed.hard_failure_count, 1);
 }
 
+#[test]
+fn a_bare_master_down_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = bare_master_down_error();
+    gate.record_failure(&error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_master_down_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = master_down_error();
+    gate.record_failure(&error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_bare_no_auth_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = bare_no_auth_error();
+    gate.record_failure(&error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_no_auth_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = no_auth_error();
+    gate.record_failure(&error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_bare_max_clients_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = bare_max_clients_error();
+    gate.record_failure(&error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_max_clients_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = max_clients_error();
+    gate.record_failure(&error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_bare_wrong_pass_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = reply_error(b"-WRONGPASS invalid username-password pair or user is disabled.\r\n");
+    gate.record_failure(&error);
+    assert_eq!(status(&gate).failure_count, 1);
+}
+
+#[test]
+fn a_bare_invalid_password_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = reply_error(b"-ERR invalid password\r\n");
+    gate.record_failure(&error);
+    assert_eq!(status(&gate).failure_count, 1);
+}
+
+#[test]
+fn a_bare_auth_without_password_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = reply_error(
+        b"-ERR AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?\r\n",
+    );
+    gate.record_failure(&error);
+    assert_eq!(status(&gate).failure_count, 1);
+}
+
+#[test]
+fn a_bare_client_auth_without_password_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = reply_error(b"-ERR Client sent AUTH, but no password is set\r\n");
+    gate.record_failure(&error);
+    assert_eq!(status(&gate).failure_count, 1);
+}
+
+#[test]
+fn a_bare_ldap_reply_counts_as_a_health_failure() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = reply_error(b"-ERR problem with LDAP service\r\n");
+    gate.record_failure(&error);
+    assert_eq!(status(&gate).failure_count, 1);
+}
+
 #[tokio::test]
 async fn a_connect_timeout_counts_as_a_timeout() {
     let elapsed = tokio::time::timeout(Duration::ZERO, future::pending::<()>())
@@ -210,6 +325,34 @@ fn swallowed_counts_a_health_failure_too() {
         .enter("async_batch_get_cache")
         .expect("the breaker is closed");
     let error = connection_error();
+    gate.swallowed(&admission, &error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn swallowed_counts_a_no_auth_reply_too() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let admission = gate
+        .enter("async_batch_get_cache")
+        .expect("the breaker is closed");
+    let error = no_auth_error();
+    gate.swallowed(&admission, &error);
+    let observed = status(&gate);
+    assert_eq!(observed.failure_count, 1);
+    assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn swallowed_counts_a_bare_master_down_reply_too() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let admission = gate
+        .enter("async_batch_get_cache")
+        .expect("the breaker is closed");
+    let error = bare_master_down_error();
     gate.swallowed(&admission, &error);
     let observed = status(&gate);
     assert_eq!(observed.failure_count, 1);

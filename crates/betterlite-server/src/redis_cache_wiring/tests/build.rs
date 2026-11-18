@@ -10,7 +10,7 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use crate::redis_cache_wiring::build::{RedisCacheRequest, RedisCacheWiring};
 
 use super::support::{
-    NoopHooks, closed_port, connection_error, empty_environment, overrides, settings,
+    FakeClock, NoopHooks, closed_port, connection_error, empty_environment, overrides, settings,
 };
 
 const DEFAULT_TTL: i64 = 120;
@@ -22,6 +22,7 @@ fn wiring(failure_threshold: u32) -> RedisCacheWiring {
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(NoopHooks),
         policy: settings(failure_threshold),
+        clock: Arc::new(FakeClock::new()).handle(),
         default_ttl: DEFAULT_TTL,
         default_major_version: MAJOR_VERSION,
     }

@@ -2,7 +2,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
-use std::fmt;
 use std::io;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -15,6 +14,8 @@ use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::cache_primitives::decode::DecodeError;
 use betterlite_redis::redis_cache::error::RedisCacheError;
+use betterlite_redis::redis_client_reuse::breaker::BreakerAdmission;
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_redis::redis_client_reuse::error::ClientReuseError;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
@@ -77,6 +78,23 @@ pub(crate) fn status(gate: &PolicyGate) -> Status {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .status()
+}
+
+// The cap test needs more swallowed calls than the set keeps, so the loop lives here, not in a test.
+pub(crate) fn swallow_calls(
+    gate: &PolicyGate,
+    error: &RedisCacheError,
+    count: usize,
+) -> Vec<BreakerAdmission> {
+    let mut admissions = Vec::new();
+    for _ in 0..count {
+        let admission = gate
+            .enter("async_batch_get_cache")
+            .expect("the breaker never opens");
+        gate.swallowed(&admission, error);
+        admissions.push(admission);
+    }
+    admissions
 }
 
 pub(crate) fn connection_error() -> RedisCacheError {
@@ -151,11 +169,35 @@ pub(crate) fn bare_cluster_down_error() -> RedisError {
     reply_error(b"-CLUSTERDOWN The cluster is down\r\n")
 }
 
+pub(crate) fn master_down_error() -> RedisCacheError {
+    wrapped(reply_error(b"-MASTERDOWN Link with MASTER is down\r\n"))
+}
+
+pub(crate) fn no_auth_error() -> RedisCacheError {
+    wrapped(reply_error(b"-NOAUTH Authentication required.\r\n"))
+}
+
+pub(crate) fn max_clients_error() -> RedisCacheError {
+    wrapped(reply_error(b"-ERR max number of clients reached\r\n"))
+}
+
+pub(crate) fn bare_master_down_error() -> RedisError {
+    reply_error(b"-MASTERDOWN Link with MASTER is down\r\n")
+}
+
+pub(crate) fn bare_no_auth_error() -> RedisError {
+    reply_error(b"-NOAUTH Authentication required.\r\n")
+}
+
+pub(crate) fn bare_max_clients_error() -> RedisError {
+    reply_error(b"-ERR max number of clients reached\r\n")
+}
+
 fn wrapped(error: RedisError) -> RedisCacheError {
     RedisCacheError::from(ClientReuseError::from(LiveClientError::from(error)))
 }
 
-fn reply_error(reply: &[u8]) -> RedisError {
+pub(crate) fn reply_error(reply: &[u8]) -> RedisError {
     redis::parse_redis_value(reply)
         .expect("the reply parses")
         .extract_error()
@@ -217,16 +259,9 @@ pub(crate) fn fixed_clock() -> FixedClock {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[error("the cache broke")]
 pub(crate) struct Broken;
-
-impl fmt::Display for Broken {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the cache broke")
-    }
-}
-
-impl StdError for Broken {}
 
 pub(crate) struct NoopHooks;
 
@@ -252,8 +287,33 @@ pub(crate) fn overrides(port: u16) -> RedisOverrides {
     RedisOverrides {
         host: Some("127.0.0.1".to_owned()),
         port: Some(IntOrText::Value(i64::from(port))),
+        db: None,
+        username: None,
+        password: None,
+        url: None,
+        ssl: None,
         socket_timeout: Some(FloatOrText::Value(1.0)),
         socket_connect_timeout: Some(FloatOrText::Value(1.0)),
-        ..RedisOverrides::default()
+        socket_keepalive: None,
+        max_connections: None,
+        health_check_interval: None,
+        credential_provider: false,
+        startup_nodes: None,
+        sentinel_nodes: None,
+        sentinel_password: None,
+        service_name: None,
+        ssl_password: None,
+        gcp_service_account: None,
+        gcp_ssl_ca_certs: None,
+        azure_redis_ad_token: None,
+        azure_client_id: None,
+        azure_tenant_id: None,
+        azure_client_secret: None,
+        aws_iam_auth: None,
+        aws_iam_user_name: None,
+        aws_iam_cache_name: None,
+        aws_iam_region: None,
+        aws_iam_serverless: None,
+        passthrough: BTreeMap::new(),
     }
 }

@@ -1,7 +1,6 @@
 use std::collections::BTreeSet;
 use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
 
 use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::redis_cache::RedisCache;
@@ -16,7 +15,7 @@ use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings};
 use thiserror::Error;
 
-use super::gate::PolicyGate;
+use super::gate::{GateClock, PolicyGate};
 
 // The settings the server resolves once and hands to every cache it builds.
 pub struct RedisCacheWiring {
@@ -24,6 +23,7 @@ pub struct RedisCacheWiring {
     pub store: Arc<RedisClientStore>,
     pub hooks: Arc<dyn ServiceHooks>,
     pub policy: Settings,
+    pub clock: GateClock,
     pub default_ttl: i64,
     pub default_major_version: u32,
 }
@@ -51,7 +51,6 @@ impl RedisCacheWiring {
     where
         E: EnvironmentLookup + Sync,
     {
-        let started = Instant::now();
         let gate = Arc::new(PolicyGate {
             policy: Mutex::new(RedisFailurePolicy::new(
                 self.policy,
@@ -59,7 +58,7 @@ impl RedisCacheWiring {
             )),
             next_call: AtomicU64::new(0),
             swallowed_calls: Mutex::new(BTreeSet::new()),
-            clock: Arc::new(move || started.elapsed()),
+            clock: Arc::clone(&self.clock),
         });
         connect(
             RedisCacheOptions {

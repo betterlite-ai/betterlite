@@ -9,13 +9,18 @@ use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use chrono::TimeDelta;
 use uuid::Uuid;
 
-use super::super::hooks::ServiceEventHooks;
+use super::super::hooks::{CallIdGenerator, ServiceEventHooks};
 use super::support::{Broken, FailingSink, RecordingSink, fixed_clock};
+
+fn call_ids() -> CallIdGenerator {
+    Arc::new(|| Uuid::new_v4().to_string())
+}
 
 fn hooks(sink: Arc<RecordingSink>) -> ServiceEventHooks {
     ServiceEventHooks {
         sink,
         clock: Arc::new(fixed_clock()),
+        call_ids: call_ids(),
     }
 }
 
@@ -61,6 +66,19 @@ fn every_event_gets_its_own_call_id() {
 }
 
 #[test]
+fn the_call_id_comes_from_the_injected_generator() {
+    let sink = Arc::new(RecordingSink::new());
+    let hooks = ServiceEventHooks {
+        sink: Arc::clone(&sink),
+        clock: Arc::new(fixed_clock()),
+        call_ids: Arc::new(|| "call-from-the-test".to_owned()),
+    };
+    hooks.success(&event());
+    let events = sink.events();
+    assert_eq!(events[0].call_id, "call-from-the-test");
+}
+
+#[test]
 fn failure_sends_the_error_text() {
     let sink = Arc::new(RecordingSink::new());
     hooks(Arc::clone(&sink)).failure(&event(), &Broken);
@@ -86,6 +104,7 @@ fn a_failing_sink_does_not_panic() {
     let hooks = ServiceEventHooks {
         sink: Arc::new(FailingSink),
         clock: Arc::new(fixed_clock()),
+        call_ids: call_ids(),
     };
     hooks.success(&event());
     hooks.failure(&event(), &Broken);

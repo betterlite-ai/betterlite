@@ -9,12 +9,15 @@ use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use chrono::TimeDelta;
-use uuid::Uuid;
+
+// The caller supplies this, so a test picks the ids and the hook reads no random source.
+pub type CallIdGenerator = Arc<dyn Fn() -> String + Send + Sync>;
 
 // Every cache shares this; the sink is sync by contract, so a cache method never spawns a task.
 pub struct ServiceEventHooks {
     pub sink: Arc<dyn ServiceEventSink>,
     pub clock: Arc<dyn SuccessClock>,
+    pub call_ids: CallIdGenerator,
 }
 
 impl ServiceHooks for ServiceEventHooks {
@@ -33,7 +36,7 @@ impl ServiceEventHooks {
         let elapsed = TimeDelta::from_std(event.duration).unwrap_or(TimeDelta::MAX);
         let is_error = error.is_some();
         let logged = LoggedServiceEvent {
-            call_id: Uuid::new_v4().to_string(),
+            call_id: (self.call_ids)(),
             payload: ServiceLoggerPayload {
                 is_error,
                 error,

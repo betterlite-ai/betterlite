@@ -116,8 +116,7 @@ impl BreakerGate for PolicyGate {
 }
 
 impl PolicyGate {
-    // LiteLLM's health filter sees the exception it caught, so the outermost class decides; a deeper
-    // cause only marks a connection failure as a timeout, the way a chained TimeoutError does.
+    // The outermost class decides, and a deeper cause only marks a connection failure as a timeout.
     fn record(&self, failure: Failure<'_>, error: &(dyn StdError + Send + Sync)) {
         let now = (self.clock)();
         let mut policy = self.policy.lock().unwrap_or_else(PoisonError::into_inner);
@@ -172,12 +171,37 @@ fn class_of(error: &(dyn StdError + 'static)) -> Option<FailureClass> {
     None
 }
 
-// A timeout is an io error inside the RedisError, and the walk reaches that io error next, so the
-// timeout class comes from the cause rather than a second is_timeout branch here.
+// redis-py maps these replies to ConnectionError subclasses, so LiteLLM counts them as health failures.
+fn is_connection_reply(code: Option<&str>, detail: Option<&str>) -> bool {
+    match code {
+        Some("NOAUTH" | "WRONGPASS") => true,
+        Some("ERR") => match detail {
+            Some(detail) => matches!(
+                detail,
+                "max number of clients reached"
+                    | "invalid password"
+                    | "AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?"
+                    | "Client sent AUTH, but no password is set"
+                    | "problem with LDAP service"
+            ),
+            None => false,
+        },
+        Some(_) | None => false,
+    }
+}
+
+// The walk reaches the io error inside the RedisError next, so a timeout class comes from the cause.
 fn redis_class(error: &RedisError) -> FailureClass {
     match error.kind() {
         ErrorKind::Server(ServerErrorKind::BusyLoading) => FailureClass::BusyLoading,
-        ErrorKind::Server(ServerErrorKind::ClusterDown) => FailureClass::ClusterDown,
+        ErrorKind::Server(ServerErrorKind::ClusterDown | ServerErrorKind::MasterDown) => {
+            FailureClass::ClusterDown
+        }
+        ErrorKind::Server(ServerErrorKind::ResponseError) | ErrorKind::Extension
+            if is_connection_reply(error.code(), error.detail()) =>
+        {
+            FailureClass::Connection
+        }
         ErrorKind::Io => FailureClass::Connection,
         ErrorKind::Server(_) | ErrorKind::Extension => FailureClass::Command,
         _ => FailureClass::Other,
@@ -187,7 +211,10 @@ fn redis_class(error: &RedisError) -> FailureClass {
 fn server_class(error: &ServerError) -> FailureClass {
     match error.kind() {
         Some(ServerErrorKind::BusyLoading) => FailureClass::BusyLoading,
-        Some(ServerErrorKind::ClusterDown) => FailureClass::ClusterDown,
+        Some(ServerErrorKind::ClusterDown | ServerErrorKind::MasterDown) => {
+            FailureClass::ClusterDown
+        }
+        _ if is_connection_reply(Some(error.code()), error.details()) => FailureClass::Connection,
         Some(_) | None => FailureClass::Command,
     }
 }

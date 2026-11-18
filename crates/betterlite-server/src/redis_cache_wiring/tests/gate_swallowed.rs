@@ -5,7 +5,9 @@ use std::sync::Arc;
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 
 use super::super::gate::SWALLOWED_CALLS_KEPT;
-use super::support::{FakeClock, command_error, gate_with, settings, status, timeout_error};
+use super::support::{
+    FakeClock, command_error, gate_with, settings, status, swallow_calls, timeout_error,
+};
 
 #[test]
 fn a_swallowed_failure_marks_only_its_own_call() {
@@ -89,14 +91,7 @@ fn the_swallow_set_stays_at_its_cap() {
     let clock = Arc::new(FakeClock::new());
     let gate = gate_with(settings(u32::MAX), &clock);
     let error = timeout_error();
-    let mut admissions = Vec::new();
-    for _ in 0..=SWALLOWED_CALLS_KEPT {
-        let admission = gate
-            .enter("async_batch_get_cache")
-            .expect("the breaker never opens");
-        gate.swallowed(&admission, &error);
-        admissions.push(admission);
-    }
+    let admissions = swallow_calls(&gate, &error, SWALLOWED_CALLS_KEPT + 1);
     gate.exit(admissions[SWALLOWED_CALLS_KEPT]);
     assert_ne!(
         status(&gate).failure_count,
