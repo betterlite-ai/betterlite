@@ -1138,6 +1138,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-postgres",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-normalization",
@@ -1276,6 +1277,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
@@ -1506,6 +1508,7 @@ dependencies = [
  "netrc-rs",
  "percent-encoding",
  "regex",
+ "regex-syntax",
  "rstest",
  "rust_decimal",
  "secrecy",
@@ -1527,6 +1530,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
+ "unicode-ident",
  "unicode_titlecase",
  "url",
  "uuid",
@@ -1592,6 +1596,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-foundry",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
@@ -2062,6 +2067,7 @@ dependencies = [
  "aws-types",
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-models",
  "bytes",
@@ -2099,6 +2105,14 @@ dependencies = [
  "uuid",
  "webpki-roots",
  "zip",
+]
+
+[[package]]
+name = "betterlite-http-fixture"
+version = "0.1.0"
+dependencies = [
+ "rstest",
+ "thiserror",
 ]
 
 [[package]]
@@ -2641,12 +2655,14 @@ dependencies = [
  "betterlite-auth",
  "betterlite-cache",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-core",
  "betterlite-db",
  "betterlite-error",
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
+ "betterlite-redact",
  "betterlite-secrets",
  "chrono",
  "hex",
@@ -2743,6 +2759,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -2851,6 +2868,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-http-fixture",
  "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
@@ -3344,6 +3362,7 @@ dependencies = [
 name = "betterlite-oracle-policy"
 version = "0.1.0"
 dependencies = [
+ "betterlite-core",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-policy",
@@ -3352,6 +3371,8 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3631,6 +3652,7 @@ dependencies = [
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-redact",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-routes",
  "betterlite-secrets",
@@ -3794,6 +3816,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tracing",
@@ -4243,6 +4266,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-tokenizer",
+ "caseless",
  "chrono",
  "fancy-regex 0.19.2",
  "hex",
@@ -4443,6 +4467,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-streaming",

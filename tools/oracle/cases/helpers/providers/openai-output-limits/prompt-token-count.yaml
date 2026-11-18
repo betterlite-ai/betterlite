@@ -1,0 +1,9 @@
+kind: helper
+name: output-limits-prompt-token-count
+call:
+  openai_output_limits:
+    build:
+      data: {"model": "gpt-3.5-turbo", "messages": "hello world"}
+      headers: {"x-request-id": "req-prompt-count"}
+env: {}
+compare: {ignore: []}

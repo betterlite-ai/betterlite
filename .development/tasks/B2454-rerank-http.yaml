@@ -15,7 +15,10 @@ description: >-
   litellm_params are not forwarded and retain that method's defaults. Unlike the media handlers, no generic
   provider-response-header attachment occurs here. Provider transformations own response parsing.
 
-  Add sdk_http rerank_http with a finite injected config, actual mock HTTP and callback-effect observations.
+  SdkHttpCall::RerankHttp, a placeholder already on main, uses a finite injected config, actual mock HTTP
+  and callback-effect observations: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/rerank_http.rs
+  (Call implements call_kind::CallKind) and fill RerankHttpRequest in tools/oracle/sdk_http/rerank_http.py,
+  with no edit to the shared sdk_http files.
   Existing SDK/HTTP decoders suffice. Count 117 nonblank/non-comment lines in the two complete methods;
   budget 115 implementation,110 tests,95 fixtures,80 adapters and 30 wiring, 430 lines.
 
@@ -25,9 +28,8 @@ scope:
   paths:
   - crates/betterlite-provider/src/api/rerank_http.rs
   - crates/betterlite-provider/src/api/rerank_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/rerank_http.rs
+  - tools/oracle/src/sdk_http/rerank_http/**
   - tools/oracle/sdk_http/rerank_http.py
   - tools/oracle/cases/sdk-http/rerank-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/rerank-http-*
@@ -70,7 +72,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::rerank_http::tests::/)'
   - id: sdk-python
     why: Rerank provider execution must run in the checked SDK HTTP adapter.
-    run: test -f tools/oracle/sdk_http/rerank_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/rerank_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The rerank_http variant must be covered by a new SDK parser seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/rerank-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

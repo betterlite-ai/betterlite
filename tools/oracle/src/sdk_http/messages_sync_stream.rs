@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::error::SdkHttpError;
-use super::result::{SdkResult, SyncRun};
+use super::result::SyncRun;
+use super::result::kinds::SdkResult;
 use super::wrapper_stream;
 use call::MessagesSyncStreamCall;
 

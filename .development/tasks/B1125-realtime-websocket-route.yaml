@@ -414,6 +414,7 @@ pitfalls:
 - gpt-realtime-whisper is the transcription authorization default but is absent from the upstream query unless the client supplied it.
 - The first subprotocol is echoed even when it is openai-insecure-api-key.sk-test; choosing the first non-credential token changes behavior.
 - Pre-call cancellation bypasses the upstream finally block and releases only parallel capacity.
+- axum's WebSocketUpgrade::on_upgrade takes only a Send upgrade future, and B9991 makes the realtime relay Send, so the route runs the relay in that future and never uses a LocalSet or spawn_local (decision 2026-11-18).
 review_level: security
 budget:
   max_changed_lines: 1500
