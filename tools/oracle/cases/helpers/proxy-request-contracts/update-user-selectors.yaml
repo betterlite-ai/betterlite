@@ -1,0 +1,20 @@
+kind: helper
+name: update_user_selectors
+call:
+  b8411:
+    calls:
+      - {function: update_user, body: {}}
+      - {function: update_user, body: {user_id: null}}
+      - {function: update_user, body: {user_email: null}}
+      - {function: update_user, body: {user_id: null, user_email: null}}
+      - {function: update_user, body: {user_id: ""}}
+      - {function: update_user, body: {user_email: ""}}
+      - {function: update_user, body: {user_email: "a@example.com"}}
+      - {function: update_user, body: {user_id: u, user_alias: a, user_role: internal_user}}
+      - {function: update_user, body: {user_id: u, spend: null, max_budget: 5, metadata: {a: 1}}}
+      - {function: update_user, body: {user_id: u, user_role: org_admin}}
+      - {function: update_user, body: {user_id: u, user_role: team}}
+      - {function: update_user, body: {user_id: u, password: hunter2}}
+      - {function: update_user, body: {user_id: u, max_budget: ""}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,84 @@
+kind: probe
+name: router-observations-callback-usage-once
+probes:
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
+        limits: {params_tpm: 1000, params_rpm: 100}
+      steps:
+      - {kind: response, total_tokens: 60}
+      - {kind: success, total_tokens: 100}
+      - {kind: success, total_tokens: 200}
+      - {kind: async_failure}
+      - {kind: success, call_type: aretrieve_batch, total_tokens: 500}
+      - {kind: success, standard_logging_object: false, total_tokens: 50}
+      - {kind: response, total_tokens: 0}
+      - {kind: success, total_tokens: 30}
+      - {kind: success, total_tokens: 25}
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
+        limits: {params_itpm: 50}
+      steps:
+      - {kind: response, total_tokens: 40}
+      - {kind: success, total_tokens: 55}
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
+      steps:
+      - {kind: response, total_tokens: 60}
+      - {kind: success, total_tokens: 100}
+      - {kind: success, total_tokens: 30}
+- clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1700000000000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 2
+        limits: {tpm: 100, params_tpm: 1000, info_rpm: 20}
+      steps:
+      - {kind: response, total_tokens: 0}
+      - {kind: success, total_tokens: 10}
+- clock: {unix_millis: 1699952700000, monotonic_millis: 0}
+  samples: []
+  operation:
+    router_observations:
+      now_millis: 1699952700000
+      catalog:
+        model_group: probe-group
+        model: openai/gpt-4o
+        target_id: dep-1
+        group_size: 3
+        limits: {rpm: 10}
+      steps:
+      - {kind: response, total_tokens: 5}
+      - {kind: success, call_type: _arealtime, total_tokens: 5}
+      - {kind: success, call_type: retrieve_batch, total_tokens: 5}
+      - {kind: async_failure, call_type: retrieve_batch}
+      - {kind: async_failure}
+      - {kind: success, total_tokens: 5}

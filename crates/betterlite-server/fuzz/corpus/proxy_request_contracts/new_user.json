@@ -1,0 +1,10 @@
+{
+  "user_email": "a@example.com",
+  "user_alias": "a",
+  "user_role": "internal_user",
+  "max_budget": 10,
+  "auto_create_key": false,
+  "teams": [{"team_id": "t1", "max_budget_in_team": 5, "user_role": "admin"}],
+  "organizations": ["org-1"],
+  "metadata": {"a": 1}
+}

@@ -1,0 +1,37 @@
+kind: helper
+name: bedrock-legacy-models-ai21-penalties
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: ai21
+          non_default: {max_tokens: 5, temperature: false, top_p: 0.25, stream: null}
+          optional: {temperature: 0.1, keep: true}
+          model: ai21.j2-mid-v1
+          drop_params: false
+          global_drop_params: false
+        - family: ai21
+          non_default:
+            max_tokens: 7
+            stream: true
+            max_completion_tokens: 9
+            stop: [x]
+            frequencePenalty: {scale: 0}
+          optional: {}
+          model: ai21.j2-ultra-v1
+          drop_params: true
+          global_drop_params: true
+calls:
+  - bedrock_legacy_models:
+      constructors:
+        default_max_tokens: 4096
+        cases:
+          - family: ai21
+            calls:
+              - maxTokens: 0
+                frequencePenalty: {scale: 0}
+                presencePenalty: {scale: 1}
+                countPenalty: {scale: 2}
+              - {}
+env: {}
+compare: {ignore: []}

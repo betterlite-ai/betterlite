@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-legacy-models-mappings-seed
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: ai21
+          non_default: {max_tokens: 5, top_p: 0.25, stream: false}
+          optional: {temperature: 0.1}
+          model: ai21.j2-mid-v1
+          drop_params: false
+          global_drop_params: false
+env: {}
+compare: {ignore: []}

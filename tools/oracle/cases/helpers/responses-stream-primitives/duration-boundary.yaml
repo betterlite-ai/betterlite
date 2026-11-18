@@ -1,0 +1,23 @@
+kind: helper
+name: duration-boundary
+call:
+  responses_stream_primitives:
+    operation: duration_boundary
+    rows:
+      - {environment: null, created: 0.0, now: 3.0, model: gpt-4o, provider: openai}
+      - {environment: "2.5", created: 0.0, now: 2.5, model: gpt-4o, provider: openai}
+      - {environment: "2.5", created: 0.0, now: 2.6, model: gpt-4o, provider: openai}
+      - {environment: "0", created: 0.0, now: 0.1, model: gpt-4o, provider: openai}
+      - {environment: "-1", created: 0.0, now: 0.0, model: gpt-4o, provider: openai}
+      - {environment: " 2.5 ", created: 0.0, now: 3.0, model: gpt-4o, provider: openai}
+      - {environment: "nan", created: 0.0, now: 3.0, model: gpt-4o, provider: openai}
+      - {environment: "inf", created: 0.0, now: 1.0, model: gpt-4o, provider: openai}
+      - {environment: "-inf", created: 0.0, now: 1.0, model: gpt-4o, provider: openai}
+      - {environment: "1e20", created: 0.0, now: 1e20, model: gpt-4o, provider: openai}
+      - {environment: "2.5s", created: 0.0, now: 3.0, model: gpt-4o, provider: openai}
+      - {environment: "Infinity", created: 0.0, now: 2.0, model: gpt-4o, provider: openai}
+      - {environment: "2.5", created: 1.5, now: 4.0, model: gpt-4o, provider: null}
+      - {environment: "2.5", created: 0.0, now: 3.0, model: "", provider: groq}
+      - {environment: "0.5", created: 0.0, now: 0.5, model: gpt-4o, provider: openai}
+env: {}
+compare: {ignore: []}
