@@ -60,10 +60,12 @@ pub fn reload_serving_verdict(
         .collect();
     let mut collateral = Vec::new();
     for id in state.before.difference(&now) {
-        if written_ids.contains(id.as_str()) || !still_desired_includes(state.still_desired, id) {
-            continue;
+        let still_wanted = state
+            .still_desired
+            .is_none_or(|desired| desired.contains(id));
+        if !written_ids.contains(id.as_str()) && still_wanted {
+            collateral.push(id.clone());
         }
-        collateral.push(id.clone());
     }
     ModelReloadVerdict {
         missing,
@@ -106,10 +108,6 @@ fn violates(
             state.before.contains(&written.id) && !now.contains(&written.id)
         }
     }
-}
-
-fn still_desired_includes(still_desired: Option<&BTreeSet<String>>, id: &str) -> bool {
-    still_desired.map_or(true, |desired| desired.contains(id))
 }
 
 fn degraded_message(verdict: &ModelReloadVerdict, action: &str) -> String {

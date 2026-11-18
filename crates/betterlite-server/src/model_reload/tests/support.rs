@@ -16,6 +16,7 @@ use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use secrecy::SecretString;
+use tokio::sync::Mutex as AsyncMutex;
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
@@ -140,19 +141,19 @@ pub(crate) struct FakeRouter {
     pub(crate) reloads: usize,
     pub(crate) database_connected: bool,
     pub(crate) reload_result: Result<ReconcileOutcome, ReloadFailure>,
-    pub(crate) gate: Option<Arc<tokio::sync::Mutex<()>>>,
+    pub(crate) gate: Option<Arc<AsyncMutex<()>>>,
     pub(crate) gate_held: bool,
 }
 
 impl FakeRouter {
     pub(crate) fn new(models: &[DeploymentSpec], strategy_names: &[&str]) -> Self {
         let mut strategies = Strategies::default();
-        for name in strategy_names {
-            let name = (*name).to_owned();
-            strategies.auto.insert(name.clone());
-            strategies.complexity.insert(name.clone());
-            strategies.adaptive.insert(name.clone());
-            strategies.quality.insert(name);
+        for name in strategy_names.iter().copied() {
+            let owned = name.to_owned();
+            strategies.auto.insert(owned.clone());
+            strategies.complexity.insert(owned.clone());
+            strategies.adaptive.insert(owned.clone());
+            strategies.quality.insert(owned);
         }
         Self {
             models: models.iter().map(PublishedModel::from).collect(),
@@ -206,10 +207,10 @@ impl ServingRouter for FakeRouter {
     ) -> Result<ReconcileOutcome, ReloadFailure> {
         self.reloads = self.reloads.saturating_add(1);
         self.database_connected = repository.prisma_client().is_ok();
-        self.gate_held = match &self.gate {
-            Some(gate) => gate.try_lock().is_err(),
-            None => false,
-        };
+        self.gate_held = self
+            .gate
+            .as_ref()
+            .is_some_and(|gate| gate.try_lock().is_err());
         match &self.reload_result {
             Ok(outcome) => Ok(outcome.clone()),
             Err(failure) => Err(failure.clone()),
