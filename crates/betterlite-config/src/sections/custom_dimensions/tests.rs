@@ -363,6 +363,7 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::empty_flag_spec("(?-)", PatternProblem::Syntax)]
 #[case::empty_extension("(?)", PatternProblem::Syntax)]
 #[case::global_removal("(?-i)", PatternProblem::Syntax)]
+#[case::local_unicode_removal("(?-u:a)", PatternProblem::Syntax)]
 #[case::ascii_unicode_flags("(?au:a)", PatternProblem::Syntax)]
 #[case::local_ascii_flag("(?a:a)", PatternProblem::Unsupported)]
 #[case::ascii_removal_pair("(?a-i:a)", PatternProblem::Unsupported)]
