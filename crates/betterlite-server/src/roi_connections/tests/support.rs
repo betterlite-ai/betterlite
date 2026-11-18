@@ -22,6 +22,7 @@ use betterlite_roi::estimator::models::{
 };
 use betterlite_roi::settings::ROISettings;
 use betterlite_secrets::error::SecretError;
+use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -55,12 +56,17 @@ pub(crate) fn base_url() -> Url {
 }
 
 pub(crate) fn settings() -> ROISettings {
-    let mut settings = ROISettings::default();
-    settings.github_token = secret("gh-token");
-    settings.estimator_key = secret("sk-estimator");
-    settings.repos = vec!["acme/widgets".to_owned()];
-    settings.estimator_model = "gpt-4o".to_owned();
-    settings
+    ROISettings {
+        github_api_url: "https://api.github.com".to_owned(),
+        github_token: secret("gh-token"),
+        estimator_key: secret("sk-estimator"),
+        repos: vec!["acme/widgets".to_owned()],
+        estimator_model: "gpt-4o".to_owned(),
+        estimator_prompt: "Estimate this.".to_owned(),
+        backfill_days: 7,
+        update_interval_minutes: 1440.0_f64,
+        identity_map: IndexMap::new(),
+    }
 }
 
 pub(crate) fn caller(subject: &str, roles: &[Role]) -> AuthContext {
