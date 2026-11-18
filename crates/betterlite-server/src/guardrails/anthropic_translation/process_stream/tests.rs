@@ -438,3 +438,16 @@ async fn unended_keeps_an_existing_key_in_the_request_data() {
     assert_eq!(data["responses"], Value::Null);
     assert_eq!(data["keep"], json!(1));
 }
+
+#[tokio::test]
+async fn unended_names_an_unknown_guardrail_on_an_undeliverable_rewrite() {
+    let guardrail = FakeGuardrail::replying(json!({"texts": ["changed"]}));
+    let mut responses = vec![bytes(&[START])];
+    let result =
+        process_output_streaming_response(&mut responses, &guardrail, None, None, None, None, true)
+            .await;
+    let ProcessStreamError::Undeliverable(failure) = result.unwrap_err() else {
+        panic!("expected an undeliverable rewrite");
+    };
+    assert_eq!(failure.guardrail_name, "unknown");
+}
