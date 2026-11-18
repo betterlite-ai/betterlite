@@ -140,14 +140,16 @@ pub(super) fn daily_row(spend: &str) -> SpendRow {
         .collect()
 }
 
-pub(super) fn with_field(row: SpendRow, name: &'static str, value: SpendColumnValue) -> SpendRow {
-    let mut row = row;
+pub(super) fn with_field(
+    mut row: SpendRow,
+    name: &'static str,
+    value: SpendColumnValue,
+) -> SpendRow {
     row.insert(name.to_owned(), value);
     row
 }
 
-pub(super) fn without_field(row: SpendRow, name: &'static str) -> SpendRow {
-    let mut row = row;
+pub(super) fn without_field(mut row: SpendRow, name: &'static str) -> SpendRow {
     row.remove(name);
     row
 }

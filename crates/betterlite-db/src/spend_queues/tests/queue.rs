@@ -102,14 +102,11 @@ async fn a_full_queue_blocks_a_producer_until_a_drain_and_rings_pressure() {
     let mut tasks = JoinSet::new();
     let producing = Arc::clone(&queue);
     tasks.spawn(async move {
-        let observer = NoEnqueueObserver;
         producing.add("second", &observer).await;
     });
-    assert!(
-        timeout(Duration::from_millis(20), tasks.join_next())
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(20), tasks.join_next())
+        .await
+        .unwrap_err();
     timeout(Duration::from_millis(20), queue.pressure.notified())
         .await
         .unwrap();
@@ -139,7 +136,7 @@ async fn a_cancelled_producer_leaves_the_queue_unchanged() {
 
 async fn add_and_compact_twenty_five(queue: Arc<BoundedUpdateQueue<i64>>) {
     let observer = NoEnqueueObserver;
-    for _record in 0..25 {
+    for _record in 0_i32..25_i32 {
         queue.add(1_i64, &observer).await;
         queue.compact_when_full(sum_all).unwrap();
     }
@@ -171,7 +168,7 @@ fn a_capacity_of_at_least_one_is_required() {
         BoundedUpdateQueue::<u8>::new(-1, 0, 1),
         Err(SpendQueueError::ZeroCapacity)
     ));
-    assert!(BoundedUpdateQueue::<u8>::new(1, 0, 1).is_ok());
+    BoundedUpdateQueue::<u8>::new(1, 0, 1).unwrap();
 }
 
 #[test]

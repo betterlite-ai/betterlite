@@ -276,11 +276,9 @@ async fn a_full_queue_blocks_a_producer_until_a_flush_drains_it() {
             .await
             .unwrap();
     });
-    assert!(
-        timeout(Duration::from_millis(20), tasks.join_next())
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_millis(20), tasks.join_next())
+        .await
+        .unwrap_err();
     let first = queue.flush_aggregated_transactions().unwrap();
     assert_eq!(first.user_list_transactions.len(), 1);
     timeout(Duration::from_secs(1), tasks.join_next())

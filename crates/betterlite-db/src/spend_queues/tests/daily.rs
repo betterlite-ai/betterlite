@@ -18,59 +18,33 @@ use crate::spend_queues::events::{NoSpendQueueEventSink, SpendQueueEventSink, Sp
 
 #[test]
 fn the_first_payload_metadata_survives_and_later_metadata_is_ignored() {
-    let second = update(
-        "k",
-        with_field(
-            with_field(
-                with_field(
-                    daily_row("2.5"),
-                    "date",
-                    SpendColumnValue::Text("2026-02-02".to_owned()),
-                ),
-                "model_group",
-                SpendColumnValue::Text("other".to_owned()),
-            ),
-            "failed_requests",
-            SpendColumnValue::Int(1),
-        ),
+    let mut later = daily_row("2.5");
+    later.insert(
+        "date".to_owned(),
+        SpendColumnValue::Text("2026-02-02".to_owned()),
     );
-    let aggregated = aggregate_daily_rows(&[update("k", daily_row("10.0")), second]).unwrap();
-    let row = aggregated.get("k").unwrap();
+    later.insert(
+        "model_group".to_owned(),
+        SpendColumnValue::Text("other".to_owned()),
+    );
+    later.insert("failed_requests".to_owned(), SpendColumnValue::Int(1));
+    let aggregated =
+        aggregate_daily_rows(&[update("k", daily_row("10.0")), update("k", later)]).unwrap();
+    let row = &aggregated["k"];
+    assert_eq!(row["date"], SpendColumnValue::Text("2026-01-01".to_owned()));
+    assert_eq!(row["api_key"], SpendColumnValue::Text("key".to_owned()));
     assert_eq!(
-        row.get("date"),
-        Some(&SpendColumnValue::Text("2026-01-01".to_owned()))
+        row["model_group"],
+        SpendColumnValue::Text("group".to_owned())
     );
-    assert_eq!(
-        row.get("api_key"),
-        Some(&SpendColumnValue::Text("key".to_owned()))
-    );
-    assert_eq!(
-        row.get("model_group"),
-        Some(&SpendColumnValue::Text("group".to_owned()))
-    );
-    assert_eq!(row.get("prompt_tokens"), Some(&SpendColumnValue::Int(6)));
-    assert_eq!(
-        row.get("completion_tokens"),
-        Some(&SpendColumnValue::Int(4))
-    );
-    assert_eq!(row.get("api_requests"), Some(&SpendColumnValue::Int(2)));
-    assert_eq!(
-        row.get("successful_requests"),
-        Some(&SpendColumnValue::Int(2))
-    );
-    assert_eq!(row.get("failed_requests"), Some(&SpendColumnValue::Int(1)));
-    assert_eq!(
-        row.get("spend"),
-        Some(&SpendColumnValue::Decimal(decimal("12.5")))
-    );
-    assert_eq!(
-        row.get("cache_read_input_tokens"),
-        Some(&SpendColumnValue::Int(0))
-    );
-    assert_eq!(
-        row.get("autorouter_savings_spend"),
-        Some(&SpendColumnValue::Int(0))
-    );
+    assert_eq!(row["prompt_tokens"], SpendColumnValue::Int(6));
+    assert_eq!(row["completion_tokens"], SpendColumnValue::Int(4));
+    assert_eq!(row["api_requests"], SpendColumnValue::Int(2));
+    assert_eq!(row["successful_requests"], SpendColumnValue::Int(2));
+    assert_eq!(row["failed_requests"], SpendColumnValue::Int(1));
+    assert_eq!(row["spend"], SpendColumnValue::Decimal(decimal("12.5")));
+    assert_eq!(row["cache_read_input_tokens"], SpendColumnValue::Int(0));
+    assert_eq!(row["autorouter_savings_spend"], SpendColumnValue::Int(0));
 }
 
 #[test]
@@ -107,10 +81,7 @@ fn a_falsey_optional_metric_adds_zero(
 ) {
     let second = update("k", with_field(daily_row("1.5"), field, value));
     let aggregated = aggregate_daily_rows(&[update("k", daily_row("1.5")), second]).unwrap();
-    assert_eq!(
-        aggregated.get("k").unwrap().get(field),
-        Some(&SpendColumnValue::Int(0))
-    );
+    assert_eq!(aggregated["k"].get(field), Some(&SpendColumnValue::Int(0)));
 }
 
 #[test]
@@ -125,7 +96,7 @@ fn integer_money_stays_an_integer() {
     );
     let aggregated = aggregate_daily_rows(&[first, second]).unwrap();
     assert_eq!(
-        aggregated.get("k").unwrap().get("spend"),
+        aggregated["k"].get("spend"),
         Some(&SpendColumnValue::Int(15))
     );
 }
@@ -146,55 +117,44 @@ fn decimal_money_stays_decimal_when_the_other_side_is_an_integer() {
     );
     let aggregated = aggregate_daily_rows(&[first, second]).unwrap();
     assert_eq!(
-        aggregated.get("k").unwrap().get("spend"),
+        aggregated["k"].get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("3.0")))
     );
 }
 
 #[test]
 fn a_nonzero_optional_metric_adds_its_own_value() {
-    let second = update(
-        "k",
-        with_field(
-            with_field(
-                with_field(
-                    with_field(
-                        with_field(
-                            daily_row("1.0"),
-                            "cache_read_input_tokens",
-                            SpendColumnValue::Int(4),
-                        ),
-                        "timed_requests",
-                        SpendColumnValue::Bool(true),
-                    ),
-                    "compression_saved_tokens",
-                    SpendColumnValue::Decimal(decimal("2.5")),
-                ),
-                "compression_savings_spend",
-                SpendColumnValue::Decimal(decimal("0.5")),
-            ),
-            "prompt_caching_savings_spend",
-            SpendColumnValue::Bool(true),
-        ),
+    let mut later = daily_row("1.0");
+    later.insert(
+        "cache_read_input_tokens".to_owned(),
+        SpendColumnValue::Int(4),
     );
-    let aggregated = aggregate_daily_rows(&[update("k", daily_row("1.0")), second]).unwrap();
-    let row = aggregated.get("k").unwrap();
-    assert_eq!(
-        row.get("cache_read_input_tokens"),
-        Some(&SpendColumnValue::Int(4))
+    later.insert("timed_requests".to_owned(), SpendColumnValue::Bool(true));
+    later.insert(
+        "compression_saved_tokens".to_owned(),
+        SpendColumnValue::Decimal(decimal("2.5")),
     );
-    assert_eq!(row.get("timed_requests"), Some(&SpendColumnValue::Int(1)));
+    later.insert(
+        "compression_savings_spend".to_owned(),
+        SpendColumnValue::Decimal(decimal("0.5")),
+    );
+    later.insert(
+        "prompt_caching_savings_spend".to_owned(),
+        SpendColumnValue::Bool(true),
+    );
+    let aggregated =
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), update("k", later)]).unwrap();
+    let row = &aggregated["k"];
+    assert_eq!(row["cache_read_input_tokens"], SpendColumnValue::Int(4));
+    assert_eq!(row["timed_requests"], SpendColumnValue::Int(1));
+    assert_eq!(row["compression_saved_tokens"], SpendColumnValue::Int(2));
     assert_eq!(
-        row.get("compression_saved_tokens"),
-        Some(&SpendColumnValue::Int(2))
+        row["compression_savings_spend"],
+        SpendColumnValue::Decimal(decimal("0.5"))
     );
     assert_eq!(
-        row.get("compression_savings_spend"),
-        Some(&SpendColumnValue::Decimal(decimal("0.5")))
-    );
-    assert_eq!(
-        row.get("prompt_caching_savings_spend"),
-        Some(&SpendColumnValue::Int(1))
+        row["prompt_caching_savings_spend"],
+        SpendColumnValue::Int(1)
     );
 }
 
@@ -204,7 +164,7 @@ fn money_is_summed_as_an_exact_decimal() {
         aggregate_daily_rows(&[update("k", daily_row("0.1")), update("k", daily_row("0.2"))])
             .unwrap();
     assert_eq!(
-        aggregated.get("k").unwrap().get("spend"),
+        aggregated["k"].get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("0.3")))
     );
 }
@@ -221,7 +181,7 @@ fn a_fractional_counter_is_truncated() {
     );
     let aggregated = aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]).unwrap();
     assert_eq!(
-        aggregated.get("k").unwrap().get("prompt_tokens"),
+        aggregated["k"].get("prompt_tokens"),
         Some(&SpendColumnValue::Int(7))
     );
 }
@@ -337,7 +297,7 @@ fn a_null_optional_metric_adds_zero() {
         ),
     );
     let aggregated = aggregate_daily_rows(&[update("k", daily_row("1.0")), second]).unwrap();
-    let row = aggregated.get("k").unwrap();
+    let row = &aggregated["k"];
     assert_eq!(
         row.get("cache_read_input_tokens"),
         Some(&SpendColumnValue::Int(0))
@@ -440,7 +400,7 @@ async fn a_flush_aggregates_rows_and_logs_the_item_count() {
         .unwrap();
     let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
     assert_eq!(
-        aggregated.get("k").unwrap().get("spend"),
+        aggregated["k"].get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("12.5")))
     );
     let text = logs.text();
@@ -483,7 +443,7 @@ async fn a_singleton_flush_keeps_absent_metrics_absent() {
         .await
         .unwrap();
     let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
-    assert!(!aggregated.get("k").unwrap().contains_key("timed_requests"));
+    assert!(!aggregated["k"].contains_key("timed_requests"));
     queue.shutdown().await;
 }
 
@@ -506,7 +466,7 @@ async fn the_daily_queue_compacts_at_the_threshold_and_reports_the_compacted_siz
         .unwrap();
     let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
     assert_eq!(
-        aggregated.get("k").unwrap().get("spend"),
+        aggregated["k"].get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("1.0")))
     );
     queue.shutdown().await;
