@@ -85,9 +85,17 @@ pub(super) fn acquire_script_args(
 
 pub(super) fn count_script_args(gauges: &[ParallelRequestGauge]) -> Vec<RedisScalar> {
     let ttl = RedisScalar::Text(PARALLEL_SLOT_TTL.as_secs().to_string());
-    vec![ttl; gauges.len()]
+    let mut args = Vec::with_capacity(gauges.len());
+    for _ in gauges {
+        args.push(ttl.clone());
+    }
+    args
 }
 
 pub(super) fn release_script_args(counter_keys: &[String], slot_id: &str) -> Vec<RedisScalar> {
-    vec![RedisScalar::Text(slot_id.to_owned()); counter_keys.len()]
+    let mut args = Vec::with_capacity(counter_keys.len());
+    for _ in counter_keys {
+        args.push(RedisScalar::Text(slot_id.to_owned()));
+    }
+    args
 }

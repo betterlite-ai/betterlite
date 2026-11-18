@@ -129,8 +129,10 @@ fn clock_at(now: u64) -> Result<FixedClock, Box<HelperError>> {
         .or_value_error()
 }
 
-fn shared_script(planned: &Arc<PlannedScript>) -> Arc<dyn CounterScript> {
-    Arc::<PlannedScript>::clone(planned)
+fn shared_script(handle: Option<&Arc<PlannedScript>>) -> Option<Arc<dyn CounterScript>> {
+    let planned = handle?;
+    let script: Arc<dyn CounterScript> = Arc::<PlannedScript>::clone(planned);
+    Some(script)
 }
 
 fn gauge_check(call: &GaugeCheckInput) -> HelperResult {
@@ -144,7 +146,7 @@ fn gauge_check(call: &GaugeCheckInput) -> HelperResult {
     let limiter = concurrency_gauges(
         shared,
         clock,
-        GaugeScripts::Check(handle.as_ref().map(shared_script)),
+        GaugeScripts::Check(shared_script(handle.as_ref())),
         call.fail_closed,
     );
     let gauges = requested_gauges(&call.descriptors);
@@ -173,7 +175,7 @@ fn release_slot(call: &ReleaseInput) -> HelperResult {
     let limiter = concurrency_gauges(
         shared,
         clock,
-        GaugeScripts::Release(handle.as_ref().map(shared_script)),
+        GaugeScripts::Release(shared_script(handle.as_ref())),
         false,
     );
     let slot = RequestStashSlot::default();

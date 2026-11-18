@@ -109,16 +109,6 @@ fn gauge_value(value: &CacheValueInput) -> GaugeCacheValue {
     }
 }
 
-fn recorded_value(value: &GaugeCacheValue) -> Value {
-    match value {
-        GaugeCacheValue::Registry(slots) => json!(slots),
-        GaugeCacheValue::Counter(CacheCounterValue::Int(number)) => json!(number),
-        GaugeCacheValue::Counter(CacheCounterValue::Float(number)) => json!(number),
-        GaugeCacheValue::Counter(CacheCounterValue::Text(text)) => json!(text),
-        GaugeCacheValue::Counter(CacheCounterValue::Bytes(bytes)) => json!(bytes),
-    }
-}
-
 impl RecordingCache {
     pub(super) fn new(entries: &BTreeMap<String, CacheValueInput>) -> Self {
         let values = entries
@@ -159,7 +149,13 @@ impl GaugeCache for RecordingCache {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.writes.push(json!({
             "key": key,
-            "value": recorded_value(&value),
+            "value": match &value {
+                GaugeCacheValue::Registry(slots) => json!(slots),
+                GaugeCacheValue::Counter(CacheCounterValue::Int(number)) => json!(number),
+                GaugeCacheValue::Counter(CacheCounterValue::Float(number)) => json!(number),
+                GaugeCacheValue::Counter(CacheCounterValue::Text(text)) => json!(text),
+                GaugeCacheValue::Counter(CacheCounterValue::Bytes(bytes)) => json!(bytes),
+            },
             "ttl": ttl.as_secs(),
             "local_only": local_only,
         }));

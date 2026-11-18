@@ -43,7 +43,7 @@ class ReleaseInput(TypedDict):
 class PlannedScript:
     def __init__(self, plan: list[ReplyInput]) -> None:
         self.plan = plan
-        self.calls: list[dict[str, JsonValue]] = []
+        self.calls: list[JsonValue] = []
 
     async def __call__(self, *, keys: Sequence[str], args: Sequence[JsonValue]) -> list[int | str]:
         index = len(self.calls)
@@ -68,9 +68,9 @@ class RecordingCache:
     def __init__(self, values: dict[str, JsonValue]) -> None:
         self.dual_cache = FakeDualCache(redis_cache=None)
         self.values = values
-        self.reads: list[dict[str, JsonValue]] = []
-        self.batch_reads: list[dict[str, JsonValue]] = []
-        self.writes: list[dict[str, JsonValue]] = []
+        self.reads: list[JsonValue] = []
+        self.batch_reads: list[JsonValue] = []
+        self.writes: list[JsonValue] = []
 
     async def async_get_cache(
         self, key: str, *, litellm_parent_otel_span: JsonValue, local_only: bool
@@ -132,7 +132,7 @@ class GaugeLimiter(Protocol):
         parallel_slot_id: str,
     ) -> RateLimitResponse: ...
 
-    async def async_release_max_parallel_requests_on_disconnect(  # ast-grep-ignore: no-long-names
+    async def async_release_max_parallel_requests_on_disconnect(
         self, user_api_key_dict: UserAPIKeyAuth
     ) -> None: ...
 
@@ -172,15 +172,31 @@ def response_value(response: RateLimitResponse) -> dict[str, JsonValue]:
     }
 
 
-async def gauge_check(input_value: GaugeCheckInput) -> dict[str, JsonValue]:
+def planned_limiter(
+    input_value: GaugeCheckInput | ReleaseInput, *, fail_closed: bool
+) -> tuple[RecordingCache, GaugeLimiter, PlannedScript | None]:
     cache = RecordingCache(input_value["cache"])
     limiter = make_limiter(
-        cache,
-        FixedTime(input_value["now"]),
-        FixedFailClosed(enabled=input_value["fail_closed"]),
+        cache, FixedTime(input_value["now"]), FixedFailClosed(enabled=fail_closed)
     )
     replies = input_value["replies"]
-    script = PlannedScript(replies) if replies is not None else None
+    return cache, limiter, PlannedScript(replies) if replies is not None else None
+
+
+def recorded(
+    cache: RecordingCache, script: PlannedScript | None, response: dict[str, JsonValue] | None
+) -> dict[str, JsonValue]:
+    return {
+        "response": response,
+        "calls": [] if script is None else script.calls,
+        "reads": cache.reads,
+        "batch_reads": cache.batch_reads,
+        "writes": cache.writes,
+    }
+
+
+async def gauge_check(input_value: GaugeCheckInput) -> dict[str, JsonValue]:
+    cache, limiter, script = planned_limiter(input_value, fail_closed=input_value["fail_closed"])
     limiter.parallel_acquire_script = script
     limiter.parallel_count_script = script
     response = await limiter.should_rate_limit(
@@ -188,35 +204,18 @@ async def gauge_check(input_value: GaugeCheckInput) -> dict[str, JsonValue]:
         read_only=input_value["read_only"],
         parallel_slot_id=input_value["slot_id"],
     )
-    return {
-        "response": response_value(response),
-        "calls": script.calls if script is not None else [],
-        "reads": cache.reads,
-        "batch_reads": cache.batch_reads,
-        "writes": cache.writes,
-    }
+    return recorded(cache, script, response_value(response))
 
 
 async def release_slot(input_value: ReleaseInput) -> dict[str, JsonValue]:
-    cache = RecordingCache(input_value["cache"])
-    limiter = make_limiter(
-        cache, FixedTime(input_value["now"]), FixedFailClosed(enabled=False)
-    )
-    replies = input_value["replies"]
-    script = PlannedScript(replies) if replies is not None else None
+    cache, limiter, script = planned_limiter(input_value, fail_closed=False)
     limiter.parallel_release_script = script
     stash = get_or_create_request_stash()
     stash.parallel_slot = ParallelSlotAcquisition(
         slot_id=input_value["slot_id"], counter_keys=input_value["counter_keys"]
     )
     await limiter.async_release_max_parallel_requests_on_disconnect(UserAPIKeyAuth())
-    return {
-        "response": None,
-        "calls": script.calls if script is not None else [],
-        "reads": cache.reads,
-        "batch_reads": cache.batch_reads,
-        "writes": cache.writes,
-    }
+    return recorded(cache, script, None)
 
 
 def run(input_value: GaugeCheckInput | ReleaseInput) -> dict[str, JsonValue]:
