@@ -168,10 +168,7 @@ fn partition_groups(keys: &[String]) -> Vec<Vec<String>> {
             Partition::KeyObject => key_objects.push(key.clone()),
         }
     }
-    [ordinary, key_objects]
-        .into_iter()
-        .filter(|group| !group.is_empty())
-        .collect()
+    vec![ordinary, key_objects]
 }
 
 fn tier_redis<Memory>(tier: &DualCache<Memory>) -> Option<Arc<RedisCache>>
