@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-claude-invoke-tool-search-tool-name
+call:
+  bedrock_claude_invoke:
+    function: transform
+    model_cost:
+      bedrock/claude-tools: {litellm_provider: bedrock, supports_tool_search: true}
+    calls:
+      - model: claude-tools
+        messages: [{role: user, content: hello}]
+        optional_params:
+          max_tokens: 64
+          tools:
+            - {type: tool_search_tool_regex_20251119}
+            - {type: tool_search_tool_bm25_20251119, name: search_bm25}
+            - {name: get_weather, input_schema: {type: object, properties: {}}}
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
+      - model: claude-tools
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 64, tools: []}
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

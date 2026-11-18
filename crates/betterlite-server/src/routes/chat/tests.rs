@@ -242,12 +242,15 @@ async fn mock_calls_behavior_tests_behavior() {
 }
 
 async fn mock_reply(source: &str, path: &str, body: &str) -> (StatusCode, Vec<u8>, HeaderMap) {
-    let config = ConfigLoader {
-        lookup: BTreeMap::new(),
-    }
-    .load(source)
-    .unwrap();
-    let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    // the loaded config would otherwise live across the await below, and every new config section grows this future past clippy's large_futures limit
+    let executor = {
+        let config = ConfigLoader {
+            lookup: BTreeMap::new(),
+        }
+        .load(source)
+        .unwrap();
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap()
+    };
     let request = Request::post(path)
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))

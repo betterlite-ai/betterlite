@@ -1,0 +1,9 @@
+model_list:
+  - model_name: chat
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+litellm_settings:
+  reasoning_auto_summary: true
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY

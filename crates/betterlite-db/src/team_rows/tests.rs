@@ -537,9 +537,17 @@ fn replays_the_team_rows_corpus(#[files("fuzz/corpus/team_rows/*")] path: PathBu
 }
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::BASELINE;
 use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
+const STORAGE: &str = r#"INSERT INTO "LiteLLM_TeamTable" (team_id) VALUES ('t');
+INSERT INTO "LiteLLM_TeamTable" (team_id, admins, members, models, metadata)
+VALUES ('strings', '{}', '{}', '{}', '"{\"stored\": true}"'::jsonb);
+INSERT INTO "LiteLLM_UserTable" (user_id) VALUES ('u');
+INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, rpm_limit, tpm_limit, created_by, updated_by)
+VALUES ('b', 1.5, 0, -2, 'test', 'test');
+INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, budget_id) VALUES ('u', 't', 'b');"#;
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -552,26 +560,19 @@ async fn database() -> (
 ) {
     let environment = Environment::parse_from(["team-tests"]);
     let url = environment.url.map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        url.as_ref(),
+        vec![BASELINE.to_owned(), STORAGE.to_owned()],
+    )
+    .resolve()
+    .await
+    .unwrap();
     let (client, connection) =
         tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
             .await
             .unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client
-        .batch_execute(include_str!(
-            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-        ))
-        .await
-        .unwrap();
-    client
-        .batch_execute(include_str!("storage.sql"))
-        .await
-        .unwrap();
     (fixture, client, tasks)
 }
 #[tokio::test]

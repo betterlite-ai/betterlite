@@ -1,0 +1,10 @@
+kind: helper
+name: google-identity-missing-profile-fields
+call:
+  google_identity:
+    userinfo:
+      sub: '42'
+      email: ann@example.com
+      email_verified: true
+env: {}
+compare: {ignore: []}

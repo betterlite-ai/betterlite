@@ -10,12 +10,15 @@ use rmcp::RoleClient;
 use rmcp::service::{RxJsonRpcMessage, TxJsonRpcMessage};
 use rmcp::transport::Transport;
 use tokio::time::sleep;
+use tokio_util::task::TaskTracker;
 
 use crate::client::sdk_runtime::handler::ServerRequestHandlers;
+use crate::client::sdk_runtime::runtime::SdkRuntime;
 use crate::client::sdk_runtime::session::SdkSessionContext;
 use crate::client::sdk_transport::error::SdkError;
 use crate::client::sessions::negotiate::Callbacks;
 use crate::client::sessions::runtime::{McpRuntime as _, SessionContext as _, SessionOptions};
+use crate::client::sessions::stdio::{FORCE_KILL_TIMEOUT, StdioShutdown};
 use crate::client::sessions::stream::MessageHandler;
 use crate::client::sessions::transport::{StdioServerParameters, TransportContext as _};
 
@@ -89,6 +92,8 @@ async fn a_session_context_opens_only_one_service() {
     drop(context);
 }
 
+const READY_NOTICE: &str = r#"{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"ready"}}"#;
+
 fn parameters(script: String) -> StdioServerParameters {
     StdioServerParameters {
         command: "/bin/sh".to_owned(),
@@ -117,10 +122,25 @@ async fn a_transport_exit_stops_a_stdio_server_that_traps_term() {
     drop(fs::remove_file(&marker));
     let marker_path = marker.display().to_string();
     let script = format!(
-        "trap 'printf done > {marker_path}; exit 0' TERM; while :; do /bin/sleep 0.1; done"
+        "trap 'printf done > {marker_path}; exit 0' TERM; printf '%s\\n' '{READY_NOTICE}'; while :; do /bin/sleep 0.1; done"
     );
-    let mut context = support::runtime().stdio_client(parameters(script));
-    let streams = context.enter().await.expect("the server starts");
+    // The ready notice comes once the trap is set, so SIGTERM need not wait long after stdin closes
+    let shutdown = StdioShutdown {
+        termination: Duration::from_millis(100),
+        force_kill: FORCE_KILL_TIMEOUT,
+    };
+    let runtime = SdkRuntime::new(
+        support::base(),
+        Arc::new(support::NoCapture),
+        TaskTracker::new(),
+        shutdown,
+    );
+    let mut context = runtime.stdio_client(parameters(script));
+    let mut streams = context.enter().await.expect("the server starts");
+    assert!(
+        streams.receive().await.is_some(),
+        "the server sends its ready notice"
+    );
     drop(streams);
     context.exit().await.expect("the transport exits");
     assert!(marker.exists(), "the server did not finish on SIGTERM");

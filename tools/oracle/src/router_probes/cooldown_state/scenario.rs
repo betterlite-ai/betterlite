@@ -1,0 +1,271 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::slice;
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_models::{decisions::Json, model_registration::JsonObject};
+use betterlite_router::cooldown_state::cooldown::{ActiveCooldown, CooldownCache};
+use betterlite_router::cooldown_state::filter::{HealthRouting, without_unhealthy};
+use betterlite_router::cooldown_state::health::{
+    DeploymentHealthCache, HealthSnapshot, HealthState,
+};
+use betterlite_router::cooldown_state::record::{CooldownRecord, KEY_PREFIX, KEY_SUFFIX};
+use betterlite_router::cooldown_state::settings::Settings;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::routing_read_batch::{RequestReads, RoutingReadBatch};
+use betterlite_router::routing_value_store::{Clock, RouteKey};
+use rust_decimal::{Decimal, prelude::ToPrimitive as _};
+use tokio::runtime::Builder;
+
+use super::store::{FakeCooldowns, FakeHealth};
+use super::{
+    ActiveView, CooldownInput, DeploymentInput, HealthInput, Input, Output, ScenarioError, Step,
+    StepKind, StepOutput,
+};
+
+pub(crate) fn run(input: &Input) -> Result<Output, ScenarioError> {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|source| ScenarioError::Runtime { source })?;
+    runtime.block_on(Scenario::new(input)?.run())
+}
+
+type SharedClock = Arc<Mutex<f64>>;
+
+fn shared_cooldowns(input: &Input) -> Result<FakeCooldowns, ScenarioError> {
+    let mut records = BTreeMap::new();
+    for (model_id, stored) in &input.shared_cooldowns {
+        records.insert(cooldown_key(model_id)?, stored.record());
+    }
+    Ok(FakeCooldowns {
+        records: Mutex::new(records),
+    })
+}
+
+struct Scenario<'case> {
+    input: &'case Input,
+    clock: SharedClock,
+    cooldowns: CooldownCache,
+    health: DeploymentHealthCache,
+    deployments: Vec<DeploymentSpec>,
+}
+
+impl<'case> Scenario<'case> {
+    fn new(input: &'case Input) -> Result<Self, ScenarioError> {
+        let clock: SharedClock = Arc::new(Mutex::new(0.0_f64));
+        let handle = Arc::clone(&clock);
+        let clock_fn: Clock =
+            Arc::new(move || *handle.lock().unwrap_or_else(PoisonError::into_inner));
+        let settings = Settings {
+            default_cooldown_time: input.settings.default_cooldown_time.0,
+            redis_read_interval_seconds: input.settings.redis_read_interval_seconds.0,
+            enable_health_check_routing: input.health.enabled,
+            staleness_threshold: input.settings.staleness_threshold.0,
+            ignore_transient_errors: false,
+        };
+        let shared = Arc::new(shared_cooldowns(input)?);
+        let cooldowns = CooldownCache::new(&settings, shared, Arc::clone(&clock_fn));
+        let states = snapshot(&input.shared_health);
+        let snapshot = (!states.is_empty()).then_some(states);
+        let health = DeploymentHealthCache::new(
+            settings.staleness_threshold,
+            Arc::new(FakeHealth {
+                snapshot: Mutex::new(snapshot),
+            }),
+            clock_fn,
+        );
+        let deployments = input
+            .deployments
+            .iter()
+            .map(deployment)
+            .collect::<Result<_, _>>()?;
+        Ok(Self {
+            input,
+            clock,
+            cooldowns,
+            health,
+            deployments,
+        })
+    }
+
+    async fn run(self) -> Result<Output, ScenarioError> {
+        let mut steps = Vec::with_capacity(self.input.steps.len());
+        for step in &self.input.steps {
+            let now = seconds(step.now_millis)?;
+            *self.clock.lock().unwrap_or_else(PoisonError::into_inner) = now;
+            steps.push(self.run_step(step).await?);
+        }
+        Ok(Output { steps })
+    }
+
+    async fn run_step(&self, step: &Step) -> Result<StepOutput, ScenarioError> {
+        let mut output = StepOutput {
+            kind: step.kind,
+            local_expiry: None,
+            local_expiries: None,
+            active: None,
+            minimum: None,
+            unhealthy: None,
+            kept: None,
+        };
+        match step.kind {
+            StepKind::Add => {
+                self.cooldowns
+                    .add(
+                        &step.model_id,
+                        &step.exception,
+                        step.status_code,
+                        step.cooldown_time.map(|time| time.0),
+                    )
+                    .map_err(|_error| ScenarioError::CooldownKey)?;
+                let model_ids = slice::from_ref(&step.model_id);
+                output.local_expiry = self.expiries(model_ids)?.pop().flatten();
+            }
+            StepKind::Read => {
+                let results = self.fetched(&step.model_ids).await?;
+                let active = self
+                    .cooldowns
+                    .active_from_results(&step.model_ids, &results)
+                    .map_err(|_error| ScenarioError::CooldownKey)?;
+                output.active = Some(active.iter().map(active_view).collect());
+                output.local_expiries = Some(self.expiries(&step.model_ids)?);
+            }
+            StepKind::Minimum => self.minimum(step, &mut output).await?,
+            StepKind::SetHealth => output.local_expiry = self.set_health(step)?,
+            StepKind::Health => output.unhealthy = Some(self.health.unhealthy_now()),
+            StepKind::Filter => output.kept = Some(self.filter(step)),
+        }
+        Ok(output)
+    }
+
+    async fn minimum(&self, step: &Step, output: &mut StepOutput) -> Result<(), ScenarioError> {
+        let results = self.fetched(&step.model_ids).await?;
+        let minimum = self.cooldowns.minimum_cooldown(&results);
+        output.minimum = Some(format!("{minimum:.6}"));
+        Ok(())
+    }
+
+    fn set_health(&self, step: &Step) -> Result<Option<String>, ScenarioError> {
+        let states = snapshot(&step.states);
+        self.health
+            .set_states(&states)
+            .map_err(|_error| ScenarioError::HealthState)?;
+        Ok(self
+            .health
+            .local_expiry()
+            .map(|expiry| format!("{expiry:.6}")))
+    }
+
+    fn filter(&self, step: &Step) -> Vec<String> {
+        let scoped = self
+            .input
+            .health
+            .scoped_groups
+            .clone()
+            .map(BTreeSet::from_iter);
+        let routing = HealthRouting {
+            enabled: self.input.health.enabled,
+            has_allowed_fails_policy: self.input.health.has_allowed_fails_policy,
+            scoped_groups: scoped.as_ref(),
+        };
+        without_unhealthy(
+            self.deployments.clone(),
+            &self.health.unhealthy_now(),
+            routing,
+            step.health_check_probe,
+        )
+        .iter()
+        .filter_map(DeploymentSpec::id)
+        .map(str::to_owned)
+        .collect()
+    }
+
+    async fn fetched(
+        &self,
+        model_ids: &[String],
+    ) -> Result<Vec<Option<CooldownRecord>>, ScenarioError> {
+        let mut batch = RoutingReadBatch::default();
+        let mut request = RequestReads::default();
+        self.cooldowns
+            .read(&mut batch, &mut request, model_ids)
+            .await
+            .map_err(|_error| ScenarioError::CooldownKey)
+    }
+
+    fn expiries(&self, model_ids: &[String]) -> Result<Vec<Option<String>>, ScenarioError> {
+        Ok(self
+            .cooldowns
+            .local_expiries(model_ids)
+            .map_err(|_error| ScenarioError::CooldownKey)?
+            .into_iter()
+            .map(|expiry| expiry.map(|seconds| format!("{seconds:.6}")))
+            .collect())
+    }
+}
+
+fn snapshot(states: &BTreeMap<String, HealthInput>) -> HealthSnapshot {
+    states
+        .iter()
+        .map(|(model_id, state)| (model_id.clone(), state.state()))
+        .collect()
+}
+
+fn active_view(cooldown: &ActiveCooldown) -> ActiveView {
+    ActiveView {
+        model_id: cooldown.model_id.clone(),
+        remaining_seconds: format!("{:.6}", cooldown.remaining_seconds),
+        exception_received: cooldown.record.exception_received.clone(),
+        status_code: cooldown.record.status_code.clone(),
+        timestamp: format!("{:.6}", cooldown.record.timestamp),
+        cooldown_time: format!("{:.6}", cooldown.record.cooldown_time),
+    }
+}
+
+impl CooldownInput {
+    fn record(&self) -> CooldownRecord {
+        CooldownRecord {
+            exception_received: self.exception_received.clone(),
+            status_code: self.status_code.clone(),
+            timestamp: self.timestamp.0,
+            cooldown_time: self.cooldown_time.0,
+        }
+    }
+}
+
+impl HealthInput {
+    fn state(&self) -> HealthState {
+        HealthState {
+            is_healthy: self.is_healthy,
+            timestamp: self.timestamp.0,
+            reason: self.reason.clone(),
+        }
+    }
+}
+
+fn deployment(input: &DeploymentInput) -> Result<DeploymentSpec, ScenarioError> {
+    let id = &input.id;
+    let params = JsonObject::from([("model".to_owned(), Json::Text(format!("openai/{id}")))]);
+    let info = JsonObject::from([("id".to_owned(), Json::Text(id.clone()))]);
+    DeploymentSpec::new(
+        input.model_name.clone(),
+        params,
+        info,
+        JsonObject::new(),
+        String::new,
+    )
+    .map_err(|_error| ScenarioError::Deployment { id: id.clone() })
+}
+
+fn cooldown_key(model_id: &str) -> Result<RouteKey, ScenarioError> {
+    RouteKey::parse(&format!("{KEY_PREFIX}{model_id}{KEY_SUFFIX}"))
+        .map_err(|_error| ScenarioError::CooldownKey)
+}
+
+fn seconds(millis: u64) -> Result<f64, ScenarioError> {
+    let quotient = Decimal::from(millis)
+        .checked_div(Decimal::from(1_000_i64))
+        .ok_or(ScenarioError::TimeOverflow { millis })?;
+    quotient
+        .to_f64()
+        .ok_or(ScenarioError::TimeOverflow { millis })
+}

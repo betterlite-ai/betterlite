@@ -1,0 +1,26 @@
+kind: helper
+name: literal-dot-before-traversal
+call:
+  cli_attribution:
+    function: build
+    claim_map: org_info.department->department,org_info\.department->flat_department,org_info.team->team
+    identity:
+      id: cli-user
+      email: cli@example.com
+      first_name: null
+      last_name: null
+      display_name: null
+      picture: https://img.example/p.png
+      provider: generic
+      team_ids: []
+      user_role: null
+      extra_fields:
+        org_info.department: flat-value
+        org_info:
+          department: nested-value
+          team: nested-team
+calls: []
+env:
+  CLI_SSO_CLAIM_MAP: org_info.department->department,org_info\.department->flat_department,org_info.team->team
+compare:
+  ignore: []

@@ -208,7 +208,7 @@ async fn exporter_metric_reader_posts_protobuf_to_the_metrics_path() {
     let wired = clients(&recorder);
     let mut settings = config("otlp_http");
     settings.endpoint = Some("http://collector:4318".to_owned());
-    let reader = build_metric_reader(&settings, &wired).expect("reader");
+    let reader = build_metric_reader(&settings, &wired, Duration::from_millis(50)).expect("reader");
     let provider = build_meter_provider(&settings, reader);
     get_meter(&provider, "litellm.metrics")
         .u64_counter("probe")
