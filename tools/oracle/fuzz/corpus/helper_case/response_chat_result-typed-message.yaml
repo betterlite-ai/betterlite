@@ -1,0 +1,46 @@
+kind: helper
+name: response-chat-result-typed-message
+call:
+  response_chat_result:
+    model: caller-model
+    response:
+      id: resp_seed
+      created_at: 1700000000
+      status: completed
+      output:
+        - type: message
+          id: msg_1
+          role: assistant
+          status: completed
+          content:
+            - {type: output_text, text: seed, annotations: []}
+    caller_extra: {}
+    caller_hidden_params: {}
+    raw_hidden_params: {}
+    recorded: null
+calls:
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_seed
+        created_at: 1700000000
+        status: incomplete
+        incomplete_details: {reason: content_filter}
+        output:
+          - type: reasoning
+            id: rs_1
+            summary:
+              - {type: summary_text, text: seed}
+          - type: function_call
+            id: fc_1
+            call_id: c1
+            name: f
+            arguments: "{}"
+      caller_extra: {existing: kept}
+      caller_hidden_params: {model_id: old}
+      raw_hidden_params: {model_id: new}
+      recorded: |-
+        data: {"type":"response.completed","response":{"output":[]}}
+env: {}
+compare:
+  ignore: []
