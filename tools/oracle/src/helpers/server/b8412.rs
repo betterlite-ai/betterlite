@@ -2,8 +2,9 @@ mod tests;
 
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::json;
 
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::member_request_contracts::MemberContractError;
 use betterlite_server::member_request_contracts::callbacks::{
@@ -52,11 +53,11 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        Ok(outcome(&input.record, &input.value))
+        outcome(&input.record, &input.value)
     }
 }
 
-fn outcome(record: &Record, value: &Json) -> Value {
+fn outcome(record: &Record, value: &Json) -> HelperResult {
     match record {
         Record::DeleteTeamRequest => recorded(DeleteTeamRequest::from_value(value)),
         Record::AddTeamCallback => recorded(AddTeamCallback::from_value(value)),
@@ -90,40 +91,36 @@ fn outcome(record: &Record, value: &Json) -> Value {
     }
 }
 
-fn recorded<T>(record: Result<T, MemberContractError>) -> Value
+fn recorded<T>(record: Result<T, MemberContractError>) -> HelperResult
 where
     T: Serialize,
 {
-    match record {
-        Ok(record) => json!({
-            "outcome": "record",
-            "dump": record,
-        }),
-        Err(error) => rejected(&error),
-    }
+    let record = record.map_err(validation_failure)?;
+    Ok(json!({
+        "outcome": "record",
+        "dump": record,
+    }))
 }
 
-fn patched(request: Result<OrganizationUpdateRequestV2, MemberContractError>) -> Value {
-    match request {
-        Ok(request) => json!({
-            "outcome": "record",
-            "dump": request,
-            "fields_set": request.fields_set(),
-        }),
-        Err(error) => rejected(&error),
-    }
+fn patched(request: Result<OrganizationUpdateRequestV2, MemberContractError>) -> HelperResult {
+    let request = request.map_err(validation_failure)?;
+    Ok(json!({
+        "outcome": "record",
+        "dump": request,
+        "fields_set": request.fields_set(),
+    }))
 }
 
-fn rejected(error: &MemberContractError) -> Value {
-    json!({
-        "outcome": "rejected",
-        "message": error_text(error),
-    })
-}
-
-fn error_text(error: &MemberContractError) -> String {
+fn validation_failure(error: MemberContractError) -> Box<HelperError> {
     match error {
-        MemberContractError::Validation { message } => message.clone(),
-        MemberContractError::Decode { source } => source.to_string(),
+        MemberContractError::Validation { message } => Box::new(HelperError {
+            class: "ValidationError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message,
+        }),
+        MemberContractError::Decode { source } => Box::<HelperError>::from(source),
     }
 }
