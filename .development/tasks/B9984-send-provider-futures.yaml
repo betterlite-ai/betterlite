@@ -8,8 +8,11 @@ description: >-
   prepare and send in crates/betterlite-anthropic/src/chat_call/, dispatch, the embedding, predibase and replicate
   entries, the compatible chat execution and shared_embedding in crates/betterlite-provider, and three in
   model_hub_dispatch's tests (pooled.rs and support.rs). crates/betterlite-openai/src/chat_content/media.rs carries an expect for
-  clippy::future_not_send, and B2206 adds two more in crates/betterlite-bedrock/src/invoke_stream.rs. B027 had to
-  leave the Anthropic gateway path out for this reason. Max chose to make the env Send and Sync (decision 2026-11-18).
+  clippy::future_not_send. Three tasks this one waits for add more: B2206 two future_not_send expects in
+  crates/betterlite-bedrock/src/invoke_stream.rs, B027 the HandlerFuture alias in
+  crates/betterlite-provider/src/anthropic_dispatch/completion.rs, and B563 the Foundry completion in
+  crates/betterlite-foundry/src/anthropic/handler.rs. Convert those too. B027 had to leave the Anthropic gateway
+  path out for this reason. Max chose to make the env Send and Sync (decision 2026-11-18).
 
 
   Make the env Send and Sync. In env.rs, LogSink gets Send + Sync as supertraits, and LoggerFn becomes a reference to
@@ -37,11 +40,12 @@ description: >-
 
   Tests. Add a send test module next to each module that had a local future: chat_call::tests::send in
   betterlite-anthropic, and model_hub_dispatch::tests::send, compatible_chat_call::tests::send and
-  compatible_embedding_call::tests::send in betterlite-provider. Each test builds one public entry point's call with
+  compatible_embedding_call::tests::send and anthropic_dispatch::tests::send in betterlite-provider, and
+  anthropic::tests::send in betterlite-foundry. Each test builds one public entry point's call with
   the module's existing fixtures, moves the future into std::thread::scope, blocks on it on that second thread, and
   asserts the result the module's existing tests expect for that fixture. A future that is not Send does not compile
   there. One test per entry point: chat_call, model_hub_dispatch::dispatch, its embedding, predibase and replicate
-  entries, the compatible chat execution and shared_embedding.
+  entries, the compatible chat execution, shared_embedding, the Anthropic dispatch entry and the Foundry completion.
 scope:
   paths:
   - crates/betterlite-logging/src/logging_pre_post/env.rs
@@ -54,6 +58,9 @@ scope:
   - crates/betterlite-provider/src/compatible_chat_call/**
   - crates/betterlite-provider/src/compatible_embedding_call.rs
   - crates/betterlite-provider/src/compatible_embedding_call/**
+  - crates/betterlite-provider/src/anthropic_dispatch.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/**
+  - crates/betterlite-foundry/src/anthropic/**
   - crates/betterlite-openai/src/chat_content/media.rs
   - crates/betterlite-bedrock/src/invoke_stream.rs
   - crates/betterlite-core/src/api/bfl/edit_call.rs
@@ -106,13 +113,15 @@ checks:
     why: A provider call future still cannot move to another thread, or gives a different result there.
     run: >-
       cargo nextest run --locked -p betterlite-provider --no-tests=fail
-      -E 'test(/^(model_hub_dispatch|compatible_chat_call|compatible_embedding_call)::tests::send::/)'
+      -E 'test(/^(model_hub_dispatch|compatible_chat_call|compatible_embedding_call|anthropic_dispatch)::tests::send::/)'
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^anthropic::tests::send::/)'
   - id: existing-tests
     why: Making the env Send changed what a call or the logging hooks do.
     run: >-
       cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^chat_call::/)'
       && cargo nextest run --locked -p betterlite-provider --no-tests=fail
-      -E 'test(/^(model_hub_dispatch|compatible_chat_call|compatible_embedding_call)::/)'
+      -E 'test(/^(model_hub_dispatch|compatible_chat_call|compatible_embedding_call|anthropic_dispatch)::/)'
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^anthropic::/)'
       && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_pre_post::/)'
   - id: oracle-logging
     why: The Recorder change altered what the pre and post call helper records against LiteLLM.
@@ -128,7 +137,8 @@ out_of_scope:
 pitfalls:
 - 'Put Send + Sync on the trait definitions, not + Sync at each use. A supertrait makes every implementor prove it once, and any later Send future can hold a PrePostEnv.'
 - 'Do not split the calls or move their PrePostEnv work out of the async code to dodge the bound. B027 tried that and dropped it.'
-- 'B2206 is open now and adds two future_not_send expects in crates/betterlite-bedrock/src/invoke_stream.rs. If they are on main when this branch merges main, remove them; the no-local-futures check finds them. If this task lands first, B2206 removes its own.'
+- 'B027, B563 and B2206 land before this task, so their local futures and expects are on main when it starts. Convert them like the others; B563 shares chat_call with Foundry, so keep both callers working.'
+- 'Run each send test as a plain #[test] that builds a runtime on the second thread. A block_on on the thread of a #[tokio::test] panics, since that thread is already inside a runtime.'
 - 'Write the clippy.toml paths as futures_util::future::LocalBoxFuture and futures_util::stream::LocalBoxStream. If a use of the re-export does not trip the lint, add the futures_core path it resolves to as well.'
 review_level: standard
 budget:
