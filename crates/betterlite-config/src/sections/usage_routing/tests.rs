@@ -31,7 +31,6 @@ fn ttl(source: &str) -> Option<i64> {
 #[case::empty_args("router_settings:\n  routing_strategy_args: {}\n", None)]
 #[case::integer("router_settings:\n  routing_strategy_args:\n    ttl: 45\n", Some(45))]
 #[case::zero("router_settings:\n  routing_strategy_args:\n    ttl: 0\n", Some(0))]
-#[case::negative("router_settings:\n  routing_strategy_args:\n    ttl: -1\n", Some(-1))]
 #[case::whole_float(
     "router_settings:\n  routing_strategy_args:\n    ttl: 45.0\n",
     Some(45)
@@ -46,11 +45,12 @@ fn usage_routing_reads_the_declared_ttl(#[case] source: &str, #[case] expected: 
     assert_eq!(ttl(source), expected);
 }
 
-// an int field refuses text that is not a whole number, and pydantic refuses a fractional one the same way
+// the shared key holds whole non-negative seconds, so text, a fraction and a negative name the key's path
 #[rstest]
 #[case::text("text")]
 #[case::fractional("1.5")]
 #[case::empty("\"\"")]
+#[case::negative("-1")]
 fn usage_routing_rejects_a_ttl_it_cannot_read(#[case] value: &str) {
     let source = format!("router_settings:\n  routing_strategy_args:\n    ttl: {value}\n");
     let error = load_with(&source, &[]).unwrap_err();
@@ -62,6 +62,18 @@ fn usage_routing_rejects_a_ttl_it_cannot_read(#[case] value: &str) {
         ),
         "a non-integer ttl names its path"
     );
+}
+
+// a list is not the int RoutingArgs declares, and the v2 section that reads the same key answers the same way
+#[test]
+fn usage_routing_rejects_a_ttl_of_another_type() {
+    let source = "router_settings:\n  routing_strategy_args:\n    ttl: [60]\n";
+    let error = load_with(source, &[]).unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::InvalidScalar { path, value: false }
+            if path == "router_settings.routing_strategy_args.ttl"
+    ));
 }
 
 #[test]
