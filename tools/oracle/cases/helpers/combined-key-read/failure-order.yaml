@@ -9,9 +9,12 @@ call:
     check_deprecated: true
     use_writer: false
     rows:
-      - error: {type: raw_query, message: "the database is down"}
-      - error: {type: raw_query, message: "the database is down"}
-      - error: {type: raw_query, message: "the database is down"}
+      - kind: failure
+        error: {type: raw_query, message: "the database is down"}
+      - kind: failure
+        error: {type: raw_query, message: "the database is down"}
+      - kind: failure
+        error: {type: raw_query, message: "the database is down"}
     deprecated: []
     reconnects: []
 calls:
@@ -33,9 +36,12 @@ calls:
       check_deprecated: true
       use_writer: false
       rows:
-        - error: {type: raw_query, message: "the database is down"}
-        - error: {type: raw_query, message: "the database is down"}
-        - data:
+        - kind: failure
+          error: {type: raw_query, message: "the database is down"}
+        - kind: failure
+          error: {type: raw_query, message: "the database is down"}
+        - kind: data
+          data:
             token: sk-flaky
             user_id: u1
             models: []

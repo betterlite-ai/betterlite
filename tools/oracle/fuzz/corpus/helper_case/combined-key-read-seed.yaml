@@ -9,7 +9,8 @@ call:
     check_deprecated: true
     use_writer: false
     rows:
-      - data:
+      - kind: data
+        data:
           token: sk-seed
           user_id: u1
           models: []

@@ -1,5 +1,5 @@
-use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -24,7 +24,7 @@ use super::fakes::{
     CountingDiagnostics, CountingHook, DeprecatedStep, FullJitter, NoopPause, RecordedReconnect,
     RecordingSink, RowStep, ScriptedDatabase, ScriptedReconnect, StepClock,
 };
-use super::{DeprecatedFields, Fault, Input, QueryType, ReconnectStep, Step};
+use super::{Fault, Input, QueryType, ReconnectStep, Step};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = Builder::new_current_thread()
@@ -57,11 +57,39 @@ impl ServiceState {
         let wall = DateTime::parse_from_rfc3339(&input.now)
             .or_value_error()?
             .with_timezone(&Utc);
+        let rows = input
+            .rows
+            .iter()
+            .map(|step| -> Result<RowStep, Box<HelperError>> {
+                match step {
+                    None => Ok(Ok(None)),
+                    Some(Step::Failure { error }) => Ok(Err(database_fault(error)?)),
+                    Some(Step::Data { data }) => Ok(Ok(Some(JsonData::Object(data.clone())))),
+                }
+            })
+            .collect::<Result<Vec<RowStep>, Box<HelperError>>>()?;
+        let deprecated = input
+            .deprecated
+            .iter()
+            .map(|step| -> Result<DeprecatedStep, Box<HelperError>> {
+                match step {
+                    None => Ok(Ok(None)),
+                    Some(Step::Failure { error }) => Ok(Err(database_fault(error)?)),
+                    Some(Step::Data { data }) => {
+                        let revoke_at = DateTime::from_timestamp(data.revoke_at_seconds, 0)
+                            .ok_or_else(|| {
+                                value_error(String::from("revoke_at_seconds is out of range"))
+                            })?;
+                        Ok(Ok(Some(DeprecatedToken {
+                            active_token_id: data.active_token_id.clone(),
+                            revoke_at,
+                        })))
+                    }
+                }
+            })
+            .collect::<Result<Vec<DeprecatedStep>, Box<HelperError>>>()?;
         Ok(Self {
-            database: ScriptedDatabase::new(
-                row_steps(&input.rows)?,
-                deprecated_steps(&input.deprecated)?,
-            ),
+            database: ScriptedDatabase::new(rows, deprecated),
             reconnect: ScriptedReconnect::new(reconnect_steps(&input.reconnects)),
             sink: Arc::new(RecordingSink::default()),
             clock: StepClock::new(Duration::from_millis(input.step_millis), wall),
@@ -105,37 +133,6 @@ impl ServiceState {
         self.tasks.wait().await;
         outcome
     }
-}
-fn row_steps(steps: &[Step<BTreeMap<String, JsonData>>]) -> Result<Vec<RowStep>, Box<HelperError>> {
-    steps
-        .iter()
-        .map(|step| match step {
-            Step::Failure(failure) => Ok(Err(database_fault(&failure.error)?)),
-            Step::Data(data) => Ok(Ok(Some(JsonData::Object(data.data.clone())))),
-            Step::Missing => Ok(Ok(None)),
-        })
-        .collect()
-}
-fn deprecated_steps(
-    steps: &[Step<DeprecatedFields>],
-) -> Result<Vec<DeprecatedStep>, Box<HelperError>> {
-    steps
-        .iter()
-        .map(|step| match step {
-            Step::Failure(failure) => Ok(Err(database_fault(&failure.error)?)),
-            Step::Data(data) => {
-                let revoke_at = DateTime::from_timestamp(data.data.revoke_at_seconds, 0)
-                    .ok_or_else(|| {
-                        value_error(String::from("revoke_at_seconds is out of range"))
-                    })?;
-                Ok(Ok(Some(DeprecatedToken {
-                    active_token_id: data.data.active_token_id.clone(),
-                    revoke_at,
-                })))
-            }
-            Step::Missing => Ok(Ok(None)),
-        })
-        .collect()
 }
 fn reconnect_steps(steps: &[ReconnectStep]) -> Vec<Result<bool, ReconnectFailure>> {
     steps
@@ -206,20 +203,22 @@ impl Report {
             result,
             view,
             error,
-            row_queries: state.database.row_queries(),
-            deprecated_queries: state.database.deprecated_queries(),
+            row_queries: state.database.row_queries.load(Ordering::Relaxed),
+            deprecated_queries: state.database.deprecated_queries.load(Ordering::Relaxed),
             reconnects: state
                 .reconnect
-                .requests()
+                .requests
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
                 .iter()
                 .map(ReconnectReport::from_recorded)
                 .collect(),
-            metric_success: state.sink.successes(),
-            metric_failure: state.sink.failures(),
-            hooks: state.hook.hooks(),
-            backoffs: state.diagnostics.backoffs(),
-            cached_plan_warnings: state.diagnostics.cached_plan_warnings(),
-            deprecated_used: state.diagnostics.deprecated_used(),
+            metric_success: state.sink.successes.load(Ordering::Relaxed),
+            metric_failure: state.sink.failures.load(Ordering::Relaxed),
+            hooks: state.hook.hooks.load(Ordering::Relaxed),
+            backoffs: state.diagnostics.backoffs.load(Ordering::Relaxed),
+            cached_plan_warnings: state.diagnostics.cached_plan.load(Ordering::Relaxed),
+            deprecated_used: state.diagnostics.deprecated_used.load(Ordering::Relaxed),
         }
     }
 }

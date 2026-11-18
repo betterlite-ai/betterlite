@@ -10,7 +10,8 @@ call:
     use_writer: false
     rows:
       - null
-      - data:
+      - kind: data
+        data:
           token: sk-active
           user_id: u1
           models: []
@@ -19,7 +20,8 @@ call:
           team_blocked: false
           team_members_with_roles: null
     deprecated:
-      - data: {active_token_id: sk-active, revoke_at_seconds: 2000000000}
+      - kind: data
+        data: {active_token_id: sk-active, revoke_at_seconds: 2000000000}
     reconnects: []
 calls:
   - combined_key_read:

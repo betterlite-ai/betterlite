@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use betterlite_db::auth_reconnect::request::ReconnectRequest;
@@ -24,45 +25,26 @@ use betterlite_db::migration_ledger::lock::JitterSource;
 use betterlite_db::tool_spend::RetryPause;
 use chrono::{DateTime, Utc};
 
-pub(crate) fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-fn bump(counter: &Mutex<u32>) {
-    let mut value = lock(counter);
-    *value = value.saturating_add(1);
-}
-
 #[derive(Debug, thiserror::Error)]
 #[error("the helper's metric sink failed")]
 pub(crate) struct SinkFailure;
 
 #[derive(Default)]
 pub(crate) struct RecordingSink {
-    successes: Mutex<u32>,
-    failures: Mutex<u32>,
-}
-
-impl RecordingSink {
-    pub(crate) fn successes(&self) -> u32 {
-        *lock(&self.successes)
-    }
-
-    pub(crate) fn failures(&self) -> u32 {
-        *lock(&self.failures)
-    }
+    pub(crate) successes: AtomicU32,
+    pub(crate) failures: AtomicU32,
 }
 
 impl DbServiceEventSink for RecordingSink {
     type Failure = SinkFailure;
 
     fn success(&self, _event: DbServiceEvent) -> DbMetricFuture<'_, Self::Failure> {
-        bump(&self.successes);
+        self.successes.fetch_add(1, Ordering::Relaxed);
         Box::pin(async { Ok(()) })
     }
 
     fn failure(&self, _event: DbServiceFailureEvent) -> DbMetricFuture<'_, Self::Failure> {
-        bump(&self.failures);
+        self.failures.fetch_add(1, Ordering::Relaxed);
         Box::pin(async { Ok(()) })
     }
 }
@@ -70,7 +52,7 @@ impl DbServiceEventSink for RecordingSink {
 pub(crate) struct StepClock {
     base: Instant,
     step: Duration,
-    calls: Mutex<u32>,
+    calls: AtomicU32,
     wall: DateTime<Utc>,
 }
 
@@ -79,7 +61,7 @@ impl StepClock {
         Self {
             base: Instant::now(),
             step,
-            calls: Mutex::new(0),
+            calls: AtomicU32::new(0),
             wall,
         }
     }
@@ -91,10 +73,7 @@ impl WriteClock for StepClock {
     }
 
     fn instant(&self) -> Instant {
-        let mut calls = lock(&self.calls);
-        let index = *calls;
-        *calls = calls.saturating_add(1);
-        drop(calls);
+        let index = self.calls.fetch_add(1, Ordering::Relaxed);
         self.base
             .checked_add(self.step.saturating_mul(index))
             .unwrap_or(self.base)
@@ -120,31 +99,23 @@ impl RetryPause for NoopPause {
 
 #[derive(Default)]
 pub(crate) struct CountingDiagnostics {
-    backoffs: Mutex<u32>,
-    cached_plan: Mutex<u32>,
-    deprecated_used: Mutex<bool>,
-}
-
-impl CountingDiagnostics {
-    pub(crate) fn backoffs(&self) -> u32 {
-        *lock(&self.backoffs)
-    }
-
-    pub(crate) fn cached_plan_warnings(&self) -> u32 {
-        *lock(&self.cached_plan)
-    }
-
-    pub(crate) fn deprecated_used(&self) -> bool {
-        *lock(&self.deprecated_used)
-    }
+    pub(crate) backoffs: AtomicU32,
+    pub(crate) cached_plan: AtomicU32,
+    pub(crate) deprecated_used: AtomicBool,
 }
 
 impl KeyReadDiagnostics for CountingDiagnostics {
     fn emit(&self, diagnostic: Diagnostic<'_>) {
         match diagnostic {
-            Diagnostic::Backoff { .. } => bump(&self.backoffs),
-            Diagnostic::CachedPlan { .. } => bump(&self.cached_plan),
-            Diagnostic::DeprecatedUsed => *lock(&self.deprecated_used) = true,
+            Diagnostic::Backoff { .. } => {
+                self.backoffs.fetch_add(1, Ordering::Relaxed);
+            }
+            Diagnostic::CachedPlan { .. } => {
+                self.cached_plan.fetch_add(1, Ordering::Relaxed);
+            }
+            Diagnostic::DeprecatedUsed => {
+                self.deprecated_used.store(true, Ordering::Relaxed);
+            }
             Diagnostic::TokenHash
             | Diagnostic::AttemptFailure { .. }
             | Diagnostic::FailureTraceback { .. }
@@ -155,18 +126,12 @@ impl KeyReadDiagnostics for CountingDiagnostics {
 
 #[derive(Default)]
 pub(crate) struct CountingHook {
-    hooks: Mutex<u32>,
-}
-
-impl CountingHook {
-    pub(crate) fn hooks(&self) -> u32 {
-        *lock(&self.hooks)
-    }
+    pub(crate) hooks: AtomicU32,
 }
 
 impl KeyFailureHook for CountingHook {
     fn schedule(&self, _hook: FailureHook) -> HookFuture {
-        bump(&self.hooks);
+        self.hooks.fetch_add(1, Ordering::Relaxed);
         Box::pin(async {})
     }
 }
@@ -175,10 +140,10 @@ pub(crate) type RowStep = Result<Option<JsonData>, DbError>;
 pub(crate) type DeprecatedStep = Result<Option<DeprecatedToken>, DbError>;
 
 pub(crate) struct ScriptedDatabase {
-    rows: Mutex<VecDeque<RowStep>>,
-    deprecated: Mutex<VecDeque<DeprecatedStep>>,
-    row_queries: Mutex<u32>,
-    deprecated_queries: Mutex<u32>,
+    pub(crate) rows: Mutex<VecDeque<RowStep>>,
+    pub(crate) deprecated: Mutex<VecDeque<DeprecatedStep>>,
+    pub(crate) row_queries: AtomicU32,
+    pub(crate) deprecated_queries: AtomicU32,
 }
 
 impl ScriptedDatabase {
@@ -186,18 +151,16 @@ impl ScriptedDatabase {
         Self {
             rows: Mutex::new(rows.into_iter().collect()),
             deprecated: Mutex::new(deprecated.into_iter().collect()),
-            row_queries: Mutex::new(0),
-            deprecated_queries: Mutex::new(0),
+            row_queries: AtomicU32::new(0),
+            deprecated_queries: AtomicU32::new(0),
         }
     }
+}
 
-    pub(crate) fn row_queries(&self) -> u32 {
-        *lock(&self.row_queries)
-    }
-
-    pub(crate) fn deprecated_queries(&self) -> u32 {
-        *lock(&self.deprecated_queries)
-    }
+fn scripted_step<T>(steps: &Mutex<VecDeque<T>>, fallback: T) -> T {
+    let mut queue = steps.lock().unwrap_or_else(PoisonError::into_inner);
+    let next = queue.pop_front();
+    next.unwrap_or(fallback)
 }
 
 impl KeyReadDatabase for ScriptedDatabase {
@@ -206,8 +169,8 @@ impl KeyReadDatabase for ScriptedDatabase {
         _hash: &'lookup KeyHash,
         _use_writer: bool,
     ) -> RowFuture<'lookup> {
-        bump(&self.row_queries);
-        let next = lock(&self.rows).pop_front().unwrap_or(Ok(None));
+        self.row_queries.fetch_add(1, Ordering::Relaxed);
+        let next: RowStep = scripted_step(&self.rows, Ok(None));
         Box::pin(async move { next })
     }
 
@@ -217,8 +180,8 @@ impl KeyReadDatabase for ScriptedDatabase {
         _now: DateTime<Utc>,
         _use_writer: bool,
     ) -> DeprecatedFuture<'lookup> {
-        bump(&self.deprecated_queries);
-        let next = lock(&self.deprecated).pop_front().unwrap_or(Ok(None));
+        let next: DeprecatedStep = scripted_step(&self.deprecated, Ok(None));
+        self.deprecated_queries.fetch_add(1, Ordering::Relaxed);
         Box::pin(async move { next })
     }
 }
@@ -237,7 +200,7 @@ pub(crate) struct ScriptedReconnect {
     generation: u64,
     handle: Arc<u64>,
     results: Mutex<VecDeque<Result<bool, ReconnectFailure>>>,
-    requests: Mutex<Vec<RecordedReconnect>>,
+    pub(crate) requests: Mutex<Vec<RecordedReconnect>>,
 }
 
 impl ScriptedReconnect {
@@ -248,10 +211,6 @@ impl ScriptedReconnect {
             results: Mutex::new(results.into_iter().collect()),
             requests: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(crate) fn requests(&self) -> Vec<RecordedReconnect> {
-        lock(&self.requests).clone()
     }
 
     fn observation(&self) -> Observation<u64> {
@@ -276,14 +235,19 @@ impl PlanReconnect for ScriptedReconnect {
         stale: Option<&'reconnect StaleReadEngine<Self::Handle>>,
     ) -> ReconnectFuture<'reconnect> {
         let observed = self.observation();
-        lock(&self.requests).push(RecordedReconnect {
+        let recorded = RecordedReconnect {
             reason: request.reason.to_owned(),
             force_recreate: request.force_recreate,
             timeout: request.timeout,
             lock_timeout: request.lock_timeout,
             stale: stale.map(|engine| engine.is_still_live(&observed)),
-        });
-        let next = lock(&self.results).pop_front().unwrap_or(Ok(true));
+        };
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(recorded);
+        let mut results = self.results.lock().unwrap_or_else(PoisonError::into_inner);
+        let next = results.pop_front().unwrap_or(Ok(true));
         Box::pin(async move { next })
     }
 }

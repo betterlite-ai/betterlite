@@ -22,9 +22,9 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) use_writer: bool,
     #[serde(default)]
-    pub(crate) rows: Vec<Step<BTreeMap<String, JsonData>>>,
+    pub(crate) rows: Vec<Option<Step<BTreeMap<String, JsonData>>>>,
     #[serde(default)]
-    pub(crate) deprecated: Vec<Step<DeprecatedFields>>,
+    pub(crate) deprecated: Vec<Option<Step<DeprecatedFields>>>,
     #[serde(default)]
     pub(crate) reconnects: Vec<ReconnectStep>,
 }
@@ -51,21 +51,10 @@ pub(crate) struct Fault {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct FaultStep {
-    pub(crate) error: Fault,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DataStep<T> {
-    pub(crate) data: T,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
+#[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step<T> {
-    Failure(FaultStep),
-    Data(DataStep<T>),
-    Missing,
+    Data { data: T },
+    Failure { error: Fault },
 }
 
 #[derive(Debug, Deserialize)]

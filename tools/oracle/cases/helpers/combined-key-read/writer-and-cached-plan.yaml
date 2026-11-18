@@ -9,8 +9,10 @@ call:
     check_deprecated: true
     use_writer: false
     rows:
-      - error: {type: raw_query, message: "ERROR: cached plan must not change result type"}
-      - data:
+      - kind: failure
+        error: {type: raw_query, message: "ERROR: cached plan must not change result type"}
+      - kind: data
+        data:
           token: sk-plan
           user_id: u1
           models: []
@@ -29,8 +31,10 @@ calls:
       check_deprecated: true
       use_writer: true
       rows:
-        - error: {type: raw_query, message: "ERROR: cached plan must not change result type"}
-        - data:
+        - kind: failure
+          error: {type: raw_query, message: "ERROR: cached plan must not change result type"}
+        - kind: data
+          data:
             token: sk-plan
             user_id: u1
             models: []
