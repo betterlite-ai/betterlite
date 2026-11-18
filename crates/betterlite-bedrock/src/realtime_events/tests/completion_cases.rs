@@ -145,9 +145,14 @@ fn content_end_variants() {
     invalid_payload();
 }
 
-// A content end that closed nothing closeable leaves the accumulated chunks as they came
+// A content end that closed nothing closeable, an empty id included, leaves the accumulated chunks as they came
 fn partial_ids() {
-    for (item, response) in [(Some("item"), None), (None, Some("resp"))] {
+    for (item, response) in [
+        (Some("item"), None),
+        (None, Some("resp")),
+        (Some(""), Some("resp")),
+        (Some("item"), Some("")),
+    ] {
         let mut input = support::input();
         input.current_output_item_id = item.map(str::to_owned);
         input.current_response_id = response.map(str::to_owned);
@@ -254,4 +259,18 @@ fn prompt_end_state() {
         assert_eq!(response.current_item_chunks, input.current_item_chunks);
         assert_eq!(response.current_conversation_id.as_deref(), Some("conv"));
     }
+    // An empty conversation id is absent to the done event, exactly as an empty one is to the reset ids
+    let empty_conversation = support::input_with_ids("item", "resp", "");
+    let without_conversation = support::transform(
+        &mut support::new_session(),
+        &support::CountingIds::new(),
+        r#"{"event":{"promptEnd":{}}}"#,
+        &empty_conversation,
+    )
+    .expect("a response end");
+    assert_eq!(support::events(&without_conversation).len(), 0);
+    assert_eq!(
+        without_conversation.current_conversation_id.as_deref(),
+        Some("")
+    );
 }
