@@ -115,21 +115,32 @@ fn candidate_routes() {
 // An item alias resolves through its model field, and a blank one falls back to the request name.
 #[test]
 fn candidate_item_alias() {
-    let snapshot = Snapshot::new(&[named("gpt-4o", "a", "openai/gpt-4o")])
-        .with_alias(
-            "sonnet",
-            AliasTarget::Item {
-                model: Some(text("gpt-4o")),
-                hidden: None,
-            },
-        )
-        .with_alias(
-            "blank",
-            AliasTarget::Item {
-                model: Some(text("")),
-                hidden: Some(Json::Bool(false)),
-            },
-        );
+    let snapshot = Snapshot::new(&[
+        named("gpt-4o", "a", "openai/gpt-4o"),
+        named("claude", "c", "anthropic/claude"),
+    ])
+    .with_alias(
+        "sonnet",
+        AliasTarget::Item {
+            model: Some(text("gpt-4o")),
+            hidden: None,
+        },
+    )
+    .with_alias(
+        "blank",
+        AliasTarget::Item {
+            model: Some(text("")),
+            hidden: Some(Json::Bool(false)),
+        },
+    )
+    .with_alias(
+        "gpt-4o",
+        AliasTarget::Item {
+            model: Some(text("")),
+            hidden: Some(Json::Bool(false)),
+        },
+    )
+    .with_alias("claude", AliasTarget::Name(String::new()));
     let lookup = snapshot.lookup();
     assert_eq!(
         lookup.candidate_model_ids("sonnet", None).unwrap(),
@@ -140,6 +151,14 @@ fn candidate_item_alias() {
             .candidate_model_ids("blank", None)
             .unwrap()
             .is_empty()
+    );
+    assert_eq!(
+        lookup.candidate_model_ids("gpt-4o", None).unwrap(),
+        BTreeSet::from(["a".to_owned()])
+    );
+    assert_eq!(
+        lookup.candidate_model_ids("claude", None).unwrap(),
+        BTreeSet::from(["c".to_owned()])
     );
 }
 
