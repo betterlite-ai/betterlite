@@ -75,8 +75,8 @@ impl ServiceEventHooks {
             start_time: end_time - elapsed,
             end_time,
         };
-        if let Err(error) = self.sender.try_send(logged) {
-            let reason = match error {
+        if let Err(failed) = self.sender.try_send(logged) {
+            let reason = match failed {
                 TrySendError::Full(_dropped) => "the redis service event queue is full",
                 TrySendError::Disconnected(_dropped) => "the redis service event worker is gone",
             };
@@ -95,7 +95,10 @@ impl ServiceHooks for ServiceEventHooks {
     }
 }
 
-fn deliver<S: ServiceEventSink>(sink: Arc<S>, events: Receiver<LoggedServiceEvent>) {
+fn deliver<S>(sink: Arc<S>, events: Receiver<LoggedServiceEvent>)
+where
+    S: ServiceEventSink,
+{
     while let Ok(event) = events.recv() {
         if let Err(error) = sink.emit(&event) {
             tracing::warn!(%error, "the redis service event was not emitted");

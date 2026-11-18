@@ -45,7 +45,7 @@ fn success_sends_a_redis_event() {
     let logged = &events[0];
     assert_eq!(logged.payload.service, ServiceType::Redis);
     assert_eq!(logged.payload.call_type, "async_get_cache");
-    assert_eq!(logged.payload.duration, 1.5);
+    assert_eq!(logged.payload.duration.to_bits(), 1.5_f64.to_bits());
     assert!(!logged.payload.is_error);
     assert_eq!(logged.payload.error, None);
     assert_eq!(logged.payload.caller, None);
