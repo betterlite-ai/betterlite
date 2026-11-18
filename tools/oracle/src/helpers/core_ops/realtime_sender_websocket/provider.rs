@@ -15,7 +15,6 @@ use betterlite_core::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use betterlite_core::api::realtime_session_state::RealtimeProviderConfig;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use serde_json::json;
 use thiserror::Error;
 
@@ -26,6 +25,8 @@ use super::transport::{Locked as _, Timeline, WireBackend, capture};
 pub(crate) enum ScriptError {
     #[error("the scripted provider transformation failed")]
     Injected,
+    #[error("the scripted sender provider does not transform responses")]
+    ResponseNotScripted,
     #[error("the scripted provider capture failed")]
     Capture {
         #[source]
@@ -126,16 +127,7 @@ impl BaseRealtimeConfig for ScriptedProvider {
         _model: &str,
         _input: &RealtimeResponseTransformInput,
     ) -> Result<RealtimeResponseTypedDict, Self::Error> {
-        Ok(RealtimeResponseTypedDict {
-            response: Json::Object(IndexMap::new()),
-            current_output_item_id: None,
-            current_response_id: None,
-            current_delta_chunks: None,
-            current_conversation_id: None,
-            current_item_chunks: None,
-            current_delta_type: None,
-            session_configuration_request: None,
-        })
+        Err(ScriptError::ResponseNotScripted)
     }
 }
 
@@ -154,24 +146,7 @@ impl RealtimeProviderConfig for ProviderView {
     }
 }
 
-pub(crate) struct Guard {
-    custom: bool,
-    runs_for: Vec<GuardrailEventHooks>,
-}
-
-impl Guard {
-    pub(crate) fn documents(documents: &[GuardrailDocument]) -> Vec<Self> {
-        documents
-            .iter()
-            .map(|document| Self {
-                custom: document.custom,
-                runs_for: document.runs_for.clone(),
-            })
-            .collect()
-    }
-}
-
-impl RealtimeGuardrailCallback for Guard {
+impl RealtimeGuardrailCallback for GuardrailDocument {
     type Error = ScriptError;
 
     fn is_custom_guardrail(&self) -> bool {

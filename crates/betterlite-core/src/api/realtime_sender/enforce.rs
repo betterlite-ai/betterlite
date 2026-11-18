@@ -170,7 +170,7 @@ where
         }
     }
     let envelope = serde_json::from_str::<Envelope>(message)
-        .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;
+        .map_err(RealtimeSenderError::SessionUpdateInvalid)?;
     if !matches!(
         (envelope.kind, envelope.session),
         (Slot::Object(_), Slot::Object(_))
@@ -178,7 +178,7 @@ where
         return Ok(message.to_owned());
     }
     let mut update = serde_json::from_str::<Update>(message)
-        .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;
+        .map_err(RealtimeSenderError::SessionUpdateInvalid)?;
     if matches!(
         &update.session.r#type,
         Slot::Object(SessionType::Transcription)
@@ -188,7 +188,7 @@ where
     if !update.session.enforce(authorized_model) {
         return Ok(message.to_owned());
     }
-    serde_json::to_string(&update).map_err(|source| RealtimeSenderError::Encode { source })
+    serde_json::to_string(&update).map_err(RealtimeSenderError::Encode)
 }
 
 fn nests_deeper_than(message: &str, limit: usize) -> bool {

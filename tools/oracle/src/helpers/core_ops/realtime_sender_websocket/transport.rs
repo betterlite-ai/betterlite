@@ -44,14 +44,6 @@ pub(crate) fn recorded(wire: &'static str, data: &str) -> Recorded {
     Recorded { wire, payload }
 }
 
-// A binary frame has no encoding of its own, so its bytes are compared one for one
-fn binary_recorded(data: &[u8]) -> Recorded {
-    Recorded {
-        wire: "binary",
-        payload: json!({"kind": "bytes", "bytes": data}),
-    }
-}
-
 #[derive(Debug, Default)]
 pub(crate) struct WireLog {
     pub(crate) attempts: usize,
@@ -62,16 +54,6 @@ pub(crate) struct WireLog {
 }
 
 impl WireLog {
-    pub(crate) fn new(failures: &[usize], capture: Arc<Mutex<usize>>) -> Self {
-        Self {
-            attempts: 0,
-            delivered: 0,
-            sent: Vec::new(),
-            failures: failures.to_vec(),
-            capture,
-        }
-    }
-
     // An injected attempt index fails before the frame reaches the socket, so a failed attempt is never recorded
     pub(crate) fn begin(&mut self, failure: &str) -> Result<(), WebSocketError> {
         let attempt = self.attempts;
@@ -176,7 +158,10 @@ pub(crate) async fn relay(listener: TcpListener, sender: Sender<Recorded>) {
     while let Some(Ok(message)) = socket.next().await {
         let frame = match message {
             Message::Text(text) => recorded("text", text.as_str()),
-            Message::Binary(data) => binary_recorded(&data),
+            Message::Binary(data) => Recorded {
+                wire: "binary",
+                payload: json!({"kind": "bytes", "bytes": data.as_ref()}),
+            },
             Message::Ping(_) | Message::Pong(_) | Message::Close(_) | Message::Frame(_) => {
                 continue;
             }

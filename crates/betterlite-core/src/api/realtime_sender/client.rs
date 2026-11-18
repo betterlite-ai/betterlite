@@ -35,15 +35,12 @@ where
         let encoded = match frame {
             ClientFrame::Text(text) => Cow::Borrowed(text),
             ClientFrame::Beta(event) => {
-                let outcome = translate_event_to_beta(event.clone())
-                    .map_err(|source| RealtimeSenderError::Beta { source })?;
+                let outcome =
+                    translate_event_to_beta(event.clone()).map_err(RealtimeSenderError::Beta)?;
                 let Some(translated) = outcome else {
                     return Ok(false);
                 };
-                Cow::Owned(
-                    serde_json::to_string(&translated)
-                        .map_err(|source| RealtimeSenderError::Encode { source })?,
-                )
+                Cow::Owned(serde_json::to_string(&translated).map_err(RealtimeSenderError::Encode)?)
             }
         };
         connection
@@ -51,7 +48,7 @@ where
             .ok_or(RealtimeSenderError::ClientMissing)?
             .send_text(&encoded)
             .await
-            .map_err(|source| RealtimeSenderError::Client { source })?;
+            .map_err(RealtimeSenderError::Client)?;
         Ok(true)
     }
     .boxed_local()

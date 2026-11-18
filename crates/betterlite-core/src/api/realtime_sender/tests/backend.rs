@@ -1,5 +1,6 @@
 use super::*;
 use crate::api::realtime_sender::error::RealtimeSenderError;
+use std::error::Error as _;
 
 #[tokio::test]
 async fn sender_interface_defers_work_until_polled() {
@@ -94,7 +95,7 @@ async fn failed_setup_send_keeps_the_cache() {
         guardrails: &callbacks,
     };
     let result = sender.send_to_backend("client-frame").await;
-    assert!(matches!(result, Err(RealtimeSenderError::Backend { .. })));
+    assert!(matches!(result, Err(RealtimeSenderError::Backend(_))));
     assert_eq!(cached(&state), Some(SECOND_SETUP));
     assert!(!state.setup.content_sent_after_setup.0);
 }
@@ -120,7 +121,7 @@ async fn failed_content_send_keeps_the_setup_cache() {
         guardrails: &callbacks,
     };
     let result = sender.send_to_backend("client-frame").await;
-    assert!(matches!(result, Err(RealtimeSenderError::Backend { .. })));
+    assert!(matches!(result, Err(RealtimeSenderError::Backend(_))));
     assert_eq!(cached(&state), Some(SETUP_FRAME));
     assert!(!state.setup.content_sent_after_setup.0);
 }
@@ -141,7 +142,7 @@ async fn failed_binary_send_leaves_content_unset() {
         guardrails: &callbacks,
     };
     let result = sender.send_to_backend("client-frame").await;
-    assert!(matches!(result, Err(RealtimeSenderError::Backend { .. })));
+    assert!(matches!(result, Err(RealtimeSenderError::Backend(_))));
     assert!(!state.setup.content_sent_after_setup.0);
     assert_eq!(fixture.script().paced, vec![BINARY_FRAME.to_vec()]);
 }
@@ -249,8 +250,12 @@ async fn transform_failure_is_returned() {
         provider: Some(&fixture.provider),
         guardrails: &callbacks,
     };
-    let result = sender.send_to_backend("client-frame").await;
-    assert!(matches!(result, Err(RealtimeSenderError::Transform { .. })));
+    let error = sender.send_to_backend("client-frame").await.unwrap_err();
+    assert!(matches!(&error, RealtimeSenderError::Transform(_)));
+    assert!(matches!(
+        error.source().unwrap().downcast_ref::<ProviderFailure>(),
+        Some(ProviderFailure::Transform)
+    ));
     assert_eq!(fixture.backend_log.attempts(), 0);
 }
 

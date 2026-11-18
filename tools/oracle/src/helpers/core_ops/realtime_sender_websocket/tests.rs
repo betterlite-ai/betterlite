@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 
 use super::driver::drive;
 use super::input::{
-    Input, MAX_CAPTURE_BYTES, MAX_OPERATIONS, MAX_TEXT_BYTES, Operation, ProviderDocument,
+    Frame, Input, MAX_CAPTURE_BYTES, MAX_FRAMES, MAX_OPERATIONS, MAX_TEXT_BYTES, Operation,
+    ProviderDocument,
 };
 use super::provider::{ScriptError, ScriptedProvider};
 use super::transport::capture;
@@ -56,6 +57,56 @@ fn operation_limits_count_utf8_bytes(#[case] characters: usize, #[case] accepted
     let mut input: Input = serde_json::from_str(EMPTY_INPUT).unwrap();
     input.operations.push(Operation::Send {
         text: "\u{e9}".repeat(characters),
+    });
+    assert_eq!(input.check().is_ok(), accepted);
+}
+
+#[rstest]
+#[case::batch_limit(MAX_OPERATIONS, 0, true)]
+#[case::batch_outside(MAX_OPERATIONS + 1, 0, false)]
+#[case::frame_limit(1, MAX_FRAMES, true)]
+#[case::frame_outside(1, MAX_FRAMES + 1, false)]
+fn provider_counts_are_bounded(
+    #[case] batches: usize,
+    #[case] frames: usize,
+    #[case] accepted: bool,
+) {
+    let mut input: Input = serde_json::from_str(EMPTY_INPUT).unwrap();
+    let frame = Frame::Binary { bytes: Vec::new() };
+    input.provider = Some(ProviderDocument {
+        requires_session_configuration: false,
+        setup: Vec::new(),
+        content: Vec::new(),
+        transforms: vec![vec![frame; frames]; batches],
+        fail_transform: false,
+    });
+    assert_eq!(input.check().is_ok(), accepted);
+}
+
+#[rstest]
+#[case::inside(MAX_CAPTURE_BYTES - 1, true)]
+#[case::limit(MAX_CAPTURE_BYTES, true)]
+#[case::outside(MAX_CAPTURE_BYTES + 1, false)]
+fn combined_input_bytes_are_bounded(#[case] total: usize, #[case] accepted: bool) {
+    let mut input: Input = serde_json::from_str(EMPTY_INPUT).unwrap();
+    input.model = "m".to_owned();
+    input.provider = Some(ProviderDocument {
+        requires_session_configuration: false,
+        setup: Vec::new(),
+        content: Vec::new(),
+        transforms: vec![vec![
+            Frame::Binary {
+                bytes: vec![0; MAX_TEXT_BYTES]
+            };
+            MAX_FRAMES - 1
+        ]],
+        fail_transform: false,
+    });
+    let remaining = total
+        .checked_sub(MAX_CAPTURE_BYTES - MAX_TEXT_BYTES)
+        .unwrap();
+    input.operations.push(Operation::Send {
+        text: "a".repeat(remaining.checked_sub(1).unwrap()),
     });
     assert_eq!(input.check().is_ok(), accepted);
 }

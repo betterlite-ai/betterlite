@@ -15,44 +15,23 @@ where
     CallbackError: Error + 'static,
 {
     #[error("the realtime provider transformation failed")]
-    Transform {
-        #[source]
-        source: ConfigError,
-    },
+    Transform(#[source] ConfigError),
     #[error("the realtime guardrail predicate failed")]
-    Predicate {
-        #[source]
-        source: CallbackError,
-    },
+    Predicate(#[source] CallbackError),
     #[error("the realtime guardrail setup patch failed")]
-    GuardrailSetup {
-        #[source]
-        source: RealtimeGuardrailPolicyError<CallbackError>,
-    },
+    GuardrailSetup(#[source] RealtimeGuardrailPolicyError<CallbackError>),
     #[error("the realtime auto-response disable message cannot be written as JSON")]
-    Disable {
-        #[source]
-        source: RealtimeGuardrailPolicyError<Infallible>,
-    },
+    Disable(#[source] RealtimeGuardrailPolicyError<Infallible>),
     #[error("the realtime backend websocket is not connected")]
     BackendMissing,
     #[error("the realtime backend send failed")]
-    Backend {
-        #[source]
-        source: WebSocketError,
-    },
+    Backend(#[source] WebSocketError),
     #[error("the realtime client websocket is not connected")]
     ClientMissing,
     #[error("the realtime client send failed")]
-    Client {
-        #[source]
-        source: WebSocketError,
-    },
+    Client(#[source] WebSocketError),
     #[error("the realtime event cannot be translated to the beta protocol")]
-    Beta {
-        #[source]
-        source: BetaProtocolError,
-    },
+    Beta(#[source] BetaProtocolError),
     #[error("the realtime session update is not a JSON object")]
     SessionUpdateNotObject,
     #[error("the realtime session update is nested past the depth the sender enforces")]
@@ -60,13 +39,7 @@ where
     #[error("the realtime session update carries JSON this sender cannot decode")]
     SessionUpdateUnreadable,
     #[error("the realtime session update cannot be read")]
-    SessionUpdateInvalid {
-        #[source]
-        source: serde_json::Error,
-    },
+    SessionUpdateInvalid(#[source] serde_json::Error),
     #[error("the realtime message cannot be written as JSON")]
-    Encode {
-        #[source]
-        source: serde_json::Error,
-    },
+    Encode(#[source] serde_json::Error),
 }

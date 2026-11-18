@@ -254,7 +254,7 @@ fn enforce_rejects_duplicate_modeled_keys(#[case] message: &str) {
     let mut sender = make(&mut state, &fixture, &callbacks);
     assert!(matches!(
         sender.enforce_session_model(message),
-        Err(RealtimeSenderError::SessionUpdateInvalid { .. })
+        Err(RealtimeSenderError::SessionUpdateInvalid(_))
     ));
 }
 

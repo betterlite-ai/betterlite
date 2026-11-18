@@ -164,7 +164,7 @@ async fn failed_fallback_send_is_propagated() {
     };
     let delta = parsed(r#"{"type":"response.output_text.delta","delta":"hi"}"#);
     let result = sender.send_event_to_client(&delta, "unused").await;
-    assert!(matches!(result, Err(RealtimeSenderError::Client { .. })));
+    assert!(matches!(result, Err(RealtimeSenderError::Client(_))));
     assert_eq!(fixture.client_log.attempts(), 2);
 }
 

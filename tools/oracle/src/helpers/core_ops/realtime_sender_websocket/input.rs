@@ -1,3 +1,5 @@
+use std::iter::once;
+
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_core::api::realtime_contracts::transport::RealtimeMessage;
 use betterlite_models::decisions::Json;
@@ -58,10 +60,10 @@ pub(crate) enum Operation {
 }
 
 impl Operation {
-    pub(crate) fn text(&self) -> &str {
+    const fn size(&self) -> usize {
         match self {
-            Self::Send { text } | Self::Event { text } | Self::Cache { text } => text,
-            Self::Disable => "",
+            Self::Send { text } | Self::Event { text } | Self::Cache { text } => text.len(),
+            Self::Disable => 0,
         }
     }
 }
@@ -82,57 +84,26 @@ pub(crate) struct Input {
 
 impl Input {
     pub(crate) fn check(&self) -> Result<(), String> {
+        let batches = self
+            .provider
+            .iter()
+            .flat_map(|provider| &provider.transforms);
+        let frames = batches.clone().flatten();
+        let sizes = once(self.model.len())
+            .chain(self.force_transcription_model.iter().map(String::len))
+            .chain(self.operations.iter().map(Operation::size))
+            .chain(frames.clone().map(Frame::size));
         if self.operations.len() > MAX_OPERATIONS
             || self.guardrails.len() > MAX_FRAMES
             || self.backend_failures.len() > MAX_FRAMES
             || self.client_failures.len() > MAX_FRAMES
+            || batches.count() > MAX_OPERATIONS
+            || frames.count() > MAX_FRAMES
+            || sizes.clone().any(|size| size > MAX_TEXT_BYTES)
+            || sizes.fold(0_usize, usize::saturating_add) > MAX_CAPTURE_BYTES
         {
             return Err(String::from("the scripted sender input is past its limits"));
         }
-        let forced = self
-            .force_transcription_model
-            .as_deref()
-            .unwrap_or_default();
-        if self.model.len() > MAX_TEXT_BYTES || forced.len() > MAX_TEXT_BYTES {
-            return Err(String::from("the scripted sender input is past its limits"));
-        }
-        let mut captured = self.model.len().saturating_add(forced.len());
-        for operation in &self.operations {
-            let size = operation.text().len();
-            if size > MAX_TEXT_BYTES {
-                return Err(String::from("the scripted sender input is past its limits"));
-            }
-            captured = captured.saturating_add(size);
-        }
-        let Some(provider) = &self.provider else {
-            return checked_capture(captured);
-        };
-        check_provider(provider, captured)
+        Ok(())
     }
-}
-
-fn check_provider(provider: &ProviderDocument, mut captured: usize) -> Result<(), String> {
-    if provider.transforms.len() > MAX_OPERATIONS {
-        return Err(String::from("the scripted sender input is past its limits"));
-    }
-    let mut frames = 0_usize;
-    for frame in provider.transforms.iter().flatten() {
-        let size = frame.size();
-        if size > MAX_TEXT_BYTES {
-            return Err(String::from("the scripted sender input is past its limits"));
-        }
-        frames = frames.saturating_add(1);
-        captured = captured.saturating_add(size);
-    }
-    if frames > MAX_FRAMES {
-        return Err(String::from("the scripted sender input is past its limits"));
-    }
-    checked_capture(captured)
-}
-
-fn checked_capture(captured: usize) -> Result<(), String> {
-    if captured > MAX_CAPTURE_BYTES {
-        return Err(String::from("the scripted sender input is past its limits"));
-    }
-    Ok(())
 }

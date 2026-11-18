@@ -63,7 +63,7 @@ where
                     self.guardrails,
                     &self.state.request_data,
                 )
-                .map_err(|source| RealtimeSenderError::GuardrailSetup { source })?;
+                .map_err(RealtimeSenderError::GuardrailSetup)?;
                 text = injected.unwrap_or(text);
             }
             send_backend::<Config::Error, CallbackError>(
@@ -102,7 +102,7 @@ where
         event: Json,
     ) -> Result<String, RealtimeSenderError<Config::Error, CallbackError>> {
         serde_json::to_string(&self.normalize_event_for_ga_client(event))
-            .map_err(|source| RealtimeSenderError::Encode { source })
+            .map_err(RealtimeSenderError::Encode)
     }
 
     // LiteLLM caches the exact frame it sent whenever the sent JSON object carries a setup key, even a null one
@@ -123,7 +123,7 @@ where
             &self.state.request_data,
             &TRANSCRIPTION_EVENT_HOOKS,
         )
-        .map_err(|source| RealtimeSenderError::Predicate { source })
+        .map_err(RealtimeSenderError::Predicate)
     }
 
     pub fn enforce_session_model(
@@ -165,7 +165,7 @@ where
                 &self.state.model,
                 self.state.response.session_configuration_request.as_deref(),
             )
-            .map_err(|source| RealtimeSenderError::Transform { source })?;
+            .map_err(RealtimeSenderError::Transform)?;
         let mut sent = false;
         for frame in transformed {
             sent |= self.deliver_frame(provider, frame).await?;
@@ -185,8 +185,7 @@ where
         let mut encoded = event_str.to_owned();
         if matches!(event, Json::Object(_)) {
             let value = self.normalize_event_for_ga_client(event.clone());
-            encoded = serde_json::to_string(&value)
-                .map_err(|source| RealtimeSenderError::Encode { source })?;
+            encoded = serde_json::to_string(&value).map_err(RealtimeSenderError::Encode)?;
             normalized = Some(value);
         }
         if let Some(object) = &normalized
@@ -213,7 +212,7 @@ where
             return Ok(());
         }
         let message = disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
-            .map_err(|source| RealtimeSenderError::Disable { source })?;
+            .map_err(RealtimeSenderError::Disable)?;
         if self.send_to_backend(&message).await? {
             self.state.setup.turn_detection_update_sent.0 = true;
         }

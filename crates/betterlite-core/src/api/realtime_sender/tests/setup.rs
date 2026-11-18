@@ -99,7 +99,7 @@ async fn failed_setup_send_keeps_the_injection_flag() {
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
         let result = sender.send_to_backend(SETUP_FRAME).await;
-        assert!(matches!(result, Err(RealtimeSenderError::Backend { .. })))
+        assert!(matches!(result, Err(RealtimeSenderError::Backend(_))))
     };
     assert!(state.setup.turn_detection_update_sent.0);
     assert_eq!(cached(&state), Some(SECOND_SETUP));
@@ -179,7 +179,7 @@ async fn a_failing_guardrail_predicate_is_returned() {
         guardrails: &callbacks,
     };
     let result = sender.maybe_disable_auto_response().await;
-    assert!(matches!(result, Err(RealtimeSenderError::Predicate { .. })));
+    assert!(matches!(result, Err(RealtimeSenderError::Predicate(_))));
 }
 
 #[tokio::test]
@@ -204,7 +204,7 @@ async fn a_failed_guardrail_patch_is_returned() {
     let result = sender.send_to_backend(broken).await;
     assert!(matches!(
         result,
-        Err(RealtimeSenderError::GuardrailSetup { .. })
+        Err(RealtimeSenderError::GuardrailSetup(_))
     ));
     assert_eq!(fixture.backend_log.attempts(), 0);
 }

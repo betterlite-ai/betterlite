@@ -34,32 +34,18 @@ fn escape(bytes: &[u8], index: usize) -> Escape {
 }
 
 // A constant is a value only after a value separator, so a token glued to a number is one Python's parser refuses
-fn value_start(bytes: &[u8], index: usize) -> bool {
-    let mut position = index;
-    while let Some(previous) = position.checked_sub(1) {
-        let Some(byte) = bytes.get(previous).copied() else {
-            return false;
-        };
-        if !byte.is_ascii_whitespace() {
-            return matches!(byte, b':' | b'[' | b',');
-        }
-        position = previous;
-    }
-    true
-}
-
 fn constant(bytes: &[u8], index: usize) -> Option<usize> {
     let rest = bytes.get(index..)?;
-    let length = if rest.starts_with(b"-Infinity") {
-        9
-    } else if rest.starts_with(b"Infinity") {
-        8
-    } else if rest.starts_with(b"NaN") {
-        3
-    } else {
-        return None;
-    };
-    if !value_start(bytes, index) {
+    let length = ["-Infinity", "Infinity", "NaN"]
+        .into_iter()
+        .find(|token| rest.starts_with(token.as_bytes()))?
+        .len();
+    let preceding = bytes
+        .get(..index)?
+        .iter()
+        .rev()
+        .find(|byte| !byte.is_ascii_whitespace());
+    if preceding.is_some_and(|byte| !matches!(byte, b':' | b'[' | b',')) {
         return None;
     }
     match bytes.get(index.saturating_add(length)).copied() {

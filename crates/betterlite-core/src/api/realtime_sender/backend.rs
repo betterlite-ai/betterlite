@@ -45,5 +45,5 @@ where
     socket
         .send(frame)
         .await
-        .map_err(|source| RealtimeSenderError::Backend { source })
+        .map_err(RealtimeSenderError::Backend)
 }

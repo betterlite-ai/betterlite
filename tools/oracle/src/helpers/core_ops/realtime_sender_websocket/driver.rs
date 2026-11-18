@@ -26,7 +26,7 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 use super::Failure;
 use super::failure;
 use super::input::{Input, MAX_FRAMES, Operation};
-use super::provider::{Guard, Normalizer, ProviderView, ScriptError, ScriptedProvider};
+use super::provider::{Normalizer, ProviderView, ScriptError, ScriptedProvider};
 use super::transport::{
     ClientSink, Locked as _, Recorded, Timeline, WireBackend, WireLog, recorded, relay,
 };
@@ -42,7 +42,6 @@ type Callbacks<'driver> = &'driver [&'driver dyn RealtimeGuardrailCallback<Error
 struct Session {
     state: RealtimeStreaming,
     provider: Option<ScriptedProvider>,
-    guards: Vec<Guard>,
     timeline: Timeline,
     backend_log: Arc<Mutex<WireLog>>,
     client_log: Arc<Mutex<WireLog>>,
@@ -94,8 +93,8 @@ fn run_operations<'driver>(
             .await
             .map_err(|error| failure("TransportError", error.to_string()))?;
         let mut streaming = session(input, socket);
-        let callbacks = streaming
-            .guards
+        let callbacks = input
+            .guardrails
             .iter()
             .map(|guard| -> &dyn RealtimeGuardrailCallback<Error = ScriptError> { guard })
             .collect::<Vec<_>>();
@@ -118,11 +117,16 @@ fn session(input: &Input, socket: WebSocketStream<MaybeTlsStream<TcpStream>>) ->
     let provider = input.provider.as_ref().map(|document| {
         ScriptedProvider::new(document, Arc::clone(&timeline), Arc::clone(&capture))
     });
-    let backend_log = Arc::new(Mutex::new(WireLog::new(
-        &input.backend_failures,
-        Arc::clone(&capture),
-    )));
-    let client_log = Arc::new(Mutex::new(WireLog::new(&input.client_failures, capture)));
+    let [backend_log, client_log] =
+        [&input.backend_failures, &input.client_failures].map(|failures| {
+            Arc::new(Mutex::new(WireLog {
+                attempts: 0,
+                delivered: 0,
+                sent: Vec::new(),
+                failures: failures.clone(),
+                capture: Arc::clone(&capture),
+            }))
+        });
     let backend = WireBackend {
         socket,
         log: Arc::clone(&backend_log),
@@ -141,7 +145,6 @@ fn session(input: &Input, socket: WebSocketStream<MaybeTlsStream<TcpStream>>) ->
     Session {
         state: RealtimeStreaming::new(connection(input, client, backend)),
         provider,
-        guards: Guard::documents(&input.guardrails),
         timeline,
         backend_log,
         client_log,
@@ -211,20 +214,20 @@ where
         Ok(sent) => json!({ "ok": sent }),
         Err(error) => {
             let label = match error {
-                RealtimeSenderError::Backend { .. } => "backend",
-                RealtimeSenderError::Client { .. } => "client",
-                RealtimeSenderError::Transform { .. } => "transform",
-                RealtimeSenderError::Predicate { .. } => "predicate",
+                RealtimeSenderError::Backend(_) => "backend",
+                RealtimeSenderError::Client(_) => "client",
+                RealtimeSenderError::Transform(_) => "transform",
+                RealtimeSenderError::Predicate(_) => "predicate",
                 RealtimeSenderError::SessionUpdateNotObject => "non-object",
-                RealtimeSenderError::GuardrailSetup { .. }
-                | RealtimeSenderError::Disable { .. }
+                RealtimeSenderError::GuardrailSetup(_)
+                | RealtimeSenderError::Disable(_)
                 | RealtimeSenderError::BackendMissing
                 | RealtimeSenderError::ClientMissing
-                | RealtimeSenderError::Beta { .. }
+                | RealtimeSenderError::Beta(_)
                 | RealtimeSenderError::SessionUpdateTooDeep
                 | RealtimeSenderError::SessionUpdateUnreadable
-                | RealtimeSenderError::SessionUpdateInvalid { .. }
-                | RealtimeSenderError::Encode { .. } => "other",
+                | RealtimeSenderError::SessionUpdateInvalid(_)
+                | RealtimeSenderError::Encode(_) => "other",
             };
             json!({ "error": label })
         }
