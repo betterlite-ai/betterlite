@@ -72,23 +72,48 @@ pub struct ConfigParamRow {
 // insert_data stores json.dumps(param), so a JSON text value becomes the value it encodes
 impl RowDecoder for ConfigParamRow {
     fn decode_row(text: &str) -> Result<Self, RowError> {
-        let stored: Self = serde_json::from_str(text).map_err(RowError::Model)?;
-        match stored.param_value {
-            JsonData::String(raw) => Ok(Self {
-                param_name: stored.param_name,
-                param_value: decode_config_json(raw.as_bytes()).map_err(RowError::Config)?,
-            }),
-            param_value => Ok(Self {
-                param_name: stored.param_name,
-                param_value,
-            }),
-        }
+        let stored: JsonData = serde_json::from_str(text).map_err(RowError::Model)?;
+        let JsonData::Object(mut fields) = stored else {
+            return Err(RowError::NotAnObject);
+        };
+        let Some(JsonData::String(param_name)) = fields.remove("param_name") else {
+            return Err(RowError::NotAnObject);
+        };
+        let param_value = match fields.remove("param_value") {
+            Some(JsonData::String(raw)) => {
+                decode_config_json(raw.as_bytes()).map_err(RowError::Config)?
+            }
+            Some(value) => value,
+            None => return Err(RowError::NotAnObject),
+        };
+        Ok(Self {
+            param_name,
+            param_value,
+        })
     }
+}
+
+// insert_data writes a JSON text for jsonify_object's dict values, so a budget map comes back as the text it encodes
+fn expand_budget_map(text: &str) -> Result<String, RowError> {
+    let mut stored: serde_json::Value = serde_json::from_str(text).map_err(RowError::Model)?;
+    let Some(fields) = stored.as_object_mut() else {
+        return Err(RowError::NotAnObject);
+    };
+    let raw = fields
+        .get("model_max_budget")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    if let Some(raw) = raw {
+        let expanded = serde_json::from_str(&raw).map_err(RowError::Model)?;
+        fields.insert(String::from("model_max_budget"), expanded);
+    }
+    serde_json::to_string(&stored).map_err(RowError::Json)
 }
 
 impl RowDecoder for LiteLLMBudgetTableFull {
     fn decode_row(text: &str) -> Result<Self, RowError> {
-        serde_json::from_str(text).map_err(RowError::Model)
+        let expanded = expand_budget_map(text)?;
+        serde_json::from_str(&expanded).map_err(RowError::Model)
     }
 }
 
@@ -208,7 +233,7 @@ impl RowDecoder for UserNotificationRow {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct UserWithAliases {
     pub user: LiteLLMUserTable,
     pub key_aliases: Vec<Option<String>>,

@@ -8,9 +8,8 @@ use crate::key_repository::table::columns::{TokenColumn, TokenSqlType};
 use crate::key_user_writes::columns::UserColumn;
 
 use super::access::{
-    BUDGET_ATTRIBUTE, BUDGET_TABLE, CONFIG_ATTRIBUTE, CONFIG_TABLE, END_USER_ATTRIBUTE,
-    END_USER_TABLE, KEY_ATTRIBUTE, KEY_TABLE, NOTIFICATION_ATTRIBUTE, NOTIFICATION_TABLE,
-    SPEND_ATTRIBUTE, SPEND_TABLE, TEAM_ATTRIBUTE, TEAM_TABLE, USER_ATTRIBUTE, USER_TABLE,
+    CONFIG_ATTRIBUTE, CONFIG_TABLE, KEY_ATTRIBUTE, KEY_TABLE, TEAM_ATTRIBUTE, TEAM_TABLE,
+    USER_ATTRIBUTE, USER_TABLE,
 };
 
 // a closed set of columns per table, so a payload column is named once and its SQL type travels with it
@@ -18,6 +17,7 @@ pub trait TableColumn: Copy + Ord {
     const TABLE: &'static str;
     const ATTRIBUTE: &'static str;
     const KEY: Self;
+    const UPDATED_AT: Option<Self> = None;
     fn definition(self) -> (&'static str, TokenSqlType);
 }
 
@@ -25,6 +25,7 @@ impl TableColumn for TokenColumn {
     const TABLE: &'static str = KEY_TABLE;
     const ATTRIBUTE: &'static str = KEY_ATTRIBUTE;
     const KEY: Self = Self::Token;
+    const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
     fn definition(self) -> (&'static str, TokenSqlType) {
         (self.name(), self.sql_type())
@@ -35,6 +36,7 @@ impl TableColumn for UserColumn {
     const TABLE: &'static str = USER_TABLE;
     const ATTRIBUTE: &'static str = USER_ATTRIBUTE;
     const KEY: Self = Self::UserId;
+    const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
     fn definition(self) -> (&'static str, TokenSqlType) {
         let named = UserColumn::definition(self);
@@ -104,6 +106,7 @@ impl TableColumn for TeamColumn {
     const TABLE: &'static str = TEAM_TABLE;
     const ATTRIBUTE: &'static str = TEAM_ATTRIBUTE;
     const KEY: Self = Self::TeamId;
+    const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
     fn definition(self) -> (&'static str, TokenSqlType) {
         match self {

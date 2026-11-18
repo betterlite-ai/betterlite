@@ -8,6 +8,8 @@ use secrecy::SecretString;
 use super::support::{Harness, Ports, TableClient, json};
 use crate::key_repository::table::TokenValue;
 use crate::table_ops::columns::TeamColumn;
+use crate::table_ops::generic::ConfigFilter;
+use crate::table_ops::reads::users::UserFilter;
 use crate::table_ops::{OperationCallType, TableOpsError};
 
 const NO_DB_MESSAGE: &str =
@@ -53,7 +55,7 @@ async fn get_generic_data_reports_one_try() {
     let ports = Ports::new();
     let ops = ports.operations(&client);
     let error = ops
-        .generic_config("general_settings")
+        .generic_row(ConfigFilter::ParamName("general_settings"))
         .await
         .expect_err("the config table is gone");
     assert!(matches!(error, TableOpsError::Database { .. }));
@@ -172,7 +174,7 @@ async fn an_offline_generic_read_reports_no_db_connected_once() {
     let ports = Ports::new();
     let ops = ports.offline();
     let error = ops
-        .generic_user("u-1")
+        .generic_row(UserFilter::UserId("u-1"))
         .await
         .expect_err("there is no database");
     assert!(matches!(error, TableOpsError::<Infallible>::NoDbConnected));

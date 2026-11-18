@@ -6,7 +6,7 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 use tokio_postgres::Client;
 
-use super::support::{Harness, Ports, TableClient, at, json};
+use super::support::{Harness, ManualClock, Ports, TableClient, at, json, seed};
 use crate::budget_permission_rows::JsonData;
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
@@ -17,50 +17,12 @@ use crate::table_ops::columns::{
 };
 use crate::table_ops::{OperationCallType, TableOpsError};
 
-async fn seed_key(db: &Client, token: &str, alias: &str, user_id: &str) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\", \"key_alias\", \"user_id\", \"models\") VALUES ($1, $2, $3, ARRAY[]::text[])",
-        &[&token, &alias, &user_id],
-    )
-    .await
-    .expect("the key row commits");
-}
-
-async fn seed_team(db: &Client, team_id: &str) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"admins\", \"members\", \"models\") VALUES ($1, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])",
-        &[&team_id],
-    )
-    .await
-    .expect("the team row commits");
-}
-
-async fn seed_user(db: &Client, user_id: &str, alias: &str) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\") VALUES ($1, $2)",
-        &[&user_id, &alias],
-    )
-    .await
-    .expect("the user row commits");
-}
-
-async fn seed_budget(db: &Client, budget_id: &str) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\") VALUES ($1, 'created', 'updated')",
-        &[&budget_id],
-    )
-    .await
-    .expect("the budget row commits");
-}
-
-async fn seed_end_user(db: &Client, user_id: &str) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_EndUserTable\" (\"user_id\") VALUES ($1)",
-        &[&user_id],
-    )
-    .await
-    .expect("the end user row commits");
-}
+const KEY_INSERT: &str = "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\", \"key_alias\", \"user_id\", \"spend\", \"models\") VALUES ($1, $2, $3, $4, ARRAY[]::text[])";
+const TEAM_INSERT: &str = "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"admins\", \"members\", \"models\") VALUES ($1, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])";
+const USER_INSERT: &str =
+    "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\") VALUES ($1, $2)";
+const BUDGET_INSERT: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\") VALUES ($1, 'created', 'updated')";
+const END_USER_INSERT: &str = "INSERT INTO \"LiteLLM_EndUserTable\" (\"user_id\") VALUES ($1)";
 
 fn team_payload(team_id: &str, alias: &str) -> BTreeMap<TeamColumn, TokenValue> {
     BTreeMap::from([
@@ -73,10 +35,10 @@ fn team_payload(team_id: &str, alias: &str) -> BTreeMap<TeamColumn, TokenValue> 
 }
 
 async fn text_column(db: &Client, sql: &str, parameter: &str) -> Option<String> {
-    db.query_one(sql, &[&parameter])
+    db.query_opt(sql, &[&parameter])
         .await
         .expect("the column query runs")
-        .get(0)
+        .map(|row| row.get(0))
 }
 
 #[tokio::test]
@@ -278,6 +240,202 @@ async fn update_team_needs_a_typed_team_id() {
 }
 
 #[tokio::test]
+async fn update_team_targets_the_resolved_id_not_the_payload_id() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    seed(&db, TEAM_INSERT, &[&"team-a"]).await;
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::new();
+    let ops = ports.operations(&client);
+    let moved = ops
+        .update_team(Some("team-a"), &team_payload("team-b", "moved"), None)
+        .await
+        .expect("the existing team updates under the resolved id");
+    assert_eq!(moved.team_id, "team-a");
+    assert_eq!(moved.data.fields.base.team_id, "team-b");
+    let renamed = text_column(
+        &db,
+        "SELECT team_alias FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
+        "team-b",
+    )
+    .await;
+    assert_eq!(renamed.as_deref(), Some("moved"));
+    let inserted = ops
+        .update_team(Some("team-c"), &team_payload("team-d", "fresh"), None)
+        .await
+        .expect("the missing team inserts the payload row");
+    assert_eq!(inserted.team_id, "team-c");
+    assert_eq!(inserted.data.fields.base.team_id, "team-d");
+    let fresh = text_column(
+        &db,
+        "SELECT team_alias FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
+        "team-d",
+    )
+    .await;
+    assert_eq!(fresh.as_deref(), Some("fresh"));
+    let absent = text_column(
+        &db,
+        "SELECT team_alias FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
+        "team-c",
+    )
+    .await;
+    assert_eq!(absent, None);
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn update_team_stamps_updated_at_from_the_injected_clock() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    seed(&db, TEAM_INSERT, &[&"team-at"]).await;
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::with_clock(Box::new(ManualClock::new(1_800_000_000)));
+    let ops = ports.operations(&client);
+    let stamped = ops
+        .update_team(Some("team-at"), &team_payload("team-at", "stamped"), None)
+        .await
+        .expect("the team update runs");
+    assert_eq!(stamped.data.fields.updated_at, Some(at(1_800_000_000)));
+    let mut explicit = team_payload("team-at", "explicit");
+    explicit.insert(
+        TeamColumn::UpdatedAt,
+        TokenValue::Timestamp(at(1_700_000_000)),
+    );
+    let kept = ops
+        .update_team(Some("team-at"), &explicit, None)
+        .await
+        .expect("the explicit update runs");
+    assert_eq!(kept.data.fields.updated_at, Some(at(1_700_000_000)));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn update_many_teams_stamps_updated_at_from_the_injected_clock() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    seed(&db, TEAM_INSERT, &[&"team-1"]).await;
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::with_clock(Box::new(ManualClock::new(1_800_000_000)));
+    let ops = ports.operations(&client);
+    let rows = vec![
+        BTreeMap::from([
+            (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+            (
+                TeamColumn::TeamAlias,
+                TokenValue::Text(String::from("stamped")),
+            ),
+        ]),
+        BTreeMap::from([
+            (TeamColumn::TeamId, TokenValue::Text(String::from("team-2"))),
+            (
+                TeamColumn::TeamAlias,
+                TokenValue::Text(String::from("explicit")),
+            ),
+            (
+                TeamColumn::UpdatedAt,
+                TokenValue::Timestamp(at(1_700_000_000)),
+            ),
+        ]),
+    ];
+    ops.update_many_teams(&rows)
+        .await
+        .expect("the team batch runs");
+    let stamped = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
+        "team-1",
+    )
+    .await;
+    assert_eq!(stamped.as_deref(), Some("2027-01-15 08:00:00"));
+    let explicit = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
+        "team-2",
+    )
+    .await;
+    assert_eq!(explicit.as_deref(), Some("2023-11-14 22:13:20"));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn update_team_writes_the_integer_columns() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    let model_id: i32 = db
+        .query_one(
+            "INSERT INTO \"LiteLLM_ModelTable\" (\"aliases\", \"created_by\", \"updated_by\") VALUES ('{}'::jsonb, 'c', 'u') RETURNING \"id\"",
+            &[],
+        )
+        .await
+        .expect("the model row commits")
+        .get(0);
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::new();
+    let ops = ports.operations(&client);
+    let mut data = team_payload("team-int", "ints");
+    data.insert(TeamColumn::MaxParallelRequests, TokenValue::Integer(150));
+    data.insert(
+        TeamColumn::ModelId,
+        TokenValue::Integer(i64::from(model_id)),
+    );
+    let created = ops.insert_team(&data).await.expect("the team insert runs");
+    assert_eq!(created.fields.max_parallel_requests, Some(150));
+    assert_eq!(created.fields.model_id, Some(i64::from(model_id)));
+    let mut changed = data;
+    changed.insert(TeamColumn::MaxParallelRequests, TokenValue::Integer(160));
+    let updated = ops
+        .update_team(Some("team-int"), &changed, None)
+        .await
+        .expect("the team update runs");
+    assert_eq!(updated.data.fields.max_parallel_requests, Some(160));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn update_many_budgets_reads_back_the_json_text_budget_map() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    db.execute(
+        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\", \"budget_duration\", \"budget_reset_at\") VALUES ('b-3', 'c', 'u', '1d', '2020-01-01'::timestamp)",
+        &[],
+    )
+    .await
+    .expect("the budget row commits");
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::new();
+    let ops = ports.operations(&client);
+    let rows = vec![BTreeMap::from([
+        (
+            BudgetColumn::BudgetId,
+            TokenValue::Text(String::from("b-3")),
+        ),
+        (
+            BudgetColumn::ModelMaxBudget,
+            TokenValue::Json(json(r#"{"gpt-4":{"max_budget":10}}"#)),
+        ),
+        (BudgetColumn::MaxParallelRequests, TokenValue::Integer(7)),
+    ])];
+    ops.update_many_budgets(&rows)
+        .await
+        .expect("the budget batch runs");
+    let found = ops
+        .budgets_due_for_reset(at(2_000_000_000).utc(), None)
+        .await
+        .expect("the budget reset read runs");
+    let budget = found
+        .into_iter()
+        .find(|row| row.budget.budget_id.as_deref() == Some("b-3"))
+        .expect("the budget row reads back");
+    assert_eq!(budget.budget.max_parallel_requests, Some(7));
+    let limits = budget
+        .budget
+        .model_max_budget
+        .expect("the budget map decodes");
+    assert_eq!(limits.get("gpt-4"), Some(&json(r#"{"max_budget":10}"#)));
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn insert_config_writes_json_text_and_invalidates_each_param() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
@@ -458,7 +616,7 @@ async fn insert_user_notification_writes_the_row_and_keeps_the_first_status() {
 async fn update_many_keys_hashes_the_token_column() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, &hash_token("sk-abc"), "old", "", 0.0).await;
+    seed(&db, KEY_INSERT, &[&hash_token("sk-abc"), &"old", &"", &0.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -482,6 +640,15 @@ async fn update_many_keys_hashes_the_token_column() {
         .expect("the key row reads");
     assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("new"));
     assert_eq!(row.get::<_, Option<String>>(1).as_deref(), Some("string"));
+    let stamped = db
+        .query_one(
+            "SELECT updated_at IS NOT NULL FROM \"LiteLLM_VerificationToken\" WHERE token = $1",
+            &[&hash_token("sk-abc")],
+        )
+        .await
+        .expect("the stamp query runs")
+        .get::<_, Option<bool>>(0);
+    assert_eq!(stamped, Some(true));
     harness.close().await;
 }
 
@@ -489,8 +656,18 @@ async fn update_many_keys_hashes_the_token_column() {
 async fn update_many_keys_rolls_back_the_whole_batch() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, &hash_token("sk-tok-1"), "first", "", 0.0).await;
-    seed_key(&db, &hash_token("sk-tok-2"), "second", "", 0.0).await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&hash_token("sk-tok-1"), &"first", &"", &0.0],
+    )
+    .await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&hash_token("sk-tok-2"), &"second", &"", &0.0],
+    )
+    .await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -538,7 +715,7 @@ async fn update_many_keys_rolls_back_the_whole_batch() {
 async fn update_many_users_sets_values_omits_nulls_and_inserts_rows() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_user(&db, "u-1", "old").await;
+    seed(&db, USER_INSERT, &[&"u-1", &"old"]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -576,7 +753,7 @@ async fn update_many_users_sets_values_omits_nulls_and_inserts_rows() {
 async fn update_many_teams_sets_values_and_inserts_rows() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_team(&db, "team-1").await;
+    seed(&db, TEAM_INSERT, &[&"team-1"]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -620,7 +797,7 @@ async fn update_many_teams_sets_values_and_inserts_rows() {
 async fn update_many_budgets_sets_values_and_inserts_rows() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_budget(&db, "b-1").await;
+    seed(&db, BUDGET_INSERT, &[&"b-1"]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -674,7 +851,7 @@ async fn update_many_budgets_sets_values_and_inserts_rows() {
 async fn update_many_end_users_sets_values_and_inserts_rows() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_end_user(&db, "e-1").await;
+    seed(&db, END_USER_INSERT, &[&"e-1"]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -715,9 +892,9 @@ async fn update_many_end_users_sets_values_and_inserts_rows() {
 async fn delete_keys_hashes_tokens_and_applies_the_user_filter() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, &hash_token("sk-a"), "a", "u-1", 0.0).await;
-    seed_key(&db, &hash_token("sk-b"), "b", "u-2", 0.0).await;
-    seed_key(&db, "literal-key", "c", "u-2", 0.0).await;
+    seed(&db, KEY_INSERT, &[&hash_token("sk-a"), &"a", &"u-1", &0.0]).await;
+    seed(&db, KEY_INSERT, &[&hash_token("sk-b"), &"b", &"u-2", &0.0]).await;
+    seed(&db, KEY_INSERT, &[&"literal-key", &"c", &"u-2", &0.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -763,9 +940,9 @@ async fn delete_keys_for_teams_and_delete_teams_report_what_they_removed() {
     )
     .await
     .expect("the key rows commit");
-    seed_team(&db, "team-1").await;
-    seed_team(&db, "team-2").await;
-    seed_team(&db, "team-3").await;
+    seed(&db, TEAM_INSERT, &[&"team-1"]).await;
+    seed(&db, TEAM_INSERT, &[&"team-2"]).await;
+    seed(&db, TEAM_INSERT, &[&"team-3"]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);

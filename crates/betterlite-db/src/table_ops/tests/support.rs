@@ -2,12 +2,14 @@
 
 use std::convert::Infallible;
 use std::sync::{Mutex, PoisonError};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use chrono::{DateTime, Utc};
 use clap::Parser as _;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
+use tokio_postgres::{Client, NoTls};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
 
@@ -15,7 +17,7 @@ use crate::budget_permission_rows::{JsonData, Timestamp};
 use crate::database_refresh::handle::{PoolFuture, PoolTransport};
 use crate::database_replica::client::{Attribute, DatabaseClient, DatabaseLifecycle};
 use crate::database_replica::pinned::WriterPinnedClient;
-use crate::key_user_writes::retry::SystemWriteClock;
+use crate::key_user_writes::retry::{SystemWriteClock, WriteClock};
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::migration_ledger::lock::JitterSource;
 use crate::table_ops::{
@@ -56,6 +58,21 @@ impl Harness {
             .build()
             .expect("the fixture pool builds");
         Self { fixture, pool }
+    }
+
+    // a second pool over the same database, so a test can drain it and watch a call wait for a connection
+    pub(crate) fn pool_with_size(&self, size: usize) -> Pool {
+        let config = self
+            .fixture
+            .options
+            .url
+            .expose_secret()
+            .parse()
+            .expect("the fixture URL parses");
+        Pool::builder(Manager::new(config, NoTls))
+            .max_size(size)
+            .build()
+            .expect("the sized pool builds")
     }
 
     pub(crate) async fn close(self) {
@@ -208,8 +225,30 @@ impl ConfigParamInvalidator for RecordingInvalidator {
     }
 }
 
+// a clock the test sets, so the timestamp Prisma's @updatedAt writes is the test's own value
+pub(crate) struct ManualClock {
+    now: DateTime<Utc>,
+}
+
+impl ManualClock {
+    pub(crate) fn new(seconds: i64) -> Self {
+        let now = DateTime::from_timestamp(seconds, 0).expect("the timestamp is in range");
+        Self { now }
+    }
+}
+
+impl WriteClock for ManualClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.now
+    }
+
+    fn instant(&self) -> Instant {
+        Instant::now()
+    }
+}
+
 pub(crate) struct Ports {
-    pub(crate) clock: SystemWriteClock,
+    pub(crate) clock: Box<dyn WriteClock>,
     pub(crate) jitter: ZeroJitter,
     pub(crate) pause: TokioPause,
     pub(crate) sink: RecordingSink,
@@ -220,6 +259,13 @@ pub(crate) fn json(text: &str) -> JsonData {
     serde_json::from_str(text).expect("the JSON parses")
 }
 
+// one insert helper keeps every fixture row's SQL beside the test that reads it
+pub(crate) async fn seed(db: &Client, sql: &str, parameters: &[&(dyn ToSql + Sync)]) {
+    db.execute(sql, parameters)
+        .await
+        .expect("the fixture row commits");
+}
+
 pub(crate) fn at(seconds: i64) -> Timestamp {
     let moment = chrono::DateTime::from_timestamp(seconds, 0).expect("the timestamp is in range");
     Timestamp::Naive(moment.naive_utc())
@@ -227,8 +273,12 @@ pub(crate) fn at(seconds: i64) -> Timestamp {
 
 impl Ports {
     pub(crate) fn new() -> Self {
+        Self::with_clock(Box::new(SystemWriteClock))
+    }
+
+    pub(crate) fn with_clock(clock: Box<dyn WriteClock>) -> Self {
         Self {
-            clock: SystemWriteClock,
+            clock,
             jitter: ZeroJitter,
             pause: TokioPause,
             sink: RecordingSink::default(),
@@ -240,10 +290,18 @@ impl Ports {
         &'ports self,
         client: &'ports TableClient,
     ) -> TableOps<'ports, TableClient> {
+        self.operations_with(client, TableSettings::default())
+    }
+
+    pub(crate) fn operations_with<'ports>(
+        &'ports self,
+        client: &'ports TableClient,
+        settings: TableSettings,
+    ) -> TableOps<'ports, TableClient> {
         TableOps {
             database: Some(WriterPinnedClient::Writer(client)),
             ports: self.table_ports(),
-            settings: TableSettings::default(),
+            settings,
         }
     }
 

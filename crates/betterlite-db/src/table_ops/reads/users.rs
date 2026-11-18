@@ -20,8 +20,8 @@ pub enum UserFilter<'value> {
     SsoUserId(&'value str),
 }
 
-impl UserFilter<'_> {
-    const fn column(self) -> (&'static str, &'static str) {
+impl<'value> UserFilter<'value> {
+    pub(crate) fn column(self) -> (&'static str, &'value str) {
         match self {
             Self::UserId(value) => ("user_id", value),
             Self::UserEmail(value) => ("user_email", value),

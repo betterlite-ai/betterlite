@@ -25,7 +25,7 @@ pub enum SpendFilterColumn {
 }
 
 impl SpendFilterColumn {
-    const fn name(self) -> &'static str {
+    pub(crate) const fn name(self) -> &'static str {
         match self {
             Self::RequestId => "request_id",
             Self::User => "user",

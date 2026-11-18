@@ -11,7 +11,7 @@ use crate::postgres_store::errors::DbError;
 use crate::table_ops::columns::TeamColumn;
 use crate::table_ops::rows::SpendLogRow;
 
-use super::sql;
+use super::sql::{self, InsertConflict};
 use super::{
     DEFAULT_TEAM_LIST_LIMIT, OperationCallType, TableOps, TableOpsError, TablePorts, TableSettings,
 };
@@ -20,6 +20,7 @@ use support::{Ports, TableClient};
 mod failures;
 mod reads;
 mod support;
+mod timeouts;
 mod writes;
 
 #[test]
@@ -124,10 +125,23 @@ fn a_hashed_key_binds_into_a_text_column() {
             TokenValue::KeyHash(KeyHash::from("hashed-key")),
         ),
     ]);
-    let statement = sql::upsert::<Infallible, TeamColumn>(&payload, None)
+    let statement = sql::insert::<Infallible, TeamColumn>(&payload, InsertConflict::Keep)
         .expect("the hashed key binds as text");
     assert!(statement.sql.contains("\"team_alias\""));
     assert_eq!(statement.parameters.bind_values().len(), 2);
+}
+
+#[test]
+fn integer_values_bind_as_bigint_for_every_integer_column() {
+    let payload = BTreeMap::from([
+        (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+        (TeamColumn::MaxParallelRequests, TokenValue::Integer(5)),
+        (TeamColumn::TpmLimit, TokenValue::Null),
+    ]);
+    let statement = sql::insert::<Infallible, TeamColumn>(&payload, InsertConflict::Keep)
+        .expect("the integers bind with a width cast");
+    assert!(statement.sql.contains("$2::bigint"));
+    assert!(statement.sql.contains("$3::bigint"));
 }
 
 #[test]
@@ -139,14 +153,14 @@ fn null_and_bool_values_bind_their_column_types() {
         (TeamColumn::MaxParallelRequests, TokenValue::Null),
         (TeamColumn::Models, TokenValue::Null),
     ]);
-    let nulls = sql::upsert::<Infallible, TeamColumn>(&with_nulls, None)
+    let nulls = sql::insert::<Infallible, TeamColumn>(&with_nulls, InsertConflict::Keep)
         .expect("the nulls bind their column types");
     assert_eq!(nulls.parameters.bind_values().len(), 5);
     let with_flag = BTreeMap::from([
         (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
         (TeamColumn::Blocked, TokenValue::Bool(true)),
     ]);
-    let flag = sql::upsert::<Infallible, TeamColumn>(&with_flag, None)
+    let flag = sql::insert::<Infallible, TeamColumn>(&with_flag, InsertConflict::Keep)
         .expect("the flag binds as a boolean");
     assert_eq!(flag.parameters.bind_values().len(), 2);
 }

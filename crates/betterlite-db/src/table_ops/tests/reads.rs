@@ -1,49 +1,23 @@
 #![cfg(test)]
 
 use chrono::{DateTime, Utc};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::Client;
 
-use super::support::{Harness, Ports, TableClient, json};
+use super::support::{Harness, Ports, TableClient, at, json, seed};
 use crate::key_user_writes::hash::hash_token;
+use crate::table_ops::generic::{ConfigFilter, KeyFilter};
 use crate::table_ops::reads::spend::{SpendFilterColumn, SpendQuery};
 use crate::table_ops::reads::users::UserFilter;
 
-async fn seed_user(db: &Client, user_id: &str, alias: &str, spend: f64) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\", \"spend\") VALUES ($1, $2, $3)",
-        &[&user_id, &alias, &spend],
-    )
-    .await
-    .expect("the user row commits");
-}
-
-async fn seed_key(db: &Client, token: &str, alias: &str, user_id: &str, spend: f64) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\", \"key_alias\", \"user_id\", \"spend\", \"models\") VALUES ($1, $2, $3, $4, ARRAY[]::text[])",
-        &[&token, &alias, &user_id, &spend],
-    )
-    .await
-    .expect("the key row commits");
-}
-
-async fn seed_team(db: &Client, team_id: &str) {
-    db.execute(
-        "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"admins\", \"members\", \"models\") VALUES ($1, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])",
-        &[&team_id],
-    )
-    .await
-    .expect("the team row commits");
-}
+const USER_INSERT: &str = "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\", \"spend\") VALUES ($1, $2, $3)";
+const KEY_INSERT: &str = "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\", \"key_alias\", \"user_id\", \"spend\", \"models\") VALUES ($1, $2, $3, $4, ARRAY[]::text[])";
+const TEAM_INSERT: &str = "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"admins\", \"members\", \"models\") VALUES ($1, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])";
+const SPEND_INSERT: &str = "INSERT INTO \"LiteLLM_SpendLogs\" (\"request_id\", \"call_type\", \"startTime\", \"endTime\", \"user\", \"spend\") VALUES ($1, 'acompletion', $2, $2, $3, 1.0)";
 
 async fn seed_spend(db: &Client, request_id: &str, user: &str, start_seconds: i64) {
     let start = moment(start_seconds).naive_utc();
-    db.execute(
-        "INSERT INTO \"LiteLLM_SpendLogs\" (\"request_id\", \"call_type\", \"startTime\", \"endTime\", \"user\", \"spend\") VALUES ($1, 'acompletion', $2, $2, $3, 1.0)",
-        &[&request_id, &start, &user],
-    )
-    .await
-    .expect("the spend row commits");
+    seed(db, SPEND_INSERT, &[&request_id, &start, &user]).await;
 }
 
 fn moment(seconds: i64) -> DateTime<Utc> {
@@ -54,12 +28,12 @@ fn moment(seconds: i64) -> DateTime<Utc> {
 async fn generic_user_reads_the_row_or_none() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_user(&db, "u-1", "first", 2.0).await;
+    seed(&db, USER_INSERT, &[&"u-1", &"first", &2.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
     let found = ops
-        .generic_user("u-1")
+        .generic_row(UserFilter::UserId("u-1"))
         .await
         .expect("the generic user read runs");
     assert_eq!(
@@ -67,7 +41,7 @@ async fn generic_user_reads_the_row_or_none() {
         Some("first")
     );
     assert!(
-        ops.generic_user("missing")
+        ops.generic_row(UserFilter::UserId("missing"))
             .await
             .expect("the generic miss runs")
             .is_none()
@@ -77,23 +51,58 @@ async fn generic_user_reads_the_row_or_none() {
 }
 
 #[tokio::test]
+async fn generic_user_filters_on_a_caller_selected_column() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    db.execute(
+        "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_email\", \"sso_user_id\") VALUES ('u-mail', 'a@example.com', NULL), ('u-other', 'b@example.com', NULL)",
+        &[],
+    )
+    .await
+    .expect("the user rows commit");
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::new();
+    let ops = ports.operations(&client);
+    let by_email = ops
+        .generic_row(UserFilter::UserEmail("a@example.com"))
+        .await
+        .expect("the email read runs")
+        .expect("the user row");
+    assert_eq!(by_email.user_id, "u-mail");
+    assert!(
+        ops.generic_row(UserFilter::UserEmail("absent@example.com"))
+            .await
+            .expect("the email miss runs")
+            .is_none()
+    );
+    harness.close().await;
+}
+
+#[tokio::test]
 async fn generic_key_reads_the_stored_token() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, "stored-token", "k-1", "", 0.0).await;
+    seed(&db, KEY_INSERT, &[&"stored-token", &"k-1", &"", &0.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
     let found = ops
-        .generic_key(&SecretString::from("stored-token"))
+        .generic_row(KeyFilter::Token(&SecretString::from("stored-token")))
         .await
         .expect("the generic key read runs");
     assert_eq!(
         found.expect("the key row").key_alias.as_deref(),
         Some("k-1")
     );
+    let by_alias = ops
+        .generic_row(KeyFilter::KeyAlias("k-1"))
+        .await
+        .expect("the alias read runs")
+        .expect("the key row");
+    let stored = by_alias.token.as_ref().expect("the stored token");
+    assert_eq!(stored.expose_secret(), "stored-token");
     assert!(
-        ops.generic_key(&SecretString::from("other-token"))
+        ops.generic_row(KeyFilter::Token(&SecretString::from("other-token")))
             .await
             .expect("the generic miss runs")
             .is_none()
@@ -117,23 +126,43 @@ async fn generic_config_decodes_json_text_and_object_values() {
     )
     .await
     .expect("the object config row commits");
+    let run_at = at(1_700_000_000).utc().naive_utc();
+    db.execute(
+        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\", \"reload_revision\", \"last_run_at\") VALUES ($1, NULL, $2, $3)",
+        &[&"revision", &7_i64, &run_at],
+    )
+    .await
+    .expect("the revision config row commits");
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
     let text_row = ops
-        .generic_config("general_settings")
+        .generic_row(ConfigFilter::ParamName("general_settings"))
         .await
         .expect("the text row read runs")
         .expect("the text row");
     assert_eq!(text_row.param_value, json(r#"{"store_model_in_db": true}"#));
     let object_row = ops
-        .generic_config("litellm_settings")
+        .generic_row(ConfigFilter::ParamName("litellm_settings"))
         .await
         .expect("the object row read runs")
         .expect("the object row");
     assert_eq!(object_row.param_value, json(r#"{"num_retries": 3}"#));
+    let revision_row = ops
+        .generic_row(ConfigFilter::ReloadRevision(7))
+        .await
+        .expect("the revision read runs")
+        .expect("the revision row");
+    assert_eq!(revision_row.param_name, "revision");
+    assert_eq!(revision_row.param_value, json("null"));
+    let ran_row = ops
+        .generic_row(ConfigFilter::LastRunAt(&at(1_700_000_000)))
+        .await
+        .expect("the last run read runs")
+        .expect("the last run row");
+    assert_eq!(ran_row.param_name, "revision");
     assert!(
-        ops.generic_config("missing")
+        ops.generic_row(ConfigFilter::ParamName("missing"))
             .await
             .expect("the generic miss runs")
             .is_none()
@@ -168,9 +197,9 @@ async fn configs_named_reads_only_the_named_rows() {
 async fn keys_for_user_reads_only_the_users_keys() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, "tok-1", "k-1", "u-1", 1.0).await;
-    seed_key(&db, "tok-2", "k-2", "u-1", 2.0).await;
-    seed_key(&db, "tok-3", "k-3", "u-2", 3.0).await;
+    seed(&db, KEY_INSERT, &[&"tok-1", &"k-1", &"u-1", &1.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-2", &"k-2", &"u-1", &2.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-3", &"k-3", &"u-2", &3.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -191,8 +220,13 @@ async fn keys_for_user_reads_only_the_users_keys() {
 async fn keys_matching_hashes_plaintext_tokens() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, &hash_token("sk-abc"), "hashed", "", 0.0).await;
-    seed_key(&db, "plain", "literal", "", 0.0).await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&hash_token("sk-abc"), &"hashed", &"", &0.0],
+    )
+    .await;
+    seed(&db, KEY_INSERT, &[&"plain", &"literal", &"", &0.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -221,9 +255,9 @@ async fn keys_matching_hashes_plaintext_tokens() {
 async fn keys_matching_without_tokens_orders_by_spend() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_key(&db, "tok-low", "low", "", 1.0).await;
-    seed_key(&db, "tok-high", "high", "", 9.0).await;
-    seed_key(&db, "tok-mid", "mid", "", 4.0).await;
+    seed(&db, KEY_INSERT, &[&"tok-low", &"low", &"", &1.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-high", &"high", &"", &9.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-mid", &"mid", &"", &4.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -354,7 +388,7 @@ async fn user_unique_returns_organization_memberships() {
     )
     .await
     .expect("the organization row commits");
-    seed_user(&db, "u-1", "member", 0.0).await;
+    seed(&db, USER_INSERT, &[&"u-1", &"member", &0.0]).await;
     db.execute(
         "INSERT INTO \"LiteLLM_OrganizationMembership\" (\"user_id\", \"organization_id\") VALUES ('u-1', 'org-1')",
         &[],
@@ -428,9 +462,9 @@ async fn users_due_for_reset_keeps_budget_durations() {
 async fn users_by_ids_returns_each_requested_row() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_user(&db, "u-1", "one", 0.0).await;
-    seed_user(&db, "u-2", "two", 0.0).await;
-    seed_user(&db, "u-3", "three", 0.0).await;
+    seed(&db, USER_INSERT, &[&"u-1", &"one", &0.0]).await;
+    seed(&db, USER_INSERT, &[&"u-2", &"two", &0.0]).await;
+    seed(&db, USER_INSERT, &[&"u-3", &"three", &0.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -448,10 +482,10 @@ async fn users_by_ids_returns_each_requested_row() {
 async fn users_all_joins_key_aliases_and_orders_by_spend() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_user(&db, "u-high", "high", 9.0).await;
-    seed_user(&db, "u-low", "low", 1.0).await;
-    seed_key(&db, "tok-1", "alias-1", "u-high", 0.0).await;
-    seed_key(&db, "tok-2", "alias-2", "u-high", 0.0).await;
+    seed(&db, USER_INSERT, &[&"u-high", &"high", &9.0]).await;
+    seed(&db, USER_INSERT, &[&"u-low", &"low", &1.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-1", &"alias-1", &"u-high", &0.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-2", &"alias-2", &"u-high", &0.0]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -528,14 +562,20 @@ async fn spend_rows_reads_the_first_row_generically() {
     let ports = Ports::new();
     let ops = ports.operations(&client);
     let found = ops
-        .generic_spend("req-1")
+        .generic_spend(SpendFilterColumn::RequestId, "req-1")
         .await
         .expect("the generic spend read runs")
         .expect("the spend row");
     assert_eq!(found.request_id, "req-1");
     assert_eq!(found.call_type, "acompletion");
+    let by_user = ops
+        .generic_spend(SpendFilterColumn::User, "u-1")
+        .await
+        .expect("the generic user spend read runs")
+        .expect("the spend row");
+    assert_eq!(by_user.request_id, "req-1");
     assert!(
-        ops.generic_spend("absent")
+        ops.generic_spend(SpendFilterColumn::RequestId, "absent")
             .await
             .expect("the generic miss runs")
             .is_none()
@@ -672,9 +712,9 @@ async fn teams_for_user_reads_the_members_array() {
 async fn teams_by_ids_returns_the_requested_teams() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed_team(&db, "team-1").await;
-    seed_team(&db, "team-2").await;
-    seed_team(&db, "team-3").await;
+    seed(&db, TEAM_INSERT, &[&"team-1"]).await;
+    seed(&db, TEAM_INSERT, &[&"team-2"]).await;
+    seed(&db, TEAM_INSERT, &[&"team-3"]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);

@@ -1,17 +1,21 @@
 use std::collections::BTreeMap;
 
+use secrecy::ExposeSecret as _;
+
+use crate::budget_permission_rows::Timestamp;
 use crate::database_replica::client::DatabaseClient;
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_user_writes::columns::UserColumn;
 use crate::key_user_writes::hash::hash_token_if_needed;
-use crate::postgres_store::diagnostics::DriverError;
 
 use crate::table_ops::access::TablePoolAccess;
 use crate::table_ops::columns::{BudgetColumn, EndUserColumn, TableColumn, TeamColumn};
-use crate::table_ops::sql::{self, Statement};
+use crate::table_ops::sql::{self, InsertConflict};
 use crate::table_ops::team_json::{jsonify_object, jsonify_team_object};
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
+
+use super::stamp_updated_at;
 
 impl<Client> TableOps<'_, Client>
 where
@@ -25,9 +29,15 @@ where
         self.attempt_with(DATA_RETRY, OperationCallType::UpdateData, || async {
             let mut statements = Vec::new();
             for row in rows {
-                statements.push(sql::update_by_key(&hash_key_row(&jsonify_object(row)))?);
+                let mut payload = hash_key_row(&jsonify_object(row));
+                stamp_updated_at(
+                    &mut payload,
+                    Timestamp::Naive(self.ports.clock.now().naive_utc()),
+                );
+                statements.push(sql::update_where(&payload, &token_key(&payload)?)?);
             }
-            self.execute_batch(TokenColumn::ATTRIBUTE, statements).await
+            self.execute_statements(TokenColumn::ATTRIBUTE, &statements)
+                .await
         })
         .await
     }
@@ -75,36 +85,17 @@ where
         self.attempt_with(DATA_RETRY, OperationCallType::UpdateData, || async {
             let mut statements = Vec::new();
             for row in rows {
-                let payload = jsonify(&without_nulls(row));
-                statements.push(sql::upsert(&payload, Some(&payload))?);
+                let mut payload = jsonify(&without_nulls(row));
+                stamp_updated_at(
+                    &mut payload,
+                    Timestamp::Naive(self.ports.clock.now().naive_utc()),
+                );
+                statements.push(sql::insert(&payload, InsertConflict::Write(&payload))?);
             }
-            self.execute_batch(Column::ATTRIBUTE, statements).await
+            self.execute_statements(Column::ATTRIBUTE, &statements)
+                .await
         })
         .await
-    }
-
-    // LiteLLM writes the whole batch through one transaction, so a failure loses every row in it
-    async fn execute_batch(
-        &self,
-        attribute: &str,
-        statements: Vec<Statement>,
-    ) -> Result<(), TableOpsError<Client::Error>> {
-        let mut client = self.connection(attribute, "update_many").await?;
-        let transaction = client
-            .transaction()
-            .await
-            .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
-        for statement in &statements {
-            transaction
-                .execute(&statement.sql, &statement.parameters.bind_values())
-                .await
-                .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
-        }
-        transaction
-            .commit()
-            .await
-            .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
-        Ok(())
     }
 }
 
@@ -118,6 +109,21 @@ where
         .filter(|(_, value)| !matches!(value, TokenValue::Null))
         .map(|(column, value)| (*column, value.clone()))
         .collect()
+}
+
+fn token_key<ClientError>(
+    payload: &BTreeMap<TokenColumn, TokenValue>,
+) -> Result<String, TableOpsError<ClientError>>
+where
+    ClientError: std::error::Error + Send + Sync + 'static,
+{
+    let (key_name, _) = TokenColumn::KEY.definition();
+    match payload.get(&TokenColumn::Token) {
+        Some(TokenValue::Text(text)) => Ok(text.clone()),
+        Some(TokenValue::KeyHash(hash)) => Ok(String::from(hash.expose_secret())),
+        Some(_) => Err(TableOpsError::WrongType { column: key_name }),
+        None => Err(TableOpsError::MissingField { field: key_name }),
+    }
 }
 
 fn hash_key_row(payload: &BTreeMap<TokenColumn, TokenValue>) -> BTreeMap<TokenColumn, TokenValue> {

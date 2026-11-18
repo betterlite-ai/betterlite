@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use crate::budget_permission_rows::Timestamp;
 use crate::database_replica::client::DatabaseClient;
 use crate::key_repository::table::TokenValue;
 use crate::team_rows::team::LiteLLMTeamTable;
@@ -7,11 +8,12 @@ use crate::team_rows::team::LiteLLMTeamTable;
 use crate::table_ops::access::{TEAM_ATTRIBUTE, TablePoolAccess};
 use crate::table_ops::columns::TeamColumn;
 use crate::table_ops::rows::RowDecoder;
-use crate::table_ops::sql;
+use crate::table_ops::sql::{self, InsertConflict};
 use crate::table_ops::team_json::jsonify_team_update;
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
 use super::TeamUpdateResult;
+use super::stamp_updated_at;
 
 impl<Client> TableOps<'_, Client>
 where
@@ -41,12 +43,32 @@ where
         if !data.contains_key(&TeamColumn::TeamId) {
             create.insert(TeamColumn::TeamId, TokenValue::Text(resolved.clone()));
         }
-        let update = match update_key_values {
+        let mut update = match update_key_values {
             Some(values) => jsonify_team_update(values),
             None => create.clone(),
         };
-        let statement = sql::upsert(&create, Some(&update))?;
-        let found = self.run_upsert(TEAM_ATTRIBUTE, &statement).await?;
+        let now = Timestamp::Naive(self.ports.clock.now().naive_utc());
+        stamp_updated_at(&mut create, now);
+        stamp_updated_at(&mut update, now);
+        // Prisma's upsert filters on the resolved id, so a different team_id in the payload only reaches the written row
+        let update = sql::update_where(&update, &resolved)?;
+        let stored = self
+            .text_rows(
+                TEAM_ATTRIBUTE,
+                "update",
+                &update.sql,
+                &update.parameters.bind_values(),
+            )
+            .await?
+            .into_iter()
+            .next();
+        let found = match stored {
+            Some(text) => text,
+            None => {
+                let insert = sql::insert(&create, InsertConflict::Reject)?;
+                self.run_upsert(TEAM_ATTRIBUTE, &insert).await?
+            }
+        };
         let data = LiteLLMTeamTable::decode_row(&found)?;
         Ok(TeamUpdateResult {
             team_id: resolved,

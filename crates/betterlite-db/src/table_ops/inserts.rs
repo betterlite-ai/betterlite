@@ -5,12 +5,10 @@ use crate::database_replica::client::DatabaseClient;
 use crate::key_repository::table::TokenValue;
 use crate::team_rows::team::LiteLLMTeamTable;
 
-use super::access::{
-    CONFIG_ATTRIBUTE, NOTIFICATION_ATTRIBUTE, SPEND_ATTRIBUTE, TEAM_ATTRIBUTE, TablePoolAccess,
-};
+use super::access::{CONFIG_ATTRIBUTE, TablePoolAccess};
 use super::columns::{ConfigColumn, NotificationColumn, SpendColumn, TableColumn, TeamColumn};
 use super::rows::{RowDecoder, SpendLogRow, UserNotificationRow};
-use super::sql::{self, Statement};
+use super::sql::{self, InsertConflict, Statement};
 use super::team_json::{jsonify_object, jsonify_team_object};
 use super::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
@@ -75,7 +73,7 @@ where
         let text = self
             .attempt_with(DATA_RETRY, OperationCallType::InsertData, || async {
                 let payload = jsonify(data);
-                let statement = sql::upsert(&payload, None)?;
+                let statement = sql::insert(&payload, InsertConflict::Keep)?;
                 self.run_upsert(Column::ATTRIBUTE, &statement).await
             })
             .await?;
@@ -104,5 +102,5 @@ where
     ]);
     let update: BTreeMap<ConfigColumn, TokenValue> =
         BTreeMap::from([(ConfigColumn::ParamValue, stored)]);
-    sql::upsert(&payload, Some(&update))
+    sql::insert(&payload, InsertConflict::Write(&update))
 }

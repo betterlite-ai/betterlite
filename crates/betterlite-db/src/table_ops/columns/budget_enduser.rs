@@ -30,6 +30,7 @@ impl TableColumn for BudgetColumn {
     const TABLE: &'static str = BUDGET_TABLE;
     const ATTRIBUTE: &'static str = BUDGET_ATTRIBUTE;
     const KEY: Self = Self::BudgetId;
+    const UPDATED_AT: Option<Self> = Some(Self::UpdatedAt);
 
     fn definition(self) -> (&'static str, TokenSqlType) {
         match self {
