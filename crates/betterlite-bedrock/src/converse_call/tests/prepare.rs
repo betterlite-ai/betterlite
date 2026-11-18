@@ -68,23 +68,24 @@ fn prepared(params: &mut ParamMap, model: &str) -> Prepared {
 }
 
 #[rstest::rstest]
-#[case::absent("{}", Some("us-east-1"))]
-#[case::present_null("{\"aws_region_name\":null}", None)]
-#[case::present_text("{\"aws_region_name\":\"eu-west-1\"}", Some("eu-west-1"))]
-fn model_region_preserves_explicit_presence(#[case] source: &str, #[case] expected: Option<&str>) {
-    let mut params: ParamMap = serde_json::from_str(source).unwrap();
+#[case::absent(ParamMap::new(), ParamValue::Text("us-east-1".to_owned()))]
+#[case::present_null(
+    ParamMap::from([("aws_region_name".to_owned(), ParamValue::Null)]),
+    ParamValue::Null
+)]
+#[case::present_text(
+    ParamMap::from([("aws_region_name".to_owned(), ParamValue::Text("eu-west-1".to_owned()))]),
+    ParamValue::Text("eu-west-1".to_owned())
+)]
+fn model_region_preserves_explicit_presence(
+    #[case] mut params: ParamMap,
+    #[case] expected: ParamValue,
+) {
     let output = prepared(&mut params, "bedrock/us-east-1/nova/model");
     assert_eq!(output.model_id, "model");
     assert_eq!(
-        params.get("aws_region_name").and_then(|value| match value {
-            ParamValue::Text(text) => Some(text.as_str()),
-            ParamValue::Null
-            | ParamValue::Bool(_)
-            | ParamValue::Number(_)
-            | ParamValue::List(_)
-            | ParamValue::Mapping(_) => None,
-        }),
-        expected
+        params,
+        ParamMap::from([("aws_region_name".to_owned(), expected)])
     );
 }
 
