@@ -15,4 +15,7 @@ deviations:
   - what: A dataset `rows` value above u32::MAX is refused when the artifact is parsed, where LiteLLM declares an unbounded int.
     why: betterlite keeps the attribution counts in u32, which the packaged artifact and every dataset it describes fit; rows only feeds attribution and never routing, so a value past four billion loses nothing a request can observe.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L35-L41
+  - what: An artifact whose posterior arithmetic overflows is refused at load, where LiteLLM accepts it and returns NaN probabilities.
+    why: Finite statistics near f64::MAX with a large prior mass make the posterior sums inf/inf, no working setup can rely on a NaN forecast, and the task requires finite arithmetic, so validation computes every posterior mean the artifact can produce and names the statistic that overflows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L141-L157
 kept_bugs: []
