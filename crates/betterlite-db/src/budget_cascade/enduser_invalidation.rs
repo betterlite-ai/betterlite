@@ -29,7 +29,7 @@ fn queue_unlinked_endusers<Sink>(writes: &Sink, cap: Option<Decimal>)
 where
     Sink: LinkedResets,
 {
-    let Some(cap) = cap else {
+    let Some(cap_value) = cap else {
         writes.zero(LinkedResetFilter {
             budget_id: BudgetIdFilter::IsNull,
             spend: SPENT_ROWS,
@@ -40,18 +40,18 @@ where
         budget_id: BudgetIdFilter::IsNull,
         spend: SpendRange {
             greater_than: Some(Decimal::ZERO),
-            less_than_or_equal: Some(cap),
+            less_than_or_equal: Some(cap_value),
         },
     });
     writes.decrement(
         LinkedResetFilter {
             budget_id: BudgetIdFilter::IsNull,
             spend: SpendRange {
-                greater_than: Some(cap),
+                greater_than: Some(cap_value),
                 less_than_or_equal: None,
             },
         },
-        cap,
+        cap_value,
     );
 }
 
