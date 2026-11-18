@@ -67,6 +67,99 @@ impl StreamCleanup<()> for NoCleanup {
 }
 
 #[test]
+fn request_flag_requires_json_true() {
+    assert!(flag(
+        &[("enabled".to_owned(), Json::Bool(true)).into()],
+        "enabled"
+    ));
+    assert!(!flag(
+        &[("enabled".to_owned(), Json::Text("true".to_owned())).into()],
+        "enabled"
+    ));
+    assert!(!flag(&JsonObject::new(), "enabled"));
+}
+
+#[test]
+fn failure_frame_preserves_null_and_missing_fields() {
+    let failure = StreamFailure {
+        message: "bad request".to_owned(),
+        error_type: None,
+        param: FailureParam::Null,
+        status_code: Some(422),
+        kind: FailureKind::Other,
+    };
+    let frame = failure_frame(&failure);
+    assert!(frame.contains("\"type\":\"None\""));
+    assert!(frame.contains("\"param\":null"));
+    assert!(frame.contains("\"code\":\"422\""));
+    assert!(!frame.contains("[DONE]"));
+}
+
+#[test]
+fn failure_frame_applies_router_status_overrides() {
+    let mut failure = StreamFailure {
+        message: "No deployments available".to_owned(),
+        error_type: Some("Unavailable".to_owned()),
+        param: FailureParam::Missing,
+        status_code: Some(500),
+        kind: FailureKind::Other,
+    };
+    assert!(failure_frame(&failure).contains("\"code\":\"429\""));
+    failure.message = "Not allowed to access model due to tags configuration".to_owned();
+    assert!(failure_frame(&failure).contains("\"code\":\"401\""));
+}
+
+#[test]
+fn cleanup_guard_finalizes_once_and_marks_incomplete_drop() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct RecordingCleanup(Arc<AtomicBool>);
+    impl StreamCleanup<()> for RecordingCleanup {
+        fn finalize(&self, outcome: CleanupOutcome<()>) {
+            assert!(outcome.client_disconnected);
+            assert!(!outcome.stream_completed);
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    let called = Arc::new(AtomicBool::new(false));
+    let guard = CleanupGuard {
+        cleanup: Arc::new(RecordingCleanup(called.clone())),
+        outcome: Some(CleanupOutcome {
+            request: None,
+            request_data: JsonObject::new(),
+            key: (),
+            response: None,
+            stream_completed: false,
+            client_disconnected: false,
+        }),
+    };
+    drop(guard);
+    assert!(called.load(Ordering::SeqCst));
+}
+
+#[test]
+fn keepalive_source_exposes_item_hidden_params_and_skips_failures() {
+    let hidden = [("model_id".to_owned(), Json::Text("deployment".to_owned()))]
+        .into_iter()
+        .collect::<JsonObject>();
+    let item = Ok(StreamItem::Chunk(StreamChunk {
+        body: JsonObject::new(),
+        kind: ChunkKind::Plain,
+        hidden: hidden.clone(),
+    }));
+    assert_eq!(item.hidden_params(), Some(&hidden));
+    let failure: Result<StreamItem, StreamFailure> = Err(StreamFailure {
+        message: "failure".to_owned(),
+        error_type: None,
+        param: FailureParam::Missing,
+        status_code: None,
+        kind: FailureKind::Other,
+    });
+    assert_eq!(failure.hidden_params(), None);
+}
+
+#[test]
 fn emits_data_chunks_then_done() {
     let chunk = StreamChunk {
         body: [
