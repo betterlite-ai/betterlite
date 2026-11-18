@@ -44,17 +44,19 @@ impl FailureShape {
 }
 
 fn failure_answer(run: &Run) -> HelperResult {
-    match &run.failure {
-        Some(failure) => Err(Box::new(HelperError {
-            class: failure.class.to_owned(),
-            status: failure.status,
-            error_type: None,
-            param: None,
-            code: None,
-            message: failure.message.clone(),
-        })),
-        None => Err("the call was expected to fail and did not").or_value_error(),
-    }
+    run.failure.as_ref().map_or_else(
+        || Err("the call was expected to fail and did not").or_value_error(),
+        |failure| {
+            Err(Box::new(HelperError {
+                class: failure.class.to_owned(),
+                status: failure.status,
+                error_type: None,
+                param: None,
+                code: None,
+                message: failure.message.clone(),
+            }))
+        },
+    )
 }
 
 // both cases compare the exception LiteLLM raises, so the answer is that error and not a value

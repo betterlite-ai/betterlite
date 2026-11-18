@@ -131,7 +131,7 @@ fn run_of(
     transport: &FixtureTransport,
     state: &LoggingState,
     logger: &Logger,
-    pre_call: Option<IndexMap<String, Json>>,
+    pre_call_record: Option<IndexMap<String, Json>>,
 ) -> Run {
     let (outcome, failure) = match result {
         Ok(ChatOutcome::Reply(envelope)) => (RunOutcome::Reply(envelope), None),
@@ -144,7 +144,7 @@ fn run_of(
     };
     let details = state.model_call_details.clone();
     // the response mapper's post_call replaces the record, so a buffered reply keeps the fixture's copy
-    let pre_call = pre_call.unwrap_or_else(|| details.clone());
+    let pre_call = pre_call_record.unwrap_or_else(|| details.clone());
     Run {
         outcome,
         failure,
