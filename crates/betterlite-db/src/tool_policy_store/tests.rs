@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
@@ -18,14 +19,22 @@ use crate::tool_records::decode::decode_tool_record;
 use crate::tool_records::records::{ToolInputPolicy, ToolOutputPolicy};
 
 use self::support::captured_logs;
-use super::blockers::{
-    add_tool_to_object_permission_blocked, remove_tool_from_object_permission_blocked,
-};
+use super::blockers::{BlockedChange, change_blocked_tools};
 use super::discovery::batch_upsert_tools;
 use super::policy_update::update_tool_policy;
-use super::records::{BlockedToolRow, ToolDiscoveryItem, ToolPolicyUpdate};
+use super::records::{BlockedToolRow, ToolDiscoveryItem, ToolIdGenerator, ToolPolicyUpdate};
 use super::refresh::{ToolPolicyStore, load_blocked_tools, sync_tool_policy_from_db};
 use super::registry::{ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
+
+const DEADLINE: Duration = Duration::from_secs(5);
+
+pub(crate) struct FixedIds;
+
+impl ToolIdGenerator for FixedIds {
+    fn next_tool_id(&self) -> String {
+        "fixed-id".to_owned()
+    }
+}
 
 #[derive(Default)]
 pub(crate) struct Reconnect {
@@ -208,7 +217,14 @@ fn blocked_tools_map_skips_empty_permission_ids_and_reads_null_as_empty() {
 #[tokio::test]
 async fn discovery_without_a_database_logs_an_error() {
     let (logs, guard) = captured_logs();
-    batch_upsert_tools(None::<&Client>, &[item(Some("search"))], instant()).await;
+    batch_upsert_tools(
+        None::<&Client>,
+        &FixedIds,
+        DEADLINE,
+        &[item(Some("search"))],
+        instant(),
+    )
+    .await;
     drop(guard);
     assert!(
         logs.text()
@@ -219,7 +235,14 @@ async fn discovery_without_a_database_logs_an_error() {
 #[tokio::test]
 async fn discovery_skips_a_batch_that_names_no_tool() {
     let (logs, guard) = captured_logs();
-    batch_upsert_tools(None::<&Client>, &[item(None), item(Some(""))], instant()).await;
+    batch_upsert_tools(
+        None::<&Client>,
+        &FixedIds,
+        DEADLINE,
+        &[item(None), item(Some(""))],
+        instant(),
+    )
+    .await;
     drop(guard);
     assert!(!logs.text().contains("batch_upsert_tools"));
 }
@@ -234,7 +257,7 @@ async fn policy_update_without_a_database_returns_none() {
         output_policy: None,
     };
     assert!(
-        update_tool_policy(None::<&Client>, &update, instant())
+        update_tool_policy(None::<&Client>, &FixedIds, DEADLINE, &update, instant())
             .await
             .is_none()
     );
@@ -248,8 +271,26 @@ async fn policy_update_without_a_database_returns_none() {
 #[tokio::test]
 async fn blocked_list_writes_without_a_database_return_false() {
     let (logs, guard) = captured_logs();
-    assert!(!add_tool_to_object_permission_blocked(None::<&Client>, "perm-1", "search").await);
-    assert!(!remove_tool_from_object_permission_blocked(None::<&Client>, "perm-1", "search").await);
+    assert!(
+        !change_blocked_tools(
+            None::<&Client>,
+            DEADLINE,
+            "perm-1",
+            "search",
+            BlockedChange::Add
+        )
+        .await
+    );
+    assert!(
+        !change_blocked_tools(
+            None::<&Client>,
+            DEADLINE,
+            "perm-1",
+            "search",
+            BlockedChange::Remove
+        )
+        .await
+    );
     drop(guard);
     let text = logs.text();
     assert!(text.contains("add_tool_to_object_permission_blocked error: no database connection"));
@@ -261,10 +302,32 @@ async fn blocked_list_writes_without_a_database_return_false() {
 #[tokio::test]
 async fn blocked_list_writes_with_empty_arguments_answer_false_before_the_database() {
     let (logs, guard) = captured_logs();
-    assert!(!add_tool_to_object_permission_blocked(None::<&Client>, "", "search").await);
-    assert!(!add_tool_to_object_permission_blocked(None::<&Client>, "perm-1", "").await);
-    assert!(!remove_tool_from_object_permission_blocked(None::<&Client>, "", "search").await);
-    assert!(!remove_tool_from_object_permission_blocked(None::<&Client>, "perm-1", "").await);
+    assert!(
+        !change_blocked_tools(None::<&Client>, DEADLINE, "", "search", BlockedChange::Add).await
+    );
+    assert!(
+        !change_blocked_tools(None::<&Client>, DEADLINE, "perm-1", "", BlockedChange::Add).await
+    );
+    assert!(
+        !change_blocked_tools(
+            None::<&Client>,
+            DEADLINE,
+            "",
+            "search",
+            BlockedChange::Remove
+        )
+        .await
+    );
+    assert!(
+        !change_blocked_tools(
+            None::<&Client>,
+            DEADLINE,
+            "perm-1",
+            "",
+            BlockedChange::Remove
+        )
+        .await
+    );
     drop(guard);
     assert!(!logs.text().contains("error"));
 }
@@ -276,6 +339,7 @@ async fn refresh_reconnects_a_missing_database_with_the_tools_reason() {
     let store = ToolPolicyStore {
         database: &database,
         registry: &registry,
+        deadline: DEADLINE,
     };
     let mut reconnect = Reconnect::default();
     let result = sync_tool_policy_from_db(&store, Some(&mut reconnect)).await;
@@ -296,7 +360,7 @@ async fn refresh_reconnects_a_missing_database_with_the_tools_reason() {
 async fn permission_reads_reconnect_with_the_permissions_reason() {
     let database = PostgresStore { pool: None };
     let mut reconnect = Reconnect::default();
-    let result = load_blocked_tools(&database, Some(&mut reconnect)).await;
+    let result = load_blocked_tools(&database, Some(&mut reconnect), DEADLINE).await;
     assert!(result.is_err());
     assert_eq!(
         reconnect.reasons(),
