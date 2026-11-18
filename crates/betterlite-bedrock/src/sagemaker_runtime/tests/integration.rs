@@ -445,6 +445,34 @@ async fn sagemaker_nova_chat_drops_the_model_field() {
 }
 
 #[tokio::test]
+async fn completion_and_chat_honor_sagemaker_base_url() {
+    let counter = Counter;
+    let mut workspace = Workspace::new();
+    workspace.options = Options::from([(
+        String::from("sagemaker_base_url"),
+        Value::String(String::from("https://custom.example/completion")),
+    )]);
+    workspace.chat_options =
+        serde_json::from_str(r#"{"sagemaker_base_url":"https://custom.example/chat"}"#)
+            .expect("chat options");
+    let runtime = runtime(
+        FakeTransport::new(200, "{}", &[]),
+        FakeCredentials,
+        &counter,
+    );
+    let completion = runtime
+        .prepare_completion(&workspace.completion())
+        .await
+        .expect("completion request");
+    assert_eq!(completion.url, "https://custom.example/completion");
+    let chat = runtime
+        .prepare_chat(&workspace.chat(false))
+        .await
+        .expect("chat request");
+    assert_eq!(chat.url, "https://custom.example/chat");
+}
+
+#[tokio::test]
 async fn completion_component_header_is_added_after_signing() {
     let counter = Counter;
     let mut workspace = Workspace::new();
