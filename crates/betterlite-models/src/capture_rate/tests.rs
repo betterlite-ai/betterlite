@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use super::alert::alert_message;
 use super::compute::{CaptureRateError, CaptureRateRequest, compute_capture_rate};
 use super::format::{format_percent, format_usd};
-use super::report::{CaptureRateDay, CaptureRateReport, CheckResult};
+use super::report::{CaptureRateReport, CheckResult};
 use super::settings::SpendCaptureProvider;
 
 fn dec(text: &str) -> Decimal {
