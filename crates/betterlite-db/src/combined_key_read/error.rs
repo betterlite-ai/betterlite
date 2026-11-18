@@ -1,5 +1,3 @@
-use std::error::Error as _;
-use std::fmt;
 use std::sync::Arc;
 
 use crate::database_faults::{DbError, ErrorType};
@@ -18,9 +16,12 @@ pub struct ReconnectFailure {
 }
 
 // a failed lookup keeps the native driver error typed, so a cached-plan match reads the database message
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum DatabaseFailure {
-    Reported(DbError),
+    // the reported fault spells its own Display and cause; a driver error hides its raw detail
+    #[error(transparent)]
+    Reported(#[from] DbError),
+    #[error("{0}")]
     Driver(Arc<DriverError>),
 }
 
@@ -31,31 +32,6 @@ impl DatabaseFailure {
             Self::Reported(fault) => fault,
             Self::Driver(error) => database_fault(ErrorType::RawQuery, error.to_string()),
         }
-    }
-}
-
-impl fmt::Display for DatabaseFailure {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Reported(fault) => fmt::Display::fmt(fault, f),
-            Self::Driver(error) => fmt::Display::fmt(error, f),
-        }
-    }
-}
-
-// the rendered error keeps the reported fault's own cause chain and never the driver's raw detail
-impl std::error::Error for DatabaseFailure {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Reported(fault) => fault.source(),
-            Self::Driver(_) => None,
-        }
-    }
-}
-
-impl From<DbError> for DatabaseFailure {
-    fn from(error: DbError) -> Self {
-        Self::Reported(error)
     }
 }
 

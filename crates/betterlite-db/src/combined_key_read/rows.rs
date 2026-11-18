@@ -115,8 +115,7 @@ fn row_fields(row: Option<JsonData>) -> Result<Option<BTreeMap<String, JsonData>
 }
 
 fn is_cached_plan(error: &DatabaseFailure) -> bool {
-    // LiteLLM matches the marker against the exception text, case-sensitively; for a server error
-    // that text is the database message, which the driver keeps out of its own Display impl
+    // LiteLLM matches the marker case-sensitively on the database message, which the driver hides
     match error {
         DatabaseFailure::Reported(fault) => fault.message.contains(STALE_PLAN_MARKER),
         DatabaseFailure::Driver(error) => error
