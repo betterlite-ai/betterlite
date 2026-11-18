@@ -200,26 +200,32 @@ impl StreamHandler for Fixture {
 // The event-stream frame a Bedrock chunk event arrives in, built the way the wire lays it out.
 pub(super) fn chunk_frame(source: &str) -> Vec<u8> {
     let payload = format!("{{\"bytes\":\"{}\"}}", STANDARD.encode(source));
-    let headers = vec![
-        Header::new(":event-type".to_owned(), text("chunk")),
-        Header::new(":message-type".to_owned(), text("event")),
-    ];
-    let message = Message::new_from_parts(headers, payload.into_bytes());
-    let mut frame = Vec::new();
-    write_message_to(&message, &mut frame).unwrap();
-    frame
+    frame(
+        &[(":event-type", "chunk"), (":message-type", "event")],
+        payload.as_bytes(),
+    )
 }
 
 // The event-stream frame a Bedrock error event arrives in: the modeled exception and its JSON body.
 pub(super) fn error_frame(exception_type: &str, payload: &str) -> Vec<u8> {
-    let headers = vec![
-        Header::new(":message-type".to_owned(), text("error")),
-        Header::new(":exception-type".to_owned(), text(exception_type)),
-    ];
-    let message = Message::new_from_parts(headers, payload.as_bytes().to_vec());
-    let mut frame = Vec::new();
-    write_message_to(&message, &mut frame).unwrap();
-    frame
+    frame(
+        &[
+            (":message-type", "error"),
+            (":exception-type", exception_type),
+        ],
+        payload.as_bytes(),
+    )
+}
+
+fn frame(headers: &[(&str, &str)], payload: &[u8]) -> Vec<u8> {
+    let mut built = Vec::new();
+    for (name, value) in headers.iter().copied() {
+        built.push(Header::new(name.to_owned(), text(value)));
+    }
+    let message = Message::new_from_parts(built, payload.to_vec());
+    let mut encoded = Vec::new();
+    write_message_to(&message, &mut encoded).unwrap();
+    encoded
 }
 
 fn text(value: &str) -> HeaderValue {
@@ -313,27 +319,6 @@ fn drive<'deps>(
     correlation: &'deps mut CorrelationContext,
     log: &mut LogContext<'_, '_>,
 ) -> Collected {
-    match compose(transport, deps, fakes, correlation, log) {
-        Ok(mut wrapped) => consume(&mut wrapped),
-        Err(message) => Collected {
-            model: String::new(),
-            custom_llm_provider: "",
-            headers: HeaderMap::new(),
-            chunks: Vec::new(),
-            failure: Some(message),
-            failure_status: None,
-            fallback: false,
-        },
-    }
-}
-
-fn compose<'deps>(
-    transport: &StreamTransport<'_>,
-    deps: &StreamDeps<'deps>,
-    fakes: &'deps Fakes,
-    correlation: &'deps mut CorrelationContext,
-    log: &mut LogContext<'_, '_>,
-) -> Result<WrappedInvokeStream<'deps>, String> {
     let ports = ChatStreamPorts {
         clock: &fakes.clock,
         logging: &fakes.logging,
@@ -355,7 +340,23 @@ fn compose<'deps>(
             logging_disable: false,
         },
     };
-    block_on(custom_stream_wrapper(transport, deps, setup, log)).map_err(|error| error.to_string())
+    match block_on(custom_stream_wrapper(transport, deps, setup, log)) {
+        Ok(mut wrapped) => consume(&mut wrapped),
+        Err(error) => unopened(error.to_string()),
+    }
+}
+
+// The wrapper's own failure, before there is a stream whose chunks could be read.
+fn unopened(message: String) -> Collected {
+    Collected {
+        model: String::new(),
+        custom_llm_provider: "",
+        headers: HeaderMap::new(),
+        chunks: Vec::new(),
+        failure: Some(message),
+        failure_status: None,
+        fallback: false,
+    }
 }
 
 fn consume(wrapped: &mut WrappedInvokeStream<'_>) -> Collected {

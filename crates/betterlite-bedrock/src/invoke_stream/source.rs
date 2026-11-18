@@ -72,7 +72,7 @@ impl InvokeChunks<'_> {
         let chunk = match self.chunks.get_mut().next().await {
             None => return Ok(None),
             Some(Ok(chunk)) => chunk,
-            Some(Err(failure)) => return Err(failure.into()),
+            Some(Err(failure)) => return Err(InvokeSourceError::from(failure)),
         };
         let projected = match chunk {
             InvokeChunk::Base(projection) => match *projection {
@@ -129,8 +129,7 @@ impl InvokeChunks<'_> {
     }
 }
 
-// LiteLLM's chunks name no model of their own; the shared record needs a string, and an empty one keeps
-// provider_response_model out of the hidden params exactly as the absent field does.
+// A chunk with no model keeps provider_response_model out of the hidden params, as an absent field does.
 fn encoded<T>(value: &T) -> Result<JsonValue, InvokeSourceError>
 where
     T: Serialize,

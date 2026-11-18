@@ -25,7 +25,7 @@ pub struct TimingCall<'call> {
 fn datetime(instant: &StreamInstant) -> Option<DateTime<FixedOffset>> {
     let elapsed = Duration::try_from_secs_f64(instant.timestamp).ok()?;
     let seconds = i64::try_from(elapsed.as_secs()).ok()?;
-    DateTime::<Utc>::from_timestamp(seconds, elapsed.subsec_nanos()).map(DateTime::fixed_offset)
+    DateTime::<Utc>::from_timestamp(seconds, elapsed.subsec_nanos()).map(|utc| utc.fixed_offset())
 }
 
 // track_llm_api_timing's finally block: the duration on model_call_details, then the service hook.
