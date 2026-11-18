@@ -1,0 +1,174 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::custom_dimensions as section;
+use rstest::rstest;
+
+use super::{config, dim, named, run, weights};
+use crate::complexity_scoring::dimensions::{
+    CustomDimension, CustomDimensionMatcher, ScoringMode, score_custom_dimensions,
+};
+use crate::custom_dimensions::{DimensionsError, validate};
+
+#[rstest]
+#[case::absent(vec![], "heuristic", weights(&[]), Ok(0))]
+#[case::empty_skips_the_classifier_gate(vec![], "heuristic_v2", weights(&[]), Ok(0))]
+#[case::empty_with_an_llm_classifier(vec![], "llm", weights(&[]), Ok(0))]
+#[case::empty_with_an_unknown_classifier(
+    vec![],
+    "bogus",
+    weights(&[]),
+    Err(DimensionsError::ClassifierType { value: "bogus".to_owned() })
+)]
+#[case::one_keyword_dimension(
+    vec![dim("domain", &["alpha"], &[])],
+    "heuristic",
+    weights(&[]),
+    Ok(0)
+)]
+#[case::a_classifier_that_refuses_custom_dimensions(
+    vec![dim("domain", &["alpha"], &[])],
+    "heuristic_v2",
+    weights(&[]),
+    Err(DimensionsError::Classifier)
+)]
+#[case::match_count_with_hybrid(
+    vec![config("domain", 0.5, &[], &["gamma"], "match_count")],
+    "hybrid",
+    weights(&[]),
+    Ok(2)
+)]
+#[case::duplicate_names_after_case_folding(
+    vec![named("Domain"), named("domain")],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Names)
+)]
+#[case::a_built_in_dimension_name(
+    vec![named("tokenCount")],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Names)
+)]
+#[case::a_built_in_dimension_name_in_another_case(
+    vec![named("TOKENCOUNT")],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Names)
+)]
+#[case::a_weight_that_belongs_to_dimension_weights(
+    vec![named("domain")],
+    "heuristic",
+    weights(&[("domain", 0.1)]),
+    Err(DimensionsError::Weights)
+)]
+#[case::a_weight_that_belongs_to_dimension_weights_in_another_case(
+    vec![named("domain")],
+    "heuristic",
+    weights(&[("DOMAIN", 0.1)]),
+    Err(DimensionsError::Weights)
+)]
+#[case::the_work_of_every_pattern_is_summed(
+    vec![dim("domain", &[], &["a{2}", "[a-z]{64}"])],
+    "heuristic_first",
+    weights(&[]),
+    Ok(136)
+)]
+#[case::an_invalid_pattern_is_reported(
+    vec![dim("domain", &[], &["a{65}"])],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Dimension(section::DimensionProblem::Pattern {
+        pattern: "a{65}".to_owned(),
+        problem: section::PatternProblem::Repeat,
+    }))
+)]
+#[case::an_invalid_scoring_mode_is_reported(
+    vec![config("domain", 0.5, &["alpha"], &[], "count")],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Dimension(section::DimensionProblem::ScoringMode))
+)]
+#[case::a_dimension_without_matchers(
+    vec![config("domain", 0.5, &[], &[], "binary")],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Dimension(section::DimensionProblem::BlankMatchers))
+)]
+#[case::an_invalid_name_is_reported(
+    vec![named("1domain")],
+    "heuristic",
+    weights(&[]),
+    Err(DimensionsError::Dimension(section::DimensionProblem::Name))
+)]
+fn custom_dimensions_behaviors(
+    #[case] declared: Vec<section::Config>,
+    #[case] classifier: &str,
+    #[case] dimension_weights: BTreeMap<String, f64>,
+    #[case] expected: Result<u64, DimensionsError>,
+) {
+    assert_eq!(run(&declared, classifier, &dimension_weights), expected);
+}
+
+#[test]
+fn a_validated_dimension_keeps_its_fields_and_mode() {
+    let declared = [config("domain", 0.8, &["alpha"], &["gamma"], "match_count")];
+    let validated = validate(&declared, "heuristic", &BTreeMap::new()).unwrap();
+    assert_eq!(validated.work, 2);
+    assert_eq!(
+        validated.dimensions,
+        [CustomDimension {
+            name: "domain".to_owned(),
+            weight: 0.8,
+            keywords: vec!["alpha".to_owned()],
+            patterns: vec!["gamma".to_owned()],
+            scoring_mode: ScoringMode::MatchCount,
+        }]
+    );
+}
+
+fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
+    let declared = [config(
+        "domain",
+        0.8,
+        &["alpha", "beta"],
+        &["gamma", "[0-9]{2}"],
+        mode,
+    )];
+    let validated = validate(&declared, "heuristic", &BTreeMap::new()).unwrap();
+    let matcher = CustomDimensionMatcher::compile(&validated.dimensions[0])
+        .expect("the test matcher compiles");
+    score_custom_dimensions(
+        prompt,
+        &prompt.to_lowercase(),
+        std::slice::from_ref(&matcher),
+    )
+    .into_iter()
+    .map(|(score, _weight)| (score.dimension.name().to_owned(), score.score))
+    .collect()
+}
+
+#[test]
+fn binary_scores_one_when_any_matcher_hits() {
+    assert_eq!(
+        scored("binary", "alpha beta gamma 42"),
+        [("domain".to_owned(), 1.0)]
+    );
+    assert!(scored("binary", "zeta").is_empty());
+}
+
+#[test]
+fn match_count_scores_half_for_one_hit_and_one_for_two() {
+    assert_eq!(scored("match_count", "alpha"), [("domain".to_owned(), 0.5)]);
+    assert_eq!(
+        scored("match_count", "alpha beta"),
+        [("domain".to_owned(), 1.0)]
+    );
+}
+
+#[test]
+fn a_repeated_match_counts_once() {
+    assert_eq!(
+        scored("match_count", "alpha alpha"),
+        [("domain".to_owned(), 0.5)]
+    );
+}
