@@ -13,13 +13,13 @@ pub fn validate_ownership_change(
     if caller.role == Some(UserRole::ProxyAdmin) {
         return Ok(());
     }
-    let Some(request) = request else {
+    let Some(change) = request else {
         return Ok(());
     };
-    if !request.user_id.supplied {
+    if !change.user_id.supplied {
         return Ok(());
     }
-    let Some(incoming) = request.user_id.value.as_deref() else {
+    let Some(incoming) = change.user_id.value.as_deref() else {
         return Err(DelegationError::RemoveUserId);
     };
     if incoming.is_empty() {

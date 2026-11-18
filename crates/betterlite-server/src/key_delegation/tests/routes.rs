@@ -10,9 +10,9 @@ use crate::key_delegation::routes::{
 use super::{admin, json, presets, sent, user};
 
 fn transition(incoming: &[&str], existing: &[&str]) -> bool {
-    let incoming = presets(incoming);
-    let existing = presets(existing);
-    is_safe_route_transition(Some(&incoming), Some(&existing))
+    let incoming_routes = presets(incoming);
+    let existing_routes = presets(existing);
+    is_safe_route_transition(Some(&incoming_routes), Some(&existing_routes))
 }
 
 #[rstest]

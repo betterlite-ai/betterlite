@@ -48,18 +48,26 @@ pub fn is_safe_route_transition(
     incoming: Option<&[JsonData]>,
     existing: Option<&[JsonData]>,
 ) -> bool {
-    let incoming = incoming.unwrap_or_default();
-    let existing = existing.unwrap_or_default();
-    if !incoming.iter().chain(existing).all(is_safe_preset) {
+    let incoming_routes = incoming.unwrap_or_default();
+    let existing_routes = existing.unwrap_or_default();
+    if !incoming_routes
+        .iter()
+        .chain(existing_routes)
+        .all(is_safe_preset)
+    {
         return false;
     }
-    let read_only = !existing.is_empty()
-        && existing.iter().all(|route| {
+    let read_only = !existing_routes.is_empty()
+        && existing_routes.iter().all(|route| {
             matches!(route, JsonData::String(name) if name.as_str() == READ_ONLY_ALLOWED_ROUTE_PRESET)
         });
     !read_only
-        || (incoming.iter().all(|route| existing.contains(route))
-            && existing.iter().all(|route| incoming.contains(route)))
+        || (incoming_routes
+            .iter()
+            .all(|route| existing_routes.contains(route))
+            && existing_routes
+                .iter()
+                .all(|route| incoming_routes.contains(route)))
 }
 
 // An unsafe transition falls back to the raw-body check so a supplied null or [] is still refused.
