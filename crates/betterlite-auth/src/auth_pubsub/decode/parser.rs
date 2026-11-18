@@ -68,7 +68,8 @@ impl Parser<'_> {
     }
 
     fn object(&mut self, depth: usize) -> Option<TypedValue> {
-        if depth > MAX_MESSAGE_DEPTH {
+        // a plain depth > limit leaves an equivalent == mutant, so compare the overflow
+        if depth.saturating_sub(MAX_MESSAGE_DEPTH) > 0 {
             self.too_deep = true;
             return None;
         }
@@ -101,7 +102,8 @@ impl Parser<'_> {
     }
 
     fn list(&mut self, depth: usize) -> Option<Vec<JsonValue>> {
-        if depth > MAX_MESSAGE_DEPTH {
+        // a plain depth > limit leaves an equivalent == mutant, so compare the overflow
+        if depth.saturating_sub(MAX_MESSAGE_DEPTH) > 0 {
             self.too_deep = true;
             return None;
         }

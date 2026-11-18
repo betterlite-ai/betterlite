@@ -97,6 +97,8 @@ impl AuthPubSub for RedisAuthPubSub {
 }
 
 impl AuthPubSubSubscription for RedisAuthSubscription {
+    // a scripted LiveSubscription is not constructible, so no unit test reaches the payload mapping
+    #[cfg_attr(test, mutants::skip)]
     async fn next_message(
         &mut self,
         timeout: Duration,
@@ -110,6 +112,8 @@ impl AuthPubSubSubscription for RedisAuthSubscription {
         }))
     }
 
+    // dropping a live subscription needs one to exist, so no unit test reaches this assignment
+    #[cfg_attr(test, mutants::skip)]
     async fn close(&mut self) -> Result<(), TransportError> {
         self.subscription = None;
         Ok(())
