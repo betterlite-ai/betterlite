@@ -8,6 +8,13 @@ const IMDS_FIRST: &str = r#"{"access_token":"imds-first","expires_in":3600}"#;
 const IMDS_SECOND: &str = r#"{"access_token":"imds-second","expires_in":3600}"#;
 const IMDS_EXPIRED: &str = r#"{"access_token":"imds-first","expires_in":0}"#;
 
+// IMDS retries back off for seconds, and a test that reads only the final error need not wait them out
+struct NoSleep;
+
+impl Scheduler for NoSleep {
+    fn sleep(&self, _delay: Duration) {}
+}
+
 struct StepClock {
     now: AtomicI64,
 }
@@ -93,9 +100,9 @@ fn production_grants(
         files: StdFiles,
         ids: Arc::new(RandomIds),
         token_files: FsTokenFiles,
-        scheduler: ThreadScheduler {
+        scheduler: Box::new(ThreadScheduler {
             runtime: Handle::current(),
-        },
+        }),
         host: ProductionHost {
             environment: BTreeMap::new(),
         },
@@ -273,7 +280,8 @@ async fn azure_an_expired_token_is_fetched_again() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn azure_the_managed_identity_grant_reports_an_unconfigured_environment() {
-    let grants = production_grants(&production_io(LIVE_TOKEN, 1), ChainEnvironment::default());
+    let mut grants = production_grants(&production_io(LIVE_TOKEN, 1), ChainEnvironment::default());
+    grants.scheduler = Box::new(NoSleep);
     let error = run_blocking(move || {
         grants
             .managed_identity("client", AZURE_REDIS_SCOPE)

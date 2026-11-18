@@ -1,0 +1,13 @@
+kind: helper
+name: response-chat-request-stream
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: system, content: rules}, {role: user, content: hello}]
+    optional_params: {stream: true, verbosity: low}
+    litellm_params: {stream: false, metadata: {team: a}}
+    headers: {X-Caller: "1"}
+    reasoning_auto_summary: true
+    client: null
+env: {}
+compare: {ignore: []}

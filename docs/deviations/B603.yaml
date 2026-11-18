@@ -1,0 +1,9 @@
+task: B603
+deviations:
+  - what: A trailing user message with a list content part of type text but no text key returns 400 "messages[N].content has a text part without a text value"; LiteLLM indexes item["text"] and the KeyError surfaces as a 500.
+    why: A malformed request is a client error, and the typed boundary names the message instead of crashing, as docs/compatibility.md asks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L208
+kept_bugs:
+  - what: An assistant tool_calls value of [] is not an orphan for neutralization, so the assistant message keeps its empty tool_calls, but it still counts as a tool-call block for the disabled-policy check, which injects a dummy tool or raises the UnsupportedParamsError 400.
+    why: LiteLLM reads truthiness in _has_orphaned_tool_blocks but only non-None in has_tool_call_blocks, and a client SDK that serializes an empty list as null-or-[] history relies on one of the two paths; both are copied as written.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L221-L225

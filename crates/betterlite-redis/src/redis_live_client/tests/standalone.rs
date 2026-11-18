@@ -149,7 +149,7 @@ async fn max_connections_reaches_the_concurrency_limit() {
     server.silence("PING");
     let mut fields = direct_fields(&server.host(), server.port());
     // long enough that the observer sees the first command before it times out and frees the slot
-    fields.socket_timeout = Some(2.0_f64);
+    fields.socket_timeout = Some(0.5_f64);
     fields.max_connections = Some(1);
     let client = factory(None)
         .open_async(&RedisClient::Direct(fields), None)
