@@ -1,0 +1,17 @@
+kind: probe
+name: routing-state-counter-expiry
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {}
+        steps:
+          - {kind: success, now_millis: 0, deployment_id: dep-a}
+          - {kind: outcomes, now_millis: 59999, deployment_id: dep-a}
+          - {kind: outcomes, now_millis: 60000, deployment_id: dep-a}
+          - {kind: outcomes, now_millis: 60001, deployment_id: dep-a}
+          - {kind: failure, now_millis: 60001, deployment_id: dep-a}
+          - {kind: outcomes, now_millis: 60001, deployment_id: dep-a}
+          - {kind: outcomes, now_millis: 60001, deployment_id: dep-b}
+compare: {ignore: []}
