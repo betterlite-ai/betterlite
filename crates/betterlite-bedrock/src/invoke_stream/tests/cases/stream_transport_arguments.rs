@@ -1,20 +1,33 @@
 use std::sync::Arc;
 
+use betterlite_http::error::HttpError;
 use betterlite_models::controls::control_options::ControlOptions;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::agentcore_stream::transport::HandlerKind;
 use crate::invoke_stream::stream_transport;
 
-use super::super::support::{BASE, Fixture, call, data, member, messages, run, sorted_pairs};
+use super::super::support::{
+    BASE, BUFFERED, Fixture, Opened, TITAN, call, chunk_frame, contents, data, member, messages,
+    run, sorted_pairs,
+};
 
-const MODEL: &str = "anthropic.claude-3-haiku-20240307-v1:0";
+const MODEL: &str = "amazon.titan-text-express-v1";
 const SERIALIZED: &str = r#"{"inputText": "hi", "max_tokens": 5}"#;
+const FAKE_BASE: &str = "https://proxy.example.com/ai21/anthropic";
+const RESPONSE_HEADERS: [(&str, &str); 2] = [
+    ("content-type", "application/vnd.amazon.eventstream"),
+    ("x-amzn-requestid", "req-1"),
+];
 
 pub(super) fn stream_transport_arguments() {
     carried_arguments();
     fake_stream_switch();
     chunk_size_option();
     reaches_b691();
+    fake_stream_reaches_b691();
+    chunk_size_reaches_b691();
 }
 
 fn carried_arguments() {
@@ -35,7 +48,7 @@ fn carried_arguments() {
     assert_eq!(asynchronous.data, SERIALIZED);
     assert_eq!(asynchronous.messages, &messages);
     assert_eq!(asynchronous.json_mode, Some(true));
-    assert_eq!(asynchronous.provider, Some("anthropic"));
+    assert_eq!(asynchronous.provider, Some("amazon"));
     assert!(!asynchronous.fake_stream);
     assert_eq!(asynchronous.stream_chunk_size, Some(7));
     assert!(!asynchronous.sync);
@@ -49,27 +62,19 @@ fn carried_arguments() {
 fn fake_stream_switch() {
     let messages = messages();
     let data = data();
-    let proxy = stream_transport(
-        &call(
-            "amazon.titan-text-express-v1",
-            "https://proxy.example.com/ai21/anthropic",
-            &data,
-            &messages,
-        ),
-        false,
-    );
+    let proxy_call = call(MODEL, FAKE_BASE, &data, &messages);
+    let proxy = stream_transport(&proxy_call, false);
     assert!(proxy.fake_stream);
-    let upper = stream_transport(
-        &call(
-            "amazon.titan-text-express-v1",
-            "https://proxy.example.com/AI21/anthropic",
-            &data,
-            &messages,
-        ),
-        false,
+    let upper_call = call(
+        MODEL,
+        "https://proxy.example.com/AI21/anthropic",
+        &data,
+        &messages,
     );
+    let upper = stream_transport(&upper_call, false);
     assert!(!upper.fake_stream);
-    let named = stream_transport(&call("ai21.j2-mid-v1", BASE, &data, &messages), false);
+    let named_call = call("ai21.j2-mid-v1", BASE, &data, &messages);
+    let named = stream_transport(&named_call, false);
     assert_eq!(named.provider, Some("ai21"));
     assert!(!named.fake_stream);
 }
@@ -77,17 +82,15 @@ fn fake_stream_switch() {
 fn chunk_size_option() {
     let messages = messages();
     let data = data();
-    let default = stream_transport(
-        &call("amazon.titan-text-express-v1", BASE, &data, &messages),
-        false,
-    );
-    assert_eq!(default.stream_chunk_size, None);
+    let plain_call = call(MODEL, BASE, &data, &messages);
+    let plain = stream_transport(&plain_call, false);
+    assert_eq!(plain.stream_chunk_size, None);
 }
 
 fn reaches_b691() {
     let messages = messages();
     let data = data();
-    let call = call("amazon.titan-text-express-v1", BASE, &data, &messages);
+    let call = call(MODEL, BASE, &data, &messages);
     let fixture = Fixture::new(HandlerKind::Async, &[], Vec::new());
     let opened = run(
         &call,
@@ -105,4 +108,60 @@ fn reaches_b691() {
     assert_eq!(posts[0].body, SERIALIZED.as_bytes().to_vec());
     assert!(posts[0].stream);
     assert_eq!(member(&opened.logs[0], "input"), &messages);
+}
+
+// fake_stream decides both the request's stream flag and whether B691 reads the reply as one buffered body.
+fn fake_stream_reaches_b691() {
+    let messages = messages();
+    let data = data();
+    let call = call(MODEL, FAKE_BASE, &data, &messages);
+    let fixture = Fixture::new(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        BUFFERED.as_bytes().to_vec(),
+    );
+    let opened = run(
+        &call,
+        Some(Arc::clone(&fixture)),
+        Arc::clone(&fixture),
+        false,
+    );
+    assert_eq!(opened.failure, None);
+    assert_eq!(
+        contents(&opened.chunks).first(),
+        Some(&Some(String::from("hello")))
+    );
+    assert_eq!(fixture.recorded()[0].stream, false);
+}
+
+// stream_chunk_size is applied to the response bytes: a read error drops the frame it had buffered.
+fn chunk_size_reaches_b691() {
+    let messages = messages();
+    let data = data();
+    let sized = sized_run(Some(4_096), &messages, &data);
+    assert!(sized.chunks.is_empty());
+    assert!(sized.failure.is_some());
+
+    let plain = sized_run(None, &messages, &data);
+    assert_eq!(
+        contents(&plain.chunks).first(),
+        Some(&Some(String::from("first")))
+    );
+    assert!(plain.failure.is_some());
+}
+
+fn sized_run(size: Option<u64>, messages: &Json, data: &IndexMap<String, Json>) -> Opened {
+    let mut call = call(MODEL, BASE, data, messages);
+    call.control = ControlOptions::new(size).unwrap();
+    let fixture = Fixture::failing(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        vec![Ok(chunk_frame(TITAN)), Err(HttpError::Timeout)],
+    );
+    run(
+        &call,
+        Some(Arc::clone(&fixture)),
+        Arc::clone(&fixture),
+        false,
+    )
 }

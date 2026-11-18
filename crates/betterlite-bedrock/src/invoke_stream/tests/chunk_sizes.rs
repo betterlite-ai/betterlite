@@ -16,8 +16,7 @@ fn chunk_size_cases() {
     flushes_the_tail();
     keeps_transport_reads_without_a_size();
     keeps_transport_reads_for_zero();
-    keeps_a_full_read_before_a_failure();
-    ends_at_a_read_failure();
+    keeps_a_full_read_and_drops_the_tail_at_a_failure();
 }
 
 fn pending(reads: Vec<Result<Vec<u8>, HttpError>>) -> PendingOpen {
@@ -83,36 +82,21 @@ fn keeps_transport_reads_for_zero() {
     assert_eq!(read(chunks), vec![Ok(b"ab".to_vec())]);
 }
 
-// A full read is handed over before the chunker asks the body for more, so the failure never eats it.
-fn keeps_a_full_read_before_a_failure() {
-    let chunks = apply(
+// A full read is handed over before the chunker asks the body for more, so the failure never eats it; the bytes it buffered do not follow.
+fn keeps_a_full_read_and_drops_the_tail_at_a_failure() {
+    let timeout = Err("the request timed out".to_owned());
+    let full = apply(
         pending(vec![Ok(b"abcd".to_vec()), Err(HttpError::Timeout)]),
         Some(4),
     )
     .head
     .chunks;
-    assert_eq!(
-        read(chunks),
-        vec![
-            Ok(b"abcd".to_vec()),
-            Err("the request timed out".to_owned())
-        ]
-    );
-}
-
-// The bytes the chunker buffered before the failing read do not follow it.
-fn ends_at_a_read_failure() {
-    let chunks = apply(
+    assert_eq!(read(full), vec![Ok(b"abcd".to_vec()), timeout.clone()]);
+    let partial = apply(
         pending(vec![Ok(b"abcde".to_vec()), Err(HttpError::Timeout)]),
         Some(4),
     )
     .head
     .chunks;
-    assert_eq!(
-        read(chunks),
-        vec![
-            Ok(b"abcd".to_vec()),
-            Err("the request timed out".to_owned())
-        ]
-    );
+    assert_eq!(read(partial), vec![Ok(b"abcd".to_vec()), timeout]);
 }
