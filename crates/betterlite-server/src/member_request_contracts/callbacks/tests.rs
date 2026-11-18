@@ -244,17 +244,20 @@ fn rejects_an_environment_reference() {
 }
 
 #[rstest]
-#[case("production")]
-#[case("prod-1")]
-#[case("prod_eu")]
-fn keeps_a_valid_langfuse_environment(#[case] environment: &str) {
+#[case("langfuse_environment", "production")]
+#[case("langfuse_environment", "prod-1")]
+#[case("langfuse_environment", "prod_eu")]
+#[case("langfuse_span_scope", "full")]
+#[case("langfuse_span_scope", "llm_only")]
+fn keeps_valid_langfuse_values(#[case] name: &str, #[case] value: &str) {
+    let vars = BTreeMap::from([(name.to_owned(), value.to_owned())]);
+    let expected = CallbackSecrets::from(vars.clone());
     let request = callback(json!({
         "callback_name": "langfuse",
-        "callback_vars": { "langfuse_environment": environment },
+        "callback_vars": vars,
     }))
     .unwrap();
-    let expected = BTreeMap::from([("langfuse_environment".to_owned(), environment.to_owned())]);
-    assert_eq!(request.callback_vars, CallbackSecrets::from(expected));
+    assert_eq!(request.callback_vars, expected, "{name} {value}");
 }
 
 #[rstest]
@@ -283,19 +286,6 @@ fn rejects_a_trailing_newline_in_the_environment() {
     }))
     .unwrap_err();
     assert!(message(error).starts_with("Invalid langfuse_environment 'production\n'"));
-}
-
-#[rstest]
-#[case("full")]
-#[case("llm_only")]
-fn keeps_a_valid_langfuse_span_scope(#[case] scope: &str) {
-    let request = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_span_scope": scope },
-    }))
-    .unwrap();
-    let expected = BTreeMap::from([("langfuse_span_scope".to_owned(), scope.to_owned())]);
-    assert_eq!(request.callback_vars, CallbackSecrets::from(expected));
 }
 
 #[test]

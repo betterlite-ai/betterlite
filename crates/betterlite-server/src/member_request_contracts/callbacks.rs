@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use subtle::ConstantTimeEq as _;
 
 use super::{MemberContractError, field, json_object, missing_field};
 use crate::key_fields::values::ExposedSecret;
@@ -72,14 +73,17 @@ pub struct CallbackSecrets(
 
 impl PartialEq for CallbackSecrets {
     fn eq(&self, other: &Self) -> bool {
-        self.0.len() == other.0.len()
-            && self
-                .0
-                .iter()
-                .zip(&other.0)
-                .all(|((name, secret), (other_name, other_secret))| {
-                    name == other_name && secret.expose_secret() == other_secret.expose_secret()
-                })
+        let mut equal = self.0.len() == other.0.len();
+        for ((name, secret), (other_name, other_secret)) in self.0.iter().zip(&other.0) {
+            equal &= name == other_name;
+            equal &= bool::from(
+                secret
+                    .expose_secret()
+                    .as_bytes()
+                    .ct_eq(other_secret.expose_secret().as_bytes()),
+            );
+        }
+        equal
     }
 }
 
