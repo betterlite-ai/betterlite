@@ -21,7 +21,7 @@ use crate::usage::ReasoningTokenCounter;
 use super::config::{ChatConfig, TransformRequest};
 use super::error::ChatCallError;
 use super::transport::ChatTransport;
-use super::{CallStyle, ChatCall, ChatDeps, ChatResult};
+use super::{CallStyle, ChatCall, ChatDeps};
 
 pub(super) struct Options {
     pub(super) stream: bool,
@@ -41,7 +41,16 @@ struct Params {
 pub(super) fn prepare<'request, 'deps, Config, Client, Counter>(
     call: &'request ChatCall<'_>,
     deps: &'request mut ChatDeps<'deps, Config, Client, Counter>,
-) -> LocalBoxFuture<'request, ChatResult<Client, Counter>>
+) -> LocalBoxFuture<
+    'request,
+    Result<
+        Prepared,
+        ChatCallError<
+            <Client as crate::anthropic_http_stream::transport::StreamTransport>::Failure,
+            <Counter as ReasoningTokenCounter>::Failure,
+        >,
+    >,
+>
 where
     'deps: 'request,
     Config: ChatConfig,

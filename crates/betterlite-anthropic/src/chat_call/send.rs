@@ -36,7 +36,7 @@ pub(super) fn buffered<'call, Config, Client, Counter>(
 where
     Config: ChatConfig,
     Client: ChatTransport,
-    Counter: ReasoningTokenCounter,
+    Counter: ReasoningTokenCounter + 'call,
 {
     Box::pin(async move {
         let counter = deps.counter;
