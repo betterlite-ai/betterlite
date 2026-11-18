@@ -78,25 +78,11 @@ pub(super) fn placement_for_tokens(
     input: &TokenInput<'_>,
 ) -> Result<Option<Placement>, PlacementError> {
     let buffer = config.buffer;
-    let mut in_tier = Vec::new();
-    for group in input.pool {
-        let window = window_facts(input.facts, group).window;
-        if window_holds(window, Some(input.needed), buffer) {
-            in_tier.push(group.clone());
-        }
-    }
+    let in_tier = holding_in_tier(input, buffer);
     if !in_tier.is_empty() && in_tier.len() == input.pool.len() {
         return Ok(None);
     }
-    let mut holdable = BTreeSet::new();
-    for pool in input.set.pools.values() {
-        for entry in pool.models() {
-            let window = window_facts(input.facts, &entry.model_name).window;
-            if window_holds(window, Some(input.needed), buffer) {
-                holdable.insert(entry.model_name.clone());
-            }
-        }
-    }
+    let holdable = holdable_models(input, buffer);
     if !in_tier.is_empty() {
         return Ok(Some(Placement {
             tier: input.tier.clone(),
@@ -105,24 +91,13 @@ pub(super) fn placement_for_tokens(
         }));
     }
     let names = input.set.tier_names();
-    let position = match names.iter().position(|name| *name == input.tier.name()) {
-        Some(position) => position,
-        None => {
-            return Err(PlacementError::UnknownTier {
-                tier: input.tier.name().to_owned(),
-            });
-        }
+    let Some(position) = names.iter().position(|name| *name == input.tier.name()) else {
+        return Err(PlacementError::UnknownTier {
+            tier: input.tier.name().to_owned(),
+        });
     };
     for name in names.iter().skip(position.saturating_add(1)) {
-        let mut proven = Vec::new();
-        if let Some(pool) = input.set.pools.get(*name) {
-            for entry in pool.models() {
-                if window_facts(input.facts, &entry.model_name).provably_fits(input.needed, buffer)
-                {
-                    proven.push(entry.model_name.clone());
-                }
-            }
-        }
+        let proven = proven_models(input, *name, buffer);
         if !proven.is_empty() {
             let tier = match ComplexityTier::built_in(*name) {
                 Some(built_in) if input.set.definitions.is_none() => Tier::BuiltIn(built_in),
@@ -136,4 +111,43 @@ pub(super) fn placement_for_tokens(
         }
     }
     Ok(None)
+}
+
+// the pool groups whose window holds the request
+fn holding_in_tier(input: &TokenInput<'_>, buffer: f64) -> Vec<String> {
+    let mut in_tier = Vec::new();
+    for group in input.pool {
+        let window = window_facts(input.facts, group).window;
+        if window_holds(window, Some(input.needed), buffer) {
+            in_tier.push(group.clone());
+        }
+    }
+    in_tier
+}
+
+// every group in every tier pool whose window holds the request
+fn holdable_models(input: &TokenInput<'_>, buffer: f64) -> BTreeSet<String> {
+    let mut holdable = BTreeSet::new();
+    for pool in input.set.pools.values() {
+        for entry in pool.models() {
+            let window = window_facts(input.facts, &entry.model_name).window;
+            if window_holds(window, Some(input.needed), buffer) {
+                holdable.insert(entry.model_name.clone());
+            }
+        }
+    }
+    holdable
+}
+
+// the pool groups that provably fit the request, the only ones an escalation may land on
+fn proven_models(input: &TokenInput<'_>, name: &str, buffer: f64) -> Vec<String> {
+    let mut proven = Vec::new();
+    if let Some(pool) = input.set.pools.get(name) {
+        for entry in pool.models() {
+            if window_facts(input.facts, &entry.model_name).provably_fits(input.needed, buffer) {
+                proven.push(entry.model_name.clone());
+            }
+        }
+    }
+    proven
 }

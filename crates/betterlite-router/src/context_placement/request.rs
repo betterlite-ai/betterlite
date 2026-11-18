@@ -80,8 +80,5 @@ fn selected_tools<'request>(out_of_band: &OutOfBand<'request>) -> Option<&'reque
 
 // a Json value always serializes; the empty fallback keeps the byte estimate total
 fn compact_json<T: Serialize>(value: &T) -> String {
-    match serde_json::to_string(value) {
-        Ok(text) => text,
-        Err(_) => String::new(),
-    }
+    serde_json::to_string(value).unwrap_or_default()
 }

@@ -175,6 +175,31 @@ fn deployments(groups: &[GroupInput]) -> DeploymentCatalog {
 }
 
 fn spec(group: &GroupInput, deployment: &DeploymentInput) -> DeploymentSpec {
+    let mut extra = JsonObject::new();
+    extra.insert(
+        "probe_router".to_owned(),
+        Json::Object(limits_json(
+            deployment
+                .router_max_input_tokens
+                .map(serde_json::Number::from),
+            deployment
+                .router_max_output_tokens
+                .map(serde_json::Number::from),
+        )),
+    );
+    DeploymentSpec {
+        model_name: group.model.clone(),
+        litellm_params: deployment_params(deployment),
+        model_info: limits_json(
+            deployment.max_input_tokens.map(serde_json::Number::from),
+            deployment.max_output_tokens.map(serde_json::Number::from),
+        ),
+        extra,
+    }
+}
+
+// the deployment's litellm_params as the YAML declares them
+fn deployment_params(deployment: &DeploymentInput) -> JsonObject {
     let mut params = JsonObject::new();
     if let Some(model) = &deployment.model {
         params.insert("model".to_owned(), Json::Text(model.clone()));
@@ -185,40 +210,22 @@ fn spec(group: &GroupInput, deployment: &DeploymentInput) -> DeploymentSpec {
             Json::Text(provider.clone()),
         );
     }
-    let mut model_info = JsonObject::new();
-    if let Some(limit) = deployment.max_input_tokens {
-        model_info.insert(
-            "max_input_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(limit)),
-        );
+    params
+}
+
+// the token limits the deployment declares, keyed as the catalog reads them
+fn limits_json(
+    input: Option<serde_json::Number>,
+    output: Option<serde_json::Number>,
+) -> JsonObject {
+    let mut limits = JsonObject::new();
+    if let Some(limit) = input {
+        limits.insert("max_input_tokens".to_owned(), Json::Number(limit));
     }
-    if let Some(limit) = deployment.max_output_tokens {
-        model_info.insert(
-            "max_output_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(limit)),
-        );
+    if let Some(limit) = output {
+        limits.insert("max_output_tokens".to_owned(), Json::Number(limit));
     }
-    let mut router = JsonObject::new();
-    if let Some(limit) = deployment.router_max_input_tokens {
-        router.insert(
-            "max_input_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(limit)),
-        );
-    }
-    if let Some(limit) = deployment.router_max_output_tokens {
-        router.insert(
-            "max_output_tokens".to_owned(),
-            Json::Number(serde_json::Number::from(limit)),
-        );
-    }
-    let mut extra = JsonObject::new();
-    extra.insert("probe_router".to_owned(), Json::Object(router));
-    DeploymentSpec {
-        model_name: group.model.clone(),
-        litellm_params: params,
-        model_info,
-        extra,
-    }
+    limits
 }
 
 fn messages(texts: &[String]) -> Vec<ChatMessage> {

@@ -109,32 +109,35 @@ impl RawRouterConfig {
                 betterlite_env::flag(&name, &resolved)?.unwrap_or(DEFAULT_ENABLED)
             }
         };
-        let buffer_path = format!("{prefix}.{BUFFER_KEY}");
-        // a declared buffer is a number; only an os.environ reference may be text
-        let buffer = match self.buffer {
-            None => DEFAULT_BUFFER,
-            Some(value) => {
-                if let RawNumber::Text(text) = &value
-                    && !text.starts_with(ENV_MARKER)
-                {
-                    return Err(ConfigError::InvalidScalar {
-                        path: buffer_path,
-                        value: false,
-                    });
-                }
-                // pydantic's gt=0, le=1 bound applies after an environment reference resolves, and a NaN fails it
-                match resolve_number(Some(value), &buffer_path, lookup, parse_float)? {
-                    Some(buffer) if buffer.is_finite() && buffer > 0.0 && buffer <= 1.0 => buffer,
-                    Some(_) => {
-                        return Err(ConfigError::InvalidScalar {
-                            path: buffer_path,
-                            value: false,
-                        });
-                    }
-                    None => DEFAULT_BUFFER,
-                }
-            }
-        };
+        let buffer = resolve_buffer(self.buffer, &prefix, lookup)?;
         Ok(Config { enabled, buffer })
+    }
+}
+
+// a declared buffer is a number; only an os.environ reference may be text
+fn resolve_buffer<L>(raw: Option<RawNumber>, prefix: &str, lookup: &L) -> Result<f64, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let buffer_path = format!("{prefix}.{BUFFER_KEY}");
+    let Some(value) = raw else {
+        return Ok(DEFAULT_BUFFER);
+    };
+    if let RawNumber::Text(text) = &value
+        && !text.starts_with(ENV_MARKER)
+    {
+        return Err(ConfigError::InvalidScalar {
+            path: buffer_path,
+            value: false,
+        });
+    }
+    // pydantic's gt=0, le=1 bound applies after an environment reference resolves, and a NaN fails it
+    match resolve_number(Some(value), &buffer_path, lookup, parse_float)? {
+        Some(buffer) if buffer.is_finite() && buffer > 0.0_f64 && buffer <= 1.0_f64 => Ok(buffer),
+        Some(_) => Err(ConfigError::InvalidScalar {
+            path: buffer_path,
+            value: false,
+        }),
+        None => Ok(DEFAULT_BUFFER),
     }
 }

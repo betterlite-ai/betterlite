@@ -79,7 +79,7 @@ fn the_defaults_are_the_pinned_litellm_values() {
     assert_eq!(Config::default().enabled, DEFAULT_ENABLED);
     assert_eq!(Config::default().buffer.to_bits(), DEFAULT_BUFFER.to_bits());
     assert_eq!(DEFAULT_BUFFER.to_bits(), 0.95_f64.to_bits());
-    assert!(!DEFAULT_ENABLED);
+    const { assert!(!DEFAULT_ENABLED) };
 }
 
 #[test]

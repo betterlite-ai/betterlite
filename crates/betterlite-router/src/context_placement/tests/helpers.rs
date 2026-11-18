@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
+use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use indexmap::IndexMap;
 
 use crate::context_placement::facts::{CatalogModelInfo, ModelLimitKey, deployment_limit};
@@ -133,19 +133,19 @@ fn messages_without_content_add_no_bytes() {
 }
 
 fn message_parts_measure_as_their_json() {
-    let mut fields = indexmap::IndexMap::new();
+    let mut fields = IndexMap::new();
     fields.insert("text".to_owned(), serde_json::json!("hi"));
-    let part = betterlite_openai::chat::ContentPart {
+    let part = ContentPart {
         kind: "text".to_owned(),
         fields,
     };
-    let parts = betterlite_openai::chat::ChatMessage {
-        role: betterlite_openai::chat::Role::User,
-        content: Some(betterlite_openai::chat::MessageContent::Parts(vec![part])),
+    let parts = ChatMessage {
+        role: Role::User,
+        content: Some(MessageContent::Parts(vec![part])),
         name: None,
         tool_calls: None,
         tool_call_id: None,
-        passthrough: indexmap::IndexMap::new(),
+        passthrough: IndexMap::new(),
     };
     let out_of_band = OutOfBand::default();
     // [{"type":"text","text":"hi"}] in bytes
@@ -180,7 +180,7 @@ fn catalog_azure_resolves_by_base_model() {
     );
     assert_eq!(
         deployment_limit(&info, "group", &spec, ModelLimitKey::InputTokens),
-        Some(128000)
+        Some(128_000)
     );
 }
 

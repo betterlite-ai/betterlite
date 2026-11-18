@@ -103,27 +103,39 @@ impl ContextPlacement<'_> {
         }
         let smallest = facts.values().filter_map(|facts| facts.window).min();
         let bound = request_byte_upper_bound(request.messages, &request.out_of_band);
-        let needed = match smallest {
-            Some(window) if !window_holds(Some(window), Some(bound), buffer) => {
-                let text = out_of_band_text(&request.out_of_band);
-                match self
-                    .counter
-                    .count(request.messages.unwrap_or_default(), &text)
-                    .await
-                {
-                    Ok(counted) => Some(counted),
-                    Err(error) => {
-                        tracing::debug!(%error, "the context-window token count failed");
-                        None
-                    }
-                }
-            }
-            _ => None,
-        };
+        let needed = self.needed_tokens(smallest, bound, buffer, request).await;
         ContextFit {
             facts,
             needed,
             buffer,
+        }
+    }
+
+    // the tokenizer runs only when the byte bound could exceed the smallest window after the buffer
+    async fn needed_tokens(
+        &self,
+        smallest: Option<u64>,
+        bound: u64,
+        buffer: f64,
+        request: &RequestFacts<'_>,
+    ) -> Option<u64> {
+        let Some(window) = smallest else {
+            return None;
+        };
+        if window_holds(Some(window), Some(bound), buffer) {
+            return None;
+        }
+        let text = out_of_band_text(&request.out_of_band);
+        match self
+            .counter
+            .count(request.messages.unwrap_or_default(), &text)
+            .await
+        {
+            Ok(counted) => Some(counted),
+            Err(error) => {
+                tracing::debug!(%error, "the context-window token count failed");
+                None
+            }
         }
     }
 
@@ -142,17 +154,7 @@ impl ContextPlacement<'_> {
         {
             return Ok(None);
         }
-        let pool = match input.pool_override {
-            Some(overridden) => overridden.to_vec(),
-            None => match input.set.pools.get(input.tier.name()) {
-                Some(pool) => pool
-                    .models()
-                    .iter()
-                    .map(|entry| entry.model_name.clone())
-                    .collect(),
-                None => Vec::new(),
-            },
-        };
+        let pool = tier_pool(input);
         if pool.is_empty() {
             return Ok(None);
         }
@@ -177,5 +179,20 @@ impl ContextPlacement<'_> {
             needed,
         };
         placement_for_tokens(self.config, &tokens)
+    }
+}
+
+// the decided tier's pool, with a pool override replacing it when the caller sets one
+fn tier_pool(input: &PlacementRequest<'_>) -> Vec<String> {
+    match input.pool_override {
+        Some(overridden) => overridden.to_vec(),
+        None => match input.set.pools.get(input.tier.name()) {
+            Some(pool) => pool
+                .models()
+                .iter()
+                .map(|entry| entry.model_name.clone())
+                .collect(),
+            None => Vec::new(),
+        },
     }
 }
