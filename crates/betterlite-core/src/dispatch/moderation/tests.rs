@@ -258,8 +258,8 @@ async fn deadline_caps_timeout() {
         )
         .await
         .expect("bounded call");
-    let seen = seen.lock().unwrap_or_else(PoisonError::into_inner).clone();
-    assert_eq!(seen, [Duration::from_secs(3)]);
+    let bounded = seen.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    assert_eq!(bounded, [Duration::from_secs(3)]);
 }
 
 async fn refused_before_transport(
@@ -282,7 +282,7 @@ async fn refused_before_transport(
 
 async fn refused<F, T>(future: F) -> DispatchError
 where
-    F: std::future::Future<Output = Result<T, DispatchError>>,
+    F: Future<Output = Result<T, DispatchError>>,
 {
     let Err(error) = future.await else {
         panic!("the moderation call must fail");

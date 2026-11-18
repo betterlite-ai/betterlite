@@ -77,7 +77,12 @@ pub(super) fn dispatch_failure(error: DispatchError, redactor: &Redactor) -> Mod
         DispatchError::DeadlineExpired { .. } => {
             ModerationFailure::plain(408, None, "the moderation call passed its deadline")
         }
-        other => ModerationFailure::plain(
+        other @ (DispatchError::NotBuilt { .. }
+        | DispatchError::UnknownOperation { .. }
+        | DispatchError::MismatchedOperation { .. }
+        | DispatchError::Rules { .. }
+        | DispatchError::Chat { .. }
+        | DispatchError::Embedding { .. }) => ModerationFailure::plain(
             500,
             Some("internal_server_error"),
             &redactor.redact_internal_details(&other.to_string()),

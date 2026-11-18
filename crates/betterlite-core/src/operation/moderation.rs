@@ -80,7 +80,8 @@ pub fn route_error(error: &ModerationError, redactor: &Redactor) -> ModerationFa
             code: Some(String::from("decimal_out_of_range")),
             message,
         },
-        ModerationError::Response(ModerationResponseError::Decode { .. }) => {
+        ModerationError::Response(ModerationResponseError::Decode { .. })
+        | ModerationError::Endpoint { .. } => {
             ModerationFailure::plain(500, Some("internal_server_error"), &message)
         }
         ModerationError::MissingApiKey => {
@@ -90,9 +91,6 @@ pub fn route_error(error: &ModerationError, redactor: &Redactor) -> ModerationFa
             ModerationFailure::plain(501, Some("internal_server_error"), &message)
         }
         ModerationError::Http { source } => transport_route(source, &message),
-        ModerationError::Endpoint { .. } => {
-            ModerationFailure::plain(500, Some("internal_server_error"), &message)
-        }
     }
 }
 
@@ -112,7 +110,13 @@ fn transport_route(error: &HttpError, message: &str) -> ModerationFailure {
     let status = match error {
         HttpError::Timeout => 408,
         // openai.APIConnectionError also carries no type or param
-        _ => 500,
+        HttpError::Required { .. }
+        | HttpError::DotSegment { .. }
+        | HttpError::UnsupportedProxyScheme { .. }
+        | HttpError::InvalidProxyUrl { .. }
+        | HttpError::Client(_)
+        | HttpError::Request(_)
+        | HttpError::TooLarge { .. } => 500,
     };
     ModerationFailure::plain(status, None, message)
 }
@@ -131,11 +135,13 @@ fn provider_route(response: &UpstreamResponse, redactor: &Redactor) -> Moderatio
             )),
         },
         // status_error builds a Status error for every response
-        other => ModerationFailure::plain(
-            500,
-            Some("internal_server_error"),
-            &redactor.redact_internal_details(&other.to_string()),
-        ),
+        other @ (SdkError::Decode(_) | SdkError::Sse(_) | SdkError::Other { .. }) => {
+            ModerationFailure::plain(
+                500,
+                Some("internal_server_error"),
+                &redactor.redact_internal_details(&other.to_string()),
+            )
+        }
     }
 }
 

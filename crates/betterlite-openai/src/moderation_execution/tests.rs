@@ -6,6 +6,10 @@ use std::time::{Duration, Instant};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::mock_response::MockResponse;
+use betterlite_config::sections::mock_response::UsageDefaults;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -21,7 +25,9 @@ use crate::chat::MockSettings;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use crate::chat::execution::ChatExecutor;
 use crate::chat::response::ChatResponse;
+use crate::embedding::EmbeddingResponse;
 use crate::moderation_request::ModerationRequest;
+use crate::moderation_response::ModerationResponseError;
 use crate::openai_base_config::CatalogCapabilities;
 
 use super::{ModerationError, ModerationOutcome, send};
@@ -144,7 +150,7 @@ async fn a_success_body_that_is_not_a_moderation_response_is_a_parse_error() {
     assert!(matches!(
         result,
         Err(ModerationError::Response(
-            crate::moderation_response::ModerationResponseError::Decode { .. }
+            ModerationResponseError::Decode { .. }
         ))
     ));
 }
@@ -157,7 +163,7 @@ async fn an_out_of_range_score_is_a_response_error() {
     assert!(matches!(
         result,
         Err(ModerationError::Response(
-            crate::moderation_response::ModerationResponseError::Decimal { .. }
+            ModerationResponseError::Decimal { .. }
         ))
     ));
 }
@@ -198,7 +204,7 @@ async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
         let read = stream.read(&mut chunk).await.expect("request");
         received.extend_from_slice(&chunk[..read]);
         if let Some(index) = received.windows(4).position(|window| window == b"\r\n\r\n") {
-            break index + 4;
+            break index.saturating_add(4);
         }
     };
     let head = String::from_utf8(received[..header_end].to_vec()).expect("head");
@@ -208,7 +214,7 @@ async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
         .find_map(|line| line.strip_prefix("content-length: "))
         .and_then(|value| value.trim().parse::<usize>().ok())
         .unwrap_or_default();
-    while received.len() < header_end + length {
+    while received.len() < header_end.saturating_add(length) {
         let read = stream.read(&mut chunk).await.expect("body");
         received.extend_from_slice(&chunk[..read]);
     }
@@ -234,7 +240,7 @@ fn split_request(received: &[u8]) -> (String, Vec<u8>) {
     let end = received
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
-        .map_or(received.len(), |index| index + 4);
+        .map_or(received.len(), |index| index.saturating_add(4));
     let head = String::from_utf8(received[..end].to_vec()).expect("head");
     (head, received[end..].to_vec())
 }
@@ -282,23 +288,20 @@ fn moderation_executor_with_model(
 
 // the executor's mock callbacks belong to other entries; moderation never reaches them
 fn unused_chat(
-    _plan: &betterlite_config::sections::mock_response::selection::MockPlan<'_>,
-    _usage: betterlite_config::sections::mock_response::UsageDefaults,
+    _plan: &MockPlan<'_>,
+    _usage: UsageDefaults,
     _model: &str,
     _id: &str,
     _created: u64,
-) -> Result<ChatResponse, betterlite_config::sections::mock_response::failure::MockError> {
-    Err(betterlite_config::sections::mock_response::failure::MockError::InternalServerError)
+) -> Result<ChatResponse, MockError> {
+    Err(MockError::InternalServerError)
 }
 
 fn unused_embedding(
-    _response: Option<&betterlite_config::sections::mock_response::MockResponse>,
+    _response: Option<&MockResponse>,
     _model: &str,
-) -> Result<
-    crate::embedding::EmbeddingResponse,
-    betterlite_config::sections::mock_response::failure::MockError,
-> {
-    Err(betterlite_config::sections::mock_response::failure::MockError::EmbeddingFailure)
+) -> Result<EmbeddingResponse, MockError> {
+    Err(MockError::EmbeddingFailure)
 }
 
 fn fixed_clock() -> u64 {

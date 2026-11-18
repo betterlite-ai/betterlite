@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
@@ -15,7 +16,7 @@ use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
-use serde_json::{Map, Value, json};
+use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
@@ -59,27 +60,23 @@ fn config(source: &str) -> Config {
     .expect("config")
 }
 
-fn repeated(value: &Value) -> Map<String, Value> {
+// every category appears in each map, and the score map carries the provider's lexeme
+fn repeated(value: &str) -> String {
     CATEGORIES
         .iter()
-        .map(|name| ((*name).to_owned(), value.clone()))
-        .collect()
+        .map(|name| format!(r#""{name}":{value}"#))
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 // the provider answers every category, so the route has a full response to rewrite
 fn answer(score: &str) -> String {
-    let number: Value = serde_json::from_str(score).expect("score lexeme");
-    serde_json::to_string(&json!({
-        "id": "modr-1",
-        "model": "omni-moderation-latest",
-        "results": [{
-            "categories": repeated(&json!(false)),
-            "category_applied_input_types": repeated(&json!(["text"])),
-            "category_scores": repeated(&number),
-            "flagged": false,
-        }],
-    }))
-    .expect("answer body")
+    format!(
+        r#"{{"id":"modr-1","model":"omni-moderation-latest","results":[{{"categories":{{{}}},"category_applied_input_types":{{{}}},"category_scores":{{{}}},"flagged":false}}]}}"#,
+        repeated("false"),
+        repeated(r#"["text"]"#),
+        repeated(score)
+    )
 }
 
 fn state_with(guard_base: &str, other_base: &str, extra: &str) -> Arc<ServerState> {
@@ -102,11 +99,11 @@ fn header_end(bytes: &[u8]) -> Option<usize> {
     bytes
         .windows(4)
         .position(|window| window == b"\r\n\r\n")
-        .map(|index| index + 4)
+        .map(|index| index.saturating_add(4))
 }
 
 fn content_length(head: &[u8]) -> usize {
-    let text = std::str::from_utf8(head)
+    let text = from_utf8(head)
         .expect("the provider request head is UTF-8")
         .to_ascii_lowercase();
     text.lines()
@@ -127,7 +124,7 @@ async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
         }
         received.extend_from_slice(&buffer[..read]);
         if let Some(end) = header_end(&received)
-            && received.len() >= end + content_length(&received[..end])
+            && received.len() >= end.saturating_add(content_length(&received[..end]))
         {
             break;
         }
@@ -178,9 +175,44 @@ async fn hold(listener: TcpListener) -> Vec<String> {
 struct Reply {
     status: StatusCode,
     headers: HeaderMap,
-    body: Value,
-    raw: String,
+    raw: Vec<u8>,
     sent: Vec<String>,
+}
+
+// the client body the route answers, read through the keys this test checks; the provider's slash keys stay unknown
+#[derive(Debug, Deserialize)]
+struct AnswerBody {
+    id: String,
+    model: String,
+    results: Vec<AnswerResult>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnswerResult {
+    categories: AnswerCategories,
+    flagged: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct AnswerCategories {
+    harassment: bool,
+    harassment_threatening: bool,
+    illicit: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorReply {
+    error: ErrorFields,
+}
+
+#[derive(Debug, Deserialize)]
+struct ErrorFields {
+    message: String,
+    #[serde(default, rename = "type")]
+    kind: Option<String>,
+    #[serde(default)]
+    param: Option<String>,
+    code: String,
 }
 
 async fn exchange<Provider>(router: Router, request: Request<Body>, provider: Provider) -> Reply
@@ -188,16 +220,16 @@ where
     Provider: Future<Output = Vec<String>>,
 {
     let (response, sent) = tokio::join!(router.oneshot(request), provider);
-    let response = response.expect("response");
-    let status = response.status();
-    let headers = response.headers().clone();
-    let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
-    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-    let raw = String::from_utf8(bytes.to_vec()).expect("the route answer is UTF-8");
+    let reply = response.expect("response");
+    let status = reply.status();
+    let headers = reply.headers().clone();
+    let raw = to_bytes(reply.into_body(), 1_048_576)
+        .await
+        .expect("body")
+        .to_vec();
     Reply {
         status,
         headers,
-        body,
         raw,
         sent,
     }
@@ -223,8 +255,18 @@ async fn call(
     .await
 }
 
-fn error_of(reply: &Reply) -> &Value {
-    &reply.body["error"]
+fn body_text(reply: &Reply) -> &str {
+    from_utf8(&reply.raw).expect("the route answer is UTF-8")
+}
+
+fn answer_body(reply: &Reply) -> AnswerBody {
+    serde_json::from_slice(&reply.raw).expect("the route answers a moderation body")
+}
+
+fn error_details(reply: &Reply) -> ErrorFields {
+    serde_json::from_slice::<ErrorReply>(&reply.raw)
+        .expect("the route answers an error body")
+        .error
 }
 
 fn call_id(reply: &Reply) -> Option<&str> {
@@ -320,7 +362,8 @@ async fn moderations_moderation_tests_behavior(#[case] scenario: Scenario) {
 }
 
 fn assert_success(reply: &Reply) {
-    assert_eq!(reply.status, StatusCode::OK, "{}", reply.raw);
+    let text = body_text(reply);
+    assert_eq!(reply.status, StatusCode::OK, "{text}");
     assert_eq!(
         reply
             .headers
@@ -352,9 +395,10 @@ fn assert_success(reply: &Reply) {
             reply.headers
         );
     }
-    assert_eq!(reply.body["id"], json!("modr-1"));
-    assert_eq!(reply.body["model"], json!("omni-moderation-latest"));
-    assert_eq!(reply.body["results"][0]["flagged"], json!(false));
+    let body = answer_body(reply);
+    assert_eq!(body.id, "modr-1");
+    assert_eq!(body.model, "omni-moderation-latest");
+    assert!(!body.results.first().expect("result").flagged);
 }
 
 // one successful moderation call on the versioned route, checked down to the bytes the provider received
@@ -405,17 +449,19 @@ async fn string_input() {
         &[r#"{"input":"hello","model":"omni-moderation-latest"}"#],
     )
     .await;
-    let categories = &reply.body["results"][0]["categories"];
-    assert_eq!(categories["harassment"], json!(false));
-    assert_eq!(categories["harassment_threatening"], json!(false));
+    let body = answer_body(&reply);
+    let categories = &body.results.first().expect("result").categories;
+    assert!(!categories.harassment);
+    assert!(!categories.harassment_threatening);
+    assert_eq!(categories.illicit, Some(false));
     // LiteLLM dumps the SDK model, which keeps the provider's slash key beside its field name
-    assert_eq!(categories["harassment/threatening"], json!(false));
-    assert_eq!(categories["self_harm"], json!(false));
-    assert_eq!(categories["self-harm"], json!(false));
-    assert_eq!(
-        reply.body["results"][0]["category_scores"]["violence_graphic"],
-        json!(0.0001)
-    );
+    let text = body_text(&reply);
+    assert!(text.contains(r#""harassment_threatening":false"#), "{text}");
+    assert!(text.contains(r#""harassment/threatening":false"#), "{text}");
+    assert!(text.contains(r#""self_harm":false"#), "{text}");
+    assert!(text.contains(r#""self-harm":false"#), "{text}");
+    assert!(text.contains(r#""violence_graphic":0.0001"#), "{text}");
+    assert!(text.contains(r#""violence/graphic":0.0001"#), "{text}");
 }
 
 async fn configured_default(body: &str) {
@@ -474,28 +520,30 @@ async fn refused_case(body: &str) -> Reply {
 
 async fn malformed_body() {
     let reply = refused_case("{").await;
-    assert_eq!(error_of(&reply)["code"], json!("400"));
+    assert_eq!(error_details(&reply).code, "400");
 }
 
 async fn missing_input() {
     let reply = refused_case(r#"{"model":"guard"}"#).await;
-    assert_eq!(error_of(&reply)["code"], json!("400"));
+    assert_eq!(error_details(&reply).code, "400");
 }
 
 async fn model_required() {
     let reply = refused_case(r#"{"input":"hello"}"#).await;
-    assert_eq!(error_of(&reply)["param"], json!("model"));
-    assert_eq!(error_of(&reply)["code"], json!("moderation_model_required"));
+    let error = error_details(&reply);
+    assert_eq!(error.param.as_deref(), Some("model"));
+    assert_eq!(error.code, "moderation_model_required");
 }
 
 async fn unknown_model() {
     let reply = refused_case(r#"{"model":"ghost","input":"hello"}"#).await;
+    let error = error_details(&reply);
     assert!(
-        reply
-            .raw
+        error
+            .message
             .contains("no model_list entry serves the model ghost"),
         "{}",
-        reply.raw
+        body_text(&reply)
     );
 }
 
@@ -504,9 +552,10 @@ async fn request_supplied_destination() {
         r#"{"model":"guard","input":"hello","api_base":"http://evil.example/v1","api_key":"sk-evil"}"#,
     )
     .await;
-    assert!(reply.raw.contains("api_base"), "{}", reply.raw);
-    assert!(!reply.raw.contains("evil.example"), "{}", reply.raw);
-    assert!(!reply.raw.contains("sk-evil"), "{}", reply.raw);
+    let text = body_text(&reply);
+    assert!(text.contains("api_base"), "{text}");
+    assert!(!text.contains("evil.example"), "{text}");
+    assert!(!text.contains("sk-evil"), "{text}");
 }
 
 async fn call_id_body_case(present: bool) {
@@ -525,10 +574,10 @@ async fn call_id_body_case(present: bool) {
     .await;
     assert_eq!(reply.status, StatusCode::BAD_REQUEST);
     assert_eq!(
-        reply.raw.contains(r#""litellm_call_id":"caller-id""#),
+        body_text(&reply).contains(r#""litellm_call_id":"caller-id""#),
         present,
         "{}",
-        reply.raw
+        body_text(&reply)
     );
 }
 
@@ -550,32 +599,50 @@ async fn provider_error(status: u16, body: &str) {
     assert_provider_error(status, &reply);
 }
 
-fn assert_provider_error(status: u16, reply: &Reply) {
-    assert_eq!(reply.status.as_u16(), status, "{}", reply.raw);
-    assert_eq!(error_of(reply)["code"], json!(status.to_string()));
-    assert_eq!(call_id(reply), Some("caller-id"));
+// the moderation except answers litellm_call_id_headers alone
+fn assert_failure_headers(reply: &Reply) {
     assert!(
         !reply.headers.contains_key("llm_provider-content-type"),
-        "the moderation except answers litellm_call_id_headers alone: {:?}",
+        "{:?}",
         reply.headers
     );
     assert!(!reply.headers.contains_key("x-litellm-timeout"));
+}
+
+fn assert_provider_error(status: u16, reply: &Reply) {
+    let text = body_text(reply);
+    assert_eq!(reply.status.as_u16(), status, "{text}");
+    let error = error_details(reply);
+    assert_eq!(error.code, status.to_string(), "{text}");
+    assert_eq!(call_id(reply), Some("caller-id"));
+    assert_failure_headers(reply);
     match status {
         400 => {
-            assert_eq!(error_of(reply)["type"], json!("invalid_request_error"));
-            assert_eq!(error_of(reply)["param"], json!("input"));
+            assert_eq!(
+                error.kind.as_deref(),
+                Some("invalid_request_error"),
+                "{text}"
+            );
+            assert_eq!(error.param.as_deref(), Some("input"), "{text}");
         }
         401 => {
-            assert_eq!(error_of(reply)["type"], json!("invalid_request_error"));
-            assert_eq!(error_of(reply)["param"], Value::Null);
+            assert_eq!(
+                error.kind.as_deref(),
+                Some("invalid_request_error"),
+                "{text}"
+            );
+            assert_eq!(error.param, None, "{text}");
+            assert!(text.contains(r#""param":null"#), "{text}");
         }
         429 => {
-            assert_eq!(error_of(reply)["type"], json!("tokens"));
-            assert_eq!(error_of(reply)["param"], Value::Null);
+            assert_eq!(error.kind.as_deref(), Some("tokens"), "{text}");
+            assert_eq!(error.param, None, "{text}");
+            assert!(text.contains(r#""param":null"#), "{text}");
         }
         500 => {
-            assert_eq!(error_of(reply)["type"], Value::Null);
-            assert_eq!(error_of(reply)["param"], Value::Null);
+            assert_eq!(error.kind, None, "{text}");
+            assert_eq!(error.param, None, "{text}");
+            assert!(text.contains(r#""type":null"#), "{text}");
         }
         other => panic!("unexpected provider status {other}"),
     }
@@ -603,9 +670,14 @@ async fn decimal_score() {
         vec![(200, answer("1e-29"))],
     )
     .await;
-    assert_eq!(reply.status, StatusCode::BAD_GATEWAY, "{}", reply.raw);
     assert_eq!(
-        reply.raw,
+        reply.status,
+        StatusCode::BAD_GATEWAY,
+        "{}",
+        body_text(&reply)
+    );
+    assert_eq!(
+        body_text(&reply),
         r#"{"error":{"message":"the category_scores value for harassment is not exactly representable as a Decimal: Scale exceeds the maximum precision allowed: 29 > 28","type":"bad_gateway","param":"category_scores","code":"decimal_out_of_range"}}"#
     );
 }
@@ -620,22 +692,22 @@ async fn smallest_score() {
     )
     .await;
     assert_success(&reply);
-    let score = reply.body["results"][0]["category_scores"]["violence"]
-        .as_f64()
-        .expect("number");
-    assert_ne!(score, 0.0, "a finite score is never rounded to zero");
-    assert_eq!(score, 1e-28);
     let exact = parse_decimal_lexeme("1e-28").expect("decimal");
+    let text = body_text(&reply);
     assert!(
-        reply.raw.contains(&format!(r#""violence":{exact}"#)),
-        "the smallest score keeps its digits: {}",
-        reply.raw
+        text.contains(&format!(r#""violence":{exact}"#)),
+        "the smallest score keeps its digits: {text}"
     );
 }
 
 fn assert_refused(reply: &Reply, status: StatusCode) {
-    assert_eq!(reply.status, status, "{}", reply.raw);
-    assert_eq!(error_of(reply)["type"], json!("invalid_request_error"));
+    let text = body_text(reply);
+    assert_eq!(reply.status, status, "{text}");
+    assert_eq!(
+        error_details(reply).kind.as_deref(),
+        Some("invalid_request_error"),
+        "{text}"
+    );
     assert_eq!(call_id(reply), Some("caller-id"));
     assert!(
         reply.sent.is_empty(),
@@ -678,7 +750,7 @@ async fn auth_required() {
     )
     .await;
     assert_eq!(unauthorized.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(unauthorized.raw, "Internal Server Error");
+    assert_eq!(body_text(&unauthorized), "Internal Server Error");
     let authorized = exchange(
         application_for(&source, &environment),
         request("/v1/moderations", r#"{"model":"guard","input":"hello"}"#),
@@ -698,7 +770,7 @@ async fn auth_required() {
 
 async fn body_limit() {
     let source = "general_settings:\n  max_request_size_mb: 1\nmodel_list:\n  - model_name: guard\n    litellm_params: {model: openai/omni-moderation-latest, api_base: 'http://127.0.0.1:1/v1', api_key: oracle-key, timeout: 0.2}\n";
-    let oversized = vec![b'a'; 2 * 1024 * 1024];
+    let oversized = vec![b'a'; 2_097_152];
     let reply = exchange(
         application_for(source, &BTreeMap::new()),
         Request::post("/v1/moderations")
@@ -711,7 +783,7 @@ async fn body_limit() {
     .await;
     assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(
-        reply.raw,
+        body_text(&reply),
         r#"{"error":"Request size is too large. Max size is 1 MB"}"#
     );
 }
@@ -730,10 +802,16 @@ async fn deployment_timeout() {
         hold(listener),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::REQUEST_TIMEOUT, "{}", reply.raw);
-    assert_eq!(error_of(&reply)["type"], Value::Null);
-    assert_eq!(error_of(&reply)["param"], Value::Null);
-    assert_eq!(error_of(&reply)["code"], json!("408"));
+    assert_eq!(
+        reply.status,
+        StatusCode::REQUEST_TIMEOUT,
+        "{}",
+        body_text(&reply)
+    );
+    let error = error_details(&reply);
+    assert_eq!(error.kind, None);
+    assert_eq!(error.param, None);
+    assert_eq!(error.code, "408");
     assert_eq!(call_id(&reply), Some("caller-id"));
     assert!(
         started.elapsed() < Duration::from_secs(2),

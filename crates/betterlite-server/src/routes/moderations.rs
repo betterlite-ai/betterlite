@@ -152,7 +152,8 @@ async fn execute(
     deployment: &ChatDeployment,
     call_id: &str,
 ) -> Response {
-    let calls: Arc<dyn ModerationCall> = Arc::clone(&state.calls);
+    let held: Arc<ModerationCalls> = Arc::clone(&state.calls);
+    let calls: Arc<dyn ModerationCall> = held;
     let operation = Operation::Moderation(DispatchRequest {
         call_id: call_id.to_owned(),
         model_id: deployment.model_id.clone(),
