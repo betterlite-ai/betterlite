@@ -1,84 +1,15 @@
 import asyncio
-import socketserver
-from typing import Literal, NotRequired, Protocol, TypedDict, cast
+from typing import Protocol, cast
 
-import litellm
-from litellm.integrations.custom_guardrail import CustomGuardrail
-from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils import realtime_streaming
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLogging
 from litellm.llms.base_llm.realtime.transformation import BaseRealtimeConfig, RealtimeBackend
-from litellm.types.guardrails import GuardrailEventHooks
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import JsonValue, ValidationError
 from typing_extensions import override
-from websockets.asyncio.client import ClientConnection, connect
-from websockets.asyncio.server import ServerConnection, serve
+from websockets.asyncio.client import ClientConnection
+from websockets.asyncio.server import ServerConnection
 
-WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-EVENT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-SETTLE_SECONDS = 10.0
-DEADLINE_SECONDS = 120.0
-MAX_OPERATIONS = 32
-MAX_FRAMES = 64
-MAX_TEXT_BYTES = 16 * 1024
-MAX_CAPTURE_BYTES = 1024 * 1024
-
-
-class Frame(TypedDict):
-    kind: Literal["text", "binary"]
-    text: NotRequired[str]
-    bytes: NotRequired[list[int]]
-
-
-class ProviderDocument(TypedDict):
-    requires_session_configuration: bool
-    setup: list[JsonValue]
-    content: list[JsonValue]
-    transforms: list[list[Frame]]
-    fail_transform: bool
-
-
-class GuardrailDocument(TypedDict):
-    custom: bool
-    runs_for: list[str]
-
-
-class Operation(TypedDict):
-    kind: str
-    text: NotRequired[str]
-
-
-class Input(TypedDict):
-    model: str
-    force_transcription_model: str | None
-    client_wants_beta: bool
-    backend_uses_beta_protocol: bool | None
-    provider: ProviderDocument | None
-    guardrails: list[GuardrailDocument]
-    backend_failures: list[int]
-    client_failures: list[int]
-    operations: list[Operation]
-
-
-def checked(input_value: Input) -> None:
-    provider = input_value["provider"]
-    batches = [] if provider is None else provider["transforms"]
-    frames = [frame for batch in batches for frame in batch]
-    texts = [operation["text"] for operation in input_value["operations"] if "text" in operation]
-    sizes = [len(text) for text in texts] + [
-        len(frame["text"]) if frame["kind"] == "text" else len(frame["bytes"])
-        for frame in frames
-    ]
-    if (
-        len(texts) > MAX_OPERATIONS
-        or len(frames) > MAX_FRAMES
-        or len(input_value["guardrails"]) > MAX_FRAMES
-        or len(input_value["backend_failures"]) > MAX_FRAMES
-        or len(input_value["client_failures"]) > MAX_FRAMES
-        or any(size > MAX_TEXT_BYTES for size in sizes)
-        or sum(sizes) > MAX_CAPTURE_BYTES
-    ):
-        raise ValueError("the scripted sender input is past its limits")
+from .records import EVENT, MAX_FRAMES, Input, ProviderDocument, decoded, recorded
 
 
 class SendFailureError(Exception): ...
@@ -96,21 +27,6 @@ class WireLog:
         self.attempts += 1
         if attempt in self.failures:
             raise SendFailureError(label)
-
-
-def recorded(wire: str, data: bytes) -> dict[str, JsonValue]:
-    try:
-        payload: JsonValue = {"kind": "json", "value": WIRE.validate_json(data)}
-    except ValidationError:
-        payload = {"kind": "text", "text": data.decode("utf-8", errors="replace")}
-    return {"wire": wire, "payload": payload}
-
-
-def decoded(text: str) -> JsonValue:
-    try:
-        return WIRE.validate_json(text)
-    except ValidationError:
-        return text
 
 
 class ScriptedNormalizer:
@@ -269,77 +185,3 @@ class Probe(realtime_streaming.RealTimeStreaming):
             "turn_detection_update_sent": self._guardrail_turn_detection_update_sent,
             "is_transcription_session": self._is_transcription_session,
         }
-
-
-async def apply(probe: Probe, op: Operation) -> JsonValue:
-    try:
-        match op["kind"]:
-            case "send":
-                return {"ok": await probe.send_to_backend(op["text"])}
-            case "event":
-                event = WIRE.validate_json(op["text"])
-                return {"ok": await probe.send_event_to_client(event, op["text"])}
-            case "disable":
-                await probe.disable()
-                return {"ok": True}
-            case "cache":
-                probe.cache_setup(op["text"])
-                return {"ok": True}
-            case other:
-                raise ValueError(f"unknown operation kind: {other}")
-    except SendFailureError as error:
-        return {"error": str(error)}
-    except AttributeError:
-        return {"error": "non-object"}
-
-
-async def session(input_value: Input, upstream: Upstream, socket: ClientConnection) -> JsonValue:
-    callbacks: list[CustomLogger] = []
-    for document in input_value["guardrails"]:
-        hooks = [GuardrailEventHooks(name) for name in document["runs_for"]]
-        custom = CustomGuardrail(guardrail_name=None, event_hook=hooks, default_on=True)
-        callbacks.append(custom if document["custom"] else CustomLogger())
-    litellm.callbacks = [*callbacks]
-    timeline: list[JsonValue] = []
-    provider_document = input_value["provider"]
-    provider = None if provider_document is None else ScriptedProvider(provider_document, timeline)
-    backend = WireBackend(socket, WireLog(input_value["backend_failures"]), timeline)
-    client = ClientSink(
-        WireLog(input_value["client_failures"]), beta=input_value["client_wants_beta"]
-    )
-    probe = Probe(input_value, backend, client, provider)
-    results: list[JsonValue] = []
-    for op in input_value["operations"]:
-        results.append(await apply(probe, op))
-        await asyncio.wait_for(upstream.wait_for(backend.log.delivered), SETTLE_SECONDS)
-    client_frames: list[JsonValue] = [
-        recorded("text", text.encode("utf-8")) for text in client.log.sent
-    ]
-    payload: dict[str, JsonValue] = {
-        "results": results,
-        "timeline": timeline,
-        "upstream": upstream.frames,
-        "client": client_frames,
-        "state": probe.facts(),
-    }
-    return WIRE.validate_python(payload)
-
-
-async def exchange(
-    input_value: Input, upstream: Upstream, server: socketserver.TCPServer
-) -> JsonValue:
-    url = f"ws://127.0.0.1:{server.server_address[1]}"
-    async with serve(upstream, sock=server.socket), connect(url) as socket:
-        return await session(input_value, upstream, socket)
-
-
-async def bounded(input_value: Input, upstream: Upstream, server: socketserver.TCPServer) -> JsonValue:
-    call = exchange(input_value, upstream, server)
-    return await asyncio.wait_for(call, DEADLINE_SECONDS)
-
-
-def run(input_value: Input) -> JsonValue:
-    checked(input_value)
-    upstream = Upstream()
-    with socketserver.TCPServer(("127.0.0.1", 0), socketserver.BaseRequestHandler) as server:
-        return asyncio.run(bounded(input_value, upstream, server))
