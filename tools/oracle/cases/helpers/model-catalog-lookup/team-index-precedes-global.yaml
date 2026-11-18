@@ -1,0 +1,50 @@
+kind: helper
+name: model-catalog-lookup-team-index-precedes-global
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+          team_public_model_name: shared-name
+      - model_name: shared-name
+        litellm_params:
+          model: openai/global
+        model_info:
+          id: g
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: shared-name
+      team_id: t1
+calls:
+  - model_catalog_lookup:
+      function: get_model_list
+      model_list:
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+            team_public_model_name: shared-name
+        - model_name: shared-name
+          litellm_params:
+            model: openai/global
+          model_info:
+            id: g
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: shared-name
+        team_id: null
+env: {}
+compare: {ignore: []}
