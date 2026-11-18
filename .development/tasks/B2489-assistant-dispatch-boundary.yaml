@@ -20,8 +20,11 @@ description: >-
   The source orjson call remains inside each whole route's ownership; this shared native decoder contains
   no route registration or error-to-HTTP mapping.
 
-  Add B2401 AssistantDispatch with a closed operation enum, typed operation payload and config/environment
-  projection. Python constructs a real Router and invokes its corresponding public method; native calls the
+  SdkHttpCall::AssistantDispatch takes a closed operation enum, typed operation payload and
+  config/environment projection. Main already registers it as a placeholder: build its Call (implementing
+  call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/assistant_dispatch.rs and
+  AssistantDispatchRequest in tools/oracle/sdk_http/assistant_dispatch.py, without touching the shared
+  sdk_http files. Python constructs a real Router and invokes its corresponding public method; native calls the
   production dispatcher. Provider operations must reach the mock HTTP server. Budget 150 dispatch/config,
   65 decoder/fuzz, 160 tests, 110 adapters, 175 fixtures and 70 wiring/config seeds, 730 changed lines.
 scope:
@@ -34,9 +37,8 @@ scope:
   - crates/betterlite-server/fuzz/fuzz_targets/assistant_body.rs
   - crates/betterlite-server/fuzz/corpus/assistant_body/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/assistant-settings-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/assistant_dispatch.rs
+  - tools/oracle/src/sdk_http/assistant_dispatch/**
   - tools/oracle/sdk_http/assistant_dispatch.py
   - tools/oracle/cases/sdk-http/assistant-dispatch/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-dispatch-*
@@ -121,7 +123,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
   - id: python-adapter
     why: dispatch comparisons bypass the actual Router or have no checked adapter
-    run: test -f tools/oracle/sdk_http/assistant_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/assistant_dispatch.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/assistant-dispatch/all-operations.yaml
 - tools/oracle/cases/sdk-http/assistant-dispatch/config-overlays-request.yaml

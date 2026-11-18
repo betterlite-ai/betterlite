@@ -1,0 +1,11 @@
+kind: helper
+name: coordination-redis-boot-block-not-mapping
+call:
+  b8377:
+    operation: config_error
+    config:
+      general_settings:
+        coordination_redis: redis://localhost:6379
+    environment: {}
+env: {}
+compare: {ignore: []}

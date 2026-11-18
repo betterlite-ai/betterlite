@@ -150,6 +150,7 @@ fn configured(settings: &Value, api_base: &str) -> Result<Configured, Box<Helper
             | ConfigError::InvalidInteger { .. }
             | ConfigError::InvalidScalar { .. }
             | ConfigError::Environment { .. }
+            | ConfigError::CustomDimensions(_)
             | ConfigError::LoadThread { .. } => "ConfigError",
         };
         fail(class, error.to_string())

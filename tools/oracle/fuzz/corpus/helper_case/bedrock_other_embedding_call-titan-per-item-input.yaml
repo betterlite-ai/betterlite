@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_other_embedding_call-titan-per-item-input-seed
+call:
+  bedrock_other_embedding_call:
+    function: titan_per_item_input
+    model: amazon.titan-embed-text-v2:0
+    input: [alpha]
+    now: 1700000000
+env: {}
+compare: {ignore: []}
