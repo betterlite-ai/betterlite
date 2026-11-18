@@ -55,5 +55,6 @@ const fn warning_kind(kind: MetadataWarningKind) -> &'static str {
         MetadataWarningKind::EmptyPath => "empty_path",
         MetadataWarningKind::IntermediateNotObject => "intermediate_not_object",
         MetadataWarningKind::ParentNotObject => "parent_not_object",
+        MetadataWarningKind::PathTooDeep => "path_too_deep",
     }
 }

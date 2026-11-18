@@ -16,6 +16,7 @@ pub enum MetadataWarningKind {
     EmptyPath,
     IntermediateNotObject,
     ParentNotObject,
+    PathTooDeep,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,7 +48,12 @@ pub fn extract_nested_form_metadata(
             warnings.push(warning(MetadataWarningKind::EmptyPath, key));
             continue;
         }
-        let parts: Vec<&str> = path.split("][").collect();
+        // Bound the tree itself: recursive cloning and destruction must also fit the worker stack.
+        let parts: Vec<&str> = path.split("][").take(129).collect();
+        if parts.len() > 128 {
+            warnings.push(warning(MetadataWarningKind::PathTooDeep, key));
+            continue;
+        }
         place(&mut metadata, &parts, key, value, &mut warnings);
     }
     (metadata, warnings)

@@ -12,6 +12,12 @@ calls:
       operation: nested_form_metadata
       parts:
         - kind: text
+          name: litellm_metadata[a][][b]
+          value: v
+  - request_form:
+      operation: nested_form_metadata
+      parts:
+        - kind: text
           name: litellm_metadata[a]
           value: leaf
         - kind: text

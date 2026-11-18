@@ -1,10 +1,9 @@
-use super::OcrRequestError;
 use multipart_rs::MultipartError;
 
-pub(super) struct RawItem<'body> {
-    pub(super) content_disposition: Option<&'body [u8]>,
-    pub(super) content_type: Option<&'body [u8]>,
-    pub(super) data: &'body [u8],
+pub(crate) struct RawItem<'body> {
+    pub(crate) content_disposition: Option<&'body [u8]>,
+    pub(crate) content_type: Option<&'body [u8]>,
+    pub(crate) data: &'body [u8],
 }
 
 enum HeaderKind {
@@ -41,10 +40,8 @@ fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
     }
 }
 
-fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), OcrRequestError> {
-    let separator = find_subslice(line, b": ").ok_or(OcrRequestError::MultipartParse(
-        MultipartError::InvalidItemHeader,
-    ))?;
+fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), MultipartError> {
+    let separator = find_subslice(line, b": ").ok_or(MultipartError::InvalidItemHeader)?;
     let (name, rest) = line.split_at(separator);
     let value = rest.get(2..).unwrap_or(&[]);
     Ok((name, value))
@@ -71,7 +68,7 @@ struct PartHeaders<'body> {
 }
 
 // Reads header lines up to the blank line that ends a part's header block, returning the Content-Disposition and Content-Type values found and what follows the blank line.
-fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, OcrRequestError> {
+fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, MultipartError> {
     let mut content_disposition = None;
     let mut content_type = None;
     let mut cursor = remaining;
@@ -110,14 +107,18 @@ fn read_data<'body>(
         if let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
             let line = cursor.get(..idx).unwrap_or(cursor);
             let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
-            if let Some(is_final) = boundary_kind(line, dash_boundary) {
+            if let Some(is_final) =
+                boundary_kind(line, dash_boundary).filter(|_| cursor.len() < remaining.len())
+            {
                 let consumed = remaining.len().saturating_sub(cursor.len());
                 let content_len = consumed.saturating_sub(2);
                 let content = remaining.get(..content_len).unwrap_or(remaining);
                 return (content, after_crlf, is_final);
             }
             cursor = after_crlf;
-        } else if let Some(is_final) = boundary_kind(cursor, dash_boundary) {
+        } else if let Some(is_final) =
+            boundary_kind(cursor, dash_boundary).filter(|_| cursor.len() < remaining.len())
+        {
             // The body can end right after the closing boundary's second hyphen, with no trailing CRLF, so a final unterminated line still needs checking before falling back to treating the rest as content.
             let consumed = remaining.len().saturating_sub(cursor.len());
             let content_len = consumed.saturating_sub(2);
@@ -129,14 +130,14 @@ fn read_data<'body>(
     }
 }
 
-pub(super) struct SplitItems<'body> {
+pub(crate) struct SplitItems<'body> {
     dash_boundary: Vec<u8>,
     remaining: &'body [u8],
     done: bool,
 }
 
 impl<'body> Iterator for SplitItems<'body> {
-    type Item = Result<RawItem<'body>, OcrRequestError>;
+    type Item = Result<RawItem<'body>, MultipartError>;
 
     // Reads one item at a time rather than collecting every part into a Vec first, so a caller's own per-item cap (parse_body's field and file counts) runs before the next part is read, the way python-multipart's own streaming reader counts as it reads.
     fn next(&mut self) -> Option<Self::Item> {
@@ -164,7 +165,7 @@ impl<'body> Iterator for SplitItems<'body> {
 }
 
 // A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type.
-pub(super) fn split_items<'body>(body: &'body [u8], boundary: &str) -> SplitItems<'body> {
+pub(crate) fn split_items<'body>(body: &'body [u8], boundary: &str) -> SplitItems<'body> {
     let dash_boundary = format!("--{boundary}").into_bytes();
     let remaining = skip_preamble(body, &dash_boundary);
     SplitItems {

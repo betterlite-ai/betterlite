@@ -521,3 +521,68 @@ fn replays_corpus(#[files("fuzz/corpus/request_form/*")] path: PathBuf) {
         assert!(result.is_ok());
     }
 }
+
+#[rstest]
+#[case(r#"name="file"; filename="report;v2.pdf""#, "file", "report;v2.pdf")]
+#[case(r#"name="file"; filename="a\"b.pdf""#, "file", "a\"b.pdf")]
+#[case(
+    r#"name="file"; filename="C:\folder\report.pdf""#,
+    "file",
+    "report.pdf"
+)]
+#[case(r#"Name="file"; FILENAME="report.pdf""#, "file", "report.pdf")]
+#[case(r#"name=""; filename="report.pdf""#, "", "report.pdf")]
+fn multipart_disposition_parameters(
+    #[case] parameters: &str,
+    #[case] name: &str,
+    #[case] filename: &str,
+) {
+    let body =
+        format!("--b\r\nContent-Disposition: form-data; {parameters}\r\n\r\nabc\r\n--b--\r\n");
+    let parts = decode_request_form(body.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
+    assert_eq!(parts.items.len(), 1);
+    assert_eq!(parts.items[0].name, name);
+    assert_eq!(
+        parts.items[0].value,
+        betterlite_core::api::request_form::values::PartValue::Upload(UploadFile {
+            filename: filename.to_owned(),
+            content_type: None,
+            content: b"abc".to_vec(),
+            size: Some(3),
+        })
+    );
+}
+
+#[rstest]
+#[case("", "é")]
+#[case("; charset=iso-8859-1", "é")]
+#[case("; charset=windows-1251", "й")]
+#[case("; charset=unknown", "é")]
+fn multipart_charset_and_fallback(#[case] charset: &str, #[case] expected: &str) {
+    use betterlite_core::api::request_form::values::PartValue;
+    let body = b"--b\r\nContent-Disposition: form-data; name=\"\xe9\"\r\n\r\n\xe9\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\xe9.pdf\"\r\n\r\n\xff\r\n--b--\r\n";
+    let content_type = format!("multipart/form-data; boundary=b{charset}");
+    let parts = decode_request_form(body, content_type.as_bytes(), &ApiLimits::default()).unwrap();
+    assert_eq!(parts.items.len(), 2);
+    assert_eq!(parts.items[0].name, expected);
+    assert_eq!(parts.items[0].value, PartValue::Text(expected.to_owned()));
+    assert_eq!(
+        parts.items[1].value,
+        PartValue::Upload(UploadFile {
+            filename: format!("{expected}.pdf"),
+            content_type: None,
+            content: vec![255],
+            size: Some(1),
+        })
+    );
+}
+
+#[test]
+fn empty_multipart_body_has_no_fields() {
+    assert!(
+        decode_request_form(b"", MULTIPART, &ApiLimits::default())
+            .unwrap()
+            .items
+            .is_empty()
+    );
+}

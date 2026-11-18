@@ -616,6 +616,45 @@ fn a_trailing_empty_part_keys_the_empty_string() {
 }
 
 #[test]
+fn an_intermediate_empty_part_is_preserved() {
+    assert_eq!(
+        metadata_of(&[("litellm_metadata[a][][b]", "v")]),
+        object([("a", object([("", object([("b", leaf("v"))]))]))])
+    );
+}
+
+#[rstest]
+#[case(128, false)]
+#[case(129, true)]
+#[case(50_000, true)]
+fn metadata_depth_is_bounded(#[case] depth: usize, #[case] rejected: bool) {
+    let path = vec!["a"; depth].join("][");
+    let key = format!("litellm_metadata[{path}]");
+    let (metadata, warnings) =
+        extract_nested_form_metadata(&texts(&[(&key, "v")]), "litellm_metadata[");
+    if rejected {
+        assert!(metadata.is_empty());
+        assert_eq!(
+            warnings,
+            vec![MetadataWarning {
+                kind: MetadataWarningKind::PathTooDeep,
+                subject: key,
+            }]
+        );
+    } else {
+        assert!(warnings.is_empty());
+        let mut cursor = &metadata;
+        for _level in 1..depth {
+            let MetadataValue::Object(child) = cursor.get("a").unwrap() else {
+                panic!("expected another object");
+            };
+            cursor = child;
+        }
+        assert_eq!(cursor.get("a"), Some(&leaf("v")));
+    }
+}
+
+#[test]
 fn an_empty_path_warns_and_drops() {
     assert!(metadata_of(&[("litellm_metadata[]", "v")]).is_empty());
     assert_eq!(

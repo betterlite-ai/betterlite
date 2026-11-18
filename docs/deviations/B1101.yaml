@@ -19,4 +19,7 @@ deviations:
       request_data["model"] and TypeError when indexing a non-dict metadata, which its routes surface as a 500.
     why: A malformed request body is a client error, and a 500 for one is a bug no working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L410-L419
+  - what: Metadata paths deeper than 128 components are dropped with a PathTooDeep warning.
+    why: Bound extraction, cloning and destruction of nested trees to prevent a worker stack overflow from a bounded but deeply nested form key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L595-L607
 kept_bugs: []

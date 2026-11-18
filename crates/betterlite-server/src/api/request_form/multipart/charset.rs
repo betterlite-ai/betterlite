@@ -76,7 +76,7 @@ fn decode_iso8859_9(bytes: &[u8]) -> String {
 }
 
 // _user_safe_decode: decode with the charset, falling back to latin-1 (which never fails) on an unrecognized charset or a decode error.
-pub(super) fn decode_part(bytes: &[u8], charset: &str) -> String {
+pub(crate) fn decode_part(bytes: &[u8], charset: &str) -> String {
     let label = normalize_charset_label(charset);
     if ASCII_OR_LATIN1_LABELS.contains(&label.as_str()) {
         return bytes.iter().copied().map(char::from).collect();
