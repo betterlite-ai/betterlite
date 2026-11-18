@@ -39,9 +39,9 @@ impl VertexRagDataImport {
     #[must_use]
     pub fn new(endpoint: &str, credentials: Option<Credentials>) -> Self {
         match credentials {
-            Some(credentials) => Self::Credentials {
+            Some(provided) => Self::Credentials {
                 endpoint: endpoint.to_owned(),
-                credentials,
+                credentials: provided,
             },
             None => Self::Adc {
                 endpoint: endpoint.to_owned(),

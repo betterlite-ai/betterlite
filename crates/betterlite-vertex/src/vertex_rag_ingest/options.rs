@@ -41,17 +41,24 @@ impl RagIngestSettings {
         bucket_environment: Option<&str>,
     ) -> Result<Self, RagIngestError> {
         let record = options.vector_store.as_ref();
-        let non_empty = |value: Option<&str>| value.filter(|text| !text.is_empty());
-        let corpus_id = non_empty(record.and_then(|record| record.vector_store_id.as_deref()))
+        let corpus_id = record
+            .and_then(|store| store.vector_store_id.as_deref())
+            .filter(|text| !text.is_empty())
             .ok_or(RagIngestError::MissingCorpus)?;
-        let bucket = non_empty(record.and_then(|record| record.gcs_bucket.as_deref()))
-            .or_else(|| non_empty(bucket_environment))
+        let bucket = record
+            .and_then(|store| store.gcs_bucket.as_deref())
+            .filter(|text| !text.is_empty())
+            .or_else(|| bucket_environment.filter(|text| !text.is_empty()))
             .ok_or(RagIngestError::MissingBucket)?;
-        let project = non_empty(record.and_then(|record| record.vertex_project.as_deref()))
-            .or_else(|| non_empty(vertex.project.as_deref()))
+        let project = record
+            .and_then(|store| store.vertex_project.as_deref())
+            .filter(|text| !text.is_empty())
+            .or_else(|| vertex.project.as_deref().filter(|text| !text.is_empty()))
             .ok_or(RagIngestError::MissingProject)?;
-        let location = non_empty(record.and_then(|record| record.vertex_location.as_deref()))
-            .or_else(|| non_empty(vertex.location.as_deref()))
+        let location = record
+            .and_then(|store| store.vertex_location.as_deref())
+            .filter(|text| !text.is_empty())
+            .or_else(|| vertex.location.as_deref().filter(|text| !text.is_empty()))
             .unwrap_or(DEFAULT_LOCATION);
         Ok(Self {
             corpus_name: format!("projects/{project}/locations/{location}/ragCorpora/{corpus_id}"),
@@ -59,13 +66,13 @@ impl RagIngestSettings {
             bucket: bucket.to_owned(),
             project: project.to_owned(),
             location: location.to_owned(),
-            credentials: record.and_then(|record| record.vertex_credentials.clone()),
+            credentials: record.and_then(|store| store.vertex_credentials.clone()),
             wait_for_import: record
-                .and_then(|record| record.wait_for_import)
+                .and_then(|store| store.wait_for_import)
                 .unwrap_or(true),
             // int() keeps every integer; a negative timeout is already expired, as Duration::ZERO is here
             import_timeout: record
-                .and_then(|record| record.import_timeout)
+                .and_then(|store| store.import_timeout)
                 .map_or(DEFAULT_IMPORT_TIMEOUT, |seconds| {
                     Duration::from_secs(u64::try_from(seconds).unwrap_or_default())
                 }),

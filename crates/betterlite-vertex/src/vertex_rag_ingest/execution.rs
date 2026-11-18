@@ -128,17 +128,23 @@ impl<Upload: NativeFileUpload, Import: CorpusImport> VertexRagIngest<Upload, Imp
     }
 
     async fn store_bytes(&self, request: StoreRequest<'_>) -> Result<StoreOutcome, RagIngestError> {
-        let content = request.file_content.filter(|content| !content.is_empty());
-        let filename = request.filename.filter(|filename| !filename.is_empty());
-        let (Some(content), Some(filename)) = (content, filename) else {
+        let StoreRequest {
+            file_content,
+            filename: object,
+            content_type: declared_type,
+            ..
+        } = request;
+        let (Some(content), Some(filename)) = (
+            file_content.filter(|data| !data.is_empty()),
+            object.filter(|text| !text.is_empty()),
+        ) else {
             tracing::warn!("No file content or filename provided for Vertex AI ingestion");
             return Ok(StoreOutcome {
                 corpus_id: Some(self.settings.corpus_id.clone()),
                 file_id: None,
             });
         };
-        let content_type = request
-            .content_type
+        let content_type = declared_type
             .filter(|value| !value.is_empty())
             .unwrap_or(DEFAULT_CONTENT_TYPE);
         self.limits.check(content, filename, content_type)?;

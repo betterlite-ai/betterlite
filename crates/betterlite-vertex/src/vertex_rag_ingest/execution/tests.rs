@@ -426,10 +426,10 @@ async fn false_wait_no_rpc() {
 #[case::explicit_timeout(Some(5), "the import timed out after 5 seconds")]
 #[case::negative_timeout(Some(-1), "the import timed out after 0 seconds")]
 #[tokio::test(start_paused = true)]
-async fn import_timeout(#[case] import_timeout: Option<i64>, #[case] message: &str) {
+async fn import_timeout(#[case] timeout_seconds: Option<i64>, #[case] message: &str) {
     let (_guard, logs) = install();
     let mut record = corpus_record();
-    record.import_timeout = import_timeout;
+    record.import_timeout = timeout_seconds;
     let settings = resolve(&options(record, None)).expect("the required values resolve");
     let deadline = settings.import_timeout;
     let (ingest, recorder) = provider_from_settings(

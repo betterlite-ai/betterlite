@@ -55,7 +55,7 @@ pub fn transform_chunking_strategy(
     strategy: Option<&RagChunkingStrategy>,
     defaults: ChunkDefaults,
 ) -> ChunkingRecord {
-    let Some(strategy) = strategy else {
+    let Some(configured) = strategy else {
         return ChunkingRecord {
             chunking_config: ChunkingConfig {
                 chunk_size: defaults.chunk_size,
@@ -63,7 +63,7 @@ pub fn transform_chunking_strategy(
             },
         };
     };
-    if strategy
+    if configured
         .separators
         .as_ref()
         .is_some_and(|separators| !separators.is_empty())
@@ -72,8 +72,8 @@ pub fn transform_chunking_strategy(
     }
     ChunkingRecord {
         chunking_config: ChunkingConfig {
-            chunk_size: strategy.chunk_size.unwrap_or(defaults.chunk_size),
-            chunk_overlap: strategy.chunk_overlap.unwrap_or(defaults.chunk_overlap),
+            chunk_size: configured.chunk_size.unwrap_or(defaults.chunk_size),
+            chunk_overlap: configured.chunk_overlap.unwrap_or(defaults.chunk_overlap),
         },
     }
 }
