@@ -18,7 +18,6 @@ litellm.suppress_debug_info = True
 
 LOG_START: Final = datetime(2026, 1, 1, tzinfo=UTC)
 REQUEST_URL: Final = "https://chatgpt.com/backend-api/codex/responses"
-TOKEN_DIR_VAR: Final = "CHATGPT_TOKEN_DIR"
 
 
 class Input(TypedDict):
@@ -72,17 +71,17 @@ class Hidden(BaseModel):
 
 @runtime_checkable
 class ResponsesConfig(Protocol):
-    def transform_responses_api_request(  # ast-grep-ignore: no-long-names
+    def transform_responses_api_request(
         self,
         model: str,
         input_text: str,
-        response_api_optional_request_params: dict[str, JsonValue],  # ast-grep-ignore: no-long-names
+        response_api_optional_request_params: dict[str, JsonValue],
         litellm_params: GenericLiteLLMParams,
         headers: dict[str, str],
         /,
     ) -> dict[str, JsonValue]: ...
 
-    def transform_response_api_response(  # ast-grep-ignore: no-long-names
+    def transform_response_api_response(
         self,
         model: str,
         raw_response: httpx.Response,
@@ -115,8 +114,6 @@ class ScriptedAuthenticator(Authenticator):
         return self.account_value
 
 
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-HEADERS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 REPLY: Final[TypeAdapter[ReplyView]] = TypeAdapter(ReplyView)
 
 
@@ -145,6 +142,9 @@ def response_value(config: ResponsesConfig, input_value: Input) -> dict[str, Jso
     view = REPLY.validate_json(reply.model_dump_json())
     hidden = Hidden.model_validate(reply, from_attributes=True)
     post = Recorded.model_validate(logging_obj, from_attributes=True).model_call_details
+    outputs: list[JsonValue] = [
+        {"type": item.get("type"), "id": item["id"]} for item in view["output"]
+    ]
     value: dict[str, JsonValue] = {
         "id": view["id"],
         "created_at": view["created_at"],
@@ -152,9 +152,7 @@ def response_value(config: ResponsesConfig, input_value: Input) -> dict[str, Jso
         "object": view["object"],
         "status": view["status"],
         "output_text": reply.output_text,
-        "output": JSON.validate_python(
-            [{"type": item.get("type"), "id": item["id"]} for item in view["output"]]
-        ),
+        "output": outputs,
     }
     post_call: dict[str, JsonValue] = {
         "original_response": post.original_response,
@@ -163,14 +161,14 @@ def response_value(config: ResponsesConfig, input_value: Input) -> dict[str, Jso
     }
     return {
         "value": value,
-        "headers": HEADERS.validate_python(dict(response.headers)),
+        "headers": {name: header_value for name, header_value in input_value["headers"].items()},
         "additional_headers": hidden.params.additional_headers,
         "post_call": post_call,
     }
 
 
 def run(input_value: Input) -> JsonValue:
-    os.environ[TOKEN_DIR_VAR] = str(Path(__file__).resolve().parent)
+    os.environ["CHATGPT_TOKEN_DIR"] = str(Path(__file__).resolve().parent)
     concrete = ChatGPTResponsesAPIConfig()
     concrete.authenticator = ScriptedAuthenticator(
         input_value["api_base"], input_value["access_token"], input_value["account_id"]
