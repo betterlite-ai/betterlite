@@ -58,22 +58,21 @@ pub fn build_fallback_payload(
 ) -> Result<IndexMap<String, Json>, EventPayloadError> {
     let model = text_field(call_details, "model")?.unwrap_or("").to_owned();
     let start = unix_start_time(call_details)?;
-    let payload = IndexMap::from([
-        ("model".to_owned(), Json::Text(model.clone())),
-        // The router names model_group inside acompletion, which a prompt block never reaches.
-        ("model_group".to_owned(), Json::Text(model)),
-        ("model_id".to_owned(), Json::Text(String::new())),
-        (
-            "model_parameters".to_owned(),
-            Json::Object(model_parameters(call_details)?),
-        ),
-        ("startTime".to_owned(), start.clone()),
-        ("endTime".to_owned(), start.clone()),
-        ("completionStartTime".to_owned(), start),
-        ("messages".to_owned(), fallback_messages(call_details)),
-        ("metadata".to_owned(), Json::Object(caller_metadata.clone())),
-        ("status".to_owned(), Json::Text("failure".to_owned())),
-    ]);
+    let mut payload = IndexMap::new();
+    payload.insert("model".to_owned(), Json::Text(model.clone()));
+    // The router names model_group inside acompletion, which a prompt block never reaches.
+    payload.insert("model_group".to_owned(), Json::Text(model));
+    payload.insert("model_id".to_owned(), Json::Text(String::new()));
+    payload.insert(
+        "model_parameters".to_owned(),
+        Json::Object(model_parameters(call_details)?),
+    );
+    payload.insert("startTime".to_owned(), start.clone());
+    payload.insert("endTime".to_owned(), start.clone());
+    payload.insert("completionStartTime".to_owned(), start);
+    payload.insert("messages".to_owned(), fallback_messages(call_details));
+    payload.insert("metadata".to_owned(), Json::Object(caller_metadata.clone()));
+    payload.insert("status".to_owned(), Json::Text("failure".to_owned()));
     Ok(payload)
 }
 
