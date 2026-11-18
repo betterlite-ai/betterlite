@@ -203,10 +203,11 @@ fn definitions(
     pattern: Option<&Regex>,
 ) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     let mut parsed = Vec::with_capacity(raw.len());
+    let mut texts = texts.unwrap_or_default().into_iter();
     for (index, item) in raw.into_iter().enumerate() {
-        let text = texts.as_ref().and_then(|scalars| scalars.get(index));
+        let text = texts.next();
         parsed.push(
-            item.with_pyyaml_scalars(text, pattern)
+            item.with_pyyaml_scalars(text.as_ref(), pattern)
                 .into_definition()
                 .map_err(|source| CustomRoutesError::Definition { index, source })?,
         );
