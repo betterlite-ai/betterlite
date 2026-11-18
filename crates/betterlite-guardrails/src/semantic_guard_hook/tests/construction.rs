@@ -40,6 +40,15 @@ fn the_routes_reach_the_builder_with_the_global_threshold() {
         vec!["attack".to_owned(), "second".to_owned()]
     );
     assert_eq!(builder_calls[0].threshold.to_bits(), 0.6_f64.to_bits());
+    assert_eq!(builder_calls[0].route_thresholds.len(), 2);
+    assert_eq!(
+        builder_calls[0].route_thresholds[0].to_bits(),
+        0.6_f64.to_bits()
+    );
+    assert_eq!(
+        builder_calls[0].route_thresholds[1].to_bits(),
+        0.6_f64.to_bits()
+    );
 }
 
 #[test]

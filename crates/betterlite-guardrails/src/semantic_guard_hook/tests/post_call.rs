@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+
 use crate::guardrail_base::failure::GuardrailFailure;
 
 use super::support::{
@@ -67,6 +69,18 @@ fn a_choice_with_empty_content_is_skipped() {
     let data = request(vec![user(text("question"))]);
     block_on(guardrail.async_post_call_success_hook(&data, reply)).unwrap();
     assert_eq!(calls.lock().unwrap().clone(), vec!["hi".to_owned()]);
+}
+
+#[test]
+fn a_null_content_adds_no_text() {
+    let calls = calls();
+    let builder = FakeBuilder::matching(Vec::new(), Arc::clone(&calls));
+    let guardrail = guardrail(args(), &builder);
+    let reply = response(vec![response_choice(GuardrailValue::Null)]);
+    let data = request(vec![user(text("question"))]);
+    let returned = block_on(guardrail.async_post_call_success_hook(&data, reply.clone())).unwrap();
+    assert_eq!(returned, reply);
+    assert!(calls.lock().unwrap().is_empty());
 }
 
 #[test]

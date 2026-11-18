@@ -150,6 +150,7 @@ pub(super) struct ScoreFailure;
 pub(super) struct BuilderCall {
     pub(super) names: Vec<String>,
     pub(super) threshold: f64,
+    pub(super) route_thresholds: Vec<f64>,
 }
 
 pub(super) struct FakeBuilder {
@@ -204,8 +205,9 @@ impl SemanticRouterBuilder for FakeBuilder {
         global_threshold: f64,
     ) -> Result<FakeRouter, BuildFailure> {
         self.builder_calls.lock().unwrap().push(BuilderCall {
-            names: routes.into_iter().map(|route| route.name).collect(),
+            names: routes.iter().map(|route| route.name.clone()).collect(),
             threshold: global_threshold,
+            route_thresholds: routes.iter().map(|route| route.score_threshold).collect(),
         });
         if self.build_fails {
             return Err(BuildFailure);
