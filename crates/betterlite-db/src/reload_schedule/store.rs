@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_redis::config_sync::table_actions::TableActions as _;
@@ -119,100 +120,68 @@ async fn bounded_query(
     }
 }
 
+// the repository owns its session, so a timed-out call reports the deadline without closing the connection
+async fn bounded_table_call<T, F>(
+    operation: &'static str,
+    deadlines: ScheduleDeadlines,
+    call: F,
+) -> Result<T, ReloadScheduleError>
+where
+    F: Future<Output = Result<T, TableError>>,
+{
+    match timeout(deadlines.statement, call).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(source)) => Err(ReloadScheduleError::Table(source)),
+        Err(_elapsed) => Err(ReloadScheduleError::Timeout {
+            operation,
+            deadline: deadlines.statement,
+        }),
+    }
+}
+
 pub async fn read_reload_schedule(
     client: Option<PrismaClient<'_>>,
     deadlines: ScheduleDeadlines,
 ) -> Result<Option<ReloadSchedule>, ReloadScheduleError> {
     let repository = ConfigRepository::new(client, false);
-    let rows = timeout(
-        deadlines.statement,
+    let rows = bounded_table_call(
+        "read_reload_schedule",
+        deadlines,
         repository
             .table()?
             .as_ref()
             .find::<ReloadConfigRow>(KeyFilter::Equal(RELOAD_CONFIG_PARAM_NAME)),
     )
-    .await
-    .map_err(|_elapsed| ReloadScheduleError::Timeout {
-        operation: "read_reload_schedule",
-        deadline: deadlines.statement,
-    })??;
+    .await?;
     rows.first()
         .map(parse_reload_schedule)
         .transpose()
         .map_err(ReloadScheduleError::Parse)
 }
 
-async fn evict_reload_config(evictor: &dyn ConfigParamEvictor) -> Result<(), ReloadScheduleError> {
-    evictor.evict_param(RELOAD_CONFIG_PARAM_NAME).await?;
-    Ok(())
-}
-
-// LiteLLM's two admin writes differ in whether a missing row is created
-#[derive(Clone, Copy)]
-enum IntervalWrite {
-    Create(u32),
-    Clear,
-}
-
-// the caller evicts after this returns, so a failed write keeps the cached schedule
-async fn store_interval(
-    client: Option<PrismaClient<'_>>,
-    write: IntervalWrite,
-    deadlines: ScheduleDeadlines,
-) -> Result<(), ReloadScheduleError> {
-    let interval_hours = match write {
-        IntervalWrite::Create(hours) => Some(hours),
-        IntervalWrite::Clear => None,
-    };
-    let param_value =
-        safe_dumps(&IntervalConfig { interval_hours }).map_err(ReloadScheduleError::Encode)?;
-    let repository = ConfigRepository::new(client, true);
-    match write {
-        IntervalWrite::Create(_) => {
-            timeout(
-                deadlines.statement,
-                repository.table()?.upsert(
-                    RELOAD_CONFIG_PARAM_NAME.to_owned(),
-                    ConfigWrite {
-                        param_name: RELOAD_CONFIG_PARAM_NAME.to_owned(),
-                        param_value: JsonData::String(param_value),
-                    },
-                ),
-            )
-            .await
-            .map_err(|_elapsed| ReloadScheduleError::Timeout {
-                operation: "write_reload_interval",
-                deadline: deadlines.statement,
-            })??;
-        }
-        IntervalWrite::Clear => {
-            timeout(
-                deadlines.statement,
-                repository.table()?.update_many(
-                    ConfigUpdate {
-                        param_value: Some(JsonData::String(param_value)),
-                    },
-                    RELOAD_CONFIG_PARAM_NAME.to_owned(),
-                ),
-            )
-            .await
-            .map_err(|_elapsed| ReloadScheduleError::Timeout {
-                operation: "clear_reload_interval",
-                deadline: deadlines.statement,
-            })??;
-        }
-    }
-    Ok(())
-}
-
+// LiteLLM's two admin writes differ in whether a missing row is created, so each runs its own action
 pub async fn write_reload_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
     interval_hours: u32,
     deadlines: ScheduleDeadlines,
 ) -> Result<(), ReloadScheduleError> {
-    store_interval(client, IntervalWrite::Create(interval_hours), deadlines).await?;
-    evict_reload_config(evictor).await
+    let config = IntervalConfig {
+        interval_hours: Some(interval_hours),
+    };
+    let param_value = safe_dumps(&config).map_err(ReloadScheduleError::Encode)?;
+    let create = ConfigWrite {
+        param_name: RELOAD_CONFIG_PARAM_NAME.to_owned(),
+        param_value: JsonData::String(param_value),
+    };
+    let repository = ConfigRepository::new(client, true);
+    let table = repository.table()?;
+    let action = table
+        .as_ref()
+        .upsert(RELOAD_CONFIG_PARAM_NAME.to_owned(), create);
+    bounded_table_call("write_reload_interval", deadlines, action).await?;
+    evictor.evict_param(RELOAD_CONFIG_PARAM_NAME).await?;
+    Ok(())
 }
 
 pub async fn clear_reload_interval(
@@ -220,8 +189,24 @@ pub async fn clear_reload_interval(
     evictor: &dyn ConfigParamEvictor,
     deadlines: ScheduleDeadlines,
 ) -> Result<(), ReloadScheduleError> {
-    store_interval(client, IntervalWrite::Clear, deadlines).await?;
-    evict_reload_config(evictor).await
+    let cleared = safe_dumps(&IntervalConfig {
+        interval_hours: None,
+    })
+    .map_err(ReloadScheduleError::Encode)?;
+    let repository = ConfigRepository::new(client, true);
+    bounded_table_call(
+        "clear_reload_interval",
+        deadlines,
+        repository.table()?.as_ref().update_many(
+            ConfigUpdate {
+                param_value: Some(JsonData::String(cleared)),
+            },
+            RELOAD_CONFIG_PARAM_NAME.to_owned(),
+        ),
+    )
+    .await?;
+    evictor.evict_param(RELOAD_CONFIG_PARAM_NAME).await?;
+    Ok(())
 }
 
 async fn record_statement(
