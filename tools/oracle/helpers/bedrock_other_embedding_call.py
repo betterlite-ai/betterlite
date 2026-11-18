@@ -9,11 +9,13 @@ from typing import Literal, NotRequired, Protocol, TypedDict, cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L51-L62
 import httpx
+from aiohttp import ClientSession
 from litellm.exceptions import Timeout
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.embed import embedding as embedding_module
+from litellm.llms.cohere.embed import handler as cohere_handler
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
-from litellm.types.utils import EmbeddingResponse
+from litellm.types.utils import EmbeddingResponse, LlmProviders
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -104,6 +106,10 @@ class Logger(Calls):
 CASE: TypeAdapter[Case] = TypeAdapter(Case)
 PAYLOAD: TypeAdapter[Payload] = TypeAdapter(Payload)
 BODY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+TIMEOUT: TypeAdapter[httpx.Timeout | float | None] = TypeAdapter(
+    httpx.Timeout | float | None,
+    config=ConfigDict(arbitrary_types_allowed=True),
+)
 
 
 SKIPPED = frozenset(
@@ -131,13 +137,17 @@ def request_value(request: httpx.Request) -> JsonValue:
 
 
 def timeout_fields(timeout: JsonValue) -> list[JsonValue] | None:
-    if timeout is None:
-        return None
-    if isinstance(timeout, float | int):
-        record = TimeoutView.model_validate(httpx.Timeout(float(timeout)))
-    else:
-        record = TimeoutView.model_validate(timeout)
-    return [record.connect, record.read, record.write, record.pool]
+    match TIMEOUT.validate_python(timeout):
+        case None:
+            return None
+        case httpx.Timeout() as value:
+            return timeout_values(TimeoutView.model_validate(value))
+        case float() as seconds:
+            return timeout_values(TimeoutView.model_validate(httpx.Timeout(seconds)))
+
+
+def timeout_values(view: TimeoutView) -> list[JsonValue]:
+    return [view.connect, view.read, view.write, view.pool]
 
 
 @dataclass
@@ -175,9 +185,26 @@ class Fixture:
         self.factory.append(record)
         return self.client()
 
+    def async_client(
+        self,
+        llm_provider: str,
+        params: dict[str, JsonValue] | None = None,
+        shared_session: ClientSession | None = None,  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713
+    ) -> AsyncHTTPHandler:
+        timeout: JsonValue = None if params is None else params.get("timeout")
+        record: dict[str, JsonValue] = {
+            "kind": "async",
+            "provider": LlmProviders(llm_provider).value,
+            "timeout": timeout_fields(timeout),
+        }
+        self.factory.append(record)
+        return AsyncHTTPHandler(transport=httpx.MockTransport(self.answer))
+
 
 def configure(fixture: Fixture) -> None:
     embedding_module._get_httpx_client = fixture.sync_client  # type: ignore[attr-defined]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L125
+    embedding_module.get_async_httpx_client = fixture.async_client  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L158
+    cohere_handler.get_async_httpx_client = fixture.async_client  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/handler.py#L84
     botocore.auth.get_current_datetime = partial(datetime.fromtimestamp, fixture.now, tz=UTC)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L60
 
 
@@ -197,7 +224,7 @@ def supplied(case: Case, fixture: Fixture) -> HTTPHandler | AsyncHTTPHandler | N
     return None
 
 
-# the batch and cohere coroutines are what aembedding hands back, so a case awaits what LiteLLM returned
+# aembedding hands back a coroutine on the batch and cohere paths
 async def settle(
     pending: EmbeddingResponse | Awaitable[EmbeddingResponse],
 ) -> EmbeddingResponse:
@@ -255,7 +282,7 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
             logging_obj=logger,
             client=supplied(case, fixture),
             timeout=case.get("timeout"),
-            aembedding=case.get("aembedding", False),
+            aembedding=case.get("aembedding"),
             extra_headers=case.get("extra_headers"),
             optional_params=optional_params,
             litellm_params=litellm_params,
