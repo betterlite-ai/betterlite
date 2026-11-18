@@ -148,6 +148,18 @@ fn a_configured_event_hook_is_kept() {
 }
 
 #[test]
+fn a_configured_many_event_hook_is_kept() {
+    let mut given = args();
+    given.event_hook = Some(LitellmParamsMode::Many(vec!["post_call".to_owned()]));
+    let builder = FakeBuilder::matching(Vec::new(), calls());
+    let built = guardrail(given, &builder);
+    assert_eq!(
+        built.base.settings.event_hook,
+        Some(LitellmParamsMode::Many(vec!["post_call".to_owned()]))
+    );
+}
+
+#[test]
 fn default_on_is_copied_to_the_class_settings() {
     let mut given = args();
     given.default_on = true;

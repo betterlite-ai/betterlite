@@ -44,6 +44,21 @@ fn a_list_content_uses_its_text_parts() {
 }
 
 #[test]
+fn a_list_content_skips_an_empty_text_part() {
+    let calls = calls();
+    let builder = FakeBuilder::matching(Vec::new(), Arc::clone(&calls));
+    let guardrail = guardrail(args(), &builder);
+    let content = list(vec![
+        object(&[("text", text(""))]),
+        object(&[("text", text("a"))]),
+    ]);
+    let reply = response(vec![response_choice(content)]);
+    let data = request(vec![user(text("question"))]);
+    block_on(guardrail.async_post_call_success_hook(&data, reply)).unwrap();
+    assert_eq!(calls.lock().unwrap().clone(), vec!["a".to_owned()]);
+}
+
+#[test]
 fn a_choice_with_empty_content_is_skipped() {
     let calls = calls();
     let builder = FakeBuilder::matching(Vec::new(), Arc::clone(&calls));
