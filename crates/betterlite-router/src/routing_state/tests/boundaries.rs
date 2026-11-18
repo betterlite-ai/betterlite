@@ -11,7 +11,7 @@ use crate::routing_state::error::RoutingStateError;
 use crate::routing_state::metadata::{
     CallbackChannels, deployment_channel, get_counted_usage_tokens,
 };
-use crate::routing_state::{MAX_PENDING_DELTAS, MAX_TRACKED_KEYS, Settings};
+use crate::routing_state::{MAX_OVERFLOW_DELTAS, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS, Settings};
 use crate::routing_value_store::{
     MAX_KEY_BYTES, PinValue, RouteValue, RoutingValueStore, StoreRead,
 };
@@ -22,10 +22,12 @@ use super::support::{
 
 const TTL: Duration = Duration::from_secs(60);
 const RPM_KEY: &str = "global_router:dep-a:gpt-4o:rpm:00-00";
+const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 
 pub(crate) async fn run(name: &str) {
     match name {
         "queue_cap_is_1024" => queue_cap_is_1024().await,
+        "usage_overflow_cap_is_1024" => usage_overflow_cap_is_1024().await,
         "tracked_cap_is_1024" => tracked_cap_is_1024(),
         "window_increment_rejects_an_oversized_key" => {
             window_increment_rejects_an_oversized_key().await;
@@ -47,7 +49,7 @@ async fn queue_cap_is_1024() {
     for _step in 0..MAX_PENDING_DELTAS {
         harness
             .counters
-            .increment_window_value(RPM_KEY, 1, TTL)
+            .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
             .await
             .unwrap();
     }
@@ -55,7 +57,7 @@ async fn queue_cap_is_1024() {
     // the caller that fills the queue flushes it, then its own delta joins the drained queue
     let overflow = harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await;
     assert_eq!(overflow.unwrap(), Decimal::from(1025_i64));
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(1024_i64)));
@@ -69,23 +71,58 @@ async fn queue_cap_is_1024() {
     down.store.set_down(true);
     for _step in 0..MAX_PENDING_DELTAS {
         down.counters
-            .increment_window_value(RPM_KEY, 1, TTL)
+            .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
             .await
             .unwrap();
     }
-    let overflow = down.counters.increment_window_value(RPM_KEY, 1, TTL).await;
+    let overflow = down
+        .counters
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
+        .await;
     assert_eq!(overflow.unwrap(), Decimal::from(1025_i64));
     assert_eq!(down.pending_len(), 0);
     assert_eq!(down.store.calls(), 1);
     assert_eq!(down.store.amount(RPM_KEY), None);
     down.store.set_down(false);
     down.counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await
         .unwrap();
     assert!(down.counters.sync_with_redis().await);
-    assert_eq!(down.store.amount(RPM_KEY), Some(Decimal::from(1)));
+    assert_eq!(down.store.amount(RPM_KEY), Some(Decimal::ONE));
     assert_eq!(down.pending_len(), 0);
+}
+
+// the callback path cannot flush inline, so a full queue fills the overflow and only then drops a delta
+async fn usage_overflow_cap_is_1024() {
+    let harness = Harness::with_store(settings(false, None));
+    harness
+        .counters
+        .increment_pipeline(&usage_batch(MAX_PENDING_DELTAS))
+        .unwrap();
+    harness
+        .counters
+        .increment_pipeline(&usage_batch(MAX_OVERFLOW_DELTAS))
+        .unwrap();
+    assert_eq!(harness.overflow_len(), MAX_OVERFLOW_DELTAS);
+    harness
+        .counters
+        .increment_pipeline(&usage_batch(1))
+        .unwrap();
+    assert_eq!(harness.overflow_len(), MAX_OVERFLOW_DELTAS);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
+    assert_eq!(harness.store.calls(), 0);
+}
+
+fn usage_batch(count: usize) -> Vec<Increment> {
+    vec![
+        Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        };
+        count
+    ]
 }
 
 fn tracked_cap_is_1024() {
@@ -112,7 +149,7 @@ async fn sync_merges_at_the_equality_boundary() {
     });
     let counters = RouterCounters::new(settings(false, None), Arc::clone(&local), Some(store));
     counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     // before 2, push stores 7 and local reaches 7 during it, so after equals redis and the merge writes 12
@@ -140,7 +177,7 @@ impl DeltaStore for DriftingStore {
         let mut value = self.value.lock().unwrap();
         let mut results = Vec::with_capacity(deltas.len());
         for delta in deltas {
-            let next = value.saturating_add(Decimal::from(delta.value));
+            let next = value.saturating_add(delta.value);
             *value = next;
             results.push(next);
         }
@@ -158,7 +195,10 @@ impl DeltaStore for DriftingStore {
 async fn window_increment_rejects_an_oversized_key() {
     let harness = Harness::with_store(settings(false, None));
     let key = oversized_key();
-    let error = harness.counters.increment_window_value(&key, 1, TTL).await;
+    let error = harness
+        .counters
+        .increment_window_value(&key, Decimal::ONE, TTL)
+        .await;
     let error = error.unwrap_err();
     assert_eq!(key_limit_error(&error), (key.len(), MAX_KEY_BYTES));
     assert!(error.to_string().contains("1025"));
@@ -215,12 +255,12 @@ fn outcome_counter_expiry_boundaries() {
 
 async fn cancelled_sync_task_does_not_tick() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
-    tokio::time::pause();
     harness.counters.start();
+    tokio::task::yield_now().await;
     harness.counters.cancel_sync_task();
     harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await
         .unwrap();
     tokio::time::advance(Duration::from_secs(10)).await;
@@ -234,7 +274,7 @@ async fn sync_without_a_store_returns_false() {
     assert!(!harness.counters.sync_with_redis().await);
     harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await
         .unwrap();
     assert!(!harness.counters.sync_with_redis().await);

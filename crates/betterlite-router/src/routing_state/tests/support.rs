@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -10,7 +10,7 @@ use rust_decimal::Decimal;
 use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::routing_state::Settings;
 use crate::routing_state::counter::RouterCounters;
-use crate::routing_state::delta::{Delta, DeltaStore};
+use crate::routing_state::delta::{Batches, Delta, DeltaStore};
 use crate::routing_state::error::RoutingStateError;
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_state_store::{
@@ -66,6 +66,7 @@ pub(crate) fn local_store(clock: &TestClock) -> RoutingValueStore {
 
 pub(crate) struct FakeStore {
     values: Mutex<BTreeMap<String, Decimal>>,
+    pushed: Mutex<Vec<Delta>>,
     calls: AtomicUsize,
     down: AtomicBool,
     stale: AtomicBool,
@@ -75,6 +76,7 @@ impl FakeStore {
     pub(crate) fn new() -> Self {
         Self {
             values: Mutex::new(BTreeMap::new()),
+            pushed: Mutex::new(Vec::new()),
             calls: AtomicUsize::new(0),
             down: AtomicBool::new(false),
             stale: AtomicBool::new(false),
@@ -108,6 +110,13 @@ impl FakeStore {
     pub(crate) fn calls(&self) -> usize {
         self.calls.load(Ordering::SeqCst)
     }
+
+    pub(crate) fn pushed(&self) -> Vec<Delta> {
+        self.pushed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 #[async_trait]
@@ -120,12 +129,16 @@ impl DeltaStore for FakeStore {
         if self.down.load(Ordering::SeqCst) {
             return Err(RoutingStateError::NonFinite);
         }
+        self.pushed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(deltas);
         let mut values = self.values.lock().unwrap_or_else(PoisonError::into_inner);
         let mut results = Vec::with_capacity(deltas.len());
         for delta in deltas {
             let entry = values.entry(delta.key.as_ref().to_owned()).or_default();
             let before = *entry;
-            *entry = entry.saturating_add(Decimal::from(delta.value));
+            *entry = entry.saturating_add(delta.value);
             results.push(if self.stale.load(Ordering::SeqCst) {
                 before
             } else {
@@ -144,42 +157,44 @@ pub(crate) struct Harness {
 }
 
 impl Harness {
-    pub(crate) fn with_store(settings: Settings) -> Self {
+    fn build(settings: Settings, store: Option<Arc<FakeStore>>) -> Self {
         let clock = TestClock::new();
-        let store = Arc::new(FakeStore::new());
         let local = Arc::new(local_store(&clock));
         let counters = Arc::new(RouterCounters::new(
             settings,
             Arc::clone(&local),
-            Some(Arc::clone(&store)),
+            store.clone(),
         ));
         Self {
             clock,
-            store,
+            store: store.unwrap_or_else(|| Arc::new(FakeStore::new())),
             local,
             counters,
         }
+    }
+
+    pub(crate) fn with_store(settings: Settings) -> Self {
+        Self::build(settings, Some(Arc::new(FakeStore::new())))
     }
 
     pub(crate) fn without_store(settings: Settings) -> Self {
-        let clock = TestClock::new();
-        let local = Arc::new(local_store(&clock));
-        let counters = Arc::new(RouterCounters::new(settings, Arc::clone(&local), None));
-        Self {
-            clock,
-            store: Arc::new(FakeStore::new()),
-            local,
-            counters,
-        }
+        Self::build(settings, None)
+    }
+
+    fn batches(&self) -> MutexGuard<'_, Batches> {
+        self.counters
+            .state
+            .batches
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     pub(crate) fn pending_len(&self) -> usize {
-        self.counters
-            .state
-            .pending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
+        self.batches().pending.len()
+    }
+
+    pub(crate) fn overflow_len(&self) -> usize {
+        self.batches().overflow.len()
     }
 
     pub(crate) fn tracked_len(&self) -> usize {

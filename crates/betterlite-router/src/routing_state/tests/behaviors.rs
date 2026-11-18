@@ -1,17 +1,21 @@
 use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
+use async_trait::async_trait;
 use rust_decimal::Decimal;
 
 use crate::router_observations::counter::{CounterSink, Increment};
+use crate::routing_state::MAX_PENDING_DELTAS;
 use crate::routing_state::counter::RouterCounters;
+use crate::routing_state::delta::{Delta, DeltaStore, SyncState, local_amount};
+use crate::routing_state::error::RoutingStateError;
 use crate::routing_state::metadata::{
     CallbackChannels, deployment_channel, get_counted_usage_tokens,
 };
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::test_support::FakeRedis;
-use crate::routing_value_store::RouteKey;
+use crate::routing_value_store::{RouteKey, RoutingValueStore};
 
 use super::support::{
     Harness, TestClock, breaker, local_store, redis_settings, route_key, same_f64, settings,
@@ -25,6 +29,8 @@ pub(crate) async fn run(name: &str) {
     match name {
         "window_increment_returns_and_queues" => window_increment_returns_and_queues().await,
         "window_increment_without_a_store" => window_increment_without_a_store().await,
+        "fractional_spend_is_kept_exactly" => fractional_spend_is_kept_exactly().await,
+        "spend_beyond_i64_adds" => spend_beyond_i64_adds().await,
         "tracked_key_accessors" => tracked_key_accessors(),
         "success_and_failure_counters" => success_and_failure_counters(),
         "sync_merges_the_stored_value" => sync_merges_the_stored_value().await,
@@ -36,6 +42,21 @@ pub(crate) async fn run(name: &str) {
         "retire_pushes_and_stops_the_task" => retire_pushes_and_stops_the_task().await,
         "usage_pipeline_increments_locally_and_queues" => {
             usage_pipeline_increments_locally_and_queues().await;
+        }
+        "usage_key_merges_the_shared_store_total" => {
+            usage_key_merges_the_shared_store_total().await;
+        }
+        "usage_overflow_flushes_within_the_deadline" => {
+            usage_overflow_flushes_within_the_deadline().await;
+        }
+        "sync_compresses_repeated_keys_into_one_operation" => {
+            sync_compresses_repeated_keys_into_one_operation().await;
+        }
+        "concurrent_increment_during_the_push_is_not_double_counted" => {
+            concurrent_increment_during_the_push_is_not_double_counted().await;
+        }
+        "concurrent_increment_under_a_leading_store_is_merged_once" => {
+            concurrent_increment_under_a_leading_store_is_merged_once().await;
         }
         "counter_write_and_read_round_trip" => counter_write_and_read_round_trip(),
         "metadata_bucket_selection" => metadata_bucket_selection(),
@@ -49,17 +70,17 @@ async fn window_increment_returns_and_queues() {
     let harness = Harness::with_store(settings(false, None));
     let first = harness
         .counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await;
     assert_eq!(first.unwrap(), Decimal::from(2));
     let second = harness
         .counters
-        .increment_window_value(RPM_KEY, 3, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(3), TTL)
         .await;
     assert_eq!(second.unwrap(), Decimal::from(5));
     assert_eq!(harness.local_amount(RPM_KEY), Some(Decimal::from(5)));
     assert_eq!(harness.pending_len(), 2);
-    let increments = [(TPM_KEY.to_owned(), 4_i64)];
+    let increments = [(TPM_KEY.to_owned(), Decimal::from(4))];
     let results = harness
         .counters
         .increment_window_values(&increments, TTL)
@@ -78,12 +99,54 @@ async fn window_increment_without_a_store() {
     let harness = Harness::without_store(settings(false, None));
     let value = harness
         .counters
-        .increment_window_value(RPM_KEY, 3, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(3), TTL)
         .await;
     assert_eq!(value.unwrap(), Decimal::from(3));
     assert_eq!(harness.pending_len(), 0);
     assert_eq!(harness.store.calls(), 0);
     assert_eq!(harness.counters.get_tracked_keys(), set(&[RPM_KEY]));
+}
+
+async fn fractional_spend_is_kept_exactly() {
+    let harness = Harness::with_store(settings(false, None));
+    let quarter = Decimal::new(25, 2);
+    let half = Decimal::new(5, 1);
+    harness
+        .counters
+        .increment_window_value(RPM_KEY, quarter, TTL)
+        .await
+        .unwrap();
+    let total = harness
+        .counters
+        .increment_window_value(RPM_KEY, half, TTL)
+        .await
+        .unwrap();
+    assert_eq!(total, Decimal::new(75, 2));
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::new(75, 2)));
+    assert_eq!(harness.local_amount(RPM_KEY), Some(Decimal::new(75, 2)));
+}
+
+async fn spend_beyond_i64_adds() {
+    let harness = Harness::with_store(settings(false, None));
+    let large = Decimal::from(i64::MAX);
+    let expected = large.saturating_add(large);
+    harness
+        .counters
+        .increment_window_value(RPM_KEY, large, TTL)
+        .await
+        .unwrap();
+    let total = harness
+        .counters
+        .increment_window_value(RPM_KEY, large, TTL)
+        .await
+        .unwrap();
+    assert_eq!(total, expected);
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(harness.store.pushed().len(), 1);
+    assert_eq!(harness.store.pushed()[0].value, expected);
+    assert_eq!(harness.store.amount(RPM_KEY), Some(expected));
+    assert_eq!(harness.local_amount(RPM_KEY), Some(expected));
 }
 
 fn tracked_key_accessors() {
@@ -122,7 +185,7 @@ async fn sync_merges_the_stored_value() {
     harness.store.seed(RPM_KEY, Decimal::from(5));
     harness
         .counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     assert!(harness.counters.sync_with_redis().await);
@@ -138,7 +201,7 @@ async fn sync_keeps_a_value_redis_is_behind_on() {
     harness.store.set_stale(true);
     harness
         .counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     assert!(harness.counters.sync_with_redis().await);
@@ -152,7 +215,7 @@ async fn failed_push_discards_its_batch() {
     harness.store.set_down(true);
     harness
         .counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     assert!(!harness.counters.sync_with_redis().await);
@@ -164,7 +227,7 @@ async fn failed_push_discards_its_batch() {
     assert_eq!(harness.local_amount(RPM_KEY), Some(Decimal::from(2)));
     harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
     assert!(harness.counters.sync_with_redis().await);
@@ -174,11 +237,11 @@ async fn failed_push_discards_its_batch() {
 
 async fn periodic_sync_writes_on_the_interval() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(250))));
-    tokio::time::pause();
     harness.counters.start();
+    tokio::task::yield_now().await;
     harness
         .counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     tokio::time::advance(Duration::from_millis(249)).await;
@@ -192,11 +255,11 @@ async fn periodic_sync_writes_on_the_interval() {
 
 async fn no_periodic_task_without_batching() {
     let harness = Harness::with_store(settings(false, Some(Duration::from_millis(50))));
-    tokio::time::pause();
     harness.counters.start();
+    tokio::task::yield_now().await;
     harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
     tokio::time::advance(Duration::from_secs(10)).await;
@@ -207,12 +270,12 @@ async fn no_periodic_task_without_batching() {
 
 async fn cleanup_stops_the_periodic_task() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
-    tokio::time::pause();
     harness.counters.start();
+    tokio::task::yield_now().await;
     harness.counters.cleanup().await;
     harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
     tokio::time::advance(Duration::from_secs(10)).await;
@@ -222,18 +285,18 @@ async fn cleanup_stops_the_periodic_task() {
 
 async fn retire_pushes_and_stops_the_task() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
-    tokio::time::pause();
     harness.counters.start();
+    tokio::task::yield_now().await;
     harness
         .counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     harness.counters.retire().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2)));
     harness
         .counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
     tokio::time::advance(Duration::from_secs(1)).await;
@@ -248,7 +311,14 @@ async fn usage_pipeline_increments_locally_and_queues() {
     harness.counters.increment_pipeline(&increments).unwrap();
     assert_eq!(harness.counters.read(TPM_KEY), Some(7));
     assert_eq!(harness.pending_len(), 3);
-    // the sink cannot await the store, so the pipeline reaches it on the owner's next sync
+    assert_eq!(
+        harness.counters.get_tracked_keys(),
+        set(&[RPM_KEY, TPM_KEY])
+    );
+    // the sink cannot await the store, so only an overflow arms a flush and the batch waits for the sync
+    for _turn in 0..4 {
+        tokio::task::yield_now().await;
+    }
     assert_eq!(harness.store.calls(), 0);
     assert_eq!(harness.store.amount(TPM_KEY), None);
     assert!(harness.counters.sync_with_redis().await);
@@ -257,6 +327,159 @@ async fn usage_pipeline_increments_locally_and_queues() {
     local_only.counters.increment_pipeline(&increments).unwrap();
     assert_eq!(local_only.counters.read(TPM_KEY), Some(7));
     assert_eq!(local_only.pending_len(), 0);
+    assert!(local_only.counters.get_tracked_keys().is_empty());
+}
+
+// LiteLLM copies redis's post-increment total back locally (router.py:8198-8202); the merge does it on the sync
+async fn usage_key_merges_the_shared_store_total() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.seed(TPM_KEY, Decimal::from(100));
+    harness
+        .counters
+        .increment_pipeline(&[Increment {
+            key: TPM_KEY.to_owned(),
+            value: 7,
+            ttl: TTL,
+        }])
+        .unwrap();
+    assert_eq!(harness.counters.read(TPM_KEY), Some(7));
+    assert!(harness.counters.get_tracked_keys().contains(TPM_KEY));
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(harness.store.amount(TPM_KEY), Some(Decimal::from(107)));
+    assert_eq!(harness.counters.read(TPM_KEY), Some(107));
+}
+
+async fn usage_overflow_flushes_within_the_deadline() {
+    let harness = Harness::with_store(settings(false, None));
+    let filled = vec![
+        Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        };
+        MAX_PENDING_DELTAS
+    ];
+    harness.counters.increment_pipeline(&filled).unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    // the queue is full, so the delta waits in the overflow and arms one flush that runs in its own task
+    harness
+        .counters
+        .increment_pipeline(&[Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        }])
+        .unwrap();
+    assert_eq!(harness.overflow_len(), 1);
+    for _turn in 0..4 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_025_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.overflow_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
+    // the flag clears when the first flush ends, so a second overflow arms another flush
+    let refill = vec![
+        Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        };
+        MAX_PENDING_DELTAS
+    ];
+    harness.counters.increment_pipeline(&refill).unwrap();
+    harness
+        .counters
+        .increment_pipeline(&[Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        }])
+        .unwrap();
+    for _turn in 0..4 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(2_050_u64))
+    );
+}
+
+async fn sync_compresses_repeated_keys_into_one_operation() {
+    let harness = Harness::with_store(settings(false, None));
+    let first_ttl = Duration::from_secs(60);
+    let later_ttl = Duration::from_secs(90);
+    let other_ttl = Duration::from_secs(30);
+    harness
+        .counters
+        .increment_window_value(RPM_KEY, Decimal::from(2), first_ttl)
+        .await
+        .unwrap();
+    harness
+        .counters
+        .increment_window_value(RPM_KEY, Decimal::from(3), later_ttl)
+        .await
+        .unwrap();
+    harness
+        .counters
+        .increment_window_value(TPM_KEY, Decimal::ONE, other_ttl)
+        .await
+        .unwrap();
+    assert!(harness.counters.sync_with_redis().await);
+    let pushed = harness.store.pushed();
+    assert_eq!(pushed.len(), 2);
+    assert_eq!(pushed[0].key.as_ref(), RPM_KEY);
+    assert_eq!(pushed[0].value, Decimal::from(5));
+    assert_eq!(pushed[0].ttl, first_ttl);
+    assert_eq!(pushed[1].key.as_ref(), TPM_KEY);
+    assert_eq!(pushed[1].value, Decimal::ONE);
+    assert_eq!(pushed[1].ttl, other_ttl);
+}
+
+async fn concurrent_increment_during_the_push_is_not_double_counted() {
+    let (counters, store, local) = racing_counters();
+    counters
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
+        .await
+        .unwrap();
+    let _armed = store.during_push.lock().unwrap().replace(Decimal::ONE);
+    assert!(counters.sync_with_redis().await);
+    assert_eq!(store.amount(), Decimal::from(2));
+    // the concurrent increment landed after the batch was detached, so it is queued and local keeps it once
+    assert_eq!(local_amount(&local, &route_key(RPM_KEY)), Decimal::from(3));
+    assert_eq!(pending_len(&counters), 1);
+    assert!(counters.sync_with_redis().await);
+    assert_eq!(store.amount(), Decimal::from(3));
+    assert_eq!(local_amount(&local, &route_key(RPM_KEY)), Decimal::from(3));
+    assert_eq!(pending_len(&counters), 0);
+}
+
+async fn concurrent_increment_under_a_leading_store_is_merged_once() {
+    let (counters, store, local) = racing_counters();
+    store.seed(Decimal::from(100));
+    counters
+        .increment_window_value(RPM_KEY, Decimal::from(7), TTL)
+        .await
+        .unwrap();
+    let _armed = store.during_push.lock().unwrap().replace(Decimal::ONE);
+    assert!(counters.sync_with_redis().await);
+    // redis holds 107, the merge adds the one increment still queued, and the next push lands it once
+    assert_eq!(store.amount(), Decimal::from(107));
+    assert_eq!(
+        local_amount(&local, &route_key(RPM_KEY)),
+        Decimal::from(108)
+    );
+    assert_eq!(pending_len(&counters), 1);
+    assert!(counters.sync_with_redis().await);
+    assert_eq!(store.amount(), Decimal::from(108));
+    assert_eq!(
+        local_amount(&local, &route_key(RPM_KEY)),
+        Decimal::from(108)
+    );
+    assert_eq!(pending_len(&counters), 0);
 }
 
 fn usage_increments() -> [Increment; 3] {
@@ -322,14 +545,14 @@ async fn real_store_smoke() {
     let counters = RouterCounters::new(settings(false, None), local, Some(Arc::clone(&store)));
     let key = route_key(RPM_KEY);
     counters
-        .increment_window_value(RPM_KEY, 2, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
     assert!(counters.sync_with_redis().await);
     assert!(same_f64(stored(&store, &key).await, 2.0_f64));
     server.set_down(true);
     counters
-        .increment_window_value(RPM_KEY, 4, TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(4), TTL)
         .await
         .unwrap();
     assert!(!counters.sync_with_redis().await);
@@ -337,7 +560,7 @@ async fn real_store_smoke() {
     assert!(!counters.sync_with_redis().await);
     assert!(same_f64(stored(&store, &key).await, 2.0_f64));
     counters
-        .increment_window_value(RPM_KEY, 1, TTL)
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await
         .unwrap();
     assert!(counters.sync_with_redis().await);
@@ -350,6 +573,82 @@ async fn stored(store: &RoutingStateStore, key: &RouteKey) -> f64 {
         .await
         .unwrap()
         .value
+}
+
+// a store that answers the push and makes one window increment land after the detach, the way a second thread can
+struct RacingStore {
+    value: Mutex<Decimal>,
+    state: Mutex<Option<Weak<SyncState<RacingStore>>>>,
+    during_push: Mutex<Option<Decimal>>,
+}
+
+impl RacingStore {
+    fn new() -> Self {
+        Self {
+            value: Mutex::new(Decimal::ZERO),
+            state: Mutex::new(None),
+            during_push: Mutex::new(None),
+        }
+    }
+
+    fn seed(&self, value: Decimal) {
+        *self.value.lock().unwrap() = value;
+    }
+
+    fn amount(&self) -> Decimal {
+        *self.value.lock().unwrap()
+    }
+}
+
+#[async_trait]
+impl DeltaStore for RacingStore {
+    async fn increment_pipeline(
+        &self,
+        deltas: &[Delta],
+    ) -> Result<Vec<Decimal>, RoutingStateError> {
+        let mut value = self.value.lock().unwrap();
+        let mut results = Vec::with_capacity(deltas.len());
+        for delta in deltas {
+            let next = value.saturating_add(delta.value);
+            *value = next;
+            results.push(next);
+        }
+        drop(value);
+        let racing = self.during_push.lock().unwrap().take();
+        if let Some(amount) = racing {
+            let state = self.state.lock().unwrap().as_ref().and_then(Weak::upgrade);
+            if let Some(state) = state {
+                let key = route_key(RPM_KEY);
+                let _recorded = state.record(&key, amount, TTL).unwrap();
+            }
+        }
+        Ok(results)
+    }
+}
+
+fn racing_counters() -> (
+    Arc<RouterCounters<RacingStore>>,
+    Arc<RacingStore>,
+    Arc<RoutingValueStore>,
+) {
+    let clock = TestClock::new();
+    let local = Arc::new(local_store(&clock));
+    let store = Arc::new(RacingStore::new());
+    let counters = Arc::new(RouterCounters::new(
+        settings(false, None),
+        Arc::clone(&local),
+        Some(Arc::clone(&store)),
+    ));
+    let _state = store
+        .state
+        .lock()
+        .unwrap()
+        .replace(Arc::downgrade(&counters.state));
+    (counters, store, local)
+}
+
+fn pending_len(counters: &RouterCounters<RacingStore>) -> usize {
+    counters.state.batches.lock().unwrap().pending.len()
 }
 
 fn channels(text: &str) -> CallbackChannels {
