@@ -490,7 +490,7 @@ async fn a_singleton_flush_keeps_absent_metrics_absent() {
 #[tokio::test]
 async fn the_daily_queue_compacts_at_the_threshold_and_reports_the_compacted_size() {
     let sink = Arc::new(RecordingSink::default());
-    let port: Arc<dyn SpendQueueEventSink> = Arc::clone(&sink);
+    let port: Arc<dyn SpendQueueEventSink> = Arc::<RecordingSink>::clone(&sink);
     let queue = DailySpendUpdateQueue::new(8, 2, 10, port).unwrap();
     queue
         .add_update(update("k", daily_row("0.5")))
@@ -626,7 +626,7 @@ async fn settling_returns_immediately_when_no_commit_is_tracked() {
 #[tokio::test]
 async fn shutdown_waits_for_settlements_and_delivers_their_events() {
     let sink = Arc::new(RecordingSink::default());
-    let port: Arc<dyn SpendQueueEventSink> = Arc::clone(&sink);
+    let port: Arc<dyn SpendQueueEventSink> = Arc::<RecordingSink>::clone(&sink);
     let queue = Arc::new(DailySpendUpdateQueue::new(8, 100, 10, port).unwrap());
     queue
         .add_update(update("a", daily_row("1.0")))

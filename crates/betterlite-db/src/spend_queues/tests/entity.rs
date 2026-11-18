@@ -207,7 +207,7 @@ async fn add_user_cost(queue: &SpendUpdateQueue, cost: &str) {
 #[tokio::test]
 async fn add_update_compacts_at_the_threshold_and_reports_the_compacted_size() {
     let sink = Arc::new(RecordingSink::default());
-    let port: Arc<dyn SpendQueueEventSink> = Arc::clone(&sink);
+    let port: Arc<dyn SpendQueueEventSink> = Arc::<RecordingSink>::clone(&sink);
     let queue = SpendUpdateQueue::new(8, 2, 10, port).unwrap();
     add_user_cost(&queue, "1.5").await;
     add_user_cost(&queue, "2.5").await;
