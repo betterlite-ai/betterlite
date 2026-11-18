@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
-use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -139,10 +138,11 @@ pub(super) fn metadata_auth(routes: &SharedPassThroughRoutes, key: &str) -> Opti
 
 pub(super) fn config_path(routes: &SharedPassThroughRoutes, key: &str) -> Option<String> {
     let state = lock_state(routes);
-    state
-        .endpoints
-        .get(key)
-        .and_then(|stored| stored.config_file_path.clone())
+    state.endpoints.get(key)?.config_file_path.clone()
+}
+
+pub(super) fn subpath_template(path: &str) -> String {
+    format!("{path}/{{subpath:path}}")
 }
 
 pub(super) fn basic(public_key: &str, secret_key: &str) -> Json {

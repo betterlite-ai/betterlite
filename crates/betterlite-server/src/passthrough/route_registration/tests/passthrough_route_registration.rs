@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
+use std::slice::from_ref;
 use std::sync::{Arc, Mutex};
 
-use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_auth::inference_routes::OPENAI_ROUTES;
 use betterlite_auth::pass_through_registry::PassThroughRouteType;
@@ -112,11 +112,8 @@ fn resolve_os_environ_in_headers_reaches_the_registered_entry() {
         r#"{"id":"e1","path":"/custom","target":"https://upstream","headers":{"Authorization":"Bearer os.environ/UP_KEY"}}"#,
     );
     register_with(&routes, &[endpoint], None, &[("UP_KEY", "sk-up")]);
-    let state = lock_state(&routes);
-    let stored = state
-        .endpoints
-        .get("e1:exact:/custom:DELETE,GET,PATCH,POST,PUT")
-        .unwrap();
+    let stored =
+        lock_state(&routes).endpoints["e1:exact:/custom:DELETE,GET,PATCH,POST,PUT"].clone();
     assert_eq!(
         stored.custom_headers,
         Some(raw_headers(r#"{"Authorization":"Bearer sk-up"}"#))
@@ -279,6 +276,7 @@ fn exact_route_registers_every_configured_method() {
         1
     );
     assert!(state.endpoints.contains_key("e1:exact:/custom:GET,POST"));
+    drop(state);
 }
 
 #[test]
@@ -302,6 +300,7 @@ fn exact_route_defaults_to_all_five_methods() {
             "PATCH".to_owned()
         ]
     );
+    drop(state);
 }
 
 #[test]
@@ -332,6 +331,7 @@ fn exact_route_keeps_configured_method_text() {
         1
     );
     assert!(state.endpoints.contains_key("e1:exact:/custom:get"));
+    drop(state);
 }
 
 #[test]
@@ -386,6 +386,7 @@ fn exact_route_skips_a_path_a_static_route_holds() {
         1
     );
     assert!(state.endpoints.contains_key("e1:exact:/custom:GET"));
+    drop(state);
 }
 
 #[test]
@@ -407,7 +408,7 @@ fn subpath_route_registers_the_wildcard_template() {
     assert_eq!(
         state
             .table
-            .colliding_routes("/custom/{subpath:path}", &method_set(&["GET"]))
+            .colliding_routes(&subpath_template("/custom"), &method_set(&["GET"]))
             .len(),
         1
     );
@@ -423,9 +424,10 @@ fn subpath_route_is_absent_without_include_subpath() {
     assert!(
         state
             .table
-            .colliding_routes("/custom/{subpath:path}", &method_set(&["GET"]))
+            .colliding_routes(&subpath_template("/custom"), &method_set(&["GET"]))
             .is_empty()
     );
+    drop(state);
 }
 
 #[test]
@@ -470,7 +472,7 @@ fn auth_adds_the_path_once_across_reloads() {
     let endpoint = parse_endpoint(
         r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"methods":["GET"]}"#,
     );
-    register_with(&routes, &[endpoint.clone()], None, &[]);
+    register_with(&routes, from_ref(&endpoint), None, &[]);
     register_with(&routes, &[endpoint], None, &[]);
     assert_eq!(route_count(&routes, "/custom"), 1);
 }
@@ -621,10 +623,7 @@ fn order_replaces_a_duplicate_key_in_place() {
         ["a:exact:/a:GET".to_owned(), "b:exact:/b:GET".to_owned()]
     );
     let state = lock_state(&routes);
-    assert_eq!(
-        state.endpoints.get("a:exact:/a:GET").unwrap().target,
-        "https://second"
-    );
+    assert_eq!(state.endpoints["a:exact:/a:GET"].target, "https://second");
 }
 
 #[test]
@@ -642,8 +641,7 @@ fn order_places_routes_ahead_of_lazy_routes_in_supplied_order() {
         parse_endpoint(r#"{"id":"b","path":"/b","target":"https://upstream","methods":["GET"]}"#),
     ];
     register_with(&routes, &endpoints, None, &[]);
-    let state = lock_state(&routes);
-    let order = state.table.order();
+    let order = lock_state(&routes).table.order();
     assert_eq!(order.len(), 4);
     assert_eq!(order.iter().position(|id| *id == lazy_a), Some(1));
     assert_eq!(order.iter().position(|id| *id == lazy_b), Some(3));
@@ -680,6 +678,7 @@ fn missing_path_registers_nothing_for_that_endpoint() {
             .colliding_routes("/custom", &method_set(&["GET"]))
             .is_empty()
     );
+    drop(state);
 }
 
 #[test]
@@ -702,6 +701,7 @@ fn missing_path_stops_later_endpoints() {
             .colliding_routes("/b", &method_set(&["GET"]))
             .is_empty()
     );
+    drop(state);
 }
 
 #[test]
@@ -730,6 +730,7 @@ fn missing_target_keeps_the_openai_path_and_registers_no_route() {
             .colliding_routes("/custom", &method_set(&["GET"]))
             .is_empty()
     );
+    drop(state);
 }
 
 #[test]
@@ -746,9 +747,10 @@ fn missing_target_registers_no_subpath_route() {
     assert!(
         state
             .table
-            .colliding_routes("/custom/{subpath:path}", &method_set(&["GET"]))
+            .colliding_routes(&subpath_template("/custom"), &method_set(&["GET"]))
             .is_empty()
     );
+    drop(state);
 }
 
 #[test]
@@ -816,7 +818,7 @@ fn config_file_path_stays_from_the_first_install_on_a_later_none_call() {
     let endpoint = parse_endpoint(
         r#"{"id":"e1","path":"/custom","target":"https://upstream","methods":["GET"]}"#,
     );
-    register_with(&routes, &[endpoint.clone()], Some("/etc/config.yaml"), &[]);
+    register_with(&routes, from_ref(&endpoint), Some("/etc/config.yaml"), &[]);
     register_with(&routes, &[endpoint], None, &[]);
     assert_eq!(
         config_path(&routes, "e1:exact:/custom:GET").as_deref(),
@@ -830,7 +832,7 @@ fn config_file_path_keeps_the_first_install_value() {
     let endpoint = parse_endpoint(
         r#"{"id":"e1","path":"/custom","target":"https://upstream","methods":["GET"]}"#,
     );
-    register_with(&routes, &[endpoint.clone()], Some("/first.yaml"), &[]);
+    register_with(&routes, from_ref(&endpoint), Some("/first.yaml"), &[]);
     register_with(&routes, &[endpoint], Some("/second.yaml"), &[]);
     assert_eq!(
         config_path(&routes, "e1:exact:/custom:GET").as_deref(),
@@ -844,7 +846,7 @@ fn config_file_path_uses_the_calls_value_when_a_static_route_holds_the_path() {
     let endpoint = parse_endpoint(
         r#"{"id":"e1","path":"/custom","target":"https://upstream","methods":["GET"]}"#,
     );
-    register_with(&routes, &[endpoint.clone()], Some("/cfg.yaml"), &[]);
+    register_with(&routes, from_ref(&endpoint), Some("/cfg.yaml"), &[]);
     assert_eq!(
         config_path(&routes, "e1:exact:/custom:GET").as_deref(),
         Some("/cfg.yaml")
@@ -862,8 +864,8 @@ fn config_file_path_is_remembered_per_method_set() {
     let post = parse_endpoint(
         r#"{"id":"e1","path":"/custom","target":"https://upstream","methods":["POST"]}"#,
     );
-    register_with(&routes, &[get.clone()], Some("/first.yaml"), &[]);
-    register_with(&routes, &[post.clone()], Some("/second.yaml"), &[]);
+    register_with(&routes, from_ref(&get), Some("/first.yaml"), &[]);
+    register_with(&routes, from_ref(&post), Some("/second.yaml"), &[]);
     register_with(&routes, &[get, post], None, &[]);
     assert_eq!(
         config_path(&routes, "e1:exact:/custom:GET").as_deref(),
@@ -882,11 +884,8 @@ fn registered_entry_keeps_target_headers_and_options() {
         r#"{"id":"e1","path":"/custom","target":"https://upstream.example","headers":{"Authorization":"os.environ/UP_KEY"},"forward_headers":true,"merge_query_params":false,"default_query_params":{"api-version":"2024-01"},"cost_per_request":0.25,"guardrails":{"pii":"on"},"timeout":12.5}"#,
     );
     register_with(&routes, &[endpoint], None, &[("UP_KEY", "sk-up")]);
-    let state = lock_state(&routes);
-    let stored = state
-        .endpoints
-        .get("e1:exact:/custom:DELETE,GET,PATCH,POST,PUT")
-        .unwrap();
+    let stored =
+        lock_state(&routes).endpoints["e1:exact:/custom:DELETE,GET,PATCH,POST,PUT"].clone();
     assert_eq!(stored.target, "https://upstream.example");
     assert_eq!(
         stored.custom_headers,
@@ -979,7 +978,7 @@ fn direct_add_subpath_route_registers_the_wildcard() {
     assert_eq!(
         state
             .table
-            .colliding_routes("/custom/{subpath:path}", &method_set(&["GET"]))
+            .colliding_routes(&subpath_template("/custom"), &method_set(&["GET"]))
             .len(),
         1
     );
