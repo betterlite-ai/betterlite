@@ -6,6 +6,7 @@ use std::sync::Arc;
 use betterlite_auth::auth_model_lists::credential::{CredentialEntry, CredentialSnapshot};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::{PassThroughDeployment, PassthroughEndpointRouter};
@@ -46,14 +47,10 @@ fn available(model_name: &str, upstream: &str, extra: &[(&str, Json)]) -> PassTh
 }
 
 fn vertex(model_name: &str, project: &str, location: &str) -> PassThroughDeployment {
-    available(
-        model_name,
-        &format!("vertex_ai/{model_name}"),
-        &[
-            ("vertex_project", text(project)),
-            ("vertex_location", text(location)),
-        ],
-    )
+    let mut candidate = available(model_name, &format!("vertex_ai/{model_name}"), &[]);
+    candidate.litellm_params.vertex_project = Some(project.to_owned());
+    candidate.litellm_params.vertex_location = Some(location.to_owned());
+    candidate
 }
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -249,8 +246,15 @@ mod deployment_matching {
         assert_eq!(api_key.expose_secret(), "first-key");
     }
 
-    #[test]
-    fn model_names_match_the_name_and_the_suffix_after_the_first_slash() {
+    #[rstest]
+    #[case::deployment_name("public-gemini", Some("project-one"))]
+    #[case::upstream_model("vertex_ai/publishers/google/gemini-2.0", Some("project-one"))]
+    #[case::suffix("publishers/google/gemini-2.0", Some("project-one"))]
+    #[case::last_component("gemini-2.0", None)]
+    fn model_names_match_the_name_and_the_suffix_after_the_first_slash(
+        #[case] named: &str,
+        #[case] expected: Option<&str>,
+    ) {
         let published = available(
             "public-gemini",
             "vertex_ai/publishers/google/gemini-2.0",
@@ -261,25 +265,12 @@ mod deployment_matching {
         );
         let other = vertex("other", "project-two", "us-central1");
         let resolver = router(vec![published, other], &[]);
-        for named in [
-            "public-gemini",
-            "vertex_ai/publishers/google/gemini-2.0",
-            "publishers/google/gemini-2.0",
-        ] {
-            let named_credentials = resolver
-                .vertex_deployment_credentials(Some(named))
-                .expect("the published deployment");
-            assert_eq!(
-                named_credentials.vertex_project.as_deref(),
-                Some("project-one")
-            );
-        }
-        assert!(
-            resolver
-                .vertex_deployment_credentials(Some("gemini-2.0"))
-                .is_none()
-        );
+        let project = resolver
+            .vertex_deployment_credentials(Some(named))
+            .and_then(|record| record.vertex_project);
+        assert_eq!(project.as_deref(), expected);
     }
+
     #[test]
     fn provider_errors_missing_models_and_explicit_providers() {
         let mut resolver = router(
@@ -375,28 +366,25 @@ mod vertex_credentials {
         let resolver = router(vec![available("gpt", "openai/gpt-4o-mini", &[])], &[]);
         assert!(resolver.vertex_deployment_credentials(None).is_none());
     }
-    #[test]
-    fn incomplete_and_disabled_vertex_deployments_never_answer() {
-        for field in [
-            "model",
-            "vertex_project",
-            "vertex_location",
-            "use_in_pass_through",
-        ] {
-            let mut params = obj(&[
-                ("model", text("vertex_ai/only")),
-                ("vertex_project", text("project")),
-                ("vertex_location", text("location")),
-                ("use_in_pass_through", Json::Bool(true)),
-            ]);
-            params.shift_remove(field);
-            let resolver = router(vec![deployment("only", params)], &[]);
-            assert!(
-                resolver
-                    .vertex_deployment_credentials(Some("only"))
-                    .is_none()
-            );
-        }
+    #[rstest]
+    #[case::model("model")]
+    #[case::project("vertex_project")]
+    #[case::location("vertex_location")]
+    #[case::enabled("use_in_pass_through")]
+    fn incomplete_and_disabled_vertex_deployments_never_answer(#[case] field: &str) {
+        let mut params = obj(&[
+            ("model", text("vertex_ai/only")),
+            ("vertex_project", text("project")),
+            ("vertex_location", text("location")),
+            ("use_in_pass_through", Json::Bool(true)),
+        ]);
+        params.shift_remove(field);
+        let resolver = router(vec![deployment("only", params)], &[]);
+        assert!(
+            resolver
+                .vertex_deployment_credentials(Some("only"))
+                .is_none()
+        );
     }
 
     #[test]
@@ -732,35 +720,32 @@ mod vertex_default_config {
             .expect("default on key miss");
         assert_eq!(fallback.vertex_project.as_deref(), Some("default-project"));
     }
-    #[test]
-    fn invalid_config_keeps_the_previous_default() {
+    #[rstest]
+    #[case::project("vertex_project")]
+    #[case::location("vertex_location")]
+    #[case::credentials("vertex_credentials")]
+    #[case::unknown("unknown")]
+    fn invalid_config_keeps_the_previous_default(#[case] field: &str) {
         let mut resolver = router(vec![], &[]);
         resolver
             .set_default_vertex_config(Some(obj(&[("vertex_project", text("kept"))])))
             .unwrap();
-        for field in [
-            "vertex_project",
-            "vertex_location",
-            "vertex_credentials",
-            "unknown",
-        ] {
-            let error = resolver
-                .set_default_vertex_config(Some(obj(&[(field, Json::Bool(true))])))
-                .unwrap_err();
-            assert_eq!(
-                error.to_string(),
-                format!("invalid pass-through Vertex config field {field}")
-            );
-            assert_eq!(
-                resolver
-                    .default_vertex_config
-                    .as_ref()
-                    .unwrap()
-                    .vertex_project
-                    .as_deref(),
-                Some("kept")
-            );
-        }
+        let error = resolver
+            .set_default_vertex_config(Some(obj(&[(field, Json::Bool(true))])))
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            format!("invalid pass-through Vertex config field {field}")
+        );
+        assert_eq!(
+            resolver
+                .default_vertex_config
+                .as_ref()
+                .unwrap()
+                .vertex_project
+                .as_deref(),
+            Some("kept")
+        );
     }
 
     #[test]
