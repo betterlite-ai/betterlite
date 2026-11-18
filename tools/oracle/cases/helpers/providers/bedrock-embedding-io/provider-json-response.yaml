@@ -1,0 +1,117 @@
+kind: helper
+name: provider-json-response
+call:
+  bedrock_embedding_io:
+    function: provider_json_response
+    asynchronous: false
+    supplied: none
+    url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+    headers:
+      Content-Type: application/json
+      X-Test: alpha
+    data:
+      inputText: hello
+    timeout: 2.5
+    reply:
+      status: 200
+      headers:
+        Content-Type: application/json
+        X-Amzn-Requestid: req-1
+      body: '{"embedding":[0.5,0.25],"inputTextTokenCount":3}'
+calls:
+  - bedrock_embedding_io:
+      function: provider_json_response
+      asynchronous: false
+      supplied: sync
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: supplied
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embedding":[0.5],"inputTextTokenCount":1}'
+  - bedrock_embedding_io:
+      function: provider_json_response
+      asynchronous: true
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/cohere.embed-english-v3/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        texts:
+          - first
+      timeout_record:
+        connect: 1.5
+        read: 2.5
+        write: 3.5
+        pool: 4.5
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embeddings":[[0.5,0.25]]}'
+  - bedrock_embedding_io:
+      function: provider_json_response
+      asynchronous: true
+      supplied: sync
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/cohere.embed-english-v3/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        texts:
+          - second
+      timeout: 7.5
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embeddings":[[1.5]]}'
+  - bedrock_embedding_io:
+      function: provider_json_response
+      asynchronous: false
+      supplied: async
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: wrong-kind
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embedding":[],"inputTextTokenCount":0}'
+  - bedrock_embedding_io:
+      function: provider_json_response
+      asynchronous: false
+      supplied: none
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: integer-timeout
+      timeout: 3
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embedding":[0.5],"inputTextTokenCount":1}'
+  - bedrock_embedding_io:
+      function: provider_json_response
+      asynchronous: true
+      supplied: async
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      data:
+        inputText: async-supplied
+      reply:
+        status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"embedding":[],"inputTextTokenCount":0}'
+env: {}
+compare:
+  ignore: []

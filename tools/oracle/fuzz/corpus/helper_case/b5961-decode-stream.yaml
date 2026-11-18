@@ -1,0 +1,6 @@
+kind: helper
+name: b5961-decode-stream
+call:
+  b5961: {"function": "decode_stream", "model": "sagemaker-endpoint", "is_messages_api": false, "sync": true, "chunks": ["00000058000000304b986bcf0d3a6d6573736167652d747970650700056576656e740b3a6576656e742d7479706507000b5061796c6f6164506172747b22746f6b656e223a207b2274657874223a202278227d7d4aaf8753"]}
+env: {}
+compare: {ignore: []}

@@ -277,3 +277,17 @@ path = "fuzz_targets/member_request_contracts.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "user_contracts"
+path = "fuzz_targets/user_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sse_frame"
+path = "fuzz_targets/sse_frame.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,100 @@
+id: B9985
+title: A per-test Redis server fixture and real-Redis pod lock tests
+description: >-
+  B1690's PodLockManager (crates/betterlite-db/src/queues/pod_lock.rs) acquires with SET NX EX and releases with
+  LiteLLM's Lua compare-and-delete, but its tests only run against a recording cache, because the CI container had
+  no Redis. Every gate part now installs Debian's redis-server, Redis 8.0.2 (#2386, decision 2026-11-18). This task
+  adds the shared fixture that starts a real server and the pod lock tests that use it.
+
+
+  The fixture is a new crate, tools/redis-fixture (package betterlite-redis-fixture, a member through the tools/*
+  glob), used only as a dev-dependency, like tools/postgres-fixture. RedisFixture::start launches redis-server from
+  the PATH in a fresh tempfile folder with --port 0, --unixsocket on a socket in that folder, --save "" and
+  --appendonly no, and waits until the socket answers PING. It polls every few milliseconds and gives up after 5
+  seconds with a typed error that carries the server's log. It hands out the redis+unix URL of its socket and
+  nothing else, so a test can never reach a Redis on the machine. Dropping it kills the server, waits for it and
+  removes the folder. A missing binary fails with a typed error that names redis-server and the Debian package.
+  Every test that needs Redis starts its own fixture. There is no shared server, no nextest setup script, no test
+  group and no container: the shared Postgres server once made 247 tests run one at a time for 94 s, and a container
+  per test cost about 3.6 s, while a redis-server answered its first ping 33 ms after launch in a trixie container.
+
+
+  The pod lock tests go in crates/betterlite-db/src/queues/pod_lock/tests/real_redis.rs and connect the production
+  Redis cache from betterlite-redis to the fixture's URL. Cover what only a real server shows: a second pod's acquire
+  fails while the first holds the lock and succeeds after the first releases it; the stored owner is the
+  JSON-encoded owner string that LiteLLM writes; a reentrant acquire succeeds without renewing the expiry (PTTL does
+  not grow); with allow_reentrant false the same pod's second acquire fails; a release by a pod that does not own
+  the lock leaves the key in place through the real Lua script; and after the key expires another pod acquires it.
+  For expiry, set the key's TTL to one millisecond with PEXPIRE and poll PTTL until the key is gone, instead of waiting out the EX seconds.
+
+
+  Max asked that these tests cost no noticeable CI time. Nothing here sleeps for a second or more, each test
+  finishes in well under a second, and the architect compares the CI shard times before and after this lands.
+scope:
+  paths:
+  - tools/redis-fixture/Cargo.toml
+  - tools/redis-fixture/README.md
+  - tools/redis-fixture/src/**
+  - crates/betterlite-db/Cargo.toml
+  - crates/betterlite-db/src/queues/pod_lock/tests.rs
+  - crates/betterlite-db/src/queues/pod_lock/tests/real_redis.rs
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/pod_lock_manager.py#L43-L192
+  why: LiteLLM's PodLockManager, whose SET NX EX acquire, JSON owner value and Lua compare-and-delete release the tests pin.
+- url: https://github.com/betterlite-ai/betterlite/blob/05152daf0c/tools/postgres-fixture/Cargo.toml
+  why: The Postgres fixture crate, the shape the Redis fixture crate follows as a dev-dependency.
+dod:
+- text: >-
+    RedisFixture starts a private redis-server on a unix socket in its own folder, answers PING, keeps two fixtures
+    apart, leaves no process or folder behind after drop, and fails with a typed error when the binary is missing.
+  proof: [redis-fixture]
+- text: >-
+    PodLockManager's acquire, reentrant acquire, release and expiry behave against a real Redis as LiteLLM's do, with
+    the owner stored as a JSON-encoded string.
+  proof: [pod-lock-real-redis]
+- text: >-
+    No Redis test sleeps for a second or more, and no test shares a server.
+  proof: [no-slow-waits]
+- text: >-
+    The existing pod lock tests still pass.
+  proof: [pod-lock-tests]
+checks:
+  optional: []
+  commands:
+  - id: redis-fixture
+    why: The fixture does not start, leaks its server or folder, or misreports a missing binary.
+    run: >-
+      cargo nextest run --locked -p betterlite-redis-fixture --no-tests=fail
+  - id: pod-lock-real-redis
+    why: The pod lock does something on a real Redis that LiteLLM's does not.
+    run: >-
+      cargo nextest run --locked -p betterlite-db --no-tests=fail
+      -E 'test(/^queues::pod_lock::tests::real_redis::/)'
+  - id: no-slow-waits
+    why: A Redis test waits seconds or reaches a shared server, the Postgres mistake again.
+    run: >-
+      ! grep -n -E 'from_secs\(|from_millis\([0-9]{4,}\)' crates/betterlite-db/src/queues/pod_lock/tests/real_redis.rs
+      && ! grep -r -n -E ':6379|REDIS_TEST_URL|REDIS_URL' tools/redis-fixture/src crates/betterlite-db/src/queues/pod_lock/tests/real_redis.rs
+  - id: pod-lock-tests
+    why: The fixture or the dev-dependency broke the recording-cache pod lock tests.
+    run: >-
+      cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^queues::pod_lock::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The oracle's B1139 RESP fake in tools/oracle/src/runner/http_scenarios/fixtures/run/redis.rs; it stays as it is.
+- The rate limiter's Lua script and its tests in crates/betterlite-rate-limit.
+- PodLockManager's code; if a real-Redis test fails, report the mismatch with the LiteLLM line instead of changing the manager.
+- A nextest setup script, a shared server or a CI service container.
+pitfalls:
+- 'Give the production Redis cache the fixture''s socket as its url setting (redis+unix://...). That setting goes through redis-rs''s own URL parser in crates/betterlite-redis/src/redis_live_client/plans.rs, while the host and port settings only build a TCP address.'
+- 'Pass the server''s options on the command line, not in a config file, and keep it on the unix socket only (--port 0), so parallel tests never race for a port.'
+- 'The 5-second readiness limit is a deadline, not a wait: poll the socket every few milliseconds and return as soon as PING answers.'
+- 'Do not use unsafe (no pre_exec or PR_SET_PDEATHSIG). Drop handles normal ends and panics, and a CI container ends with its job.'
+- 'Use tempfile 3.27.0, the version the workspace already uses, for the server folder.'
+review_level: standard
+budget:
+  max_changed_lines: 700
+  max_new_expects: 0

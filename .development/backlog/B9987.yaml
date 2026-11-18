@@ -1,0 +1,13 @@
+id: B9987
+milestone: M4 keys, spend and management
+title: Mount the credential routes over the shared database
+status: todo
+depends_on: [B1601, B8610, B5076, B8590]
+file: tasks/B9987-credential-routes-mount.yaml
+covers: []
+parent: B061
+split_from: B1601
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

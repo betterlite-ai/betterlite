@@ -1,0 +1,145 @@
+id: B9983
+title: SageMaker stream JSON buffer is capped and a skipped failure clears it
+description: >-
+  Fix two LiteLLM bugs B5961 (https://github.com/betterlite-ai/betterlite/pull/2354) copied into the SageMaker
+  response-stream decoder, EventState in crates/betterlite-bedrock/src/sagemaker_stream/events.rs. The review found
+  both and the architect decided to fix them, but the PR merged before the decision reached it.
+
+
+  First bug: the JSON buffer has no cap. EventState::event appends every event's payload text to accumulated and
+  reparses the whole buffer, and the buffer only empties when a complete value projects. So valid AWS frames that keep
+  an unfinished JSON value open (a string that never closes) grow memory without bound and reparse an ever longer
+  string on every event. Each frame is capped at MAX_FRAME_BYTES (16 MiB) in crates/betterlite-bedrock/src/event_frames.rs,
+  but the number of frames is not. LiteLLM does the same: accumulated_json += message, then json.loads on the whole
+  string, in both iter_bytes and aiter_bytes (common_utils.py L109-L113 and L158-L161).
+
+
+  Second bug: under ErrorPolicy::Skip (the async face), a complete JSON value that fails to project stays in the
+  buffer. The next event is appended behind it, the joined text never parses, and every later event of the stream is
+  lost. For example [] followed by {"token": {"text": "after"}} yields no token. LiteLLM loses them the same way: its
+  aiter_bytes except branches continue without resetting accumulated_json (common_utils.py L168-L176).
+
+
+  Rust change in events.rs. Import crate::agentcore_stream::line::MAX_LINE_BYTES (0x0010_0000, the bound the AgentCore
+  line decoder already puts on the same kind of buffer) and do not define a second constant. In EventState::event, the
+  Projection::Pending arm checks the buffer after the append: when accumulated.len() is greater than MAX_LINE_BYTES,
+  clear accumulated, push Err(SagemakerStreamError::BufferLimit { limit: MAX_LINE_BYTES }) and return false, under
+  both policies, so the stream ends. A value that completes in the same event is projected first and never hits the
+  cap, so one large complete event (bounded by MAX_FRAME_BYTES) still parses as it does in LiteLLM. The projection Err
+  arm clears accumulated before it calls failed. The Utf8 and Status failures from event_text never touch the buffer
+  and keep it, as LiteLLM combines those with the next event. Update the comment above the match, which says the
+  buffer is cleared only when the text parses and projects. Add the variant to
+  crates/betterlite-bedrock/src/sagemaker_stream/error.rs with the message "the SageMaker stream JSON buffer passed
+  {limit} bytes without a complete value".
+
+
+  Tests in crates/betterlite-bedrock/src/sagemaker_stream/events/tests.rs, with the existing event, sync_items and
+  async_items helpers. Delete a_projection_failure_keeps_the_buffer_for_the_next_event, which pins the second bug.
+  a_skipped_projection_failure_clears_the_buffer is an #[rstest] with cases wrong_token_shape ({"token": 5}) and
+  array ([]); each sends that event, then {"token": {"text": "after"}}, under ErrorPolicy::Skip, and asserts that
+  sync_items and async_items each give exactly one item, a token chunk with text "after".
+  an_unfinished_value_past_the_buffer_limit_ends_the_stream runs under both policies (#[values]) and sends
+  {"token": {"text": " then 16 events of 65536 bytes of a, then "}}; sync_items and async_items each give exactly one
+  item, Err(SagemakerStreamError::BufferLimit { limit: 0x0010_0000 }). a_value_under_the_buffer_limit_still_joins
+  sends the same opening, 15 events of 65536 bytes of a and the closing "}}, and gets one token chunk whose text is
+  983040 bytes long, under both policies. a_complete_value_past_the_limit_in_one_event_still_parses sends one event
+  holding {"token": {"text": "<2097152 bytes of a>"}} and gets one token chunk with that text, under both policies.
+  The skip and limit tests fail on the unfixed code.
+
+
+  Deviations. Write docs/deviations/B9983.yaml (task: B9983, then deviations) with the two rows under deviations below,
+  each with its pinned LiteLLM link. B5961's rows stay as they are.
+scope:
+  paths:
+  - crates/betterlite-bedrock/src/sagemaker_stream/events.rs
+  - crates/betterlite-bedrock/src/sagemaker_stream/events/tests.rs
+  - crates/betterlite-bedrock/src/sagemaker_stream/error.rs
+  - docs/deviations/B9983.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L100-L122
+  why: iter_bytes appends every event to accumulated_json and resets it only after a chunk projects, with no size check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L150-L176
+  why: aiter_bytes appends the same way, and its except branches continue without resetting accumulated_json.
+dod:
+- text: >-
+    An unfinished JSON value whose buffer passes 0x0010_0000 bytes ends the stream with
+    SagemakerStreamError::BufferLimit { limit: 0x0010_0000 } under both policies and both faces.
+  proof: [buffer-limit]
+- text: >-
+    Under ErrorPolicy::Skip a complete value that fails to project is dropped from the buffer, so the next event
+    projects on its own, on the blocking and the async face.
+  proof: [skip-clears]
+- text: >-
+    A value that completes under the limit, or in one large event, still projects, and the other SageMaker stream
+    tests and the corpus replay still pass.
+  proof: [stream-tests]
+- text: >-
+    The SageMaker stream helper cases still match LiteLLM.
+  proof: [oracle-stream]
+- text: >-
+    docs/deviations/B9983.yaml records both fixes with their pinned LiteLLM links, and the cap is the shared
+    MAX_LINE_BYTES.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: buffer-limit
+    why: An unfinished value still grows the buffer past 1 MiB, or ends with another error.
+    run: >-
+      cargo nextest run --locked -p betterlite-bedrock --no-tests=fail
+      -E 'test(/^sagemaker_stream::events::tests::an_unfinished_value_past_the_buffer_limit_ends_the_stream/)'
+  - id: skip-clears
+    why: A skipped projection failure still keeps its text in the buffer and the next event is lost.
+    run: >-
+      ! grep -q 'a_projection_failure_keeps_the_buffer_for_the_next_event' crates/betterlite-bedrock/src/sagemaker_stream/events/tests.rs
+      && cargo nextest run --locked -p betterlite-bedrock --no-tests=fail
+      -E 'test(/^sagemaker_stream::events::tests::a_skipped_projection_failure_clears_the_buffer::case_/)'
+  - id: stream-tests
+    why: The cap refuses a value it should allow, or the fix broke another decoder case or the corpus replay.
+    run: >-
+      cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^sagemaker_stream::/)'
+  - id: oracle-stream
+    why: The fix changed decoder output on a case where LiteLLM and betterlite agreed.
+    run: >-
+      cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: deviation-row
+    why: A deviation row or its pinned link is missing, or the cap got its own constant.
+    run: >-
+      grep -q -F 'common_utils.py#L100-L122' docs/deviations/B9983.yaml
+      && grep -q -F 'common_utils.py#L150-L176' docs/deviations/B9983.yaml
+      && grep -q -F 'MAX_LINE_BYTES' crates/betterlite-bedrock/src/sagemaker_stream/events.rs
+      && ! grep -q -E '0x0010_0000|1_048_576|1048576' crates/betterlite-bedrock/src/sagemaker_stream/events.rs crates/betterlite-bedrock/src/sagemaker_stream/error.rs
+oracle_cases: []
+deviations:
+- what: >-
+    A SageMaker response stream whose buffered JSON value is still unfinished after more than 1 MiB (0x0010_0000 bytes)
+    ends with "the SageMaker stream JSON buffer passed 1048576 bytes without a complete value", on the blocking and the
+    async path. A value that completes, even in one large event, projects as before.
+  why: >-
+    LiteLLM appends every event to accumulated_json and reparses the whole string until a value completes, so a stream
+    that never closes its JSON grows memory and parse time without bound.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L100-L122
+- what: >-
+    On the async path, a complete JSON value that fails to project is logged and dropped from the buffer, so the next
+    event projects on its own. [] followed by {"token": {"text": "after"}} yields the "after" token.
+  why: >-
+    LiteLLM's aiter_bytes keeps the rejected text in accumulated_json, every later event is appended behind it and
+    never parses, and the rest of the stream is lost.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L150-L176
+out_of_scope:
+- The AgentCore line decoder and its MAX_LINE_BYTES; this task only reads the constant.
+- The frame decoder and MAX_FRAME_BYTES in event_frames.rs.
+- The oracle helper and its cases; no case changes, since the existing ones never send a failed value followed by more events.
+pitfalls:
+- 'Reuse crate::agentcore_stream::line::MAX_LINE_BYTES; a second 0x0010_0000 in events.rs or error.rs fails the deviation-row check.'
+- 'Check the cap only when the projection is Pending. A value that completes in the event that crosses the limit must still project.'
+- 'Clear the buffer only in the projection Err arm. Utf8 and Status failures happen before the append and keep the buffer, as LiteLLM combines them with the next event.'
+- 'Do not add an oracle case for either fix: LiteLLM answers differently there by design.'
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

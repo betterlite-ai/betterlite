@@ -20,6 +20,9 @@ description: >-
   native settings build data structures the caller passes to the worker process.
 scope:
   paths:
+    - "crates/betterlite-config/tests/fixtures/unsupported/**"
+    - "crates/betterlite-config/src/sections.rs"
+    - "crates/betterlite-config/src/loader.rs"
     - crates/betterlite-server/src/worker_options.rs
     - crates/betterlite-server/src/worker_options/**
     - crates/betterlite-config/src/sections/worker_options_reload.rs
