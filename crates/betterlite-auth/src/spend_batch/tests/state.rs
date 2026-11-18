@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_redis::request_batch::lock;
 
 use crate::spend_batch::batch::{BatchPhase, SpendCounterBatch, SpendCounterValue};
+use crate::spend_batch::increment::PendingSpendIncrement;
 
 use super::support::{FakeRedis, allow_cache, decimal, keys};
 
@@ -85,6 +86,17 @@ async fn forget_clears_the_key_even_when_closed() {
     assert!(state.loaded.is_empty());
     drop(state);
     assert_eq!(batch.read("spend:key:a").await, None);
+}
+
+#[test]
+fn a_pending_increment_keeps_its_key_and_signed_amount() {
+    let increment = PendingSpendIncrement {
+        counter_key: "spend:key:a".to_owned(),
+        increment: decimal("-5"),
+    };
+    assert_eq!(increment.counter_key, "spend:key:a");
+    assert_eq!(increment.increment, decimal("-5"));
+    assert!(increment.increment.is_sign_negative());
 }
 
 #[tokio::test]
