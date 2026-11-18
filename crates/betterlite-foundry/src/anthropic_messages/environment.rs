@@ -45,7 +45,7 @@ pub struct EnvironmentRequest<'data> {
 }
 
 // A dict only takes the argument when it has no api_key entry; a typed object when its field is empty
-fn explicit_key<'data>(
+pub(crate) fn explicit_key<'data>(
     params_key: ParamsKey<'data>,
     argument: Option<&'data SecretString>,
 ) -> Option<&'data SecretString> {

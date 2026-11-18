@@ -1,0 +1,19 @@
+kind: helper
+name: responses-open-item-state
+call:
+  b3673:
+    operation: responses_open_item
+    message: blocked
+    model: gpt-test
+    original_response: null
+    stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
+    events:
+      - {type: response.output_item.added, output_index: 0, item: {type: message, id: open_1}}
+      - {type: response.output_text.delta, item_id: open_1, output_index: 0, delta: first}
+      - {type: response.output_item.added, output_index: 1, item: {type: message, id: open_2}}
+      - {type: response.output_text.delta, item_id: open_2, output_index: 1, delta: last}
+    chunks: []
+    status_code: 400
+    message_id: msg_00000000-0000-0000-0000-000000000001
+env: {}
+compare: {ignore: []}
