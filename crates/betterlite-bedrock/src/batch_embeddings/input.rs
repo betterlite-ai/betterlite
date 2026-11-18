@@ -41,7 +41,7 @@ pub fn coerce_input_to_string(
     // each refusal names the Python type it read, and an int is a token list, True included
     match candidate {
         EmbeddingInput::Text(text) => Ok(text.clone()),
-        EmbeddingInput::Number(number) if !number.is_i64() && !number.is_u64() => {
+        EmbeddingInput::Number(number) if number.as_str().contains(['.', 'e', 'E']) => {
             Err(BatchEmbeddingError::InputNotString {
                 found: "float",
                 model: model.to_owned(),

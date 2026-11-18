@@ -439,6 +439,10 @@ fn invalid_multi_input() {
         // a negative int is still an int even though it is not a u64
         (input("-1"), tokenized()),
         (input("1.5"), not_a_string("float")),
+        (input("1e5"), not_a_string("float")),
+        (input("1E5"), not_a_string("float")),
+        // a whole number past the i64/u64 range is still an int, so it reads as tokens
+        (input("123456789012345678901234567890"), tokenized()),
         (input(r#"{"a":1}"#), not_a_string("dict")),
         (input("[null]"), not_a_string("NoneType")),
     ];
