@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_other_embedding_call-embedding-family-selection-seed
+call:
+  bedrock_other_embedding_call:
+    function: embedding_family_selection
+    model: meta.llama3-70b-instruct-v1:0
+    input: [hello]
+    now: 1700000000
+env: {}
+compare: {ignore: []}

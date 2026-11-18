@@ -14,8 +14,10 @@ description: >-
   the post operation is inside _handle_error's try; after response transformation attach provider headers.
   Client kind filtering and ssl_verify=None default match the generation transport, but edit has no dummy file.
 
-  The image_edit_http SDK operation runs real mock HTTP with a finite config fixture supplying transforms,
-  finalizer and trusted URL. Tests record callback order rather than treating expected captures as results.
+  SdkHttpCall::ImageEditHttp runs real mock HTTP with a finite config fixture supplying transforms,
+  finalizer and trusted URL. Main already registers it as a placeholder: build its Call (implementing
+  call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/image_edit_http.rs and ImageEditHttpRequest
+  in tools/oracle/sdk_http/image_edit_http.py, with the shared sdk_http files and dispatch.py left alone. Tests record callback order rather than treating expected captures as results.
   Count 191 nonblank/non-comment lines; allocate 175 implementation, 120 tests, 100 fixtures, 75 adapters and
   30 wiring lines, 500 total. Reuse existing HTTP/multipart and SDK decoders with new SDK parser seeds.
 
@@ -25,9 +27,8 @@ scope:
   paths:
   - crates/betterlite-provider/src/api/image_edit_http.rs
   - crates/betterlite-provider/src/api/image_edit_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/image_edit_http.rs
+  - tools/oracle/src/sdk_http/image_edit_http/**
   - tools/oracle/sdk_http/image_edit_http.py
   - tools/oracle/cases/sdk-http/image-edit-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-edit-http-*
@@ -71,7 +72,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::image_edit_http::tests::/)'
   - id: sdk-python
     why: The edit handler adapter must be present and type checked.
-    run: test -f tools/oracle/sdk_http/image_edit_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_edit_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: Edit HTTP must have a recognized typed SDK operation seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-edit-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

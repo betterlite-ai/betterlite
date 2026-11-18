@@ -1,0 +1,29 @@
+kind: helper
+name: dual-cache-batch-reads-sync-read-backfill
+call:
+  b4294:
+    sync_read_backfill:
+      clock: 1000.0
+      default_in_memory_ttl: 30.0
+      memory:
+        - key: a
+          value: memory-a
+        - key: c
+          value: 7
+      keys: [a, c]
+      read_keys: [a, b, c, d]
+      ttl_keys: [a, b, c]
+      due_keys: []
+      write_keys: []
+      duplicate_keys: []
+      merge_keys: []
+      replies:
+        - [redis-b, null]
+      own_replies: []
+      caches: []
+      breaker_caches: []
+      prepare_caches: []
+      apply_caches: []
+env: {}
+compare:
+  ignore: []

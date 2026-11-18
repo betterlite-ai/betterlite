@@ -1,0 +1,38 @@
+kind: helper
+name: stream-cleanup-partial-model-checks
+call:
+  b8605:
+    function: model_checks
+    checks:
+      - chunks: [{model: alias}]
+        assembled: routed
+        request_data: {}
+      - chunks: [{model: alias}]
+        assembled: alias
+        request_data: {}
+      - chunks: [{model: alias}]
+        assembled: ""
+        request_data: {}
+      - chunks: [{}]
+        assembled: routed
+        request_data: {}
+      - chunks: [{model: 7}]
+        assembled: routed
+        request_data: {}
+      - chunks: [{model: alias}]
+        assembled: null
+        request_data: {}
+      - chunks: [{model: alias}]
+        assembled: routed
+        request_data: {_litellm_client_requested_model: routed}
+      - chunks: [{model: alias}]
+        assembled: other
+        request_data: {_litellm_client_requested_model: routed, model: other}
+      - chunks: [{model: alias}]
+        assembled: alias
+        request_data: {_litellm_client_requested_model: 5, model: alias}
+      - chunks: [{model: alias}]
+        assembled: routed
+        request_data: {model: 7}
+env: {}
+compare: {ignore: []}

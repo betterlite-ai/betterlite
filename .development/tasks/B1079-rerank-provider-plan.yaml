@@ -24,8 +24,11 @@ description: >-
   accepts the B002 normalizer, including invalid nonempty values warning and enabling the flag.
   Reuse config_yaml decoding with new seeds. No new request-byte decoder is introduced here.
 
-  B2401 sdk_http.rerank_provider_plan must actually call the mock HTTP provider for every successful
-  dispatch, recording request, result and ordered diagnostics. Error-only cases capture no request.
+  SdkHttpCall::RerankProviderPlan must actually call the mock HTTP provider for every successful
+  dispatch, recording request, result and ordered diagnostics. The variant is a placeholder on main:
+  replace the Call and Outcome aliases in tools/oracle/src/sdk_http/rerank_provider_plan.rs (Call
+  implements call_kind::CallKind) and fill RerankProviderPlanRequest in
+  tools/oracle/sdk_http/rerank_provider_plan.py; the shared sdk_http files stay as they are. Error-only cases capture no request.
   Preserve SDK exception class/status/type/param/code, including absent values; proxy envelopes belong
   to B085. Count 413 nonblank/non-comment lines in the complete function. Share typed branch arguments
   rather than duplicating Rust calls: 280 implementation,170 table tests,135 fixtures,90 adapters,
@@ -37,9 +40,8 @@ scope:
   - crates/betterlite-config/src/api/rerank_provider_plan.rs
   - crates/betterlite-config/src/api/rerank_provider_plan/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/rerank_provider_plan.rs
+  - tools/oracle/src/sdk_http/rerank_provider_plan/**
   - tools/oracle/sdk_http/rerank_provider_plan.py
   - tools/oracle/cases/sdk-http/rerank-provider-plan/**
   - tools/oracle/fuzz/corpus/sdk_http_case/rerank-provider-plan-*
@@ -120,7 +122,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/rerank-provider-plan-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: sdk-python
     why: The rerank adapter must invoke the SDK against mock HTTP, with checked Python types.
-    run: test -f tools/oracle/sdk_http/rerank_provider_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/rerank_provider_plan.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The rerank_provider_plan operation needs a fresh decoder seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/rerank-provider-plan-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
