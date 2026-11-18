@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -29,7 +29,7 @@ use betterlite_router::routing_state_store::{
     RedisSettings, RoutingStateStore, Settings as StateSettings,
 };
 use betterlite_router::routing_value_store::{
-    RouteIncrement, RouteKey, RoutingValueStore, StoreSettings,
+    RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead, StoreSettings,
 };
 use betterlite_tokenizer::reservation::RequestBody;
 use serde_json::Number;
@@ -251,6 +251,67 @@ fn a_redis_outage_keeps_the_rpm_check() {
     };
     assert_eq!(exceeded.channel, RateLimitChannel::Rpm);
     assert_eq!(exceeded.current, 2);
+}
+
+// an open breaker is its own answer, so the service falls back to the in-memory count instead of skipping the check
+#[test]
+fn an_open_breaker_answers_reads_as_its_own_state() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+    let server = runtime
+        .block_on(FakeRedis::try_start())
+        .expect("the fake redis starts");
+    let mut settings = remote_settings(server.port());
+    settings.breaker.failure_threshold = 1;
+    let store = RoutingStateStore::new(&settings, Arc::new(|| Duration::ZERO))
+        .expect("the state store opens");
+    let cache = RoutingRateLimitCache {
+        local: local(),
+        remote: Some(Arc::new(store)),
+    };
+    server.set_down(true);
+    assert_eq!(
+        runtime.block_on(cache.remote("router:tpm")),
+        super::RemoteRead::Value(None)
+    );
+    assert_eq!(
+        runtime.block_on(cache.remote("router:tpm")),
+        super::RemoteRead::BreakerOpen
+    );
+}
+
+// a value the counter check cannot use is a failed read, so the service lets the request through instead of rejecting
+#[test]
+fn a_non_counter_remote_value_reads_as_failed() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+    let server = runtime
+        .block_on(FakeRedis::try_start())
+        .expect("the fake redis starts");
+    let store =
+        RoutingStateStore::new(&remote_settings(server.port()), Arc::new(|| Duration::ZERO))
+            .expect("the state store opens");
+    let key = RouteKey::parse("router:rpm").expect("the key parses");
+    runtime
+        .block_on(store.compare_and_set(
+            &key,
+            &StoreRead::Missing,
+            &RouteValue::Members(BTreeSet::new()),
+            None,
+        ))
+        .expect("the member value lands");
+    let cache = RoutingRateLimitCache {
+        local: local(),
+        remote: Some(Arc::new(store)),
+    };
+    assert_eq!(
+        runtime.block_on(cache.remote("router:rpm")),
+        super::RemoteRead::Failed
+    );
 }
 
 struct AllowAll;
