@@ -150,6 +150,32 @@ fn azure_file_client_inputs() {
         panic!("the cached client comes back");
     };
     assert_eq!(view.base_url, format!("{SUPPLIED_ENDPOINT}/v1/"));
+
+    // an empty v1 key carries no credential, so the client sends no auth header
+    let mut empty_v1 = step(Action::Client);
+    empty_v1.settings.api_version = Some("v1".to_owned());
+    empty_v1.settings.api_key = Some(SecretString::from(String::new()));
+    assert_eq!(client_view(empty_v1).auth, AuthKind::None);
+
+    // a base URL that already carries api-version has it replaced rather than doubled
+    let files = FilesClient {
+        api_key: SecretString::from(KEY.to_owned()),
+        base_url: Url::parse("https://fixture.test/openai/?api-version=old").expect("a URL"),
+        organization: None,
+        timeout: DEFAULT_TIMEOUT,
+        max_retries: 0,
+    };
+    let client = SelectedClient::new(
+        files,
+        FileAuth::None,
+        Some(VERSION.to_owned()),
+        ClientKind::AzureOpenAi,
+    )
+    .expect("the client builds");
+    assert_eq!(
+        client.query(),
+        vec![("api-version".to_owned(), VERSION.to_owned())]
+    );
 }
 
 fn azure_file_client_errors() {

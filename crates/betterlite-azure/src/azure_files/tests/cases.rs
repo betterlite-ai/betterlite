@@ -95,6 +95,34 @@ fn file_upload() {
     assert_eq!(data, original, "the request data is left as it was");
     upload_request(only_call(&observation));
     upload_logs();
+    file_upload_caller_headers_win();
+    file_upload_supplied_client_keeps_caller_authorization();
+}
+
+fn file_upload_caller_headers_win() {
+    let mut data = plain_upload();
+    data.extra_headers = IndexMap::from([
+        ("api-key".to_owned(), "caller-key".to_owned()),
+        ("authorization".to_owned(), "Bearer caller".to_owned()),
+    ]);
+    let request = only_call(&created(step(Action::Create), data));
+    assert_eq!(header(request, "api-key"), Some("caller-key"));
+    assert_eq!(header(request, "authorization"), Some("Bearer caller"));
+}
+
+fn file_upload_supplied_client_keeps_caller_authorization() {
+    let mut data = plain_upload();
+    data.extra_headers = IndexMap::from([("authorization".to_owned(), "Bearer caller".to_owned())]);
+    let observation = run(Step {
+        client: Some(Supplied::OpenAi),
+        data: Some(data),
+        reply: Some(json_reply(FILE_JSON)),
+        ..step(Action::Create)
+    });
+    assert_eq!(
+        header(only_call(&observation), "authorization"),
+        Some("Bearer caller")
+    );
 }
 
 fn upload_request(request: &OutboundRequest) {

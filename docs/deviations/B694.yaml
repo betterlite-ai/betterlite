@@ -15,4 +15,7 @@ deviations:
   - what: A synchronous call handed an AsyncAzureOpenAI or AsyncOpenAI client sends the request and returns the reply, where LiteLLM's retrieve, list and delete hand the un-awaited SDK coroutine to a sync caller and create and content fail with AttributeError on it.
     why: A sync call returns a value; an un-awaited coroutine is a leak no working setup relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/files/handler.py#L143-L179
+  - what: A v1, latest or preview api_version with an explicit empty api_key builds a client that sends no auth header, where LiteLLM's key chain takes the empty string as absent and the OpenAI SDK then fails at construction with its missing-credentials error.
+    why: B531's v1 projection carries the present-but-empty key as a static key; betterlite sends the request the caller configured and lets the API answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L552-L556
 kept_bugs: []
