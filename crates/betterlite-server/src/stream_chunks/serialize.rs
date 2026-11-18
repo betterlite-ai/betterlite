@@ -135,29 +135,23 @@ fn without_nulls(value: &Json, shape: Shape) -> Json {
     match shape {
         Shape::Value => value.clone(),
         Shape::Fields(fields) => strip_nulls(value, fields),
-        Shape::Tagged(variants) => tagged_without_nulls(value, variants),
+        Shape::Tagged(variants) => tagged_object(value, variants),
         Shape::Tools(variants) => tool_shapes::tools_without_nulls(value, variants),
     }
 }
 
 // a tagged union member is a model when its type matches, and anything else stays a dictionary
-fn tagged_without_nulls(value: &Json, variants: &[(&str, Shape)]) -> Json {
-    match value {
-        Json::List(items) => Json::List(
-            items
-                .iter()
-                .map(|item| tagged_object(item, variants))
-                .collect(),
-        ),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            tagged_object(value, variants)
-        }
-    }
-}
-
 fn tagged_object(value: &Json, variants: &[(&str, Shape)]) -> Json {
     let Json::Object(entries) = value else {
-        return value.clone();
+        return match value {
+            Json::List(items) => Json::List(
+                items
+                    .iter()
+                    .map(|item| tagged_object(item, variants))
+                    .collect(),
+            ),
+            other => other.clone(),
+        };
     };
     let Some(Json::Text(kind)) = entries.get("type") else {
         return value.clone();
