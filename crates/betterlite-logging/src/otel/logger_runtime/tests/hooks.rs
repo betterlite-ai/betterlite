@@ -17,7 +17,7 @@ use crate::otel::plumbing::context::context_slots::RequestTraceContext;
 use crate::otel::v2_callback::identity::IdentitySeed;
 use crate::otel::vocabulary::constants::attribute_keys::{error as error_keys, exception_event};
 
-use super::support::{attribute, fixture, lock, register_callback, settings};
+use super::support::{Fixture, attribute, fixture, lock, register_callback, settings};
 
 #[test]
 fn absent_hooks_noop() {
@@ -38,7 +38,7 @@ fn absent_hooks_noop() {
         request_metadata: None,
         ambient_span: None,
     };
-    let mut identity_trace = trace.clone();
+    let mut identity_trace = trace;
     assert!(seed_request_identity(&fixture.runtime, &seed, &mut identity_trace).is_none());
 }
 
@@ -106,6 +106,10 @@ fn phase_error_propagates() {
     assert_eq!(result, Err(error));
     // the guard is dropped with the phase, so the caller's context is untouched
     assert!(!Context::current().has_active_span());
+    assert_phase_exported(&fixture);
+}
+
+fn assert_phase_exported(fixture: &Fixture) {
     let spans = fixture.export_sinks.spans();
     assert_eq!(spans.len(), 2);
     let phase = spans

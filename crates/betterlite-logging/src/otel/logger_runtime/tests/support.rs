@@ -292,54 +292,75 @@ fn build_fixture(
     )
 }
 
+struct FixtureParts {
+    sdk_sink: InMemorySpanExporter,
+    sdk_provider: SdkTracerProvider,
+    constructor: Arc<RecordingConstructor>,
+    registered: Arc<V2Registry>,
+    trace: Arc<FixedTrace>,
+    environment: Arc<TestEnvironment>,
+    assembler: Arc<dyn StreamOutputAssembler>,
+    scope: Arc<FixedScope>,
+    factories: Arc<ExporterFactories>,
+    export_sinks: Arc<SinkRecorder>,
+    tenant_sinks: Arc<SinkRecorder>,
+}
+
+fn fixture_parts() -> FixtureParts {
+    let sdk_sink = InMemorySpanExporter::default();
+    let sdk_provider = provider_exporting(&sdk_sink);
+    let (factories, export_sinks, tenant_sinks) = fixture_factories();
+    FixtureParts {
+        sdk_sink,
+        sdk_provider,
+        constructor: Arc::new(RecordingConstructor::default()),
+        registered: Arc::new(V2Registry::default()),
+        trace: Arc::new(FixedTrace::default()),
+        environment: Arc::new(TestEnvironment::default()),
+        assembler: Arc::new(NullAssembler),
+        scope: Arc::new(FixedScope::default()),
+        factories,
+        export_sinks,
+        tenant_sinks,
+    }
+}
+
 fn build_fixture_on(
     base: Settings,
     configured_exclusions: Option<Vec<String>>,
     v2_enabled: bool,
     hooks: Option<Arc<dyn RuntimeHooks>>,
 ) -> Fixture {
-    let sdk_sink = InMemorySpanExporter::default();
-    let sdk_provider = provider_exporting(&sdk_sink);
-    let constructor = Arc::new(RecordingConstructor::default());
-    let registered = Arc::new(V2Registry::default());
-    let trace = Arc::new(FixedTrace::default());
-    let environment = Arc::new(TestEnvironment::default());
-    let assembler: Arc<dyn StreamOutputAssembler> = Arc::new(NullAssembler);
-    let constructor_port = Arc::clone(&constructor);
-    let trace_source = Arc::clone(&trace);
-    let environment_lookup = Arc::clone(&environment);
-    let (factories, export_sinks, tenant_sinks) = fixture_factories();
-    let scope = Arc::new(FixedScope::default());
-    let scope_source = Arc::clone(&scope);
+    let parts = fixture_parts();
     let runtime = LoggerRuntime {
-        registered: Arc::clone(&registered),
+        registered: Arc::clone(&parts.registered),
         loggers: Mutex::new(Vec::new()),
         fan_out: Arc::new(Mutex::new(TenantFanOutRegistry::default())),
-        constructor: constructor_port,
+        constructor: Arc::clone(&parts.constructor),
         base,
-        environment: environment_lookup,
-        trace: trace_source,
-        factories,
-        scope: scope_source,
-        assembler: Arc::clone(&assembler),
+        environment: Arc::clone(&parts.environment),
+        trace: Arc::clone(&parts.trace),
+        factories: Arc::clone(&parts.factories),
+        scope: Arc::clone(&parts.scope),
+        assembler: Arc::clone(&parts.assembler),
         hooks,
         configured_exclusions,
         v2_enabled,
-        sdk_provider,
+        sdk_provider: parts.sdk_provider,
         generic: Mutex::new(None),
         published: Mutex::new(None),
     };
     Fixture {
         runtime,
-        constructor,
-        registered,
-        sdk_sink,
-        trace,
-        environment,
-        assembler,
-        scope,
-        export_sinks,
-        tenant_sinks,
+        constructor: parts.constructor,
+        registered: parts.registered,
+        sdk_sink: parts.sdk_sink,
+        trace: parts.trace,
+        environment: parts.environment,
+        assembler: parts.assembler,
+        scope: parts.scope,
+        export_sinks: parts.export_sinks,
+        tenant_sinks: parts.tenant_sinks,
     }
 }
 
@@ -457,9 +478,9 @@ fn fixture_factories() -> (Arc<ExporterFactories>, Arc<SinkRecorder>, Arc<SinkRe
 }
 
 fn custom_factory(recorder: &Arc<SinkRecorder>) -> ExporterFactory {
-    let recorder = Arc::clone(recorder);
+    let sinks = Arc::clone(recorder);
     let factory = move |_spec: &ExporterSpec| -> ExportResult<SpanSink> {
-        Ok(SpanSink::InMemory(recorder.exporter()))
+        Ok(SpanSink::InMemory(sinks.exporter()))
     };
     Arc::new(factory)
 }
@@ -577,18 +598,26 @@ fn callback_parts(fixture: &Fixture, config: Settings, name: &str) -> CallbackPa
             callback_settings: Arc::new(NoSettings),
             utc_offset: FixedOffset::east_opt(0).expect("utc"),
         },
-        emitter: EmitterParts {
-            mappers: vec![MapperKind::GenAI(GenAIMapper {
-                tool_attr_budget: tool_attr_budget(1),
-            })],
-            environment: Arc::new(BTreeMap::<String, String>::new()),
-            attribute_limit: None,
-        },
-        error_info: ErrorInformationConfig {
-            normalizer: Normalizer::new().expect("normalizer"),
-            redactor: None,
-            log_client_error_tracebacks: false,
-        },
+        emitter: emitter_parts(),
+        error_info: error_information(),
+    }
+}
+
+fn emitter_parts() -> EmitterParts {
+    EmitterParts {
+        mappers: vec![MapperKind::GenAI(GenAIMapper {
+            tool_attr_budget: tool_attr_budget(1),
+        })],
+        environment: Arc::new(BTreeMap::<String, String>::new()),
+        attribute_limit: None,
+    }
+}
+
+fn error_information() -> ErrorInformationConfig {
+    ErrorInformationConfig {
+        normalizer: Normalizer::new().expect("normalizer"),
+        redactor: None,
+        log_client_error_tracebacks: false,
     }
 }
 

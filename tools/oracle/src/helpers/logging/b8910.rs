@@ -115,7 +115,7 @@ impl Helper for Op {
 }
 
 // the three LiteLLM callback classes _logger_class can return
-fn class_name(class: LoggerClass) -> &'static str {
+const fn class_name(class: LoggerClass) -> &'static str {
     match class {
         LoggerClass::Generic => "OpenTelemetryV2",
         LoggerClass::Langfuse => "LangfuseOpenTelemetryV2",

@@ -28,23 +28,99 @@ use crate::otel::mappers::registry::MapperError;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::plumbing::events::OperationException;
+use crate::otel::v2_callback::callback::V2Callback;
 use crate::otel::v2_callback::error::CallbackError;
 
 use super::support::{
-    Fixture, callback_constructor, destination, finished, fixture, fixture_disabled,
+    Fixture, RootLog, callback_constructor, destination, finished, fixture, fixture_disabled,
     fixture_with_base, gated, lock, operator_exporter, placeholder, probe, provider_exporting,
     recording_root, settings, spec,
 };
 
-fn build(fixture: &Fixture, config: Settings, name: &str) {
+fn build_with_settings(
+    fixture: &Fixture,
+    config: Settings,
+    name: &str,
+    constructor_settings: ConstructorSettings,
+) {
     build_otel_v2_logger(
         &fixture.runtime,
         config,
         Some(name),
         InjectedProviders::default(),
-        ConstructorSettings::default(),
+        constructor_settings,
     )
     .expect("built");
+}
+
+fn recorded_runtime(fixture: Fixture) -> (RootLog, LoggerRuntime) {
+    let (log, roots) = recording_root();
+    let runtime = LoggerRuntime {
+        constructor: Arc::new(callback_constructor(roots)),
+        ..fixture.runtime
+    };
+    (log, runtime)
+}
+
+fn record_failure(
+    callback: &V2Callback,
+    meter: &SdkMeterProvider,
+    exporter: &InMemoryMetricExporter,
+) {
+    callback
+        .recorders()
+        .0
+        .expect("metric recorder")
+        .record_failure(
+            &MetadataMap::new(),
+            Decimal::from(10_i64),
+            Decimal::from(13_i64),
+        )
+        .expect("record");
+    meter.force_flush().expect("meter flush");
+    assert!(
+        !exporter
+            .get_finished_metrics()
+            .expect("finished metrics")
+            .is_empty()
+    );
+}
+
+fn record_exception(callback: &V2Callback, exporter: &InMemoryLogExporter) {
+    callback
+        .recorders()
+        .1
+        .expect("event recorder")
+        .record_operation_exception(&OperationException {
+            span_context: &span_context(),
+            error_type: "Boom",
+            message: "kaboom",
+            stack_trace: None,
+            timestamp_ns: None,
+        });
+    assert_eq!(exporter.get_emitted_logs().expect("logs").len(), 1);
+}
+
+fn assert_root_log(log: &RootLog, expected: &[&str]) {
+    assert_eq!(*lock(log), expected);
+}
+
+fn pre_call_details() -> Json {
+    serde_json::from_str(
+        r#"{
+            "litellm_call_id": "call-1",
+            "model": "gpt-4o",
+            "litellm_params": {
+                "metadata": {
+                    "trace_name": "checkout",
+                    "trace_user_id": "user-1",
+                    "session_id": "session-1",
+                    "tags": ["env:test", "beta"]
+                }
+            }
+        }"#,
+    )
+    .expect("details")
 }
 
 fn add_carrier(fixture: &Fixture, in_memory: &mut Vec<Arc<dyn CallbackLogger>>, name: &str) {
@@ -72,12 +148,7 @@ fn span_context() -> SpanContext {
 
 #[test]
 fn factory_provider_passthrough() {
-    let fixture = fixture();
-    let (_, roots) = recording_root();
-    let runtime = LoggerRuntime {
-        constructor: Arc::new(callback_constructor(roots)),
-        ..fixture.runtime
-    };
+    let (_log, runtime) = recorded_runtime(fixture());
     let mut config = settings(vec![]);
     config.enable_metrics = true;
     config.enable_events = true;
@@ -111,41 +182,19 @@ fn factory_provider_passthrough() {
         panic!("the generic class keeps its typed callback");
     };
     // each recorder emits through the provider the caller injected, never one the build replaces
-    callback
-        .recorders()
-        .0
-        .expect("metric recorder")
-        .record_failure(
-            &MetadataMap::new(),
-            Decimal::from(10_i64),
-            Decimal::from(13_i64),
-        )
-        .expect("record");
-    meter.force_flush().expect("meter flush");
-    assert!(
-        !metric_exporter
-            .get_finished_metrics()
-            .expect("finished metrics")
-            .is_empty()
-    );
-    callback
-        .recorders()
-        .1
-        .expect("event recorder")
-        .record_operation_exception(&OperationException {
-            span_context: &span_context(),
-            error_type: "Boom",
-            message: "kaboom",
-            stack_trace: None,
-            timestamp_ns: None,
-        });
-    assert_eq!(log_exporter.get_emitted_logs().expect("logs").len(), 1);
+    record_failure(callback, &meter, &metric_exporter);
+    record_exception(callback, &log_exporter);
 }
 
 #[test]
 fn factory_chooses_generic_class() {
     let fixture = fixture();
-    build(&fixture, settings(vec![]), "otel");
+    build_with_settings(
+        &fixture,
+        settings(vec![]),
+        "otel",
+        ConstructorSettings::default(),
+    );
     let records = fixture.constructor.records();
     assert_eq!(records[0].class, LoggerClass::Generic);
     assert_eq!(records[0].callback_name.as_deref(), Some("otel"));
@@ -158,7 +207,12 @@ fn factory_chooses_langfuse_class() {
     let fixture = fixture();
     let mut config = settings(vec![]);
     config.mapper_names = vec!["genai".to_owned(), "langfuse".to_owned()];
-    build(&fixture, config, "langfuse_otel");
+    build_with_settings(
+        &fixture,
+        config,
+        "langfuse_otel",
+        ConstructorSettings::default(),
+    );
     let records = fixture.constructor.records();
     assert_eq!(records[0].class, LoggerClass::Langfuse);
     assert!(records[0].assembler.is_none());
@@ -170,7 +224,12 @@ fn factory_chooses_langfuse_content_class() {
     let mut config = settings(vec![]);
     config.mapper_names = vec!["langfuse".to_owned()];
     config.capture_message_content = CaptureMessageContent::SpanAndEvent;
-    build(&fixture, config, "langfuse_otel");
+    build_with_settings(
+        &fixture,
+        config,
+        "langfuse_otel",
+        ConstructorSettings::default(),
+    );
     let records = fixture.constructor.records();
     assert_eq!(records[0].class, LoggerClass::LangfuseContent);
     let assembler = records[0].assembler.as_ref().expect("the assembler");
@@ -184,33 +243,17 @@ fn factory_forwards_constructor_settings() {
         turn_off_message_logging: true,
         message_logging: false,
     };
-    build_otel_v2_logger(
-        &fixture.runtime,
-        settings(vec![]),
-        Some("otel"),
-        InjectedProviders::default(),
-        constructor_settings,
-    )
-    .expect("generic");
+    build_with_settings(&fixture, settings(vec![]), "otel", constructor_settings);
     let mut langfuse = settings(vec![]);
     langfuse.mapper_names = vec!["langfuse".to_owned()];
-    build_otel_v2_logger(
-        &fixture.runtime,
+    build_with_settings(
+        &fixture,
         langfuse.clone(),
-        Some("langfuse_otel"),
-        InjectedProviders::default(),
+        "langfuse_otel",
         constructor_settings,
-    )
-    .expect("langfuse");
+    );
     langfuse.capture_message_content = CaptureMessageContent::SpanAndEvent;
-    build_otel_v2_logger(
-        &fixture.runtime,
-        langfuse,
-        Some("langfuse_otel"),
-        InjectedProviders::default(),
-        constructor_settings,
-    )
-    .expect("langfuse content");
+    build_with_settings(&fixture, langfuse, "langfuse_otel", constructor_settings);
     let records = fixture.constructor.records();
     assert_eq!(
         records
@@ -262,15 +305,12 @@ fn logger_class_content_needs_span_capture() {
 }
 
 #[rstest]
-#[case::absent_headers(None, true, true)]
-#[case::empty_headers(Some(""), true, true)]
-#[case::present_headers(Some("authorization=x"), true, false)]
-#[case::header_optional(None, false, false)]
-fn is_gated_table(
-    #[case] headers: Option<&str>,
-    #[case] requires_headers: bool,
-    #[case] expected: bool,
-) {
+#[case::absent_headers((None, true, true))]
+#[case::empty_headers((Some(""), true, true))]
+#[case::present_headers((Some("authorization=x"), true, false))]
+#[case::header_optional((None, false, false))]
+fn is_gated_table(#[case] case: (Option<&str>, bool, bool)) {
+    let (headers, requires_headers, expected) = case;
     assert_eq!(
         is_gated(&spec("otlp_http", None, headers, requires_headers)),
         expected
@@ -508,12 +548,7 @@ fn a_v2_logger_alone_does_not_carry_langfuse_credentials() {
 
 #[test]
 fn the_factory_langfuse_handle_stamps_the_root_span() {
-    let fixture = fixture();
-    let (log, roots) = recording_root();
-    let runtime = LoggerRuntime {
-        constructor: Arc::new(callback_constructor(roots)),
-        ..fixture.runtime
-    };
+    let (log, runtime) = recorded_runtime(fixture());
     let mut config = settings(vec![]);
     config.mapper_names = vec!["langfuse".to_owned()];
     let logger = build_otel_v2_logger(
@@ -527,47 +562,27 @@ fn the_factory_langfuse_handle_stamps_the_root_span() {
     let Some(CallbackHooks::Langfuse(callback)) = &logger.hooks else {
         panic!("the factory kept the Langfuse handle");
     };
-    let details: Json = serde_json::from_str(
-        r#"{
-            "litellm_call_id": "call-1",
-            "model": "gpt-4o",
-            "litellm_params": {
-                "metadata": {
-                    "trace_name": "checkout",
-                    "trace_user_id": "user-1",
-                    "session_id": "session-1",
-                    "tags": ["env:test", "beta"]
-                }
-            }
-        }"#,
-    )
-    .expect("details");
     callback
         .log_pre_api_call(&PreCallEvent {
             model: "gpt-4o",
             messages: &Json::Null,
-            details: &details,
+            details: &pre_call_details(),
         })
         .expect("pre call");
-    assert_eq!(
-        lock(&log).clone(),
-        [
+    assert_root_log(
+        &log,
+        &[
             "langfuse.trace.name=checkout",
             "user.id=user-1",
             "session.id=session-1",
             "langfuse.trace.tags=[\"env:test\",\"beta\"]",
-        ]
+        ],
     );
 }
 
 #[test]
 fn the_factory_langfuse_content_handle_stamps_the_root_io() {
-    let fixture = fixture();
-    let (log, roots) = recording_root();
-    let runtime = LoggerRuntime {
-        constructor: Arc::new(callback_constructor(roots)),
-        ..fixture.runtime
-    };
+    let (log, runtime) = recorded_runtime(fixture());
     let mut config = settings(vec![]);
     config.mapper_names = vec!["langfuse".to_owned()];
     config.capture_message_content = CaptureMessageContent::SpanAndEvent;
@@ -594,12 +609,12 @@ fn the_factory_langfuse_content_handle_stamps_the_root_io() {
         &MetadataMap::new(),
         &OutputResponse::ModelResponse(&response),
     );
-    assert_eq!(
-        lock(&log).clone(),
-        [
+    assert_root_log(
+        &log,
+        &[
             "langfuse.observation.output=[{\"content\":\"done\",\"role\":\"assistant\"}]",
             "langfuse.observation.input=[{\"content\":\"hello\",\"role\":\"user\"}]",
-        ]
+        ],
     );
 }
 
