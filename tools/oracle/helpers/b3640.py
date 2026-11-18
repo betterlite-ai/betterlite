@@ -17,6 +17,8 @@ from litellm.types.utils import ModelResponse
 from litellm.types.videos.main import VideoObject
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
+litellm.suppress_debug_info = True
+
 
 class Input(TypedDict):
     operation: Literal["gemini_handler", "gemini_chunks", "vertex_chunks"]
