@@ -234,20 +234,17 @@ fn an_array_limit_repeats_like_doseq() {
     );
 }
 
-#[test]
-fn scalar_limits_are_written_as_python_does() {
-    for (value, written) in [
-        (JsonValue::Bool(true), "True"),
-        (JsonValue::Bool(false), "False"),
-        (JsonValue::from(1.5_f64), "1.5"),
-    ] {
-        let body = build_request(&single("q"), &options(&[("max_results", value)])).unwrap();
+#[rstest]
+#[case(JsonValue::Bool(true), "True")]
+#[case(JsonValue::Bool(false), "False")]
+#[case(JsonValue::from(1.5_f64), "1.5")]
+fn scalar_limits_are_written_as_python_does(#[case] value: JsonValue, #[case] written: &str) {
+    let body = build_request(&single("q"), &options(&[("max_results", value)])).unwrap();
 
-        assert_eq!(
-            search_url(None, "https://instant.test", Some(&body)),
-            format!("https://instant.test/?q=q&format=json&_max_results={written}")
-        );
-    }
+    assert_eq!(
+        search_url(None, "https://instant.test", Some(&body)),
+        format!("https://instant.test/?q=q&format=json&_max_results={written}")
+    );
 }
 
 #[test]
@@ -272,12 +269,16 @@ fn null_options_are_left_out() {
 }
 
 #[rstest]
-#[case("pretty")]
-#[case("no_redirect")]
-#[case("no_html")]
-#[case("skip_disambig")]
-fn a_wrong_typed_option_names_the_field(#[case] field: &str) {
-    let error = build_request(&single("q"), &options(&[(field, text("1"))])).unwrap_err();
+#[case("pretty", text("1"))]
+#[case("no_redirect", text("1"))]
+#[case("no_html", text("1"))]
+#[case("skip_disambig", text("1"))]
+#[case("pretty", JsonValue::from(9_223_372_036_854_775_808_u64))]
+#[case("no_redirect", JsonValue::from(9_223_372_036_854_775_808_u64))]
+#[case("no_html", JsonValue::from(9_223_372_036_854_775_808_u64))]
+#[case("skip_disambig", JsonValue::from(9_223_372_036_854_775_808_u64))]
+fn an_unsupported_option_value_names_the_field(#[case] field: &str, #[case] value: JsonValue) {
+    let error = build_request(&single("q"), &options(&[(field, value)])).unwrap_err();
 
     match error {
         DuckDuckGoSearchError::OptionType { field: named } => assert_eq!(named, field),
@@ -368,29 +369,32 @@ fn a_limit_is_read_from_a_numeric_string() {
 }
 
 #[rstest]
-#[case(JsonValue::String("abc".to_owned()), 2)]
-#[case(JsonValue::String("0_1".to_owned()), 2)]
-#[case(JsonValue::Bool(true), 2)]
-#[case(JsonValue::from(1.5_f64), 2)]
-#[case(JsonValue::Null, 2)]
-#[case(JsonValue::Array(Vec::new()), 2)]
-#[case(
-    JsonValue::Array(vec![
-        JsonValue::from(4_i64),
-        JsonValue::String("5".to_owned()),
-        JsonValue::Null,
-    ]),
-    2
-)]
-fn an_invalid_limit_leaves_every_topic(#[case] limit: JsonValue, #[case] expected: usize) {
+#[case(JsonValue::String("abc".to_owned()))]
+#[case(JsonValue::String("0_1".to_owned()))]
+#[case(JsonValue::Bool(true))]
+#[case(JsonValue::from(1.5_f64))]
+#[case(JsonValue::Null)]
+#[case(JsonValue::Array(Vec::new()))]
+#[case(JsonValue::Array(vec![
+    JsonValue::from(4_i64),
+    JsonValue::String("5".to_owned()),
+    JsonValue::Null,
+]))]
+fn an_invalid_limit_leaves_every_topic(#[case] limit: JsonValue) {
     let body = r#"{"RelatedTopics":[
         {"Text":"A - one","FirstURL":"https://a.test"},
-        {"Text":"B - two","FirstURL":"https://b.test"}
+        {"Text":"B - two","FirstURL":"https://b.test"},
+        {"Text":"C - three","FirstURL":"https://c.test"}
     ]}"#;
 
     let response = decode(body, Some(limit)).unwrap();
 
-    assert_eq!(response.results.len(), expected);
+    let urls: Vec<&str> = response
+        .results
+        .iter()
+        .map(|result| result.url.as_str())
+        .collect();
+    assert_eq!(urls, ["https://a.test", "https://b.test", "https://c.test"]);
 }
 
 #[test]
@@ -701,17 +705,18 @@ fn a_null_heading_fails() {
 }
 
 #[rstest]
-#[case(r#"{"Text":null,"FirstURL":"https://a.test"}"#, "Text")]
-#[case(r#"{"Text":"A - one","FirstURL":null}"#, "FirstURL")]
-fn a_null_topic_field_fails(#[case] topic: &str, #[case] field: &str) {
+#[case(
+    r#"{"Text":null,"FirstURL":"https://a.test"}"#,
+    "the DuckDuckGo search reply field `Text` is null"
+)]
+#[case(
+    r#"{"Text":"A - one","FirstURL":null}"#,
+    "the DuckDuckGo search reply field `FirstURL` is null"
+)]
+fn a_null_topic_field_fails(#[case] topic: &str, #[case] message: &str) {
     let body = format!(r#"{{"RelatedTopics":[{topic}]}}"#);
 
-    let error = decode(&body, None).unwrap_err();
-
-    match error {
-        DuckDuckGoSearchError::ReplyNull { field: named } => assert_eq!(named, field),
-        other => panic!("unexpected error {other:?}"),
-    }
+    assert_eq!(decode(&body, None).unwrap_err().to_string(), message);
 }
 
 #[rstest]
