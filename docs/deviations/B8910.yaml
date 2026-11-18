@@ -85,14 +85,18 @@ deviations:
       build_fan_out_tracer_provider, and the logger runtime's factory builds every provider it creates
       through it. LiteLLM builds the provider without the fan-out and calls attach_tenant_fan_out on the
       provider it publishes, or on the registered callback's provider when fan_out_provider falls back to
-      it, with one operator-sink map merged from every V2 logger config.
+      it, with one operator-sink map merged from every V2 logger config. Every runtime-built provider
+      therefore carries the fan-out, so a span emitted by a V2 logger that publication did not select
+      also reaches the request's tenant destinations; LiteLLM attaches the processor to the published
+      provider alone.
     why: >-
       opentelemetry_sdk 0.33.1 keeps a provider's processors private and only TracerProviderBuilder can
       add one, so a provider this runtime did not build cannot gain the processor: not one passed in
-      through InjectedProviders, and not one already held by a registered V2Callback. A runtime-built
-      provider's fan-out also sees only the config that built it, so a destination that another V2
-      logger's operator exporter already writes can be delivered twice. Publication still records the
-      same processor in the runtime's TenantFanOutRegistry and still attaches it before the provider
-      setter runs. That registry is what deliverable_destinations reads.
+      through InjectedProviders, and not one already held by a registered V2Callback. The factory cannot
+      know which logger publication will select, so it cannot narrow the attachment to that one. A
+      runtime-built provider's fan-out also sees only the config that built it, so a destination that
+      another V2 logger's operator exporter already writes can be delivered twice. Publication still
+      records the same processor in the runtime's TenantFanOutRegistry and still attaches it before the
+      provider setter runs. That registry is what deliverable_destinations reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L899-L908
 kept_bugs: []
