@@ -313,6 +313,10 @@ fn build(cache: &Arc<FakeCache>, events: &Arc<RecordingEvents>) -> PodLockManage
     )
 }
 
+fn owner_text(manager: &PodLockManager<FakeCache>) -> &str {
+    manager.pod_id.as_ref()
+}
+
 #[tokio::test]
 async fn acquiring_without_a_cache_returns_none() {
     let manager = PodLockManager::<FakeCache>::new(
@@ -331,10 +335,8 @@ async fn a_fresh_set_acquires_without_an_event() {
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
     assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
-    assert_eq!(
-        cache.stored_owners(),
-        vec![manager.pod_id.as_ref().to_owned()]
-    );
+    let owner = owner_text(&manager);
+    assert_eq!(cache.stored_owners(), vec![owner.to_owned()]);
     assert_eq!(cache.set_ttls(), vec![60]);
     assert!(events.events().is_empty());
 }
@@ -370,7 +372,7 @@ async fn a_reentrant_acquire_succeeds_and_emits_the_acquired_gauge() {
         events.events(),
         vec![PodLockEvent {
             call_type: PodLockCallType::Acquired,
-            gauge_labels: format!("job:{}", manager.pod_id.as_ref()),
+            gauge_labels: format!("job:{}", owner_text(&manager)),
             gauge_value: 1.0,
             duration_seconds: 60.0,
         }]
@@ -392,7 +394,7 @@ async fn a_reentrant_event_reports_the_default_ttl_for_a_custom_lease() {
         events.events(),
         vec![PodLockEvent {
             call_type: PodLockCallType::Acquired,
-            gauge_labels: format!("job:{}", manager.pod_id.as_ref()),
+            gauge_labels: format!("job:{}", owner_text(&manager)),
             gauge_value: 1.0,
             duration_seconds: 60.0,
         }]
@@ -471,7 +473,7 @@ async fn release_uses_the_cached_script_and_emits_only_for_one() {
         events.events(),
         vec![PodLockEvent {
             call_type: PodLockCallType::Released,
-            gauge_labels: format!("job:{}", manager.pod_id.as_ref()),
+            gauge_labels: format!("job:{}", owner_text(&manager)),
             gauge_value: 0.0,
             duration_seconds: 60.0,
         }]
@@ -488,7 +490,7 @@ async fn the_release_script_compares_the_json_encoded_owner() {
     manager.release_lock("job").await;
     assert_eq!(
         cache.script_arguments(),
-        vec![format!("\"{}\"", manager.pod_id.as_ref())]
+        vec![format!("\"{}\"", owner_text(&manager))]
     );
     assert!(!cache.has_lease());
     assert_eq!(events.events().len(), 1);
@@ -504,7 +506,7 @@ async fn a_script_that_finds_another_owner_deletes_nothing() {
     manager.release_lock("job").await;
     assert_eq!(
         cache.script_arguments(),
-        vec![format!("\"{}\"", manager.pod_id.as_ref())]
+        vec![format!("\"{}\"", owner_text(&manager))]
     );
     assert!(cache.has_lease());
     assert!(events.events().is_empty());
@@ -526,7 +528,7 @@ async fn a_script_failure_clears_the_handle_warns_and_falls_back() {
         events.events(),
         vec![PodLockEvent {
             call_type: PodLockCallType::Released,
-            gauge_labels: format!("job:{}", manager.pod_id.as_ref()),
+            gauge_labels: format!("job:{}", owner_text(&manager)),
             gauge_value: 0.0,
             duration_seconds: 60.0,
         }]
@@ -555,7 +557,7 @@ async fn the_get_and_delete_fallback_cannot_be_atomic() {
         events.events(),
         vec![PodLockEvent {
             call_type: PodLockCallType::Released,
-            gauge_labels: format!("job:{}", manager.pod_id.as_ref()),
+            gauge_labels: format!("job:{}", owner_text(&manager)),
             gauge_value: 0.0,
             duration_seconds: 60.0,
         }]
@@ -600,7 +602,8 @@ async fn a_cancelled_release_keeps_the_lease_and_emits_nothing() {
     assert!(cancelled.is_err());
     assert_eq!(cache.deletes(), 1);
     assert!(cache.deleted_owners().is_empty());
-    assert_eq!(cache.held_owner(), Some(manager.pod_id.as_ref().to_owned()));
+    let owner = owner_text(&manager);
+    assert_eq!(cache.held_owner(), Some(owner.to_owned()));
     assert!(events.events().is_empty());
 }
 
@@ -627,7 +630,7 @@ async fn the_constructed_uuid_owns_every_acquire() {
         sink,
         PodId::try_from(owner).unwrap(),
     );
-    assert_eq!(manager.pod_id.as_ref(), owner.to_string().as_str());
+    assert_eq!(owner_text(&manager), owner.to_string().as_str());
     manager.acquire_lock("first", None, true).await;
     manager.acquire_lock("second", None, true).await;
     assert_eq!(

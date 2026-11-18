@@ -220,14 +220,15 @@ impl<C: LockCache> PodLockManager<C> {
         lease_ttl: i64,
         allow_reentrant: bool,
     ) -> Result<Acquisition, LockCacheError> {
+        let pod_id: &str = self.pod_id.as_ref();
         tracing::debug!(
-            pod_id = self.pod_id.as_ref(),
+            pod_id,
             lock_key,
             ttl = lease_ttl,
             "Pod attempting to acquire Redis lock for cronjob_id"
         );
         if cache
-            .set_owner_if_absent(lock_key, self.pod_id.as_ref(), lease_ttl)
+            .set_owner_if_absent(lock_key, pod_id, lease_ttl)
             .await?
         {
             return Ok(Acquisition::Fresh);
@@ -236,11 +237,11 @@ impl<C: LockCache> PodLockManager<C> {
             return Ok(Acquisition::Denied);
         };
         let owner = decode_pod_owner(&bytes)?;
-        if owner == self.pod_id.as_ref() && allow_reentrant {
+        if owner == pod_id && allow_reentrant {
             return Ok(Acquisition::Reentrant);
         }
         tracing::info!(
-            pod_id = self.pod_id.as_ref(),
+            pod_id,
             lock_key,
             holder = %owner,
             "Pod could not acquire Redis lock for cronjob_id, held by another pod"
@@ -249,9 +250,10 @@ impl<C: LockCache> PodLockManager<C> {
     }
 
     async fn compare_and_delete(&self, cache: &C, lock_key: &str) -> Result<bool, LockCacheError> {
+        let pod_id: &str = self.pod_id.as_ref();
         if let Some(script) = self.release_script(cache) {
             // async_set_cache stored json.dumps(pod_id), so the Lua equality check needs the same quoted text.
-            let owner_json = serde_json::to_string(self.pod_id.as_ref())?;
+            let owner_json = serde_json::to_string(pod_id)?;
             match script.run(lock_key, &owner_json).await {
                 Ok(deleted) => return Ok(deleted),
                 Err(_script_error) => {
@@ -268,7 +270,7 @@ impl<C: LockCache> PodLockManager<C> {
             return Ok(false);
         };
         let owner = decode_pod_owner(&bytes)?;
-        if owner != self.pod_id.as_ref() {
+        if owner != pod_id {
             return Ok(false);
         }
         Ok(cache.delete(lock_key).await? == 1)
@@ -283,9 +285,10 @@ impl<C: LockCache> PodLockManager<C> {
     }
 
     fn emit(&self, call_type: PodLockCallType, cronjob_id: &str) {
+        let pod_id: &str = self.pod_id.as_ref();
         self.events.emit(PodLockEvent {
             call_type,
-            gauge_labels: format!("{cronjob_id}:{}", self.pod_id.as_ref()),
+            gauge_labels: format!("{cronjob_id}:{pod_id}"),
             gauge_value: match call_type {
                 PodLockCallType::Acquired => 1.0,
                 PodLockCallType::Released => 0.0,
