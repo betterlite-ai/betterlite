@@ -33,9 +33,12 @@ pub(super) const TEAM_CLOCK_FIELDS: [[(TeamColumn, &str); 2]; 2] = [
     ],
 ];
 
-pub(super) fn text_fields<Column: Ord, const N: usize>(
+pub(super) fn text_fields<Column, const N: usize>(
     fields: [(Column, &str); N],
-) -> BTreeMap<Column, TokenValue> {
+) -> BTreeMap<Column, TokenValue>
+where
+    Column: Ord,
+{
     fields
         .into_iter()
         .map(|(column, value)| (column, TokenValue::Text(value.to_owned())))

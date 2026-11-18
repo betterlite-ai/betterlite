@@ -278,20 +278,20 @@ async fn update_many_teams_stamps_updated_at_from_the_injected_clock() {
     ops.update_many_teams(&rows)
         .await
         .expect("the team batch runs");
-    let stamped = text_column(
+    let stamped_at = text_column(
         &db,
         "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
         "team-1",
     )
     .await;
-    assert_eq!(stamped.as_deref(), Some("2027-01-15 08:00:00"));
-    let explicit = text_column(
+    assert_eq!(stamped_at.as_deref(), Some("2027-01-15 08:00:00"));
+    let explicit_at = text_column(
         &db,
         "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
         "team-2",
     )
     .await;
-    assert_eq!(explicit.as_deref(), Some("2023-11-14 22:13:20"));
+    assert_eq!(explicit_at.as_deref(), Some("2023-11-14 22:13:20"));
     harness.close().await;
 }
 
@@ -488,12 +488,7 @@ async fn insert_user_notification_writes_the_row_and_keeps_the_first_status() {
 async fn update_many_keys_hashes_the_token_column() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(
-        &db,
-        KEY_INSERT,
-        &[&hash_token("sk-abc"), &"old", &"", &0.0_f64],
-    )
-    .await;
+    seed_key(&db, &hash_token("sk-abc"), "old", "").await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -510,22 +505,14 @@ async fn update_many_keys_hashes_the_token_column() {
         .expect("the key batch runs");
     let row = db
         .query_one(
-            "SELECT key_alias, jsonb_typeof(metadata) FROM \"LiteLLM_VerificationToken\" WHERE token = $1",
+            "SELECT key_alias, jsonb_typeof(metadata), updated_at IS NOT NULL FROM \"LiteLLM_VerificationToken\" WHERE token = $1",
             &[&hash_token("sk-abc")],
         )
         .await
         .expect("the key row reads");
     assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("new"));
     assert_eq!(row.get::<_, Option<String>>(1).as_deref(), Some("string"));
-    let stamped = db
-        .query_one(
-            "SELECT updated_at IS NOT NULL FROM \"LiteLLM_VerificationToken\" WHERE token = $1",
-            &[&hash_token("sk-abc")],
-        )
-        .await
-        .expect("the stamp query runs")
-        .get::<_, Option<bool>>(0);
-    assert_eq!(stamped, Some(true));
+    assert_eq!(row.get::<_, Option<bool>>(2), Some(true));
     harness.close().await;
 }
 
@@ -533,18 +520,8 @@ async fn update_many_keys_hashes_the_token_column() {
 async fn update_many_keys_rolls_back_the_whole_batch() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(
-        &db,
-        KEY_INSERT,
-        &[&hash_token("sk-tok-1"), &"first", &"", &0.0_f64],
-    )
-    .await;
-    seed(
-        &db,
-        KEY_INSERT,
-        &[&hash_token("sk-tok-2"), &"second", &"", &0.0_f64],
-    )
-    .await;
+    seed_key(&db, &hash_token("sk-tok-1"), "first", "").await;
+    seed_key(&db, &hash_token("sk-tok-2"), "second", "").await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -720,19 +697,9 @@ async fn update_many_end_users_sets_values_and_inserts_rows() {
 async fn delete_keys_hashes_tokens_and_applies_the_user_filter() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(
-        &db,
-        KEY_INSERT,
-        &[&hash_token("sk-a"), &"a", &"u-1", &0.0_f64],
-    )
-    .await;
-    seed(
-        &db,
-        KEY_INSERT,
-        &[&hash_token("sk-b"), &"b", &"u-2", &0.0_f64],
-    )
-    .await;
-    seed(&db, KEY_INSERT, &[&"literal-key", &"c", &"u-2", &0.0_f64]).await;
+    seed_key(&db, &hash_token("sk-a"), "a", "u-1").await;
+    seed_key(&db, &hash_token("sk-b"), "b", "u-2").await;
+    seed_key(&db, "literal-key", "c", "u-2").await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -801,6 +768,10 @@ async fn delete_keys_for_teams_and_delete_teams_report_what_they_removed() {
         .get(0);
     assert_eq!(remaining, 1);
     harness.close().await;
+}
+
+async fn seed_key(db: &Client, token: &str, alias: &str, user: &str) {
+    seed(db, KEY_INSERT, &[&token, &alias, &user, &0.0_f64]).await;
 }
 
 async fn assert_batch_timestamps(db: &Client, table: &str, key: &str) {
