@@ -4,6 +4,7 @@ use super::support::titan_body;
 const ONE_ACCESS: &str = "AKIAIDENTITYONE00000";
 const TWO_ACCESS: &str = "AKIAIDENTITYTWO00000";
 
+#[test]
 pub(super) fn embedding_call_credential_identity_isolation() {
     distinct_sources_do_not_share_credentials();
     each_call_resolves_its_own_region();

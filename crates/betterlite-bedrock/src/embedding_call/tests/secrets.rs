@@ -9,6 +9,7 @@ const ACCESS: &str = "AKIAREDACTIONSAMPLE0";
 const SIGNING_SECRET: &str = "redaction-secret-material";
 const SESSION: &str = "redaction-session-token";
 
+#[test]
 pub(super) fn embedding_call_secret_safe_failure() {
     failure_paths_keep_their_credentials_out_of_debug();
     a_signed_request_names_its_headers_only();
