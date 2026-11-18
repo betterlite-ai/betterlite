@@ -1,7 +1,10 @@
 use betterlite_db::queues::pod_lock::{PodLockEvent, PodLockEventSink};
 
-use super::pipeline::ServicePipeline;
-use super::types::{ServiceEvent, ServiceEventMetadata, ServiceLoggerPayload, ServiceType};
+use crate::logging_service_events::pipeline::ServicePipeline;
+use crate::logging_service_events::types::{
+    ServiceEvent, ServiceEventMetadata, ServiceLoggerPayload, ServiceType,
+};
+use crate::logging_success::ports::SuccessClock;
 
 impl PodLockEventSink for ServicePipeline {
     fn emit(&self, event: PodLockEvent) {
