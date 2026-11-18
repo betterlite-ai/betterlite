@@ -46,8 +46,7 @@ pub(super) enum StatementFailure {
     Expired { deadline: Duration, cancelled: bool },
 }
 
-// The driver's own text says only "db error"; the server's message names the trigger or constraint
-// that refused the statement. The detail and hint can carry row values, so they stay out of the log.
+// The driver prints only "db error"; the server's severity and message name the failing constraint, while detail and hint can carry row values.
 fn driver_detail(source: &tokio_postgres::Error) -> String {
     source.as_db_error().map_or_else(
         || source.to_string(),
@@ -55,8 +54,7 @@ fn driver_detail(source: &tokio_postgres::Error) -> String {
     )
 }
 
-// A statement whose deadline passed keeps running on the server, so its client leaves the pool
-// unless the cancel request was delivered.
+// A statement past its deadline keeps running on the server, so its client leaves the pool unless the cancel landed.
 pub(super) fn discard_uncancelled(client: Client, failure: &StatementFailure) {
     if let StatementFailure::Expired {
         cancelled: false, ..
