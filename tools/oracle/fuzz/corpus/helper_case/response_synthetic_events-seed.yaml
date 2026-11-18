@@ -1,0 +1,21 @@
+kind: helper
+name: response-synthetic-events-seed
+call:
+  response_synthetic_events:
+    operation: build
+    rows:
+      - response:
+          id: resp_seed
+          created_at: 1
+          status: completed
+          output:
+            - type: message
+              id: msg_seed
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: hi, annotations: []}
+        chunk_size: 1
+        cost: null
+env: {}
+compare: {ignore: []}

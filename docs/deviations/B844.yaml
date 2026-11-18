@@ -1,0 +1,64 @@
+task: B844
+deviations:
+  - what: >-
+      A listing, a candidate-id lookup or either get_model_ids that meets a name, team or id index
+      entry pointing past the end of the model list skips that entry. LiteLLM indexes model_list at
+      the stored index and raises IndexError from the same places.
+    why: >-
+      An index that points at no row is a damaged index, and no working setup can rely on a 500 from it.
+      The single-row lookups keep the failure: get_deployment and get_deployment_by_model_group_name
+      raise the typed InvalidRow with the index, which the invalid-row case compares against LiteLLM's
+      error envelope, and stale_map_precondition proves the same entries fail there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11670-L11671
+  - what: >-
+      The early-resolve step of get_candidate_model_ids_for_route and of the request resolver models only
+      a deployment sequence. The mapping form, the default_deployment singleton, is not built.
+    why: >-
+      default_deployment is None for the whole life of a router at the pin: its assignment in __init__
+      is None and the only other one, in _add_deployment, is commented out, so no configured setup
+      reaches the mapping arm. Both callers resolve through one shared early_deployments in
+      deployment_catalog::lookup, the same function the request path uses, and it returns the sequence
+      arm only. B302 owns _try_early_resolve_deployments_for_model_not_in_names and would add the
+      mapping form if the field ever gains a writer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12681-L12686
+  - what: >-
+      _deployment_ids collects text, number and bool ids as Python str() spells them, so 42 becomes
+      "42" and true becomes "True", and drops an id that is a list or an object. LiteLLM includes the
+      str() of those too, which is a Python repr such as "['x']".
+    why: >-
+      docs/compatibility.md keeps output standard JSON and leaves Python repr text out. An id of either
+      shape cannot pass LiteLLM's ModelInfo validation, so only a model_info mutated after construction
+      reaches the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11506-L11513
+  - what: >-
+      A wildcard candidate that never joined the model list fails with the typed UnindexedCandidate.
+      Every candidate whose deployment was pushed serves the snapshot recorded at that push, whatever
+      the model list holds afterwards, as LiteLLM's pattern map serves its deep copies.
+    why: >-
+      The pattern catalog records the deployment when it enters the model list, so a reordered rebuild,
+      a partial rebuild or a row that rejoins with other pricing or credentials cannot move or change
+      what the pattern serves; reordered_rebuild_keeps_wildcard_rows, partial_rebuild_keeps_wildcard_rows
+      and changed_metadata_keeps_registered_row pin each. A candidate added without that push, as the
+      crate's own tests and the oracle harness build them, has no snapshot to serve, and
+      unindexed_candidate proves the typed error. LiteLLM registers a pattern only through
+      _add_deployment, so no configured router holds such a candidate and there is no answer to compare.
+    link: ""
+kept_bugs:
+  - what: >-
+      _build_model_id_to_deployment_index_map empties model_list and both caches but leaves the name and
+      id indices as they were, so a rebuild whose caller did not clear them first keeps stale entries.
+      betterlite keeps that precondition: rebuild_ids clears the row list and the caches only.
+    why: >-
+      The task text orders preserving the precondition and the partial rebuild on failure. A stale entry
+      that survives then fails in get_deployment with the typed InvalidRow, the failure the invalid-row
+      case compares, and stale_map_precondition pins it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11424-L11426
+  - what: >-
+      get_model_list_from_model_alias reads a mapping alias item's hidden before its model, so an item
+      missing both fails on hidden and an item whose model is not text is skipped when hidden is true
+      before model is read. betterlite copies the order and names the missing field in its own error.
+    why: >-
+      RouterModelGroupAliasItem declares hidden and model as required keys, so a config-built alias
+      always carries hidden, and a hand-built mapping fails in the same place LiteLLM fails. The
+      malformed-alias-error case compares the failure and hidden-alias-direct covers the skip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11870-L11874
