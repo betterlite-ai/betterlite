@@ -107,8 +107,7 @@ struct RecordCase {
     requests_window: Option<&'static [(&'static str, i64)]>,
 }
 
-// log_success_event and async_log_success_event share one read-modify-write, so each case is one success and
-// the two windows it leaves behind.
+// Both success callbacks share one read-modify-write, so each case is one success and the two windows it leaves.
 #[rstest]
 #[case::plain(RecordCase { targets: Targets::First, call_type: None, tokens: Some(120), seed: &[], tokens_window: Some(&[("dep-a", 120)]), requests_window: Some(&[("dep-a", 1)]) })]
 #[case::completion_call_type(RecordCase { targets: Targets::First, call_type: Some("acompletion"), tokens: Some(120), seed: &[], tokens_window: Some(&[("dep-a", 120)]), requests_window: Some(&[("dep-a", 1)]) })]
@@ -130,7 +129,9 @@ struct RecordCase {
 fn usage_routing_behaviors(#[case] case: RecordCase) {
     let windows = LocalWindows::default();
     let (tokens_key, requests_key) = window_keys(GROUP, instant(NOW));
-    windows.seed(&tokens_key, case.seed);
+    if !case.seed.is_empty() {
+        windows.seed(&tokens_key, case.seed);
+    }
     record(&windows, case.targets, case.call_type, case.tokens);
     assert_eq!(windows.window(&tokens_key), case.tokens_window.map(counts));
     assert_eq!(
@@ -142,8 +143,7 @@ fn usage_routing_behaviors(#[case] case: RecordCase) {
     assert_eq!(windows.ttl(&requests_key), expected_ttl);
 }
 
-// get_available_deployments over a stored window: the pooled id with the lowest count wins, and a pooled id
-// the window never saw starts at zero.
+// get_available_deployments over a stored window: the lowest count wins, and an unseen pooled id starts at zero.
 #[rstest]
 #[case::cold_window(&[], &["dep-a", "dep-b"], Some(0))]
 #[case::lowest_count(&[("dep-a", 100), ("dep-b", 50)], &["dep-a", "dep-b"], Some(1))]
@@ -207,8 +207,7 @@ fn the_configured_ttl_reaches_both_writes(#[case] ttl_seconds: i64) {
     assert_eq!(windows.ttl(&requests_key), Some(ttl_seconds));
 }
 
-// LiteLLM's cache reads a failed get as a cold window and writes the fresh map back; betterlite keeps the
-// stored counts instead, which docs/deviations/B317.yaml records.
+// LiteLLM's cache reads a failed get as a cold window and writes the fresh map back; betterlite keeps the counts.
 #[test]
 fn a_failed_read_drops_the_update_instead_of_replacing_the_window() {
     let windows = LocalWindows::default();
