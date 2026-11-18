@@ -154,6 +154,7 @@ pub(super) fn converse_body_shape() {
     null_options_leave_no_field();
     client_beta_header_reaches_the_request_fields();
     invalid_request_metadata_is_rejected();
+    null_metadata_members_are_dropped();
 }
 
 fn invalid_request_metadata_is_rejected() {
@@ -166,6 +167,21 @@ fn invalid_request_metadata_is_rejected() {
         ConverseRequestError::Metadata(BedrockError::MetadataKeyCharacters { .. })
     ));
     assert_eq!(invalid.error().status_code(), Some(400));
+}
+
+// The exception filter LiteLLM runs first drops the null member before the metadata validation.
+fn null_metadata_members_are_dropped() {
+    let (compacted, _warnings) = run(
+        &Call::new(
+            CLAUDE_3_5,
+            r#"{"requestMetadata": {"dropped": null, "kept": "x"}}"#,
+        ),
+        &remote(&[]),
+    );
+    assert_eq!(
+        field(compacted.body(), "requestMetadata"),
+        Some(&expected(r#"{"kept": "x"}"#))
+    );
 }
 
 fn client_beta_header_reaches_the_request_fields() {

@@ -58,5 +58,17 @@ calls:
       modify_params: false
       neutralize_orphaned_blocks: true
       request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-3-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      optional_params:
+        requestMetadata: {dropped: null, kept: x}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
 env: {}
 compare: {ignore: []}

@@ -183,15 +183,21 @@ fn split_output_config(value: Option<ParamValue>) -> (Option<ParamValue>, Option
 }
 
 fn metadata_value(value: Option<ParamValue>) -> Result<Option<Json>, ConverseRequestError> {
-    match value {
-        None | Some(ParamValue::Null) => Ok(None),
-        Some(value) => {
-            // serde_json sorts an object's keys here, and the pair selection keeps the first pairs in caller order.
-            let encoded = json_of(&value);
-            validate_request_metadata(&request_value(&encoded))?;
-            Ok(Some(encoded))
+    let Some(value) = value.filter(|entry| !matches!(entry, ParamValue::Null)) else {
+        return Ok(None);
+    };
+    let value = match value {
+        ParamValue::Mapping(mut fields) => {
+            // The record projection drops a null member before LiteLLM validates; this keeps the rest in caller order.
+            fields.retain(|_, entry| !matches!(entry, ParamValue::Null));
+            ParamValue::Mapping(fields)
         }
-    }
+        value => value,
+    };
+    // serde_json sorts an object's keys here, and the pair selection keeps the first pairs in caller order.
+    let encoded = json_of(&value);
+    validate_request_metadata(&request_value(&encoded))?;
+    Ok(Some(encoded))
 }
 
 fn json_of(value: &ParamValue) -> Json {
