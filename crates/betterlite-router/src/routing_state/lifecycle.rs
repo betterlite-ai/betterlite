@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use tokio::time::sleep;
 
+use super::FLUSH_DEADLINE;
 use super::counter::RouterCounters;
 use super::delta::{self, DeltaStore};
 
@@ -40,10 +41,13 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         while tasks.join_next().await.is_some() {}
     }
 
-    // BaseRoutingStrategy.retire waits out an in-flight sync, stops the loop, then pushes what is queued
+    // BaseRoutingStrategy.retire stops the loop, then pushes what is queued inside the flush deadline
     pub async fn retire(&self) {
-        let _flush = self.state.flush_lock.lock().await;
         self.cancel_sync_task();
+        let Some(_gate) = self.state.gate.acquire(FLUSH_DEADLINE).await else {
+            tracing::warn!("a routing flush held the store past the retire deadline");
+            return;
+        };
         let _pushed = delta::push_pending(self.state.as_ref()).await;
     }
 }
