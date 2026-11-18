@@ -342,12 +342,18 @@ async fn drop_releases_local() {
     let shared = shared_store(&server, 100);
     let service = service(local_store(&TestClock::default()), Some(shared));
     let deployments = [deployment("a")];
-    let started = service
+    let first = service
         .pre_call(&facts(Some(GROUP), Some("a"), None))
         .await
         .unwrap();
-    drop(started.call.unwrap());
-    assert_counts(&service, &deployments, &[Some(1)], &[Some(0)]).await;
+    let second = service
+        .pre_call(&facts(Some(GROUP), Some("a"), None))
+        .await
+        .unwrap();
+    drop(first.call.unwrap());
+    // one of two calls ends without an awaited release, so this worker drops to one while the shared tier keeps both
+    assert_counts(&service, &deployments, &[Some(2)], &[Some(1)]).await;
+    drop(second.call.unwrap());
 }
 
 async fn down_shared_warns() {

@@ -69,7 +69,7 @@ impl LeastBusy {
         let ttl = Some(IN_FLIGHT_COUNT_TTL_SECONDS);
         let outcome = self.local.increment(key, &RouteIncrement::Counter(-1), ttl);
         if let Ok(RouteValue::Counter(value)) = outcome
-            && value < 0
+            && value.is_negative()
         {
             let _reset = self.local.set(key, &RouteValue::Counter(0), ttl);
         }
@@ -84,7 +84,7 @@ fn write_local(
     ttl: Option<f64>,
 ) -> LocalWrite {
     match store.increment(key, &RouteIncrement::Counter(delta), ttl) {
-        Ok(RouteValue::Counter(value)) if value < 0 => {
+        Ok(RouteValue::Counter(value)) if value.is_negative() => {
             match store.set(key, &RouteValue::Counter(0), ttl) {
                 Ok(()) => LocalWrite::Written,
                 Err(source) => LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source))),
@@ -108,7 +108,7 @@ async fn write_shared(
         .await
     {
         Ok(Observed { value, .. }) => match value {
-            RouteValue::Counter(value) if value < 0 => {
+            RouteValue::Counter(value) if value.is_negative() => {
                 let floor = value.saturating_neg();
                 store
                     .increment(key, &RouteIncrement::Counter(floor), ttl)
