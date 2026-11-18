@@ -6,8 +6,8 @@ use super::capture::{Execution, Stop, run_until_stopped};
 use super::responses_agentic_continuation as agentic;
 use super::{
     anthropic_beta_config, chat_response_stream, embedding_executor, file_azure_storage,
-    messages_chat_stream, messages_header_stream, messages_stream_logging, messages_sync_stream,
-    native, vector_query_embedding,
+    messages_chat_stream, messages_header_stream, messages_stream_factory, messages_stream_logging,
+    messages_sync_stream, native, vector_query_embedding,
 };
 
 #[expect(
@@ -33,6 +33,9 @@ pub(crate) fn execute(
         }
         SdkHttpCall::MessagesHeaderStream(stream) => {
             run_until_stopped(messages_header_stream::send(stream, api_base, env), stop)
+        }
+        SdkHttpCall::MessagesStreamFactory(factory) => {
+            run_until_stopped(messages_stream_factory::send(factory, api_base, env), stop)
         }
         SdkHttpCall::MessagesStreamLogging(logging) => {
             run_until_stopped(messages_stream_logging::send(logging, api_base, env), stop)

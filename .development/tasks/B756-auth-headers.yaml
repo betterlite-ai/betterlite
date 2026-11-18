@@ -60,8 +60,10 @@ description: >-
   (L2747-L2751; 5 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.require_auth_for_metrics_endpoint=True;
-  litellm_jwtauth.routing_overrides=None.
+  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_settings.require_auth_for_metrics_endpoint=True.
+  It also reads litellm_jwtauth.routing_overrides=None. That is a LiteLLM_JWTAuth field, and B869's jwt_settings
+  section (config.sections.jwt_settings) parses and validates that whole object; read the typed value from there.
+  The auth_headers section does not parse it again.
 
 
   general_settings.litellm_key_header_name=None; query ?key=
@@ -85,8 +87,7 @@ description: >-
 
 
   Write betterlite-config::auth_headers::tests::metrics_default_true_and_explicit_false,
-  general_settings_metrics_is_not_read_here, routing_overrides_default_none_and_validation,
-  custom_header_name_default_none, passthrough_auth_default_true and no_auth_mode_flags.
+  general_settings_metrics_is_not_read_here, custom_header_name_default_none, passthrough_auth_default_true and no_auth_mode_flags.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the

@@ -1,0 +1,55 @@
+kind: helper
+name: prometheus-failure-status-code-exception-fallback
+call:
+  b3880:
+    function: extract_status_code
+    enum_status_code: null
+    exception:
+      kind: scripted
+      message: "upstream refused"
+      status_code: "502"
+      code: "502"
+    kwargs_exception: null
+calls:
+  - b3880:
+      function: extract_status_code
+      enum_status_code: null
+      exception:
+        kind: scripted
+        message: "proxy code only"
+        status_code: null
+        code: "418"
+      kwargs_exception: null
+  - b3880:
+      function: extract_status_code
+      enum_status_code: null
+      exception: null
+      kwargs_exception:
+        kind: scripted
+        message: "keyword only"
+        status_code: "429"
+        code: "429"
+  - b3880:
+      function: extract_status_code
+      enum_status_code: null
+      exception:
+        kind: scripted
+        message: "unparseable code"
+        status_code: "not-a-code"
+        code: "400"
+      kwargs_exception:
+        kind: scripted
+        message: "kwargs fallback"
+        status_code: "409"
+        code: "409"
+  - b3880:
+      function: extract_status_code
+      enum_status_code: null
+      exception:
+        kind: scripted
+        message: "nothing usable"
+        status_code: null
+        code: null
+      kwargs_exception: null
+env: {}
+compare: {ignore: []}
