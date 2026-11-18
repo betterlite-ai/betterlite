@@ -12,6 +12,9 @@ deviations:
   - what: The hourly export window comes from an injected Clock, which also stamps the records, instead of datetime.now(timezone.utc).
     why: Tests and callers control the clock.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L80-L84
+  - what: An interval whose doubled lookback or subtraction leaves the supported datetime range returns CloudZeroExportError::WindowOutOfRange instead of raising Python's OverflowError from timedelta.
+    why: betterlite reports an out-of-range window as a typed error with a message rather than leaking an arithmetic exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L85
   - what: The scheduled export job is registered under the id cloudzero_export_usage_data. LiteLLM passes no job id to scheduler.add_job, so APScheduler mints one.
     why: A stable job id lets a restart replace its own job and matches the lease key the job uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L358-L363
