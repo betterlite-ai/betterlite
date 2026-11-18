@@ -30,7 +30,19 @@ pub fn log_budget_lookup_failure(
     } else {
         ""
     };
-    let cause = redactor.redact_string(&message);
+    if let Some(facts) = database_facts(failure) {
+        tracing::error!(
+            entity,
+            hint,
+            cause = facts.sqlstate,
+            table = facts.table,
+            column = facts.column,
+            constraint = facts.constraint,
+            "budget lookup failed for {entity}; the cache will not be populated and each request will reach the database"
+        );
+        return;
+    }
+    let cause = redactor.redact_internal_details(&message);
     tracing::error!(
         entity,
         hint,
@@ -48,4 +60,30 @@ fn chain_text(failure: &(dyn Error + 'static)) -> String {
         source = cause.source();
     }
     text
+}
+
+// The database error's identifiers, never its message, detail, hint or where text.
+struct DatabaseFacts<'error> {
+    sqlstate: &'error str,
+    table: Option<&'error str>,
+    column: Option<&'error str>,
+    constraint: Option<&'error str>,
+}
+
+fn database_facts<'a>(failure: &'a (dyn Error + 'static)) -> Option<DatabaseFacts<'a>> {
+    let mut link = failure;
+    loop {
+        if let Some(error) = link
+            .downcast_ref::<tokio_postgres::Error>()
+            .and_then(tokio_postgres::Error::as_db_error)
+        {
+            return Some(DatabaseFacts {
+                sqlstate: error.code().code(),
+                table: error.table(),
+                column: error.column(),
+                constraint: error.constraint(),
+            });
+        }
+        link = link.source()?;
+    }
 }

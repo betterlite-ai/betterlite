@@ -1,7 +1,9 @@
 use rstest::rstest;
+use tokio_postgres::error::{DbError, SqlState};
 
 use crate::auth_read::budget_failure::{ExpectedLookupMiss, log_budget_lookup_failure};
 
+use super::postgres::{close, database};
 use super::support::{Logs, redactor};
 
 #[derive(Debug, thiserror::Error)]
@@ -23,6 +25,19 @@ impl NamedFailure {
 struct ChainedFailure {
     #[source]
     source: NamedFailure,
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the budget lookup failed")]
+struct LookupFailure {
+    #[source]
+    source: tokio_postgres::Error,
+}
+
+fn logged(failure: tokio_postgres::Error) -> String {
+    let (logs, _guard) = Logs::capture();
+    log_budget_lookup_failure(&redactor(), "user", &LookupFailure { source: failure });
+    logs.text()
 }
 
 #[test]
@@ -142,9 +157,10 @@ fn lookup_diagnostics_redact_credentials() {
     let text = logs.text();
     assert!(!text.contains("dbpass123"), "{text}");
     assert!(
-        text.contains("postgres://REDACTED@db.internal:5432/app"),
+        text.contains("postgres://REDACTED@REDACTED:5432/app"),
         "{text}"
     );
+    assert!(!text.contains("db.internal"), "{text}");
     assert!(!text.contains("betterlite-db-admin migrate"), "{text}");
 }
 
@@ -162,4 +178,71 @@ fn nested_source_message_and_hint_logged() {
         "{text}"
     );
     assert!(text.contains("betterlite-db-admin migrate"), "{text}");
+}
+
+#[tokio::test]
+async fn unique_violation_logs_sqlstate_and_constraint() {
+    let (fixture, pool) = database().await;
+    let text = {
+        let client = pool.get().await.expect("the database connection");
+        let insert =
+            "INSERT INTO \"LiteLLM_VerificationToken\" (token) VALUES ('opaque-customer-token')";
+        client.batch_execute(insert).await.expect("the token row");
+        let failure = client
+            .batch_execute(insert)
+            .await
+            .expect_err("the duplicate token violates the primary key");
+        assert_eq!(
+            failure.as_db_error().and_then(DbError::constraint),
+            Some("LiteLLM_VerificationToken_pkey")
+        );
+        logged(failure)
+    };
+    assert!(text.contains("23505"), "{text}");
+    assert!(text.contains("LiteLLM_VerificationToken_pkey"), "{text}");
+    assert!(!text.contains("duplicate key value"), "{text}");
+    assert!(!text.contains("opaque-customer-token"), "{text}");
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn undefined_column_keeps_migrate_hint() {
+    let (fixture, pool) = database().await;
+    let text = {
+        let client = pool.get().await.expect("the database connection");
+        let failure = client
+            .query("SELECT \"missing_column\" FROM \"LiteLLM_UserTable\"", &[])
+            .await
+            .expect_err("the missing column is undefined");
+        assert_eq!(failure.code().map(SqlState::code), Some("42703"));
+        logged(failure)
+    };
+    // PostgreSQL 16 sends no column diagnostic with 42703; the not-null case covers that field.
+    assert!(text.contains("42703"), "{text}");
+    assert!(text.contains("betterlite-db-admin migrate"), "{text}");
+    assert!(!text.contains("does not exist"), "{text}");
+    close(fixture, pool).await;
+}
+
+#[tokio::test]
+async fn not_null_violation_logs_table_and_column() {
+    let (fixture, pool) = database().await;
+    let text = {
+        let client = pool.get().await.expect("the database connection");
+        let failure = client
+            .execute(
+                "INSERT INTO \"LiteLLM_UserTable\" (\"user_email\") VALUES ('leak@example.com')",
+                &[],
+            )
+            .await
+            .expect_err("the user row needs an identifier");
+        assert_eq!(failure.code().map(SqlState::code), Some("23502"));
+        logged(failure)
+    };
+    assert!(text.contains("23502"), "{text}");
+    assert!(text.contains("LiteLLM_UserTable"), "{text}");
+    assert!(text.contains("user_id"), "{text}");
+    assert!(!text.contains("null value in column"), "{text}");
+    assert!(!text.contains("leak@example.com"), "{text}");
+    close(fixture, pool).await;
 }

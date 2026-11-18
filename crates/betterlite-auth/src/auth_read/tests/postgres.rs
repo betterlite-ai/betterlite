@@ -37,7 +37,7 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, Pool) {
+pub(super) async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["auth-read-postgres-tests"])
         .url
         .map(SecretString::from);
@@ -66,7 +66,7 @@ async fn seed(pool: &Pool) {
     client.batch_execute(SEED).await.expect("the seeded rows");
 }
 
-async fn close(fixture: PostgresFixture, pool: Pool) {
+pub(super) async fn close(fixture: PostgresFixture, pool: Pool) {
     pool.close();
     fixture.close_async().await.expect("the fixture teardown");
 }

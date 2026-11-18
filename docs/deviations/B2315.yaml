@@ -1,9 +1,10 @@
 task: B2315
 deviations:
   - what: >-
-      Schema-failure logs recommend `betterlite-db-admin migrate` and redact credential values,
-      where LiteLLM recommends `prisma db push` or `prisma migrate deploy` and prints the
-      exception text as given.
+      Schema-failure logs recommend `betterlite-db-admin migrate`, redact credential values and
+      withhold database payloads: a chain holding a PostgreSQL error logs only its SQLSTATE and
+      its table, column and constraint names, where LiteLLM recommends `prisma db push` or
+      `prisma migrate deploy` and prints the exception text as given.
     why: >-
       betterlite uses native migrations and keeps secrets out of diagnostics; the ERROR severity,
       the suppression rule and the five case-insensitive hint triggers stay compatible.
