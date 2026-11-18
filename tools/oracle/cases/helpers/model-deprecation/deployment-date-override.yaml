@@ -1,0 +1,20 @@
+kind: helper
+name: model-deprecation-deployment-date-override
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      openai/raw-model:
+        deprecation_date: "2026-05-20"
+        litellm_provider: openai
+    deployments:
+      - model_name: alpha
+        litellm_params: {model: openai/raw-model}
+        model_info:
+          deprecation_date: "2026-05-10"
+          litellm_provider: override-provider
+      - model_name: beta
+        litellm_params: {model: openai/raw-model}
+        model_info: {deprecation_date: "2026-03-01"}
+env: {}
+compare: {ignore: []}

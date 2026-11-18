@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "global_statistics": [
+    {"tier": 1, "successes": 8.0, "observations": 10.0},
+    {"tier": 2, "successes": 6.0, "observations": 10.0},
+    {"tier": 3, "successes": 4.0, "observations": 10.0},
+    {"tier": 4, "successes": 2.0, "observations": 10.0}
+  ],
+  "domain_statistics": [
+    {"tier": 1, "successes": 3.0, "observations": 4.0, "request_type": "code_generation"}
+  ],
+  "cohort_statistics": [
+    {"tier": 1, "successes": 1.0, "observations": 2.0, "cohort": "code_generation|short|code=1|math=0|mc=0|intl=0"}
+  ],
+  "domain_prior_mass": 200.0,
+  "cohort_prior_mass": 20.0,
+  "routing_threshold": 0.75,
+  "datasets": [
+    {"name": "openbmb/UltraFeedback", "url": "https://huggingface.co/datasets/openbmb/UltraFeedback", "license": "MIT", "rows": 255864, "success_definition": "UltraFeedback overall_score >= 4"}
+  ],
+  "success_definition": "UltraFeedback overall_score >= 4",
+  "split_method": "sha256(prompt): 70% train, 15% validation, 15% test"
+}
