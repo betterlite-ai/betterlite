@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::convert::Infallible;
 use std::str;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -19,7 +20,11 @@ use betterlite_auth::auth_identity::roles::AuthMethod;
 use betterlite_auth::auth_identity::roles::PrincipalType;
 use betterlite_auth::auth_identity::roles::Role;
 use betterlite_db::gateway_request_tracking::GatewayRequestClock;
+use betterlite_db::migration_ledger::baseline::PACKAGED_CATALOGS;
+use betterlite_db::migration_ledger::baseline::catalog_statements;
+use betterlite_db::postgres_store::diagnostics::PoolFailure;
 use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::DateTime;
@@ -28,10 +33,16 @@ use chrono::Utc;
 use clap::Parser as _;
 use deadpool_postgres::Manager;
 use deadpool_postgres::Pool;
+use deadpool_postgres::PoolError;
+use deadpool_postgres::TimeoutType;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tokio::io::AsyncReadExt as _;
+use tokio::io::AsyncWriteExt as _;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 use tokio_postgres::NoTls;
 use tower::ServiceExt as _;
 
@@ -41,19 +52,6 @@ use crate::management::gateway_request_activity::router;
 use crate::management::gateway_request_activity::store::GatewayActivityRow;
 use crate::management::gateway_request_activity::store::GatewayActivityStore;
 use crate::management::gateway_request_activity::store::PostgresActivityStore;
-
-const SCHEMA_SQL: &str = r#"
-CREATE TABLE IF NOT EXISTS "LiteLLM_DailyGatewayRequests" (
-    "date" TEXT NOT NULL,
-    "category" TEXT NOT NULL,
-    "route" TEXT NOT NULL,
-    "successful_requests" BIGINT NOT NULL DEFAULT 0,
-    "failed_requests" BIGINT NOT NULL DEFAULT 0,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "LiteLLM_DailyGatewayRequests_pkey" PRIMARY KEY ("date","category","route")
-);
-"#;
 
 struct FixedClock(DateTime<Utc>);
 
@@ -73,7 +71,7 @@ pub(crate) fn fixed_clock() -> Arc<dyn GatewayRequestClock> {
 
 pub(crate) struct FakeStore {
     rows: Vec<GatewayActivityRow>,
-    failure: bool,
+    failure: Mutex<Option<DbError>>,
     calls: Mutex<Vec<(String, String)>>,
 }
 
@@ -81,15 +79,23 @@ impl FakeStore {
     pub(crate) fn answering(rows: Vec<GatewayActivityRow>) -> Self {
         Self {
             rows,
-            failure: false,
+            failure: Mutex::new(None),
             calls: Mutex::new(Vec::new()),
         }
     }
 
     pub(crate) fn failing() -> Self {
+        Self::failing_with(DbError::Pool {
+            source: PoolFailure {
+                driver: PoolError::Timeout(TimeoutType::Wait),
+            },
+        })
+    }
+
+    pub(crate) fn failing_with(error: DbError) -> Self {
         Self {
             rows: Vec::new(),
-            failure: true,
+            failure: Mutex::new(Some(error)),
             calls: Mutex::new(Vec::new()),
         }
     }
@@ -117,11 +123,70 @@ impl GatewayActivityStore for FakeStore {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((start_date.to_owned(), end_date.to_owned()));
-        if self.failure {
-            return Err(DbError::NoDbConnected);
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(error) = failure {
+            return Err(error);
         }
         Ok(self.rows.clone())
     }
+}
+
+// A listener that answers the startup with an ErrorResponse yields the real driver error LiteLLM sees
+pub(crate) async fn startup_error(code: &str, message: &str) -> DbError {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("the fake postgres listener");
+    let address = listener.local_addr().expect("the fake postgres address");
+    let frame = error_frame(code, message);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let Ok((mut socket, _)) = listener.accept().await else {
+            return;
+        };
+        let mut header = [0_u8; 4];
+        if socket.read_exact(&mut header).await.is_err() {
+            return;
+        }
+        let size = u32::from_be_bytes(header).saturating_sub(4);
+        let mut startup = vec![0_u8; usize::try_from(size).unwrap_or_default()];
+        if socket.read_exact(&mut startup).await.is_err() {
+            return;
+        }
+        let _written = socket.write_all(&frame).await;
+    });
+    let dsn = format!("host=127.0.0.1 port={} user=gateway", address.port());
+    let Err(driver) = tokio_postgres::connect(&dsn, NoTls).await else {
+        panic!("the fake postgres server never completes a startup");
+    };
+    if let Some(result) = tasks.join_next().await {
+        result.expect("the fake postgres task");
+    }
+    let database = driver.as_db_error().expect("the fake postgres error");
+    assert_eq!(database.code().code(), code);
+    assert_eq!(database.message(), message);
+    backend::<Infallible>(driver)
+}
+
+fn error_frame(code: &str, message: &str) -> Vec<u8> {
+    let mut body: Vec<u8> = [
+        (b'S', "FATAL"),
+        (b'V', "FATAL"),
+        (b'C', code),
+        (b'M', message),
+    ]
+    .into_iter()
+    .flat_map(|(field, value)| [field].into_iter().chain(value.bytes()).chain([0_u8]))
+    .collect();
+    body.push(0);
+    let mut frame = vec![b'E'];
+    let size = u32::try_from(body.len().saturating_add(4)).expect("the error frame length");
+    frame.extend_from_slice(&size.to_be_bytes());
+    frame.extend(body);
+    frame
 }
 
 pub(crate) fn row(
@@ -253,11 +318,11 @@ pub(crate) async fn gateway_database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["gateway-activity-tests"])
         .url
         .map(SecretString::from);
-    let fixture =
-        PostgresFixture::provision_with_statements(url.as_ref(), vec![SCHEMA_SQL.to_owned()])
-            .resolve()
-            .await
-            .expect("the test database is provisioned");
+    let statements = catalog_statements(&PACKAGED_CATALOGS).expect("the packaged catalogs open");
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .expect("the test database is provisioned");
     let manager = Manager::new(
         fixture
             .options
