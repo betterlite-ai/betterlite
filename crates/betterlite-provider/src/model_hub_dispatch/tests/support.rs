@@ -439,7 +439,7 @@ pub(super) fn run_with<'run, A>(
     arm: A,
 ) -> BoxFuture<'run, Outcome<A::Output>>
 where
-    A: Arm + 'run,
+    A: Arm + Send + 'run,
     A::Output: 'run,
 {
     Box::pin(async move {

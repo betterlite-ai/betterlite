@@ -46,11 +46,8 @@ fn chat_call_completes_on_a_second_thread() {
     let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let logger = RecordingLogger::default();
     let settings = settings_of(&setup);
-    let call = call_of(
-        &setup,
-        Some(&SecretString::from(CALLER_KEY.to_owned())),
-        &settings,
-    );
+    let key = SecretString::from(CALLER_KEY.to_owned());
+    let call = call_of(&setup, Some(&key), &settings);
     let clients = ChatClients {
         supplied: setup.supplied.then_some(SuppliedChatClient {
             kind: setup.supplied_kind,
