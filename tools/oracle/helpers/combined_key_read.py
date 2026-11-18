@@ -1,18 +1,20 @@
 import asyncio
+import json
 import sys
-import types
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+from types import ModuleType
 from typing import Final, Literal, Protocol, TypedDict
 
 import litellm
-from fastapi import HTTPException
-from litellm.proxy import proxy_server
-from litellm.proxy import utils as proxy_utils
+from litellm._service_logger import ServiceLogging
+from litellm.proxy import proxy_server, utils as proxy_utils
 from litellm.proxy._types import LiteLLM_VerificationTokenView
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.routing_prisma_wrapper import RoutingPrismaWrapper
 from litellm.proxy.utils import PrismaClient
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
+from typing_extensions import override
 
 litellm.suppress_debug_info = True
 
@@ -22,12 +24,10 @@ class ScriptedDatabaseError(Exception):
 
 
 # log_db_metrics imports PrismaError lazily, so the scripted failure counts as a database failure
-fake_prisma = types.ModuleType("prisma")
-fake_prisma_errors = types.ModuleType("prisma.errors")
-setattr(fake_prisma_errors, "PrismaError", ScriptedDatabaseError)
-setattr(fake_prisma, "errors", fake_prisma_errors)
-sys.modules["prisma"] = fake_prisma
-sys.modules["prisma.errors"] = fake_prisma_errors
+PRISMA_ERRORS = ModuleType("prisma.errors")
+object.__setattr__(PRISMA_ERRORS, "PrismaError", ScriptedDatabaseError)
+sys.modules["prisma"] = ModuleType("prisma")
+sys.modules["prisma.errors"] = PRISMA_ERRORS
 
 
 class DeprecatedRowFields(TypedDict):
@@ -35,38 +35,33 @@ class DeprecatedRowFields(TypedDict):
     revoke_at_seconds: int
 
 
-class Fault(TypedDict):
-    type: str
-    message: str
-
-
-class FaultStep(TypedDict):
-    error: Fault
-
-
-class DeprecatedData(TypedDict):
-    data: DeprecatedRowFields
+class FailureStep(TypedDict):
+    kind: Literal["failure"]
+    error: dict[str, str]
 
 
 class RowData(TypedDict):
+    kind: Literal["data"]
     data: dict[str, JsonValue]
 
 
-RowStep = RowData | FaultStep | None
-DeprecatedStep = DeprecatedData | FaultStep | None
-ReconnectStep = bool | None
+class DeprecatedData(TypedDict):
+    kind: Literal["data"]
+    data: DeprecatedRowFields
+
+
+RowStep = RowData | FailureStep | None
+DeprecatedStep = DeprecatedData | FailureStep | None
 
 
 class Input(TypedDict):
-    now: str
-    step_millis: int
     token: str | None
     query_type: Literal["find_unique", "find_all"]
     check_deprecated: bool
     use_writer: bool
     rows: list[RowStep]
     deprecated: list[DeprecatedStep]
-    reconnects: list[ReconnectStep]
+    reconnects: list[bool | None]
 
 
 class ViewFields(TypedDict):
@@ -83,14 +78,29 @@ class ViewFields(TypedDict):
     expires: str | None
 
 
+class Report(TypedDict):
+    result: str
+    view: ViewFields | None
+    error: dict[str, JsonValue] | None
+    row_queries: int
+    deprecated_queries: int
+    reconnects: list[dict[str, JsonValue]]
+    metric_success: int
+    metric_failure: int
+    hooks: int
+    backoffs: int
+    cached_plan_warnings: int
+    deprecated_used: bool
+
+
 VIEW: Final[TypeAdapter[ViewFields]] = TypeAdapter(ViewFields)
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 class KeyLookup(Protocol):
     async def get_data(
         self,
-        token: str | None = None,
-        *,
+        token: str | None = None, *,
         table_name: Literal["combined_view"],
         query_type: Literal["find_unique", "find_all"],
         check_deprecated: bool,
@@ -102,7 +112,19 @@ class StaleEngine(Protocol):
     def is_still_live(self, current: PrismaWrapper) -> bool: ...
 
 
-class Counters:
+class RecorderHooks(Protocol):
+    def debug(self, message: str, *args: JsonValue) -> None: ...
+
+    def info(self, message: str, *args: JsonValue) -> None: ...
+
+    def warning(self, message: str, *args: JsonValue) -> None: ...
+
+    def error(self, message: str, *args: JsonValue) -> None: ...
+
+    async def failure_handler(self, **_kwargs: JsonValue) -> None: ...
+
+
+class Recorder(RecorderHooks):
     def __init__(self) -> None:
         self.rows = 0
         self.deprecated = 0
@@ -110,117 +132,82 @@ class Counters:
         self.cached_plan_warnings = 0
         self.deprecated_used = 0
         self.hooks = 0
+        self.service_logging_obj = ServiceLogging(mock_testing=True)
 
-
-class LogRecorder:
-    def __init__(self, counters: Counters) -> None:
-        self.counters = counters
-        self.messages: list[str] = []
-
-    def debug(self, message: str, *args: object) -> None:
+    @override
+    def debug(self, message: str, *args: JsonValue) -> None:
         self.record("debug", message, args)
 
-    def info(self, message: str, *args: object) -> None:
+    @override
+    def info(self, message: str, *args: JsonValue) -> None:
         self.record("info", message, args)
 
-    def warning(self, message: str, *args: object) -> None:
+    @override
+    def warning(self, message: str, *args: JsonValue) -> None:
         self.record("warning", message, args)
 
-    def error(self, message: str, *args: object) -> None:
+    @override
+    def error(self, message: str, *args: JsonValue) -> None:
         self.record("error", message, args)
 
-    def record(self, level: str, message: str, args: tuple[object, ...]) -> None:
-        text = message % args if args else message
-        self.messages.append(text)
-        if level == "debug" and text == "Deprecated key used during grace period":
-            self.counters.deprecated_used += 1
-        if level == "warning" and "cached plan" in text:
-            self.counters.cached_plan_warnings += 1
-
-
-class BackoffRecorder:
-    def __init__(self, counters: Counters) -> None:
-        self.counters = counters
+    @override
+    async def failure_handler(self, **_kwargs: JsonValue) -> None:
+        self.hooks += 1
 
     def __call__(self, message: str) -> None:
         if message.startswith("Backing off"):
-            self.counters.backoffs += 1
+            self.backoffs += 1
 
-
-class MetricLog:
-    def __init__(self) -> None:
-        self.successes = 0
-        self.failures = 0
-
-    async def async_service_success_hook(self, **_kwargs: object) -> None:
-        self.successes += 1
-
-    async def async_service_failure_hook(self, **_kwargs: object) -> None:
-        self.failures += 1
-
-
-class LoggingObject:
-    def __init__(self, counters: Counters) -> None:
-        self.service_logging_obj = MetricLog()
-        self.counters = counters
-
-    async def failure_handler(self, **_kwargs: object) -> None:
-        self.counters.hooks += 1
+    def record(self, level: str, message: str, args: tuple[JsonValue, ...]) -> None:
+        text = message % args if args else message
+        if level == "debug" and text == "Deprecated key used during grace period":
+            self.deprecated_used += 1
+        if level == "warning" and "cached plan" in text:
+            self.cached_plan_warnings += 1
 
 
 class DeprecatedRow:
     def __init__(self, fields: DeprecatedRowFields) -> None:
         self.active_token_id = fields["active_token_id"]
-        self.revoke_at = datetime.fromtimestamp(fields["revoke_at_seconds"], tz=timezone.utc)
+        self.revoke_at = datetime.fromtimestamp(fields["revoke_at_seconds"], tz=UTC)
 
 
 class FakeDeprecated:
-    def __init__(self, steps: list[DeprecatedStep], counters: Counters) -> None:
+    def __init__(self, steps: list[DeprecatedStep], recorder: Recorder) -> None:
         self.steps = steps
-        self.counters = counters
+        self.recorder = recorder
 
-    async def find_first(self, where: dict[str, object]) -> DeprecatedRow | None:
+    async def find_first(self, where: dict[str, JsonValue]) -> DeprecatedRow | None:
         if "token" not in where:
             return None
-        self.counters.deprecated += 1
+        self.recorder.deprecated += 1
         step = self.steps.pop(0) if self.steps else None
         if step is None:
             return None
-        if "data" in step:
-            return DeprecatedRow(step["data"])
-        raise ScriptedDatabaseError(step["error"]["message"])
+        if step["kind"] == "failure":
+            raise ScriptedDatabaseError(step["error"]["message"])
+        return DeprecatedRow(step["data"])
 
 
 class FakeWrapper(PrismaWrapper):
-    def __init__(
-        self,
-        generation: int,
-        rows: list[RowStep],
-        deprecated: list[DeprecatedStep],
-        counters: Counters,
-    ) -> None:
-        self._engine_generation = generation
+    def __init__(self, rows: list[RowStep], deprecated: list[DeprecatedStep], recorder: Recorder) -> None:
+        self._engine_generation = 0
         self.rows = rows
-        self.counters = counters
-        self.litellm_deprecatedverificationtoken = FakeDeprecated(deprecated, counters)
+        self.recorder = recorder
+        self.litellm_deprecatedverificationtoken = FakeDeprecated(deprecated, recorder)
 
-    async def query_first(self, _sql_query: str, *_args: object) -> dict[str, JsonValue] | None:
-        self.counters.rows += 1
+    async def query_first(self, _sql_query: str, *_args: JsonValue) -> dict[str, JsonValue] | None:
+        self.recorder.rows += 1
         step = self.rows.pop(0) if self.rows else None
         if step is None:
             return None
-        if "data" in step:
-            return step["data"]
-        raise ScriptedDatabaseError(step["error"]["message"])
-
-
-class FakeRouting(RoutingPrismaWrapper):
-    def __init__(self, writer: FakeWrapper, reader: FakeWrapper) -> None:
-        super().__init__(writer, reader)
+        if step["kind"] == "failure":
+            raise ScriptedDatabaseError(step["error"]["message"])
+        return step["data"]
 
 
 class ReconnectRecorder:
-    def __init__(self, steps: list[ReconnectStep], reader: FakeWrapper) -> None:
+    def __init__(self, steps: list[bool | None], reader: FakeWrapper) -> None:
         self.steps = steps
         self.reader = reader
         self.effects: list[dict[str, JsonValue]] = []
@@ -254,76 +241,42 @@ class FakeClient(PrismaClient):
         self.db = db
 
 
-class Outcome:
-    def __init__(
-        self,
-        result: str,
-        view: ViewFields | None,
-        error: dict[str, JsonValue] | None,
-    ) -> None:
-        self.result = result
-        self.view = view
-        self.error = error
-
-
 class Session:
     def __init__(self, input_value: Input) -> None:
-        self.counters = Counters()
-        self.logger = LogRecorder(self.counters)
-        self.logging = LoggingObject(self.counters)
-        self.reader = FakeWrapper(
-            0, list(input_value["rows"]), list(input_value["deprecated"]), self.counters
-        )
-        self.writer = FakeWrapper(
-            0, list(input_value["rows"]), list(input_value["deprecated"]), self.counters
-        )
-        self.client = FakeClient(FakeRouting(self.writer, self.reader))
-        self.recorder = ReconnectRecorder(list(input_value["reconnects"]), self.reader)
-        setattr(self.client, "proxy_logging_obj", self.logging)
-        setattr(self.client, "attempt_db_reconnect", self.recorder.attempt)
+        self.recorder = Recorder()
+        self.reader = FakeWrapper(list(input_value["rows"]), list(input_value["deprecated"]), self.recorder)
+        self.writer = FakeWrapper(list(input_value["rows"]), list(input_value["deprecated"]), self.recorder)
+        self.reconnects = ReconnectRecorder(list(input_value["reconnects"]), self.reader)
+        self.client = FakeClient(RoutingPrismaWrapper(self.writer, self.reader))
 
     def install(self) -> None:
-        object.__setattr__(proxy_utils, "verbose_proxy_logger", self.logger)
-        object.__setattr__(proxy_utils, "print_verbose", BackoffRecorder(self.counters))
-        object.__setattr__(proxy_server, "proxy_logging_obj", self.logging)
+        object.__setattr__(proxy_utils, "verbose_proxy_logger", self.recorder)
+        object.__setattr__(proxy_utils, "print_verbose", self.recorder)
+        object.__setattr__(proxy_server, "proxy_logging_obj", self.recorder)
+        object.__setattr__(self.client, "proxy_logging_obj", self.recorder)
+        object.__setattr__(self.client, "attempt_db_reconnect", self.reconnects.attempt)
 
-    def report(self, outcome: Outcome) -> dict[str, JsonValue]:
-        view: dict[str, JsonValue] | None = None
-        if outcome.view is not None:
-            view = view_report(outcome.view)
+    async def execute(self, input_value: Input) -> Report:
+        result, view, error = await call(self.client, input_value)
+        for _ in range(8):
+            await asyncio.sleep(0)
         return {
-            "result": outcome.result,
+            "result": result,
             "view": view,
-            "error": outcome.error,
-            "row_queries": self.counters.rows,
-            "deprecated_queries": self.counters.deprecated,
-            "reconnects": self.recorder.effects,
-            "metric_success": self.logging.service_logging_obj.successes,
-            "metric_failure": self.logging.service_logging_obj.failures,
-            "hooks": self.counters.hooks,
-            "backoffs": self.counters.backoffs,
-            "cached_plan_warnings": self.counters.cached_plan_warnings,
-            "deprecated_used": self.counters.deprecated_used > 0,
+            "error": error,
+            "row_queries": self.recorder.rows,
+            "deprecated_queries": self.recorder.deprecated,
+            "reconnects": self.reconnects.effects,
+            "metric_success": self.recorder.service_logging_obj.mock_testing_async_success_hook,
+            "metric_failure": self.recorder.service_logging_obj.mock_testing_async_failure_hook,
+            "hooks": self.recorder.hooks,
+            "backoffs": self.recorder.backoffs,
+            "cached_plan_warnings": self.recorder.cached_plan_warnings,
+            "deprecated_used": self.recorder.deprecated_used > 0,
         }
 
 
-def view_report(view: ViewFields) -> dict[str, JsonValue]:
-    return {
-        "token": view["token"],
-        "team_alias": view["team_alias"],
-        "team_models": view["team_models"],
-        "team_blocked": view["team_blocked"],
-        "team_member": view["team_member"],
-        "org_id": view["org_id"],
-        "organization_alias": view["organization_alias"],
-        "project_alias": view["project_alias"],
-        "team_tpm_limit": view["team_tpm_limit"],
-        "team_member_tpm_limit": view["team_member_tpm_limit"],
-        "expires": view["expires"],
-    }
-
-
-async def call(lookup: KeyLookup, input_value: Input) -> Outcome:
+async def call(lookup: KeyLookup, input_value: Input) -> tuple[str, ViewFields | None, dict[str, JsonValue] | None]:
     try:
         found = await lookup.get_data(
             token=input_value["token"],
@@ -333,28 +286,15 @@ async def call(lookup: KeyLookup, input_value: Input) -> Outcome:
             use_writer=input_value["use_writer"],
         )
     except HTTPException as failure:
-        return Outcome(
-            "missing_token", None, {"kind": "missing_token", "status": failure.status_code}
-        )
+        return "missing_token", None, {"kind": "missing_token", "status": failure.status_code}
     except ScriptedDatabaseError:
-        return Outcome("database", None, {"kind": "database", "status": None})
+        return "database", None, {"kind": "database", "status": None}
     if found is None:
-        return Outcome("none", None, None)
-    return Outcome("found", VIEW.validate_json(found.model_dump_json()), None)
-
-
-async def drain() -> None:
-    for _ in range(8):
-        await asyncio.sleep(0)
-
-
-async def scenario(input_value: Input) -> dict[str, JsonValue]:
-    session = Session(input_value)
-    session.install()
-    outcome = await call(session.client, input_value)
-    await drain()
-    return session.report(outcome)
+        return "none", None, None
+    return "found", VIEW.validate_json(found.model_dump_json()), None
 
 
 def run(input_value: Input) -> JsonValue:
-    return asyncio.run(scenario(input_value))
+    session = Session(input_value)
+    session.install()
+    return JSON.validate_json(json.dumps(asyncio.run(session.execute(input_value))))
