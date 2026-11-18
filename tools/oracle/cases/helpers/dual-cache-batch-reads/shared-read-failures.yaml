@@ -1,0 +1,58 @@
+kind: helper
+name: dual-cache-batch-reads-shared-read-failures
+call:
+  b4294:
+    shared_read_failures:
+      clock: 1000.0
+      default_in_memory_ttl: null
+      memory: []
+      keys: []
+      read_keys: []
+      ttl_keys: []
+      due_keys: []
+      write_keys: []
+      duplicate_keys: []
+      merge_keys: []
+      replies:
+        - [redis-p2]
+        - [redis-q1, redis-q2]
+      own_replies: []
+      caches: []
+      breaker_caches:
+        - memory:
+            - key: a1
+              value: memory-a1
+          keys: [a1, a2]
+          client: rejecting
+          fail_reads: false
+          fail_writes: false
+        - memory: []
+          keys: [b1]
+          client: rejecting
+          fail_reads: false
+          fail_writes: false
+      prepare_caches:
+        - memory: []
+          keys: [p1]
+          client: shared
+          fail_reads: true
+          fail_writes: false
+        - memory: []
+          keys: [p2]
+          client: shared
+          fail_reads: false
+          fail_writes: false
+      apply_caches:
+        - memory: []
+          keys: [q1]
+          client: shared
+          fail_reads: false
+          fail_writes: true
+        - memory: []
+          keys: [q2]
+          client: shared
+          fail_reads: false
+          fail_writes: false
+env: {}
+compare:
+  ignore: []

@@ -101,4 +101,6 @@ pub enum SdkHttpError {
     Redactor(#[source] RedactionError),
     #[error("cannot build the fixture logging state: {0}")]
     LoggingState(#[source] LoggingStateError),
+    #[error("the sdk_http call of task B{task:03} is not built yet")]
+    NotBuilt { task: u16 },
 }

@@ -75,8 +75,13 @@ description: >-
   (L981-L997; 16 source lines), JWTHandler.is_allowed_domain (L999-L1007; 8 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): JWT_PUBLIC_KEY_URL=None;
+  Pinned settings read by this component: JWT_PUBLIC_KEY_URL=None;
   litellm_jwtauth.user_allowed_email_domain=None; litellm_jwtauth.public_key_ttl=600; litellm_jwtauth.public_key_stale_ttl=DEFAULT_JWKS_STALE_TTL.
+  The three litellm_jwtauth keys are LiteLLM_JWTAuth fields, and B869's jwt_settings section
+  (config.sections.jwt_settings) parses and validates that whole object, DEFAULT_JWKS_STALE_TTL and the ge=0
+  bound on public_key_stale_ttl included; read them typed from there and never parse them again.
+  JWT_PUBLIC_KEY_URL is an environment variable (handle_jwt.py L963), not part of that object, so this task's
+  own jwt_keys section reads that one variable and nothing else.
 
 
   Add the jwt_keys operation under B856 Management::jwt. Python calls only the owned MIT helper with injected
@@ -86,10 +91,9 @@ description: >-
   to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::jwt_keys::tests::ttl_defaults_600_and_3600, ttl_unconstrained_stale_nonnegative,
-  stale_zero_disables_and_negative_rejects, jwt_public_url_absent_empty_and_comma_list,
-  email_domain_default_none_and_exact_match. Invalid settings fail validation, not fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  Write betterlite-config::jwt_keys::tests::jwt_public_url_absent_empty_and_comma_list for JWT_PUBLIC_KEY_URL;
+  the TTL and email-domain values are B869's to test.
+  It must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
@@ -110,7 +114,7 @@ description: >-
 
 
   Sizing: 255 production, 290 table-driven tests, 80 helper adapters, 50 wiring, 65 decoder/fuzz and
-  60 config lines, 800 changed lines. Only the repository fixture/corpus/lock
+  25 config lines, 765 changed lines. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -251,8 +255,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
+  - text: JWT_PUBLIC_KEY_URL loads through the production config boundary with its default and its absent, empty
+      and comma-list values.
     proof:
       - config-tests
       - config-corpus

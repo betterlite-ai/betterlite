@@ -1,0 +1,52 @@
+kind: helper
+name: prometheus-failure-provider-attribution-model-fallback
+call:
+  b3880:
+    function: api_provider_from_request_data
+    litellm_params:
+      model: "gpt-4o"
+    standard_logging: {}
+    model: "claude-sonnet-4-5"
+calls:
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params:
+        custom_llm_provider: "anthropic"
+      standard_logging: null
+      model: "gpt-4o"
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params: {}
+      standard_logging:
+        custom_llm_provider: "openai"
+      model: null
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params:
+        model: ""
+      standard_logging: null
+      model: "claude-sonnet-4-5"
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params:
+        model: null
+      standard_logging: null
+      model: "claude-sonnet-4-5"
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params:
+        model: "brand-new-unknown"
+      standard_logging: null
+      model: null
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params: null
+      standard_logging: null
+      model: null
+  - b3880:
+      function: api_provider_from_request_data
+      litellm_params: null
+      standard_logging: null
+      model: "openai/gpt-4o"
+env: {}
+compare: {ignore: []}

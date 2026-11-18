@@ -1,0 +1,24 @@
+kind: helper
+name: model-visibility-no-hidden-short-circuit
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: visible
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: v1
+      - model_name: marked
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: m1
+          discoverable: true
+    model_group_alias: {}
+    arguments:
+      model_names: [visible, missing]
+      user_role: internal_user
+      broken_pattern: true
+env: {}
+compare: {ignore: []}

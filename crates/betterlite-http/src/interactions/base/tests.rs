@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::identity::provider_id::ProviderId;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -121,10 +122,11 @@ fn a_read_failure_keeps_its_limit() {
 
 #[test]
 fn sync_client_returns_the_supplied_client() {
-    let serving = support::serve_once(
+    let serving = serve(
         support::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+        Duration::from_millis(200),
+    )
+    .unwrap();
     let mut clients = clients();
     let supplied = BlockingClientBuilder::new()
         .timeout(Duration::from_millis(20))
@@ -138,7 +140,7 @@ fn sync_client_returns_the_supplied_client() {
 
     assert!(matches!(&outcome, Err(source) if source.is_timeout()));
     assert!(clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -333,9 +335,8 @@ fn a_supplied_async_client_is_returned_before_the_provider_is_read() {
 
 #[test]
 fn sync_client_sends_the_request_through_the_configured_proxy() {
-    let listener = support::listener();
-    let proxy = format!("http://user:secret@{}", listener.local_addr().unwrap());
-    let serving = support::serve_on(listener, support::reply("200 OK", &[], "{}"), None);
+    let serving = serve(support::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let proxy = format!("http://user:secret@{}", serving.address);
     let mut clients = HttpClients::new(
         support::policy(Verification::Enabled, None),
         support::proxy_policy(&[("HTTP_PROXY", proxy.as_str())]),
@@ -345,22 +346,24 @@ fn sync_client_sends_the_request_through_the_configured_proxy() {
     let answer = client.get("http://127.0.0.1:1/x").send().unwrap();
 
     assert_eq!(answer.status().as_u16(), 200);
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
-        "{sent}"
+        sent.line.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
+        "{}",
+        sent.line
     );
     assert!(
-        sent.contains("proxy-authorization: Basic dXNlcjpzZWNyZXQ="),
-        "{sent}"
+        sent.head
+            .contains("proxy-authorization: Basic dXNlcjpzZWNyZXQ="),
+        "{}",
+        sent.head
     );
 }
 
 #[test]
 fn a_proxy_for_the_scheme_beats_the_all_proxy() {
-    let listener = support::listener();
-    let proxy = format!("http://{}", listener.local_addr().unwrap());
-    let serving = support::serve_on(listener, support::reply("200 OK", &[], "{}"), None);
+    let serving = serve(support::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let proxy = format!("http://{}", serving.address);
     let mut clients = HttpClients::new(
         support::policy(Verification::Enabled, None),
         support::proxy_policy(&[
@@ -373,18 +376,18 @@ fn a_proxy_for_the_scheme_beats_the_all_proxy() {
     let answer = client.get("http://127.0.0.1:1/x").send().unwrap();
 
     assert_eq!(answer.status().as_u16(), 200);
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
-        "{sent}"
+        sent.line.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
+        "{}",
+        sent.line
     );
 }
 
 #[tokio::test]
 async fn async_client_sends_the_request_through_the_configured_proxy() {
-    let listener = support::listener();
-    let proxy = format!("http://{}", listener.local_addr().unwrap());
-    let serving = support::serve_on(listener, support::reply("200 OK", &[], "{}"), None);
+    let serving = serve(support::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
+    let proxy = format!("http://{}", serving.address);
     let mut clients = HttpClients::new(
         support::policy(Verification::Enabled, None),
         support::proxy_policy(&[("HTTP_PROXY", proxy.as_str())]),
@@ -394,16 +397,17 @@ async fn async_client_sends_the_request_through_the_configured_proxy() {
     let answer = client.get("http://127.0.0.1:1/x").send().await.unwrap();
 
     assert_eq!(answer.status().as_u16(), 200);
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
-        "{sent}"
+        sent.line.starts_with("GET http://127.0.0.1:1/x HTTP/1.1"),
+        "{}",
+        sent.line
     );
 }
 
 #[test]
 fn a_host_the_policy_bypasses_skips_the_proxy() {
-    let serving = support::serve_once(support::reply("200 OK", &[], "{}"), None);
+    let serving = serve(support::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut clients = HttpClients::new(
         support::policy(Verification::Enabled, None),
         support::proxy_policy(&[
@@ -419,8 +423,8 @@ fn a_host_the_policy_bypasses_skips_the_proxy() {
         .unwrap();
 
     assert_eq!(answer.status().as_u16(), 200);
-    let sent = serving.request.join().unwrap();
-    assert_eq!(sent.lines().next(), Some("GET /x HTTP/1.1"));
+    let sent = serving.finish().unwrap();
+    assert_eq!(sent.line, "GET /x HTTP/1.1");
 }
 
 #[rstest]
