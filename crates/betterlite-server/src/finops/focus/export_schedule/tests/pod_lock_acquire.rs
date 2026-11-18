@@ -51,8 +51,8 @@ async fn another_pod_cannot_export_until_the_holder_finishes_and_releases() {
     ));
     let tasks = TaskTracker::new();
     let job = tasks.spawn({
-        let logger = Arc::clone(&logger);
-        async move { initialize_focus_export_job(&logger).await }
+        let task_logger = Arc::clone(&logger);
+        async move { initialize_focus_export_job(&task_logger).await }
     });
     started.notified().await;
     assert_eq!(

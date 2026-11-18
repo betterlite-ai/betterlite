@@ -82,8 +82,8 @@ async fn a_cancelled_export_still_releases_the_lock_exactly_once() {
         .expect("the logger builds"),
     );
     let job = tasks.spawn({
-        let logger = Arc::clone(&logger);
-        async move { initialize_focus_export_job(&logger).await }
+        let task_logger = Arc::clone(&logger);
+        async move { initialize_focus_export_job(&task_logger).await }
     });
     started.notified().await;
     job.abort();

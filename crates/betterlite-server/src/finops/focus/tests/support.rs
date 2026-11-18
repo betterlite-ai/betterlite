@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
+use std::fmt::Debug;
 use std::future::{Future, pending, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -19,9 +19,9 @@ use futures_util::future::BoxFuture;
 use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::export::{
@@ -437,7 +437,10 @@ impl<F: FocusEngineFactory> FocusScheduler<F> for RecordingScheduler<F> {
         if self.rejects {
             return Err(TestError);
         }
-        self.jobs.lock().unwrap().push((logger, trigger));
+        self.jobs
+            .lock()
+            .map_err(|_error| TestError)?
+            .push((logger, trigger));
         Ok(())
     }
 }
@@ -480,9 +483,10 @@ struct Fields<'buffer> {
 }
 
 impl Visit for Fields<'_> {
-    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
         if field.name() == "message" {
-            write!(self.message, "{value:?}").expect("writing to a String cannot fail");
+            let rendered = format!("{value:?}");
+            self.message.push_str(&rendered);
         }
     }
 }
@@ -490,5 +494,5 @@ impl Visit for Fields<'_> {
 pub(super) fn capture_logs() -> (Logs, DefaultGuard) {
     let logs = Logs::default();
     let subscriber = registry().with(Collector { logs: logs.clone() });
-    (logs, tracing::subscriber::set_default(subscriber))
+    (logs, set_default(subscriber))
 }
