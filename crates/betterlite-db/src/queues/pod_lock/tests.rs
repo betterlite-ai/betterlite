@@ -19,6 +19,8 @@ use super::{
 };
 use crate::queues::test_support::captured_logs;
 
+mod real_redis;
+
 // The JSON string B126's async_set_cache stores, the ARGV text the Lua compares, and the DEL bookkeeping of the fallback.
 #[derive(Default)]
 struct LeaseStore {
