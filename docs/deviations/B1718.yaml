@@ -8,12 +8,12 @@ deviations:
       batch when its guard drops, including when the task is cancelled.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L138-L172
   - what: >-
-      Concurrent readers coalesce on a fetch generation: one reader claims the fetch under the
-      lock, releases it before the Redis call, and publishes to waiters when it returns, so no
-      mutex is held across I/O.
+      Concurrent readers share one in-flight load: one reader claims it under the lock and releases
+      the lock before the Redis call, and completion is published to that load's waiters when it
+      finishes, so no mutex is held across I/O.
     why: >-
-      A std mutex held across an await blocks the runtime worker, and the guard republishes on drop
-      so a cancelled fetcher still releases its waiters.
+      A std mutex held across an await blocks the runtime worker, and completion is published on
+      drop so a cancelled fetcher still releases its waiters.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L95-L106
   - what: >-
       A counter decodes to a Decimal, not a float, so every digit the Redis value carries survives
