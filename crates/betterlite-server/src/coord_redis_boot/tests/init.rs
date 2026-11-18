@@ -3,20 +3,22 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use tracing::Level;
 
 use super::support::{
-    AttachCall, FakeSecrets, LogLine, PingOutcome, RecordingCaches, RecordingProbe,
-    capture_async_logs, closed_port, environment, json, messages, no_environment, standalone_cache,
-    wiring,
+    AttachCall, FakeSecrets, LogLine, PingOutcome, RecordingCaches, RecordingProbe, block,
+    capture_async_logs, closed_port, environment, messages, no_environment, settings,
+    standalone_cache, wiring,
 };
 use crate::coord_redis_boot::attach::{CLI_SSO_SESSION_TTL_SECONDS, UsageAttach};
 use crate::coord_redis_boot::env_refs::ResolveContext;
 use crate::coord_redis_boot::error::CoordRedisError;
 use crate::coord_redis_boot::init::{
     AdminPing, UsageRedisProbe, buffer_redis, init_env_fallback, init_from_config, init_from_db,
+};
+use crate::coord_redis_boot::settings::{
+    CoordinationGeneralSettings, CoordinationLitellmSettings, CoordinationRedisSettings,
 };
 
 const CONFIG_INFO: &str = "coordination_redis: using a standalone Redis from general_settings for usage tracking, rate limiting, and cross-pod coordination.";
@@ -30,10 +32,23 @@ const NOT_REACHABLE: &str =
     "coordination_redis: REDIS_* environment variables named a Redis that is not reachable (";
 const STAYS_IN_MEMORY: &str = "); cross-pod coordination stays in-memory. Set general_settings.coordination_redis explicitly to require it.";
 
-fn config_with_block(block: &str) -> JsonValue {
-    json(&format!(
-        r#"{{"general_settings": {{"coordination_redis": {block}}}}}"#
+fn config_with_block(block_text: &str) -> CoordinationRedisSettings {
+    settings(&format!(
+        r#"{{"general_settings": {{"coordination_redis": {block_text}}}}}"#
     ))
+}
+
+fn config_with_block_and(block_text: &str, litellm_text: &str) -> CoordinationRedisSettings {
+    settings(&format!(
+        r#"{{"general_settings": {{"coordination_redis": {block_text}}}, "litellm_settings": {{{litellm_text}}}}}"#
+    ))
+}
+
+fn buffer_settings(flag: &str) -> CoordinationGeneralSettings {
+    settings(&format!(
+        r#"{{"general_settings": {{"use_redis_transaction_buffer": {flag}}}}}"#
+    ))
+    .general_settings
 }
 
 fn only_warning(lines: &[LogLine]) -> String {
@@ -84,7 +99,7 @@ fn port_environment(port: u16) -> BTreeMap<String, String> {
     ])
 }
 
-async fn config_without_a_block(config: &JsonValue) -> bool {
+async fn config_without_a_block(config: &CoordinationRedisSettings) -> bool {
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
     let context = ResolveContext {
@@ -101,15 +116,11 @@ async fn config_without_a_block(config: &JsonValue) -> bool {
 
 #[tokio::test]
 async fn init_from_config_returns_none_without_a_block() {
-    assert!(config_without_a_block(&json("{}")).await);
-    assert!(config_without_a_block(&json(r#"{"general_settings": null}"#)).await);
-    assert!(config_without_a_block(&json(r#"{"general_settings": {}}"#)).await);
+    assert!(config_without_a_block(&settings("{}")).await);
+    assert!(config_without_a_block(&settings(r#"{"general_settings": null}"#)).await);
+    assert!(config_without_a_block(&settings(r#"{"general_settings": {}}"#)).await);
     assert!(
-        config_without_a_block(&json(r#"{"general_settings": "coordination"}"#)).await,
-        "a general_settings that is not an object names no block"
-    );
-    assert!(
-        config_without_a_block(&json(
+        config_without_a_block(&settings(
             r#"{"general_settings": {"coordination_redis": null}}"#
         ))
         .await
@@ -221,13 +232,7 @@ async fn init_from_config_resolves_environment_references() {
 #[tokio::test]
 async fn init_from_config_reads_the_auth_flag_from_litellm_settings() {
     let port = closed_port();
-    let block = format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#);
-    let config = json(&format!(
-        r#"{{"general_settings": {{"coordination_redis": {block}}}, "litellm_settings": {{"enable_redis_auth_cache": true}}}}"#
-    ));
-    let text_config = json(&format!(
-        r#"{{"general_settings": {{"coordination_redis": {block}}}, "litellm_settings": {{"enable_redis_auth_cache": "true"}}}}"#
-    ));
+    let block_text = format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#);
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
     let context = ResolveContext {
@@ -235,23 +240,27 @@ async fn init_from_config_reads_the_auth_flag_from_litellm_settings() {
         env: &env,
     };
     let enabled = RecordingCaches::new();
+    let config = config_with_block_and(&block_text, r#""enable_redis_auth_cache": true"#);
     init_from_config(&config, &context, &wiring(), &attach_of(&enabled))
         .await
         .expect("the block builds");
     let disabled = RecordingCaches::new();
-    init_from_config(&text_config, &context, &wiring(), &attach_of(&disabled))
+    let off = config_with_block_and(&block_text, r#""enable_redis_auth_cache": false"#);
+    init_from_config(&off, &context, &wiring(), &attach_of(&disabled))
         .await
-        .expect("the text flag leaves the auth cache alone");
-    let word_config = json(&format!(
-        r#"{{"general_settings": {{"coordination_redis": {block}}}, "litellm_settings": "coordination"}}"#
-    ));
-    let from_word = RecordingCaches::new();
-    init_from_config(&word_config, &context, &wiring(), &attach_of(&from_word))
-        .await
-        .expect("a litellm_settings that is not an object leaves the auth cache alone");
+        .expect("a false flag leaves the auth cache alone");
+    let absent = RecordingCaches::new();
+    init_from_config(
+        &config_with_block(&block_text),
+        &context,
+        &wiring(),
+        &attach_of(&absent),
+    )
+    .await
+    .expect("an absent flag leaves the auth cache alone");
     assert_eq!(enabled.auth.calls().len(), 1);
     assert!(disabled.auth.calls().is_empty());
-    assert!(from_word.auth.calls().is_empty());
+    assert!(absent.auth.calls().is_empty());
 }
 
 #[tokio::test]
@@ -298,9 +307,10 @@ async fn init_from_db_returns_none_without_a_block() {
         env: &env,
     };
     let caches = RecordingCaches::new();
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_from_db(
         None,
-        &json("{}"),
+        &litellm_settings,
         &context,
         &wiring(),
         &attach_of(&caches),
@@ -313,7 +323,7 @@ async fn init_from_db_returns_none_without_a_block() {
 
 #[tokio::test]
 async fn init_from_db_warns_without_a_target() {
-    let persisted = json(r#"{"port": 6379}"#);
+    let persisted = block(r#"{"port": 6379}"#);
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
     let context = ResolveContext {
@@ -321,9 +331,10 @@ async fn init_from_db_warns_without_a_target() {
         env: &env,
     };
     let caches = RecordingCaches::new();
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_from_db(
         Some(&persisted),
-        &json("{}"),
+        &litellm_settings,
         &context,
         &wiring(),
         &attach_of(&caches),
@@ -337,8 +348,9 @@ async fn init_from_db_warns_without_a_target() {
 #[tokio::test]
 async fn init_from_db_builds_and_attaches() {
     let port = closed_port();
-    let persisted = json(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
-    let settings = json(r#"{"enable_redis_auth_cache": true}"#);
+    let persisted = block(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
+    let litellm_settings =
+        settings(r#"{"litellm_settings": {"enable_redis_auth_cache": true}}"#).litellm_settings;
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
     let context = ResolveContext {
@@ -348,7 +360,7 @@ async fn init_from_db_builds_and_attaches() {
     let caches = RecordingCaches::new();
     let (result, lines) = capture_async_logs(init_from_db(
         Some(&persisted),
-        &settings,
+        &litellm_settings,
         &context,
         &wiring(),
         &attach_of(&caches),
@@ -365,7 +377,7 @@ async fn init_from_db_builds_and_attaches() {
 
 #[tokio::test]
 async fn init_from_db_rejects_a_block_that_is_not_a_mapping() {
-    let persisted = json(r#"["host", 6379]"#);
+    let persisted = block(r#"["host", 6379]"#);
     let secrets = FakeSecrets::new(&[]);
     let env = no_environment();
     let context = ResolveContext {
@@ -373,9 +385,10 @@ async fn init_from_db_rejects_a_block_that_is_not_a_mapping() {
         env: &env,
     };
     let caches = RecordingCaches::new();
+    let litellm_settings = CoordinationLitellmSettings::default();
     let error = init_from_db(
         Some(&persisted),
-        &json("{}"),
+        &litellm_settings,
         &context,
         &wiring(),
         &attach_of(&caches),
@@ -399,8 +412,9 @@ async fn init_env_fallback_returns_none_without_a_target() {
     let probe = RecordingProbe {
         outcome: PingOutcome::Reachable,
     };
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_env_fallback(
-        &json("{}"),
+        &litellm_settings,
         &wiring(),
         &no_environment(),
         &probe,
@@ -419,8 +433,9 @@ async fn init_env_fallback_warns_when_the_build_fails() {
     let probe = RecordingProbe {
         outcome: PingOutcome::Reachable,
     };
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_env_fallback(
-        &json("{}"),
+        &litellm_settings,
         &wiring(),
         &env,
         &probe,
@@ -445,8 +460,9 @@ async fn init_env_fallback_warns_when_the_ping_fails() {
     let probe = RecordingProbe {
         outcome: PingOutcome::Fails,
     };
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_env_fallback(
-        &json("{}"),
+        &litellm_settings,
         &wiring(),
         &env,
         &probe,
@@ -471,8 +487,9 @@ async fn init_env_fallback_warns_when_the_ping_times_out() {
     let probe = RecordingProbe {
         outcome: PingOutcome::Hangs,
     };
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_env_fallback(
-        &json("{}"),
+        &litellm_settings,
         &wiring(),
         &env,
         &probe,
@@ -494,8 +511,9 @@ async fn init_env_fallback_stays_silent_on_a_false_ping() {
     let probe = RecordingProbe {
         outcome: PingOutcome::Unreachable,
     };
+    let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_env_fallback(
-        &json("{}"),
+        &litellm_settings,
         &wiring(),
         &env,
         &probe,
@@ -516,8 +534,10 @@ async fn init_env_fallback_attaches_when_reachable() {
     let probe = RecordingProbe {
         outcome: PingOutcome::Reachable,
     };
+    let litellm_settings =
+        settings(r#"{"litellm_settings": {"enable_redis_auth_cache": true}}"#).litellm_settings;
     let (result, lines) = capture_async_logs(init_env_fallback(
-        &json(r#"{"enable_redis_auth_cache": true}"#),
+        &litellm_settings,
         &wiring(),
         &env,
         &probe,
@@ -536,7 +556,7 @@ async fn init_env_fallback_attaches_when_reachable() {
 async fn buffer_redis_returns_the_usage_cache_first() {
     let usage = standalone_cache().await;
     let env = environment(&[("REDIS_HOST", "127.0.0.1"), ("REDIS_PORT", "6379")]);
-    let settings = json(r#"{"use_redis_transaction_buffer": true}"#);
+    let settings = buffer_settings("true");
     let redis = buffer_redis(&settings, Some(&usage), &wiring(), &env)
         .await
         .expect("the usage cache wins");
@@ -547,13 +567,13 @@ async fn buffer_redis_returns_the_usage_cache_first() {
 async fn buffer_redis_builds_from_the_environment_when_wanted() {
     let port = closed_port();
     let env = port_environment(port);
-    let bool_flag = json(r#"{"use_redis_transaction_buffer": true}"#);
+    let bool_flag = buffer_settings("true");
     let redis = buffer_redis(&bool_flag, None, &wiring(), &env)
         .await
         .expect("the flag builds a client")
         .expect("the environment names a target");
     assert_eq!(redis.transport.settings.port, Some(i64::from(port)));
-    let text_flag = json(r#"{"use_redis_transaction_buffer": "TRUE"}"#);
+    let text_flag = buffer_settings(r#""TRUE""#);
     let from_text = buffer_redis(&text_flag, None, &wiring(), &env)
         .await
         .expect("a true text builds a client");
@@ -563,35 +583,36 @@ async fn buffer_redis_builds_from_the_environment_when_wanted() {
 #[tokio::test]
 async fn buffer_redis_returns_none_when_the_flag_is_off() {
     let env = environment(&[("REDIS_HOST", "127.0.0.1"), ("REDIS_PORT", "6379")]);
-    let off = json(r#"{"use_redis_transaction_buffer": false}"#);
+    let off = buffer_settings("false");
     let bool_off = buffer_redis(&off, None, &wiring(), &env)
         .await
         .expect("a disabled buffer is not an error");
     assert!(bool_off.is_none());
-    let text_off = json(r#"{"use_redis_transaction_buffer": "false"}"#);
+    let text_off = buffer_settings(r#""false""#);
     let from_text = buffer_redis(&text_off, None, &wiring(), &env)
         .await
         .expect("a false text is not an error");
     assert!(from_text.is_none());
-    let unrecognized = json(r#"{"use_redis_transaction_buffer": "no"}"#);
+    let unrecognized = buffer_settings(r#""no""#);
     let from_word = buffer_redis(&unrecognized, None, &wiring(), &env)
         .await
         .expect("an unknown word is off");
     assert!(from_word.is_none());
-    let null = json(r#"{"use_redis_transaction_buffer": null}"#);
+    let null = buffer_settings("null");
     let from_null = buffer_redis(&null, None, &wiring(), &env)
         .await
         .expect("null takes the default");
     assert!(from_null.is_none());
-    let absent = buffer_redis(&json("{}"), None, &wiring(), &env)
+    let absent = CoordinationGeneralSettings::default();
+    let from_absent = buffer_redis(&absent, None, &wiring(), &env)
         .await
         .expect("an absent flag takes the default");
-    assert!(absent.is_none());
+    assert!(from_absent.is_none());
 }
 
 #[tokio::test]
 async fn buffer_redis_without_a_target_returns_none() {
-    let settings = json(r#"{"use_redis_transaction_buffer": true}"#);
+    let settings = buffer_settings("true");
     let redis = buffer_redis(&settings, None, &wiring(), &no_environment())
         .await
         .expect("no target is not an error");
@@ -600,7 +621,7 @@ async fn buffer_redis_without_a_target_returns_none() {
 
 #[tokio::test]
 async fn buffer_redis_reports_a_build_error() {
-    let settings = json(r#"{"use_redis_transaction_buffer": true}"#);
+    let settings = buffer_settings("true");
     let env = environment(&[("REDIS_CLUSTER_NODES", "not json")]);
     let error = buffer_redis(&settings, None, &wiring(), &env)
         .await

@@ -15,6 +15,11 @@ pub enum CoordRedisError {
     MissingTarget,
     #[error(transparent)]
     Params(#[from] ContractError),
+    #[error("the coordination Redis settings could not be read: {source}")]
+    Settings {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("REDIS_CLUSTER_NODES is not valid JSON: {source}")]
     ClusterNodes {
         #[source]

@@ -40,6 +40,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use crate::coord_redis_boot::attach::{ConfigCacheTarget, UsageCacheTarget, UsageCaches};
 use crate::coord_redis_boot::env_refs::{CoordSecretLookup, EnvironmentSecrets};
 use crate::coord_redis_boot::init::UsageRedisProbe;
+use crate::coord_redis_boot::settings::{CoordinationRedisBlock, CoordinationRedisSettings};
 use crate::proxy_request_contracts::coordination_redis::CoordinationRedisParams;
 use crate::redis_cache_wiring::build::{RedisCacheRequest, RedisCacheWiring};
 
@@ -128,6 +129,14 @@ pub(crate) fn json(text: &str) -> JsonValue {
 
 pub(crate) fn params(text: &str) -> CoordinationRedisParams {
     CoordinationRedisParams::from_value(&json(text)).expect("the params are valid")
+}
+
+pub(crate) fn settings(text: &str) -> CoordinationRedisSettings {
+    CoordinationRedisSettings::from_config(&json(text)).expect("the settings read")
+}
+
+pub(crate) fn block(text: &str) -> CoordinationRedisBlock {
+    CoordinationRedisBlock { value: json(text) }
 }
 
 pub(crate) async fn standalone_cache() -> Arc<RedisCache> {
@@ -352,8 +361,9 @@ impl FakeSecrets {
 }
 
 // A test injects named secrets and failures in front of the environment-only lookup.
+#[async_trait]
 impl CoordSecretLookup for FakeSecrets {
-    fn get_secret(
+    async fn get_secret(
         &self,
         env: &BTreeMap<String, String>,
         name: &str,
@@ -365,7 +375,7 @@ impl CoordSecretLookup for FakeSecrets {
         if let Some(value) = self.values.get(&stripped) {
             return Ok(Some(value.clone()));
         }
-        EnvironmentSecrets.get_secret(env, name)
+        EnvironmentSecrets.get_secret(env, name).await
     }
 }
 

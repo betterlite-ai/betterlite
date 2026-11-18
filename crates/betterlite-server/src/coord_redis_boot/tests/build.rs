@@ -2,6 +2,7 @@
 
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_connection_settings::model::nodes::ClusterNodeConfig;
+use secrecy::ExposeSecret as _;
 
 use super::support::{closed_port, environment, no_environment, params, wiring};
 use crate::coord_redis_boot::build::{
@@ -241,6 +242,94 @@ async fn build_from_env_builds_from_the_environment() {
     assert_eq!(cache.transport.family, RedisCacheFamily::Standalone);
     assert_eq!(cache.transport.settings.host.as_deref(), Some("127.0.0.1"));
     assert_eq!(cache.transport.settings.port, Some(i64::from(port)));
+}
+
+#[tokio::test]
+async fn build_from_env_honors_a_configured_socket_timeout() {
+    let port = closed_port();
+    let env = environment(&[
+        ("REDIS_HOST", "127.0.0.1"),
+        ("REDIS_PORT", &port.to_string()),
+        ("REDIS_SOCKET_TIMEOUT", "1.5"),
+    ]);
+    let cache = build_from_env(&wiring(), &env)
+        .await
+        .expect("the environment client builds")
+        .expect("the environment names a target");
+    assert_eq!(cache.transport.settings.socket_timeout, Some(1.5_f64));
+}
+
+#[tokio::test]
+async fn build_from_env_rejects_a_malformed_socket_timeout() {
+    let port = closed_port();
+    let env = environment(&[
+        ("REDIS_HOST", "127.0.0.1"),
+        ("REDIS_PORT", &port.to_string()),
+        ("REDIS_SOCKET_TIMEOUT", "soon"),
+    ]);
+    let error = build_from_env(&wiring(), &env)
+        .await
+        .err()
+        .expect("the timeout text does not parse");
+    assert!(matches!(error, CoordRedisError::Build(_)));
+    assert!(
+        error.to_string().contains("REDIS_SOCKET_TIMEOUT"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn build_from_env_keeps_the_default_socket_timeout_when_unset() {
+    let port = closed_port();
+    let env = environment(&[
+        ("REDIS_HOST", "127.0.0.1"),
+        ("REDIS_PORT", &port.to_string()),
+    ]);
+    let cache = build_from_env(&wiring(), &env)
+        .await
+        .expect("the environment client builds")
+        .expect("the environment names a target");
+    assert_eq!(cache.transport.settings.socket_timeout, Some(5.0_f64));
+}
+
+#[tokio::test]
+async fn build_from_env_keeps_the_default_socket_timeout_for_an_empty_value() {
+    let port = closed_port();
+    let env = environment(&[
+        ("REDIS_HOST", "127.0.0.1"),
+        ("REDIS_PORT", &port.to_string()),
+        ("REDIS_SOCKET_TIMEOUT", ""),
+    ]);
+    let cache = build_from_env(&wiring(), &env)
+        .await
+        .expect("an empty timeout counts as unset")
+        .expect("the environment names a target");
+    assert_eq!(cache.transport.settings.socket_timeout, Some(5.0_f64));
+}
+
+#[tokio::test]
+async fn build_usage_redis_keeps_the_credentials_secret() {
+    let port = closed_port();
+    let text = format!(
+        r#"{{"host": "127.0.0.1", "port": {port}, "password": "s3cr3t", "sentinel_password": "sentinel"}}"#
+    );
+    let cache = build_usage_redis(&params(&text), &wiring(), &no_environment())
+        .await
+        .expect("the cache builds with its credentials");
+    let password = cache
+        .transport
+        .settings
+        .password
+        .as_ref()
+        .expect("the password reaches the client");
+    assert_eq!(password.expose_secret(), "s3cr3t");
+    let sentinel = cache
+        .transport
+        .settings
+        .sentinel_password
+        .as_ref()
+        .expect("the sentinel password reaches the client");
+    assert_eq!(sentinel.expose_secret(), "sentinel");
 }
 
 #[tokio::test]

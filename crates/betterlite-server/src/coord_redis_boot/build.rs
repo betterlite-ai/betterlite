@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::scalars::FloatOrText;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_secret_managers::secret_lookup::text_to_bool;
 use serde::de::Error as _;
@@ -13,6 +14,7 @@ use crate::redis_cache_wiring::build::{RedisCacheRequest, RedisCacheWiring};
 
 pub const REDIS_CLUSTER_NODES: &str = "REDIS_CLUSTER_NODES";
 const REDIS_SENTINEL_NODES: &str = "REDIS_SENTINEL_NODES";
+const REDIS_SOCKET_TIMEOUT: &str = "REDIS_SOCKET_TIMEOUT";
 
 // litellm only branches on cluster mode for a non-empty node list; an empty or absent REDIS_CLUSTER_NODES keeps the plain client.
 pub fn usage_family(
@@ -77,7 +79,7 @@ pub async fn build_from_env(
     }
     let family = env_family(env)?;
     let request = RedisCacheRequest {
-        overrides: RedisOverrides::default(),
+        overrides: environment_overrides(env),
         family,
         namespace: None,
         redis_flush_size: None,
@@ -86,13 +88,29 @@ pub async fn build_from_env(
     Ok(Some(cache))
 }
 
+// litellm passes every REDIS_* connection value as an explicit kwarg, so a configured socket timeout reaches the client instead of the cache's five second default.
+fn environment_overrides(env: &BTreeMap<String, String>) -> RedisOverrides {
+    let mut overrides = RedisOverrides::default();
+    if let Some(text) = env
+        .get(REDIS_SOCKET_TIMEOUT)
+        .filter(|text| !text.trim().is_empty())
+    {
+        overrides.socket_timeout = Some(FloatOrText::Text(text.clone()));
+    }
+    overrides
+}
+
 // litellm hands RedisCache every model_dump field, so the cache's own namespace and flush size come from the block and the client never sees them.
 fn usage_cache_request(
     params: &CoordinationRedisParams,
     family: RedisCacheFamily,
 ) -> Result<RedisCacheRequest, CoordRedisError> {
+    let mut carried = params.clone();
+    carried.password = None;
+    carried.url = None;
+    carried.sentinel_password = None;
     let serialized =
-        serde_json::to_value(params).map_err(|source| CoordRedisError::Overrides { source })?;
+        serde_json::to_value(&carried).map_err(|source| CoordRedisError::Overrides { source })?;
     let JsonValue::Object(fields) = serialized else {
         return Err(CoordRedisError::Overrides {
             source: serde_json::Error::custom("the coordination Redis params are not an object"),
@@ -104,8 +122,11 @@ fn usage_cache_request(
             !value.is_null() && name != "namespace" && name != "redis_flush_size"
         })
         .collect();
-    let overrides = serde_json::from_value::<RedisOverrides>(JsonValue::Object(settings))
+    let mut overrides = serde_json::from_value::<RedisOverrides>(JsonValue::Object(settings))
         .map_err(|source| CoordRedisError::Overrides { source })?;
+    overrides.password = params.password.clone().map(Some);
+    overrides.url = params.url.clone().map(Some);
+    overrides.sentinel_password = params.sentinel_password.clone();
     Ok(RedisCacheRequest {
         overrides,
         family,

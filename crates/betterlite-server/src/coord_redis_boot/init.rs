@@ -3,16 +3,19 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_secret_managers::secret_lookup::text_to_bool;
 
-use super::attach::{UsageAttach, attach_usage_redis, enable_redis_auth_cache};
+use super::attach::{UsageAttach, attach_usage_redis};
 use super::build::{build_from_env, build_usage_redis};
-use super::env_refs::{ResolveContext, resolve_env_refs};
+use super::env_refs::{ResolveContext, resolve_params};
 use super::error::CoordRedisError;
-use crate::proxy_request_contracts::coordination_redis::CoordinationRedisParams;
+use super::settings::{
+    CoordinationGeneralSettings, CoordinationLitellmSettings, CoordinationRedisBlock,
+    CoordinationRedisSettings,
+};
+use crate::proxy_request_contracts::coordination_redis::{BoolOrText, CoordinationRedisParams};
 use crate::redis_cache_wiring::build::RedisCacheWiring;
 
 const PING_TIMEOUT: Duration = Duration::from_secs(2);
@@ -31,18 +34,14 @@ impl UsageRedisProbe for AdminPing {
     }
 }
 
-pub fn config_coordination_params(
-    config: &JsonValue,
+pub async fn config_coordination_params(
+    settings: &CoordinationRedisSettings,
     context: &ResolveContext<'_>,
 ) -> Result<Option<CoordinationRedisParams>, CoordRedisError> {
-    let Some(block) = config
-        .get("general_settings")
-        .and_then(|settings| settings.get("coordination_redis"))
-        .filter(|block| !block.is_null())
-    else {
+    let Some(block) = settings.general_settings.coordination_redis.as_ref() else {
         return Ok(None);
     };
-    let params = params_from_block(block, context)?;
+    let params = resolve_params(block, context).await?;
     if !params.has_connection_target() {
         return Err(CoordRedisError::MissingTarget);
     }
@@ -50,18 +49,16 @@ pub fn config_coordination_params(
 }
 
 pub async fn init_from_config(
-    config: &JsonValue,
+    settings: &CoordinationRedisSettings,
     context: &ResolveContext<'_>,
     wiring: &RedisCacheWiring,
     attach: &UsageAttach<'_>,
 ) -> Result<Option<Arc<RedisCache>>, CoordRedisError> {
-    let Some(params) = config_coordination_params(config, context)? else {
+    let Some(params) = config_coordination_params(settings, context).await? else {
         return Ok(None);
     };
     let cache = Arc::new(build_usage_redis(&params, wiring, context.env).await?);
-    let enable_auth = config
-        .get("litellm_settings")
-        .is_some_and(enable_redis_auth_cache);
+    let enable_auth = settings.litellm_settings.enable_redis_auth_cache == Some(true);
     attach_usage_redis(&cache, enable_auth, attach);
     tracing::info!(
         "coordination_redis: using a standalone Redis from general_settings for usage tracking, rate limiting, and cross-pod coordination."
@@ -70,8 +67,8 @@ pub async fn init_from_config(
 }
 
 pub async fn init_from_db(
-    persisted: Option<&JsonValue>,
-    litellm_settings: &JsonValue,
+    persisted: Option<&CoordinationRedisBlock>,
+    litellm_settings: &CoordinationLitellmSettings,
     context: &ResolveContext<'_>,
     wiring: &RedisCacheWiring,
     attach: &UsageAttach<'_>,
@@ -79,7 +76,7 @@ pub async fn init_from_db(
     let Some(block) = persisted else {
         return Ok(None);
     };
-    let params = params_from_block(block, context)?;
+    let params = resolve_params(block, context).await?;
     if !params.has_connection_target() {
         tracing::warn!(
             "coordination_redis saved in the database names no connection target; ignoring it."
@@ -87,7 +84,11 @@ pub async fn init_from_db(
         return Ok(None);
     }
     let cache = Arc::new(build_usage_redis(&params, wiring, context.env).await?);
-    attach_usage_redis(&cache, enable_redis_auth_cache(litellm_settings), attach);
+    attach_usage_redis(
+        &cache,
+        litellm_settings.enable_redis_auth_cache == Some(true),
+        attach,
+    );
     tracing::info!(
         "coordination_redis: using the standalone Redis saved in the database for usage tracking, rate limiting, and cross-pod coordination."
     );
@@ -96,7 +97,7 @@ pub async fn init_from_db(
 
 // The inferred fallback never stops startup: a malformed value, an unreachable Redis and a false ping all stay in memory.
 pub async fn init_env_fallback(
-    litellm_settings: &JsonValue,
+    litellm_settings: &CoordinationLitellmSettings,
     wiring: &RedisCacheWiring,
     env: &BTreeMap<String, String>,
     probe: &dyn UsageRedisProbe,
@@ -127,7 +128,8 @@ pub async fn init_env_fallback(
             return None;
         }
     }
-    attach_usage_redis(&cache, enable_redis_auth_cache(litellm_settings), attach);
+    let enable_auth = litellm_settings.enable_redis_auth_cache == Some(true);
+    attach_usage_redis(&cache, enable_auth, attach);
     tracing::info!(
         "coordination_redis: using a standalone Redis built from REDIS_* environment variables for usage tracking, rate limiting, and cross-pod coordination."
     );
@@ -135,7 +137,7 @@ pub async fn init_env_fallback(
 }
 
 pub async fn buffer_redis(
-    settings: &JsonValue,
+    settings: &CoordinationGeneralSettings,
     usage_redis: Option<&Arc<RedisCache>>,
     wiring: &RedisCacheWiring,
     env: &BTreeMap<String, String>,
@@ -143,25 +145,17 @@ pub async fn buffer_redis(
     if let Some(redis) = usage_redis {
         return Ok(Some(Arc::clone(redis)));
     }
-    if !buffer_wanted(settings) {
+    if !buffer_wanted(settings.use_redis_transaction_buffer.as_ref()) {
         return Ok(None);
     }
     Ok(build_from_env(wiring, env).await?.map(Arc::new))
 }
 
-fn params_from_block(
-    block: &JsonValue,
-    context: &ResolveContext<'_>,
-) -> Result<CoordinationRedisParams, CoordRedisError> {
-    CoordinationRedisParams::from_value(&resolve_env_refs(block, context)?)
-        .map_err(CoordRedisError::from)
-}
-
 // litellm reads the flag as a bool or a string through str_to_bool, so "false" and "no" leave the buffer off.
-fn buffer_wanted(settings: &JsonValue) -> bool {
-    match settings.get("use_redis_transaction_buffer") {
-        Some(JsonValue::Bool(flag)) => *flag,
-        Some(JsonValue::String(text)) => text_to_bool(text).unwrap_or(false),
-        _ => false,
+fn buffer_wanted(flag: Option<&BoolOrText>) -> bool {
+    match flag {
+        Some(BoolOrText::Bool(value)) => *value,
+        Some(BoolOrText::Text(text)) => text_to_bool(text).unwrap_or(false),
+        None => false,
     }
 }

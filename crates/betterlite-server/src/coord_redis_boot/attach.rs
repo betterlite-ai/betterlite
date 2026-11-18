@@ -4,7 +4,6 @@ use betterlite_auth::auth_cache::AuthCache;
 use betterlite_auth::auth_cache::backend::AuthCacheTier;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::dual_cache::DualCache;
-use betterlite_config::sections::settings::JsonValue;
 use betterlite_redis::redis_cache::RedisCache;
 
 // litellm's CLI SSO session cache keeps logins for ten minutes, whichever worker the browser lands on.
@@ -51,15 +50,6 @@ pub struct UsageCaches<'a> {
 pub struct UsageAttach<'a> {
     pub caches: UsageCaches<'a>,
     pub default_redis_ttl: Option<f64>,
-}
-
-// litellm compares the setting with `is True`, so only the boolean true opts the auth cache in.
-#[must_use]
-pub fn enable_redis_auth_cache(litellm_settings: &JsonValue) -> bool {
-    litellm_settings
-        .get("enable_redis_auth_cache")
-        .and_then(JsonValue::as_bool)
-        == Some(true)
 }
 
 pub fn attach_usage_redis(

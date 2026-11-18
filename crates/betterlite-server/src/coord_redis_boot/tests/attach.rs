@@ -6,12 +6,11 @@ use betterlite_redis::redis_cache::RedisCache;
 use tracing::Level;
 
 use super::support::{
-    AttachCall, RecordingCaches, auth_cache, capture_logs, dual_cache, json, messages,
-    standalone_cache,
+    AttachCall, RecordingCaches, auth_cache, capture_logs, dual_cache, messages, standalone_cache,
 };
 use crate::coord_redis_boot::attach::{
     CLI_SSO_SESSION_TTL_SECONDS, ConfigCacheTarget, UsageAttach, UsageCacheTarget,
-    attach_usage_redis, enable_redis_auth_cache,
+    attach_usage_redis,
 };
 
 fn attach_with<'a>(caches: &'a RecordingCaches, ttl: f64) -> UsageAttach<'a> {
@@ -142,30 +141,4 @@ async fn usage_cache_target_attaches_to_a_real_auth_cache() {
         .read()
         .expect("the client lock");
     assert!(held.as_ref().is_some_and(|held| Arc::ptr_eq(held, &redis)));
-}
-
-#[test]
-fn enable_redis_auth_cache_reads_the_boolean_true() {
-    let settings = json(r#"{"enable_redis_auth_cache": true}"#);
-    assert!(enable_redis_auth_cache(&settings));
-}
-
-#[test]
-fn enable_redis_auth_cache_ignores_the_text_true() {
-    let settings = json(r#"{"enable_redis_auth_cache": "true"}"#);
-    assert!(!enable_redis_auth_cache(&settings));
-}
-
-#[test]
-fn enable_redis_auth_cache_ignores_a_number() {
-    let settings = json(r#"{"enable_redis_auth_cache": 1}"#);
-    assert!(!enable_redis_auth_cache(&settings));
-}
-
-#[test]
-fn enable_redis_auth_cache_ignores_null_and_absence() {
-    let null = json(r#"{"enable_redis_auth_cache": null}"#);
-    assert!(!enable_redis_auth_cache(&null));
-    let absent = json(r#"{"other_setting": true}"#);
-    assert!(!enable_redis_auth_cache(&absent));
 }
