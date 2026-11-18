@@ -181,7 +181,7 @@ fn split_output_config(value: Option<ParamValue>) -> (Option<ParamValue>, Option
 }
 
 fn metadata_value(value: Option<ParamValue>) -> Result<Option<Json>, ConverseRequestError> {
-    let Some(present) = value.filter(|present| !matches!(present, ParamValue::Null)) else {
+    let Some(present) = value.filter(|entry| !matches!(entry, ParamValue::Null)) else {
         return Ok(None);
     };
     // The record projection drops a null member before LiteLLM validates; this keeps the rest in caller order.
