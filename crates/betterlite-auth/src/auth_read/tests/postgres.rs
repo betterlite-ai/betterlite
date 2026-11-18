@@ -3,7 +3,6 @@
 use std::convert::Infallible;
 use std::sync::Arc;
 
-use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::rows::KeyColumn;
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -100,52 +99,41 @@ fn user_create() -> UserCreate {
     }
 }
 
-fn membership_count(users: &[LiteLLMUserTable], user_id: &str) -> Option<usize> {
-    users
-        .iter()
-        .find(|user| user.user_id == user_id)
-        .expect("the seeded user")
-        .organization_memberships
-        .as_ref()
-        .map(Vec::len)
-}
-
 #[tokio::test]
 async fn native_user_reads_select_requested_memberships() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let found = repository
-            .find_unique(FindOne {
-                filter: key("user-1"),
-                include: Presence::Value(UserInclude {
-                    organization_memberships: true,
-                }),
-            })
-            .await
-            .expect("the user read")
-            .expect("the stored user");
-        let memberships = found
-            .organization_memberships
-            .expect("the included memberships");
-        assert_eq!(memberships.len(), 1);
-        assert_eq!(memberships[0].organization_id, "org-1");
-        assert_eq!(memberships[0].user_role.as_deref(), Some("admin"));
-        let plain = repository
-            .find_unique(FindOne {
-                filter: key("user-2"),
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the plain read")
-            .expect("the stored user");
-        assert!(plain.organization_memberships.is_none())
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let found = repository
+        .find_unique(FindOne {
+            filter: key("user-1"),
+            include: Presence::Value(UserInclude {
+                organization_memberships: true,
+            }),
+        })
+        .await
+        .expect("the user read")
+        .expect("the stored user");
+    let memberships = found
+        .organization_memberships
+        .expect("the included memberships");
+    assert_eq!(memberships.len(), 1);
+    assert_eq!(memberships[0].organization_id, "org-1");
+    assert_eq!(memberships[0].user_role.as_deref(), Some("admin"));
+    let plain = repository
+        .find_unique(FindOne {
+            filter: key("user-2"),
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the plain read")
+        .expect("the stored user");
+    assert!(plain.organization_memberships.is_none());
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -153,26 +141,39 @@ async fn native_user_reads_select_requested_memberships() {
 async fn native_user_list_selects_requested_memberships() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let listed = repository
-            .find_many(FindMany {
-                filter: Presence::Omitted,
-                include: Presence::Value(UserInclude {
-                    organization_memberships: true,
-                }),
-                take: Presence::Omitted,
-            })
-            .await
-            .expect("the user list");
-        assert_eq!(listed.len(), 2);
-        assert_eq!(membership_count(&listed, "user-1"), Some(1));
-        assert_eq!(membership_count(&listed, "user-2"), Some(0))
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let listed = repository
+        .find_many(FindMany {
+            filter: Presence::Omitted,
+            include: Presence::Value(UserInclude {
+                organization_memberships: true,
+            }),
+            take: Presence::Omitted,
+        })
+        .await
+        .expect("the user list");
+    assert_eq!(listed.len(), 2);
+    let first_user = listed
+        .iter()
+        .find(|user| user.user_id == "user-1")
+        .expect("the seeded user");
+    assert_eq!(
+        first_user.organization_memberships.as_ref().map(Vec::len),
+        Some(1)
+    );
+    let second_user = listed
+        .iter()
+        .find(|user| user.user_id == "user-2")
+        .expect("the seeded user");
+    assert_eq!(
+        second_user.organization_memberships.as_ref().map(Vec::len),
+        Some(0)
+    );
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -180,31 +181,30 @@ async fn native_user_list_selects_requested_memberships() {
 async fn native_first_returns_one_of_several_rows() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let first = repository
-            .find_first(FindOne {
-                filter: UserEmailFilter::default(),
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the filtered read does not fail on several matches")
-            .expect("one of the stored users");
-        assert!(["user-1", "user-2"].contains(&first.user_id.as_str()));
-        let unique = repository
-            .find_unique(FindOne {
-                filter: key("user-2"),
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the keyed read")
-            .expect("the stored user");
-        assert_eq!(unique.user_id, "user-2")
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let first = repository
+        .find_first(FindOne {
+            filter: UserEmailFilter::default(),
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the filtered read does not fail on several matches")
+        .expect("one of the stored users");
+    assert!(["user-1", "user-2"].contains(&first.user_id.as_str()));
+    let unique = repository
+        .find_unique(FindOne {
+            filter: key("user-2"),
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the keyed read")
+        .expect("the stored user");
+    assert_eq!(unique.user_id, "user-2");
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -212,34 +212,33 @@ async fn native_first_returns_one_of_several_rows() {
 async fn native_email_filter_selects_one_user() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let found = repository
-            .find_first(FindOne {
-                filter: UserEmailFilter {
-                    address: Some("FIRST@EXAMPLE.COM".to_owned()),
-                    insensitive: true,
-                },
-                include: Presence::Value(UserInclude {
-                    organization_memberships: true,
-                }),
-            })
-            .await
-            .expect("the email read")
-            .expect("the matching user");
-        assert_eq!(found.user_id, "user-1");
-        assert_eq!(
-            found
-                .organization_memberships
-                .expect("the included memberships")
-                .len(),
-            1
-        )
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let found = repository
+        .find_first(FindOne {
+            filter: UserEmailFilter {
+                address: Some("FIRST@EXAMPLE.COM".to_owned()),
+                insensitive: true,
+            },
+            include: Presence::Value(UserInclude {
+                organization_memberships: true,
+            }),
+        })
+        .await
+        .expect("the email read")
+        .expect("the matching user");
+    assert_eq!(found.user_id, "user-1");
+    assert_eq!(
+        found
+            .organization_memberships
+            .expect("the included memberships")
+            .len(),
+        1
+    );
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -247,24 +246,23 @@ async fn native_email_filter_selects_one_user() {
 async fn native_email_filter_returns_none_when_missing() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let missing = repository
-            .find_first(FindOne {
-                filter: UserEmailFilter {
-                    address: Some("missing@example.com".to_owned()),
-                    insensitive: true,
-                },
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the missing read");
-        assert!(missing.is_none())
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let missing = repository
+        .find_first(FindOne {
+            filter: UserEmailFilter {
+                address: Some("missing@example.com".to_owned()),
+                insensitive: true,
+            },
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the missing read");
+    assert!(missing.is_none());
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -272,35 +270,34 @@ async fn native_email_filter_returns_none_when_missing() {
 async fn native_membership_list_applies_take() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let include = Presence::Value(UserInclude {
-            organization_memberships: true,
-        });
-        let limited = repository
-            .find_many(FindMany {
-                filter: Presence::Omitted,
-                include,
-                take: Presence::Value(1),
-            })
-            .await
-            .expect("the limited list");
-        assert_eq!(limited.len(), 1);
-        assert!(limited[0].organization_memberships.is_some());
-        let empty = repository
-            .find_many(FindMany {
-                filter: Presence::Omitted,
-                include,
-                take: Presence::Value(0),
-            })
-            .await
-            .expect("a zero take keeps its meaning");
-        assert!(empty.is_empty())
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let include = Presence::Value(UserInclude {
+        organization_memberships: true,
+    });
+    let limited = repository
+        .find_many(FindMany {
+            filter: Presence::Omitted,
+            include,
+            take: Presence::Value(1),
+        })
+        .await
+        .expect("the limited list");
+    assert_eq!(limited.len(), 1);
+    assert!(limited[0].organization_memberships.is_some());
+    let empty = repository
+        .find_many(FindMany {
+            filter: Presence::Omitted,
+            include,
+            take: Presence::Value(0),
+        })
+        .await
+        .expect("a zero take keeps its meaning");
+    assert!(empty.is_empty());
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -308,42 +305,41 @@ async fn native_membership_list_applies_take() {
 async fn native_create_binds_user_and_returns_memberships() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: UserRows,
-        };
-        let created = repository
-            .create(Create {
-                data: user_create(),
-                include: Presence::Value(UserInclude {
-                    organization_memberships: true,
-                }),
-            })
-            .await
-            .expect("the created user");
-        assert_eq!(created.user_id, "user-3");
-        assert_eq!(created.user_email.as_deref(), Some("third@example.com"));
-        assert_eq!(created.user_role.as_deref(), Some("internal_user"));
-        assert_eq!(created.tpm_limit, Some(10));
-        assert_eq!(
-            created
-                .organization_memberships
-                .expect("the empty membership list")
-                .len(),
-            0
-        );
-        let stored = repository
-            .find_unique(FindOne {
-                filter: key("user-3"),
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the stored user read")
-            .expect("the stored user");
-        assert_eq!(stored.user_email.as_deref(), Some("third@example.com"))
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: UserRows,
     };
+    let created = repository
+        .create(Create {
+            data: user_create(),
+            include: Presence::Value(UserInclude {
+                organization_memberships: true,
+            }),
+        })
+        .await
+        .expect("the created user");
+    assert_eq!(created.user_id, "user-3");
+    assert_eq!(created.user_email.as_deref(), Some("third@example.com"));
+    assert_eq!(created.user_role.as_deref(), Some("internal_user"));
+    assert_eq!(created.tpm_limit, Some(10));
+    assert_eq!(
+        created
+            .organization_memberships
+            .expect("the empty membership list")
+            .len(),
+        0
+    );
+    let stored = repository
+        .find_unique(FindOne {
+            filter: key("user-3"),
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the stored user read")
+        .expect("the stored user");
+    assert_eq!(stored.user_email.as_deref(), Some("third@example.com"));
+    drop(repository);
     close(fixture, pool).await;
 }
 
@@ -351,42 +347,41 @@ async fn native_create_binds_user_and_returns_memberships() {
 async fn native_jwt_filter_returns_mapping() {
     let (fixture, pool) = database().await;
     seed(&pool).await;
-    {
-        let client = pool.get().await.expect("the database connection");
-        let repository: RepositoryTable<Client, _> = RepositoryTable {
-            client: Some(Arc::new(client)),
-            table: JwtRows,
-        };
-        let found = repository
-            .find_first(FindOne {
-                filter: JwtMappingFilter {
-                    claim_name: "role".to_owned(),
-                    claim_value: "admin".to_owned(),
-                    issuer: "https://issuer.example".to_owned(),
-                    active: true,
-                },
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the mapping read")
-            .expect("the matching mapping");
-        assert_eq!(found.token, "hashed-token");
-        assert_eq!(found.jwt_issuer, "https://issuer.example");
-        assert_eq!(found.jwt_claim_name, "role");
-        assert_eq!(found.jwt_claim_value, "admin");
-        let inactive = repository
-            .find_first(FindOne {
-                filter: JwtMappingFilter {
-                    claim_name: "role".to_owned(),
-                    claim_value: "admin".to_owned(),
-                    issuer: "https://issuer.example".to_owned(),
-                    active: false,
-                },
-                include: Presence::Omitted,
-            })
-            .await
-            .expect("the inactive read");
-        assert!(inactive.is_none())
+    let client = pool.get().await.expect("the database connection");
+    let repository: RepositoryTable<Client, _> = RepositoryTable {
+        client: Some(Arc::new(client)),
+        table: JwtRows,
     };
+    let found = repository
+        .find_first(FindOne {
+            filter: JwtMappingFilter {
+                claim_name: "role".to_owned(),
+                claim_value: "admin".to_owned(),
+                issuer: "https://issuer.example".to_owned(),
+                active: true,
+            },
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the mapping read")
+        .expect("the matching mapping");
+    assert_eq!(found.token, "hashed-token");
+    assert_eq!(found.jwt_issuer, "https://issuer.example");
+    assert_eq!(found.jwt_claim_name, "role");
+    assert_eq!(found.jwt_claim_value, "admin");
+    let inactive = repository
+        .find_first(FindOne {
+            filter: JwtMappingFilter {
+                claim_name: "role".to_owned(),
+                claim_value: "admin".to_owned(),
+                issuer: "https://issuer.example".to_owned(),
+                active: false,
+            },
+            include: Presence::Omitted,
+        })
+        .await
+        .expect("the inactive read");
+    assert!(inactive.is_none());
+    drop(repository);
     close(fixture, pool).await;
 }

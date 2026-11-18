@@ -297,22 +297,21 @@ async fn read_cancel_propagates() {
     let harness = Harness::new();
     let repo = recording_repo(Mode::Pending);
     let table = AuthReadAdapter::User.open(Arc::clone(&repo), String::new(), harness.context(60.0));
-    {
-        let mut read = Box::pin(table.find_unique(FindOne {
-            filter: filter(),
-            include: Presence::Omitted,
-        }));
-        poll_fn(|poll_context| {
-            assert!(
-                read.as_mut().poll(poll_context).is_pending(),
-                "the read waits on the pending repository"
-            );
-            Poll::Ready(())
-        })
-        .await;
-        yield_now().await;
-        assert!(!repo.dropped())
-    };
+    let mut read = Box::pin(table.find_unique(FindOne {
+        filter: filter(),
+        include: Presence::Omitted,
+    }));
+    poll_fn(|poll_context| {
+        assert!(
+            read.as_mut().poll(poll_context).is_pending(),
+            "the read waits on the pending repository"
+        );
+        Poll::Ready(())
+    })
+    .await;
+    yield_now().await;
+    assert!(!repo.dropped());
+    drop(read);
     yield_now().await;
     assert!(repo.dropped());
     harness.drain().await;
