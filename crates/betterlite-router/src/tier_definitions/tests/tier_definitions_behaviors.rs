@@ -91,6 +91,25 @@ fn a_custom_set_resolves_replies_to_its_defined_names(
     assert_eq!(resolved.as_ref().map(Tier::name), expected);
 }
 
+// the documented casefold deviation: Rust lowercases, so a reply that only Python's casefold folds
+// onto a defined name resolves on LiteLLM's side and not here
+#[test]
+fn a_reply_that_only_casefold_would_match_does_not_resolve() {
+    let config = section::Config {
+        tier_definitions: ladder(&[("STRASSE", Some("relays")), ("DEEP", Some("hard"))]),
+        tier_models: pools(&[("STRASSE", single("a")), ("DEEP", single("b"))]),
+        ..blank()
+    };
+    let set = checked(config, &llm("STRASSE"));
+    assert_eq!(set.resolve_classified_tier("straße"), None);
+    assert_eq!(
+        set.resolve_classified_tier("STRASSE")
+            .as_ref()
+            .map(Tier::name),
+        Some("STRASSE")
+    );
+}
+
 #[rstest]
 #[case::label("cheap", Some(ComplexityTier::Simple))]
 #[case::padded_label("  STANDARD ", Some(ComplexityTier::Medium))]
