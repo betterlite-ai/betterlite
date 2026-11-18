@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use opentelemetry::trace::{SpanKind, Status, TracerProvider as _};
@@ -255,6 +256,36 @@ fn traceloop_stops_before_the_response_when_the_response_is_missing() {
         Some(&Value::from("Hello"))
     );
     assert!(!attributes.contains_key("gen_ai.response.model"));
+}
+
+#[tokio::test]
+async fn traceloop_async_logs_a_success_on_the_litellm_completion_span() {
+    let (logger, exporter) = logger();
+    logger
+        .async_log_success_event(Arc::new(event()))
+        .await
+        .expect("the event is logged");
+    let span = only_span(&exporter);
+    assert_eq!(span.name, SPAN_NAME);
+    assert_eq!(
+        attributes(&span).get("gen_ai.prompt.0.role"),
+        Some(&Value::from("user"))
+    );
+}
+
+#[tokio::test]
+async fn traceloop_async_logs_a_failure_with_the_error_status() {
+    let (logger, exporter) = logger();
+    let payload = payload(SUCCESS_RESPONSE, DEFAULT_MESSAGES).replace(
+        r#""hidden_params": {}"#,
+        r#""hidden_params": {}, "error_information": {"error_message": "boom"}"#,
+    );
+    logger
+        .async_log_failure_event(Arc::new(from_payload(&payload)))
+        .await
+        .expect("the event is logged");
+    let span = only_span(&exporter);
+    assert!(matches!(span.status, Status::Error { .. }));
 }
 
 #[test]

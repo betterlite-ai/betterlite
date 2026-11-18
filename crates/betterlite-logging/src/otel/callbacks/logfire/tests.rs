@@ -5,11 +5,10 @@ use std::sync::{Arc, Mutex};
 use betterlite_models::decisions::Json;
 use chrono::DateTime;
 use indexmap::IndexMap;
-use rstest::rstest;
 
 use super::{
-    CHAT_COMPLETION_TEMPLATE, DEFAULT_TEMPLATE, EMBEDDING_TEMPLATE, IMAGE_GENERATION_TEMPLATE,
-    LogfireLevel, LogfireLogger, LogfireSink, SpanConfig,
+    CALLBACK_NAME, CHAT_COMPLETION_TEMPLATE, DEFAULT_TEMPLATE, EMBEDDING_TEMPLATE,
+    IMAGE_GENERATION_TEMPLATE, LogfireLevel, LogfireLogger, LogfireSink, SpanConfig,
 };
 use crate::callback_logger::CallbackLogger as _;
 use crate::otel::callbacks::IdGenerator;
@@ -101,26 +100,62 @@ fn payload_for_call_type(call_type: &str) -> String {
     )
 }
 
-#[rstest]
-#[case::completion("completion", CHAT_COMPLETION_TEMPLATE)]
-#[case::async_completion("acompletion", CHAT_COMPLETION_TEMPLATE)]
-#[case::embedding("embedding", EMBEDDING_TEMPLATE)]
-#[case::async_embedding("aembedding", EMBEDDING_TEMPLATE)]
-#[case::image_generation("image_generation", IMAGE_GENERATION_TEMPLATE)]
-#[case::async_image_generation("aimage_generation", IMAGE_GENERATION_TEMPLATE)]
-#[case::other("text_completion", DEFAULT_TEMPLATE)]
-fn logfire_selects_the_message_template_for_each_call_type(
-    #[case] call_type: &str,
-    #[case] template: &'static str,
-) {
+#[test]
+fn logfire_selects_the_message_template_for_each_call_type() {
+    let cases = [
+        ("completion", CHAT_COMPLETION_TEMPLATE),
+        ("acompletion", CHAT_COMPLETION_TEMPLATE),
+        ("embedding", EMBEDDING_TEMPLATE),
+        ("aembedding", EMBEDDING_TEMPLATE),
+        ("image_generation", IMAGE_GENERATION_TEMPLATE),
+        ("aimage_generation", IMAGE_GENERATION_TEMPLATE),
+        ("text_completion", DEFAULT_TEMPLATE),
+    ];
+    let sink = RecordingSink::default();
+    let logger = logger(&sink, generated_id, false);
+    for (call_type, template) in cases {
+        logger
+            .log_success_event(&from_payload(&payload_for_call_type(call_type)))
+            .expect("the event is logged");
+        let records = sink.recorded();
+        let last = records.last().expect("the event is recorded");
+        assert_eq!(last.template, template, "call type {call_type}");
+    }
+}
+
+#[test]
+fn logfire_answers_to_the_logfire_callback_name() {
+    let sink = RecordingSink::default();
+    let logger = logger(&sink, generated_id, false);
+    assert_eq!(logger.callback_name(), CALLBACK_NAME);
+    assert_eq!(CALLBACK_NAME, "logfire");
+}
+
+#[tokio::test]
+async fn logfire_async_logs_a_success_at_info() {
     let sink = RecordingSink::default();
     let logger = logger(&sink, generated_id, false);
     logger
-        .log_success_event(&from_payload(&payload_for_call_type(call_type)))
+        .async_log_success_event(Arc::new(event()))
+        .await
         .expect("the event is logged");
     let records = sink.recorded();
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].template, template);
+    assert_eq!(records[0].level, LogfireLevel::Info);
+}
+
+#[tokio::test]
+async fn logfire_async_logs_a_failure_at_error_with_exc_info() {
+    let sink = RecordingSink::default();
+    let logger = logger(&sink, generated_id, false);
+    logger
+        .async_log_failure_event(Arc::new(event()))
+        .await
+        .expect("the event is logged");
+    let records = sink.recorded();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].level, LogfireLevel::Error);
+    assert_eq!(records[0].exc_info, Some(true));
 }
 
 #[test]
