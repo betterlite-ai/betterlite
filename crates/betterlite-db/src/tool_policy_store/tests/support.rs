@@ -310,5 +310,5 @@ where
     let Ok(mut server) = TcpStream::connect((target.host.as_str(), target.port)).await else {
         return;
     };
-    let _proxy = copy_bidirectional(client, &mut server).await;
+    drop(copy_bidirectional(client, &mut server).await);
 }

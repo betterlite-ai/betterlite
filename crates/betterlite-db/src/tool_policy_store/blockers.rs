@@ -20,12 +20,6 @@ impl BlockedChange {
     }
 }
 
-enum BlockedList {
-    Listed(Vec<String>),
-    Missing,
-    Unreadable,
-}
-
 pub async fn change_blocked_tools(
     client: Option<Client>,
     bounds: StatementBounds<'_>,
@@ -41,16 +35,15 @@ pub async fn change_blocked_tools(
         tracing::error!("tool_registry_writer {operation} error: no database connection");
         return false;
     };
-    let mut current =
-        match read_blocked_list(&connected, bounds, object_permission_id, operation).await {
-            Ok(BlockedList::Listed(current)) => current,
-            Ok(BlockedList::Missing | BlockedList::Unreadable) => return false,
-            Err(failure) => {
-                tracing::error!("tool_registry_writer {operation} error: {failure}");
-                discard_uncancelled(connected, &failure);
-                return false;
-            }
-        };
+    let mut current = match read_blocked_list(&connected, bounds, object_permission_id).await {
+        Ok(Some(current)) => current,
+        Ok(None) => return false,
+        Err(failure) => {
+            tracing::error!("tool_registry_writer {operation} error: {failure}");
+            discard_uncancelled(connected, &failure);
+            return false;
+        }
+    };
     let listed = current.iter().any(|blocked| blocked.as_str() == tool_name);
     match (change, listed) {
         (BlockedChange::Add, true) => return true,
@@ -90,8 +83,7 @@ async fn read_blocked_list(
     client: &Client,
     bounds: StatementBounds<'_>,
     object_permission_id: &str,
-    operation: &str,
-) -> Result<BlockedList, StatementFailure> {
+) -> Result<Option<Vec<String>>, StatementFailure> {
     let found = bounded_statement(
         client,
         bounds,
@@ -99,13 +91,9 @@ async fn read_blocked_list(
     )
     .await?;
     let Some(row) = found else {
-        return Ok(BlockedList::Missing);
+        return Ok(None);
     };
-    match row.try_get("blocked_tools") {
-        Ok(current) => Ok(BlockedList::Listed(current)),
-        Err(error) => {
-            tracing::error!("tool_registry_writer {operation} error: {error}");
-            Ok(BlockedList::Unreadable)
-        }
-    }
+    row.try_get::<_, Vec<String>>("blocked_tools")
+        .map(Some)
+        .map_err(StatementFailure::Driver)
 }

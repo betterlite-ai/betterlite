@@ -179,6 +179,35 @@ async fn a_tls_required_cancel_stops_the_read_over_tls() {
 }
 
 #[tokio::test]
+async fn a_pool_checkout_past_the_deadline_fails_the_tools_read() {
+    let db = Db::start().await;
+    let first = db.client().await;
+    let second = db.client().await;
+    let registry = Mutex::new(ToolPolicyRegistry::default());
+    let store = ToolPolicyStore {
+        database: &db.store,
+        registry: &registry,
+        bounds: StatementBounds {
+            deadline: Duration::from_millis(100),
+            canceller: &TlsCanceller { tls: NoTls },
+        },
+    };
+    let mut reconnect = Reconnect::default();
+    let result = sync_tool_policy_from_db(&store, Some(&mut reconnect)).await;
+    assert!(matches!(
+        result,
+        Err(ToolPolicyStoreError::Deadline {
+            lookup: "tool policy",
+            ..
+        })
+    ));
+    assert!(reconnect.reasons().is_empty());
+    drop(first);
+    drop(second);
+    db.close().await;
+}
+
+#[tokio::test]
 async fn a_cancel_that_never_answers_discards_the_connection() {
     let db = Db::start().await;
     let holder = db.client().await;
