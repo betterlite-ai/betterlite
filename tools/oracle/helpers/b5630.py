@@ -1,7 +1,7 @@
 from typing import Literal, TypedDict
 
 import litellm
-from litellm.caching import RedisCache
+from litellm.caching.redis_cache import RedisCache
 
 # RedisCache's client is lazy and its failed info() and ping() calls are caught.
 CLOSED_PORT = 6399
