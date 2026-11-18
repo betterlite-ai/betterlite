@@ -1,0 +1,26 @@
+task: B167
+deviations:
+  - what: >-
+      Names LiteLLM's types modules import from the openai, httpx or pydantic packages are not exported from the
+      matching betterlite package, so a caller that imports, say, ChatCompletionChunk from
+      litellm.types.llms.openai finds no such name in betterlite.types.llms.openai.
+    why: >-
+      The wheel depends only on python-dotenv, and the same shapes are defined locally under betterlite.types;
+      the task's out_of_scope keeps other packages' names out of the port.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L17-L19
+  - what: >-
+      betterlite.types.llms.openai does not export HttpxBinaryResponseContent, the one public name LiteLLM
+      defines in its openai types module that betterlite has no local equivalent for.
+    why: >-
+      LiteLLM's class subclasses the openai package's _HttpxBinaryResponseContent and wraps an httpx.Response;
+      neither package is a betterlite dependency, so there is nothing local to export and nothing to subclass.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L121-L146
+  - what: >-
+      typing's TYPE_CHECKING, which litellm.types.llms.bedrock and litellm.types.mcp import at module level and
+      so expose as a public attribute, is not an attribute of betterlite.types.llms.bedrock or
+      betterlite.types.mcp.
+    why: >-
+      It is an import-time switch that types the modules in both codebases, not a type any caller imports from a
+      types module; every name either module defines is exported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/bedrock.py#L4
+kept_bugs: []
