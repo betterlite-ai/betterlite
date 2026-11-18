@@ -18,6 +18,8 @@ description: 'Implement usage-based-routing with B304''s per-group minute maps a
   B016 registers Strategy::UsageBasedRouting as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/usage_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-router/src/router_core/tests.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
   - crates/betterlite-router/src/usage_routing.rs
   - crates/betterlite-router/src/usage_routing/**
   - crates/betterlite-router/src/strategy/usage_routing.rs
