@@ -40,9 +40,14 @@ impl QualityRouter {
     pub fn new(
         router_name: &str,
         configured: Option<&section::RouterConfig>,
+        default_model: Option<&str>,
         deployments: &[section::Deployment],
     ) -> Result<Self, QualityRouterError> {
-        let config = Config::resolve(configured);
+        let mut config = Config::resolve(configured);
+        // __init__: the caller's default_model, resolved from quality_router_default_model, wins
+        if let Some(explicit_model) = default_model {
+            config.default_model = Some(explicit_model.to_owned());
+        }
         let scorer = Scorer::new(ScoringConfig::resolve(&ScoringInput::default())?)?;
         let mut warnings: Vec<String> = config
             .ignored

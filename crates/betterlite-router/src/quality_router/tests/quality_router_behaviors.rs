@@ -168,6 +168,24 @@ fn an_empty_tier_index_falls_back_to_the_default_model() {
 }
 
 #[test]
+fn a_constructor_default_model_wins_over_the_configured_one() {
+    let config = section::RouterConfig {
+        default_model: Some("configured".to_owned()),
+        ..section::RouterConfig::default()
+    };
+    let router = QualityRouter::new("qr", Some(&config), Some("explicit"), &[]).unwrap();
+    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    assert_eq!(pick(&router, &request).as_deref(), Some("explicit"));
+    let system_only = messages(r#"[{"role":"system","content":"sys"}]"#);
+    let mut metadata = None;
+    let route = router
+        .pre_route(Some(&system_only), &mut metadata)
+        .unwrap()
+        .unwrap();
+    assert_eq!(route.model, "explicit");
+}
+
+#[test]
 fn no_user_message_routes_to_the_default_model_without_a_stash() {
     let router = router_with(&["one"], None, Some("fb"), &[deployment("one", 1)]);
     let request = messages(r#"[{"role":"system","content":"sys"}]"#);
@@ -235,7 +253,7 @@ fn unknown_keys_are_reported_and_the_route_still_runs() {
     if let Some(preferences) = one.preferences.as_mut() {
         preferences.extras.insert("odd".to_owned(), json(r#""x""#));
     }
-    let router = QualityRouter::new("qr", Some(&config), &[one]).unwrap();
+    let router = QualityRouter::new("qr", Some(&config), None, &[one]).unwrap();
     assert_eq!(
         router.warnings,
         strings(&[
@@ -251,7 +269,8 @@ fn unknown_keys_are_reported_and_the_route_still_runs() {
 fn the_shipped_seeds_define_the_routers_document() {
     let settings = text_settings(CONFIG_VALID).unwrap();
     let config = settings.deployments[0].config.as_ref().unwrap();
-    let router = QualityRouter::new("quality-router", Some(config), &settings.deployments).unwrap();
+    let router =
+        QualityRouter::new("quality-router", Some(config), None, &settings.deployments).unwrap();
     assert!(router.warnings.is_empty());
     let request = messages(r#"[{"role":"user","content":"please write code"}]"#);
     assert_eq!(pick(&router, &request).as_deref(), Some("quality-fast"));

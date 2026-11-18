@@ -17,7 +17,7 @@ fn try_router(
         available_models: available.iter().map(|name| (*name).to_owned()).collect(),
         ..section::RouterConfig::default()
     };
-    QualityRouter::new("qr", Some(&config), deployments)
+    QualityRouter::new("qr", Some(&config), None, deployments)
 }
 
 fn error_for(router: &QualityRouter, request: &[Message]) -> QualityRouterError {
@@ -237,6 +237,25 @@ fn a_name_declared_twice_is_sorted_by_its_last_preferences() {
         .unwrap();
     assert_eq!(route.model, "other");
     assert!(matches!(route.decision, Decision::QualityTier { .. }));
+}
+
+// both orders become the same f64 in LiteLLM, so its name tiebreak picks aaa; the exact i64 keeps the order
+#[test]
+fn large_orders_keep_more_precision_than_python_floats() {
+    let router = router(
+        &["aaa", "zzz"],
+        &[
+            ordered(keyword(deployment("aaa", 2), "k"), 9_007_199_254_740_993),
+            ordered(keyword(deployment("zzz", 2), "k"), 9_007_199_254_740_992),
+        ],
+    );
+    let request = messages(r#"[{"role":"user","content":"k"}]"#);
+    let mut metadata = None;
+    let route = router
+        .pre_route(Some(&request), &mut metadata)
+        .unwrap()
+        .unwrap();
+    assert_eq!(route.model, "zzz");
 }
 
 // both prices become the same f64 in LiteLLM, so its name tiebreak picks aaa; Decimal keeps the order

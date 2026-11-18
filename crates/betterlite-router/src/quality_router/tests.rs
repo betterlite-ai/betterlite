@@ -64,7 +64,7 @@ fn router_with(
         complexity_to_quality: mapping,
         extras: BTreeMap::new(),
     };
-    QualityRouter::new("qr", Some(&config), deployments).unwrap()
+    QualityRouter::new("qr", Some(&config), None, deployments).unwrap()
 }
 
 // the pinned complexity_to_quality table, so SIMPLE lands on quality tier 1
