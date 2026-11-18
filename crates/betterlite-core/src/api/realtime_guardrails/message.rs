@@ -12,8 +12,8 @@ const GUARDRAIL_PROMPT: &str =
 
 // LiteLLM's error_msg: a non-empty realtime_violation_message wins, then the raised exception's detail
 pub(crate) fn violation_message(violation: &GuardrailViolation, configured: Option<&str>) -> Json {
-    if let Some(configured) = configured.filter(|message| !message.is_empty()) {
-        return Json::Text(configured.to_owned());
+    if let Some(chosen) = configured.filter(|message| !message.is_empty()) {
+        return Json::Text(chosen.to_owned());
     }
     detail_message(violation)
 }
@@ -28,7 +28,9 @@ fn detail_message(violation: &GuardrailViolation) -> Json {
             .unwrap_or_else(|| Json::Text(violation.message.clone())),
         Json::Null => exception_message(&violation.message),
         Json::Text(text) => Json::Text(text.clone()),
-        detail => Json::Text(serde_json::to_string(detail).unwrap_or_default()),
+        detail @ Json::Bool(_) | detail @ Json::Number(_) | detail @ Json::List(_) => {
+            Json::Text(serde_json::to_string(detail).unwrap_or_default())
+        }
     }
 }
 
@@ -50,7 +52,7 @@ fn error_message_wins(value: &Json) -> bool {
             (None, Some(integer)) => integer != 0,
             (None, None) => number
                 .as_f64()
-                .is_some_and(|float| float.partial_cmp(&0.0) != Some(Ordering::Equal)),
+                .is_some_and(|float| float.partial_cmp(&0.0_f64) != Some(Ordering::Equal)),
         },
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
@@ -91,7 +93,11 @@ pub(crate) fn spoken_message(message: &Json) -> Json {
 fn prompt_text(message: &Json) -> String {
     match message {
         Json::Text(text) => text.clone(),
-        other => serde_json::to_string(other).unwrap_or_default(),
+        other @ Json::Null
+        | other @ Json::Bool(_)
+        | other @ Json::Number(_)
+        | other @ Json::List(_)
+        | other @ Json::Object(_) => serde_json::to_string(other).unwrap_or_default(),
     }
 }
 
