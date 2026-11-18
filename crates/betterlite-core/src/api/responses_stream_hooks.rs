@@ -1,81 +1,36 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
+use std::sync::Arc;
 
-#[must_use]
-pub fn converted_stream_requested(kwargs: &IndexMap<String, Json>) -> bool {
-    [
-        "_websearch_interception_converted_stream",
-        "_compression_interception_converted_stream",
-        "_headroom_interception_converted_stream",
-        "_code_interpreter_interception_converted_stream",
-    ]
-    .iter()
-    .any(|key| value_is_set(kwargs.get(*key)))
-}
+use betterlite_logging::logging_success::ports::SuccessClock;
+use betterlite_redact::secret::Redactor;
 
-fn value_is_set(value: Option<&Json>) -> bool {
-    match value {
-        None | Some(Json::Null | Json::Bool(false)) => false,
-        Some(Json::Number(numeric_value)) => {
-            numeric_value.as_i64().is_some_and(|integer| integer != 0)
-                || numeric_value.as_u64().is_some_and(|integer| integer != 0)
-                || numeric_value
-                    .as_f64()
-                    .is_some_and(|float_value| float_value != 0.0_f64)
-        }
-        Some(Json::Text(text)) => !text.is_empty(),
-        Some(Json::List(items)) => !items.is_empty(),
-        Some(Json::Object(fields)) => !fields.is_empty(),
-        Some(Json::Bool(true)) => true,
-    }
-}
+use ports::{
+    ChunkDeploymentHook, ResponseMetadataTarget, ResponsesStreamCacheHandler,
+    ResponsesStreamCacheTarget, ResponsesStreamFailureTarget, ResponsesStreamSuccessTarget,
+    SuccessDeploymentHook,
+};
 
-#[must_use]
-pub fn cache_request_kwargs(
-    kwargs: &IndexMap<String, Json>,
-    preset_cache_key: Option<&Json>,
-) -> IndexMap<String, Json> {
-    let mut copied = kwargs.clone();
-    copied.shift_remove("custom_llm_provider");
-    if matches!(copied.get("metadata"), Some(Json::Null)) {
-        copied.shift_remove("metadata");
-    }
-    let request_key = copied.shift_remove("cache_key");
-    let selected_key = match preset_cache_key {
-        Some(Json::Null) | None => request_key,
-        Some(key) => Some(key.clone()),
-    };
-    if let Some(key) = selected_key {
-        copied.insert("cache_key".to_owned(), key);
-    }
-    copied
-}
-
-#[derive(Clone, Copy)]
-pub struct CacheEligibility<'request> {
-    pub event_type: &'request str,
-    pub stream: Option<&'request Json>,
-    pub kwargs: &'request IndexMap<String, Json>,
-    pub dependencies: CacheDependencies,
-    pub global_cache: bool,
-    pub store_allowed: bool,
-}
-
-#[derive(Clone, Copy)]
-pub struct CacheDependencies {
-    pub has_typed_response: bool,
-    pub has_cache_handler: bool,
-}
-
-#[must_use]
-pub fn is_stream_cache_eligible(input: &CacheEligibility<'_>) -> bool {
-    input.event_type == "response.completed"
-        && input.dependencies.has_typed_response
-        && input.dependencies.has_cache_handler
-        && input.global_cache
-        && input.store_allowed
-        && (matches!(input.stream, Some(Json::Bool(true)))
-            || converted_stream_requested(input.kwargs))
-}
+pub mod cache;
+pub mod deployment;
+pub mod events;
+pub mod failed;
+pub mod failure;
+pub mod logging;
+pub mod ports;
+pub mod post_success;
+pub mod state;
 
 mod tests;
+
+// The injected dependencies of the Responses stream hook methods: LiteLLM reaches each through
+// logging_obj, litellm.cache or the callback list, and none of them may be rebuilt here.
+pub struct ResponsesStreamHooks<'context> {
+    pub cache: Option<Arc<dyn ResponsesStreamCacheTarget>>,
+    pub cache_handler: Option<Arc<dyn ResponsesStreamCacheHandler>>,
+    pub success: Option<Arc<dyn ResponsesStreamSuccessTarget>>,
+    pub failure: Option<Arc<dyn ResponsesStreamFailureTarget>>,
+    pub metadata: Option<Arc<dyn ResponseMetadataTarget>>,
+    pub success_hook: Option<Arc<dyn SuccessDeploymentHook>>,
+    pub chunk_hooks: Vec<Arc<dyn ChunkDeploymentHook>>,
+    pub clock: Arc<dyn SuccessClock>,
+    pub redactor: &'context Redactor,
+}
