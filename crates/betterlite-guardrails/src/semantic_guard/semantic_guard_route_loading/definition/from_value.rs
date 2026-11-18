@@ -25,15 +25,20 @@ impl RouteDefinition {
             }
         }
         let route_name = text(
-            required(field(fields, "route_name"), "route_name")?,
+            field(fields, "route_name").ok_or(DefinitionError::MissingField {
+                field: "route_name",
+            })?,
             "route_name",
             "a string",
         )?;
         let description = field(fields, "description")
-            .map(|value| text(value, "description", "a string"))
+            .map(|field_value| text(field_value, "description", "a string"))
             .transpose()?
             .unwrap_or_default();
-        let GuardrailValue::Array(items) = required(field(fields, "utterances"), "utterances")?
+        let GuardrailValue::Array(items) =
+            field(fields, "utterances").ok_or(DefinitionError::MissingField {
+                field: "utterances",
+            })?
         else {
             return Err(DefinitionError::FieldType {
                 field: "utterances",
@@ -42,7 +47,7 @@ impl RouteDefinition {
         };
         let utterances = utterance_texts(items)?;
         let similarity_threshold = field(fields, "similarity_threshold")
-            .map(|value| number(value, "similarity_threshold"))
+            .map(|field_value| number(field_value, "similarity_threshold"))
             .transpose()?;
         Ok(Self {
             route_name,
@@ -54,20 +59,13 @@ impl RouteDefinition {
 }
 
 // a null field reads as absent, so an explicit null description or threshold takes its default
-fn field<'a>(
-    fields: &'a BTreeMap<String, GuardrailValue>,
+fn field<'fields>(
+    fields: &'fields BTreeMap<String, GuardrailValue>,
     name: &'static str,
-) -> Option<&'a GuardrailValue> {
+) -> Option<&'fields GuardrailValue> {
     fields
         .get(name)
         .filter(|value| **value != GuardrailValue::Null)
-}
-
-fn required<'a>(
-    value: Option<&'a GuardrailValue>,
-    field: &'static str,
-) -> Result<&'a GuardrailValue, DefinitionError> {
-    value.ok_or(DefinitionError::MissingField { field })
 }
 
 fn text(

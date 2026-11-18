@@ -1,10 +1,8 @@
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{self, Read as _};
 use std::path::Path;
 
-use serde::Deserialize;
-use serde::de::IgnoredAny;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::definition::{DefinitionError, RawDefinition, RouteDefinition};
 use super::error::RouteLoadError;
@@ -34,14 +32,6 @@ pub enum CustomRoutesError {
     },
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Shape {
-    List(Vec<IgnoredAny>),
-    Mapping(BTreeMap<String, IgnoredAny>),
-    Other(IgnoredAny),
-}
-
 pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     if bytes.len() > MAX_ROUTES_FILE_BYTES {
         return Err(CustomRoutesError::TooLarge {
@@ -49,26 +39,31 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
         });
     }
     // the document is probed once for its shape, then parsed again as the routes it holds
-    let shape: Shape =
+    let document: GuardrailValue =
         serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
             source: Box::new(source),
         })?;
-    match shape {
-        Shape::List(_) => {
+    match document {
+        GuardrailValue::Array(_) => {
             let raw: Vec<RawDefinition> =
                 serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
                     source: Box::new(source),
                 })?;
             definitions(raw)
         }
-        Shape::Mapping(_) => {
+        GuardrailValue::Object(_) => {
             let raw: RawDefinition =
                 serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
                     source: Box::new(source),
                 })?;
             definitions(vec![raw])
         }
-        Shape::Other(_) => Err(CustomRoutesError::InvalidFormat),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_) => Err(CustomRoutesError::InvalidFormat),
     }
 }
 

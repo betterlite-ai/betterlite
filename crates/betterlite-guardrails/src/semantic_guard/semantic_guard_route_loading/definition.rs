@@ -55,8 +55,8 @@ impl RawDefinition {
             ("similarity_threshold", self.similarity_threshold),
         ];
         for (name, value) in known {
-            if let Some(value) = value {
-                fields.insert(name.to_owned(), value);
+            if let Some(present) = value {
+                fields.insert(name.to_owned(), present);
             }
         }
         // the file route and the inline route go through one validator, so a wrong type names the same field
