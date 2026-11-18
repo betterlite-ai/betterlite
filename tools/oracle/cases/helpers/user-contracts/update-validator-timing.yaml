@@ -30,6 +30,10 @@ call:
       - function: bulk_update
         body: {"users": null, "all_users": true, "user_updates": {}}
       - function: bulk_update
+        body: {"users": [{"user_id": "alice", "user_alias": null}], "all_users": null}
+      - function: bulk_update
+        body: {"users": [{"user_email": null}]}
+      - function: bulk_update
         body: {"users": [{"user_email": "a@b.c"}], "user_updates": {"user_alias": "x"}}
       - function: bulk_update
         body: {"users": [{}]}

@@ -111,6 +111,23 @@ fn update_explicit_null() {
     assert!(null_users.users.is_none());
     assert_eq!(null_users.all_users, Some(true));
     assert!(null_users.user_updates.is_some());
+    let null_all_users = update(r#"{"users": [{"user_id": "alice"}], "all_users": null}"#)
+        .expect("a null all_users is not the false default");
+    assert_eq!(null_all_users.all_users, None);
+    let null_row_field = update(r#"{"users": [{"user_id": "alice", "user_alias": null}]}"#)
+        .expect("a null row field is supplied without a value");
+    let rows = null_row_field.users.expect("the users list");
+    assert_eq!(rows[0].fields.user_alias, None);
+    assert_eq!(
+        rows[0].fields.supplied,
+        BTreeSet::from(["user_alias".to_owned()])
+    );
+    let null_selector = update(r#"{"users": [{"user_id": null}]}"#)
+        .expect_err("an explicit null selector is not an identity");
+    assert_eq!(
+        rejection_text(&null_selector),
+        "Either user id or user email must be provided"
+    );
 }
 
 #[test]
