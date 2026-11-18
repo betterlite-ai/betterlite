@@ -154,9 +154,13 @@ fn factory_forwards_constructor_settings() {
             LoggerClass::LangfuseContent
         ]
     );
-    for record in records.iter() {
-        assert_eq!(record.settings, constructor_settings);
-    }
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.settings)
+            .collect::<Vec<_>>(),
+        vec![constructor_settings; 3]
+    );
 }
 
 #[test]
