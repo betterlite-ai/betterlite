@@ -1,3 +1,7 @@
+use std::future::{Future as _, poll_fn};
+use std::pin::pin;
+use std::task::Poll;
+
 use betterlite_models::decisions::Json;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
@@ -11,6 +15,7 @@ use crate::router_core::tests::support::{
 };
 use crate::static_eligibility::request::RequestFacts;
 use crate::strategy::Strategy;
+use crate::strategy::select as strategy_select;
 use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 use crate::strategy_dispatch::types::{Resolution, ResolutionSource};
@@ -47,8 +52,7 @@ fn select_one(boundary: &Boundary) -> Result<Option<usize>, RoutingError> {
     select_counts(&windows, &deployments, boundary.input_tokens)
 }
 
-// get_available_deployments checks the estimate against the limit with a strict greater-than, counts the next
-// request before comparing it, and never rules out a deployment the requests window does not hold.
+// The estimate is checked with a strict greater-than, the next request is counted first, and an absent id is never ruled out.
 #[rstest]
 #[case::tokens_under_the_limit(Boundary { tpm: Some(10), rpm: None, seed: &[("dep-a", 0)], requests: &[], input_tokens: 9 }, Some(0))]
 #[case::tokens_exactly_at_the_limit(Boundary { tpm: Some(10), rpm: None, seed: &[("dep-a", 0)], requests: &[], input_tokens: 10 }, Some(0))]
@@ -125,6 +129,68 @@ fn usage_routing_boundaries_read_past_a_null_limit_level() {
         select_counts(&WindowCounts::default(), &deployments, 11).unwrap(),
         None
     );
+}
+
+// the top-level 10 rules the request out before litellm_params' 1000 can be reached
+#[test]
+fn usage_routing_boundaries_read_the_top_token_limit_before_litellm_params() {
+    let deployments = [deployment(
+        "dep-a",
+        &[("tpm", number(10))],
+        &[("tpm", number(1000))],
+        &[],
+    )];
+    assert_eq!(
+        select_counts(&WindowCounts::default(), &deployments, 11).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn usage_routing_boundaries_read_the_litellm_params_token_limit_before_model_info() {
+    let deployments = [deployment(
+        "dep-a",
+        &[],
+        &[("tpm", number(10))],
+        &[("tpm", number(1000))],
+    )];
+    assert_eq!(
+        select_counts(&WindowCounts::default(), &deployments, 11).unwrap(),
+        None
+    );
+}
+
+// the same order decides the request limit, where a stored 9 plus the next request reaches 10
+#[test]
+fn usage_routing_boundaries_read_the_top_request_limit_before_litellm_params() {
+    let deployments = [deployment(
+        "dep-a",
+        &[("rpm", number(10))],
+        &[("rpm", number(1000))],
+        &[],
+    )];
+    let stored = counts(&[("dep-a", 9)]);
+    let windows = WindowCounts {
+        tpm: None,
+        rpm: Some(&stored),
+    };
+    assert_eq!(select_counts(&windows, &deployments, 0).unwrap(), None);
+}
+
+#[test]
+fn usage_routing_boundaries_read_the_litellm_params_request_limit_before_model_info() {
+    let deployments = [deployment(
+        "dep-a",
+        &[],
+        &[("rpm", number(10))],
+        &[("rpm", number(1000))],
+    )];
+    let stored = counts(&[("dep-a", 9)]);
+    let windows = WindowCounts {
+        tpm: None,
+        rpm: Some(&stored),
+    };
+    assert_eq!(select_counts(&windows, &deployments, 0).unwrap(), None);
 }
 
 // a requests window without a token window still applies its limit, as it does when only the tpm key expired
@@ -238,7 +304,7 @@ fn usage_routing_boundaries_never_let_a_store_failure_hide_a_limit_error() {
     assert!(matches!(error, RoutingError::Metric { field: "rpm" }));
 }
 
-// the strategy arm answers from its arguments alone, so a caller that stops waiting leaves nothing behind
+// the strategy arm answers on its first poll from its arguments alone, so stopping there leaves nothing behind
 #[tokio::test]
 async fn usage_routing_boundaries_cancel_a_strategy_call_without_state() {
     let deployments = [plain("dep-a"), plain("dep-b")];
@@ -257,10 +323,15 @@ async fn usage_routing_boundaries_cancel_a_strategy_call_without_state() {
     let mut random = StdRng::seed_from_u64(7);
     {
         let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
-        let _cancelled = crate::strategy::select(Strategy::UsageBasedRouting, context, &mut random);
+        let mut call = pin!(strategy_select(
+            Strategy::UsageBasedRouting,
+            context,
+            &mut random
+        ));
+        let first = poll_fn(|poll_context| call.as_mut().poll(poll_context)).await;
+        assert!(matches!(first, Poll::Ready(Ok(0))));
     }
-    let mut random = StdRng::seed_from_u64(7);
     let context = strategy_context(&deployments, &route, &mut dispatch, &resolution);
-    let selected = crate::strategy::select(Strategy::UsageBasedRouting, context, &mut random).await;
+    let selected = strategy_select(Strategy::UsageBasedRouting, context, &mut random).await;
     assert_eq!(selected.unwrap(), 0);
 }
