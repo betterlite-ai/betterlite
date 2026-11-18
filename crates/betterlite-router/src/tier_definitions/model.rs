@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::slice::from_ref;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -41,7 +42,7 @@ impl TierPool {
     #[must_use]
     pub fn models(&self) -> &[TierModelEntry] {
         match self {
-            Self::Single(entry) => std::slice::from_ref(entry),
+            Self::Single(entry) => from_ref(entry),
             Self::Pool(entries) => entries,
         }
     }
@@ -136,10 +137,7 @@ impl TierSet {
     }
 }
 
-pub(crate) fn label_for<'labels>(
-    labels: &'labels BTreeMap<ComplexityTier, String>,
-    tier: ComplexityTier,
-) -> &'labels str {
+pub(crate) fn label_for(labels: &BTreeMap<ComplexityTier, String>, tier: ComplexityTier) -> &str {
     match labels.get(&tier) {
         Some(label) if !label.trim().is_empty() => label.trim(),
         _ => tier.name(),

@@ -251,7 +251,7 @@ fn an_absent_pool_map_uses_the_pinned_default_models() {
 #[case::plain_pool(pool(&["dup", "dup"]), "SIMPLE")]
 #[case::object_and_plain(
     TierPool::Pool(vec![
-        detailed("dup", &[("temperature", Json::Number(1_u64.into()))]),
+        detailed("dup", &[("temperature", Json::Number(Number::from(1_u64)))]),
         section::TierEntry::Model("dup".to_owned()),
     ]),
     "SIMPLE"

@@ -96,11 +96,16 @@ impl ProbeFeature {
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the output view.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+struct Flag(bool);
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Fields {
-    custom: bool,
-    non_reasoning: bool,
-    uses_llm_classifier: bool,
+    custom: Flag,
+    non_reasoning: Flag,
+    uses_llm_classifier: Flag,
     tier_names: Vec<String>,
     wire_labels: Vec<String>,
     severity_order: Vec<String>,
@@ -175,9 +180,9 @@ fn resolved_config(configured: Option<&Json>) -> Result<section::Config, Operati
 
 fn fields(set: &TierSet, payload: &Payload) -> Fields {
     Fields {
-        custom: set.definitions.is_some(),
-        non_reasoning: set.non_reasoning,
-        uses_llm_classifier: payload.knobs.classifier_type.production().uses_llm(),
+        custom: Flag(set.definitions.is_some()),
+        non_reasoning: Flag(set.non_reasoning),
+        uses_llm_classifier: Flag(payload.knobs.classifier_type.production().uses_llm()),
         tier_names: set.tier_names().into_iter().map(str::to_owned).collect(),
         wire_labels: set.wire_labels().into_iter().map(str::to_owned).collect(),
         severity_order: tier_severity_order(set.non_reasoning)

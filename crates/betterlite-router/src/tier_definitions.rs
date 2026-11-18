@@ -31,7 +31,7 @@ impl TierSet {
         let display = labels::resolve_labels(&input.tier_labels)?;
         definitions::validate_non_reasoning(
             input.non_reasoning_tier,
-            ladder.is_some(),
+            ladder.as_deref(),
             checks.classifier_type,
             &pools,
         )?;

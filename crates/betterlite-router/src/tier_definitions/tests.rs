@@ -125,7 +125,7 @@ pub(crate) fn custom_with(count: usize) -> section::Config {
 }
 
 // the checks a custom tier set needs: an LLM classifier with a defined fallback
-pub(crate) fn llm<'a>(fallback: &'a str) -> TierChecks<'a> {
+pub(crate) fn llm(fallback: &str) -> TierChecks<'_> {
     TierChecks {
         classifier_type: ClassifierKind::Llm,
         fallback_tier: Some(fallback),

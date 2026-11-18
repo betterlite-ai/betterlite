@@ -122,18 +122,18 @@ pub(super) fn normalize_definition(
 // _validate_non_reasoning_tier: the flag and the NON_REASONING tier must agree
 pub(super) fn validate_non_reasoning(
     non_reasoning: bool,
-    custom: bool,
+    custom: Option<&[TierDefinition]>,
     classifier: ClassifierKind,
     pools: &BTreeMap<String, TierPool>,
 ) -> Result<(), TierDefinitionsError> {
     let tier = ComplexityTier::NonReasoning.name();
     if !non_reasoning {
-        if !custom && pools.contains_key(tier) {
+        if custom.is_none() && pools.contains_key(tier) {
             return Err(TierDefinitionsError::NonReasoningWithoutFlag { tier });
         }
         return Ok(());
     }
-    if custom {
+    if custom.is_some() {
         return Err(TierDefinitionsError::NonReasoningWithTiers);
     }
     if !matches!(
@@ -192,13 +192,16 @@ fn validate_definition_names(names: &[&str]) -> Result<(), TierDefinitionsError>
 
 // the names that repeat a case-insensitive spelling, each listed once and sorted
 fn duplicate_names(names: &[&str]) -> Vec<String> {
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for name in names {
-        *counts.entry(name.to_lowercase()).or_default() += 1;
-    }
     let mut duplicated: Vec<String> = names
         .iter()
-        .filter(|name| counts[&name.to_lowercase()] > 1)
+        .filter(|name| {
+            let folded = name.to_lowercase();
+            names
+                .iter()
+                .filter(|other| other.to_lowercase() == folded)
+                .count()
+                > 1
+        })
         .map(|name| (*name).to_owned())
         .collect();
     duplicated.sort();

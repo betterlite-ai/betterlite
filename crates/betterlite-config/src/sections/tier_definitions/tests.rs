@@ -7,14 +7,14 @@ use serde_json::Number;
 
 use crate::loader::ConfigLoader;
 use crate::sections::Section;
+use crate::sections::parse_section;
 use crate::sections::tier_definitions::{
     Config, Raw, Settings, TierDefinition, TierEntry, TierModelEntry, TierPool,
 };
 
 fn parse(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
     let mut ignored = Vec::new();
-    let raw = crate::sections::parse_section::<Raw>(source, &mut ignored)
-        .map_err(|error| error.to_string())?;
+    let raw = parse_section::<Raw>(source, &mut ignored).map_err(|error| error.to_string())?;
     let lookup: BTreeMap<String, String> = variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
