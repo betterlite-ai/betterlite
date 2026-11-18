@@ -7,7 +7,7 @@ use rstest::rstest;
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::tier_definitions::checks::{ClassifierKind, TierChecks};
 use crate::tier_definitions::error::TierDefinitionsError;
-use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
+use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet, label_for};
 use crate::tier_definitions::tests::{
     blank, checked, custom, detailed, error, labels, ladder, llm, pool, pools, single,
 };
@@ -295,6 +295,13 @@ fn a_section_shaped_rubric_requires_an_llm_classifier() {
             field: "classification_prompt"
         }
     ));
+}
+
+#[test]
+fn a_blank_label_falls_back_to_the_canonical_name() {
+    let labels = BTreeMap::from([(ComplexityTier::Simple, "   ".to_owned())]);
+    assert_eq!(label_for(&labels, ComplexityTier::Simple), "SIMPLE");
+    assert_eq!(label_for(&labels, ComplexityTier::Medium), "MEDIUM");
 }
 
 #[test]

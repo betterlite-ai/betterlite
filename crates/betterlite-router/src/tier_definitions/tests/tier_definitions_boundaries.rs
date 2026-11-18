@@ -9,7 +9,8 @@ use crate::tier_definitions::checks::{
 };
 use crate::tier_definitions::error::{DefinitionConflict, TierDefinitionsError};
 use crate::tier_definitions::tests::{
-    blank, checked, custom, custom_with, error, labels, llm, order_features, pool, pools, single,
+    blank, checked, custom, custom_with, error, labels, ladder, llm, order_features, pool, pools,
+    single,
 };
 
 // a two-tier custom set whose first definition name and first pool key are given separately, so a
@@ -143,6 +144,27 @@ fn a_newline_in_a_definition_is_rejected(#[case] name: &str, #[case] description
     assert!(matches!(
         error(config, &llm("SECOND")),
         TierDefinitionsError::Newline { .. }
+    ));
+}
+
+#[test]
+fn a_repeated_definition_name_is_rejected_case_insensitively() {
+    let config = section::Config {
+        tier_definitions: ladder(&[
+            ("ECO", Some("fresh asks")),
+            ("eco", Some("fresh asks")),
+            ("DEEP", Some("hard asks")),
+        ]),
+        tier_models: pools(&[
+            ("ECO", single("eco-mini")),
+            ("eco", single("eco-small")),
+            ("DEEP", single("deep-a")),
+        ]),
+        ..blank()
+    };
+    assert!(matches!(
+        error(config, &llm("ECO")),
+        TierDefinitionsError::DuplicateNames { names } if names == ["ECO", "eco"]
     ));
 }
 
@@ -425,6 +447,41 @@ fn all_order_dependent_features_are_reported_in_one_conflict() {
                 DefinitionConflict::TierLabels,
             ]
     ));
+}
+
+#[test]
+fn a_classifier_conflict_names_the_configured_classifier() {
+    let checks = TierChecks {
+        classifier_type: ClassifierKind::Hybrid,
+        fallback_tier: Some("ECO"),
+        ..TierChecks::default()
+    };
+    assert_eq!(
+        error(custom(), &checks).to_string(),
+        "tier_definitions requires an LLM, Jev or custom classifier, got hybrid"
+    );
+}
+
+#[test]
+fn every_conflict_is_joined_into_one_message() {
+    let features = [OrderFeature::Adaptive, OrderFeature::Plugins];
+    let checks = TierChecks {
+        classifier_type: ClassifierKind::Llm,
+        fallback_tier: Some("ECO"),
+        llm_system_prompt: Some("whole prompt"),
+        order_features: &features,
+        ..TierChecks::default()
+    };
+    let config = section::Config {
+        tier_labels: labels(&[("SIMPLE", "Cheap")]),
+        ..custom()
+    };
+    assert_eq!(
+        error(config, &checks).to_string(),
+        "adaptive, plugins cannot be combined with tier_definitions: these features rely on the \
+         built-in tier severity order; classifier_llm_config.system_prompt cannot be combined with \
+         tier_definitions; tier_labels cannot be combined with tier_definitions"
+    );
 }
 
 #[test]
