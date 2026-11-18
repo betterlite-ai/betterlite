@@ -64,7 +64,7 @@ fn reply_input(
     logged_input: Option<&EmbeddingInput>,
     request_data: &Object,
 ) -> Result<Vec<String>, CohereLegacyEmbeddingError> {
-    let mut chosen = logged_input.filter(|input| is_truthy(input)).cloned();
+    let mut chosen = logged_input.filter(|input| has_value(input)).cloned();
     if chosen.is_none() {
         for key in ["texts", "images"] {
             let Some(value) = request_data.get(key).filter(|value| value.is_truthy()) else {
@@ -91,8 +91,8 @@ fn reply_input(
     }
 }
 
-// Cohere's input choice tests the value's truthiness, as the pinned code does with `or`
-fn is_truthy(input: &EmbeddingInput) -> bool {
+// Cohere's input choice skips an empty value, as the pinned code's `or` chain does
+fn has_value(input: &EmbeddingInput) -> bool {
     match input {
         EmbeddingInput::Text(text) => !text.is_empty(),
         EmbeddingInput::Texts(texts) => !texts.is_empty(),
