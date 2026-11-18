@@ -1,0 +1,19 @@
+kind: probe
+name: usage-v2-accounting-concurrent-last-slot
+compare:
+  ignore: []
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_v2_accounting:
+        ttl_seconds: 60
+        steps:
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 1, num_retries: 2}
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 1, num_retries: 2}
+          - {kind: sync, now_millis: 0}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o:rpm:00-00"}

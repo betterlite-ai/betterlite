@@ -33,6 +33,10 @@ description: >-
   default (not overridden, or the inputs unchanged for apply_guardrail) when it does not. `overrides(&self) ->
   HookOverrides` (B8390's struct) is true exactly for the hooks the class's LiteLLM file defines on its own class, so
   B8392's dispatcher picks the unified path or the class hook the way LiteLLM's class dictionary check does.
+  The Bedrock variant forwards `pre_call`, `moderation`, `post_call_success` and `streaming_iterator` to B3726's
+  async_pre_call_hook, async_moderation_hook, async_post_call_success_hook and async_post_call_streaming_iterator_hook
+  (crates/betterlite-bedrock, module `guardrail_hooks`), and `apply_guardrail` to B3727's `apply_guardrail` on
+  BedrockGuardrail (crates/betterlite-guardrails, module `bedrock_incremental_guardrail`).
 
 
   semantic.rs. B3808 declares `SemanticRouterBuilder` in betterlite-guardrails because that crate may not depend on

@@ -1,0 +1,21 @@
+task: B4294
+deviations:
+  - what: A failed read is logged and returned as a miss (`None`), but the failure travels as a typed `BatchReadsError` through the module's own functions instead of a caught Python `Exception`.
+    why: Rust has no catch-all exception; the observable result, one ERROR line and `None`, is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L218-L259
+  - what: reserve_redis_batch_reads logs a failing memory tier at ERROR and reserves as if every key missed; LiteLLM lets that exception escape to B382's caller.
+    why: The public reservation returns no error to its caller, and a routing prefetch that cannot read memory still needs its Redis keys reserved, exactly as an empty memory read would.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L327-L339
+  - what: The read operations take no parent_otel_span and no per-call kwargs, so the backfill always uses the cache's default_in_memory_ttl and no caller-supplied ttl override.
+    why: betterlite's tiers take their TTL from the cache's configuration, and the task's signatures carry neither argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L138-L148
+  - what: The async prepare reads the memory tier through its synchronous batch_get_cache, where LiteLLM awaits InMemoryCache.async_batch_get_cache.
+    why: The memory tier's async batch read is a plain map read that blocks no thread, and B2226 and B4290 own its interface; a tier that truly needed async I/O would need that trait extended.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L349-L368
+  - what: A Redis value with no CacheValue form is not backfilled; the read logs and still serves the value.
+    why: The memory tier's value type cannot hold an integer past u64 or a float no f64 can represent, and returning it is more faithful than dropping the whole read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L376-L383
+kept_bugs:
+  - what: A backfill write failure fails the whole read as `None`, even though Redis answered; the values fetched are lost to that caller.
+    why: LiteLLM's backfill runs inside the read's try block, so a broken memory tier reads exactly like a failed read; copied to keep parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L250-L259

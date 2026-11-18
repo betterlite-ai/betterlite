@@ -1,0 +1,15 @@
+task: B3010
+deviations:
+  - what: Each linked-row read runs once through the injected LinkedRows source, where LiteLLM wraps every read in _with_db_retry so a dropped connection reconnects and retries before the warning-only fallback.
+    why: the reconnect client and retry policy are B3009's transport primitives, and the LinkedRows source this task reads through owns no DbReconnect handle; the phase that supplies the source owns the retry, and a failure here still falls back to the warning-and-empty path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L671-L675
+  - what: commit_budget_cascade runs the cascade transaction once, where LiteLLM wraps _commit_budget_cascade_once in _with_db_write_retry with the retry-safe error types.
+    why: the write-retry strategy is out of scope here and owned by B3009, which supplies the retry primitives; this module keeps the write replayable only by leaving every queued statement unconditional and inside one transaction, and the phase that calls it decides whether to replay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L829-L832
+  - what: A rollover cap is the tier's max_budget as a Decimal, so there is no isfinite branch; a max_budget no Decimal can hold fails the row read with an error naming the field, where LiteLLM treats a non-finite max_budget as no cap.
+    why: betterlite keeps spend and budgets in rust_decimal from the row read (docs/compatibility.md), and Decimal cannot hold NaN or infinity, so LiteLLM's non-finite rejection has no value to act on here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L134-L138
+kept_bugs:
+  - what: The cascade drops the team-membership auth cache entry {team_id}_{user_id} but leaves LiteLLM's separate pre-call reservation entry team_membership:{user_id}:{team_id} in place, so the reservation path keeps reading pre-reset spend until that entry expires.
+    why: LiteLLM keeps the two cache entries distinct on purpose and its reset job invalidates only the auth one; a setup whose reservations come from the second entry would see different cache contents if betterlite dropped both, and the stale entry only delays the reset on that path rather than losing a write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L156-L157
