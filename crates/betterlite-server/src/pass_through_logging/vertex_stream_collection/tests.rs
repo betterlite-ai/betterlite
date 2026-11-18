@@ -8,6 +8,7 @@ use betterlite_logging::passthrough_stream_logging::types::CollectedChunksHandle
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
+use crate::pass_through_logging::gemini_passthrough_logging::counter::CollectedCounter;
 use crate::pass_through_logging::gemini_passthrough_logging::tests::support::{
     FakeCost, as_text, capture_logs, collected, detail, field, integer, json, kwarg, logged_model,
     number_text, optional_param, result_json, text,
@@ -31,6 +32,10 @@ const TEXT_DELTA: &str =
     r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" hi"}}"#;
 const MESSAGE_DELTA: &str =
     r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"#;
+const THINKING_DELTA: &str = r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"Hello world"}}"#;
+const HELLO_DELTA: &str =
+    r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hello"}}"#;
+const NO_USAGE_STOP: &str = r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"}}"#;
 
 const VERTEX_MISSING_RESPONSE: &str =
     "Unable to build complete streaming response for Vertex passthrough endpoint, not logging...";
@@ -38,9 +43,15 @@ const VERTEX_MISSING_RESPONSE: &str =
 #[test]
 fn build_generate_route_uses_the_decoder() {
     let lines = [CHUNK.to_owned()];
-    let body = build::vertex_response(&lines, VERTEX_GENERATE_ROUTE, "gemini-2.0-flash", 0)
-        .expect("the chunk builds a response")
-        .expect("a response is built");
+    let body = build::vertex_response(
+        &lines,
+        VERTEX_GENERATE_ROUTE,
+        "gemini-2.0-flash",
+        0,
+        Some(&bundled_counter()),
+    )
+    .expect("the chunk builds a response")
+    .expect("a response is built");
     assert_eq!(text(&body, "model"), "gemini-2.0-flash");
     assert_eq!(content(&body), "hi");
     assert_eq!(integer(field(&body, "usage"), "total_tokens"), 5);
@@ -49,9 +60,15 @@ fn build_generate_route_uses_the_decoder() {
 #[test]
 fn build_stream_generate_route_uses_the_decoder() {
     let lines = [NO_MODEL_CHUNK.to_owned()];
-    let body = build::vertex_response(&lines, VERTEX_STREAM_ROUTE, "url-model", 0)
-        .expect("the chunk builds a response")
-        .expect("a response is built");
+    let body = build::vertex_response(
+        &lines,
+        VERTEX_STREAM_ROUTE,
+        "url-model",
+        0,
+        Some(&bundled_counter()),
+    )
+    .expect("the chunk builds a response")
+    .expect("a response is built");
     assert_eq!(field(&body, "model"), &Json::Null);
     assert_eq!(content(&body), "hi");
 }
@@ -66,9 +83,15 @@ fn build_raw_predict_strips_both_prefixes_and_skips_bad_lines() {
         "data: ".to_owned(),
         MESSAGE_DELTA.to_owned(),
     ];
-    let body = build::vertex_response(&lines, VERTEX_RAW_ROUTE, "claude-3", 0)
-        .expect("the events build a response")
-        .expect("a response is built");
+    let body = build::vertex_response(
+        &lines,
+        VERTEX_RAW_ROUTE,
+        "claude-3",
+        0,
+        Some(&bundled_counter()),
+    )
+    .expect("the events build a response")
+    .expect("a response is built");
     assert_eq!(content(&body), " hi");
     assert_eq!(
         text(&choice(&body), "finish_reason"),
@@ -80,9 +103,15 @@ fn build_raw_predict_strips_both_prefixes_and_skips_bad_lines() {
 #[test]
 fn build_stream_raw_predict_uses_the_parser() {
     let lines = [MESSAGE_START.to_owned(), TEXT_DELTA.to_owned()];
-    let body = build::vertex_response(&lines, VERTEX_STREAM_RAW_ROUTE, "claude-3", 0)
-        .expect("the events build a response")
-        .expect("a response is built");
+    let body = build::vertex_response(
+        &lines,
+        VERTEX_STREAM_RAW_ROUTE,
+        "claude-3",
+        0,
+        Some(&bundled_counter()),
+    )
+    .expect("the events build a response")
+    .expect("a response is built");
     assert_eq!(content(&body), " hi");
 }
 
@@ -90,9 +119,15 @@ fn build_stream_raw_predict_uses_the_parser() {
 fn build_unknown_route_returns_no_response() {
     let lines = [CHUNK.to_owned()];
     assert!(
-        build::vertex_response(&lines, VERTEX_PREDICT_ROUTE, "m", 0)
-            .expect("an unknown route is not an error")
-            .is_none()
+        build::vertex_response(
+            &lines,
+            VERTEX_PREDICT_ROUTE,
+            "m",
+            0,
+            Some(&bundled_counter())
+        )
+        .expect("an unknown route is not an error")
+        .is_none()
     );
 }
 
@@ -100,7 +135,7 @@ fn build_unknown_route_returns_no_response() {
 fn build_raw_predict_without_usable_lines_returns_no_response() {
     let lines = ["not json".to_owned(), "data: ".to_owned()];
     assert!(
-        build::vertex_response(&lines, VERTEX_RAW_ROUTE, "m", 0)
+        build::vertex_response(&lines, VERTEX_RAW_ROUTE, "m", 0, Some(&bundled_counter()))
             .expect("no usable line is not an error")
             .is_none()
     );
@@ -251,6 +286,27 @@ fn chunks_raw_predict_builds_and_prices_the_events() {
 }
 
 #[test]
+fn chunks_raw_predict_without_usage_counts_the_text_and_reasoning() {
+    let fixture = collected(
+        VERTEX_RAW_ROUTE,
+        &[THINKING_DELTA, HELLO_DELTA, NO_USAGE_STOP],
+        None,
+    );
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let outcome = collector
+        .handle(&fixture.call())
+        .expect("the events build a response");
+    let usage = field(&result_json(&outcome), "usage");
+    assert_eq!(integer(usage, "prompt_tokens"), 0);
+    assert_eq!(integer(usage, "completion_tokens"), 3);
+    assert_eq!(integer(usage, "total_tokens"), 3);
+    let details = field(usage, "completion_tokens_details");
+    assert_eq!(integer(details, "reasoning_tokens"), 2);
+    assert_eq!(integer(details, "text_tokens"), 1);
+}
+
+#[test]
 fn build_cost_record_reads_only_a_non_empty_body_model() {
     assert_eq!(
         build::body_model(&json(r#"{"model":"gemini-2.0-flash"}"#)),
@@ -258,6 +314,11 @@ fn build_cost_record_reads_only_a_non_empty_body_model() {
     );
     assert_eq!(build::body_model(&json(r#"{"model":""}"#)), None);
     assert_eq!(build::body_model(&json("[]")), None);
+}
+
+fn bundled_counter() -> CollectedCounter {
+    let built = CollectedCounter::bundled();
+    built.expect("the bundled cl100k vocabulary loads")
 }
 
 fn choice(body: &Json) -> &Json {

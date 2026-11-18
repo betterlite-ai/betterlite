@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_stream_logging::types::{CollectedChunksHandler, HandlerError};
@@ -11,7 +10,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::UsageNumber;
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
-use betterlite_streaming::stream_usage_assembly::UsageTokenCounter;
 use betterlite_streaming::stream_usage_assembly::wire::Usage as WireUsage;
 use betterlite_streaming::streamed_response_assembly::cost::{CostInput, StreamCostCalculator};
 use betterlite_vertex::vertex_relay_metadata::types::{CustomLlmProvider, ResponseLoggingKwargs};
@@ -677,21 +675,24 @@ fn relay_kwargs_write_the_cost_model_and_provider() {
     );
 }
 
-#[tokio::test]
-async fn assembly_zero_counters_count_no_tokens() {
-    assert_eq!(
-        assembly::ZeroReasoning
-            .count_reasoning_tokens("some text")
-            .expect("an infallible count"),
-        0
+#[test]
+fn chunks_without_usage_count_the_assembled_text() {
+    let fixture = collected(
+        STREAM_ROUTE,
+        &[
+            r#"data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"Hello world"}],"role":"model"},"finishReason":"STOP","index":0}]}"#,
+        ],
+        None,
     );
-    let usage = assembly::ZeroUsage;
-    assert_eq!(
-        usage.count_response_text("m", "hi").await.expect("a count"),
-        0
-    );
-    assert_eq!(usage.count_text("hi").await.expect("a count"), 0);
-    assert_eq!(usage.count_messages("m", None).await.expect("a count"), 0);
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .handle(&fixture.call())
+        .expect("the chunk builds a response");
+    let usage = field(&result_json(&outcome), "usage");
+    assert_eq!(integer(usage, "prompt_tokens"), 0);
+    assert_eq!(integer(usage, "completion_tokens"), 2);
+    assert_eq!(integer(usage, "total_tokens"), 2);
+    assert_eq!(cost.calls()[0].usage, Some((0, 2, 2)));
 }
 
 #[test]
