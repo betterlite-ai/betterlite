@@ -672,7 +672,7 @@ fn load(
     bearer: Option<&SecretString>,
     source: &Source,
 ) -> Result<LoadedCredentials, EmbeddingIoError> {
-    let secrets = no_secrets();
+    let secrets = secret_lookup(None);
     runtime().block_on(load_credentials(
         CredentialRequest {
             optional_params: parameters,

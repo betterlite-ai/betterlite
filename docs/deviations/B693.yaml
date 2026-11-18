@@ -1,7 +1,7 @@
 task: B693
 deviations:
   - what: A caller-supplied Date header is dropped and the request is signed with X-Amz-Date instead of LiteLLM's SignedHeaders=date form.
-    why: The shared B595 signer owns this behavior: aws-sigv4 only signs the X-Amz-Date form, and Bedrock clients do not send Date themselves.
+    why: "The shared B595 signer owns this behavior: aws-sigv4 only signs the X-Amz-Date form, and Bedrock clients do not send Date themselves."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1629-L1655
   - what: A request that times out fails with a BedrockError carrying status 408 and the message "Timeout error occurred."; LiteLLM's HTTPHandler turns the httpx timeout into litellm.Timeout first, so its error carries that handler's message and model name instead.
     why: betterlite implements the owned 408 branch directly with the same status code. The Python class, message and request come from the HTTP handler that does its wrapping before embedding.py's own except clause can run, and that handler is a separate layer betterlite does not reproduce here.

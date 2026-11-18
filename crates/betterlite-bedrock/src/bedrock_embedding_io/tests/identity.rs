@@ -21,7 +21,7 @@ fn resolved(access: &str, secret_key: &str, token: &str, region: &str) -> (Crede
                 environment: &environment(&[("AWS_REGION_NAME", region)]),
                 bearer_token: None,
             },
-            &no_secrets(),
+            &secret_lookup(None),
             source.resolve(),
         ))
         .expect("the fixture credentials load");

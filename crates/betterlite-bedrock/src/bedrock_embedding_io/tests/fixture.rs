@@ -260,9 +260,9 @@ impl OidcClock for NoOidc {
     }
 }
 
-pub(super) fn no_secrets() -> SecretLookup {
+pub(super) fn secret_lookup(manager: Option<ManagerState>) -> SecretLookup {
     SecretLookup {
-        manager: None,
+        manager,
         oidc_http: Arc::new(NoOidc),
         azure_tokens: Arc::new(NoOidc),
         clock: Arc::new(NoOidc),
@@ -305,16 +305,13 @@ impl SyncSecretReader for ManagedReader {
 }
 
 pub(super) fn managed_secrets(reader: Arc<ManagedReader>) -> SecretLookup {
-    SecretLookup {
-        manager: Some(ManagerState {
-            client: SecretManagerClient::Vault(reader),
-            settings: Some(SecretManagerSettings::default()),
-            system: Some(KeyManagementSystem::HashicorpVault),
-            access_mode: SecretAccessMode::ReadOnly,
-            hosted_keys: None,
-        }),
-        ..no_secrets()
-    }
+    secret_lookup(Some(ManagerState {
+        client: SecretManagerClient::Vault(reader),
+        settings: Some(SecretManagerSettings::default()),
+        system: Some(KeyManagementSystem::HashicorpVault),
+        access_mode: SecretAccessMode::ReadOnly,
+        hosted_keys: None,
+    }))
 }
 
 pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
