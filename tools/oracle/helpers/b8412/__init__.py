@@ -4,12 +4,12 @@ from typing import Literal, TypedDict
 from litellm.proxy._types import (
     AddTeamCallback,
     DeleteTeamRequest,
-    LiteLLM_OrganizationTableUpdate,
-    LiteLLM_OrganizationTableWithMembers,
+    LiteLLM_OrganizationTableUpdate as OrgTableUpdate,
+    LiteLLM_OrganizationTableWithMembers as OrgTableWithMembers,
     MemberAddRequest,
     OrganizationMemberAddRequest,
-    OrganizationMemberDeleteRequest,
-    OrganizationMemberUpdateRequest,
+    OrganizationMemberDeleteRequest as OrgMemberDelete,
+    OrganizationMemberUpdateRequest as OrgMemberUpdate,
     OrganizationUpdateRequestV2,
     OrgMember,
     OrgMemberAddRequest,
@@ -72,16 +72,12 @@ RECORDS: dict[Record, type[BaseModel]] = {
     "OrgMemberAddRequest": OrgMemberAddRequest,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4627
     "OrganizationMemberAddRequest": OrganizationMemberAddRequest,
     "TeamMemberDeleteRequest": TeamMemberDeleteRequest,
-    # ast-grep-ignore: no-long-names
-    "OrganizationMemberDeleteRequest": OrganizationMemberDeleteRequest,
+    "OrganizationMemberDeleteRequest": OrgMemberDelete,
     "TeamMemberUpdateRequest": TeamMemberUpdateRequest,
-    # ast-grep-ignore: no-long-names
-    "OrganizationMemberUpdateRequest": OrganizationMemberUpdateRequest,
-    # ast-grep-ignore: no-long-names
-    "OrganizationTableUpdate": LiteLLM_OrganizationTableUpdate,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3607
+    "OrganizationMemberUpdateRequest": OrgMemberUpdate,
+    "OrganizationTableUpdate": OrgTableUpdate,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3607
     "OrganizationUpdateRequestV2": OrganizationUpdateRequestV2,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3634
-    # ast-grep-ignore: no-long-names
-    "OrganizationTableWithMembers": LiteLLM_OrganizationTableWithMembers,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3664
+    "OrganizationTableWithMembers": OrgTableWithMembers,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3664
 }
 
 DUMP: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
