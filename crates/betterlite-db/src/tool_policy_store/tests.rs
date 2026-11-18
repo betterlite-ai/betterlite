@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod cancel;
 mod postgres;
 mod support;
 
@@ -81,10 +82,10 @@ impl DbReconnect for Reconnect {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(reason.to_owned());
-        match self.failure.clone() {
-            Some(failure) => Box::pin(ready(Err(failure))),
-            None => Box::pin(ready(Ok(false))),
-        }
+        let Some(failure) = self.failure.clone() else {
+            return Box::pin(ready(Ok(false)));
+        };
+        Box::pin(ready(Err(failure)))
     }
 }
 
@@ -101,6 +102,43 @@ fn item(tool_name: Option<&str>) -> ToolDiscoveryItem {
         team_id: None,
         key_alias: None,
         user_agent: None,
+    }
+}
+
+async fn change_without_a_database(
+    object_permission_id: &str,
+    tool_name: &str,
+    change: BlockedChange,
+) -> bool {
+    change_blocked_tools(
+        None::<Client>,
+        StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
+        object_permission_id,
+        tool_name,
+        change,
+    )
+    .await
+}
+
+fn reconnect_failure() -> DbError {
+    let cause = DbError {
+        error_type: ErrorType::Read,
+        message: "the socket closed".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    };
+    DbError {
+        error_type: ErrorType::Connect,
+        message: "the reconnect was refused".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: Some(Box::new(cause)),
     }
 }
 
@@ -312,32 +350,8 @@ async fn policy_update_without_a_database_returns_none() {
 #[tokio::test]
 async fn blocked_list_writes_without_a_database_return_false() {
     let (logs, guard) = captured_logs();
-    assert!(
-        !change_blocked_tools(
-            None::<Client>,
-            StatementBounds {
-                deadline: DEADLINE,
-                canceller: &TlsCanceller { tls: NoTls },
-            },
-            "perm-1",
-            "search",
-            BlockedChange::Add
-        )
-        .await
-    );
-    assert!(
-        !change_blocked_tools(
-            None::<Client>,
-            StatementBounds {
-                deadline: DEADLINE,
-                canceller: &TlsCanceller { tls: NoTls },
-            },
-            "perm-1",
-            "search",
-            BlockedChange::Remove
-        )
-        .await
-    );
+    assert!(!change_without_a_database("perm-1", "search", BlockedChange::Add).await);
+    assert!(!change_without_a_database("perm-1", "search", BlockedChange::Remove).await);
     drop(guard);
     let text = logs.text();
     assert!(text.contains("add_tool_to_object_permission_blocked error: no database connection"));
@@ -349,58 +363,10 @@ async fn blocked_list_writes_without_a_database_return_false() {
 #[tokio::test]
 async fn blocked_list_writes_with_empty_arguments_answer_false_before_the_database() {
     let (logs, guard) = captured_logs();
-    assert!(
-        !change_blocked_tools(
-            None::<Client>,
-            StatementBounds {
-                deadline: DEADLINE,
-                canceller: &TlsCanceller { tls: NoTls },
-            },
-            "",
-            "search",
-            BlockedChange::Add
-        )
-        .await
-    );
-    assert!(
-        !change_blocked_tools(
-            None::<Client>,
-            StatementBounds {
-                deadline: DEADLINE,
-                canceller: &TlsCanceller { tls: NoTls },
-            },
-            "perm-1",
-            "",
-            BlockedChange::Add
-        )
-        .await
-    );
-    assert!(
-        !change_blocked_tools(
-            None::<Client>,
-            StatementBounds {
-                deadline: DEADLINE,
-                canceller: &TlsCanceller { tls: NoTls },
-            },
-            "",
-            "search",
-            BlockedChange::Remove
-        )
-        .await
-    );
-    assert!(
-        !change_blocked_tools(
-            None::<Client>,
-            StatementBounds {
-                deadline: DEADLINE,
-                canceller: &TlsCanceller { tls: NoTls },
-            },
-            "perm-1",
-            "",
-            BlockedChange::Remove
-        )
-        .await
-    );
+    assert!(!change_without_a_database("", "search", BlockedChange::Add).await);
+    assert!(!change_without_a_database("perm-1", "", BlockedChange::Add).await);
+    assert!(!change_without_a_database("", "search", BlockedChange::Remove).await);
+    assert!(!change_without_a_database("perm-1", "", BlockedChange::Remove).await);
     drop(guard);
     assert!(!logs.text().contains("error"));
 }
@@ -444,21 +410,7 @@ async fn a_failed_reconnect_keeps_its_typed_cause() {
             canceller: &TlsCanceller { tls: NoTls },
         },
     };
-    let mut reconnect = Reconnect::failing(DbError {
-        error_type: ErrorType::Connect,
-        message: "the reconnect was refused".to_owned(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: Some(Box::new(DbError {
-            error_type: ErrorType::Read,
-            message: "the socket closed".to_owned(),
-            code: None,
-            meta_code: None,
-            traceback_modules: Vec::new(),
-            cause: None,
-        })),
-    });
+    let mut reconnect = Reconnect::failing(reconnect_failure());
     let error = sync_tool_policy_from_db(&store, Some(&mut reconnect))
         .await
         .expect_err("the failing read");

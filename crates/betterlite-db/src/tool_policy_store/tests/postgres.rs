@@ -3,8 +3,6 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
-use secrecy::ExposeSecret as _;
-use tokio::task::yield_now;
 use tokio_postgres::NoTls;
 use tokio_postgres::error::SqlState;
 
@@ -16,13 +14,15 @@ use crate::tool_policy_store::deadline::{StatementBounds, TlsCanceller};
 use crate::tool_policy_store::discovery::batch_upsert_tools;
 use crate::tool_policy_store::errors::ToolPolicyStoreError;
 use crate::tool_policy_store::policy_update::update_tool_policy;
-use crate::tool_policy_store::records::{ToolDiscoveryItem, ToolPolicyUpdate, UuidToolIdGenerator};
+use crate::tool_policy_store::records::{
+    ToolDiscoveryItem, ToolIdGenerator, ToolPolicyUpdate, UuidToolIdGenerator,
+};
 use crate::tool_policy_store::refresh::{ToolPolicyStore, sync_tool_policy_from_db};
 use crate::tool_policy_store::registry::ToolPolicyRegistry;
 use crate::tool_records::queries::get_tool;
 use crate::tool_records::records::{LiteLLMToolTableRow, ToolInputPolicy, ToolOutputPolicy};
 
-use super::support::{Db, TlsFront, captured_logs};
+use super::support::{Db, captured_logs};
 use super::{FixedIds, Reconnect, instant, item};
 
 const DEADLINE: Duration = Duration::from_secs(5);
@@ -49,8 +49,6 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER reject_locked_permission BEFORE UPDATE ON "LiteLLM_ObjectPermissionTable"
     FOR EACH ROW EXECUTE FUNCTION reject_locked_permission();"#;
 
-const TABLE_LOCK: &str = "BEGIN; LOCK TABLE \"LiteLLM_ToolTable\" IN ACCESS EXCLUSIVE MODE";
-
 async fn stored_tool(db: &Db, tool_name: &str) -> LiteLLMToolTableRow {
     let client = db.client().await;
     get_tool(Some(&client), tool_name)
@@ -67,31 +65,7 @@ async fn blocked_list(db: &Db, object_permission_id: &str) -> Option<Vec<String>
         )
         .await
         .expect("the permission row");
-    row.map(|row| row.try_get("blocked_tools").expect("the blocked list"))
-}
-
-async fn lock_waiters(db: &Db) -> i64 {
-    let client = db.client().await;
-    client
-        .query_one(
-            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND state = 'active' AND query LIKE '%LiteLLM_ToolTable%'",
-            &[],
-        )
-        .await
-        .expect("the database activity")
-        .get(0)
-}
-
-async fn wait_until_no_lock_waiters(db: &Db) -> i64 {
-    let mut waiting = lock_waiters(db).await;
-    for _ in 0..100 {
-        if waiting == 0 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-        waiting = lock_waiters(db).await;
-    }
-    waiting
+    row.map(|found| found.try_get("blocked_tools").expect("the blocked list"))
 }
 
 async fn sync(db: &Db, registry: &Mutex<ToolPolicyRegistry>) -> Result<(), ToolPolicyStoreError> {
@@ -106,7 +80,7 @@ async fn sync(db: &Db, registry: &Mutex<ToolPolicyRegistry>) -> Result<(), ToolP
     sync_tool_policy_from_db(&store, None::<&mut Reconnect>).await
 }
 
-fn trusted(name: &str) -> ToolPolicyUpdate<'_> {
+const fn trusted(name: &str) -> ToolPolicyUpdate<'_> {
     ToolPolicyUpdate {
         tool_name: name,
         updated_by: None,
@@ -115,19 +89,48 @@ fn trusted(name: &str) -> ToolPolicyUpdate<'_> {
     }
 }
 
-async fn store_trusted(db: &Db, tool_name: &str, now: DateTime<Utc>) -> LiteLLMToolTableRow {
+async fn update_policy(
+    db: &Db,
+    ids: &dyn ToolIdGenerator,
+    update: &ToolPolicyUpdate<'_>,
+    now: DateTime<Utc>,
+) -> Option<LiteLLMToolTableRow> {
     update_tool_policy(
         Some(db.client().await),
-        &FixedIds,
+        ids,
         StatementBounds {
             deadline: DEADLINE,
             canceller: &TlsCanceller { tls: NoTls },
         },
-        &trusted(tool_name),
+        update,
         now,
     )
     .await
-    .expect("the stored tool")
+}
+
+async fn store_trusted(db: &Db, tool_name: &str, now: DateTime<Utc>) -> LiteLLMToolTableRow {
+    update_policy(db, &FixedIds, &trusted(tool_name), now)
+        .await
+        .expect("the stored tool")
+}
+
+async fn discover(
+    db: &Db,
+    ids: &dyn ToolIdGenerator,
+    items: &[ToolDiscoveryItem],
+    now: DateTime<Utc>,
+) {
+    batch_upsert_tools(
+        Some(db.client().await),
+        ids,
+        StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
+        items,
+        now,
+    )
+    .await;
 }
 
 async fn check_blocked_change(
@@ -189,17 +192,7 @@ async fn discovery_creates_an_untrusted_tool_with_one_call() {
         key_alias: Some("alias".to_owned()),
         user_agent: Some("agent/1".to_owned()),
     };
-    batch_upsert_tools(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &[discovered],
-        now,
-    )
-    .await;
+    discover(&db, &FixedIds, &[discovered], now).await;
     let tool = stored_tool(&db, "search").await;
     assert_eq!(tool.tool_id, "fixed-id");
     assert_eq!(tool.origin.as_deref(), Some("user_defined"));
@@ -222,29 +215,9 @@ async fn discovery_keeps_the_first_identity_and_increments_the_count() {
     let db = Db::start().await;
     let ids = &UuidToolIdGenerator;
     let first = identified_item("search", "system", "seed", "k1", None);
-    batch_upsert_tools(
-        Some(db.client().await),
-        ids,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &[first],
-        instant(),
-    )
-    .await;
+    discover(&db, ids, &[first], instant()).await;
     let second = identified_item("search", "user_defined", "other", "k2", Some("team-2"));
-    batch_upsert_tools(
-        Some(db.client().await),
-        ids,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &[second],
-        later_instant(),
-    )
-    .await;
+    discover(&db, ids, &[second], later_instant()).await;
     let tool = stored_tool(&db, "search").await;
     let tool_id = tool.tool_id.as_str();
     assert!(
@@ -267,17 +240,7 @@ async fn discovery_keeps_the_first_identity_and_increments_the_count() {
 async fn discovery_preserves_an_administrative_policy() {
     let db = Db::start().await;
     store_trusted(&db, "search", instant()).await;
-    batch_upsert_tools(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &[item(Some("search"))],
-        later_instant(),
-    )
-    .await;
+    discover(&db, &FixedIds, &[item(Some("search"))], later_instant()).await;
     let tool = stored_tool(&db, "search").await;
     assert_eq!(tool.input_policy, ToolInputPolicy::Trusted);
     assert_eq!(tool.output_policy, ToolOutputPolicy::Trusted);
@@ -289,13 +252,9 @@ async fn discovery_preserves_an_administrative_policy() {
 async fn discovery_ignores_items_without_a_tool_name() {
     let db = Db::start().await;
     let (logs, guard) = captured_logs();
-    batch_upsert_tools(
-        Some(db.client().await),
+    discover(
+        &db,
         &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
         &[item(None), item(Some("")), item(Some("kept"))],
         instant(),
     )
@@ -327,17 +286,7 @@ async fn discovery_stops_at_the_first_failed_item_without_rolling_back() {
         item(Some("poison")),
         item(Some("after")),
     ];
-    batch_upsert_tools(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &items,
-        instant(),
-    )
-    .await;
+    discover(&db, &FixedIds, &items, instant()).await;
     drop(guard);
     let client = db.client().await;
     assert!(get_tool(Some(&client), "first").await.is_some());
@@ -351,43 +300,6 @@ async fn discovery_stops_at_the_first_failed_item_without_rolling_back() {
 }
 
 #[tokio::test]
-async fn discovery_stops_at_the_deadline() {
-    let db = Db::start().await;
-    let holder = db.client().await;
-    holder
-        .batch_execute(TABLE_LOCK)
-        .await
-        .expect("the table lock");
-    let (logs, guard) = captured_logs();
-    batch_upsert_tools(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: Duration::from_millis(100),
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &[item(Some("search"))],
-        instant(),
-    )
-    .await;
-    drop(guard);
-    assert!(
-        logs.text()
-            .contains("the statement did not finish within 100ms")
-    );
-    assert_eq!(wait_until_no_lock_waiters(&db).await, 0);
-    holder
-        .batch_execute("ROLLBACK")
-        .await
-        .expect("the rollback");
-    drop(holder);
-    let client = db.client().await;
-    assert!(get_tool(Some(&client), "search").await.is_none());
-    drop(client);
-    db.close().await;
-}
-
-#[tokio::test]
 async fn policy_update_creates_an_undiscovered_tool() {
     let db = Db::start().await;
     let now = instant();
@@ -397,18 +309,9 @@ async fn policy_update_creates_an_undiscovered_tool() {
         input_policy: Some(ToolInputPolicy::Trusted),
         output_policy: Some(ToolOutputPolicy::Trusted),
     };
-    let returned = update_tool_policy(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &update,
-        now,
-    )
-    .await
-    .expect("the stored tool");
+    let returned = update_policy(&db, &FixedIds, &update, now)
+        .await
+        .expect("the stored tool");
     assert_eq!(returned.tool_id, "fixed-id");
     assert_eq!(returned.tool_name, "undeclared");
     assert_eq!(returned.input_policy, ToolInputPolicy::Trusted);
@@ -431,18 +334,9 @@ async fn policy_update_defaults_absent_policies_and_the_actor() {
         input_policy: None,
         output_policy: None,
     };
-    let returned = update_tool_policy(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &update,
-        instant(),
-    )
-    .await
-    .expect("the stored tool");
+    let returned = update_policy(&db, &FixedIds, &update, instant())
+        .await
+        .expect("the stored tool");
     assert_eq!(returned.input_policy, ToolInputPolicy::Untrusted);
     assert_eq!(returned.output_policy, ToolOutputPolicy::Untrusted);
     assert_eq!(returned.created_by.as_deref(), Some("system"));
@@ -454,35 +348,16 @@ async fn policy_update_defaults_absent_policies_and_the_actor() {
 async fn policy_update_preserves_unspecified_policies() {
     let db = Db::start().await;
     store_trusted(&db, "search", instant()).await;
-    batch_upsert_tools(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &[item(Some("search"))],
-        instant(),
-    )
-    .await;
+    discover(&db, &FixedIds, &[item(Some("search"))], instant()).await;
     let changed = ToolPolicyUpdate {
         tool_name: "search",
         updated_by: Some("second"),
         input_policy: None,
         output_policy: Some(ToolOutputPolicy::Untrusted),
     };
-    let returned = update_tool_policy(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &changed,
-        later_instant(),
-    )
-    .await
-    .expect("the updated tool");
+    let returned = update_policy(&db, &FixedIds, &changed, later_instant())
+        .await
+        .expect("the updated tool");
     assert_eq!(returned.input_policy, ToolInputPolicy::Trusted);
     assert_eq!(returned.output_policy, ToolOutputPolicy::Untrusted);
     assert_eq!(returned.created_by.as_deref(), Some("system"));
@@ -506,17 +381,7 @@ async fn policy_update_failure_returns_none_and_logs() {
         input_policy: Some(ToolInputPolicy::Trusted),
         output_policy: None,
     };
-    let returned = update_tool_policy(
-        Some(db.client().await),
-        &FixedIds,
-        StatementBounds {
-            deadline: DEADLINE,
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-        &update,
-        instant(),
-    )
-    .await;
+    let returned = update_policy(&db, &FixedIds, &update, instant()).await;
     drop(guard);
     assert!(returned.is_none());
     let client = db.client().await;
@@ -833,42 +698,6 @@ async fn refresh_does_not_reconnect_for_a_missing_table() {
 }
 
 #[tokio::test]
-async fn refresh_cancels_a_read_past_the_deadline() {
-    let db = Db::start().await;
-    let holder = db.client().await;
-    holder
-        .batch_execute(TABLE_LOCK)
-        .await
-        .expect("the table lock");
-    let registry = Mutex::new(ToolPolicyRegistry::default());
-    let store = ToolPolicyStore {
-        database: &db.store,
-        registry: &registry,
-        bounds: StatementBounds {
-            deadline: Duration::from_millis(100),
-            canceller: &TlsCanceller { tls: NoTls },
-        },
-    };
-    let mut reconnect = Reconnect::default();
-    let result = sync_tool_policy_from_db(&store, Some(&mut reconnect)).await;
-    assert!(matches!(result, Err(ToolPolicyStoreError::Deadline { .. })));
-    assert!(reconnect.reasons().is_empty());
-    assert!(
-        !registry
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .initialized
-    );
-    assert_eq!(wait_until_no_lock_waiters(&db).await, 0);
-    holder
-        .batch_execute("ROLLBACK")
-        .await
-        .expect("the rollback");
-    drop(holder);
-    db.close().await;
-}
-
-#[tokio::test]
 async fn refresh_fails_on_an_unreadable_tool_row() {
     let db = Db::start().await;
     db.batch(
@@ -908,102 +737,5 @@ async fn refresh_fails_on_an_unreadable_permission_row() {
             .unwrap_or_else(PoisonError::into_inner)
             .initialized
     );
-    db.close().await;
-}
-
-#[tokio::test]
-async fn a_tls_required_cancel_stops_the_read_over_tls() {
-    let db = Db::start().await;
-    let server_url = db.fixture.options.url.expose_secret();
-    let front = TlsFront::start(server_url).await;
-    let store = front.store(server_url);
-    let holder = db.client().await;
-    holder
-        .batch_execute(TABLE_LOCK)
-        .await
-        .expect("the table lock");
-    let registry = Mutex::new(ToolPolicyRegistry::default());
-    let canceller = front.trusted_connector();
-    let policy_store = ToolPolicyStore {
-        database: &store,
-        registry: &registry,
-        bounds: StatementBounds {
-            deadline: Duration::from_millis(500),
-            canceller: &TlsCanceller { tls: canceller },
-        },
-    };
-    let (logs, guard) = captured_logs();
-    let result = sync_tool_policy_from_db(&policy_store, None::<&mut Reconnect>).await;
-    drop(guard);
-    assert!(matches!(result, Err(ToolPolicyStoreError::Deadline { .. })));
-    assert_eq!(
-        front.handshakes(),
-        2,
-        "the session and its cancel request both spoke TLS"
-    );
-    assert!(!logs.text().contains("could not be cancelled"));
-    assert_eq!(wait_until_no_lock_waiters(&db).await, 0);
-    holder
-        .batch_execute("ROLLBACK")
-        .await
-        .expect("the rollback");
-    drop(holder);
-    sync_tool_policy_from_db(&policy_store, None::<&mut Reconnect>)
-        .await
-        .expect("the read after the cancel");
-    assert_eq!(
-        front.handshakes(),
-        2,
-        "the cancelled session stayed in the pool"
-    );
-    store.pool.expect("the TLS pool").close();
-    yield_now().await;
-    drop(front);
-    yield_now().await;
-    db.close().await;
-}
-
-#[tokio::test]
-async fn an_undeliverable_cancel_discards_the_connection() {
-    let db = Db::start().await;
-    let server_url = db.fixture.options.url.expose_secret();
-    let front = TlsFront::start(server_url).await;
-    let store = front.store(server_url);
-    let holder = db.client().await;
-    holder
-        .batch_execute(TABLE_LOCK)
-        .await
-        .expect("the table lock");
-    let registry = Mutex::new(ToolPolicyRegistry::default());
-    let canceller = TlsFront::untrusted_connector();
-    let policy_store = ToolPolicyStore {
-        database: &store,
-        registry: &registry,
-        bounds: StatementBounds {
-            deadline: Duration::from_millis(500),
-            canceller: &TlsCanceller { tls: canceller },
-        },
-    };
-    let (logs, guard) = captured_logs();
-    let result = sync_tool_policy_from_db(&policy_store, None::<&mut Reconnect>).await;
-    drop(guard);
-    assert!(matches!(result, Err(ToolPolicyStoreError::Deadline { .. })));
-    assert!(logs.text().contains("could not be cancelled"));
-    let pool = store.pool.as_ref().expect("the TLS pool");
-    assert_eq!(
-        pool.status().size,
-        0,
-        "the timed out connection left the pool"
-    );
-    assert_eq!(pool.status().available, 0);
-    holder
-        .batch_execute("ROLLBACK")
-        .await
-        .expect("the rollback");
-    drop(holder);
-    store.pool.expect("the TLS pool").close();
-    yield_now().await;
-    drop(front);
-    yield_now().await;
     db.close().await;
 }
