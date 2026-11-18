@@ -24,7 +24,9 @@ use crate::user_contracts::bulk_update::{
 };
 use crate::user_contracts::error::UserContractsError;
 use crate::user_contracts::list::{LiteLLMUserTableWithKeyCount, UserListResponse};
-use crate::user_contracts::query::{MAX_USER_ID_LENGTH, is_valid_user_id, user_id_from_query};
+use crate::user_contracts::query::{
+    MAX_ENCODED_USER_ID_LENGTH, MAX_USER_ID_LENGTH, is_valid_user_id, user_id_from_query,
+};
 use crate::user_contracts::search::{UserSearchTerm, UserSearchWhere};
 use crate::user_contracts::{decode_bulk_user_request, decode_user_info_query};
 
@@ -58,6 +60,14 @@ fn validation_text(error: &ContractError) -> String {
 fn rejection_text(error: &UserContractsError) -> String {
     match error {
         UserContractsError::Contract(inner) => validation_text(inner),
+        UserContractsError::Bounded(reason) => panic!("a bounded rejection: {reason}"),
+    }
+}
+
+fn rejection_detail(error: &UserContractsError) -> String {
+    match error {
+        UserContractsError::Contract(ContractError::Decode { source }) => source.to_string(),
+        UserContractsError::Contract(ContractError::Validation { message }) => message.clone(),
         UserContractsError::Bounded(reason) => panic!("a bounded rejection: {reason}"),
     }
 }
@@ -196,22 +206,19 @@ fn update_response_defaults() {
 #[test]
 fn update_wrong_types() {
     let users = update(r#"{"users": 5}"#).expect_err("a number is not a users list");
-    assert_eq!(
-        rejection_text(&users),
-        "users has a value of the wrong JSON type"
-    );
+    assert_decode_rejected(&users);
     let all_users = update(r#"{"all_users": 1, "user_updates": {}}"#)
         .expect_err("betterlite rejects the integer pydantic would coerce");
-    assert_eq!(
-        rejection_text(&all_users),
-        "all_users has a value of the wrong JSON type"
-    );
+    assert_decode_rejected(&all_users);
     let updates = update(r#"{"all_users": true, "user_updates": []}"#)
         .expect_err("a list is not an updates model");
     assert_eq!(
-        rejection_text(&updates),
+        rejection_detail(&updates),
         "user_updates has a value of the wrong JSON type"
     );
+    let extra = update(r#"{"users": [{"user_id": "u"}], "unknown": true}"#)
+        .expect("pydantic ignores an extra top-level key");
+    assert_eq!(extra.users.expect("the users list").len(), 1);
 }
 
 #[test]
@@ -349,10 +356,7 @@ fn new_bounds_and_extras() {
     );
     let extra_top =
         new_users(r#"{"users": [{"user_id": "u"}], "all_users": true}"#).expect_err("an extra key");
-    assert_eq!(
-        rejection_text(&extra_top),
-        "extra inputs are not permitted: `all_users`"
-    );
+    assert_decode_rejected(&extra_top);
     let extra_row = new_users(r#"{"users": [{"user_id": "u", "nickname": "n"}]}"#)
         .expect_err("an extra row key");
     assert_eq!(
@@ -377,7 +381,7 @@ fn new_response_nulls() {
     assert_eq!(result.user_id, None);
     assert_eq!(result.user_email, None);
     assert_eq!(result.teams, None);
-    assert_eq!(result.key, None);
+    assert!(result.key.is_none());
     assert_eq!(result.error, None);
     let empty_teams: UserCreateResult =
         serde_json::from_str(r#"{"success": true, "teams": []}"#).expect("empty teams");
@@ -402,6 +406,17 @@ fn new_response_nulls() {
 }
 
 #[test]
+fn create_result_debug_redacts_key() {
+    let result: UserCreateResult = serde_json::from_str(r#"{"success": true, "key": "sk-live-1"}"#)
+        .expect("a create result that minted a key");
+    let wire = serde_json::to_string(&result).expect("the serialized result");
+    assert!(wire.contains(r#""key":"sk-live-1""#));
+    let debug = format!("{result:?}");
+    assert!(debug.contains("[REDACTED]"));
+    assert!(!debug.contains("sk-live-1"));
+}
+
+#[test]
 fn id_character_boundaries() {
     assert!(is_valid_user_id(""));
     assert!(is_valid_user_id(&"a".repeat(MAX_USER_ID_LENGTH)));
@@ -414,6 +429,23 @@ fn id_character_boundaries() {
     assert!(!is_valid_user_id("\u{1f}"));
     assert!(user_id_from_query(&format!("user_id={}", "a".repeat(512))).is_some());
     assert!(user_id_from_query(&format!("user_id={}", "a".repeat(513))).is_none());
+}
+
+#[test]
+fn id_encoded_length_bound() {
+    assert_eq!(MAX_ENCODED_USER_ID_LENGTH, 6144);
+    let escaped = "%F0%9F%98%80".repeat(MAX_USER_ID_LENGTH);
+    assert_eq!(escaped.len(), MAX_ENCODED_USER_ID_LENGTH);
+    assert_eq!(
+        user_id_from_query(&format!("user_id={escaped}&tag=1")),
+        Some("\u{1f600}".repeat(MAX_USER_ID_LENGTH))
+    );
+    let over = "%41".repeat(MAX_ENCODED_USER_ID_LENGTH + 1);
+    assert!(user_id_from_query(&format!("user_id={over}&tag=1")).is_none());
+    let literal = "a".repeat(MAX_ENCODED_USER_ID_LENGTH + 1);
+    assert!(user_id_from_query(&format!("user_id={literal}&tag=1")).is_none());
+    let long_escape = "%41".repeat(2000);
+    assert!(user_id_from_query(&format!("user_id={long_escape}")).is_none());
 }
 
 #[test]
@@ -611,7 +643,15 @@ fn search_where_and_list_rows() {
 
 #[rstest]
 fn replays_the_user_contracts_corpus(#[files("fuzz/corpus/user_contracts/*")] path: PathBuf) {
-    let bytes = fs::read(path).expect("a corpus seed");
+    let bytes = fs::read(&path).expect("a corpus seed");
+    if !path.to_string_lossy().ends_with(".json") {
+        let query = String::from_utf8(bytes).expect("a query seed is UTF-8 text");
+        if let Some(user_id) = user_id_from_query(&query) {
+            assert!(is_valid_user_id(&user_id));
+        }
+        drop(decode_user_info_query(&query, Some(query.as_str())));
+        return;
+    }
     drop(decode_bulk_user_request(
         &bytes,
         BulkUpdateUserRequest::from_value,
