@@ -1,0 +1,26 @@
+kind: websocket
+name: realtime-sender-send-order
+path: /v1/realtime
+headers: {openai-beta: realtime=v1}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: client_to_provider
+    action: send
+    text: '{"type": "session.update", "session": {"model": "gpt-4o-realtime-preview", "modalities": ["text"]}}'
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "session.created", "session": {"id": "sess-1"}}'
+  - direction: client_to_provider
+    action: send
+    text: '{"type": "conversation.item.create", "item": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hello"}]}}'
+  - direction: client_to_provider
+    action: send
+    text: '{"type": "response.create", "response": {"modalities": ["text"]}}'
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "response.output_text.done", "text": "hi"}'
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "response.done", "response": {"status": "completed"}}'
