@@ -18,7 +18,7 @@ use super::stamping::{self, ResponsesCostCalculator};
 use super::tool_events::function_call_events;
 
 macro_rules! push_event {
-    ($events:expr, $event:expr $(,)?) => {
+    ($events:expr, $event:expr) => {
         $events.push(ResponsesAPIStreamingResponse::Known(Box::new($event)));
     };
 }
@@ -73,14 +73,14 @@ where
         KnownResponseEvent::ResponseCreated(ResponseEvent {
             response: in_progress.clone(),
             extra: Extra::new(),
-        }),
+        })
     );
     push_event!(
         &mut events,
         KnownResponseEvent::ResponseInProgress(ResponseEvent {
             response: in_progress,
             extra: Extra::new(),
-        }),
+        })
     );
     for (position, item) in transformed.output.iter().enumerate() {
         let output_index = i64::try_from(position).unwrap_or(i64::MAX);
@@ -91,7 +91,7 @@ where
         KnownResponseEvent::ResponseCompleted(ResponseEvent {
             response: transformed.clone(),
             extra: Extra::new(),
-        }),
+        })
     );
     Ok(events)
 }
@@ -117,7 +117,7 @@ fn push_item_events(
             output_index,
             item: RequiredNullable::Value(item_payload.clone()),
             extra: Extra::new(),
-        }),
+        })
     );
     let context = ItemContext {
         item_id: &item_id,
@@ -139,7 +139,7 @@ fn push_item_events(
             sequence_number: build.sequence_number,
             item: item_payload,
             extra: Extra::new(),
-        }),
+        })
     );
     Ok(())
 }
