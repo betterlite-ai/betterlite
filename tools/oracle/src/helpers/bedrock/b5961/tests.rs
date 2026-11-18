@@ -48,21 +48,23 @@ fn seed_case(source: &str) -> HelperCase {
 fn seeds_select_b5961() {
     let sources = seed_sources();
     assert!(!sources.is_empty());
-    let cases: Vec<HelperCase> = sources.iter().map(|source| seed_case(source)).collect();
-    let inputs: Vec<&serde_json::Value> = cases
-        .iter()
-        .flat_map(|case| iter::once(&case.call).chain(&case.calls))
-        .map(|call| &call.input)
-        .collect();
-    let rejected: Vec<String> = inputs
-        .iter()
-        .copied()
-        .filter_map(|input| <Op as Helper>::check(input).err())
-        .collect();
+    let mut rejected: Vec<String> = Vec::new();
+    let mut functions: BTreeSet<String> = BTreeSet::new();
+    for source in &sources {
+        let case = seed_case(source);
+        for call in iter::once(&case.call).chain(&case.calls) {
+            if let Err(error) = <Op as Helper>::check(&call.input) {
+                rejected.push(error);
+            }
+            if let Some(name) = call
+                .input
+                .get("function")
+                .and_then(serde_json::Value::as_str)
+            {
+                functions.insert(name.to_owned());
+            }
+        }
+    }
     assert!(rejected.is_empty(), "{rejected:#?}");
-    let functions: BTreeSet<&str> = inputs
-        .iter()
-        .filter_map(|input| input.get("function").and_then(serde_json::Value::as_str))
-        .collect();
-    assert_eq!(functions, BTreeSet::from(FUNCTIONS));
+    assert_eq!(functions, BTreeSet::from(FUNCTIONS.map(String::from)));
 }
