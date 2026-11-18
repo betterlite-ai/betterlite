@@ -34,7 +34,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 struct ClientState {
     frames: Mutex<VecDeque<Option<String>>>,
     block: bool,
-    client_send_failures: Vec<u32>,
+    client_send_failures: Vec<usize>,
     sent: Mutex<Vec<String>>,
     closes: Mutex<Vec<(u16, Option<String>)>>,
     receives: AtomicUsize,
@@ -105,7 +105,7 @@ impl RealtimeClientWebSocket for TransportClient {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(data);
-        if self.state.client_send_failures.contains(&(index as u32)) {
+        if self.state.client_send_failures.contains(&index) {
             return Err(ClientError {
                 message: "the client send failed".to_owned(),
                 source: None,
@@ -125,13 +125,13 @@ impl RealtimeClientWebSocket for TransportClient {
 
 struct StreamState {
     sent: Mutex<Vec<Json>>,
-    bedrock_send_failures: Vec<u32>,
+    bedrock_send_failures: Vec<usize>,
     closed: AtomicBool,
     close_error: bool,
     await_error: Option<String>,
     chunks: Mutex<VecDeque<Chunk>>,
     receives: AtomicUsize,
-    receive_failures: Vec<u32>,
+    receive_failures: Vec<usize>,
     block: bool,
 }
 
@@ -182,7 +182,7 @@ impl BedrockInputStream for TransportInput {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(event);
-        if self.state.bedrock_send_failures.contains(&(index as u32)) {
+        if self.state.bedrock_send_failures.contains(&index) {
             return Err(StreamError {
                 message: "the input send failed".to_owned(),
                 source: None,
@@ -215,10 +215,8 @@ struct WireChunk(Option<Part>);
 
 impl BedrockOutputChunk for WireChunk {
     fn value(&self) -> Option<&dyn BedrockPayloadPart> {
-        match &self.0 {
-            Some(part) => Some(part),
-            None => None,
-        }
+        let part: &dyn BedrockPayloadPart = self.0.as_ref()?;
+        Some(part)
     }
 }
 
@@ -231,7 +229,7 @@ impl BedrockOutputStream for TransportOutput {
     type Error = io::Error;
 
     async fn receive(&self) -> Result<Option<Box<dyn BedrockOutputChunk>>, StreamError<io::Error>> {
-        let index = self.state.receives.fetch_add(1, Ordering::SeqCst) as u32;
+        let index = self.state.receives.fetch_add(1, Ordering::SeqCst);
         if self.state.receive_failures.contains(&index) {
             return Err(StreamError {
                 message: "the provider receive failed".to_owned(),
@@ -311,8 +309,8 @@ fn runtime() -> Result<Runtime, Box<HelperError>> {
 
 fn threshold(run: &Run) -> usize {
     match run.kind {
-        Kind::Client => run.frames.len() + 1,
-        Kind::Provider => run.chunks.len() + 1,
+        Kind::Client => run.frames.len().saturating_add(1),
+        Kind::Provider => run.chunks.len().saturating_add(1),
     }
 }
 
@@ -335,13 +333,13 @@ fn scope_view(scope: &EventScope) -> ScopeView {
     ScopeView {
         pending_session_update: match &scope.pending_session_update {
             Json::Text(text) => Some(text.clone()),
-            _ => None,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
         },
         session_committed: matches!(scope.session_committed, Json::Bool(true)),
     }
 }
 
-fn client_outcome(
+const fn client_outcome(
     result: &Result<ForwardEnd, ClientForwardError<io::Error>>,
 ) -> (&'static str, Option<&'static str>) {
     match result {
@@ -354,7 +352,7 @@ fn client_outcome(
     }
 }
 
-fn provider_outcome(
+const fn provider_outcome(
     result: &Result<ForwardEnd, ProviderForwardError<io::Error>>,
 ) -> (&'static str, Option<&'static str>) {
     match result {
@@ -376,8 +374,8 @@ async fn client_view(
     let shared = Mutex::new(session_input(name_ids));
     let mut scope = EventScope::default();
     let client = Arc::new(ClientState::new(run));
-    let stream_state = Arc::new(StreamState::new(run));
-    let stream = TransportStream::new(Arc::clone(&stream_state));
+    let wire = Arc::new(StreamState::new(run));
+    let stream = TransportStream::new(Arc::clone(&wire));
     let transport = TransportClient {
         state: Arc::clone(&client),
     };
@@ -412,9 +410,9 @@ async fn client_view(
     Ok(BridgeView {
         outcome,
         error,
-        sent_to_bedrock: stream_state.sent(),
+        sent_to_bedrock: wire.sent(),
         sent_to_client: parse_sent(client.sent())?,
-        closed_input: stream_state.closed(),
+        closed_input: wire.closed(),
         closed_client: None,
         scope: Some(scope_view(&scope)),
         state: None,
@@ -433,8 +431,8 @@ async fn provider_view(
     let mut logged = Vec::new();
     let types = LoggedEventTypes::Default;
     let client = Arc::new(ClientState::new(run));
-    let stream_state = Arc::new(StreamState::new(run));
-    let stream = TransportStream::new(Arc::clone(&stream_state));
+    let wire = Arc::new(StreamState::new(run));
+    let stream = TransportStream::new(Arc::clone(&wire));
     let transport = TransportClient {
         state: Arc::clone(&client),
     };
@@ -452,7 +450,7 @@ async fn provider_view(
             cancel: &token,
         };
         if run.cancel {
-            let canceller = cancel_at(&stream_state.receives, threshold(run), &token);
+            let canceller = cancel_at(&wire.receives, threshold(run), &token);
             let pump = forward.forward_bedrock_to_client();
             tokio::pin!(pump);
             tokio::pin!(canceller);
@@ -501,11 +499,11 @@ pub(super) fn runs(
     events: &FixedIds,
     redactor: &Redactor,
 ) -> Result<serde_json::Value, Box<HelperError>> {
-    let runtime = runtime()?;
-    let views = runtime.block_on(async {
+    let executor = runtime()?;
+    let views = executor.block_on(async {
         let mut views = Vec::with_capacity(input.runs.len());
         for (index, run) in input.runs.iter().enumerate() {
-            let start = index * 3;
+            let start = index.saturating_mul(3);
             let name_ids = names
                 .get(start..start.saturating_add(3))
                 .ok_or_else(|| failure(format!("run {index} needs three name ids")))?;

@@ -43,11 +43,11 @@ struct Run {
     #[serde(default)]
     cancel: bool,
     #[serde(default)]
-    bedrock_send_failures: Vec<u32>,
+    bedrock_send_failures: Vec<usize>,
     #[serde(default)]
-    receive_failures: Vec<u32>,
+    receive_failures: Vec<usize>,
     #[serde(default)]
-    client_send_failures: Vec<u32>,
+    client_send_failures: Vec<usize>,
     #[serde(default)]
     bedrock_close_error: bool,
 }
