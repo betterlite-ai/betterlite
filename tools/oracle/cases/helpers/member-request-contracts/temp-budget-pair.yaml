@@ -1,0 +1,13 @@
+kind: helper
+name: member-request-contracts-temp-budget-pair
+call:
+  b8412: {record: TeamMemberUpdateRequest, value: {user_id: "user-1", team_id: "team-1", temp_budget_increase: 12.5}}
+calls:
+  - b8412: {record: TeamMemberUpdateRequest, value: {user_id: "user-1", team_id: "team-1", temp_budget_expiry: "2026-03-01T00:00:00"}}
+  - b8412: {record: TeamMemberUpdateRequest, value: {user_id: "user-1", team_id: "team-1", temp_budget_increase: -1}}
+  - b8412: {record: TeamMemberUpdateRequest, value: {user_id: "user-1", team_id: "team-1"}}
+  - b8412: {record: TeamMemberUpdateRequest, value: {user_id: "user-1", team_id: "team-1", temp_budget_increase: 12.5, temp_budget_expiry: "2026-03-01T00:00:00"}}
+  - b8412: {record: TeamMemberUpdateRequest, value: {user_id: "user-1", team_id: "team-1", role: "admin", max_budget_in_team: 12.5, tpm_limit: 100, rpm_limit: 10, budget_duration: "1d", allowed_models: []}}
+  - b8412: {record: TeamMemberUpdateRequest, value: {user_email: "a@b.c", team_id: "team-1", temp_budget_increase: 2.5, temp_budget_expiry: "2026-03-01T00:00:00"}}
+env: {}
+compare: {ignore: []}

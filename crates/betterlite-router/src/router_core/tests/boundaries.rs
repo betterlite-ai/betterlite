@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -12,6 +14,10 @@ use super::support::{
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::prompt_affinity::service::PromptAffinity;
+use crate::prompt_affinity::tests::support::{
+    FakePins, MARKED_MESSAGES, cache_key, json_messages, messages, pin, service,
+};
 use crate::router_core::candidates::{CandidateSet, weights};
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::{
@@ -66,6 +72,81 @@ pub(super) async fn stage_skips(stage: RouteStage) {
     assert_eq!(skipped, set);
     let error = context::apply(stage, set, &context).await.unwrap_err();
     assert_eq!(error.unbuilt_entry(), Some(stage_name(stage)));
+}
+
+// The B325 stage as the registered check: the router consults it once, and a pinned prefix narrows the pool.
+pub(super) async fn prompt_affinity_narrows_the_pool() {
+    let pins = Arc::new(FakePins::default());
+    pins.seed(
+        &cache_key(&json_messages(MARKED_MESSAGES), None).unwrap(),
+        pin("a"),
+    );
+    let services = Pinned {
+        affinity: service(pins, 2000, false),
+        calls: AtomicUsize::new(0),
+    };
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[("model", text("claude-min"))]),
+        deployment("gpt-4o", "b", &[("model", text("claude-min"))]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.messages = Some(messages(MARKED_MESSAGES));
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &setup,
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(services.calls.load(Ordering::SeqCst), 1);
+}
+
+// The check narrows before the pre-call checks, so the pinned deployment's own param rejection empties the pool.
+pub(super) async fn prompt_affinity_before_pre_call_checks() {
+    let pins = Arc::new(FakePins::default());
+    pins.seed(
+        &cache_key(&json_messages(MARKED_MESSAGES), None).unwrap(),
+        pin("a"),
+    );
+    let services = Pinned {
+        affinity: service(pins, 2000, false),
+        calls: AtomicUsize::new(0),
+    };
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[("model", text("claude-min"))]),
+        deployment("gpt-4o", "b", &[("model", text("gpt-4o-mini"))]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.messages = Some(messages(MARKED_MESSAGES));
+    // the pre-call checks read a prompt, and the request asks for a param only one deployment declares
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.response_format = true;
+    let checks = Checked {
+        limits: &NoLimits,
+        params: &Providers::Mini,
+        pre_call: true,
+    };
+    let error = run_checked(&fixture, &setup, &services, &checks)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, RoutingError::NoDeployment(_)));
+    assert_eq!(services.calls.load(Ordering::SeqCst), 1);
+}
+
+struct Pinned {
+    affinity: PromptAffinity,
+    calls: AtomicUsize,
+}
+
+impl RouteServices for Pinned {
+    fn prompt_affinity(&self) -> Option<&PromptAffinity> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Some(&self.affinity)
+    }
 }
 
 pub(super) async fn strategy_unbuilt(strategy: RoutingStrategy, entry: &'static str) {
