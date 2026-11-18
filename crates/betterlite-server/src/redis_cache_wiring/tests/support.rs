@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
+use std::fmt;
 use std::io;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -27,8 +28,13 @@ use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings, Stat
 use chrono::{DateTime, FixedOffset};
 use redis::{ErrorKind, RedisError};
 use tokio::time::error::Elapsed;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::redis_cache_wiring::gate::{GateClock, PolicyGate};
+use crate::redis_cache_wiring::hooks::ServiceEventHooks;
 
 const RECOVERY_TIMEOUT: Duration = Duration::from_secs(10);
 const TIMEOUT_MIN_DURATION: Duration = Duration::from_secs(60);
@@ -211,6 +217,45 @@ pub(crate) fn reply_error(reply: &[u8]) -> RedisError {
         .expect_err("the reply is an error")
 }
 
+pub(crate) struct LogLine {
+    pub(crate) level: Level,
+    pub(crate) message: String,
+}
+
+struct MessageVisitor(String);
+
+impl Visit for MessageVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+struct LogCapture(Arc<Mutex<Vec<LogLine>>>);
+
+impl<S: Subscriber> Layer<S> for LogCapture {
+    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
+        let mut visitor = MessageVisitor(String::new());
+        event.record(&mut visitor);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(LogLine {
+                level: *event.metadata().level(),
+                message: visitor.0,
+            });
+    }
+}
+
+// A test installs this on its own thread and reads back the lines the code under test writes.
+pub(crate) fn capture_logs<F: FnOnce()>(run: F) -> Vec<LogLine> {
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(LogCapture(Arc::clone(&lines)));
+    with_default(subscriber, run);
+    lines.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
 pub(crate) struct RecordingSink {
     events: Mutex<Vec<LoggedServiceEvent>>,
     arrived: Condvar,
@@ -283,6 +328,13 @@ impl ServiceEventSink for BlockedSink {
             let _released = release.recv();
         }
         Ok(())
+    }
+}
+
+// The queue test sends more events than the queue holds, so the loop lives here, not in a test.
+pub(crate) fn emit_successes(hooks: &ServiceEventHooks, event: &ServiceEvent, count: usize) {
+    for _ in 0..count {
+        hooks.success(event);
     }
 }
 

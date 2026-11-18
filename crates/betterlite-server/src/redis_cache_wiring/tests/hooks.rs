@@ -9,10 +9,14 @@ use betterlite_logging::logging_service_events::types::ServiceType;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use chrono::TimeDelta;
+use tracing::Level;
 use uuid::Uuid;
 
-use super::super::hooks::{CallIdGenerator, ServiceEventHooks};
-use super::support::{BlockedSink, Broken, FailingSink, RecordingSink, SINK_WAIT, fixed_clock};
+use super::super::hooks::{CallIdGenerator, EVENTS_QUEUED, ServiceEventHooks};
+use super::support::{
+    BlockedSink, Broken, FailingSink, RecordingSink, SINK_WAIT, capture_logs, emit_successes,
+    fixed_clock,
+};
 
 fn call_ids() -> CallIdGenerator {
     Arc::new(|| Uuid::new_v4().to_string())
@@ -155,4 +159,29 @@ fn a_blocked_sink_does_not_delay_either_hook() {
         );
     });
     drop(hooks);
+}
+
+#[test]
+fn an_event_over_the_queue_capacity_is_dropped_with_a_warning() {
+    let (entered, entered_rx) = sync_channel(1);
+    let (release, release_rx) = sync_channel(1);
+    let sink = Arc::new(BlockedSink::new(entered, release_rx));
+    let hooks = ServiceEventHooks::start(sink, Arc::new(fixed_clock()), call_ids())
+        .expect("the service event worker starts");
+    hooks.success(&event());
+    entered_rx
+        .recv_timeout(SINK_WAIT)
+        .expect("the worker is parked in the sink");
+    let lines = capture_logs(|| emit_successes(&hooks, &event(), EVENTS_QUEUED + 1));
+    let _released = release.try_send(());
+    let warnings: Vec<&str> = lines
+        .iter()
+        .filter(|line| line.level == Level::WARN)
+        .map(|line| line.message.as_str())
+        .collect();
+    assert_eq!(
+        warnings,
+        ["the redis service event was dropped"],
+        "the one event over the queue's capacity is dropped with a warning"
+    );
 }

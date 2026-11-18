@@ -1,66 +1,24 @@
 #![cfg(test)]
 
-use std::fmt;
 use std::future;
 use std::io;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_router::redis_failure_policy::classify::FailureClass;
-use tracing::field::{Field, Visit};
-use tracing::subscriber::with_default;
-use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing::Level;
 
 use crate::redis_cache_wiring::gate::classify;
 
 use super::support::{
     Broken, FakeClock, bare_busy_loading_error, bare_cluster_down_error, bare_command_error,
     bare_connection_error, bare_master_down_error, bare_max_clients_error, bare_no_auth_error,
-    bare_timeout_error, busy_loading_error, chained_timeout_error, cluster_down_error,
-    command_error, connect_timeout_error, connection_error, decode_error,
+    bare_timeout_error, busy_loading_error, capture_logs, chained_timeout_error,
+    cluster_down_error, command_error, connect_timeout_error, connection_error, decode_error,
     described_connection_error, extension_error, gate_with, master_down_error, max_clients_error,
     no_auth_error, reply_error, settings, status, timeout_error,
 };
-
-struct LogLine {
-    level: Level,
-    message: String,
-}
-
-struct MessageVisitor(String);
-
-impl Visit for MessageVisitor {
-    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
-        if field.name() == "message" {
-            self.0 = format!("{value:?}");
-        }
-    }
-}
-
-struct LogCapture(Arc<Mutex<Vec<LogLine>>>);
-
-impl<S: Subscriber> Layer<S> for LogCapture {
-    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
-        let mut visitor = MessageVisitor(String::new());
-        event.record(&mut visitor);
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(LogLine {
-                level: *event.metadata().level(),
-                message: visitor.0,
-            });
-    }
-}
-
-fn capture_logs<F: FnOnce()>(run: F) -> Vec<LogLine> {
-    let lines = Arc::new(Mutex::new(Vec::new()));
-    let subscriber = tracing_subscriber::registry().with(LogCapture(Arc::clone(&lines)));
-    with_default(subscriber, run);
-    lines.lock().unwrap_or_else(PoisonError::into_inner).clone()
-}
 
 #[test]
 fn a_connection_error_counts_as_a_hard_failure() {

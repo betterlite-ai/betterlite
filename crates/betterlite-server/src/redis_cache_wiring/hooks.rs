@@ -17,7 +17,7 @@ use chrono::TimeDelta;
 pub type CallIdGenerator = Arc<dyn Fn() -> String + Send + Sync>;
 
 // A stalled sink may delay these events but never a cache call, because a full queue drops them.
-const EVENTS_QUEUED: usize = 1024;
+pub(crate) const EVENTS_QUEUED: usize = 1024;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceEventHooksError {
