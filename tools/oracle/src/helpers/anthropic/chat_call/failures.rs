@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 
+use betterlite_anthropic::chat_call::CallStyle;
 use betterlite_anthropic::chat_call::error::ChatCallError;
 use betterlite_anthropic::chat_call::transport::ClientKind;
 use betterlite_anthropic::headers::HeadersError;
@@ -58,13 +59,17 @@ fn failure_answer(run: &Run) -> HelperResult {
 
 // both cases compare the exception LiteLLM raises, so the answer is that error and not a value
 pub(super) fn failed_call(input: &Input) -> HelperResult {
-    let acompletion = input.acompletion;
-    let run = execute(input, acompletion, client_kind(acompletion))?;
+    let style = if input.acompletion {
+        CallStyle::Async
+    } else {
+        CallStyle::Sync
+    };
+    let run = execute(input, style, client_kind(input.acompletion))?;
     failure_answer(&run)
 }
 
 pub(super) fn chat_failure_projection(input: &Input) -> HelperResult {
-    let asynchronous = execute(input, true, ClientKind::Async)?;
+    let asynchronous = execute(input, CallStyle::Async, ClientKind::Async)?;
     if asynchronous.failure.is_none() {
         return Err("the call was expected to fail and did not").or_value_error();
     }

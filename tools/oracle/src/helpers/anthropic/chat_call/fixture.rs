@@ -12,8 +12,7 @@ use betterlite_anthropic::chat_call::transport::{BufferedReply, ChatTransport};
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::request::beta_headers::add_optional_betas;
 use betterlite_anthropic::response::error::ResponseError;
-use betterlite_anthropic::response::wire::ResponseEnvelope;
-use betterlite_anthropic::response::{Logging, RawResponse, ResponseRequest, transform_response};
+use betterlite_anthropic::response::{Logging, transform_response};
 use betterlite_anthropic::stream_decode::TransportChunk;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_core::api::anthropic_beta_config::matrix::{BetaMatrix, BetaNode};
@@ -100,39 +99,42 @@ impl FixtureTransport {
 impl StreamTransport for FixtureTransport {
     type Failure = FixtureFailure;
 
-    async fn post(
+    fn post(
         &self,
         post: StreamPost,
-    ) -> Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>> {
+    ) -> impl Future<Output = Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>>> + Send
+    {
         self.record(post);
         if let Some(failure) = self.failure() {
-            return Err(failure);
+            return ready(Err(failure));
         }
         let lines: Vec<String> = self.reply.lines.clone();
         let decoded: LineChunks<FixtureFailure> =
             stream::iter(lines.into_iter().map(|line| Ok(TransportChunk::Text(line)))).boxed();
-        Ok(StreamReply {
+        ready(Ok(StreamReply {
             status_code: self.reply.status_code,
             headers: self.reply.headers.clone(),
             lines: decoded,
-        })
+        }))
     }
 }
 
 impl ChatTransport for FixtureTransport {
-    async fn post_buffered(
+    fn post_buffered(
         &self,
         post: StreamPost,
-    ) -> Result<BufferedReply, PostFailure<FixtureFailure>> {
+    ) -> impl Future<Output = Result<BufferedReply, PostFailure<FixtureFailure>>> + Send {
         self.record(post);
-        match self.failure() {
-            Some(failure) => Err(failure),
-            None => Ok(BufferedReply {
-                status_code: self.reply.status_code,
-                headers: self.reply.headers.clone(),
-                body: self.reply.body.clone(),
-            }),
-        }
+        ready(self.failure().map_or_else(
+            || {
+                Ok(BufferedReply {
+                    status_code: self.reply.status_code,
+                    headers: self.reply.headers.clone(),
+                    body: self.reply.body.clone(),
+                })
+            },
+            Err,
+        ))
     }
 }
 
@@ -165,15 +167,34 @@ impl FixtureConfig {
     }
 
     fn transform(&self) -> Result<IndexMap<String, Json>, ConfigError> {
-        match &self.failure {
-            Some(message) => Err(Box::new(FixtureFailure {
-                message: message.clone(),
-            })),
-            None => Ok(self.body.clone()),
-        }
+        self.failure.as_ref().map_or_else(
+            || Ok(self.body.clone()),
+            |message| {
+                Err(Box::new(FixtureFailure {
+                    message: message.clone(),
+                }))
+            },
+        )
     }
 }
 
+// the beta callbacks read the message and tool lists off the body the transform produced
+fn prompt_list<'prompt>(
+    prompt: &'prompt IndexMap<String, PromptJson>,
+    name: &str,
+) -> &'prompt [PromptJson] {
+    match prompt.get(name) {
+        Some(PromptJson::List(items)) => items.as_slice(),
+        None
+        | Some(
+            PromptJson::Null
+            | PromptJson::Bool(_)
+            | PromptJson::Number(_)
+            | PromptJson::Text(_)
+            | PromptJson::Object(_),
+        ) => &[],
+    }
+}
 impl ChatConfig for FixtureConfig {
     fn transform_request(
         &self,
@@ -200,28 +221,8 @@ impl ChatConfig for FixtureConfig {
         let encoded = serde_json::to_string(&*body)?;
         let mut prompt: IndexMap<String, PromptJson> = serde_json::from_str(&encoded)?;
         // the provider config this fixture stands in for adds its own betas before the matrix filters them
-        let messages: &[PromptJson] = match prompt.get("messages") {
-            Some(PromptJson::List(items)) => items.as_slice(),
-            None
-            | Some(
-                PromptJson::Null
-                | PromptJson::Bool(_)
-                | PromptJson::Number(_)
-                | PromptJson::Text(_)
-                | PromptJson::Object(_),
-            ) => &[],
-        };
-        let tools: &[PromptJson] = match prompt.get("tools") {
-            Some(PromptJson::List(items)) => items.as_slice(),
-            None
-            | Some(
-                PromptJson::Null
-                | PromptJson::Bool(_)
-                | PromptJson::Number(_)
-                | PromptJson::Text(_)
-                | PromptJson::Object(_),
-            ) => &[],
-        };
+        let messages = prompt_list(&prompt, "messages");
+        let tools = prompt_list(&prompt, "tools");
         let mut native = AnthropicHeaders {
             values: headers.clone(),
         };

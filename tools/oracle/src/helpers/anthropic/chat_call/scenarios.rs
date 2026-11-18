@@ -7,7 +7,9 @@ use betterlite_anthropic::anthropic_http_stream::completion::WrappedStream;
 use betterlite_anthropic::anthropic_http_stream::transport::StreamPost;
 use betterlite_anthropic::chat_call::error::ChatCallError;
 use betterlite_anthropic::chat_call::transport::{ClientKind, SuppliedChatClient};
-use betterlite_anthropic::chat_call::{ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call};
+use betterlite_anthropic::chat_call::{
+    CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call,
+};
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_logging::logging_state::LoggingState;
@@ -34,7 +36,6 @@ use super::support::{
 const NOW: i64 = 1_767_225_600;
 const TIMEOUT: Duration = Duration::from_secs(1);
 const MAX_BYTES: usize = 0x0010_0000;
-
 type CallResult =
     Result<ChatOutcome<FixtureFailure, FixtureCounter>, ChatCallError<FixtureFailure, Infallible>>;
 type FixtureStream = WrappedStream<FixtureFailure, FixtureCounter>;
@@ -44,7 +45,6 @@ enum RunOutcome {
     Stream(Box<FixtureStream>),
     Failed,
 }
-
 pub(super) struct Run {
     outcome: RunOutcome,
     pub(super) failure: Option<FailureShape>,
@@ -53,23 +53,25 @@ pub(super) struct Run {
     pre_call: IndexMap<String, Json>,
     logger_calls: Vec<LoggerCall>,
 }
-
 impl Run {
     fn reply(&self) -> Result<&ResponseEnvelope, Box<HelperError>> {
         match &self.outcome {
             RunOutcome::Reply(envelope) => Ok(envelope),
-            _ => Err("the buffered call did not return a reply").or_value_error(),
+            RunOutcome::Stream(_) | RunOutcome::Failed => {
+                Err("the buffered call did not return a reply").or_value_error()
+            }
         }
     }
 
     fn stream(&self) -> Result<&FixtureStream, Box<HelperError>> {
         match &self.outcome {
             RunOutcome::Stream(wrapper) => Ok(wrapper),
-            _ => Err("the stream call did not open a stream").or_value_error(),
+            RunOutcome::Reply(_) | RunOutcome::Failed => {
+                Err("the stream call did not open a stream").or_value_error()
+            }
         }
     }
 }
-
 pub(super) const fn client_kind(acompletion: bool) -> ClientKind {
     if acompletion {
         ClientKind::Async
@@ -77,7 +79,6 @@ pub(super) const fn client_kind(acompletion: bool) -> ClientKind {
         ClientKind::Sync
     }
 }
-
 // the same fixture answers the reply and the trip, so the two stay one endpoint
 fn endpoint_of(input: &Input) -> Result<(FixtureReply, Trip), Box<HelperError>> {
     let headers = header_map(&input.upstream_headers)?;
@@ -100,12 +101,11 @@ fn endpoint_of(input: &Input) -> Result<(FixtureReply, Trip), Box<HelperError>> 
     };
     Ok((reply, trip))
 }
-
 fn call_of<'call>(
     input: &'call Input,
     settings: &'call AnthropicSettings,
     api_key: Option<&'call SecretString>,
-    acompletion: bool,
+    style: CallStyle,
 ) -> ChatCall<'call> {
     ChatCall {
         model: &input.model,
@@ -118,14 +118,13 @@ fn call_of<'call>(
         api_key,
         settings,
         timeout: TIMEOUT,
-        acompletion,
+        style,
         effort_used: false,
         now: NOW,
         disable_add_prefix_to_prompt: false,
         model_response: ResponseEnvelope::new("chatcmpl-1".to_owned()),
     }
 }
-
 fn run_of(
     result: CallResult,
     transport: &FixtureTransport,
@@ -158,10 +157,9 @@ fn run_of(
         logger_calls: take(&mut *logger.calls.lock().unwrap_or_else(PoisonError::into_inner)),
     }
 }
-
 pub(super) fn execute(
     input: &Input,
-    acompletion: bool,
+    style: CallStyle,
     kind: ClientKind,
 ) -> Result<Run, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
@@ -177,7 +175,7 @@ pub(super) fn execute(
         .api_key
         .as_ref()
         .map(|text| SecretString::from(text.clone()));
-    let call = call_of(input, &settings, api_key.as_ref(), acompletion);
+    let call = call_of(input, &settings, api_key.as_ref(), style);
     let deps = ChatDeps {
         config: &config,
         clients: ChatClients {
@@ -202,8 +200,8 @@ pub(super) fn execute(
 }
 
 fn both(input: &Input) -> Result<(Run, Run), Box<HelperError>> {
-    let asynchronous = execute(input, true, ClientKind::Async)?;
-    let synchronous = execute(input, false, ClientKind::Sync)?;
+    let asynchronous = execute(input, CallStyle::Async, ClientKind::Async)?;
+    let synchronous = execute(input, CallStyle::Sync, ClientKind::Sync)?;
     Ok((asynchronous, synchronous))
 }
 

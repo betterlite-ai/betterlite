@@ -23,7 +23,6 @@ pub(crate) enum Scenario {
     UnsupportedEmbedding,
     ChatFailureProjection,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -45,11 +44,8 @@ pub(crate) struct Input {
     pub(crate) upstream_lines: Vec<String>,
     pub(crate) failure_message: Option<String>,
     pub(crate) request_header_names: Vec<String>,
-    pub(crate) response_header_names: Vec<String>,
 }
-
 pub(crate) struct Op;
-
 impl Helper for Op {
     type Input = Input;
 

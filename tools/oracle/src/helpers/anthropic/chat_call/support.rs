@@ -7,7 +7,8 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::fixture::{FixtureCounter, FixtureFailure, LoggerCall};
+use super::fixture::runtime::FixtureCounter;
+use super::fixture::{FixtureFailure, LoggerCall};
 
 pub(crate) fn header_map(pairs: &IndexMap<String, String>) -> Result<HeaderMap, Box<HelperError>> {
     let mut headers = HeaderMap::new();
