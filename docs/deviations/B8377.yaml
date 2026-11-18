@@ -1,6 +1,6 @@
 task: B8377
 deviations:
-  - what: A general_settings value that is not an object is read as no coordination_redis block, where LiteLLM's `or` default keeps a truthy string or list and then raises AttributeError on `.get("coordination_redis")`; an object with an absent, null or non-object coordination_redis still behaves as in LiteLLM, missing target included.
-    why: The proxy config loader has already rejected a general_settings that is not a mapping before this function runs, so the read never turns a valid config into a silent difference; the wrong-typed block itself is still rejected with a load error, as docs/compatibility.md asks.
+  - what: A general_settings or litellm_settings value that is not an object reads as no coordination_redis block and as enable_redis_auth_cache false, where LiteLLM's `or` defaults keep a truthy string or list and then raise AttributeError on `.get(...)`; an object block with an absent, null or non-object coordination_redis still behaves as in LiteLLM, both startup errors included.
+    why: The proxy config loader has already rejected a non-mapping general_settings or litellm_settings before these functions run, so the read never turns a valid config into a silent difference; the wrong-typed coordination_redis block itself is still rejected with a load error, as docs/compatibility.md asks.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5870-L5884
 kept_bugs: []
