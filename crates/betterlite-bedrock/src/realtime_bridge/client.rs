@@ -65,12 +65,13 @@ where
             // The replay marker holds the message the transform never got to send
             if is_session_update {
                 self.scope.pending_session_update = Json::Text(message.clone());
-                // LiteLLM raises on a non-object session; the typed decoder would read a list as the defaults
-                if !matches!(parsed.get("session"), None | Some(Json::Object(_))) {
-                    return Err(ClientForwardError::Input(InputError::Malformed {
-                        source: serde_json::Error::custom("the session field must be an object"),
-                    }));
-                }
+            }
+            // LiteLLM raises on a non-object session; the typed decoder would read a list as the defaults
+            let object_session = matches!(parsed.get("session"), None | Some(Json::Object(_)));
+            if is_session_update && !object_session {
+                return Err(ClientForwardError::Input(InputError::Malformed {
+                    source: serde_json::Error::custom("the session field must be an object"),
+                }));
             }
             for frame in self.transformed(&message)? {
                 self.send_frame(&frame).await?;

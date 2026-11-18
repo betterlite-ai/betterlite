@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 
-use super::support::{self, ClientFixture, ScriptedClient, event_key, json};
+use super::support::{self, ClientFixture, ClientRun, ScriptedClient, event_key, json};
 use crate::realtime_bridge::end::ForwardEnd;
 use crate::realtime_bridge::error::ClientForwardError;
 use crate::realtime_input::error::InputError;
@@ -8,6 +8,8 @@ use crate::realtime_input::error::InputError;
 const SESSION_UPDATE: &str = r#"{"type": "session.update", "session": {}}"#;
 // A non-object session raises in LiteLLM's session_config.get, and the typed decoder would read an array as defaults
 const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":[]}"#;
+// LiteLLM declares the session temperature as a float, so the typed decoder rejects a string inside the transform
+const HOT_SESSION_UPDATE: &str = r#"{"type":"session.update","session":{"temperature":"hot"}}"#;
 const AUDIO_APPEND: &str = r#"{"type":"input_audio_buffer.append","audio":"AAAA"}"#;
 const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;
 const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
@@ -16,6 +18,7 @@ pub(super) async fn client_event_forwarding() {
     forwards_every_client_frame().await;
     ack_failure_stops_forwarding().await;
     malformed_session_keeps_the_replay_marker().await;
+    typed_transform_failure_keeps_the_replay_marker().await;
 }
 
 async fn forwards_every_client_frame() {
@@ -132,12 +135,14 @@ async fn ack_failure_stops_forwarding() {
     assert!(fixture.stream.closed());
 }
 
-// A session.update whose session is not an object is rejected before any frame is sent
-async fn malformed_session_keeps_the_replay_marker() {
+async fn run_initial(initial: &str) -> (ClientRun, ClientFixture) {
     let client = ScriptedClient::new(vec![Some(AUDIO_APPEND.to_owned()), None]);
-    let mut fixture = ClientFixture::new(Some(MALFORMED_SESSION_UPDATE.to_owned()), client);
+    let mut fixture = ClientFixture::new(Some(initial.to_owned()), client);
     let outcome = fixture.run().await;
+    (outcome, fixture)
+}
 
+fn assert_malformed_initial(outcome: &ClientRun, fixture: &ClientFixture, initial: &str) {
     assert!(matches!(
         outcome,
         Err(ClientForwardError::Input(InputError::Malformed { .. }))
@@ -146,11 +151,23 @@ async fn malformed_session_keeps_the_replay_marker() {
     assert!(fixture.stream.closed());
     assert_eq!(
         fixture.scope.pending_session_update,
-        Json::Text(MALFORMED_SESSION_UPDATE.to_owned())
+        Json::Text(initial.to_owned())
     );
     assert_eq!(fixture.scope.session_committed, Json::Null);
     assert!(fixture.client.sent_events().is_empty());
     assert!(fixture.client.closes().is_empty());
+}
+
+// A session.update whose session is not an object is rejected before any frame is sent
+async fn malformed_session_keeps_the_replay_marker() {
+    let (outcome, fixture) = run_initial(MALFORMED_SESSION_UPDATE).await;
+    assert_malformed_initial(&outcome, &fixture, MALFORMED_SESSION_UPDATE);
+}
+
+// A session the typed transform rejects ends the pump through its error return with the marker still pending
+async fn typed_transform_failure_keeps_the_replay_marker() {
+    let (outcome, fixture) = run_initial(HOT_SESSION_UPDATE).await;
+    assert_malformed_initial(&outcome, &fixture, HOT_SESSION_UPDATE);
 }
 
 fn payload_text<'frame>(frame: &'frame Json, event: &str, field: &str) -> Option<&'frame str> {
