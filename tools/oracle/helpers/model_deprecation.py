@@ -119,7 +119,7 @@ def run(input_value: Input) -> JsonValue:
         llm_router = router
     original_datetime = deprecation.datetime
     FrozenDatetime.instant = FrozenDatetime.fromisoformat(input_value["now"])
-    deprecation.datetime = FrozenDatetime
+    object.__setattr__(deprecation, "datetime", FrozenDatetime)
     litellm.model_cost = cost_entries(input_value["model_cost"])
     try:
         snapshot = deprecation.collect_model_deprecations(
@@ -133,5 +133,5 @@ def run(input_value: Input) -> JsonValue:
             "message": message,
         }
     finally:
-        deprecation.datetime = original_datetime
+        object.__setattr__(deprecation, "datetime", original_datetime)
         litellm.model_cost = EMPTY_COST
