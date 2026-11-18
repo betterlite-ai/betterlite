@@ -11,9 +11,12 @@ pub struct Raw {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Settings {
+pub struct CredentialListSettings {
     pub credentials: Vec<CredentialItem>,
 }
+
+// the settings are boxed so a new section adds one pointer to Sections, which sits in clippy's 16384-byte large_futures limit for a db-admin future
+pub type Settings = Box<CredentialListSettings>;
 
 impl Section for Raw {
     type Settings = Settings;
@@ -22,8 +25,8 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings {
+        Ok(Box::new(CredentialListSettings {
             credentials: self.credential_list.unwrap_or_default(),
-        })
+        }))
     }
 }
