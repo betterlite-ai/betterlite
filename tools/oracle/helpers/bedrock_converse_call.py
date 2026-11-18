@@ -5,15 +5,15 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Protocol, TypedDict, Unpack, runtime_checkable
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
-from litellm.exceptions import APIError
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.bedrock.chat.converse_handler import BedrockConverseLLM
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import ModelResponse, ModelResponseStream
+from openai import APIError
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from pydantic import JsonValue as Json
 from typing_extensions import override
@@ -64,6 +64,10 @@ class Bound(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     sync: SyncCall
     asynchronous: AsyncCall
+
+
+class Failure(BaseModel):
+    status_code: int
 
 
 class Message(TypedDict):
@@ -121,7 +125,10 @@ class Fixture:
             model_response=ModelResponse(id="fixture", created=0),
             encoding=None,
             logging_obj=MagicMock(
-                model_call_details=details, litellm_params=params, stream_options=None, messages=messages
+                model_call_details=details,
+                litellm_params=params,
+                stream_options=None,
+                messages=messages,
             ),
             optional_params=dict(self.input["params"]),
             acompletion=self.input["asynchronous"],
@@ -132,15 +139,22 @@ class Fixture:
             api_key=self.input["bearer"],
         )
 
-    async def execute(self) -> dict[str, Json]:
+    async def execute(self, environment: dict[str, str]) -> dict[str, Json]:
         transport = httpx.MockTransport(self.respond)
-        async with AsyncExitStack() as stack:
-            if self.input["asynchronous"]:
-                handler = AsyncHTTPHandler(transport=transport)
-                await stack.enter_async_context(handler.client)
-                return await observe(self, handler)
-            client = stack.enter_context(httpx.Client(transport=transport))
-            return await observe(self, HTTPHandler(client=client))
+        saved = os.environ.copy()
+        try:
+            os.environ.clear()
+            os.environ.update(environment)
+            async with AsyncExitStack() as stack:
+                if self.input["asynchronous"]:
+                    handler = AsyncHTTPHandler(transport=transport)
+                    await stack.enter_async_context(handler.client)
+                    return await observe(self, handler)
+                client = stack.enter_context(httpx.Client(transport=transport))
+                return await observe(self, HTTPHandler(client=client))
+        finally:
+            os.environ.clear()
+            os.environ.update(saved)
 
 
 class Body(httpx.SyncByteStream, httpx.AsyncByteStream):
@@ -215,7 +229,7 @@ async def observe(fixture: Fixture, client: HTTPHandler | AsyncHTTPHandler) -> d
     except BedrockError as error:
         status = error.status_code
     except APIError as error:
-        status = error.status_code
+        status = Failure.model_validate(error, from_attributes=True).status_code
     headers: dict[str, Json] = {
         name.lower(): ("sigv4" if value.startswith("AWS4-HMAC-SHA256") else value)
         for name, value in fixture.headers.items()
@@ -243,5 +257,4 @@ def run(input_value: Input) -> Json:
         "LITELLM_RUST": "false",
         "LITELLM_LOCAL_MODEL_COST_MAP": "true",
     }
-    with patch.dict(os.environ, environment, clear=True):
-        return asyncio.run(Fixture(input_value).execute())
+    return asyncio.run(Fixture(input_value).execute(environment))
