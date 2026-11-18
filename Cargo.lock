@@ -3415,6 +3415,7 @@ name = "betterlite-oracle-provider"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-smithy-async",
  "betterlite-anthropic",
  "betterlite-bedrock",
  "betterlite-config",
