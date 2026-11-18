@@ -1,0 +1,15 @@
+kind: helper
+name: policy-response-retrieval-registry-not-initialized
+call:
+  b3269:
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
+    auth: {team_alias: null, key_alias: null}
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies: null
+    attachments:
+      - {policy: p1, scope: "*"}
+env: {}
+compare: {ignore: []}

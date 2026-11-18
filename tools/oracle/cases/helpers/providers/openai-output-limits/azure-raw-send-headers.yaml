@@ -1,0 +1,14 @@
+kind: helper
+name: output-limits-azure-raw-send-headers
+call:
+  openai_output_limits:
+    azure:
+      asynchronous: false
+      data: {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hello world"}]}
+      timeout: 2.5
+      outcome:
+        kind: reply
+        headers: {"x-ms-request-id": "azure-req-1"}
+        body: {"id": "c1", "object": "chat.completion", "model": "gpt-3.5-turbo", "choices": [{"index": 0, "message": {"role": "assistant", "content": "up"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 8, "completion_tokens": 1, "total_tokens": 9}}
+env: {}
+compare: {ignore: []}

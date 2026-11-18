@@ -1,7 +1,7 @@
 id: B027
 title: Anthropic provider composition
 description: >-
-  Fill B010's Provider::Anthropic stub and compose all native Anthropic operations and exported typed records. Consume the
+  Leave B010's impl Adapter for Anthropic at its default stub (only const NAME) and compose all native Anthropic operations through one closed anthropic_dispatch entry, the shape of crates/betterlite-provider/src/model_hub_dispatch.rs L170-L182 (a dispatch returning LocalBoxFuture with injected deps and call logging, driven by the oracle helper), and exported typed records. Consume the
   already selected anthropic_text or anthropic dispatch branch; expose file/batch/count methods for later public
   API tasks. Keep native Messages public endpoint translation in B081 and cache prediction in B3120 to B3123. Exercise installed
   operations through the closed dispatcher and existing text/chat bridges.
@@ -20,10 +20,7 @@ description: >-
   ANTHROPIC_API_KEY.
 
 
-  Provider composition changes existing chat dispatch, not route registration: add the HTTP dispatch case through
-  the booted proxy for POST /v1/chat/completions and /chat/completions with the source provider prefix. Assert upstream
-  request, auth, response status, error type/param/code and response headers. Keep the existing router as the sole
-  route owner; pure helper cases exercise the other typed provider operations without calling FastAPI globals.
+  Provider composition installs no route and no gateway path; keep the existing router as the sole route owner. Pure helper cases exercise the other typed provider operations without calling FastAPI globals.
 
 
   Named case contracts: anthropic_chat_dispatch: Use truthy explicit api_key, litellm.anthropic_key, litellm.api_key,
@@ -34,8 +31,7 @@ description: >-
   and B196 encoding. It computes caller-or-global custom_prompt_dict but never forwards it to that call; no owned
   post_call or exception catch is added. anthropic_count_dispatch: Install B585 count_tokens and retain its model,
   system/tool/image translation and input_tokens result; use its configured transport and key policy rather than
-  invoking chat dispatch. anthropic_batch_file_dispatch: Install B586 batch create/retrieve/cancel/list/results
-  and B587/B588 upload/retrieve/list/delete/content operations through the closed operation enum. Preserve beta
+  invoking chat dispatch. anthropic_batch_file_dispatch: Install B587's batch retrieve and results and its create outcome (NotImplemented, crates/betterlite-anthropic/src/batches/config.rs L110-L116), and the B587/B588 file upload/retrieve/list/delete/content operations, through the closed operation enum. The enum has no batch cancel or list for Anthropic, since LiteLLM's batch router rejects both with a 400 before any provider code (litellm/batches/main.py L869-L883 and L1071-L1081); that rejection belongs to the batch API owner, not this task. Preserve beta
   headers, multipart boundaries, pagination and result streams from those leaves; public API routes remain B081
   and their file/batch family owners. messages_default_base: For messages choose explicit base, litellm.api_base,
   ANTHROPIC_API_BASE, ANTHROPIC_BASE_URL, then https://api.anthropic.com/v1/messages. Empty values fall through.
@@ -81,10 +77,10 @@ description: >-
 
   Write rstest function anthropic_dispatch_cases in betterlite-provider with these exact named cases (one per oracle
   file): anthropic_chat_dispatch, anthropic_legacy_dispatch, anthropic_count_dispatch, anthropic_batch_file_dispatch,
-  messages_default_base, legacy_default_base, url_suffix_enabled, url_suffix_disabled, anthropic_provider_dispatch_http,
+  messages_default_base, legacy_default_base, url_suffix_enabled, url_suffix_disabled,
   provider_config_selection, config_url_selector. Each case exercises its named outcome independently; use stable
-  supplied clocks/IDs and fixture transports. HTTP cases use the booted proxy and assert both client response and
-  captured upstream request. Existing API tasks retain route registration; this task must not register a duplicate
+  supplied clocks/IDs and fixture transports.
+  Existing API tasks retain route registration; this task must not register a duplicate
   axum route.
 
 
@@ -109,6 +105,11 @@ description: >-
   provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
+  - "tools/oracle"
+  - "crates/betterlite-provider/src/provider/tests.rs"
+  - "crates/betterlite-provider/src/provider.rs"
+  - "crates/betterlite-anthropic/src/request.rs"
+  - "crates/betterlite-anthropic/src/chat_call.rs"
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/anthropic_dispatch.rs
   - crates/betterlite-provider/src/anthropic_dispatch/**
@@ -121,7 +122,6 @@ scope:
   - tools/oracle/helpers/anthropic_provider/**
   - tools/oracle/cases/helpers/providers/anthropic-provider/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_provider*
-  - tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2827-L2946
@@ -189,10 +189,6 @@ dod:
   - case-url-suffix-disabled
   - oracle
   - helper-python
-- text: 'anthropic_provider dispatch http: the production result, omission or failure matches tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml.'
-  proof:
-  - case-anthropic-provider-dispatch-http
-  - oracle
 - text: New anthropic_provider seeds parse as the intended call variant and replay through the shared production
     parser.
   proof:
@@ -262,9 +258,6 @@ checks:
       LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping /v1/messages suffix or the corresponding /v1/complete
       suffix.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_url_suffix_disabled$/)'
-  - id: case-anthropic-provider-dispatch-http
-    why: the production result, omission or failure matches tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml.
-    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_http$/)'
   - id: helper-python
     why: The operation adapter is absent, unchanged or fails strict Python checks.
     run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/anthropic_provider.py tools/oracle/helpers/anthropic_provider)" && uv run
@@ -302,11 +295,11 @@ oracle_cases:
 - tools/oracle/cases/helpers/providers/anthropic-provider/legacy-default-base.yaml
 - tools/oracle/cases/helpers/providers/anthropic-provider/url-suffix-enabled.yaml
 - tools/oracle/cases/helpers/providers/anthropic-provider/url-suffix-disabled.yaml
-- tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
 - tools/oracle/cases/helpers/providers/anthropic-provider/provider-config-selection.yaml
 - tools/oracle/cases/helpers/providers/anthropic-provider/config-url-selector.yaml
 deviations: []
 out_of_scope:
+- The gateway path for Anthropic chat (Adapter prepare, execute and decode, and the POST /v1/chat/completions dispatch case) waits for the provider seam decision on local dispatch futures, open with Max since 2026-11-18.
 - B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.
   B157-B166 own Python SDK facades, callable hooks and SDK module globals.
 - Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
@@ -425,12 +418,13 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
   L1069-L1080 belong to B500.'
 pitfalls:
+- Adapter::execute must return a Send future, and the composed Anthropic calls (B584 chat_call, B577 prepare, B580 transform_response) are local futures that hold PrePostEnv, whose LogSink has no Send bound. So this task wires nothing into the gateway. The impl Adapter for Anthropic keeps only const NAME, B584, B577 and B580 stay unchanged, and the closed anthropic_dispatch entry carries the composition the way model_hub_dispatch does (decision 2026-11-18).
 - Request media is fetched as LiteLLM fetches it (decision 2026-10-31), so build B5083's Fetcher once from the route's UserUrlFetcher, B173's shared client and MAX_IMAGE_URL_DOWNLOAD_SIZE_MB and pass it to B577's request preparation (PromptDeps), never a refusing fetcher.
 - 'The oracle helper for this task is pre-registered as anthropic_provider in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/anthropic_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The calculated caller custom_prompt_dict is not the value passed to Anthropic chat; the source passes the global
   map.
 - The batch-results selector tests substrings anywhere in the URL, not an endpoint suffix.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2000
   max_new_expects: 0
 review_level: security

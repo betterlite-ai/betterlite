@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "global_statistics": [
+    {"tier": 1, "successes": 8.0, "observations": 10.0},
+    {"tier": 1, "successes": 6.0, "observations": 10.0},
+    {"tier": 3, "successes": 4.0, "observations": 10.0},
+    {"tier": 4, "successes": 2.0, "observations": 10.0}
+  ]
+}

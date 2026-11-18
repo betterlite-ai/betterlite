@@ -1,3 +1,7 @@
+use std::convert::Infallible;
+use std::io::Error as IoError;
+
+use betterlite_error::error::{ErrorClass, ErrorContext};
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use http::header::HeaderValue;
@@ -5,7 +9,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 
 use crate::chat_call::CallStyle;
-use crate::chat_call::error::ChatCallError;
+use crate::chat_call::error::{ChatCallError, ClassifiedConfigError};
 use crate::chat_call::transport::ClientKind;
 use crate::headers::request::{SKILLS_BETA, TOOL_SEARCH_BETA};
 
@@ -538,4 +542,35 @@ fn transport_failures() {
     assert!(format!("{}", unaddressed.error()).contains("the api_base is not a URL"));
     assert_eq!(unaddressed.posts_supplied, 0);
     assert_eq!(unaddressed.posts_pooled, 0);
+}
+
+// A config refusal that raised a typed LiteLLM error keeps its class on the call error; a plain failure has none
+#[test]
+fn config_refusal_keeps_its_typed_metadata() {
+    let class = ErrorClass::UnsupportedParams(Box::new(ErrorContext {
+        message: "speed is not supported".to_owned(),
+        model: None,
+        provider: Some("azure_ai".to_owned()),
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }));
+    let refused: ChatCallError<Infallible, Infallible> = ChatCallError::Prepare {
+        source: Box::new(ClassifiedConfigError {
+            source: Box::new(IoError::other("speed is not supported")),
+            class,
+        }),
+    };
+    let metadata = refused.metadata().unwrap();
+    assert_eq!(metadata.status_code, 400);
+    assert_eq!(metadata.provider.as_deref(), Some("azure_ai"));
+    assert_eq!(refused.status_code(), Some(400));
+
+    let plain: ChatCallError<Infallible, Infallible> = ChatCallError::Prepare {
+        source: Box::new(IoError::other("the config failed")),
+    };
+    assert!(plain.metadata().is_none());
+    assert_eq!(plain.status_code(), None);
 }
