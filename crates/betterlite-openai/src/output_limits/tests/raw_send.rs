@@ -281,6 +281,24 @@ pub(super) async fn azure_async_timeout() {
     );
 }
 
+// the documented deviation: an integer-valued timeout prints without Python's trailing .0
+#[tokio::test]
+async fn integer_timeout_value_prints_without_a_trailing_zero() {
+    let data = fields(&[("model", json!("gpt-3.5-turbo")), ("messages", json!([]))]);
+    let recorder = Recorder::new(0);
+    TICKS.store(0, Ordering::SeqCst);
+    let background = ScriptedTransport::from(Err(RawChatError::Timeout {
+        message: String::from("Request timed out."),
+    }));
+    let failure = send_raw_chat_async(&background, &data, 2.0, ticking_now, &recovery(&recorder))
+        .await
+        .expect_err("the timeout travels on");
+    assert_eq!(
+        failure.to_string(),
+        "Request timed out. - timeout value=2, time taken=1.25 seconds"
+    );
+}
+
 pub(super) async fn unrelated_error() {
     let data = fields(&[("model", json!("gpt-3.5-turbo")), ("messages", json!([]))]);
     let recorder = Recorder::new(7);
