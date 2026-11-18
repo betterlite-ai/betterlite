@@ -190,9 +190,8 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
 pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
     let prepared = release_fixture::prepare(path, text)?;
-    let case: Case = load::parse_case_text(path, prepared.text())?;
+    let mut case: Case = load::parse_case_text(path, prepared.text())?;
     validate(path, &case)?;
-    let mut case = case;
     if let Some(fixture) = prepared.fixture() {
         fixture.apply(&mut case);
     }
