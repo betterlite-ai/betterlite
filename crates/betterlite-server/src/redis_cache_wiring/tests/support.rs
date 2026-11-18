@@ -4,8 +4,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
 use std::io;
 use std::net::TcpListener;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{Receiver, SyncSender};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_logging::logging_service_events::sink::{ServiceEventError, ServiceEventSink};
@@ -32,6 +33,7 @@ use crate::redis_cache_wiring::gate::{GateClock, PolicyGate};
 const RECOVERY_TIMEOUT: Duration = Duration::from_secs(10);
 const TIMEOUT_MIN_DURATION: Duration = Duration::from_secs(60);
 const TIMEOUT_LOG_INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const SINK_WAIT: Duration = Duration::from_secs(10);
 
 pub(crate) struct FakeClock {
     millis: AtomicU64,
@@ -206,40 +208,76 @@ pub(crate) fn reply_error(reply: &[u8]) -> RedisError {
 
 pub(crate) struct RecordingSink {
     events: Mutex<Vec<LoggedServiceEvent>>,
+    arrived: Condvar,
 }
 
 impl RecordingSink {
     pub(crate) fn new() -> Self {
         Self {
             events: Mutex::new(Vec::new()),
+            arrived: Condvar::new(),
         }
     }
 
-    pub(crate) fn events(&self) -> Vec<LoggedServiceEvent> {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+    // the worker thread delivers asynchronously, so a test waits for the events instead of reading once
+    pub(crate) fn wait_for_events(&self, count: usize) -> Vec<LoggedServiceEvent> {
+        let guard = self.events.lock().unwrap_or_else(PoisonError::into_inner);
+        let (events, _timed_out) = self
+            .arrived
+            .wait_timeout_while(guard, SINK_WAIT, |pending| pending.len() < count)
+            .unwrap_or_else(PoisonError::into_inner);
+        events.clone()
     }
 }
 
 impl ServiceEventSink for RecordingSink {
     fn emit(&self, event: &LoggedServiceEvent) -> Result<(), ServiceEventError> {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(event.clone());
+        let mut events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
+        events.push(event.clone());
+        drop(events);
+        self.arrived.notify_all();
         Ok(())
     }
 }
 
-pub(crate) struct FailingSink;
+pub(crate) struct FailingSink {
+    pub(crate) calls: SyncSender<()>,
+}
 
 impl ServiceEventSink for FailingSink {
     fn emit(&self, _event: &LoggedServiceEvent) -> Result<(), ServiceEventError> {
+        let _signalled = self.calls.try_send(());
         Err(ServiceEventError::Rejected {
             message: "the sink is down".to_owned(),
         })
+    }
+}
+
+// The first emit blocks until the test releases it, so a hook that called the sink inline would hang too.
+pub(crate) struct BlockedSink {
+    entered: SyncSender<()>,
+    release: Mutex<Receiver<()>>,
+    first: AtomicBool,
+}
+
+impl BlockedSink {
+    pub(crate) fn new(entered: SyncSender<()>, release: Receiver<()>) -> Self {
+        Self {
+            entered,
+            release: Mutex::new(release),
+            first: AtomicBool::new(false),
+        }
+    }
+}
+
+impl ServiceEventSink for BlockedSink {
+    fn emit(&self, _event: &LoggedServiceEvent) -> Result<(), ServiceEventError> {
+        if !self.first.swap(true, Ordering::SeqCst) {
+            let _announced = self.entered.try_send(());
+            let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
+            let _released = release.recv();
+        }
+        Ok(())
     }
 }
 

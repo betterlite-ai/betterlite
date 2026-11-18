@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
 use betterlite_redis::redis_live_client::LiveClientFactory;

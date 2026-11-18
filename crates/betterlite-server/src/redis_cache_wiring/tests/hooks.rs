@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
+use std::thread;
 use std::time::Duration;
 
 use betterlite_logging::logging_service_events::types::ServiceType;
@@ -10,18 +12,15 @@ use chrono::TimeDelta;
 use uuid::Uuid;
 
 use super::super::hooks::{CallIdGenerator, ServiceEventHooks};
-use super::support::{Broken, FailingSink, RecordingSink, fixed_clock};
+use super::support::{BlockedSink, Broken, FailingSink, RecordingSink, SINK_WAIT, fixed_clock};
 
 fn call_ids() -> CallIdGenerator {
     Arc::new(|| Uuid::new_v4().to_string())
 }
 
 fn hooks(sink: Arc<RecordingSink>) -> ServiceEventHooks {
-    ServiceEventHooks {
-        sink,
-        clock: Arc::new(fixed_clock()),
-        call_ids: call_ids(),
-    }
+    ServiceEventHooks::start(sink, Arc::new(fixed_clock()), call_ids())
+        .expect("the service event worker starts")
 }
 
 fn event() -> ServiceEvent {
@@ -37,7 +36,7 @@ fn success_sends_a_redis_event() {
     let sink = Arc::new(RecordingSink::new());
     let clock = fixed_clock();
     hooks(Arc::clone(&sink)).success(&event());
-    let events = sink.events();
+    let events = sink.wait_for_events(1);
     assert_eq!(events.len(), 1);
     let logged = &events[0];
     assert_eq!(logged.payload.service, ServiceType::Redis);
@@ -61,20 +60,21 @@ fn every_event_gets_its_own_call_id() {
     let hooks = hooks(Arc::clone(&sink));
     hooks.success(&event());
     hooks.success(&event());
-    let events = sink.events();
+    let events = sink.wait_for_events(2);
     assert_ne!(events[0].call_id, events[1].call_id);
 }
 
 #[test]
 fn the_call_id_comes_from_the_injected_generator() {
     let sink = Arc::new(RecordingSink::new());
-    let hooks = ServiceEventHooks {
-        sink: Arc::clone(&sink),
-        clock: Arc::new(fixed_clock()),
-        call_ids: Arc::new(|| "call-from-the-test".to_owned()),
-    };
+    let hooks = ServiceEventHooks::start(
+        Arc::clone(&sink),
+        Arc::new(fixed_clock()),
+        Arc::new(|| "call-from-the-test".to_owned()),
+    )
+    .expect("the service event worker starts");
     hooks.success(&event());
-    let events = sink.events();
+    let events = sink.wait_for_events(1);
     assert_eq!(events[0].call_id, "call-from-the-test");
 }
 
@@ -82,7 +82,7 @@ fn the_call_id_comes_from_the_injected_generator() {
 fn failure_sends_the_error_text() {
     let sink = Arc::new(RecordingSink::new());
     hooks(Arc::clone(&sink)).failure(&event(), &Broken);
-    let events = sink.events();
+    let events = sink.wait_for_events(1);
     assert_eq!(events.len(), 1);
     let logged = &events[0];
     assert!(logged.payload.is_error);
@@ -96,16 +96,63 @@ fn the_hooks_need_no_runtime() {
     // a plain test thread has no tokio runtime, the way a sync cache method calls these
     let sink = Arc::new(RecordingSink::new());
     hooks(Arc::clone(&sink)).success(&event());
-    assert_eq!(sink.events().len(), 1);
+    assert_eq!(sink.wait_for_events(1).len(), 1);
 }
 
 #[test]
 fn a_failing_sink_does_not_panic() {
-    let hooks = ServiceEventHooks {
-        sink: Arc::new(FailingSink),
-        clock: Arc::new(fixed_clock()),
-        call_ids: call_ids(),
-    };
+    let (calls, arrived) = sync_channel(2);
+    let hooks = ServiceEventHooks::start(
+        Arc::new(FailingSink { calls }),
+        Arc::new(fixed_clock()),
+        call_ids(),
+    )
+    .expect("the service event worker starts");
     hooks.success(&event());
     hooks.failure(&event(), &Broken);
+    arrived
+        .recv_timeout(SINK_WAIT)
+        .expect("the first event reached the failing sink");
+    arrived
+        .recv_timeout(SINK_WAIT)
+        .expect("the second event reached the failing sink");
+}
+
+#[test]
+fn a_blocked_sink_does_not_delay_either_hook() {
+    let (entered, entered_rx) = sync_channel(1);
+    let (release, release_rx) = sync_channel(1);
+    let sink = Arc::new(BlockedSink::new(entered, release_rx));
+    let hooks = Arc::new(
+        ServiceEventHooks::start(sink, Arc::new(fixed_clock()), call_ids())
+            .expect("the service event worker starts"),
+    );
+    let (success_done, success_done_rx) = sync_channel(1);
+    let (failure_done, failure_done_rx) = sync_channel(1);
+    thread::scope(|scope| {
+        let success_hooks = Arc::clone(&hooks);
+        scope.spawn(move || {
+            success_hooks.success(&event());
+            let _signalled = success_done.try_send(());
+        });
+        let announced = entered_rx.recv_timeout(SINK_WAIT).is_ok();
+        let success_returned = success_done_rx.recv_timeout(SINK_WAIT).is_ok();
+        let failure_hooks = Arc::clone(&hooks);
+        scope.spawn(move || {
+            failure_hooks.failure(&event(), &Broken);
+            let _signalled = failure_done.try_send(());
+        });
+        let failure_returned = failure_done_rx.recv_timeout(SINK_WAIT).is_ok();
+        let _released = release.try_send(());
+        assert!(announced, "the worker thread reached the blocked sink");
+        assert!(
+            success_returned,
+            "the success hook returns while the sink blocks"
+        );
+        assert!(
+            failure_returned,
+            "a plain thread's failure hook returns while the sink blocks"
+        );
+    });
+    drop(hooks);
 }
