@@ -1,3 +1,5 @@
+mod events;
+
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -184,51 +186,6 @@ impl ModelRateLimits {
             }
         }
         Ok(())
-    }
-
-    // async_log_success_event: a response that reported both a model name and tokens counts its tpm usage
-    pub async fn async_log_success_event(&self, usage: &SuccessUsage<'_>) {
-        if let Some(key) = self.success_key(usage) {
-            let _counted = self
-                .cache
-                .increment(&key, usage.total_tokens, RATE_LIMIT_TTL_SECONDS)
-                .await;
-        }
-    }
-
-    // log_success_event: the blocking twin counts the in-memory tier only
-    pub fn log_success_event(&self, usage: &SuccessUsage<'_>) {
-        if let Some(key) = self.success_key(usage) {
-            let _counted =
-                self.cache
-                    .increment_local(&key, usage.total_tokens, RATE_LIMIT_TTL_SECONDS);
-        }
-    }
-
-    // async_log_failure_event: never fail the primary logging pipeline over an io-token refund error
-    pub async fn async_log_failure_event(&self, request: &mut RequestBody) {
-        if let Some(hook) = &self.io {
-            hook.async_refund(request).await;
-        }
-    }
-
-    // log_failure_event: the blocking twin
-    pub fn log_failure_event(&self, request: &mut RequestBody) {
-        if let Some(hook) = &self.io {
-            hook.refund(request);
-        }
-    }
-
-    fn success_key(&self, usage: &SuccessUsage<'_>) -> Option<String> {
-        let model_id = usage.model_id?;
-        let model = usage.model.filter(|name| !name.is_empty())?;
-        if usage.total_tokens == 0 {
-            return None;
-        }
-        Some(format!(
-            "{model_id}:{model}:tpm:{}",
-            minute_label((self.clock)())
-        ))
     }
 
     async fn async_check_limits(
