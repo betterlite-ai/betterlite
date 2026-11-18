@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 use super::RecordingCost;
 
 const DETAIL_KEYS: [&str; 3] = ["model", "custom_llm_provider", "response_cost"];
+const USAGE_KEYS: [&str; 3] = ["prompt_tokens", "completion_tokens", "total_tokens"];
 
 pub(super) fn outcome_view(
     outcome: &HandlerOutcome,
@@ -70,14 +71,17 @@ fn usage_view(usage: Option<&Value>) -> Value {
     let Some(Value::Object(fields)) = usage else {
         return Value::Null;
     };
-    let Some(prompt) = fields.get("prompt_tokens") else {
+    if !fields.contains_key("prompt_tokens") {
         return Value::Null;
-    };
-    json!({
-        "prompt_tokens": prompt,
-        "completion_tokens": fields.get("completion_tokens").cloned().unwrap_or(Value::Null),
-        "total_tokens": fields.get("total_tokens").cloned().unwrap_or(Value::Null),
-    })
+    }
+    let counts: Map<String, Value> = USAGE_KEYS
+        .iter()
+        .map(|key| {
+            let value = fields.get(*key).cloned().unwrap_or(Value::Null);
+            ((*key).to_owned(), value)
+        })
+        .collect();
+    Value::Object(counts)
 }
 
 fn entry_view(fields: &Extra) -> Result<Value, Box<HelperError>> {
@@ -104,13 +108,16 @@ fn logging_view(logging_obj: &StreamLoggingObject) -> Result<Value, Box<HelperEr
             "the logging object holds no state",
         ));
     };
-    Ok(json!({
-        "model": logged.model,
-        "custom_llm_provider": logged.provider,
-        "call_type": logged.call_type,
-        "details": entry_view(&logged.details)?,
-        "optional": json!({ "vertex_location": optional_view(&logged.optional) }),
-    }))
+    let mut view = Map::new();
+    view.insert("model".to_owned(), json!(logged.model));
+    view.insert("custom_llm_provider".to_owned(), json!(logged.provider));
+    view.insert("call_type".to_owned(), json!(logged.call_type));
+    view.insert("details".to_owned(), entry_view(&logged.details)?);
+    view.insert(
+        "optional".to_owned(),
+        json!({ "vertex_location": optional_view(&logged.optional) }),
+    );
+    Ok(Value::Object(view))
 }
 
 fn optional_view(optional: &IndexMap<String, Json>) -> Value {

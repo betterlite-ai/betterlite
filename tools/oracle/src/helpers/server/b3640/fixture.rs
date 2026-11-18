@@ -14,7 +14,7 @@ use betterlite_logging::passthrough_stream_logging::object::{
 };
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_redact::secret::Redactor;
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 
 struct NoopDispatch;
@@ -22,10 +22,6 @@ struct NoopDispatch;
 #[async_trait]
 impl StreamSuccessDispatch for NoopDispatch {
     async fn dispatch_success(&self, _call: StreamSuccessCall<'_>) {}
-}
-
-pub(super) fn timestamp() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()
 }
 
 pub(super) fn logging_object() -> Result<StreamLoggingObject, Box<HelperError>> {
@@ -56,7 +52,7 @@ fn logging_init() -> Result<LoggingInit, Box<HelperError>> {
     Ok(LoggingInit {
         model: "fixture-model".to_owned(),
         call_type: "pass_through_endpoint".to_owned(),
-        start_time: timestamp()?,
+        start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?,
         litellm_call_id: "call-1".to_owned(),
         function_id: "function-1".to_owned(),
         messages: None,

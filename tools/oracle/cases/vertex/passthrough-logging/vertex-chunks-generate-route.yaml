@@ -3,8 +3,11 @@ name: vertex-chunks-generate-route
 call:
   b3640:
     "operation": "vertex_chunks"
+    body: {}
+    request_body: null
     url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/gemini-2.0-flash:generateContent
     lines:
       - 'data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"hi"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}'
+    model: null
 env: {}
 compare: {ignore: []}

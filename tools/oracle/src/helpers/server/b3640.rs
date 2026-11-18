@@ -21,6 +21,7 @@ use betterlite_server::pass_through_logging::gemini_passthrough_logging::{
     GeminiPassthroughInput, GeminiPassthroughLogger,
 };
 use betterlite_server::pass_through_logging::vertex_stream_collection::VertexStreamCollector;
+use chrono::DateTime;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -117,8 +118,9 @@ impl Helper for Op {
             url_route: &input.url_route,
             request_body: None,
             endpoint_type: EndpointType::Gemini,
-            start_time: fixture::timestamp()?,
-            end_time: fixture::timestamp()?,
+            start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
+                .or_value_error()?,
+            end_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?,
             lines: &input.lines,
             model: input.model.as_deref(),
         };
@@ -134,8 +136,10 @@ impl Helper for Op {
                         response_headers: &http::HeaderMap::new(),
                         response_body: &bytes,
                         request_body,
-                        start_time: fixture::timestamp()?,
-                        end_time: fixture::timestamp()?,
+                        start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
+                            .or_value_error()?,
+                        end_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
+                            .or_value_error()?,
                         kwargs: PassThroughLoggingKwargs::default(),
                     })
                     .map_err(|error| error.to_string())

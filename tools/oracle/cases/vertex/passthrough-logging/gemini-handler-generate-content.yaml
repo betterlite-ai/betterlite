@@ -18,5 +18,7 @@ call:
         totalTokenCount: 5
       modelVersion: gemini-2.0-flash
     request_body: {}
+    lines: []
+    model: null
 env: {}
 compare: {ignore: []}
