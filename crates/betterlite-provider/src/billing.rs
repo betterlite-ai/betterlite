@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::str::Utf8Error;
+use std::str::{Utf8Error, from_utf8};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -259,7 +259,7 @@ fn bucket_day(start_time: i64) -> Result<String, BillingError> {
 }
 
 fn http_status_error(status: u16, body: &[u8]) -> BillingError {
-    match std::str::from_utf8(body) {
+    match from_utf8(body) {
         Ok(text) => BillingError::HttpStatus {
             status,
             detail: text.chars().take(MAX_DETAIL_CHARS).collect(),

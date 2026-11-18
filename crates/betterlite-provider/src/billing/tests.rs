@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::fs;
+use std::mem::take;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -35,7 +36,7 @@ impl FakeHttpGet {
 
     fn take_requests(&self) -> Vec<BillingHttpRequest> {
         let mut requests = self.requests.lock().unwrap();
-        std::mem::take(&mut *requests)
+        take(&mut *requests)
     }
 }
 
