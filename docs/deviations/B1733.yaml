@@ -56,13 +56,21 @@ deviations:
       bodies and secrets out of every log line.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L72-L74
   - what: >-
-      Costs are summed as exact decimals, and a counter that arrives as a fractional number is
-      truncated toward zero. The source adds Python numbers, so a float sum carries binary
-      rounding and a fractional counter keeps its fraction.
+      Daily spend costs are summed as exact decimals, and a counter that arrives as a fractional
+      number is truncated toward zero. The source adds Python numbers, so a float sum carries
+      binary rounding and a fractional counter keeps its fraction.
     why: >-
       Money is a decimal column and a counter is an integer column; the task requires checked
       Decimal money, and docs/compatibility.md makes a counter an integer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L121-L126
+  - what: >-
+      Entity spend costs are summed as exact decimals, both when matching records compact and
+      when they aggregate into the database transaction maps. The source keeps response_cost as
+      a Python float or int, so its sums carry binary rounding.
+    why: >-
+      A spend column stores an exact decimal and the task requires checked Decimal money; a
+      float sum such as 0.1 + 0.2 has no decimal column value to store.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L217
   - what: >-
       A cost or counter sum that overflows its stored type reports SpendQueueError. The source's
       floats become an infinity and its integers never overflow.
