@@ -52,7 +52,10 @@ struct RechunkState {
 }
 
 async fn next_chunk(mut state: RechunkState) -> Option<(Result<Vec<u8>, HttpError>, RechunkState)> {
-    while !state.done && state.pending.len() < state.size.get() {
+    while !state.done {
+        if state.pending.len() >= state.size.get() {
+            break;
+        }
         match state.chunks.next().await {
             Some(Ok(bytes)) => state.pending.extend_from_slice(&bytes),
             Some(Err(error)) => {
