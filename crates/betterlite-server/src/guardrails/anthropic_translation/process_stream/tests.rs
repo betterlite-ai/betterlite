@@ -153,7 +153,7 @@ fn inputs_json(recorded: &Recorded) -> Value {
 async fn ended_passes_the_assembled_text_and_response() {
     let guardrail = FakeGuardrail::echoing();
     let stream = vec![bytes(&[START, TEXT_1, TEXT_2, STOP_TEXT])];
-    let (result, _, stored) = process(stream, &guardrail, None, None, false).await;
+    let (result, _, stored) = process(stream, &guardrail, Some(json!({})), None, false).await;
     result.unwrap();
     let calls = guardrail.calls();
     assert_eq!(calls.len(), 1);
@@ -315,7 +315,8 @@ async fn unended_sends_the_string_so_far_and_the_chunks() {
     );
     let stream = vec![bytes(&[START]), chunk, SseChunk::Other];
     let key_dict = json!({"user_id": "u1"});
-    let (result, _, stored) = process(stream, &guardrail, None, Some(key_dict), false).await;
+    let (result, _, stored) =
+        process(stream, &guardrail, Some(json!({})), Some(key_dict), false).await;
     result.unwrap();
     let calls = guardrail.calls();
     assert_eq!(calls[0].inputs.texts, Some(vec!["curious".to_owned()]));
@@ -419,7 +420,7 @@ async fn unended_writes_nothing_without_delivery() {
 async fn unended_skips_metadata_without_a_user_key() {
     let guardrail = FakeGuardrail::echoing();
     let stream = vec![bytes(&[START])];
-    let (result, _, stored) = process(stream, &guardrail, None, None, false).await;
+    let (result, _, stored) = process(stream, &guardrail, Some(json!({})), None, false).await;
     result.unwrap();
     let data = stored.unwrap();
     assert!(data.contains_key("responses"));
