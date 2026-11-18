@@ -3,7 +3,7 @@ use betterlite_azure::azure_files::error::AzureFilesError;
 use betterlite_azure::endpoints::projection::ClientKind;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::records::{BinaryContent, FileDeleted, FileObject, FilePage};
+use betterlite_openai::files::records::{BinaryContent, FileObject, FilePage};
 use http::HeaderMap;
 use serde_json::{Map, Value, json};
 
@@ -11,19 +11,20 @@ use serde_json::{Map, Value, json};
 const COMPARED: [&str; 4] = ["accept", "api-key", "authorization", "openai-organization"];
 
 pub(super) fn request(request: &OutboundRequest) -> Value {
-    json!({
-        "method": request.method.as_str(),
-        "host": request.url.host_str(),
-        "path": request.url.path(),
-        "query": request
-            .query
-            .iter()
-            .map(|(name, value)| json!([name, value]))
-            .collect::<Vec<_>>(),
-        "headers": headers(&request.headers),
-        "timeout_ms": request.deadline.as_millis(),
-        "parts": parts(&request.body),
-    })
+    let mut fields = Map::new();
+    fields.insert("method".to_owned(), json!(request.method.as_str()));
+    fields.insert("host".to_owned(), json!(request.url.host_str()));
+    fields.insert("path".to_owned(), json!(request.url.path()));
+    let params = request
+        .query
+        .iter()
+        .map(|(name, value)| json!([name, value]))
+        .collect();
+    fields.insert("query".to_owned(), Value::Array(params));
+    fields.insert("headers".to_owned(), headers(&request.headers));
+    fields.insert("timeout_ms".to_owned(), json!(request.deadline.as_millis()));
+    fields.insert("parts".to_owned(), parts(&request.body));
+    Value::Object(fields)
 }
 
 fn headers(headers: &HeaderMap) -> Value {
@@ -38,8 +39,7 @@ fn headers(headers: &HeaderMap) -> Value {
     Value::Object(selected)
 }
 
-// The multipart fields in the order the request builder writes them; null for every other method.
-// A part without a filename or content type is an empty string, as the python adapter's regex reads it.
+// multipart fields in builder order, null for other methods, and "" for a part with no filename or type
 fn parts(body: &RequestBody) -> Value {
     let RequestBody::Multipart { parts, .. } = body else {
         return Value::Null;
@@ -73,10 +73,6 @@ pub(super) fn page(page: &FilePage) -> Value {
         "object": page.object, "data": page.data.iter().map(object).collect::<Vec<_>>(),
         "has_more": page.has_more, "first_id": &page.first_id, "last_id": &page.last_id,
     })
-}
-
-pub(super) fn deleted(deleted: &FileDeleted) -> Value {
-    json!({ "id": &deleted.id, "object": deleted.object, "deleted": deleted.deleted })
 }
 
 pub(super) fn content(content: &BinaryContent) -> Value {

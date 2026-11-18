@@ -5,6 +5,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
+use betterlite_oracle_helper_api::error::HelperError;
 use http::header::{CONTENT_LENGTH, HeaderMap, HeaderName, HeaderValue};
 
 use super::super::input::Reply;
@@ -17,11 +18,11 @@ pub(crate) struct Recorded {
 }
 
 impl Recorded {
-    pub(crate) fn new(reply: Option<&Reply>, calls: Log) -> Self {
-        Self {
-            reply: response(reply),
+    pub(crate) fn new(reply: Option<&Reply>, calls: Log) -> Result<Self, Box<HelperError>> {
+        Ok(Self {
+            reply: response(reply)?,
             calls,
-        }
+        })
     }
 }
 
@@ -30,51 +31,64 @@ impl FileTransport for Recorded {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        ready(Ok(self.reply.clone()))
+        ready(answer(&self.calls, request, Ok(self.reply.clone())))
     }
 
     fn send_stream(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        ready(Err(TransportError::HeadersTooLarge { limit: 0 }))
+        ready(answer(
+            &self.calls,
+            request,
+            Err(TransportError::HeadersTooLarge { limit: 0 }),
+        ))
     }
 }
 
+// every request the SDK sends is kept, so a case can report the wire call it made
+fn answer<T>(calls: &Log, request: OutboundRequest, reply: T) -> T {
+    calls
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(request);
+    reply
+}
+
 // httpx adds a content-length header for a non-empty body, and keeps every declared header
-fn response(reply: Option<&Reply>) -> UpstreamResponse {
+fn response(reply: Option<&Reply>) -> Result<UpstreamResponse, Box<HelperError>> {
     let Some(reply) = reply else {
-        return UpstreamResponse {
+        return Ok(UpstreamResponse {
             status: 200,
             headers: HeaderMap::new(),
             body: Vec::new(),
-        };
+        });
     };
     let mut headers = HeaderMap::new();
     for (name, value) in &reply.headers {
-        headers.append(
-            HeaderName::from_bytes(name.as_bytes()).expect("the reply header name is valid"),
-            HeaderValue::from_str(value).expect("the reply header value is valid"),
-        );
+        let name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|source| invalid(source.to_string()))?;
+        let value = HeaderValue::from_str(value).map_err(|source| invalid(source.to_string()))?;
+        headers.append(name, value);
     }
-    if !reply.body.is_empty() && !headers.contains_key(CONTENT_LENGTH) {
-        headers.insert(
-            CONTENT_LENGTH,
-            HeaderValue::from_str(&reply.body.len().to_string())
-                .expect("the reply body length is a header value"),
-        );
+    let length = HeaderValue::from_str(&reply.body.len().to_string()).ok();
+    if let Some(length) = length.filter(|_| !reply.body.is_empty()) {
+        headers.entry(CONTENT_LENGTH).or_insert(length);
     }
-    UpstreamResponse {
+    Ok(UpstreamResponse {
         status: reply.status,
         headers,
         body: reply.body.clone().into_bytes(),
-    }
+    })
+}
+
+fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "InvalidInput".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
 }

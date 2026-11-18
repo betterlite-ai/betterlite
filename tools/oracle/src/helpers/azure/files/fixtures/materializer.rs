@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_azure::azure_files::client::auth::FileAuth;
 use betterlite_azure::azure_files::client::{ClientMaterializer, ClientSettings, SelectedClient};
 use betterlite_azure::azure_files::error::AzureFilesError;
+use betterlite_azure::azure_urls::AuthParams;
 use betterlite_azure::endpoints::projection::{
     ClientKind, ClientOutcome, LiteLlmParams, SuppliedClient,
 };
@@ -29,9 +30,9 @@ pub(crate) fn params(step: &Step) -> LiteLlmParams {
     let params = &step.args.litellm_params;
     LiteLlmParams {
         azure_ad_token: params.azure_ad_token.clone().map(SecretString::from),
+        auth: AuthParams::default(),
         max_retries: params.max_retries,
         timeout: params.timeout,
-        ..LiteLlmParams::default()
     }
 }
 
@@ -76,7 +77,9 @@ impl ClientMaterializer for Materializer {
         };
         let files = FilesClient {
             api_key: SecretString::from(SUPPLIED_KEY),
-            base_url: base.parse().expect("the fixture base URL is a URL"),
+            base_url: base
+                .parse()
+                .map_err(|source| AzureFilesError::BaseUrl { source })?,
             organization: None,
             timeout: DEFAULT_TIMEOUT,
             max_retries: DEFAULT_MAX_RETRIES,

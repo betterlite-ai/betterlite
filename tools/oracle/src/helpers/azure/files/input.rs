@@ -47,8 +47,7 @@ pub(super) struct Params {
     pub(super) max_retries: Option<i64>,
 }
 
-// The handler's keyword arguments. api_key, api_base and api_version build the client, litellm_params
-// carries the rest, and timeout/max_retries are required by the signature but never forwarded.
+// api_key, api_base, api_version, litellm_params build the client; timeout/max_retries only parse
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Values {
