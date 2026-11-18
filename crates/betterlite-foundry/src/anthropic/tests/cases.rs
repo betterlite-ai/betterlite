@@ -705,7 +705,7 @@ fn status_failures() {
     let carried = status_call(529, true);
     assert_anthropic_error(&carried, 529, "rate limited");
 
-    // a body that is not valid utf-8 is raised the way httpx's errors="replace" decodes it
+    // the reused buffered step carries the body as text, so a body that is not utf-8 names its size
     let invalid = run(Setup {
         trip: Trip::Status {
             status_code: 500,
@@ -716,7 +716,11 @@ fn status_failures() {
         ..Setup::chat()
     });
     assert_eq!(invalid.status(), Some(500));
-    assert!(format!("{}", invalid.error()).contains("bad \u{FFFD} byte"));
+    assert!(
+        format!("{}", invalid.error()).contains("10 bytes that are not text"),
+        "{}",
+        invalid.error()
+    );
 }
 
 fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
