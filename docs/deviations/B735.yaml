@@ -1,0 +1,35 @@
+task: B735
+deviations:
+  - what: >-
+      Prefetch validation warnings identify the row/model without printing rejected field values.
+    why: >-
+      Source Pydantic exceptions can contain credentials or stored private data; native
+      diagnostics redact values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_object_prefetch.py#L245-L258
+  - what: >-
+      A failure reading the object permission cache fails get_object_permission, where LiteLLM's
+      DualCache.async_get_cache logs the exception and returns None so the caller reads the
+      database as on a cache miss.
+    why: >-
+      A cache fault is surfaced instead of being folded into a miss; the request fails instead of
+      silently issuing an uncached database read on every call while the cache stays broken.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/dual_cache.py#L294-L297
+  - what: >-
+      On the normal (not database-only) route, a failed cache write after a successful row read
+      returns no permission; LiteLLM's DualCache.async_set_cache swallows the write failure and
+      the validated permission is still returned.
+    why: >-
+      get_object_permission keeps LiteLLM's code shape, where the write happens inside the try and
+      any exception is swallowed as a missing permission; betterlite's cache reports write failures
+      where LiteLLM's logs and continues, so the difference is observable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4023-L4034
+  - what: >-
+      The organization entries' TTL comes from the DEFAULT_IN_MEMORY_TTL config key (a trimmed
+      integer, default 5) read at startup and carried as a float; LiteLLM reads
+      int(os.getenv("DEFAULT_IN_MEMORY_TTL", 5)) into a module constant when litellm.constants
+      loads.
+    why: >-
+      betterlite keeps configuration in one startup-loaded section; the value and its default
+      match, and a bad value fails startup instead of failing the import of litellm.constants.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L498
+kept_bugs: []
