@@ -1,0 +1,61 @@
+kind: probe
+name: threshold-equality
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0, observations: 2}
+            - {tier: 2, successes: 0, observations: 2}
+            - {tier: 3, successes: 5, observations: 6}
+            - {tier: 4, successes: 5, observations: 6}
+          routing_threshold: 0.75
+        prompt: 'Hello.'
+        request_type: general
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0, observations: 2}
+            - {tier: 2, successes: 0, observations: 2}
+            - {tier: 3, successes: 5, observations: 6}
+            - {tier: 4, successes: 5, observations: 6}
+          routing_threshold: 0.75
+        prompt: 'Hello.'
+        request_type: general
+        threshold: '0.25'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0, observations: 2}
+            - {tier: 2, successes: 0, observations: 2}
+            - {tier: 3, successes: 5, observations: 6}
+            - {tier: 4, successes: 5, observations: 6}
+          routing_threshold: 0.75
+        prompt: 'Hello.'
+        request_type: general
+        threshold: '0.7500000000000001'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: classify
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0, observations: 2}
+            - {tier: 2, successes: 0, observations: 2}
+            - {tier: 3, successes: 5, observations: 6}
+            - {tier: 4, successes: 5, observations: 6}
+          routing_threshold: 0.75
+        prompt: 'Hello.'
+compare: {ignore: []}
