@@ -143,17 +143,19 @@ fn scan_key_releases_tool_fingerprint_only_after_end() {
     assert!(!ended.tool_calls_in_flight);
 }
 
-#[test]
-fn replays_the_anthropic_sse_events_corpus() {
-    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/anthropic_sse_events");
-    for entry in fs::read_dir(directory).unwrap() {
-        let bytes = fs::read(entry.unwrap().path()).unwrap();
-        let chunk = SseChunk::Bytes(bytes);
-        let _events = iter_sse_events(&chunk);
-        let _state = content_block_state(slice::from_ref(&chunk));
-        let _text = streaming_string_so_far(slice::from_ref(&chunk));
-        let _ended = streaming_has_ended(&[chunk]);
-    }
+#[rstest::rstest]
+#[case::bundled("bundled")]
+#[case::empty("empty")]
+#[case::invalid_utf8("invalid-utf8")]
+fn replays_the_anthropic_sse_events_corpus(#[case] name: &str) {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fuzz/corpus/anthropic_sse_events")
+        .join(name);
+    let chunk = SseChunk::Bytes(fs::read(path).unwrap());
+    let _events = iter_sse_events(&chunk);
+    let _state = content_block_state(slice::from_ref(&chunk));
+    let _text = streaming_string_so_far(slice::from_ref(&chunk));
+    let _ended = streaming_has_ended(&[chunk]);
 }
 
 #[test]
