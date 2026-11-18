@@ -1,0 +1,7 @@
+kind: helper
+name: template-listing
+call:
+  b3808:
+    function: list_templates
+env: {}
+compare: {ignore: []}

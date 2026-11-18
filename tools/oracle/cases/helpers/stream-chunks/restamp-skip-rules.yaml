@@ -1,0 +1,78 @@
+kind: helper
+name: stream-chunks-restamp-skip-rules
+call:
+  b8602:
+    function: restamp
+    restamps:
+      - kind: stream
+        body: {id: skip-1, object: chat.completion.chunk, created: 1, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {metadata: {_complexity_router_return_raw_model_name: true}}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-2, object: chat.completion.chunk, created: 2, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {litellm_metadata: {_complexity_router_return_raw_model_name: true}}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-3, object: chat.completion.chunk, created: 3, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {metadata: {_complexity_router_return_raw_model_name: false}}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-4, object: chat.completion.chunk, created: 4, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {metadata: 5}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-5, object: chat.completion.chunk, created: 5, model: openai/raw, choices: []}
+        requested_model: ""
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-6, object: chat.completion.chunk, created: 6, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: true
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-7, object: chat.completion.chunk, created: 7, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: true
+        fallback_model: ""
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-8, object: chat.completion.chunk, created: 8, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {fastest_response: true}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-9, object: chat.completion.chunk, created: 9, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {fastest_response: true}
+        fallback_attempted: true
+        fallback_model: gpt-4o-mini-fallback
+        mismatch_logged: false
+      - kind: stream
+        body: {id: skip-10, object: chat.completion.chunk, created: 10, model: openai/raw, choices: []}
+        requested_model: gpt-4o
+        request_data: {fastest_response: false}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+env: {}
+compare: {ignore: []}

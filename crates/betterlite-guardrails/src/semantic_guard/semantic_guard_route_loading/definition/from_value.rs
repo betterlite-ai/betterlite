@@ -1,0 +1,108 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+
+use super::{DefinitionError, RouteDefinition};
+
+const KNOWN_FIELDS: [&str; 7] = [
+    "description",
+    "function_schemas",
+    "llm",
+    "metadata",
+    "route_name",
+    "similarity_threshold",
+    "utterances",
+];
+
+impl RouteDefinition {
+    pub fn from_value(value: &GuardrailValue) -> Result<Self, DefinitionError> {
+        let GuardrailValue::Object(fields) = value else {
+            return Err(DefinitionError::NotAMapping);
+        };
+        for key in fields.keys() {
+            if !KNOWN_FIELDS.contains(&key.as_str()) {
+                return Err(DefinitionError::UnknownField { field: key.clone() });
+            }
+        }
+        let route_name = text(
+            field(fields, "route_name").ok_or(DefinitionError::MissingField {
+                field: "route_name",
+            })?,
+            "route_name",
+            "a string",
+        )?;
+        let description = field(fields, "description")
+            .map(|field_value| text(field_value, "description", "a string"))
+            .transpose()?
+            .unwrap_or_default();
+        let GuardrailValue::Array(items) =
+            field(fields, "utterances").ok_or(DefinitionError::MissingField {
+                field: "utterances",
+            })?
+        else {
+            return Err(DefinitionError::FieldType {
+                field: "utterances",
+                expected: "a list of strings",
+            });
+        };
+        let utterances = utterance_texts(items)?;
+        let similarity_threshold = field(fields, "similarity_threshold")
+            .map(|field_value| number(field_value, "similarity_threshold"))
+            .transpose()?;
+        Ok(Self {
+            route_name,
+            description,
+            utterances,
+            similarity_threshold,
+        })
+    }
+}
+
+// a null field reads as absent, so an explicit null description or threshold takes its default
+fn field<'fields>(
+    fields: &'fields BTreeMap<String, GuardrailValue>,
+    name: &'static str,
+) -> Option<&'fields GuardrailValue> {
+    fields
+        .get(name)
+        .filter(|value| **value != GuardrailValue::Null)
+}
+
+fn text(
+    value: &GuardrailValue,
+    field: &'static str,
+    expected: &'static str,
+) -> Result<String, DefinitionError> {
+    let GuardrailValue::Text(text) = value else {
+        return Err(DefinitionError::FieldType { field, expected });
+    };
+    Ok(text.clone())
+}
+
+// a yaml scalar that is not a string reaches the route as an error naming the field, never as its text
+fn utterance_texts(utterances: &[GuardrailValue]) -> Result<Vec<String>, DefinitionError> {
+    utterances
+        .iter()
+        .map(|utterance| text(utterance, "utterances", "a list of strings"))
+        .collect()
+}
+
+fn number(value: &GuardrailValue, field: &'static str) -> Result<f64, DefinitionError> {
+    raw_number(value).ok_or(DefinitionError::FieldType {
+        field,
+        expected: "a number",
+    })
+}
+
+fn raw_number(value: &GuardrailValue) -> Option<f64> {
+    match value {
+        GuardrailValue::Decimal(number) => Some(*number),
+        GuardrailValue::SignedInteger(number) => number.to_string().parse::<f64>().ok(),
+        GuardrailValue::UnsignedInteger(number) => number.to_string().parse::<f64>().ok(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
+    }
+}

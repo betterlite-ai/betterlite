@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Opens a task's PR as a draft when its first review starts, so CI runs the tests, oracle cases and mutants while the review runs (Max, 11-12). Once a review has started, a new head is pushed with the done mark on top when the run on the last push has finished (or after 90 minutes), so a newer head waits instead of cancelling that run (Max, 11-15). The pushed commit is one the checkout never sees, and a failed CI run on it goes to the journal's ci-failures file for the gate's next fix turn. A non-draft PR belongs to the land, so this leaves it alone. Usage: bash early-pr.sh <id> <flow pid>
+# Opens a task's PR as a draft when its first review starts, so CI runs the tests, oracle cases and mutants while the review runs (Max, 11-12). Once a review has started, a new head is pushed with the done mark on top when the run on the last push has finished (or after 90 minutes), so a newer head waits instead of cancelling that run (Max, 11-15). The pushed commit is one the checkout never sees, and a failed CI run on it goes to the journal's ci-failures file for the gate's next fix turn, with its failure lines from ci-failure.sh and its gate logs in the worktree's target/ci-logs (Max, 11-18). A non-draft PR belongs to the land, so this leaves it alone. Usage: bash early-pr.sh <id> <flow pid>
 self=$(readlink -f "$0") || exit 1
 P=${self%/*}
 main=${BETTERLITE_ROOT:-$(git -C "${P}" rev-parse --show-toplevel)}
@@ -73,8 +73,8 @@ while kill -0 "${flow}" 2> /dev/null; do
     read -r run_id status conclusion <<< "${run}"
     if [[ "${status}" = completed ]]; then
       if [[ "${conclusion}" = failure ]]; then
-        fail=$(bash "${P}/first-fail.sh" "${run_id}")
-        printf '%s\nCI run https://github.com/%s/actions/runs/%s failed on draft PR #%s: %s\n' "${reviewed}" "${GH_REPO}" "${run_id}" "${pr}" "${fail:-see the run log}" > "${journal}/ci-failures"
+        report=$(bash "${P}/ci-failure.sh" "${run_id}" "${worktree}")
+        printf '%s\nCI run https://github.com/%s/actions/runs/%s failed on draft PR #%s.\n%s\n' "${reviewed}" "${GH_REPO}" "${run_id}" "${pr}" "${report}" > "${journal}/ci-failures"
       fi
       pushed=
     # a run GitHub never finishes, or a head that left the last five check suites, would hold every later push

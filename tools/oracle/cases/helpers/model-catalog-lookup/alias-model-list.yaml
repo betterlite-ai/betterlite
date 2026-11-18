@@ -1,0 +1,28 @@
+kind: helper
+name: model-catalog-lookup-alias-model-list
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: chat-model
+        litellm_params:
+          model: openai/chat
+        model_info:
+          id: c
+    model_group_alias:
+      sonnet: gpt-4o
+      assistant:
+        model: chat-model
+        hidden: false
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: null
+env: {}
+compare: {ignore: []}

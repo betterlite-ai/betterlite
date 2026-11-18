@@ -1,0 +1,53 @@
+kind: helper
+name: signed-embedding-request
+call:
+  bedrock_embedding_io:
+    function: signed_embedding_request
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+    url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+    headers:
+      Content-Type: application/json
+    region: us-west-2
+    now: 1700000000
+calls:
+  - bedrock_embedding_io:
+      function: signed_embedding_request
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        session_token: session-token-example
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+      region: us-west-2
+      now: 1700000000
+  - bedrock_embedding_io:
+      function: signed_embedding_request
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      url: https://bedrock-runtime.us-west-2.amazonaws.com/model/cohere.embed-english-v3/invoke
+      headers:
+        Content-Type: application/json
+        Authorization: stale-authorization
+        X-Amz-Date: 20200101T000000Z
+        X-Amz-Security-Token: stale-token
+      region: eu-west-1
+      now: 1700000000
+  - bedrock_embedding_io:
+      function: signed_embedding_request
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        session_token: session-token-example
+      url: https://example.com/model/amazon.titan-embed-text-v1/invoke
+      headers:
+        Content-Type: application/json
+        Host: example.com
+      region: us-east-1
+      now: 1700000000
+env: {}
+compare:
+  ignore: []
