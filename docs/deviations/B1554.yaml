@@ -1,3 +1,15 @@
 task: B1554
-deviations: []
-kept_bugs: []
+deviations:
+  - what: A DataForSEO reply larger than 16 MiB is refused with a typed size error before it is decoded, where LiteLLM hands the body to httpx.Response.json() with no size limit.
+    why: Rule bounded-inputs caps every input from outside, and the cap is the shared search reply decoder's ceiling; a search reply is a short JSON document, so no working setup sends one near the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dataforseo/search/transformation.py#L191
+  - what: An unparsable DEFAULT_DATAFORSEO_LOCATION_CODE falls back to 2250, where LiteLLM calls int() on the value at import time so the whole module fails to load.
+    why: A broken location value must not stop betterlite from starting; no working setup sets a non-integer here, and the shared env parser's fallback keeps the documented default location.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L682-L684
+kept_bugs:
+  - what: A caller language_code never reaches the task, because LiteLLM sets language_code to en before it copies native parameters in, so every request carries en.
+    why: The task requires this default precedence, and every DataForSEO request LiteLLM sends today already carries en, so a working setup keeps the same results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dataforseo/search/transformation.py#L153-L164
+  - what: A caller location_code never replaces the default 2250, because LiteLLM inserts the default before copying native parameters into the task.
+    why: The task requires this default precedence, and a setup that sends location_code in optional_params already gets results for the default location.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dataforseo/search/transformation.py#L157-L164
