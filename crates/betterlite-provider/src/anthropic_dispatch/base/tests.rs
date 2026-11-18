@@ -65,6 +65,23 @@ fn disabling_the_suffix_keeps_the_url_and_names_the_notice() {
 }
 
 #[test]
+fn a_global_base_precedes_both_environment_variables() {
+    let globals = Globals {
+        api_base: Some(String::from("https://global.test")),
+        anthropic_key: None,
+        api_key: None,
+    };
+    let resolved = resolve_base(
+        Surface::Messages,
+        None,
+        &globals,
+        &environment(&[(API_BASE_VARIABLE, "https://env.test")]),
+        false,
+    );
+    assert_eq!(resolved.url, "https://global.test/v1/messages");
+}
+
+#[test]
 fn empty_environment_values_fall_through_to_the_default() {
     let resolved = resolve_base(
         Surface::Messages,
