@@ -2,7 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 
 use crate::routing_state_store::RoutingStateStore;
-use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, RoutingValueStore};
+use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue};
 
 use crate::routing_state_store::error::Observed;
 
@@ -48,20 +48,14 @@ impl fmt::Debug for InFlightCall {
     }
 }
 
-// whether this worker's counter took the write, and the warning a rejected one raised
-pub(super) enum LocalWrite {
-    Written,
-    Rejected(LeastBusyWarning),
-}
-
 // how one increment landed, the same arms in both tiers: only a negative counter needs the corrective write
-enum IncrementOutcome {
+pub(super) enum IncrementOutcome {
     Negative(i64),
     Counted,
     NotACount,
 }
 
-const fn increment_outcome(value: RouteValue) -> IncrementOutcome {
+pub(super) fn increment_outcome(value: RouteValue) -> IncrementOutcome {
     match value {
         RouteValue::Counter(count) if count.is_negative() => IncrementOutcome::Negative(count),
         RouteValue::Counter(_) => IncrementOutcome::Counted,
@@ -69,31 +63,6 @@ const fn increment_outcome(value: RouteValue) -> IncrementOutcome {
         | RouteValue::Pin(_)
         | RouteValue::SchedulerTuple(_)
         | RouteValue::Members(_) => IncrementOutcome::NotACount,
-    }
-}
-
-// increment_cache with local_only: a counter driven below zero is written back as zero
-pub(super) fn write_local(
-    store: &RoutingValueStore,
-    key: &RouteKey,
-    delta: i64,
-    ttl: Option<f64>,
-) -> LocalWrite {
-    let landed = match store.increment(key, &RouteIncrement::Counter(delta), ttl) {
-        Ok(value) => increment_outcome(value),
-        Err(source) => {
-            return LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source)));
-        }
-    };
-    match landed {
-        IncrementOutcome::Negative(_) => match store.set(key, &RouteValue::Counter(0), ttl) {
-            Ok(()) => LocalWrite::Written,
-            Err(source) => LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source))),
-        },
-        IncrementOutcome::Counted => LocalWrite::Written,
-        IncrementOutcome::NotACount => {
-            LocalWrite::Rejected(unwritable(key, UnwrittenCount::NotACount))
-        }
     }
 }
 
@@ -126,7 +95,7 @@ pub(super) async fn write_shared(
     failed.map(|cause| unwritable(key, cause))
 }
 
-fn unwritable(key: &RouteKey, cause: UnwrittenCount) -> LeastBusyWarning {
+pub(super) fn unwritable(key: &RouteKey, cause: UnwrittenCount) -> LeastBusyWarning {
     LeastBusyWarning::Unwritable {
         key: key.as_ref().to_owned(),
         cause,

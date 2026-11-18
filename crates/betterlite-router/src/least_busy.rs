@@ -13,8 +13,10 @@ use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
 };
 
-use self::error::{LeastBusyError, LeastBusyWarning, UnreadableCounts};
-use self::guard::{InFlightCall, LocalWrite, Started, write_local, write_shared};
+use self::error::{LeastBusyError, LeastBusyWarning, UnreadableCounts, UnwrittenCount};
+use self::guard::{
+    InFlightCall, IncrementOutcome, Started, increment_outcome, unwritable, write_shared,
+};
 use self::identity::{AttemptFacts, deployment_ref, request_count_key, request_count_keys};
 
 // IN_FLIGHT_COUNT_TTL_SECONDS: LiteLLM's one hour, counted from the call that created the counter
@@ -119,13 +121,31 @@ impl LeastBusy {
     // _increment and _async_increment: this worker's count first, then the shared floor, and a failed write only warns
     async fn increment(&self, key: &RouteKey, delta: i64) -> Option<LeastBusyWarning> {
         let ttl = Some(IN_FLIGHT_COUNT_TTL_SECONDS);
-        match write_local(&self.local, key, delta, ttl) {
-            LocalWrite::Rejected(warning) => Some(warning),
-            LocalWrite::Written => match &self.shared {
-                None => None,
-                Some(shared) => write_shared(shared, key, delta, ttl).await,
-            },
+        let local = match self
+            .local
+            .increment(key, &RouteIncrement::Counter(delta), ttl)
+        {
+            Ok(value) => increment_outcome(value),
+            Err(source) => return Some(unwritable(key, UnwrittenCount::Local(source))),
+        };
+        match local {
+            IncrementOutcome::Counted => {}
+            IncrementOutcome::NotACount => {
+                return Some(unwritable(key, UnwrittenCount::NotACount));
+            }
+            IncrementOutcome::Negative(_) => {
+                match self.local.set(key, &RouteValue::Counter(0), ttl) {
+                    Ok(()) => {}
+                    Err(source) => {
+                        return Some(unwritable(key, UnwrittenCount::Local(source)));
+                    }
+                }
+            }
         }
+        let Some(shared) = &self.shared else {
+            return None;
+        };
+        write_shared(shared, key, delta, ttl).await
     }
 
     // a dropped callback cannot await, so the shared count expires with its ttl while this worker's returns at once
