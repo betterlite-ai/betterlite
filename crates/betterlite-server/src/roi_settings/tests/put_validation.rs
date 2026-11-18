@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use axum::http::StatusCode;
+use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
 use crate::roi_settings::support::MemoryRepository;
@@ -83,6 +84,18 @@ use crate::roi_settings::support::settings_app;
 )]
 #[case::malformed_json(
     r#"{"backfill_days":"#,
+    "json_invalid",
+    &["body"],
+    "JSON decode error"
+)]
+#[case::nan_literal(
+    r#"{"update_interval_minutes":NaN}"#,
+    "json_invalid",
+    &["body"],
+    "JSON decode error"
+)]
+#[case::infinity_literal(
+    r#"{"update_interval_minutes":Infinity}"#,
     "json_invalid",
     &["body"],
     "JSON decode error"
@@ -172,4 +185,62 @@ async fn put_validation_accepts_a_valid_backfill_days(#[case] days: i64) {
     assert_eq!(reply.status, StatusCode::OK);
     let saved = memory.stored().expect("saved settings");
     assert_eq!(saved.backfill_days, days);
+}
+
+#[tokio::test]
+async fn put_validation_issues_carry_only_type_loc_and_msg() {
+    let memory = Arc::new(MemoryRepository::default());
+    let app = settings_app(Some(erased(&memory)), Some(catalog(Vec::new())));
+    let reply = call(
+        app,
+        put_request(Some(&admin_caller()), r#"{"backfill_days":0}"#),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let JsonData::Object(root) = reply.json::<JsonData>() else {
+        panic!("the error body is not an object");
+    };
+    let Some(JsonData::Array(issues)) = root.get("detail") else {
+        panic!("the detail is not a list");
+    };
+    let JsonData::Object(issue) = &issues[0] else {
+        panic!("the issue is not an object");
+    };
+    let names: Vec<&str> = issue.keys().map(String::as_str).collect();
+    assert_eq!(names, ["loc", "msg", "type"]);
+}
+
+#[tokio::test]
+async fn put_validation_rejects_a_duplicate_field() {
+    let memory = Arc::new(MemoryRepository::default());
+    let app = settings_app(Some(erased(&memory)), Some(catalog(Vec::new())));
+    let reply = call(
+        app,
+        put_request(
+            Some(&admin_caller()),
+            r#"{"backfill_days":10,"backfill_days":20}"#,
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(reply.issues().len(), 1);
+    assert!(memory.is_empty());
+}
+
+#[tokio::test]
+async fn put_validation_reports_the_first_bad_field_only() {
+    let memory = Arc::new(MemoryRepository::default());
+    let app = settings_app(Some(erased(&memory)), Some(catalog(Vec::new())));
+    let reply = call(
+        app,
+        put_request(
+            Some(&admin_caller()),
+            r#"{"backfill_days":0,"update_interval_minutes":-1}"#,
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let issues = reply.issues();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(loc_names(&issues[0]), ["body", "backfill_days"]);
 }

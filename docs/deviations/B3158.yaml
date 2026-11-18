@@ -29,12 +29,13 @@ deviations:
       answer for a request it is refused.
     link: ""
   - what: >-
-      JSON that Python's json module accepts but RFC 8259 does not is rejected as json_invalid at
-      body: the NaN and Infinity literals, and an object with a duplicate key.
+      JSON that Python's json module accepts but RFC 8259 does not is refused: the NaN and
+      Infinity literals answer 422 json_invalid at body, and a body that repeats a field is
+      rejected instead of keeping the last value.
     why: >-
-      serde_json follows the standard, and docs/compatibility.md keeps standard JSON on the wire.
-      Python keeps the last duplicate key and parses NaN, which pydantic then reports as
-      finite_number.
+      serde_json follows the standard for the literals, and serde's struct decoder rejects a
+      repeated field. docs/compatibility.md keeps standard JSON on the wire; Python parses NaN,
+      which pydantic then reports as finite_number, and keeps the last duplicate key.
     link: ""
   - what: >-
       A stored secret that does not decrypt reads as empty and the failure is recorded at debug.
