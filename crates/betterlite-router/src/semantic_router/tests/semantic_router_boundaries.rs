@@ -736,6 +736,18 @@ fn a_document_norm_reduces_like_the_pinned_numpy_pairwise_sum(
     assert!(score.total_cmp(&expected).is_eq());
 }
 
+#[test]
+fn a_split_document_reduces_at_the_pinned_split_point() {
+    // a seven-value cycle rounds differently at any other split point
+    let document: Vec<f64> = (0_usize..130)
+        .map(|index| EIGHT_DIMENSIONS[index % 7])
+        .collect();
+    let mut query = vec![0.0_f64; document.len()];
+    query[0] = 1.0;
+    let score = cosine_similarity(&query, &document, 0).expect("the vectors are usable");
+    assert!(score.total_cmp(&0.150_227_391_023_630_06_f64).is_eq());
+}
+
 #[tokio::test]
 async fn a_self_similar_document_at_threshold_one_selects_the_default_model() {
     let config =
