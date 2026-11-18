@@ -32,21 +32,19 @@ pub enum ClassifierType {
     Jev,
 }
 
-impl std::str::FromStr for ClassifierType {
-    type Err = ();
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
+impl ClassifierType {
+    fn parse(value: &str) -> Option<Self> {
         match value {
-            "heuristic" => Ok(Self::Heuristic),
-            "heuristic_v2" => Ok(Self::HeuristicV2),
-            "llm" => Ok(Self::Llm),
-            "capability" => Ok(Self::Capability),
-            "llm_v2" => Ok(Self::LlmV2),
-            "custom" => Ok(Self::Custom),
-            "heuristic_first" => Ok(Self::HeuristicFirst),
-            "hybrid" => Ok(Self::Hybrid),
-            "jev" => Ok(Self::Jev),
-            _ => Err(()),
+            "heuristic" => Some(Self::Heuristic),
+            "heuristic_v2" => Some(Self::HeuristicV2),
+            "llm" => Some(Self::Llm),
+            "capability" => Some(Self::Capability),
+            "llm_v2" => Some(Self::LlmV2),
+            "custom" => Some(Self::Custom),
+            "heuristic_first" => Some(Self::HeuristicFirst),
+            "hybrid" => Some(Self::Hybrid),
+            "jev" => Some(Self::Jev),
+            _ => None,
         }
     }
 }
@@ -92,11 +90,10 @@ pub fn validate(
             limit: MAX_CUSTOM_DIMENSIONS,
         });
     }
-    let classifier_type = classifier.parse::<ClassifierType>().map_err(|_source| {
-        DimensionsError::ClassifierType {
+    let classifier_type =
+        ClassifierType::parse(classifier).ok_or_else(|| DimensionsError::ClassifierType {
             value: classifier.to_owned(),
-        }
-    })?;
+        })?;
     if checked.is_empty() {
         return Ok(Validated::default());
     }
