@@ -1,12 +1,16 @@
+use std::convert::Infallible;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_faults::ErrorType;
+use betterlite_db::postgres_store::rows::KeyColumn;
+use betterlite_db::user_repository::tables::USER_TABLE;
 use rstest::rstest;
 
 use crate::auth_read::adapter::AuthReadAdapter;
+use crate::auth_read::repository::{NativeKey, RepositoryTable};
 use crate::auth_read::table::{AuthTable, Create, FindMany, FindOne, Presence, Update};
 
 use super::support::{
@@ -16,6 +20,22 @@ use super::support::{
 
 fn filter() -> Fields {
     Fields::from([("id".to_owned(), "row-1".to_owned())])
+}
+
+fn native_key() -> NativeKey<Infallible> {
+    NativeKey::new(KeyColumn::Id, "user-1")
+}
+
+fn assert_connect<Output>(read: Result<Output, DbLookupError>) {
+    match read {
+        Err(DbLookupError::Database(fault)) => {
+            let message = fault.message;
+            assert_eq!(fault.error_type, ErrorType::Connect);
+            assert!(message.contains("No DB Connected"), "{message}");
+        }
+        Err(other) => panic!("the native failure is not a deadline, got {other:?}"),
+        Ok(_) => panic!("the unconnected repository returns no row"),
+    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -126,42 +146,47 @@ async fn kwargs_omission_vs_null() {
     let repo = recording_repo(Mode::Row);
     let table = AuthReadAdapter::Tag.open(Arc::clone(&repo), String::new(), harness.context(5.0));
     let include = Fields::from([("litellm_budget_table".to_owned(), "true".to_owned())]);
+    let unique_request = FindOne {
+        filter: filter(),
+        include: Presence::Omitted,
+    };
+    let first_request = FindOne {
+        filter: filter(),
+        include: Presence::Null,
+    };
+    let omitted_request = FindMany {
+        filter: Presence::Omitted,
+        include: Presence::Omitted,
+        take: Presence::Omitted,
+    };
+    let null_request = FindMany {
+        filter: Presence::Null,
+        include: Presence::Null,
+        take: Presence::Null,
+    };
+    let values_request = FindMany {
+        filter: Presence::Value(filter()),
+        include: Presence::Value(include),
+        take: Presence::Value(0),
+    };
     let unique = table
-        .find_unique(FindOne {
-            filter: filter(),
-            include: Presence::Omitted,
-        })
+        .find_unique(unique_request.clone())
         .await
         .expect("the tag read succeeds");
     let first = table
-        .find_first(FindOne {
-            filter: filter(),
-            include: Presence::Null,
-        })
+        .find_first(first_request.clone())
         .await
         .expect("the tag read succeeds");
     let omitted = table
-        .find_many(FindMany {
-            filter: Presence::Omitted,
-            include: Presence::Omitted,
-            take: Presence::Omitted,
-        })
+        .find_many(omitted_request.clone())
         .await
         .expect("the tag read succeeds");
     let null = table
-        .find_many(FindMany {
-            filter: Presence::Null,
-            include: Presence::Null,
-            take: Presence::Null,
-        })
+        .find_many(null_request.clone())
         .await
         .expect("the tag read succeeds");
     let values = table
-        .find_many(FindMany {
-            filter: Presence::Value(filter()),
-            include: Presence::Value(include.clone()),
-            take: Presence::Value(0),
-        })
+        .find_many(values_request.clone())
         .await
         .expect("the tag read succeeds");
     assert!(unique.is_some());
@@ -172,29 +197,11 @@ async fn kwargs_omission_vs_null() {
     assert_eq!(
         repo.calls(),
         vec![
-            RecordedCall::FindUnique {
-                filter: filter(),
-                include: Presence::Omitted,
-            },
-            RecordedCall::FindFirst {
-                filter: filter(),
-                include: Presence::Null,
-            },
-            RecordedCall::FindMany {
-                filter: Presence::Omitted,
-                include: Presence::Omitted,
-                take: Presence::Omitted,
-            },
-            RecordedCall::FindMany {
-                filter: Presence::Null,
-                include: Presence::Null,
-                take: Presence::Null,
-            },
-            RecordedCall::FindMany {
-                filter: Presence::Value(filter()),
-                include: Presence::Value(include),
-                take: Presence::Value(0),
-            },
+            RecordedCall::FindUnique(unique_request),
+            RecordedCall::FindFirst(first_request),
+            RecordedCall::FindMany(omitted_request),
+            RecordedCall::FindMany(null_request),
+            RecordedCall::FindMany(values_request),
         ]
     );
 }
@@ -205,23 +212,17 @@ async fn empty_filters_and_zero_take_kept() {
     let repo = recording_repo(Mode::Row);
     let table =
         AuthReadAdapter::EndUser.open(Arc::clone(&repo), String::new(), harness.context(5.0));
+    let request = FindMany {
+        filter: Presence::Value(Fields::new()),
+        include: Presence::Value(Fields::new()),
+        take: Presence::Value(0),
+    };
     let rows = table
-        .find_many(FindMany {
-            filter: Presence::Value(Fields::new()),
-            include: Presence::Value(Fields::new()),
-            take: Presence::Value(0),
-        })
+        .find_many(request.clone())
         .await
         .expect("the end-user read succeeds");
     assert_eq!(rows.len(), 3);
-    assert_eq!(
-        repo.calls(),
-        vec![RecordedCall::FindMany {
-            filter: Presence::Value(Fields::new()),
-            include: Presence::Value(Fields::new()),
-            take: Presence::Value(0),
-        }]
-    );
+    assert_eq!(repo.calls(), vec![RecordedCall::FindMany(request)]);
 }
 
 #[tokio::test]
@@ -316,18 +317,20 @@ async fn writes_do_not_use_read_deadline() {
     let repo = recording_repo(Mode::Delayed);
     let table = AuthReadAdapter::User.open(Arc::clone(&repo), String::new(), harness.context(0.0));
     let data = Fields::from([("spend".to_owned(), "1.25".to_owned())]);
+    let update_request = Update {
+        filter: filter(),
+        data: data.clone(),
+    };
+    let create_request = Create {
+        data: data.clone(),
+        include: Presence::Value(Fields::new()),
+    };
     let updated = table
-        .update(Update {
-            filter: filter(),
-            data: data.clone(),
-        })
+        .update(update_request.clone())
         .await
         .expect("a write is not bounded by the read deadline");
     let created = table
-        .create(Create {
-            data: data.clone(),
-            include: Presence::Value(Fields::new()),
-        })
+        .create(create_request.clone())
         .await
         .expect("a write is not bounded by the read deadline");
     assert_eq!(updated, Some(rich_row("user-1")));
@@ -335,14 +338,8 @@ async fn writes_do_not_use_read_deadline() {
     assert_eq!(
         repo.calls(),
         vec![
-            RecordedCall::Update {
-                filter: filter(),
-                data: data.clone(),
-            },
-            RecordedCall::Create {
-                data,
-                include: Presence::Value(Fields::new()),
-            },
+            RecordedCall::Update(update_request),
+            RecordedCall::Create(create_request),
         ]
     );
     harness.drain().await;
@@ -370,6 +367,62 @@ async fn tag_end_user_group_adapters_unwrapped(#[case] adapter: AuthReadAdapter)
         "an unwrapped adapter applies no read deadline"
     );
     assert_eq!(repo.calls().len(), 1);
+    harness.drain().await;
+}
+
+#[tokio::test]
+async fn repository_composes_with_native_table() {
+    let harness = Harness::new();
+    let repository: RepositoryTable<deadpool_postgres::Client, _> = RepositoryTable {
+        client: None,
+        table: USER_TABLE,
+    };
+    let table = AuthReadAdapter::Team.open(
+        Arc::new(repository),
+        "team".to_owned(),
+        harness.context(5.0),
+    );
+    assert_connect(
+        table
+            .find_unique(FindOne {
+                filter: native_key(),
+                include: Presence::Omitted,
+            })
+            .await,
+    );
+    assert_connect(
+        table
+            .find_first(FindOne {
+                filter: native_key(),
+                include: Presence::Omitted,
+            })
+            .await,
+    );
+    assert_connect(
+        table
+            .find_many(FindMany {
+                filter: Presence::Omitted,
+                include: Presence::Omitted,
+                take: Presence::Omitted,
+            })
+            .await,
+    );
+    assert_connect(
+        table
+            .update(Update {
+                filter: native_key(),
+                data: (),
+            })
+            .await,
+    );
+    assert_connect(
+        table
+            .create(Create {
+                data: (),
+                include: Presence::Omitted,
+            })
+            .await,
+    );
     harness.drain().await;
 }
 

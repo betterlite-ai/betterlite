@@ -17,11 +17,16 @@ use tracing::Level;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::auth_read::table::{
-    AuthTable, Create, FindMany, FindOne, Presence, ReadContext, Update,
-};
+use crate::auth_read::table::{AuthTable, Create, FindMany, FindOne, ReadContext, Update};
 
 pub(super) type Fields = BTreeMap<String, String>;
+
+type OneRequest = FindOne<Fields, Fields>;
+type ManyRequest = FindMany<Fields, Fields>;
+type WriteRequest = Update<Fields, Fields>;
+type OneAnswer = Result<Option<RichRow>, DbLookupError>;
+type ManyAnswer = Result<Vec<RichRow>, DbLookupError>;
+type RowAnswer = Result<RichRow, DbLookupError>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct JwtMapping {
@@ -94,27 +99,11 @@ pub(super) fn rich_row(user_id: &str) -> RichRow {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum RecordedCall {
-    FindUnique {
-        filter: Fields,
-        include: Presence<Fields>,
-    },
-    FindFirst {
-        filter: Fields,
-        include: Presence<Fields>,
-    },
-    FindMany {
-        filter: Presence<Fields>,
-        include: Presence<Fields>,
-        take: Presence<i64>,
-    },
-    Update {
-        filter: Fields,
-        data: Fields,
-    },
-    Create {
-        data: Fields,
-        include: Presence<Fields>,
-    },
+    FindUnique(OneRequest),
+    FindFirst(OneRequest),
+    FindMany(ManyRequest),
+    Update(WriteRequest),
+    Create(Create<Fields, Fields>),
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -136,6 +125,18 @@ pub(super) struct RecordingRepo {
 }
 
 impl RecordingRepo {
+    fn new(mode: Mode, row: RichRow, rows: Vec<RichRow>) -> Self {
+        let calls = Mutex::new(Vec::new());
+        let dropped = AtomicBool::new(false);
+        Self {
+            mode,
+            row,
+            rows,
+            calls,
+            dropped,
+        }
+    }
+
     pub(super) fn calls(&self) -> Vec<RecordedCall> {
         self.calls
             .lock()
@@ -203,63 +204,33 @@ impl Drop for HeldFlag<'_> {
 #[async_trait]
 impl AuthTable for RecordingRepo {
     type Row = RichRow;
+    type Key = Fields;
     type Filter = Fields;
     type Include = Fields;
     type Data = Fields;
 
-    async fn find_unique(
-        &self,
-        request: FindOne<Self::Filter, Self::Include>,
-    ) -> Result<Option<Self::Row>, DbLookupError> {
-        self.record(RecordedCall::FindUnique {
-            filter: request.filter,
-            include: request.include,
-        });
+    async fn find_unique(&self, request: OneRequest) -> OneAnswer {
+        self.record(RecordedCall::FindUnique(request));
         self.reply_one().await
     }
 
-    async fn find_first(
-        &self,
-        request: FindOne<Self::Filter, Self::Include>,
-    ) -> Result<Option<Self::Row>, DbLookupError> {
-        self.record(RecordedCall::FindFirst {
-            filter: request.filter,
-            include: request.include,
-        });
+    async fn find_first(&self, request: OneRequest) -> OneAnswer {
+        self.record(RecordedCall::FindFirst(request));
         self.reply_one().await
     }
 
-    async fn find_many(
-        &self,
-        request: FindMany<Self::Filter, Self::Include>,
-    ) -> Result<Vec<Self::Row>, DbLookupError> {
-        self.record(RecordedCall::FindMany {
-            filter: request.filter,
-            include: request.include,
-            take: request.take,
-        });
+    async fn find_many(&self, request: ManyRequest) -> ManyAnswer {
+        self.record(RecordedCall::FindMany(request));
         self.reply_many().await
     }
 
-    async fn update(
-        &self,
-        request: Update<Self::Filter, Self::Data>,
-    ) -> Result<Option<Self::Row>, DbLookupError> {
-        self.record(RecordedCall::Update {
-            filter: request.filter,
-            data: request.data,
-        });
+    async fn update(&self, request: WriteRequest) -> OneAnswer {
+        self.record(RecordedCall::Update(request));
         self.reply_one().await
     }
 
-    async fn create(
-        &self,
-        request: Create<Self::Data, Self::Include>,
-    ) -> Result<Self::Row, DbLookupError> {
-        self.record(RecordedCall::Create {
-            data: request.data,
-            include: request.include,
-        });
+    async fn create(&self, request: Create<Fields, Fields>) -> RowAnswer {
+        self.record(RecordedCall::Create(request));
         self.reply_created().await
     }
 }
@@ -272,23 +243,11 @@ pub(super) fn recording_repo(mode: Mode) -> Arc<RecordingRepo> {
 }
 
 pub(super) fn recording_repo_with(mode: Mode, rows: Vec<RichRow>) -> Arc<RecordingRepo> {
-    Arc::new(RecordingRepo {
-        mode,
-        row: rich_row("user-1"),
-        rows,
-        calls: Mutex::new(Vec::new()),
-        dropped: AtomicBool::new(false),
-    })
+    Arc::new(RecordingRepo::new(mode, rich_row("user-1"), rows))
 }
 
 pub(super) fn recording_row_repo(mode: Mode, row: RichRow) -> Arc<RecordingRepo> {
-    Arc::new(RecordingRepo {
-        mode,
-        row,
-        rows: Vec::new(),
-        calls: Mutex::new(Vec::new()),
-        dropped: AtomicBool::new(false),
-    })
+    Arc::new(RecordingRepo::new(mode, row, Vec::new()))
 }
 
 pub(super) fn read_error() -> DbLookupError {
