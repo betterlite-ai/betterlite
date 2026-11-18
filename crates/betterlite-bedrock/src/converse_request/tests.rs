@@ -6,7 +6,37 @@ mod request_cases;
 mod support;
 mod thinking_cases;
 
+use betterlite_context::request_records::RequestRecordError;
+use betterlite_prompts::bedrock_processor::error::ProcessorError;
 use rstest::rstest;
+
+use crate::converse_messages::error::ConverseMessageError;
+use crate::converse_request::error::ConverseRequestError;
+use crate::error::BedrockError;
+
+// Every wrapper keeps the status its source error reports, and the provider-free ones carry none.
+#[test]
+fn converse_request_error_status_codes() {
+    let rejected = ConverseRequestError::FieldType {
+        field: "requestMetadata",
+        expected: "an object",
+    };
+    assert_eq!(rejected.status_code(), Some(400));
+
+    let forwarded = ConverseRequestError::Messages(ConverseMessageError::ToolCallsWithoutTools);
+    assert_eq!(forwarded.status_code(), Some(400));
+
+    let metadata = ConverseRequestError::Metadata(BedrockError::MetadataNotObject);
+    assert_eq!(metadata.status_code(), Some(400));
+
+    let internal = ConverseRequestError::Records(RequestRecordError::MetadataMembership {
+        bucket: "params".to_owned(),
+    });
+    assert_eq!(internal.status_code(), None);
+
+    let processor = ConverseRequestError::Processor(ProcessorError::NoMessages);
+    assert_eq!(processor.status_code(), None);
+}
 
 #[rstest]
 #[case::converse_body_shape(body_cases::converse_body_shape)]

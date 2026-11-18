@@ -15,6 +15,7 @@ use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{Resolve, SystemResolver, UrlValidator};
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
+use betterlite_models::decisions::Json as MetadataJson;
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::fireworks_catalog_metadata::Catalog;
 use betterlite_models::full_model_metadata::record::ModelInfo;
@@ -121,6 +122,7 @@ pub(super) struct Call<'request> {
     pub(super) litellm_params: Option<&'request str>,
     pub(super) model_cost: &'request str,
     pub(super) policy: Option<&'request [&'request str]>,
+    pub(super) answers: &'request str,
     pub(super) settings: Settings,
 }
 
@@ -133,6 +135,7 @@ impl<'request> Call<'request> {
             litellm_params: None,
             model_cost: MODEL_COST,
             policy: None,
+            answers: "{}",
             settings: Settings::default(),
         }
     }
@@ -163,8 +166,7 @@ impl Outcome {
 #[error("the model is not mapped")]
 pub(super) struct Unmapped;
 
-#[derive(Default)]
-pub(super) struct Answers(BTreeMap<String, IndexMap<String, Json>>);
+pub(super) struct Answers(BTreeMap<String, IndexMap<String, MetadataJson>>);
 
 impl ModelInfoLookup for Answers {
     type Error = Unmapped;
@@ -280,6 +282,7 @@ impl Fixture {
 
 pub(super) fn runtime() -> Runtime {
     Builder::new_current_thread()
+        .enable_all()
         .build()
         .expect("the test runtime builds")
 }
@@ -337,6 +340,7 @@ struct Session<'setup, 'request, R> {
     litellm_params: Option<Object>,
     parsed_messages: Vec<Message>,
     policy: Option<BedrockRequestPolicy>,
+    answers: Answers,
 }
 
 impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
@@ -351,6 +355,7 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
             policy: call.policy.map(|fields| BedrockRequestPolicy {
                 fields: fields.iter().map(|field| (*field).to_owned()).collect(),
             }),
+            answers: Answers(serde_json::from_str(call.answers).expect("the lookup answers parse")),
             fixture: Fixture::load(&model_cost),
             model_cost,
         }
@@ -358,7 +363,6 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
 
     async fn assemble(&mut self) -> Result<ConverseRequestBody, ConverseRequestError> {
         let catalogs = self.fixture.catalogs();
-        let lookup = Answers::default();
         let mut keys = ModelCostKeys::default();
         let dynamic = NoDynamicMetadata;
         let resolution = self.fixture.resolution();
@@ -378,7 +382,7 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
             },
             model_cost: &self.model_cost,
             catalogs: &catalogs,
-            lookup: &lookup,
+            lookup: &self.answers,
             packaged: self.fixture.packaged(),
         };
         let media = ConverseMedia {

@@ -1,5 +1,8 @@
 use betterlite_prompts::bedrock_processor::error::ProcessorError;
 
+use crate::converse_options::error::ConverseOptionsError;
+use crate::converse_request::error::ConverseRequestError;
+
 use super::support::{
     ARN, CLAUDE_3_5, CLAUDE_4_5, Call, LLAMA, Settings, expected, field, processor_error, remote,
     run,
@@ -138,6 +141,11 @@ const DROP_OUTPUT_CONFIG_WARNING: &str = "Dropping unsupported `output_config` f
 const EFFORT_OPTIONS: &str = r#"{"output_config": {"effort": "high"}}"#;
 const EFFORT_ADDITIONAL: &str =
     r#"{"output_config": {"effort": "high"}, "anthropic_beta": ["effort-2025-11-24"]}"#;
+const EFFORT_CEILING_ANSWERS: &str =
+    r#"{"anthropic.claude-4-5-test": {"bedrock_output_config_effort_ceiling": "high"}}"#;
+const MAX_EFFORT_OPTIONS: &str = r#"{"output_config": {"effort": "max"}}"#;
+const NORMALIZED_MAX_EFFORT_OPTIONS: &str =
+    r#"{"_output_config_normalized": true, "output_config": {"effort": "max"}}"#;
 
 // The application inference profile ARN forwards remaining output_config verbatim and skips both gates.
 pub(super) fn model_arn_request() {
@@ -146,6 +154,8 @@ pub(super) fn model_arn_request() {
     per_call_drop_forwards_output_config();
     foreign_model_drops_output_config_silently();
     discarded_format_still_warns_before_arn();
+    effort_ceiling_clamps_before_validation();
+    normalized_marker_skips_the_clamp();
 }
 
 fn arn_forwards_output_config() {
@@ -205,6 +215,32 @@ fn discarded_format_still_warns_before_arn() {
         Some(&expected(EFFORT_OPTIONS))
     );
     assert!(warnings.contains(FORMAT_WARNING), "{warnings}");
+}
+
+fn effort_ceiling_clamps_before_validation() {
+    let call = Call {
+        answers: EFFORT_CEILING_ANSWERS,
+        ..Call::new(CLAUDE_4_5, MAX_EFFORT_OPTIONS)
+    };
+    let (clamped, warnings) = run(&call, &remote(&[]));
+    assert_eq!(
+        field(clamped.body(), "additionalModelRequestFields"),
+        Some(&expected(EFFORT_ADDITIONAL))
+    );
+    assert!(!warnings.contains(DROP_OUTPUT_CONFIG_WARNING), "{warnings}");
+}
+
+fn normalized_marker_skips_the_clamp() {
+    // A caller that already normalized keeps its value, so the effort gate rejects max on this model.
+    let call = Call {
+        answers: EFFORT_CEILING_ANSWERS,
+        ..Call::new(CLAUDE_4_5, NORMALIZED_MAX_EFFORT_OPTIONS)
+    };
+    let (raw, _warnings) = run(&call, &remote(&[]));
+    assert!(matches!(
+        raw.error(),
+        ConverseRequestError::Options(ConverseOptionsError::UnsupportedEffort { .. })
+    ));
 }
 
 const NATIVE_CONFIG: &str = r#"{"textFormat": {"type": "json_schema", "structure": {"jsonSchema": {

@@ -87,6 +87,9 @@ const TOOL_CONFIG_UNPLACED: &str = r#"{"tools": [{"toolSpec": {
     "inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}
 }}], "toolChoice": {"tool": {"name": "lookup"}}}"#;
 
+const CACHE_POINT_ONLY: &str =
+    r#"{"cache_control_injection_points": [{"location": "tool_config"}]}"#;
+
 const CONTEXT_OPTIONS: &str = r#"{
     "custom": 1,
     "context_management": {"edits": [
@@ -117,6 +120,21 @@ pub(super) fn converse_body_shape() {
 fn caller_options_move_and_copy() {
     let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, CALLER_OPTIONS), &remote(&[]));
     assert_eq!(outcome.body(), &expected(CALLER_BODY));
+    // The members keep the pinned module's insertion order, which the parsed copy also preserves.
+    let Json::Object(fields) = outcome.body() else {
+        panic!("the Converse body is an object");
+    };
+    let order: Vec<&str> = fields.keys().map(String::as_str).collect();
+    assert_eq!(
+        order,
+        [
+            "messages",
+            "inferenceConfig",
+            "additionalModelRequestFields",
+            "guardrailConfig",
+            "requestMetadata"
+        ]
+    );
     // Only the internal marker leaves the caller's own options; the copy takes the rest.
     assert!(field(&outcome.optional_params, "_output_config_normalized").is_none());
     assert_eq!(
@@ -144,6 +162,7 @@ pub(super) fn tool_config_injection() {
     tool_config_point_outside_tool_config();
     uncached_model_places_no_breakpoint();
     tool_choice_without_tools_stays_inference();
+    cache_points_without_tools_place_nothing();
 }
 
 fn tool_config_breakpoint() {
@@ -204,6 +223,16 @@ fn tool_choice_without_tools_stays_inference() {
             r#"{"tool_choice": {"tool": {"name": "lookup"}}}"#
         ))
     );
+}
+
+fn cache_points_without_tools_place_nothing() {
+    let call = Call {
+        litellm_params: Some(TOOL_LITELLM),
+        ..Call::new(CLAUDE_4_5, CACHE_POINT_ONLY)
+    };
+    let (empty, _warnings) = run(&call, &remote(&[]));
+    assert!(field(empty.body(), "toolConfig").is_none());
+    assert_eq!(empty.litellm_params, Some(expected(TOOL_LITELLM)));
 }
 
 // The compact-only context management filter runs inside the tools stage and its beta reaches the body.
