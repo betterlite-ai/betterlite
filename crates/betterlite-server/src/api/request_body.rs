@@ -160,28 +160,16 @@ fn decode_form_body(
     let parts =
         super::request_form::decode_request_form(&input.body, content_type.as_bytes(), limits)
             .map_err(|_error| RequestBodyError::UndecodedForm)?;
-    let fields = betterlite_core::api::request_form::values::get_form_data(&parts)
-        .map_err(|_error| RequestBodyError::UndecodedForm)?;
-    let parsed = fields
+    // LiteLLM's auth-time read takes dict(request.form()): the last value per exact key, uploads left out of the JSON shape
+    let fields = parts
+        .items
         .into_iter()
-        .filter_map(|(name, value)| match value {
-            betterlite_core::api::request_form::values::FormValue::Text(text) => {
-                Some((name, serde_json::Value::String(text)))
+        .filter_map(|part| match part.value {
+            betterlite_core::api::request_form::values::PartValue::Text(text) => {
+                Some((part.name, text))
             }
-            betterlite_core::api::request_form::values::FormValue::List(values) => {
-                let values = values
-                    .into_iter()
-                    .map(|value| match value {
-                        betterlite_core::api::request_form::values::FormValue::Text(text) => {
-                            Some(serde_json::Value::String(text))
-                        }
-                        _other => None,
-                    })
-                    .collect::<Option<Vec<_>>>();
-                values.map(|values| (name, serde_json::Value::Array(values)))
-            }
-            _other => None,
+            betterlite_core::api::request_form::values::PartValue::Upload(_upload) => None,
         })
         .collect::<std::collections::BTreeMap<_, _>>();
-    Ok(parsed_result(BodyKind::Form, parsed))
+    Ok(parsed_result(BodyKind::Form, form_body(&fields)?))
 }
