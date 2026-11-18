@@ -1,0 +1,5 @@
+router_settings:
+  routing_groups:
+    - group_name: cheap
+      models: gpt-4o-mini
+      routing_strategy: least-busy

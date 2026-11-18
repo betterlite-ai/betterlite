@@ -1,0 +1,71 @@
+kind: helper
+name: extra-body-and-metadata
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: user, content: hello}]
+    optional_params: {reasoning_effort: low, extra_body: {reasoning_effort: high, store: true, vendor: {x: 1}}}
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: null
+calls:
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {extra_body: {}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {extra_body: {vendor_option: 1, other: [1]}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {extra_body: {text: {format: {type: text}}, previous_response_id: resp_b, max_output_tokens: 11}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {}
+      litellm_params: {metadata: {user_id: u1, team: a}, litellm_metadata: {team: b, org: o2}, custom_key: value, temperature: 0.9}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {}
+      litellm_params: {metadata: "text", litellm_metadata: "other"}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {}
+      litellm_params: {litellm_metadata: {}}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {}
+      litellm_params: {litellm_metadata: "text"}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,4 @@
+# an empty value counts as unset, so the checks stay off
+environment_variables:
+  LITELLM_MAX_STREAMING_DURATION_SECONDS: ""
+model_list: []

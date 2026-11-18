@@ -1,0 +1,26 @@
+kind: helper
+name: redis_connection_target
+call:
+  b8411:
+    calls:
+      - {function: redis_params, body: {}}
+      - {function: redis_params, body: {port: 6379}}
+      - {function: redis_params, body: {username: u, password: hunter2, ssl: true}}
+      - {function: redis_params, body: {host: ""}}
+      - {function: redis_params, body: {url: ""}}
+      - {function: redis_params, body: {startup_nodes: []}}
+      - {function: redis_params, body: {sentinel_nodes: []}}
+      - {function: redis_params, body: {host: redis, port: 6379}}
+      - {function: redis_params, body: {url: "redis://:hunter2@redis:6379"}}
+      - {function: redis_params, body: {startup_nodes: [{host: n1, port: 6379}, {host: n2, port: 6380}]}}
+      - {function: redis_params, body: {sentinel_nodes: [[sentinel, 26379], [sentinel2, 26380]]}}
+      - {function: redis_params, body: {aws_iam_auth: true}}
+      - {function: redis_params, body: {aws_iam_auth: "true"}}
+      - {function: redis_params, body: {aws_iam_serverless: false}}
+      - {function: redis_params, body: {aws_iam_serverless: "yes", aws_iam_region: us-east-1, aws_iam_user_name: u, aws_iam_cache_name: c}}
+      - {function: redis_params, body: {service_name: mymaster, sentinel_password: sentinel-secret}}
+      - {function: redis_params, body: {host: redis, cluster_mode: true, nested: {a: [1]}}}
+      - {function: redis_params, body: {host: 5}}
+      - {function: redis_params, body: {port: 6379.5}}
+env: {}
+compare: {ignore: []}
