@@ -93,10 +93,10 @@ pub(crate) async fn run(name: &str) {
             periodic_sync_drains_queued_callbacks().await;
         }
         "scheduled_flush_past_the_deadline_drops_queued_callbacks" => {
-            scheduled_flush_past_the_deadline_drops_queued_callbacks().await;
+            flush_discards_callbacks(FlushFailure::Deadline).await;
         }
         "failed_scheduled_flush_drops_queued_callbacks" => {
-            failed_scheduled_flush_drops_queued_callbacks().await;
+            flush_discards_callbacks(FlushFailure::Store).await;
         }
         "cleanup_waits_for_the_scheduled_flush" => cleanup_waits_for_the_scheduled_flush().await,
         "failure_callback_increment_survives_the_merge" => {
@@ -606,30 +606,14 @@ async fn periodic_sync_drains_queued_callbacks() {
     harness.counters.cleanup().await;
 }
 
-// a stalled flush and its successor expire without replaying either batch
-async fn scheduled_flush_past_the_deadline_drops_queued_callbacks() {
-    let harness = Harness::with_store(settings(false, None));
-    harness.store.set_stalled(true);
-    let sink: &dyn CounterSink = harness.counters.as_ref();
-    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
-        .unwrap();
-    yield_now().await;
-    assert_eq!(harness.store.calls(), 1);
-    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
-        .unwrap();
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS + 1);
-    yield_now().await;
-    advance(FLUSH_DEADLINE).await;
-    harness.drain_flushes().await;
-    assert_eq!(harness.pending_len(), 0);
-    harness.store.set_stalled(false);
-    assert!(!harness.counters.sync_with_redis().await);
-    assert_eq!(harness.store.amount(TPM_KEY), None);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(2_050));
+#[derive(Clone, Copy)]
+enum FlushFailure {
+    Deadline,
+    Store,
 }
 
-// every detached batch fails once; a later healthy sync never replays it
-async fn failed_scheduled_flush_drops_queued_callbacks() {
+// both failure modes discard the detached batches without changing callback results or replaying them
+async fn flush_discards_callbacks(failure: FlushFailure) {
     let harness = Harness::with_store(settings(false, None));
     harness.store.set_stalled(true);
     let sink: &dyn CounterSink = harness.counters.as_ref();
@@ -640,11 +624,22 @@ async fn failed_scheduled_flush_drops_queued_callbacks() {
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
         .unwrap();
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS + 1);
-    harness.store.set_down(true);
-    harness.store.release();
+    match failure {
+        FlushFailure::Deadline => {
+            yield_now().await;
+            advance(FLUSH_DEADLINE).await;
+        }
+        FlushFailure::Store => {
+            harness.store.set_down(true);
+            harness.store.release();
+        }
+    }
     harness.drain_flushes().await;
-    assert_eq!(harness.store.calls(), 2);
+    if matches!(failure, FlushFailure::Store) {
+        assert_eq!(harness.store.calls(), 2);
+    }
     assert_eq!(harness.pending_len(), 0);
+    harness.store.set_stalled(false);
     harness.store.set_down(false);
     assert!(!harness.counters.sync_with_redis().await);
     assert_eq!(harness.store.amount(TPM_KEY), None);
