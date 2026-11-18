@@ -1,0 +1,5 @@
+kind: helper
+name: database-failures-table-metadata-seed
+call: {database_failures: {values: [users, "", 12, null]}}
+env: {}
+compare: {ignore: []}
