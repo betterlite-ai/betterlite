@@ -183,6 +183,27 @@ async fn sap_chat_prepare_runs_the_chat_deployment_lookup() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn sap_service_key_supplies_the_credentials() {
+    let transport = Scripted::new(SAP_CHAT_REPLIES.to_vec());
+    let env = Env::new(sap_environment(&[]));
+    let service_key = key(SAP_SERVICE_KEY);
+    let request = SapRequest {
+        api_key: None,
+        sap_service_key: Some(&service_key),
+        env: env.source(),
+    };
+    let prepared =
+        sap::prepare_chat(request, &transport, &FixedClock).expect("the service key resolves");
+    assert_eq!(prepared.url, "https://dep.example.com/v2/completion");
+    let sent = transport.sent();
+    assert_eq!(sent[0].url, "https://other-auth.example.com/oauth/token");
+    assert_eq!(
+        sent[1].url,
+        "https://other-base.example.com/v2/lm/deployments"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn sap_embedding_reports_missing_credentials() {
     let transport = Scripted::empty();
     let env = Env::new(sap_environment(&[]));
