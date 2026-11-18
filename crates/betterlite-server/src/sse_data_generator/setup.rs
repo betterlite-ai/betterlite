@@ -20,7 +20,10 @@ use crate::stream_keepalive::{JsonObject as KeepaliveObject, KeepaliveRouter};
 
 pub(super) type BeatStream = BoxStream<'static, Beat<Result<StreamItem, StreamFailure>>>;
 
-pub(super) struct Ports<Key: Sync> {
+pub(super) struct Ports<Key>
+where
+    Key: Sync,
+{
     pub(super) hooks: Arc<dyn StreamHooks<Key>>,
     pub(super) error_state: Arc<dyn ErrorStateSource>,
     pub(super) cleanup: Arc<dyn StreamCleanup<Key>>,
@@ -30,7 +33,10 @@ pub(super) struct Ports<Key: Sync> {
     pub(super) is_model_router: RouterCheck,
 }
 
-impl<Key: Sync> Ports<Key> {
+impl<Key> Ports<Key>
+where
+    Key: Sync,
+{
     pub(super) fn wrapped_items(
         &self,
         items: ItemStream,
@@ -65,13 +71,16 @@ pub(super) struct Setup {
 }
 
 impl Setup {
-    pub(super) fn read<Key: Sync>(
+    pub(super) fn read<Key>(
         hooks: &dyn StreamHooks<Key>,
         expose: Flag,
         request_data: &JsonObject,
         hidden: &JsonObject,
         is_model_router: RouterCheck,
-    ) -> Self {
+    ) -> Self
+    where
+        Key: Sync,
+    {
         Self {
             raw: Flag(matches!(
                 request_data.get("_litellm_raw_sse_stream"),

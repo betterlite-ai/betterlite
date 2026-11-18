@@ -6,7 +6,10 @@ use futures_util::stream::BoxStream;
 use super::types::{SseDataGenerator, StreamSource};
 use crate::data_generator_select::{AsyncDataGenerator, GeneratorInput};
 
-impl<Key: Send + Sync + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
+impl<Key> AsyncDataGenerator<Key> for SseDataGenerator<Key>
+where
+    Key: Send + Sync + 'static,
+{
     type Response = StreamSource;
     type Stream = BoxStream<'static, Result<Bytes, io::Error>>;
 

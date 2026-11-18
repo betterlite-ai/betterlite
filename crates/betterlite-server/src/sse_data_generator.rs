@@ -7,5 +7,4 @@ mod setup;
 mod stream;
 pub mod types;
 
-#[cfg(test)]
 mod tests;

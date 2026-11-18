@@ -58,7 +58,10 @@ pub struct CollectedStream {
 }
 
 #[async_trait]
-pub trait StreamHooks<Key: Sync>: Send + Sync {
+pub trait StreamHooks<Key>: Send + Sync
+where
+    Key: Sync,
+{
     fn needs_iterator_wrap(&self) -> bool;
 
     fn needs_per_chunk_hook(&self) -> bool;
@@ -108,7 +111,10 @@ pub trait StreamCleanup<Key>: Send + Sync {
     fn finalize(&self, outcome: CleanupOutcome<Key>);
 }
 
-pub struct SseDataGenerator<Key: Sync> {
+pub struct SseDataGenerator<Key>
+where
+    Key: Sync,
+{
     pub hooks: Arc<dyn StreamHooks<Key>>,
     pub error_state: Arc<dyn ErrorStateSource>,
     pub cleanup: Arc<dyn StreamCleanup<Key>>,

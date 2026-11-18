@@ -16,7 +16,10 @@ use super::types::{
 use crate::data_generator_select::GeneratorInput;
 use crate::stream_keepalive::wrapper::Beat;
 
-pub(super) struct Session<Key: Sync> {
+pub(super) struct Session<Key>
+where
+    Key: Sync,
+{
     pub(super) hooks: Arc<dyn StreamHooks<Key>>,
     pub(super) cleanup: Arc<dyn StreamCleanup<Key>>,
     pub(super) request_data: Arc<JsonObject>,
@@ -26,7 +29,10 @@ pub(super) struct Session<Key: Sync> {
     pub(super) setup: Setup,
 }
 
-pub(super) struct Drive<Key: Sync> {
+pub(super) struct Drive<Key>
+where
+    Key: Sync,
+{
     pub(super) session: Session<Key>,
     pub(super) fallback_sent: Flag,
     pub(super) mismatch: Flag,
@@ -44,10 +50,13 @@ pub(super) enum Output {
     End,
 }
 
-pub(super) fn generate<Key: Send + Sync + 'static>(
+pub(super) fn generate<Key>(
     generator: &SseDataGenerator<Key>,
     input: GeneratorInput<StreamSource, Key>,
-) -> BoxStream<'static, Result<Bytes, io::Error>> {
+) -> BoxStream<'static, Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
     let ports = Ports {
         hooks: Arc::clone(&generator.hooks),
         error_state: Arc::clone(&generator.error_state),
@@ -68,7 +77,10 @@ pub(super) fn generate<Key: Send + Sync + 'static>(
     .boxed()
 }
 
-impl<Key: Send + Sync + 'static> Drive<Key> {
+impl<Key> Drive<Key>
+where
+    Key: Send + Sync + 'static,
+{
     pub(super) fn start(ports: Ports<Key>, input: GeneratorInput<StreamSource, Key>) -> Self {
         let GeneratorInput {
             response,
@@ -119,7 +131,10 @@ impl<Key: Send + Sync + 'static> Drive<Key> {
     }
 }
 
-impl<Key: Sync> Session<Key> {
+impl<Key> Session<Key>
+where
+    Key: Sync,
+{
     pub(super) fn open(
         ports: Ports<Key>,
         source: StreamSource,

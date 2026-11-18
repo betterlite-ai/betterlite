@@ -16,10 +16,13 @@ use crate::stream_chunks::{ChunkKind, MAX_RAW_SSE_BUFFER_CHARS};
 
 const RELAY_PREFIXES: [&str; 3] = ["data:", "event:", ":"];
 
-pub(super) async fn handle_item<Key: Send + Sync + 'static>(
+pub(super) async fn handle_item<Key>(
     drive: &mut Drive<Key>,
     mut item: StreamItem,
-) -> Vec<Result<Bytes, io::Error>> {
+) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
     if drive.session.setup.per_chunk.0 {
         item = match hook(drive, item).await {
             Ok(hooked) => {
@@ -41,10 +44,10 @@ pub(super) async fn handle_item<Key: Send + Sync + 'static>(
     output(drive, item, pending)
 }
 
-async fn hook<Key: Send + Sync + 'static>(
-    drive: &mut Drive<Key>,
-    item: StreamItem,
-) -> Result<StreamItem, StreamFailure> {
+async fn hook<Key>(drive: &mut Drive<Key>, item: StreamItem) -> Result<StreamItem, StreamFailure>
+where
+    Key: Send + Sync + 'static,
+{
     let Some(key) = drive.session.outcome.as_ref().map(|outcome| &outcome.key) else {
         return Ok(item);
     };
@@ -55,7 +58,10 @@ async fn hook<Key: Send + Sync + 'static>(
         .await
 }
 
-fn grow_text<Key: Sync>(drive: &mut Drive<Key>, item: &StreamItem) {
+fn grow_text<Key>(drive: &mut Drive<Key>, item: &StreamItem)
+where
+    Key: Sync,
+{
     if let StreamItem::Chunk(chunk) = item
         && matches!(chunk.kind, ChunkKind::ModelStream | ChunkKind::ModelFull)
     {
@@ -64,7 +70,10 @@ fn grow_text<Key: Sync>(drive: &mut Drive<Key>, item: &StreamItem) {
     }
 }
 
-fn latch_fallback<Key: Sync>(drive: &mut Drive<Key>, item: &StreamItem) {
+fn latch_fallback<Key>(drive: &mut Drive<Key>, item: &StreamItem)
+where
+    Key: Sync,
+{
     if drive.session.setup.fallback.model.is_some() {
         return;
     }
@@ -83,7 +92,10 @@ fn latch_fallback<Key: Sync>(drive: &mut Drive<Key>, item: &StreamItem) {
     }
 }
 
-fn pending<Key: Sync>(drive: &Drive<Key>) -> bool {
+fn pending<Key>(drive: &Drive<Key>) -> bool
+where
+    Key: Sync,
+{
     let setup = &drive.session.setup;
     setup.include.0
         && setup.fallback.attempted
@@ -91,7 +103,10 @@ fn pending<Key: Sync>(drive: &Drive<Key>) -> bool {
         && !drive.fallback_sent.0
 }
 
-fn restamp<Key: Sync>(drive: &mut Drive<Key>, item: &mut StreamItem) {
+fn restamp<Key>(drive: &mut Drive<Key>, item: &mut StreamItem)
+where
+    Key: Sync,
+{
     let setup = &drive.session.setup;
     let input = RestampInput {
         requested_model: &setup.requested,
@@ -103,14 +118,20 @@ fn restamp<Key: Sync>(drive: &mut Drive<Key>, item: &mut StreamItem) {
     drive.mismatch = Flag(restamp_chunk_model(item, &input, drive.mismatch.0));
 }
 
-fn strip_usage<Key: Sync>(drive: &Drive<Key>, item: &StreamItem) -> bool {
+fn strip_usage<Key>(drive: &Drive<Key>, item: &StreamItem) -> bool
+where
+    Key: Sync,
+{
     if !drive.session.setup.strip.0 {
         return false;
     }
     matches!(item, StreamItem::Chunk(chunk) if is_usage_artifact(chunk))
 }
 
-fn skipped<Key: Sync>(drive: &mut Drive<Key>, pending: bool) -> Vec<Result<Bytes, io::Error>> {
+fn skipped<Key>(drive: &mut Drive<Key>, pending: bool) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Sync,
+{
     if !pending {
         return Vec::new();
     }
@@ -118,17 +139,23 @@ fn skipped<Key: Sync>(drive: &mut Drive<Key>, pending: bool) -> Vec<Result<Bytes
     vec![Ok(Bytes::from(fallback_event(drive)))]
 }
 
-fn fallback_event<Key: Sync>(drive: &Drive<Key>) -> String {
+fn fallback_event<Key>(drive: &Drive<Key>) -> String
+where
+    Key: Sync,
+{
     let model = drive.session.setup.fallback.model.as_deref();
     let created = unix_timestamp();
     fallback_event_frame(model, &drive.session.setup.fallback.errors, created)
 }
 
-fn output<Key: Send + Sync + 'static>(
+fn output<Key>(
     drive: &mut Drive<Key>,
     item: StreamItem,
     pending: bool,
-) -> Vec<Result<Bytes, io::Error>> {
+) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
     match classify(drive, item) {
         Output::Item(frame) => {
             let marked = if let Some(state) = drive.session.error_state.as_mut() {
@@ -154,7 +181,10 @@ fn output<Key: Send + Sync + 'static>(
     }
 }
 
-fn classify<Key: Sync>(drive: &mut Drive<Key>, item: StreamItem) -> Output {
+fn classify<Key>(drive: &mut Drive<Key>, item: StreamItem) -> Output
+where
+    Key: Sync,
+{
     match item {
         StreamItem::Chunk(chunk) => Output::Item(sse_data_frame(&serialize_chunk(&chunk))),
         StreamItem::Bytes(bytes) => classify_bytes(drive, &bytes),
@@ -162,7 +192,10 @@ fn classify<Key: Sync>(drive: &mut Drive<Key>, item: StreamItem) -> Output {
     }
 }
 
-fn classify_bytes<Key: Sync>(drive: &mut Drive<Key>, bytes: &[u8]) -> Output {
+fn classify_bytes<Key>(drive: &mut Drive<Key>, bytes: &[u8]) -> Output
+where
+    Key: Sync,
+{
     let text = UTF_8.decode_without_bom_handling(bytes).0.into_owned();
     if drive.session.setup.raw.0 {
         return buffer_raw(drive, &text);
@@ -181,7 +214,10 @@ fn classify_bytes<Key: Sync>(drive: &mut Drive<Key>, bytes: &[u8]) -> Output {
     Output::Item(sse_data_frame(&text))
 }
 
-fn classify_text<Key: Sync>(drive: &mut Drive<Key>, text: String) -> Output {
+fn classify_text<Key>(drive: &mut Drive<Key>, text: String) -> Output
+where
+    Key: Sync,
+{
     if drive.session.setup.raw.0 {
         return buffer_raw(drive, &text);
     }
@@ -192,7 +228,10 @@ fn classify_text<Key: Sync>(drive: &mut Drive<Key>, text: String) -> Output {
     Output::Item(sse_data_frame(&text))
 }
 
-fn buffer_raw<Key: Sync>(drive: &mut Drive<Key>, text: &str) -> Output {
+fn buffer_raw<Key>(drive: &mut Drive<Key>, text: &str) -> Output
+where
+    Key: Sync,
+{
     drive.raw_buffer.push_str(text);
     let mut frames = Vec::new();
     while let (Some(frame), rest) = pop_sse_frame(&drive.raw_buffer) {
@@ -205,11 +244,14 @@ fn buffer_raw<Key: Sync>(drive: &mut Drive<Key>, text: &str) -> Output {
     Output::Raw(frames)
 }
 
-fn raw_frames<Key: Sync>(
+fn raw_frames<Key>(
     drive: &mut Drive<Key>,
     frames: Vec<String>,
     pending: bool,
-) -> Vec<Result<Bytes, io::Error>> {
+) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Sync,
+{
     let mut output = frames
         .into_iter()
         .map(|frame| Ok(Bytes::from(frame)))

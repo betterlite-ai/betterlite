@@ -11,9 +11,10 @@ use super::types::{FailureKind, Flag, StreamFailure};
 use crate::stream_chunks::DONE_FRAME;
 use crate::stream_chunks::frames::ends_with_frame_delimiter;
 
-pub(super) fn end<Key: Send + Sync + 'static>(
-    drive: &mut Drive<Key>,
-) -> Vec<Result<Bytes, io::Error>> {
+pub(super) fn end<Key>(drive: &mut Drive<Key>) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
     drive.finished = Flag(true);
     mark_completed(&mut drive.session);
     if !drive.session.setup.wrapped.0 {
@@ -39,10 +40,13 @@ pub(super) fn end<Key: Send + Sync + 'static>(
     frames
 }
 
-pub(super) async fn handle_failure<Key: Send + Sync + 'static>(
+pub(super) async fn handle_failure<Key>(
     drive: &mut Drive<Key>,
     failure: StreamFailure,
-) -> Vec<Result<Bytes, io::Error>> {
+) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
     tracing::error!(
         "litellm.proxy.proxy_server.async_data_generator(): Exception occurred - {}",
         failure.message
@@ -64,10 +68,13 @@ pub(super) async fn handle_failure<Key: Send + Sync + 'static>(
     vec![Ok(Bytes::from(frame))]
 }
 
-async fn call_failure_hook<Key: Send + Sync + 'static>(
+async fn call_failure_hook<Key>(
     drive: &mut Drive<Key>,
     failure: &StreamFailure,
-) -> Result<(), StreamFailure> {
+) -> Result<(), StreamFailure>
+where
+    Key: Send + Sync + 'static,
+{
     let Some(key) = drive.session.outcome.as_ref().map(|outcome| &outcome.key) else {
         return Ok(());
     };
@@ -77,10 +84,13 @@ async fn call_failure_hook<Key: Send + Sync + 'static>(
         .await
 }
 
-fn state_failure<Key: Send + Sync + 'static>(
+fn state_failure<Key>(
     drive: &mut Drive<Key>,
     failure: &StreamFailure,
-) -> Vec<Result<Bytes, io::Error>> {
+) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
     mark_completed(&mut drive.session);
     let frame = drive
         .session
