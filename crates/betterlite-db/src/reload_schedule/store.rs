@@ -135,6 +135,11 @@ pub async fn read_reload_schedule(
         .map_err(ReloadScheduleError::Parse)
 }
 
+async fn evict_reload_config(evictor: &dyn ConfigParamEvictor) -> Result<(), ReloadScheduleError> {
+    evictor.evict_param(RELOAD_CONFIG_PARAM_NAME).await?;
+    Ok(())
+}
+
 pub async fn write_reload_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
@@ -147,8 +152,7 @@ pub async fn write_reload_interval(
     ConfigRepository::new(client, true)
         .set_param(RELOAD_CONFIG_PARAM_NAME, JsonData::String(param_value))
         .await?;
-    evictor.evict_param(RELOAD_CONFIG_PARAM_NAME).await?;
-    Ok(())
+    evict_reload_config(evictor).await
 }
 
 pub async fn clear_reload_interval(
@@ -168,8 +172,7 @@ pub async fn clear_reload_interval(
             RELOAD_CONFIG_PARAM_NAME.to_owned(),
         )
         .await?;
-    evictor.evict_param(RELOAD_CONFIG_PARAM_NAME).await?;
-    Ok(())
+    evict_reload_config(evictor).await
 }
 
 async fn record_statement(
