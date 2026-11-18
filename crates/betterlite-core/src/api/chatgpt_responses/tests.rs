@@ -859,6 +859,13 @@ fn sse_falls_back_to_the_response_error_when_the_event_error_is_null() {
     assert_eq!(provider_error(error), (500, String::from("fallback")));
 }
 
+#[test]
+fn sse_ignores_an_empty_failure_message() {
+    let body = vec![event(r#"{"type":"error","error":{"message":""}}"#)];
+    let error = expect_error(transformed(500, &headers(SSE_TYPE), &body));
+    assert_eq!(provider_error(error), (500, body.join("\n")));
+}
+
 #[rstest]
 #[case::integer("1700000005", 1_700_000_005)]
 #[case::text("\"1700000007\"", 1_700_000_007)]
