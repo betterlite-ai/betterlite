@@ -9,7 +9,7 @@ use crate::loader::ConfigLoader;
 use crate::sections::Section;
 use crate::sections::parse_section;
 use crate::sections::tier_definitions::{
-    Config, Raw, Settings, TierDefinition, TierEntry, TierModelEntry, TierPool,
+    Config, Raw, Settings, TierDefinition, TierEntry, TierModelEntry, TierParam, TierPool,
 };
 
 fn parse(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
@@ -515,4 +515,38 @@ fn parameter_values_serialize_in_the_shape_the_file_spells() {
         "{rendered}"
     );
     assert!(rendered.contains(r#""stop":["END","STOP"]"#), "{rendered}");
+}
+
+#[test]
+fn a_parameter_map_exposes_its_entries() {
+    let keys = "        tier_models:
+          SIMPLE:
+            model_name: small
+            litellm_params: {max_tokens: 512, top_p: 1}
+";
+    let config = only(keys, &[]).unwrap().unwrap();
+    let pools = config.tier_models.unwrap();
+    let TierPool::Single(TierEntry::Detailed(entry)) = &pools["SIMPLE"] else {
+        panic!("a parameterized entry expected");
+    };
+    assert_eq!(entry.litellm_params.len(), 2);
+    assert!(!entry.litellm_params.is_empty());
+    assert_eq!(
+        entry
+            .litellm_params
+            .get("max_tokens")
+            .map(TierParam::exposed),
+        Some(number(512))
+    );
+    let absent = only(
+        "        tier_models:\n          SIMPLE:\n            model_name: small\n",
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    let pools = absent.tier_models.unwrap();
+    let TierPool::Single(TierEntry::Detailed(entry)) = &pools["SIMPLE"] else {
+        panic!("a parameterized entry expected");
+    };
+    assert!(entry.litellm_params.is_empty());
 }
