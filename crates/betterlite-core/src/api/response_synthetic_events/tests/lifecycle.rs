@@ -328,6 +328,24 @@ fn oversized_item_id_with_tiny_chunks_raises_the_event_budget() {
 }
 
 #[test]
+fn long_text_with_small_chunks_stays_within_the_event_budget() {
+    let text = "t".repeat(64 * 1024);
+    let output = format!("[{}]", message_with_text("msg_a", &text));
+    let mut transformed = response(&output);
+    let items = build(&mut transformed, None, 5);
+    assert_eq!(
+        events_of(&items, "response.output_text.delta").len(),
+        13_108
+    );
+    assert_eq!(
+        deltas(&items, "response.output_text.delta")
+            .into_iter()
+            .collect::<String>(),
+        text
+    );
+}
+
+#[test]
 fn zero_chunk_size_without_text_events_succeeds() {
     let mut transformed = response("[]");
     let items = build(&mut transformed, None, 0);

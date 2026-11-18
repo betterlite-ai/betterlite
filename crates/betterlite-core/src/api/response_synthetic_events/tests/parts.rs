@@ -211,6 +211,19 @@ fn missing_or_falsy_item_id_falls_back_to_response_id(
 }
 
 #[test]
+fn many_empty_parts_with_a_huge_item_id_exceed_the_event_budget() {
+    let item_id = "i".repeat(64 * 1024);
+    let parts = vec![r#"{"type":"refusal","refusal":""}"#; 16_384].join(",");
+    let output = format!(
+        r#"[{{"type":"message","id":"{item_id}","status":"completed","role":"assistant","content":[{parts}]}}]"#
+    );
+    let mut transformed = response(&output);
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+}
+
+#[test]
 fn indices_preserve_source_positions() {
     let output = concat!(
         r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"{}","status":"completed"},"#,

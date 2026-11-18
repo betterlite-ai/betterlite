@@ -35,14 +35,9 @@ fn reasoning_summary_events(
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
     let summary_payload = dump_response_object(ResponseObject::Value(summary))?;
-    let summary_text = text_or_empty(summary_payload.get("text"));
+    let text = text_or_empty(summary_payload.get("text"));
     let chunk_size = build.chunk_size;
-    for delta in delta_chunks(
-        &summary_text,
-        chunk_size,
-        &mut build.budget,
-        context.item_id.len(),
-    )? {
+    for delta in delta_chunks(&text, chunk_size, &mut build.budget, context.item_id.len())? {
         push_event!(
             events,
             KnownResponseEvent::ReasoningSummaryTextDelta(ReasoningSummaryTextDeltaEvent {
@@ -54,6 +49,8 @@ fn reasoning_summary_events(
             })
         );
     }
+    let bytes = context.item_id.len().saturating_mul(2);
+    build.budget.charge(2, bytes.saturating_add(text.len()))?;
     build.sequence_number = build.sequence_number.saturating_add(1);
     push_event!(
         events,
@@ -62,7 +59,7 @@ fn reasoning_summary_events(
             output_index: context.output_index,
             sequence_number: build.sequence_number,
             summary_index,
-            text: summary_text,
+            text,
             extra: Extra::new(),
         })
     );

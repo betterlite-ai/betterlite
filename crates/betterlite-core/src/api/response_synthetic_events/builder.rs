@@ -17,7 +17,7 @@ use super::stamping::{self, ResponsesCostCalculator};
 use super::tool_events::function_call_events;
 
 macro_rules! push_event {
-    ($events:expr, $event:expr) => {
+    ($events:expr, $event:expr $(,)?) => {
         $events.push(ResponsesAPIStreamingResponse::Known(Box::new($event)));
     };
 }

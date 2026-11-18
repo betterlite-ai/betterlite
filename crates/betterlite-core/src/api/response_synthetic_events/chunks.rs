@@ -3,6 +3,7 @@ use super::error::SyntheticEventsError;
 pub const MAX_SYNTHETIC_EVENTS: usize = 1_000_000;
 
 pub const MAX_SYNTHETIC_BYTES: usize = 256 * 1024 * 1024;
+const EVENT_OVERHEAD_BYTES: usize = 64;
 
 #[derive(Default)]
 pub struct EventBudget {
@@ -35,9 +36,10 @@ pub fn delta_chunks(
         return Ok(Vec::new());
     };
     let count = characters.len().div_ceil(size);
+    let per_event = item_id_bytes.saturating_add(EVENT_OVERHEAD_BYTES);
     budget.charge(
         count,
-        count.saturating_mul(item_id_bytes.saturating_add(text.len())),
+        text.len().saturating_add(count.saturating_mul(per_event)),
     )?;
     Ok(characters
         .chunks(size)

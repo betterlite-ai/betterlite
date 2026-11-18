@@ -37,6 +37,7 @@ fn content_part_events(
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
     let part_payload = dump_response_object(ResponseObject::Value(part))?;
+    build.budget.charge(1, context.item_id.len())?;
     push_event!(
         events,
         KnownResponseEvent::ContentPartAdded(ContentPartAddedEvent {
@@ -54,6 +55,7 @@ fn content_part_events(
     };
     text_like_part_events(events, &part_context, &part_payload, build)?;
     if let Some(part) = content_part_done_part(&part_payload)? {
+        build.budget.charge(1, context.item_id.len())?;
         push_event!(
             events,
             KnownResponseEvent::ContentPartDone(ContentPartDoneEvent {
@@ -90,6 +92,8 @@ fn text_like_part_events(
         text_or_empty(payload.get("refusal"))
     };
     push_delta_events(events, context, &text, build, kind)?;
+    let done_bytes = context.item_id.len().saturating_add(text.len());
+    build.budget.charge(1, done_bytes)?;
     if matches!(kind, DeltaKind::OutputText) {
         annotation_events(
             events,
@@ -176,10 +180,8 @@ fn annotation_events(
     annotations: &[Json],
     budget: &mut EventBudget,
 ) -> Result<(), SyntheticEventsError> {
-    budget.charge(
-        annotations.len(),
-        annotations.len().saturating_mul(context.item_id.len()),
-    )?;
+    let count = annotations.len();
+    budget.charge(count, count.saturating_mul(context.item_id.len()))?;
     for (annotation_index, annotation) in annotations.iter().enumerate() {
         let annotation_index = i64::try_from(annotation_index).unwrap_or(i64::MAX);
         let Json::Object(fields) = annotation else {

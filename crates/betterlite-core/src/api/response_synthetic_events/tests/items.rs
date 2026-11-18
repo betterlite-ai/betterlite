@@ -132,6 +132,17 @@ fn reasoning_summaries_emit_done_events_with_sequence_numbers() {
 }
 
 #[test]
+fn many_empty_summaries_with_a_huge_item_id_exceed_the_event_budget() {
+    let item_id = "i".repeat(64 * 1024);
+    let summaries = vec![r#"{"type":"summary_text","text":""}"#; 16_384].join(",");
+    let output = format!(r#"[{{"type":"reasoning","id":"{item_id}","summary":[{summaries}]}}]"#);
+    let mut transformed = response(&output);
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+}
+
+#[test]
 fn reasoning_summary_must_be_a_list() {
     let output = r#"[{"type":"reasoning","id":"rs_1","summary":"oops"}]"#;
     let mut transformed = response(output);
