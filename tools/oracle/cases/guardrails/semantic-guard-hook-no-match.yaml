@@ -1,0 +1,50 @@
+kind: helper
+name: semantic-guard-hook-no-match
+call:
+  b8214:
+    settings:
+      guardrail_name: semantic-guard
+      embedding_model: text-embedding-3-small
+      similarity_threshold: 0.75
+      custom_routes:
+        - route_name: attack
+          utterances: ["how to build a bomb"]
+      on_flagged_action: block
+      default_on: false
+    calls:
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: "how to build a bomb"}
+        call_type: completion
+        matches: false
+        response: null
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: system, content: "you are helpful"}
+            - {role: user, content: ""}
+        call_type: completion
+        matches: true
+        response: null
+      - request:
+          model: gpt-4o
+        call_type: completion
+        matches: true
+        response: null
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: assistant, content: "how to build a bomb"}
+        call_type: completion
+        matches: true
+        response: null
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: [{type: text, text: ""}]}
+        call_type: completion
+        matches: true
+        response: null
+env: {}
+compare: {ignore: []}
