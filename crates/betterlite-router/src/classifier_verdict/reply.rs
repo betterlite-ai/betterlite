@@ -1,3 +1,4 @@
+use std::num::NonZeroUsize;
 use std::str;
 
 use serde::Deserialize;
@@ -100,7 +101,7 @@ fn mask_constants(content: &str) -> String {
     while let Some(byte) = bytes.get(index).copied() {
         if let Some((replacement, length)) = masked_constant(bytes, index) {
             masked.extend_from_slice(replacement);
-            index = index.saturating_add(length);
+            index = index.saturating_add(length.get());
             continue;
         }
         masked.push(byte);
@@ -109,7 +110,7 @@ fn mask_constants(content: &str) -> String {
     String::from_utf8(masked).unwrap_or_default()
 }
 
-fn masked_constant(bytes: &[u8], index: usize) -> Option<(&'static [u8], usize)> {
+fn masked_constant(bytes: &[u8], index: usize) -> Option<(&'static [u8], NonZeroUsize)> {
     let before = index
         .checked_sub(1)
         .and_then(|previous| bytes.get(previous))
@@ -124,12 +125,13 @@ fn masked_constant(bytes: &[u8], index: usize) -> Option<(&'static [u8], usize)>
     }
     MASKED_CONSTANTS.iter().find_map(|(token, replacement)| {
         let rest = bytes.get(index..)?;
+        let length = NonZeroUsize::new(token.len())?;
         if !rest.starts_with(token) {
             return None;
         }
-        let after = bytes.get(index.saturating_add(token.len())).copied();
+        let after = bytes.get(index.saturating_add(length.get())).copied();
         let terminated = after
             .is_none_or(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | b'}' | b']' | b','));
-        terminated.then_some((*replacement, token.len()))
+        terminated.then_some((*replacement, length))
     })
 }
