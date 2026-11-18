@@ -15,23 +15,23 @@ fn watsonx_environment_reads_every_secret() {
 
 fn assert_secrets(filled: &WatsonxEnvironment) {
     assert_eq!(
-        exposed(filled.wx_api_key.as_ref()).as_deref(),
+        filled.wx_api_key.as_ref().map(exposed).as_deref(),
         Some("wx-key")
     );
     assert_eq!(
-        exposed(filled.watsonx_api_key.as_ref()).as_deref(),
+        filled.watsonx_api_key.as_ref().map(exposed).as_deref(),
         Some("api-key")
     );
     assert_eq!(
-        exposed(filled.watsonx_apikey.as_ref()).as_deref(),
+        filled.watsonx_apikey.as_ref().map(exposed).as_deref(),
         Some("apikey")
     );
     assert_eq!(
-        exposed(filled.watsonx_zenapikey.as_ref()).as_deref(),
+        filled.watsonx_zenapikey.as_ref().map(exposed).as_deref(),
         Some("zen")
     );
     assert_eq!(
-        exposed(filled.watsonx_token.as_ref()).as_deref(),
+        filled.watsonx_token.as_ref().map(exposed).as_deref(),
         Some("token")
     );
 }

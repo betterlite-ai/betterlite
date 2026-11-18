@@ -26,7 +26,7 @@ fn text_call(chat: &Chat) -> CompletionCall {
 fn sap_headers(
     headers: Option<BTreeMap<String, String>>,
     globals: Option<BTreeMap<String, String>>,
-) -> Option<BTreeMap<String, String>> {
+) -> BTreeMap<String, String> {
     let mut chat = Chat::new("sap", "gpt-4o");
     chat.headers = headers;
     chat.globals_headers = globals;
@@ -40,7 +40,10 @@ fn sap_headers(
     )
     .expect("the sap arm runs")
     .expect("the handler answers");
-    recorder.calls()[0].headers.clone()
+    let Some(headers) = recorder.calls()[0].headers.clone() else {
+        panic!("the sap arm sends headers");
+    };
+    headers
 }
 
 #[test]
@@ -114,7 +117,7 @@ fn sap_chat_replaces_a_null_model_version() {
 fn sap_chat_falls_back_to_the_global_headers() {
     let global = BTreeMap::from([(String::from("x-global"), String::from("1"))]);
     let headers = sap_headers(Some(BTreeMap::new()), Some(global.clone()));
-    assert_eq!(headers, Some(global));
+    assert_eq!(headers, global);
 }
 
 #[test]
@@ -122,7 +125,7 @@ fn sap_chat_keeps_the_caller_headers() {
     let explicit = BTreeMap::from([(String::from("x-explicit"), String::from("2"))]);
     let global = BTreeMap::from([(String::from("x-global"), String::from("1"))]);
     let headers = sap_headers(Some(explicit.clone()), Some(global));
-    assert_eq!(headers, Some(explicit));
+    assert_eq!(headers, explicit);
 }
 
 #[test]
@@ -158,7 +161,7 @@ fn watsonx_chat_passes_the_context_fields_under_the_literal_provider() {
     assert_eq!(sent[0].custom_llm_provider, "watsonx");
     assert_eq!(sent[0].api_base.as_deref(), Some("https://wx.example.com"));
     assert_eq!(
-        exposed(sent[0].api_key.as_ref()).as_deref(),
+        sent[0].api_key.as_ref().map(exposed).as_deref(),
         Some("ctx-key")
     );
     assert_eq!(sent[0].optional_params, object(r#"{"temperature":0.2}"#));
@@ -174,7 +177,10 @@ fn watsonx_text_keeps_the_parameter_keys_the_context_overrides() {
     let sent = text_call(&chat);
     assert_eq!(sent.custom_llm_provider, "watsonx_text");
     assert_eq!(sent.api_base.as_deref(), Some("https://ctx.example.com"));
-    assert_eq!(exposed(sent.api_key.as_ref()).as_deref(), Some("ctx-key"));
+    assert_eq!(
+        sent.api_key.as_ref().map(exposed).as_deref(),
+        Some("ctx-key")
+    );
     assert_eq!(sent.optional_params, object(params));
 }
 
@@ -186,7 +192,10 @@ fn watsonx_text_pops_the_parameter_keys_and_uses_them() {
     );
     let sent = text_call(&chat);
     assert_eq!(sent.api_base.as_deref(), Some("https://legacy.example.com"));
-    assert_eq!(exposed(sent.api_key.as_ref()).as_deref(), Some("param-key"));
+    assert_eq!(
+        sent.api_key.as_ref().map(exposed).as_deref(),
+        Some("param-key")
+    );
     assert_eq!(sent.optional_params, object(r#"{"temperature":0.2}"#));
 }
 
@@ -208,7 +217,7 @@ fn watsonx_text_reads_the_environment_in_order() {
     ]);
     let sent = text_call(&chat);
     assert_eq!(
-        exposed(sent.api_key.as_ref()).as_deref(),
+        sent.api_key.as_ref().map(exposed).as_deref(),
         Some("second-key")
     );
     assert_eq!(sent.api_base.as_deref(), Some("https://env.example.com"));
@@ -233,7 +242,10 @@ fn watsonx_text_applies_the_wx_credentials_over_the_nested_ones() {
     );
     let sent = text_call(&chat);
     assert_eq!(sent.api_base.as_deref(), Some("https://wx.example.com"));
-    assert_eq!(exposed(sent.api_key.as_ref()).as_deref(), Some("wx-key"));
+    assert_eq!(
+        sent.api_key.as_ref().map(exposed).as_deref(),
+        Some("wx-key")
+    );
     assert_eq!(sent.optional_params, object(r#"{"token":"wx-token"}"#));
 }
 
@@ -246,7 +258,7 @@ fn watsonx_text_reads_the_nested_credentials_alone() {
     let sent = text_call(&chat);
     assert_eq!(sent.api_base.as_deref(), Some("https://nested.example.com"));
     assert_eq!(
-        exposed(sent.api_key.as_ref()).as_deref(),
+        sent.api_key.as_ref().map(exposed).as_deref(),
         Some("nested-key")
     );
     assert_eq!(sent.optional_params, object(r#"{"token":"nested-token"}"#));
@@ -263,7 +275,7 @@ fn watsonx_text_falls_to_the_nested_credentials_on_a_null_wx() {
     let sent = text_call(&chat);
     assert_eq!(sent.api_base.as_deref(), Some("https://nested.example.com"));
     assert_eq!(
-        exposed(sent.api_key.as_ref()).as_deref(),
+        sent.api_key.as_ref().map(exposed).as_deref(),
         Some("nested-key")
     );
     assert!(sent.optional_params.is_empty());
@@ -289,7 +301,10 @@ fn watsonx_text_credentials_keep_the_context_values_on_null() {
     chat.optional_params = object(r#"{"wx_credentials":{"url":null,"apikey":null}}"#);
     let sent = text_call(&chat);
     assert_eq!(sent.api_base.as_deref(), Some("https://ctx.example.com"));
-    assert_eq!(exposed(sent.api_key.as_ref()).as_deref(), Some("ctx-key"));
+    assert_eq!(
+        sent.api_key.as_ref().map(exposed).as_deref(),
+        Some("ctx-key")
+    );
     assert!(sent.optional_params.is_empty());
 }
 
@@ -300,7 +315,10 @@ fn watsonx_text_credentials_keep_the_context_key_when_absent() {
     chat.optional_params = object(r#"{"wx_credentials":{"url":"https://wx.example.com"}}"#);
     let sent = text_call(&chat);
     assert_eq!(sent.api_base.as_deref(), Some("https://wx.example.com"));
-    assert_eq!(exposed(sent.api_key.as_ref()).as_deref(), Some("ctx-key"));
+    assert_eq!(
+        sent.api_key.as_ref().map(exposed).as_deref(),
+        Some("ctx-key")
+    );
 }
 
 #[test]
@@ -317,7 +335,7 @@ fn watsonx_text_uses_an_explicit_empty_key_as_given() {
     chat.api_key = Some(key(""));
     chat.environment = BTreeMap::from([(String::from("WATSONX_APIKEY"), String::from("env-key"))]);
     let sent = text_call(&chat);
-    assert_eq!(exposed(sent.api_key.as_ref()).as_deref(), Some(""));
+    assert_eq!(sent.api_key.as_ref().map(exposed).as_deref(), Some(""));
 }
 
 #[test]

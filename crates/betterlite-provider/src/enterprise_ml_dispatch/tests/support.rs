@@ -124,8 +124,8 @@ pub(super) fn message(wire: &str) -> Message {
     serde_json::from_str(wire).expect("the fixture message is a chat message")
 }
 
-pub(super) fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|stored| stored.expose_secret().to_owned())
+pub(super) fn exposed(stored: &SecretString) -> String {
+    stored.expose_secret().to_owned()
 }
 
 // walks a recorded JSON body along an object path
@@ -512,7 +512,7 @@ pub(super) async fn dispatch_embedding(
 }
 
 // LiteLLM's service key and credentials for the SAP flow, with the fixture hosts
-pub(super) const SAP_SERVICE_KEY: &str = r#"{"client_id":"ignored","client_secret":"ignored","url":"https://other-auth.example.com","serviceurls":{"AI_API_URL":"https://other-base.example.com"}}"#;
+pub(super) const SAP_SERVICE_KEY: &str = r#"{"clientid":"ignored","clientsecret":"ignored","url":"https://other-auth.example.com","serviceurls":{"AI_API_URL":"https://other-base.example.com"}}"#;
 
 pub(super) const SAP_EMBEDDING_REPLIES: &[(u16, &str)] = &[
     (200, r#"{"access_token":"oracle-token","expires_in":7200}"#),

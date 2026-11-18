@@ -93,9 +93,11 @@ fn assert_sap_headers(transport: &Scripted) {
         assert_eq!(client_type(transport, index).as_deref(), Some("LiteLLM"));
     }
     let sent = transport.sent();
-    for request in &sent[..5] {
+    for request in &sent[..4] {
         assert_eq!(request.deadline, Duration::from_secs(30));
     }
+    // the orchestration post runs with the call timeout, not the token client's
+    assert_eq!(sent[4].deadline, Duration::from_secs(5));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -336,8 +338,8 @@ async fn watsonx_embedding_without_ids_reports_401() {
         panic!("no project or space is set");
     };
     assert!(matches!(
-        error,
-        EnterpriseError::WatsonxEmbedding(WatsonxEmbeddingError::Watsonx(ref inner))
+        &error,
+        EnterpriseError::WatsonxEmbedding(WatsonxEmbeddingError::Watsonx(inner))
             if matches!(inner.as_ref(), WatsonxError::Api { status_code: 401, .. })
     ));
     assert_eq!(error.status(), Some(401));
@@ -394,6 +396,6 @@ async fn sagemaker_embedding_posts_the_hf_request() {
     assert!(sent[0].headers.get(AUTHORIZATION).is_some());
     assert_eq!(
         at(&sagemaker.transport.body(0), &["inputs"]),
-        &Json::List(vec![Json::Text(String::from("hi"))])
+        &Json::Text(String::from("hi"))
     );
 }

@@ -1,5 +1,5 @@
-use betterlite_openai::cohere_embedding::TextEncoding;
-use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
+use betterlite_openai::cohere_embedding::TextEncoding as _;
+use betterlite_openai::sagemaker_completion::response::TextTokenCounter as _;
 
 use crate::enterprise_ml_dispatch::sagemaker::Tokenizer;
 
