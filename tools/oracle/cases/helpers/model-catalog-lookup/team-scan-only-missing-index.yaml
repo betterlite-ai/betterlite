@@ -1,0 +1,22 @@
+kind: helper
+name: model-catalog-lookup-team-scan-only-missing-index
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+          team_public_model_name: ""
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: ""
+      team_id: t1
+env: {}
+compare: {ignore: []}
