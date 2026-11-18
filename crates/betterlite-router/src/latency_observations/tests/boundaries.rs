@@ -176,9 +176,9 @@ fn a_sample_at_the_exact_expiry_keeps_the_running_window() {
 fn a_sample_one_millisecond_past_the_expiry_starts_over() {
     let clock = TestClock::at(0);
     let observations = service(settings(60.0_f64, 10), &clock);
-    record_success(&observations, &success_plan(1_000, usage(1, 4)));
+    record_success(&observations, &success_plan(1_000, Some(usage(1, 4))));
     clock.set(60_001);
-    record_success(&observations, &success_plan(2_000, usage(1, 9)));
+    record_success(&observations, &success_plan(2_000, Some(usage(1, 9))));
     assert_eq!(latency(&observations), vec![2.0_f64]);
     assert_eq!(
         minutes(&observations),
@@ -255,8 +255,11 @@ fn a_non_positive_completion_count_has_no_normalized_time() {
 fn a_minute_total_past_the_integer_limit_is_an_error() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
-    record_success(&observations, &success_plan(1_000, usage(1, i64::MAX)));
-    let second = success_plan(1_000, usage(1, 1));
+    record_success(
+        &observations,
+        &success_plan(1_000, Some(usage(1, i64::MAX))),
+    );
+    let second = success_plan(1_000, Some(usage(1, 1)));
     let error = observations
         .record_success(&second.event())
         .expect_err("the minute total overflows");

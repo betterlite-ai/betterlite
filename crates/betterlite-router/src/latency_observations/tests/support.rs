@@ -108,7 +108,7 @@ pub(crate) struct Failure<'event> {
     pub(crate) call_type: Option<&'event str>,
     pub(crate) channels: RequestChannels<'event>,
     pub(crate) deployment_id: Option<&'event str>,
-    pub(crate) failure: FailureClass,
+    pub(crate) class: FailureClass,
 }
 
 pub(crate) const DEFAULT_FAILURE: Failure<'static> = Failure {
@@ -118,7 +118,7 @@ pub(crate) const DEFAULT_FAILURE: Failure<'static> = Failure {
         metadata: Channel::Present(Some(GROUP)),
     },
     deployment_id: Some(DEPLOYMENT),
-    failure: FailureClass::Timeout,
+    class: FailureClass::Timeout,
 };
 
 impl Default for Failure<'_> {
@@ -133,7 +133,7 @@ impl Failure<'_> {
             call_type: self.call_type,
             channels: self.channels,
             deployment_id: self.deployment_id,
-            failure: self.failure,
+            failure: self.class,
         }
     }
 }
@@ -187,9 +187,9 @@ pub(crate) fn minutes(service: &LatencyObservations) -> Vec<(String, MinuteUsage
         .collect()
 }
 
-pub(crate) fn usage(completion_tokens: i64, total_tokens: i64) -> Option<TokenUsage> {
-    Some(TokenUsage {
+pub(crate) fn usage(completion_tokens: i64, total_tokens: i64) -> TokenUsage {
+    TokenUsage {
         completion_tokens,
         total_tokens,
-    })
+    }
 }

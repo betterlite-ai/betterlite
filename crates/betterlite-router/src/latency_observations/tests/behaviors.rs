@@ -22,7 +22,7 @@ pub(crate) fn run(name: &str) {
             a_streaming_success_without_a_completion_start();
         }
         "a_non_streaming_success_records_no_first_token_time" => {
-            a_non_streaming_success_has_no_ttft()
+            a_non_streaming_success_has_no_ttft();
         }
         "the_minute_bucket_sums_tokens_and_counts_requests" => the_minute_bucket_sums_tokens(),
         "a_timeout_failure_appends_the_penalty" => a_timeout_failure_appends_the_penalty(),
@@ -55,7 +55,7 @@ fn a_success_records_the_response_time() {
 fn a_success_normalizes_the_response_time() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
-    let plan = success_plan(2_000, usage(4, 10));
+    let plan = success_plan(2_000, Some(usage(4, 10)));
     record_success(&observations, &plan);
     assert_eq!(latency(&observations), vec![0.5_f64]);
     let recorded = minutes(&observations);
@@ -66,7 +66,7 @@ fn a_success_normalizes_the_response_time() {
 fn a_zero_completion_count_keeps_the_response_time() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
-    record_success(&observations, &success_plan(2_500, usage(0, 7)));
+    record_success(&observations, &success_plan(2_500, Some(usage(0, 7))));
     let recorded = minutes(&observations);
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].1.tpm, 7);
@@ -82,7 +82,7 @@ fn a_streaming_success_records_ttft() {
         stream: true,
         elapsed_millis: 2_000,
         completion_start_millis: Some(first_token),
-        usage: usage(4, 10),
+        usage: Some(usage(4, 10)),
         ..DEFAULT_SUCCESS
     };
     record_success(&observations, &plan);
@@ -123,9 +123,9 @@ fn a_non_streaming_success_has_no_ttft() {
 fn the_minute_bucket_sums_tokens() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
-    record_success(&observations, &success_plan(2_000, usage(4, 10)));
+    record_success(&observations, &success_plan(2_000, Some(usage(4, 10))));
     clock.set(5_000);
-    record_success(&observations, &success_plan(1_000, usage(2, 30)));
+    record_success(&observations, &success_plan(1_000, Some(usage(2, 30))));
     assert_eq!(latency(&observations), vec![0.5_f64, 0.5_f64]);
     assert_eq!(
         minutes(&observations),
@@ -151,7 +151,7 @@ fn a_non_timeout_failure_records_nothing() {
     record_failure(
         &observations,
         &Failure {
-            failure: FailureClass::Api,
+            class: FailureClass::Api,
             ..DEFAULT_FAILURE
         },
     );
