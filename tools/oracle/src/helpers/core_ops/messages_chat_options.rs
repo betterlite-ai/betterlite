@@ -123,8 +123,8 @@ impl Helper for Op {
             .map_err(|error| failure("OptionsError", None, error.to_string()))?;
         let probes = parameters.into_calls();
         Ok(json!({
-            "kwargs": to_value(&Json::Object(kwargs))?,
-            "request": to_value(&Json::Object(request))?,
+            "kwargs": Json::Object(kwargs),
+            "request": Json::Object(request),
             "probes": probes,
         }))
     }
@@ -162,10 +162,6 @@ fn starting_messages(request: &Object, model: &str) -> Vec<Json> {
         translated.push(message.clone());
     }
     translated
-}
-
-fn to_value(value: &Json) -> HelperResult {
-    serde_json::to_value(value).map_err(|error| failure("InvalidInput", None, error.to_string()))
 }
 
 fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
