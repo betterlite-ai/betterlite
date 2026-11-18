@@ -3,4 +3,7 @@ deviations:
   - what: 'Session updates nested deeper than 64 container levels are rejected before parsing.'
     why: 'serde_json refuses nesting at this boundary; an explicit limit avoids parser-dependent failure and keeps malformed input handling bounded.'
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L427-L547'
+  - what: 'Duplicate modeled keys in forced transcription updates are rejected.'
+    why: 'Reject ambiguous authorization fields rather than allowing typed parse failures to bypass enforcement.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L497-L546'
 kept_bugs: []

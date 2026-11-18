@@ -2,7 +2,7 @@ pub mod error;
 
 mod backend;
 mod client;
-mod enforce;
+pub mod enforce;
 mod setup;
 mod tests;
 

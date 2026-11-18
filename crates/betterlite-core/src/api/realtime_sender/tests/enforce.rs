@@ -238,3 +238,38 @@ fn enforce_counts_sibling_depths() {
         format!(r#"{{"type":"session.update","session":{{"extension":[{siblings}null]}}}}"#);
     assert_eq!(sender.enforce_session_model(&message).unwrap(), message);
 }
+
+#[rstest]
+#[case::envelope(r#"{"type":"session.update","type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"}}}"#)]
+#[case::session(r#"{"type":"session.update","session":{},"session":{"input_audio_transcription":{"model":"forbidden"}}}"#)]
+#[case::flat_model(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"allowed","model":"forbidden"}}}"#)]
+#[case::ga_model(r#"{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"allowed","model":"forbidden"}}}}}"#)]
+fn enforce_rejects_duplicate_modeled_keys(#[case] message: &str) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    assert!(matches!(
+        sender.enforce_session_model(message),
+        Err(RealtimeSenderError::SessionUpdateInvalid { .. })
+    ));
+}
+
+#[test]
+fn replays_the_realtime_enforcement_corpus() {
+    let root =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/realtime_enforcement");
+    let entries: Vec<_> = std::fs::read_dir(root).unwrap().collect();
+    assert!(!entries.is_empty());
+    for entry in entries {
+        let bytes = std::fs::read(entry.unwrap().path()).unwrap();
+        let message = String::from_utf8_lossy(&bytes);
+        let mut transcription = false;
+        let _result = super::super::enforce::enforce_session_update::<Infallible, Infallible>(
+            &message,
+            "allowed",
+            &mut transcription,
+        );
+    }
+}

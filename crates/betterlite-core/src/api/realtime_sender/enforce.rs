@@ -1,6 +1,8 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::de::{DeserializeOwned, Error as _};
+use serde::{Deserialize, Deserializer, Serialize};
+use serde_json::value::RawValue;
 
 use super::RealtimeSender;
 use super::error::RealtimeSenderError;
@@ -12,19 +14,11 @@ type Map = IndexMap<String, Json>;
 const MAX_NESTING: usize = 64;
 
 #[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Root {
-    Update(Envelope),
-    Other(Json),
-}
-
-// The envelope only classifies the frame; the typed Update below reads it, and a duplicate key still fails closed
-#[derive(Debug, Deserialize)]
 struct Envelope {
-    #[serde(rename = "type")]
-    _kind: UpdateType,
-    #[serde(rename = "session")]
-    _session: Map,
+    #[serde(rename = "type", default = "default_slot")]
+    kind: Slot<UpdateType>,
+    #[serde(default = "default_slot")]
+    session: Slot<Map>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -42,12 +36,26 @@ enum SessionType {
 }
 
 // A session field is an object of the typed shape, any other JSON value it carries, or absent from the frame
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum Slot<T> {
     Object(T),
     Other(Json),
     Missing,
+}
+
+// Object-shaped fields must parse as their modeled type; duplicate keys cannot become passthrough.
+impl<'de, T: DeserializeOwned> Deserialize<'de> for Slot<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let raw = Box::<RawValue>::deserialize(deserializer)?;
+        match serde_json::from_str(raw.get()) {
+            Ok(value) => Ok(Self::Object(value)),
+            Err(error) if raw.get().starts_with('{') => Err(D::Error::custom(error)),
+            Err(_) => serde_json::from_str(raw.get())
+                .map(Self::Other)
+                .map_err(D::Error::custom),
+        }
+    }
 }
 
 impl<T> Slot<T> {
@@ -150,28 +158,51 @@ where
         let Some(authorized_model) = self.state.force_transcription_model.clone() else {
             return Ok(message.to_owned());
         };
-        if nests_deeper_than(message, MAX_NESTING) {
-            return Err(RealtimeSenderError::SessionUpdateTooDeep);
-        }
-        match serde_json::from_str::<Root>(message) {
-            Ok(Root::Update(_)) => {}
-            Ok(Root::Other(Json::Object(_))) => return Ok(message.to_owned()),
-            Ok(Root::Other(_)) => return Err(RealtimeSenderError::SessionUpdateNotObject),
-            Err(_) => return Ok(message.to_owned()),
-        }
-        let mut update = serde_json::from_str::<Update>(message)
-            .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;
-        if matches!(
-            &update.session.r#type,
-            Slot::Object(SessionType::Transcription)
-        ) {
-            self.state.is_transcription_session.0 = true;
-        }
-        if !update.session.enforce(&authorized_model) {
-            return Ok(message.to_owned());
-        }
-        serde_json::to_string(&update).map_err(|source| RealtimeSenderError::Encode { source })
+        enforce_session_update(
+            message,
+            &authorized_model,
+            &mut self.state.is_transcription_session.0,
+        )
     }
+}
+
+pub fn enforce_session_update<ConfigError, CallbackError>(
+    message: &str,
+    authorized_model: &str,
+    is_transcription: &mut bool,
+) -> Result<String, RealtimeSenderError<ConfigError, CallbackError>>
+where
+    ConfigError: std::error::Error + 'static,
+    CallbackError: std::error::Error + 'static,
+{
+    if nests_deeper_than(message, MAX_NESTING) {
+        return Err(RealtimeSenderError::SessionUpdateTooDeep);
+    }
+    match serde_json::from_str::<Json>(message) {
+        Ok(Json::Object(_)) => {}
+        Ok(_) => return Err(RealtimeSenderError::SessionUpdateNotObject),
+        Err(_) => return Ok(message.to_owned()),
+    }
+    let envelope = serde_json::from_str::<Envelope>(message)
+        .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;
+    if !matches!(
+        (envelope.kind, envelope.session),
+        (Slot::Object(_), Slot::Object(_))
+    ) {
+        return Ok(message.to_owned());
+    }
+    let mut update = serde_json::from_str::<Update>(message)
+        .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;
+    if matches!(
+        &update.session.r#type,
+        Slot::Object(SessionType::Transcription)
+    ) {
+        *is_transcription = true;
+    }
+    if !update.session.enforce(authorized_model) {
+        return Ok(message.to_owned());
+    }
+    serde_json::to_string(&update).map_err(|source| RealtimeSenderError::Encode { source })
 }
 
 fn nests_deeper_than(message: &str, limit: usize) -> bool {
