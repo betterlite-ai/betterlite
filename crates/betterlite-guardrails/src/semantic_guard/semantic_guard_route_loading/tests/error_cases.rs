@@ -97,6 +97,46 @@ fn an_unknown_file_field_is_rejected() {
 }
 
 #[test]
+fn a_repeated_key_in_one_route_is_rejected() {
+    let (_folder, path) =
+        routes_file("- route_name: x\n  utterances: [\"a\"]\n  utterances: [\"b\"]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert!(matches!(
+        build_routes(&sources),
+        Err(RouteLoadError::CustomRoutes {
+            source: CustomRoutesError::Yaml { .. },
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_file_entry_with_a_non_string_utterance_is_rejected() {
+    let (_folder, path) = routes_file("- route_name: x\n  utterances: [\"a\", 1]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert!(matches!(
+        build_routes(&sources),
+        Err(RouteLoadError::CustomRoutes {
+            source: CustomRoutesError::Yaml { .. },
+            ..
+        })
+    ));
+}
+
+#[test]
+fn a_file_entry_that_is_not_a_mapping_is_rejected() {
+    let (_folder, path) = routes_file("- 1\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert!(matches!(
+        build_routes(&sources),
+        Err(RouteLoadError::CustomRoutes {
+            source: CustomRoutesError::Yaml { .. },
+            ..
+        })
+    ));
+}
+
+#[test]
 fn a_scalar_document_is_an_invalid_format() {
     let (_folder, path) = routes_file("just text\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);
