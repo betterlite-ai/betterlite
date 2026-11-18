@@ -6,7 +6,10 @@ description: >-
   resolution, B011 async error mapping and B2487 resource settings. Thread creation accepts required
   provider and nullable messages,metadata,tool_resources,client; retrieval requires provider/thread_id and
   nullable client. Preserve that tool_resources is accepted but never forwarded by either branch.
-  B2401 AssistantThreads executes the real sync/async wrappers through mock HTTP, not helper projections.
+  SdkHttpCall::AssistantThreads executes the real sync/async wrappers through mock HTTP, not helper
+  projections. It is on main as a placeholder: fill tools/oracle/src/sdk_http/assistant_threads.rs (a Call
+  implementing call_kind::CallKind and the Outcome of SdkResult::AssistantThreads) and AssistantThreadsRequest
+  in tools/oracle/sdk_http/assistant_threads.py; the shared sdk_http files already list it.
 
   Use B2487's OpenAI/Azure credentials and timeout (600-second fallback), already loaded by Config.
   Create reads acreate_thread from kwargs without removing it; get pops aget_thread. Neither validates
@@ -17,9 +20,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/assistant_threads.rs
   - crates/betterlite-core/src/api/assistant_threads/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/assistant_threads.rs
+  - tools/oracle/src/sdk_http/assistant_threads/**
   - tools/oracle/sdk_http/assistant_threads.py
   - tools/oracle/cases/sdk-http/assistant-threads/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-threads-*
@@ -73,7 +75,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_threads::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: thread creation/retrieval is not checked via the pinned SDK and mock HTTP
-    run: test -f tools/oracle/sdk_http/assistant_threads.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/assistant_threads.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: thread operation inputs have no newly committed decoder cases
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-threads-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

@@ -14,7 +14,10 @@ description: >-
   _handle_error without network traffic. Validation/transformation/URL/logging/response-transform errors are
   outside that conversion. Attach provider response headers only after a successful binary transformation.
 
-  Add sdk_http speech_http with finite injected config transforms and a trusted mock endpoint. It executes
+  SdkHttpCall::SpeechHttp, already on main as a placeholder, uses finite injected config transforms and a
+  trusted mock endpoint: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/speech_http.rs
+  (Call implements call_kind::CallKind) and fill SpeechHttpRequest in tools/oracle/sdk_http/speech_http.py,
+  leaving the shared sdk_http files alone. It executes
   actual HTTP independently in both implementations; B173 owns raw response bytes and B2401 the input decoder.
   The two methods contain 191 nonblank/non-comment lines; allocate 170 implementation,120 tests,100 fixtures,
   80 adapters and 30 wiring, 500 total. This is buffered binary execution; streaming cancellation is B083's
@@ -26,9 +29,8 @@ scope:
   paths:
   - crates/betterlite-provider/src/api/speech_http.rs
   - crates/betterlite-provider/src/api/speech_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/speech_http.rs
+  - tools/oracle/src/sdk_http/speech_http/**
   - tools/oracle/sdk_http/speech_http.py
   - tools/oracle/cases/sdk-http/speech-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-http-*
@@ -72,7 +74,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::speech_http::tests::/)'
   - id: sdk-python
     why: Generic speech must be compared through captured HTTP, not a pure helper result.
-    run: test -f tools/oracle/sdk_http/speech_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/speech_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: Speech HTTP's operation tag must be accepted by the shared SDK parser.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/speech-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

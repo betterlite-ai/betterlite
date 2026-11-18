@@ -1,61 +1,24 @@
 #![cfg(test)]
 
-use std::io::{Read as _, Write as _};
-use std::net::{SocketAddr, TcpListener};
-use std::thread;
+use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
-use super::{HEALTH_TIMEOUT, HealthTransport as _, MAX_HEALTH_BODY, ReqwestHealth, TransportError};
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 
-struct Serving {
-    address: SocketAddr,
-    request: thread::JoinHandle<String>,
-}
+use super::{HEALTH_TIMEOUT, HealthTransport as _, MAX_HEALTH_BODY, ReqwestHealth, TransportError};
 
 const SLOW_REPLY_PAUSE: Duration = Duration::from_millis(1_200);
 const SHORT_TIMEOUT: Duration = Duration::from_millis(100);
 const STALLED_REPLY_PAUSE: Duration = Duration::from_millis(500);
 
-fn reply_with_body(length: usize) -> Vec<u8> {
-    let head = format!("HTTP/1.1 200 OK\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
-    [head.as_bytes(), &vec![b'a'; length]].concat()
-}
-
-fn serve_once(reply: Vec<u8>, pause: Option<Duration>) -> Serving {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let (mut stream, _peer) = listener.accept().unwrap();
-            stream
-                .set_read_timeout(Some(Duration::from_secs(3)))
-                .unwrap();
-            let mut received = Vec::new();
-            while !received.ends_with(b"\r\n\r\n") {
-                let mut byte = [0];
-                stream.read_exact(&mut byte).unwrap();
-                received.extend_from_slice(&byte);
-            }
-            if let Some(delay) = pause {
-                let started = Instant::now();
-                while started.elapsed() < delay {
-                    thread::park_timeout(delay.saturating_sub(started.elapsed()));
-                }
-            }
-            // the client may have given up and closed the socket by now
-            drop(stream.write_all(&reply));
-            String::from_utf8(received).unwrap()
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
 #[test]
 fn reqwest_health_sends_an_unauthenticated_get_to_the_health_path() {
-    let serving = serve_once(
+    let serving = serve(
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
@@ -63,17 +26,18 @@ fn reqwest_health_sends_an_unauthenticated_get_to_the_health_path() {
         .expect("the server answers");
 
     assert_eq!(body, "{}");
-    let request = serving.request.join().unwrap();
-    assert!(request.starts_with("GET /health HTTP/1.1"), "{request}");
-    assert!(!request.to_ascii_lowercase().contains("authorization"));
+    let request = serving.finish().unwrap();
+    assert!(
+        request.line.starts_with("GET /health HTTP/1.1"),
+        "{}",
+        request.line
+    );
+    assert!(!request.head.to_ascii_lowercase().contains("authorization"));
 }
 
 #[test]
 fn reqwest_health_does_not_follow_redirects() {
-    let serving = serve_once(
-        b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/\r\nContent-Length: 7\r\nConnection: close\r\n\r\nblocked".to_vec(),
-        None,
-    );
+    let serving = serve(b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/\r\nContent-Length: 7\r\nConnection: close\r\n\r\nblocked".to_vec(), Duration::ZERO).unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
@@ -81,15 +45,16 @@ fn reqwest_health_does_not_follow_redirects() {
         .expect("the redirect answer is returned as is");
 
     assert_eq!(body, "blocked");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn reqwest_health_waits_for_a_slow_response_within_its_timeout() {
-    let serving = serve_once(
+    let serving = serve(
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
-        Some(SLOW_REPLY_PAUSE),
-    );
+        SLOW_REPLY_PAUSE,
+    )
+    .unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
@@ -97,7 +62,7 @@ fn reqwest_health_waits_for_a_slow_response_within_its_timeout() {
         .expect("the slow answer still arrives");
 
     assert_eq!(body, "{}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -121,10 +86,11 @@ fn the_health_timeout_stays_five_seconds() {
 
 #[test]
 fn reqwest_health_gives_up_when_the_reply_outlasts_the_timeout() {
-    let serving = serve_once(
+    let serving = serve(
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_vec(),
-        Some(STALLED_REPLY_PAUSE),
-    );
+        STALLED_REPLY_PAUSE,
+    )
+    .unwrap();
     let transport = ReqwestHealth::new(SHORT_TIMEOUT).expect("the client builds");
     let started = Instant::now();
 
@@ -139,15 +105,13 @@ fn reqwest_health_gives_up_when_the_reply_outlasts_the_timeout() {
     );
     assert!(waited >= SHORT_TIMEOUT, "{waited:?}");
     assert!(waited < STALLED_REPLY_PAUSE, "{waited:?}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn reqwest_health_accepts_a_body_of_exactly_the_limit() {
-    let serving = serve_once(
-        reply_with_body(usize::try_from(MAX_HEALTH_BODY).unwrap()),
-        None,
-    );
+    let answer = "a".repeat(usize::try_from(MAX_HEALTH_BODY).unwrap());
+    let serving = serve(reply("200 OK", &[], &answer), Duration::ZERO).unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let body = transport
@@ -155,15 +119,13 @@ fn reqwest_health_accepts_a_body_of_exactly_the_limit() {
         .expect("a body at the limit is read in full");
 
     assert_eq!(u64::try_from(body.len()).unwrap(), MAX_HEALTH_BODY);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn reqwest_health_rejects_a_body_one_byte_over_the_limit() {
-    let serving = serve_once(
-        reply_with_body(usize::try_from(MAX_HEALTH_BODY).unwrap() + 1),
-        None,
-    );
+    let over = "a".repeat(usize::try_from(MAX_HEALTH_BODY).unwrap() + 1);
+    let serving = serve(reply("200 OK", &[], &over), Duration::ZERO).unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let error = transport
@@ -174,15 +136,16 @@ fn reqwest_health_rejects_a_body_one_byte_over_the_limit() {
         matches!(error, TransportError::BodyTooLarge { limit } if limit == MAX_HEALTH_BODY),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn reqwest_health_refuses_a_body_that_is_not_utf8() {
-    let serving = serve_once(
+    let serving = serve(
         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n\xff\xfe".to_vec(),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
 
     let error = transport
@@ -190,5 +153,5 @@ fn reqwest_health_refuses_a_body_that_is_not_utf8() {
         .expect_err("the bytes are not text");
 
     assert!(matches!(error, TransportError::NotUtf8(_)), "{error:?}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }

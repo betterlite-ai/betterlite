@@ -15,7 +15,10 @@ description: >-
   signed bytes when non-null, otherwise json.dumps(request_body), as data rather than json. Both sends
   pass timeout. TimeoutException gets the special 408 error below; other send failures use _handle_error.
 
-  Add VectorSearchTransport to B2401, exercising actual OpenAI HTTP handlers. Native tests use typed
+  SdkHttpCall::VectorSearchTransport exercises actual OpenAI HTTP handlers. It is already on main as a
+  placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/vector_search_transport.rs
+  (Call implements call_kind::CallKind) and fill VectorSearchTransportRequest in
+  tools/oracle/sdk_http/vector_search_transport.py; the shared sdk_http files already list it. Native tests use typed
   direct-provider/signing seams for non-HTTP behavior; they do not replace the HTTP oracle. No new decoder
   is needed. The three functions contain 258 nonblank/non-comment lines; estimate 250 implementation,
   170 tests, 95 adapters, 120 fixtures, 35 wiring/corpus, 670 total within 710.
@@ -23,9 +26,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/vector_search_execution.rs
   - crates/betterlite-core/src/api/vector_search_execution/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_search_transport.rs
+  - tools/oracle/src/sdk_http/vector_search_transport/**
   - tools/oracle/sdk_http/vector_search_transport.py
   - tools/oracle/cases/sdk-http/vector-search-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-search-transport-*
@@ -81,7 +83,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_search_execution::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: search transport parity lacks actual pinned HTTP calls
-    run: test -f tools/oracle/sdk_http/vector_search_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_search_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the transport variant lacks new input-parser coverage
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-search-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
