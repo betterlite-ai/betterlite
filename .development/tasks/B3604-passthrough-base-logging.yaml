@@ -188,7 +188,8 @@ out_of_scope:
   and owned by B190; this task calls it in build_response_logging_payload to construct the
   standard logging object with status="success".
 - >-
-  get_end_user_id_from_request_body is imported from litellm.proxy.auth.auth_utils and owned by B884;
+  get_end_user_id_from_request_body is imported from litellm.proxy.auth.auth_utils and owned by B880
+  (betterlite-auth end_user_identity);
   this task calls it in _get_user_from_metadata to extract end_user_id from the request body.
 - >-
   PassthroughStandardLoggingPayload is a TypedDict imported from litellm.types.passthrough_endpoints
