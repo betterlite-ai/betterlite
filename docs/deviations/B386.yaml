@@ -1,0 +1,30 @@
+task: B386
+deviations:
+  - what: >-
+      A declared max_input_tokens or max_output_tokens that is a JSON boolean, a negative
+      integer, or an integer above u64::MAX is no window at all in betterlite: the declaration
+      still shadows the model map, so the group reports an unknown window. LiteLLM's
+      isinstance(int) check returns the declared value, so True counts as a window of one token
+      and -1 as a window no request fits within.
+    why: >-
+      A token window is a non-negative count, and the shared window primitive holds one as u64.
+      A boolean or negative count is a configuration mistake no working setup relies on, and
+      copying it would put a meaningless capacity into the placement decision. A value past
+      u64::MAX is likewise unrepresentable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L3234-L3237
+  - what: >-
+      The model-map answer behind an undeclared limit comes from betterlite's static model
+      catalog only: the deployment's model and custom provider pick the entry, azure resolves by
+      base_model, and an unmapped model has no window. LiteLLM's get_router_model_info also
+      merges provider-discovered model info and resolves wildcard deployment names through the
+      pattern router before looking up the key, and its get_model_list also lists
+      model_group_alias, routing-group and wildcard-pattern deployments beyond the exact name.
+    why: >-
+      The router's model metadata in betterlite is the loaded catalog plus the provider-preferred
+      overlays it already resolves, and provider discovery is a separate service this task does
+      not own. A deployment whose limit only discovery knows, or whose model name is a wildcard
+      matched by the pattern router, therefore reports an unknown window, and so does a group
+      name that only an alias, routing group or wildcard pattern resolves; the gate then treats
+      the group as holdable but never escalates onto it, which is the safe direction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10703-L10758
+kept_bugs: []
