@@ -378,6 +378,35 @@ async fn down_shared_warns() {
     ));
 }
 
+async fn local_rejection_skips_shared() {
+    let server = FakeRedis::try_start().await.unwrap();
+    let shared = shared_store(&server, 100);
+    let local = local_store(&TestClock::default());
+    local
+        .set(
+            &group_key("a"),
+            &RouteValue::Pin(PinValue {
+                model_id: "x".to_owned(),
+            }),
+            Some(IN_FLIGHT_COUNT_TTL_SECONDS),
+        )
+        .unwrap();
+    let service = service(local, Some(shared));
+    let started = service
+        .pre_call(&facts(Some(GROUP), Some("a"), None))
+        .await
+        .unwrap();
+    // this worker's counter refusing the write stops the shared one too, as the sync path does in LiteLLM
+    assert!(matches!(
+        unwritten(started.warning),
+        UnwrittenCount::Local(StoreError::NotIncrementable { .. })
+    ));
+    match service.shared_counts(&[group_key("a")]).await {
+        SharedCounts::Values(values) => assert_eq!(values, vec![None]),
+        other => panic!("unexpected shared counts {other:?}"),
+    }
+}
+
 async fn batch_retrieve_skips() {
     let service = service(local_store(&TestClock::default()), None);
     let skipped = service
@@ -555,6 +584,7 @@ async fn behavior(name: &str) -> bool {
         "clamp_after_reset" => clamp_after_reset().await,
         "drop_releases_local" => drop_releases_local().await,
         "down_shared_warns" => down_shared_warns().await,
+        "local_rejection_skips_shared" => local_rejection_skips_shared().await,
         "batch_retrieve_skips" => batch_retrieve_skips().await,
         "missing_halves_skip" => missing_halves_skip().await,
         "first_minimum" => first_minimum(),
@@ -721,6 +751,7 @@ async fn boundary(name: &str) -> bool {
 #[case::clamp_after_reset("clamp_after_reset")]
 #[case::drop_releases_local("drop_releases_local")]
 #[case::down_shared_warns("down_shared_warns")]
+#[case::local_rejection_skips_shared("local_rejection_skips_shared")]
 #[case::batch_retrieve_skips("batch_retrieve_skips")]
 #[case::missing_halves_skip("missing_halves_skip")]
 #[case::first_minimum("first_minimum")]
