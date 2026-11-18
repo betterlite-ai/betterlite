@@ -77,24 +77,27 @@ async fn failures() {
     construction_failure().await;
 }
 
+// A status failure surfaces at once; the codes the SDK would retry are not repeated (docs/deviations/B686.yaml).
 async fn status_failure() {
     let fixture = Fixture::new();
     let request = fixture.request();
-    let (api, transport) = harness(400, ERROR_BODY);
-    let failed = api
-        .call(&request, None, Some(true), DefinitionCall::List)
-        .await;
-    assert!(
-        matches!(
-            failed,
-            Err(DefinitionsError::Assistants(AssistantsError::Status {
-                status: 400,
-                ..
-            }))
-        ),
-        "{failed:?}"
-    );
-    assert_eq!(transport.requests().len(), 1);
+    for status in [400, 408, 409, 429, 500, 503] {
+        let (api, transport) = harness(status, ERROR_BODY);
+        let failed = api
+            .call(&request, None, Some(true), DefinitionCall::List)
+            .await;
+        assert!(
+            matches!(
+                failed,
+                Err(DefinitionsError::Assistants(AssistantsError::Status {
+                    status: seen,
+                    ..
+                })) if seen == status
+            ),
+            "{status}: {failed:?}"
+        );
+        assert_eq!(transport.requests().len(), 1, "{status}");
+    }
 }
 
 async fn transport_failure() {

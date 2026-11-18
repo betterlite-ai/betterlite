@@ -182,7 +182,7 @@ impl<'data, T: AssistantsTransport> AzureAssistantsClient<'data, T> {
         if self.token.is_none()
             && let Some(key) = key
         {
-            let mut header = HeaderValue::try_from(key.expose_secret().as_str())
+            let mut header = HeaderValue::try_from(key.expose_secret())
                 .map_err(|source| AssistantsError::Header { source })?;
             header.set_sensitive(true);
             headers.insert(API_KEY, header);
@@ -237,12 +237,12 @@ fn resolve_base_url(
 ) -> Result<String, DefinitionsError> {
     match (&inputs.endpoint.base_url, &inputs.endpoint.azure_endpoint) {
         (Some(base), _) => Ok(base.clone()),
-        (None, Some(endpoint)) => Ok(openai_base(endpoint)),
+        (None, Some(endpoint)) => Ok(format!("{}/openai", endpoint.trim_end_matches('/'))),
         (None, None) => {
             let endpoint = environment
                 .lookup("AZURE_OPENAI_ENDPOINT")
                 .ok_or(DefinitionsError::MissingEndpoint)?;
-            Ok(openai_base(&endpoint))
+            Ok(format!("{}/openai", endpoint.trim_end_matches('/')))
         }
     }
 }
@@ -265,11 +265,6 @@ fn provider_token(provider: &TokenProvider<'_>) -> Result<SecretString, Definiti
             message: failure.message,
         }),
     }
-}
-
-fn openai_base(endpoint: &str) -> String {
-    let trimmed = endpoint.trim_end_matches('/');
-    format!("{trimmed}/openai")
 }
 
 // A relative path joins the base URL's raw path, so a base URL query swallows the tail exactly as the SDK's does.

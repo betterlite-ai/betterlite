@@ -96,6 +96,8 @@ fn headers_of(headers: &HeaderMap) -> Headers {
         "authorization",
         "content-type",
         "openai-beta",
+        "openai-organization",
+        "openai-project",
     ] {
         if let Some(value) = headers.get(name) {
             kept.insert(name.to_owned(), value.to_str().unwrap().to_owned());

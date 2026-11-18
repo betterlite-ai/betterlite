@@ -30,6 +30,7 @@ pub(super) async fn check() {
     providers().await;
     static_token_wins().await;
     provider_failures().await;
+    org_project_ignored().await;
     deployments_base().await;
 }
 
@@ -64,23 +65,20 @@ async fn litellm_params_win() {
 fn assert_param_inputs(inputs: &AzureClientInputs<'_>) {
     assert_eq!(inputs.api_version, "2024-05-01");
     assert_eq!(inputs.max_retries, 4);
-    assert_eq!(inputs.timeout.map(f64::to_bits), Some(30.0f64.to_bits()));
+    assert_eq!(inputs.timeout.map(f64::to_bits), Some(30.0_f64.to_bits()));
     assert_eq!(
         inputs.endpoint.azure_endpoint.as_deref(),
         Some("https://arg.test")
     );
     assert_eq!(
-        inputs
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        inputs.api_key.as_ref().map(|key| key.expose_secret()),
         Some("arg-key")
     );
     assert_eq!(
         inputs
             .azure_ad_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(|token| token.expose_secret()),
         Some("params-token")
     );
     assert!(!inputs.http_client.is_async);
@@ -234,6 +232,7 @@ fn missing() {
     let refused = api.azure_client(&request, None, ClientKind::Sync);
     assert!(matches!(refused, Err(DefinitionsError::MissingCredentials)));
     assert!(transport.requests().is_empty());
+    drop(refused);
     fixture.api_key = Some(SecretString::from(KEY));
     fixture.api_base = None;
     let request = fixture.request();
@@ -367,6 +366,28 @@ async fn provider_error(provider: Arc<dyn CallableTokenProvider>) -> Definitions
         .unwrap_err();
     assert!(transport.requests().is_empty());
     error
+}
+
+// The SDK constructor's OPENAI_ORG_ID and OPENAI_PROJECT_ID fallbacks are not read (docs/deviations/B686.yaml).
+async fn org_project_ignored() {
+    let mut fixture = Fixture::new();
+    fixture
+        .environment
+        .insert(String::from("OPENAI_ORG_ID"), String::from("org-1"));
+    fixture
+        .environment
+        .insert(String::from("OPENAI_PROJECT_ID"), String::from("proj-1"));
+    let request = fixture.request();
+    let (api, transport) = harness(200, PAGE);
+    api.azure_client(&request, None, ClientKind::Sync)
+        .unwrap()
+        .list()
+        .await
+        .unwrap();
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert!(!seen[0].headers.contains_key("openai-organization"));
+    assert!(!seen[0].headers.contains_key("openai-project"));
 }
 
 async fn deployments_base() {
