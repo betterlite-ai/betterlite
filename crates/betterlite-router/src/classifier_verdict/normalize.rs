@@ -24,10 +24,10 @@ pub fn normalize_section(
     value: Option<&str>,
 ) -> Result<Option<String>, ClassifierVerdictError> {
     let (field, cap) = section.name_and_cap();
-    let Some(value) = value else {
+    let Some(text) = value else {
         return Ok(None);
     };
-    let stripped = value.trim();
+    let stripped = text.trim();
     if stripped.is_empty() {
         return Err(ClassifierVerdictError::OperatorSectionBlank { field });
     }

@@ -4,6 +4,7 @@ use betterlite_logging::spend_bodies::support::Fields;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 
 use super::error::ClassifierVerdictError;
 

@@ -10,7 +10,7 @@ use crate::tier_definitions::model::TierSet;
 
 use super::error::ClassifierVerdictError;
 
-pub const MAX_REPLY_BYTES: usize = 1_048_576;
+pub const MAX_REPLY_BYTES: usize = 0x0010_0000;
 pub(super) const SCAN_BUDGET: usize = MAX_REPLY_BYTES.saturating_mul(16);
 
 // same-length stand-ins so the decoder locates the object Python's raw_decode would have accepted
@@ -59,6 +59,7 @@ pub fn parse_class_reply(
     })
 }
 
+// B394's scanner is pub(super) in capability_forecast/reply.rs, outside this task's scope, and returns the original slice, while this parser reads the masked one
 #[must_use]
 pub(super) fn first_object(content: &str, budget: usize) -> Option<&str> {
     let mut remaining = budget;

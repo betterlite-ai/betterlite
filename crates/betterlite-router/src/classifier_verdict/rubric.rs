@@ -173,10 +173,8 @@ pub fn calibration_examples_section(
         let label = labeled
             .iter()
             .find(|(candidate, _)| *candidate == tier)
-            .map(|(_, label)| *label);
-        let Some(label) = label else {
-            return Err(ClassifierVerdictError::MissingLabel { tier: tier.name() });
-        };
+            .map(|(_, label)| *label)
+            .ok_or(ClassifierVerdictError::MissingLabel { tier: tier.name() })?;
         section.push_str(label);
         rest = &tail[close + 1..];
     }
