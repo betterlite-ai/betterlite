@@ -144,30 +144,31 @@ fn hashed_from_auth(auth: &UserApiKeyFacts) -> Option<&str> {
         .or(auth.key_hash.as_deref())
 }
 
+fn source_values<'src>(
+    sources: &'src DeploymentFailureSources<'_>,
+    key: LabelKey,
+) -> (Option<&'src str>, Option<&'src str>) {
+    let payload_value = sources
+        .payload_metadata
+        .as_ref()
+        .and_then(|metadata| metadata.text(key));
+    let params_value = sources
+        .litellm_params_metadata
+        .and_then(|metadata| text_field(metadata, key.metadata_name()));
+    (payload_value, params_value)
+}
+
 // Each getter ends at the first source that is not None, so an empty payload value still stops the cascade.
 fn merged(
     sources: &DeploymentFailureSources<'_>,
     key: LabelKey,
     auth_value: Option<&str>,
 ) -> Option<String> {
-    payload(sources, key)
+    let (payload_value, params_value) = source_values(sources, key);
+    payload_value
         .map(str::to_owned)
-        .or_else(|| params(sources, key).map(str::to_owned))
+        .or_else(|| params_value.map(str::to_owned))
         .or_else(|| auth_value.map(str::to_owned))
-}
-
-fn payload<'src>(sources: &'src DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'src str> {
-    let Some(metadata) = sources.payload_metadata.as_ref() else {
-        return None;
-    };
-    metadata.text(key)
-}
-
-fn params<'src>(sources: &'src DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'src str> {
-    let Some(metadata) = sources.litellm_params_metadata else {
-        return None;
-    };
-    text_field(metadata, key.metadata_name())
 }
 
 // requester_ip_address and user_agent merge with Python's `or`, so only a non-empty payload value stops the cascade.
@@ -175,10 +176,8 @@ fn preferred<'src>(
     sources: &'src DeploymentFailureSources<'_>,
     key: LabelKey,
 ) -> Option<&'src str> {
-    if let Some(value) = payload(sources, key)
-        && !value.is_empty()
-    {
-        return Some(value);
-    }
-    params(sources, key)
+    let (payload_value, params_value) = source_values(sources, key);
+    payload_value
+        .filter(|value| !value.is_empty())
+        .or(params_value)
 }
