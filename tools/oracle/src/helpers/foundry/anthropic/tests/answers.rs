@@ -152,30 +152,14 @@ fn outcome_value(
     outcome: Result<ChatOutcome<WireFailure, Tally>, ChatError<WireFailure, Infallible>>,
     wire: &Wire,
 ) -> HelperResult {
-    let recorded = wire.recorded();
-    let url = json!(recorded.first().map(|post| post.url.as_str()));
-    let mut headers = IndexMap::new();
-    for name in HEADERS {
-        headers.insert(
-            name,
-            recorded.first().and_then(|post| header_value(post, name)),
-        );
-    }
-    let body = recorded.first().map_or(Value::Null, |post| {
-        serde_json::from_slice(&post.body).unwrap_or(Value::Null)
-    });
-    let mut fields = IndexMap::new();
-    for name in BODY_KEYS {
-        if let Some(value) = body.get(name) {
-            fields.insert(name, value.clone());
-        }
-    }
+    let recorded = recorded_parts(wire);
     let stream = match outcome {
         Ok(ChatOutcome::Reply(_)) => None,
         Ok(ChatOutcome::Stream(wrapped)) => Some(stream_value(executor, *wrapped)?),
         Ok(ChatOutcome::Embedding) => {
             return Err("a chat call has no embedding outcome".to_owned()).or_value_error();
         }
+        // the handler raises its AnthropicError with only a status, so the other fields are empty
         Err(error) => {
             let status = error.status_code();
             return Err(Box::new(HelperError {
@@ -189,11 +173,44 @@ fn outcome_value(
         }
     };
     Ok(json!({
-        "url": url,
-        "headers": headers,
-        "body": fields,
+        "url": recorded.url,
+        "headers": recorded.headers,
+        "body": recorded.body,
         "stream": stream,
     }))
+}
+
+// What the endpoint received, projected the way a case's answer compares it
+struct Recorded {
+    url: Value,
+    headers: IndexMap<&'static str, Option<String>>,
+    body: IndexMap<&'static str, Value>,
+}
+
+fn recorded_parts(wire: &Wire) -> Recorded {
+    let posts = wire.recorded();
+    let url = json!(posts.first().map(|post| post.url.as_str()));
+    let mut headers = IndexMap::new();
+    for name in HEADERS {
+        headers.insert(
+            name,
+            posts.first().and_then(|post| header_value(post, name)),
+        );
+    }
+    let body = posts.first().map_or(Value::Null, |post| {
+        serde_json::from_slice(&post.body).unwrap_or(Value::Null)
+    });
+    let mut fields = IndexMap::new();
+    for name in BODY_KEYS {
+        if let Some(value) = body.get(name) {
+            fields.insert(name, value.clone());
+        }
+    }
+    Recorded {
+        url,
+        headers,
+        body: fields,
+    }
 }
 
 // LiteLLM joins derived betas out of a set, so the order says nothing about the provider
