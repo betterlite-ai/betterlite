@@ -13,6 +13,8 @@ use uuid::Uuid;
 use super::super::*;
 use super::support::*;
 
+mod stale_removal;
+
 #[test]
 fn resolve_os_environ_in_headers_replaces_a_whole_value() {
     let custom = raw_headers(r#"{"Authorization":"os.environ/ANTHROPIC_API_KEY"}"#);
@@ -759,93 +761,6 @@ fn missing_target_leaves_earlier_endpoints_registered() {
 }
 
 #[test]
-fn stale_removal_drops_a_route_from_a_prior_load() {
-    let routes = shared();
-    let first =
-        parse_endpoint(r#"{"id":"e1","path":"/a","target":"https://upstream","methods":["GET"]}"#);
-    let second =
-        parse_endpoint(r#"{"id":"e2","path":"/b","target":"https://upstream","methods":["GET"]}"#);
-    register_with(&routes, &[first.clone(), second], None, &[]);
-    register_with(&routes, &[first], None, &[]);
-    assert_eq!(registry_keys(&routes), ["e1:exact:/a:GET".to_owned()]);
-    let state = lock_state(&routes);
-    assert_eq!(state.endpoints.len(), 1);
-    assert_eq!(state.table.order().len(), 2);
-}
-
-#[test]
-fn stale_removal_keeps_a_path_shared_with_a_live_endpoint() {
-    let routes = shared();
-    let first = parse_endpoint(
-        r#"{"id":"e1","path":"/shared","target":"https://upstream","auth":true,"methods":["GET"]}"#,
-    );
-    let second = parse_endpoint(
-        r#"{"id":"e2","path":"/shared","target":"https://upstream","auth":true,"methods":["POST"]}"#,
-    );
-    register_with(&routes, &[first, second.clone()], None, &[]);
-    register_with(&routes, &[second], None, &[]);
-    assert_eq!(registry_keys(&routes), ["e2:exact:/shared:POST".to_owned()]);
-    assert_eq!(route_count(&routes, "/shared"), 1);
-}
-
-#[test]
-fn stale_removal_keeps_a_base_openai_route() {
-    let routes = shared();
-    let endpoint = parse_endpoint(
-        r#"{"id":"e1","path":"/v1/chat/completions","target":"https://upstream","auth":true,"methods":["POST"]}"#,
-    );
-    register_with(&routes, &[endpoint], None, &[]);
-    register_with(&routes, &[], None, &[]);
-    assert!(registry_keys(&routes).is_empty());
-    assert_eq!(route_count(&routes, "/v1/chat/completions"), 1);
-}
-
-#[test]
-fn stale_removal_removes_an_unowned_path() {
-    let routes = shared();
-    let endpoint = parse_endpoint(
-        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"methods":["GET"]}"#,
-    );
-    register_with(&routes, &[endpoint], None, &[]);
-    register_with(&routes, &[], None, &[]);
-    assert_eq!(route_count(&routes, "/custom"), 0);
-}
-
-#[test]
-fn stale_removal_removes_an_unowned_wildcard() {
-    let routes = shared();
-    let endpoint = parse_endpoint(
-        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"include_subpath":true,"methods":["GET"]}"#,
-    );
-    register_with(&routes, &[endpoint], None, &[]);
-    register_with(&routes, &[], None, &[]);
-    assert_eq!(route_count(&routes, "/custom"), 0);
-    assert_eq!(route_count(&routes, "/custom/*"), 0);
-}
-
-#[test]
-fn stale_removal_keeps_a_wildcard_owned_by_a_live_subpath() {
-    let routes = shared();
-    let first = parse_endpoint(
-        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"include_subpath":true,"methods":["GET"]}"#,
-    );
-    let second = parse_endpoint(
-        r#"{"id":"e2","path":"/custom","target":"https://upstream","auth":true,"include_subpath":true,"methods":["GET"]}"#,
-    );
-    register_with(&routes, &[first, second.clone()], None, &[]);
-    register_with(&routes, &[second], None, &[]);
-    assert_eq!(
-        registry_keys(&routes),
-        [
-            "e2:exact:/custom:GET".to_owned(),
-            "e2:subpath:/custom:GET".to_owned()
-        ]
-    );
-    assert_eq!(route_count(&routes, "/custom"), 1);
-    assert_eq!(route_count(&routes, "/custom/*"), 1);
-}
-
-#[test]
 fn auth_default_is_unauthenticated_without_the_field() {
     let routes = shared();
     let endpoint = parse_endpoint(
@@ -995,5 +910,76 @@ fn default_handle_seeds_openai_routes_from_the_base_list() {
         OPENAI_ROUTES
             .iter()
             .all(|route| state.openai_routes.iter().any(|entry| entry == route))
+    );
+}
+
+fn direct_params() -> PassthroughParams {
+    PassthroughParams {
+        target: "https://upstream".to_owned(),
+        custom_headers: None,
+        forward_headers: None,
+        merge_query_params: None,
+        default_query_params: None,
+        cost_per_request: None,
+        guardrails: None,
+        timeout: None,
+        config_file_path: None,
+    }
+}
+
+#[test]
+fn direct_add_exact_path_route_registers_the_spec() {
+    let routes = shared();
+    let params = direct_params();
+    let methods = ["GET".to_owned()];
+    let spec = RouteSpec {
+        endpoint_id: "e1",
+        path: "/custom",
+        methods: &methods,
+        auth: true,
+        params: &params,
+    };
+    add_exact_path_route(&routes, &spec, Some("/cfg.yaml"));
+    assert_eq!(
+        config_path(&routes, "e1:exact:/custom:GET").as_deref(),
+        Some("/cfg.yaml")
+    );
+    let state = lock_state(&routes);
+    assert_eq!(state.registry.registrations.len(), 1);
+    assert_eq!(
+        state
+            .table
+            .colliding_routes("/custom", &method_set(&["GET"]))
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn direct_add_subpath_route_registers_the_wildcard() {
+    let routes = shared();
+    let params = direct_params();
+    let methods = ["GET".to_owned()];
+    let spec = RouteSpec {
+        endpoint_id: "e1",
+        path: "/custom",
+        methods: &methods,
+        auth: false,
+        params: &params,
+    };
+    add_subpath_route(&routes, &spec, None);
+    assert_eq!(config_path(&routes, "e1:subpath:/custom:GET"), None);
+    let state = lock_state(&routes);
+    assert_eq!(state.registry.registrations.len(), 1);
+    assert_eq!(
+        state.registry.registrations[0].1.route_type,
+        PassThroughRouteType::Subpath
+    );
+    assert_eq!(
+        state
+            .table
+            .colliding_routes("/custom/{subpath:path}", &method_set(&["GET"]))
+            .len(),
+        1
     );
 }
