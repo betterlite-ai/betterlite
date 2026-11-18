@@ -45,6 +45,15 @@ deviations:
       to be kept. The public response reports the secret as absent either way; logging an exception
       for a value betterlite already treats as unset only fills the operator log on every read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L180-L217
+  - what: >-
+      A request with more than one invalid field reports the first error only, while pydantic's
+      422 detail carries one entry for every invalid field.
+    why: >-
+      serde stops at the first field it cannot decode, and the patch bounds are checked in a fixed
+      order, so the second bad field is reported once the first is fixed. Each issue keeps
+      pydantic's type, loc and msg, and docs/compatibility.md accepts an error that names the
+      field where Python's runtime decides what is valid.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L385-L386
 kept_bugs:
   - what: >-
       A stored settings object with a key outside _StoredSettings loads, and the next PUT writes the
