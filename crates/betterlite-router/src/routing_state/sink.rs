@@ -13,16 +13,19 @@ impl<S: DeltaStore + 'static> CounterSink for RouterCounters<S> {
         increment_local_counter(self.state.as_ref(), key, value, ttl)
     }
 
-    // cache.async_increment_cache_pipeline: a full queue schedules its flush on the owner's task set
+    // cache.async_increment_cache_pipeline: the whole batch is staged, then one flush carries what the full queue joined
     fn increment_pipeline(&self, increments: &[Increment]) -> Result<(), CounterError> {
+        let mut joined = false;
         for increment in increments {
             match self.stage_usage(increment) {
-                Ok(Some(delta)) => sync::schedule_flush(&self.state, &self.flushes, delta),
-                Ok(None) => {}
+                Ok(saturated) => joined |= saturated,
                 Err(error) => {
                     tracing::warn!(%error, "a usage counter could not be incremented in memory");
                 }
             }
+        }
+        if joined {
+            sync::schedule_flush(&self.state, &self.flushes);
         }
         Ok(())
     }

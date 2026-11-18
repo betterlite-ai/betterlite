@@ -5,28 +5,21 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::FLUSH_DEADLINE;
-use super::delta::{self, Delta, DeltaStore, FlushGate, SyncOutcome, SyncState};
+use super::delta::{self, DeltaStore, SyncOutcome, SyncState};
 
 // the sink's saturated path: the owner's task set runs the flush, so a stalled store never blocks the callback
-pub(super) fn schedule_flush<S>(
-    state: &Arc<SyncState<S>>,
-    flushes: &Mutex<JoinSet<()>>,
-    delta: Delta,
-) where
+pub(super) fn schedule_flush<S>(state: &Arc<SyncState<S>>, flushes: &Mutex<JoinSet<()>>)
+where
     S: DeltaStore + 'static,
 {
     if Handle::try_current().is_err() {
         tracing::warn!(
-            key = delta.key.as_ref(),
-            "the usage delta needs a running runtime to flush; it is dropped"
+            "the joined usage deltas need a running runtime to flush; they wait for the next sync"
         );
         return;
     }
-    let Some(gate) = FlushGate::try_acquire(&state.gate) else {
-        tracing::warn!(
-            key = delta.key.as_ref(),
-            "a flush is already running; the delta is dropped"
-        );
+    // the sink's path takes the gate without waiting, so a full queue never blocks the callback's thread
+    let Ok(gate) = Arc::clone(&state.gate.held).try_lock_owned() else {
         return;
     };
     let owned = Arc::clone(state);
@@ -34,34 +27,40 @@ pub(super) fn schedule_flush<S>(
     while tasks.try_join_next().is_some() {}
     let _task = tasks.spawn(async move {
         let _guard = gate;
-        flush(&owned, delta, true).await;
+        // the task holds the gate already, so it pushes what joined it while it wrote
+        if timeout(FLUSH_DEADLINE, drain(&owned)).await.is_err() {
+            delta::discard_joined(&owned);
+            tracing::warn!("the scheduled routing flush passed its deadline");
+        }
     });
 }
 
-// one bounded flush: a scheduled task holds the gate already, and the async caller waits for it inside sync_state
-pub(super) async fn flush<S>(state: &SyncState<S>, delta: Delta, gate_held: bool)
+// one bounded inline flush for an async caller: sync_state takes the gate itself and merges the store's totals
+pub(super) async fn flush<S>(state: &SyncState<S>)
 where
     S: DeltaStore,
 {
-    let outcome = if gate_held {
-        timeout(FLUSH_DEADLINE, delta::push_and_merge(state)).await
-    } else {
-        timeout(FLUSH_DEADLINE, delta::sync_state(state)).await
-    };
-    finish_flush(state, delta, outcome.unwrap_or(SyncOutcome::Busy));
+    if timeout(FLUSH_DEADLINE, delta::sync_state(state))
+        .await
+        .is_err()
+    {
+        tracing::warn!("the routing flush passed its deadline");
+    }
 }
 
-// a delta that found the queue full goes back only after a flush that finished, and only if there is room again
-fn finish_flush<S>(state: &SyncState<S>, delta: Delta, outcome: SyncOutcome)
+// push the batch, then push again while a delta that found the queue full joined the running flush
+async fn drain<S>(state: &SyncState<S>) -> SyncOutcome
 where
     S: DeltaStore,
 {
-    let key = delta.key.clone();
-    if matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) && state.queue(delta) {
-        return;
+    let mut outcome = delta::push_and_merge(state).await;
+    while matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty)
+        && delta::joined_len(state) > 0
+    {
+        outcome = delta::push_and_merge(state).await;
     }
-    tracing::warn!(
-        key = key.as_ref(),
-        "the queue is full; the delta is dropped after the bounded flush"
-    );
+    if !matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) {
+        delta::discard_joined(state);
+    }
+    outcome
 }

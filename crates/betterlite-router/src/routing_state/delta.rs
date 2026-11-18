@@ -1,14 +1,13 @@
 pub(crate) mod store;
 
 use std::collections::BTreeSet;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use tokio::sync::Notify;
-use tokio::time::{Instant, timeout};
+use tokio::sync::{Mutex as AsyncMutex, OwnedMutexGuard};
+use tokio::time::timeout;
 
 use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError,
@@ -32,53 +31,23 @@ pub trait DeltaStore: Send + Sync {
     -> Result<Vec<Decimal>, RoutingStateError>;
 }
 
-// the owner of the store push: a flag plus a waker, so no lock is held across a storage await
+// the owner of the store push: an async lock, safe to hold across the storage await, released on drop
 pub(super) struct FlushGate {
-    busy: AtomicBool,
-    idle: Notify,
+    pub(super) held: Arc<AsyncMutex<()>>,
 }
 
 impl FlushGate {
-    pub(super) const fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
-            busy: AtomicBool::new(false),
-            idle: Notify::const_new(),
+            held: Arc::new(AsyncMutex::new(())),
         }
     }
 
     // a caller that cannot get the gate inside its deadline gives up instead of waiting forever
-    pub(super) async fn acquire(gate: &Arc<Self>, deadline: Duration) -> Option<FlushGuard> {
-        let start = Instant::now();
-        loop {
-            if !gate.busy.swap(true, Ordering::AcqRel) {
-                return Some(FlushGuard {
-                    gate: Arc::clone(gate),
-                });
-            }
-            let remaining = deadline.checked_sub(start.elapsed())?;
-            timeout(remaining, gate.idle.notified()).await.ok()?;
-        }
-    }
-
-    // the sink's path takes the gate without waiting, so a full queue never blocks the callback's thread
-    pub(super) fn try_acquire(gate: &Arc<Self>) -> Option<FlushGuard> {
-        if gate.busy.swap(true, Ordering::AcqRel) {
-            return None;
-        }
-        Some(FlushGuard {
-            gate: Arc::clone(gate),
-        })
-    }
-}
-
-pub(super) struct FlushGuard {
-    gate: Arc<FlushGate>,
-}
-
-impl Drop for FlushGuard {
-    fn drop(&mut self) {
-        self.gate.busy.store(false, Ordering::Release);
-        self.gate.idle.notify_one();
+    pub(super) async fn acquire(gate: &Self, deadline: Duration) -> Option<OwnedMutexGuard<()>> {
+        timeout(deadline, Arc::clone(&gate.held).lock_owned())
+            .await
+            .ok()
     }
 }
 
@@ -86,8 +55,9 @@ pub(super) struct SyncState<S: DeltaStore> {
     pub(super) local: Arc<RoutingValueStore>,
     pub(super) store: Option<Arc<S>>,
     pub(super) pending: Mutex<Vec<Delta>>,
+    pub(super) joined: Mutex<Vec<Delta>>,
     pub(super) tracked: Mutex<BTreeSet<RouteKey>>,
-    pub(super) gate: Arc<FlushGate>,
+    pub(super) gate: FlushGate,
 }
 
 impl<S: DeltaStore> SyncState<S> {
@@ -96,8 +66,9 @@ impl<S: DeltaStore> SyncState<S> {
             local,
             store,
             pending: Mutex::new(Vec::new()),
+            joined: Mutex::new(Vec::new()),
             tracked: Mutex::new(BTreeSet::new()),
-            gate: Arc::new(FlushGate::new()),
+            gate: FlushGate::new(),
         }
     }
 
@@ -132,14 +103,14 @@ impl<S: DeltaStore> SyncState<S> {
         key: &RouteKey,
         increment: &RouteIncrement,
         ttl: Duration,
-    ) -> Result<(RouteValue, Option<Delta>), StoreError> {
+    ) -> Result<(RouteValue, bool), StoreError> {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         let updated = self
             .local
             .increment(key, increment, Some(ttl.as_secs_f64()))?;
         if self.store.is_none() {
             drop(pending);
-            return Ok((updated, None));
+            return Ok((updated, false));
         }
         let value = match increment {
             RouteIncrement::Spend(value) => *value,
@@ -150,22 +121,46 @@ impl<S: DeltaStore> SyncState<S> {
             value,
             ttl,
         };
-        let queued = pending.len() < MAX_PENDING_DELTAS;
-        if queued {
-            pending.push(delta.clone());
+        if pending.len() < MAX_PENDING_DELTAS {
+            pending.push(delta);
+            drop(pending);
+            return Ok((updated, false));
         }
         drop(pending);
-        Ok((updated, if queued { None } else { Some(delta) }))
+        self.joined
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(delta);
+        Ok((updated, true))
     }
+}
 
-    pub(super) fn queue(&self, delta: Delta) -> bool {
-        let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
-        if pending.len() >= MAX_PENDING_DELTAS {
-            return false;
-        }
-        pending.push(delta);
-        true
+// the deltas that found the queue full and ride the flush that is scheduled or running
+pub(super) fn joined_len<S>(state: &SyncState<S>) -> usize
+where
+    S: DeltaStore,
+{
+    state
+        .joined
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len()
+}
+
+// a flush past its deadline or a failed store drops what joined it, as LiteLLM drops a failed batch
+pub(super) fn discard_joined<S>(state: &SyncState<S>)
+where
+    S: DeltaStore,
+{
+    let mut joined = state.joined.lock().unwrap_or_else(PoisonError::into_inner);
+    if joined.is_empty() {
+        return;
     }
+    tracing::warn!(
+        dropped = joined.len(),
+        "the joined routing deltas are dropped"
+    );
+    joined.clear();
 }
 
 // BaseRoutingStrategy._sync_in_memory_spend_with_redis: push the queued deltas, then merge the store's totals back

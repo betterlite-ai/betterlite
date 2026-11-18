@@ -79,7 +79,9 @@ where
         .iter()
         .map(|key| local_amount(&state.local, key))
         .collect();
-    let batch = mem::take(&mut *pending);
+    let mut batch = mem::take(&mut *pending);
+    let joined = mem::take(&mut *state.joined.lock().unwrap_or_else(PoisonError::into_inner));
+    batch.extend(joined);
     drop(pending);
     if batch.is_empty() {
         return None;

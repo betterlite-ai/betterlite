@@ -13,7 +13,7 @@ use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
 };
 
-use super::delta::{self, Delta, DeltaStore, FlushGate, SyncOutcome, SyncState};
+use super::delta::{self, DeltaStore, FlushGate, SyncOutcome, SyncState};
 use super::error::RoutingStateError;
 use super::{FLUSH_DEADLINE, Settings, lifecycle, sync};
 
@@ -44,11 +44,11 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     ) -> Result<Decimal, RoutingStateError> {
         let route_key = RouteKey::parse(key)?;
         self.state.track(&route_key);
-        let (updated, saturated) =
+        let (updated, joined) =
             self.state
                 .record_delta(&route_key, &RouteIncrement::Spend(value), ttl)?;
-        if let Some(delta) = saturated {
-            sync::flush(self.state.as_ref(), delta, false).await;
+        if joined {
+            sync::flush(self.state.as_ref()).await;
         }
         Ok(spend_value(&route_key, &updated))
     }
@@ -66,8 +66,8 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         Ok(results)
     }
 
-    // B397's sink cannot await the store; a delta a full queue refused comes back for the caller to flush
-    pub(super) fn stage_usage(&self, increment: &Increment) -> Result<Option<Delta>, CounterError> {
+    // B397's sink cannot await the store; a delta that found the queue full joins the flush the sink schedules
+    pub(super) fn stage_usage(&self, increment: &Increment) -> Result<bool, CounterError> {
         let route_key =
             RouteKey::parse(&increment.key).map_err(|_source| CounterError::Rejected {
                 key: increment.key.clone(),
@@ -81,7 +81,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             increment.ttl,
         );
         match recorded {
-            Ok((_updated, saturated)) => Ok(saturated),
+            Ok((_updated, joined)) => Ok(joined),
             Err(_source) => Err(CounterError::Rejected {
                 key: increment.key.clone(),
             }),
@@ -212,10 +212,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
 
     // BaseRoutingStrategy.retire stops the loop, then pushes what is queued inside the flush deadline
     pub async fn retire(&self) {
-        self.cancel_sync_task();
-        let mut flushes =
-            mem::take(&mut *self.flushes.lock().unwrap_or_else(PoisonError::into_inner));
-        while flushes.join_next().await.is_some() {}
+        self.cleanup().await;
         let Some(_gate) = FlushGate::acquire(&self.state.gate, FLUSH_DEADLINE).await else {
             tracing::warn!("a routing flush held the store past the retire deadline");
             return;
