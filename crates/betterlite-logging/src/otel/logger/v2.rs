@@ -10,6 +10,7 @@ use opentelemetry_sdk::trace::SdkTracer;
 
 use crate::otel::config::Settings;
 use crate::otel::emitter::span_emission::SpanEmitter;
+use crate::otel::logger_runtime::types::ConstructorSettings;
 use crate::otel::plumbing::context::context_slots::RequestTraceContext;
 use crate::otel::plumbing::metrics::recorder::GenAiMetricRecorder;
 use crate::otel::plumbing::routing::cache::{TenantProvider, TenantTracerCache};
@@ -95,6 +96,8 @@ pub struct OpenTelemetryV2Parts {
 pub struct OpenTelemetryV2 {
     pub(crate) name: String,
     pub(crate) config: Settings,
+    // the CustomLogger logging controls the constructing factory passed; B3857's own callers keep the defaults
+    pub(crate) settings: ConstructorSettings,
     pub(crate) tracer: SdkTracer,
     pub(crate) emitter: SpanEmitter<SdkTracer>,
     pub(crate) metrics: Option<Arc<GenAiMetricRecorder>>,
@@ -110,6 +113,7 @@ impl OpenTelemetryV2 {
         Self {
             name: parts.name,
             config: parts.config,
+            settings: ConstructorSettings::default(),
             tracer: parts.tracer,
             emitter: parts.emitter,
             metrics: parts.metrics,

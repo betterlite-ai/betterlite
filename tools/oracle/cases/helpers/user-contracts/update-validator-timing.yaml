@@ -1,0 +1,52 @@
+kind: helper
+name: update-validator-timing
+call:
+  user_contracts:
+    calls:
+      - function: bulk_update
+        body: {}
+      - function: bulk_update
+        body: {"users": null, "all_users": null, "user_updates": null}
+      - function: bulk_update
+        body: {"users": [{"user_id": "alice", "user_role": "internal_user"}]}
+      - function: bulk_update
+        body: {"all_users": true, "user_updates": {"max_budget": 5}}
+      - function: bulk_update
+        body: {"all_users": true, "user_updates": {}}
+      - function: bulk_update
+        body: {"all_users": true, "user_updates": null}
+      - function: bulk_update
+        body: {"users": [{"user_id": "alice"}], "all_users": true, "user_updates": {}}
+      - function: bulk_update
+        body: {"users": [{"user_id": "alice"}], "all_users": true, "user_updates": null}
+      - function: bulk_update
+        body: {"users": [{"user_id": "alice"}], "all_users": true}
+      - function: bulk_update
+        body: {"users": [], "all_users": false}
+      - function: bulk_update
+        body: {"users": [], "all_users": false, "user_updates": {}}
+      - function: bulk_update
+        body: {"users": [], "all_users": true, "user_updates": {}}
+      - function: bulk_update
+        body: {"users": null, "all_users": true, "user_updates": {}}
+      - function: bulk_update
+        body: {"users": [{"user_id": "alice", "user_alias": null}], "all_users": null}
+      - function: bulk_update
+        body: {"users": [{"user_email": null}]}
+      - function: bulk_update
+        body: {"users": [{"user_email": "a@b.c"}], "user_updates": {"user_alias": "x"}}
+      - function: bulk_update
+        body: {"users": [{}]}
+      - function: bulk_update
+        body: {"users": [{"user_id": ""}]}
+      - function: bulk_update
+        body: {"users": [{"user_id": "alice", "user_role": "team"}]}
+      - function: bulk_update
+        body: {"users": "alice"}
+      - function: bulk_update
+        body: {"user_updates": {"metadata": {"team": "x"}}}
+      - function: bulk_update
+        body: []
+    queries: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+task: B584
+deviations:
+  - what: A transport failure that carries no status, a deadline included, becomes status 500, where LiteLLM's httpx handler raises litellm.Timeout and the wrapper copies its 408.
+    why: betterlite's transport reports a failed exchange without a status, so the shared exception projection takes its 500 default; the task fixes this outcome as a plain timeout becoming 500 rather than an invented 408.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L374
+  - what: The AnthropicError message keeps the upstream body text unchanged, where LiteLLM masks secrets in the body and in the exception text inside the HTTP handler before the wrapper copies them.
+    why: the task defines the message as exception.text-or-str; betterlite redacts the post_call record and the client error envelope (B011) instead of rewriting the typed provider error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L548-L549
+kept_bugs:
+  - what: A sync buffered failure emits no post_call, while the async path logs the exception before wrapping it.
+    why: a working setup cannot rely on a log record that is absent, and both branches stay as LiteLLM writes them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L511-L516

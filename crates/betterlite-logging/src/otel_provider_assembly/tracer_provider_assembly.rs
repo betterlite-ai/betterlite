@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+use std::slice::from_ref;
 use std::sync::Arc;
 
 use opentelemetry::KeyValue;
@@ -6,8 +8,9 @@ use opentelemetry_sdk::trace::{SdkTracerProvider, TracerProviderBuilder};
 
 use crate::otel::config::destination::SpanScope;
 use crate::otel::config::{ExporterOwner, ExporterSpec, Settings};
-use crate::otel::fan_out::attach::{SinkKey, sink_key};
+use crate::otel::fan_out::attach::{SinkKey, sink_key, tenant_fan_out_processor};
 use crate::otel::fan_out::overridden::OverriddenBackendFilter;
+use crate::otel::fan_out::processor::TenantFanOutSpanProcessor;
 use crate::otel::fan_out::scope::RequestScopeSource;
 use crate::otel::plumbing::exporters::{ExportResult, ExporterFactories, Transport};
 use crate::otel::plumbing::headers::parse_headers;
@@ -107,38 +110,79 @@ impl Assembly<'_> {
             scope_source: Arc::clone(self.scope_source),
         }))
     }
+
+    fn build(
+        mut self,
+        fan_out: Option<TenantFanOutSpanProcessor>,
+    ) -> ExportResult<SdkTracerProvider> {
+        let baggage = self.options.baggage_processor.take().unwrap_or_else(|| {
+            BaggageSpanProcessor::new(self.config.baggage_promoted_keys.clone(), None)
+        });
+        let mut builder = SdkTracerProvider::builder()
+            .with_resource(provider_resource(self.config))
+            .with_span_processor(baggage);
+        if let Some(sink) = self.options.exporter.take() {
+            let processor = processor_for(sink, self.options.use_simple_processor);
+            let built = builder.with_span_processor(processor);
+            return Ok(with_fan_out(built, fan_out).build());
+        }
+        for spec in &self.config.exporters {
+            if spec.requires_headers && spec.headers.is_none() {
+                continue;
+            }
+            builder = self.add_exporter(builder, spec)?;
+        }
+        Ok(with_fan_out(builder, fan_out).build())
+    }
+}
+
+fn with_fan_out(
+    builder: TracerProviderBuilder,
+    fan_out: Option<TenantFanOutSpanProcessor>,
+) -> TracerProviderBuilder {
+    match fan_out {
+        Some(processor) => builder.with_span_processor(processor),
+        None => builder,
+    }
 }
 
 pub fn build_tracer_provider(
     config: &Settings,
     factories: &ExporterFactories,
     scope_source: &Arc<dyn RequestScopeSource>,
-    mut options: AssemblyOptions,
+    options: AssemblyOptions,
 ) -> ExportResult<SdkTracerProvider> {
-    let baggage = options
-        .baggage_processor
-        .take()
-        .unwrap_or_else(|| BaggageSpanProcessor::new(config.baggage_promoted_keys.clone(), None));
-    let mut builder = SdkTracerProvider::builder()
-        .with_resource(provider_resource(config))
-        .with_span_processor(baggage);
-    if let Some(sink) = options.exporter.take() {
-        let processor = processor_for(sink, options.use_simple_processor);
-        return Ok(builder.with_span_processor(processor).build());
-    }
     let assembly = Assembly {
         config,
         factories,
         scope_source,
         options,
     };
-    for spec in &config.exporters {
-        if spec.requires_headers && spec.headers.is_none() {
-            continue;
-        }
-        builder = assembly.add_exporter(builder, spec)?;
-    }
-    Ok(builder.build())
+    assembly.build(None)
+}
+
+// The provider the runtime publishes: the configured exporters plus the tenant fan-out processor.
+pub fn build_fan_out_tracer_provider(
+    config: &Settings,
+    factories: Arc<ExporterFactories>,
+    scope_source: &Arc<dyn RequestScopeSource>,
+    options: AssemblyOptions,
+    excluded_db_systems: BTreeSet<String>,
+) -> ExportResult<SdkTracerProvider> {
+    let assembly_factories = Arc::clone(&factories);
+    let fan_out = tenant_fan_out_processor(
+        factories,
+        Arc::clone(scope_source),
+        from_ref(config),
+        excluded_db_systems,
+    );
+    let assembly = Assembly {
+        config,
+        factories: assembly_factories.as_ref(),
+        scope_source,
+        options,
+    };
+    assembly.build(Some(fan_out))
 }
 
 #[path = "tracer_provider_assembly/tests.rs"]

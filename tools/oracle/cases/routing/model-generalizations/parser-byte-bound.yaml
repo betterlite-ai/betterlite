@@ -1,0 +1,16 @@
+kind: probe
+name: parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        parse: {bytes: 1048577}
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/model_generalizations/parse
+      reference: {kind: valid, rules: 0}
+      rust: {kind: invalid, bytes: 1048577, limit: 1048576}
+      why: betterlite refuses a generalization rule document past 1 MiB before decoding, while the LiteLLM reference reads it
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277

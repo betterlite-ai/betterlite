@@ -1,0 +1,42 @@
+kind: helper
+name: empty-exporters-export-nowhere
+call:
+  b8910:
+    function: exports_nowhere
+    config:
+      exporters: []
+      mapper_names: [genai]
+      capture_message_content: no_content
+calls:
+  - b8910:
+      function: exports_nowhere
+      config:
+        exporters:
+          - requires_headers: true
+        mapper_names: [genai]
+        capture_message_content: no_content
+  - b8910:
+      function: exports_nowhere
+      config:
+        exporters:
+          - requires_headers: true
+            headers: api-key=abc
+        mapper_names: [genai]
+        capture_message_content: no_content
+  - b8910:
+      function: exports_nowhere
+      config:
+        exporters:
+          - {}
+          - requires_headers: true
+        mapper_names: [genai]
+        capture_message_content: no_content
+  - b8910:
+      function: only_the_gated_exporter
+      config:
+        exporters: []
+        mapper_names: [genai]
+        capture_message_content: no_content
+env: {}
+compare:
+  ignore: []
