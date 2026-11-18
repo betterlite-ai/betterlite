@@ -62,7 +62,6 @@ fn shadowed_labels(labels: &BTreeMap<ComplexityTier, String>) -> Vec<(Complexity
     shadowed
 }
 
-// the tiers whose display names collide, each group in severity order of its first member
 fn duplicate_labels(
     labels: &BTreeMap<ComplexityTier, String>,
     non_reasoning: bool,

@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::tier_definitions as section;
+use indexmap::IndexMap;
 
 use crate::complexity_scoring::defaults::{self, Defaults};
 use crate::complexity_scoring::tier::ComplexityTier;
@@ -35,7 +36,7 @@ fn pinned_pools() -> Result<BTreeMap<String, TierPool>, TierDefinitionsError> {
     for (tier, model) in defaults.tier_models {
         let entry = TierModelEntry {
             model_name: model,
-            params: section::TierParams::default(),
+            params: IndexMap::new(),
         };
         pools.insert(tier, TierPool::Single(entry));
     }
@@ -74,7 +75,7 @@ fn normalize_entry(entry: &section::TierEntry) -> TierModelEntry {
     match entry {
         section::TierEntry::Model(model) => TierModelEntry {
             model_name: model.clone(),
-            params: section::TierParams::default(),
+            params: IndexMap::new(),
         },
         section::TierEntry::Detailed(detailed) => TierModelEntry {
             model_name: detailed.model_name.clone(),

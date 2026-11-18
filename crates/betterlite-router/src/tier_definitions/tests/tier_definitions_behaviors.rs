@@ -212,7 +212,7 @@ fn a_single_object_entry_keeps_its_request_params() {
         reasoning.models()[0]
             .params
             .get("reasoning_effort")
-            .map(section::TierParam::exposed),
+            .map(|param| Json::from(param.clone())),
         Some(parameters)
     );
 }
@@ -384,7 +384,7 @@ fn entry_params_stay_typed_json_values() {
         entry
             .params
             .get("max_tokens")
-            .map(section::TierParam::exposed),
+            .map(|param| Json::from(param.clone())),
         Some(Json::Number(Number::from(512_u64)))
     );
 }

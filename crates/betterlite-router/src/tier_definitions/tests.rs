@@ -64,9 +64,14 @@ pub(crate) fn detailed(model: &str, params: &[(&str, Json)]) -> section::TierEnt
         model_name: model.to_owned(),
         litellm_params: params
             .iter()
-            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .map(|(key, value)| ((*key).to_owned(), stored(value)))
             .collect(),
     })
+}
+
+fn stored(value: &Json) -> section::TierParam {
+    serde_json::from_value(serde_json::to_value(value).expect("the parameter serializes"))
+        .expect("the parameter deserializes")
 }
 
 pub(crate) fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {

@@ -52,9 +52,14 @@ fn entry(model_name: &str, params: &[(&str, Json)]) -> TierEntry {
         model_name: model_name.to_owned(),
         litellm_params: params
             .iter()
-            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .map(|(key, value)| ((*key).to_owned(), param(value)))
             .collect(),
     })
+}
+
+fn param(value: &Json) -> TierParam {
+    serde_json::from_value(serde_json::to_value(value).expect("the parameter serializes"))
+        .expect("the parameter deserializes")
 }
 
 fn model(name: &str) -> TierEntry {
@@ -486,10 +491,10 @@ fn absent_null_and_empty_parameters_are_one_empty_map() {
 
 #[test]
 fn parameter_text_equality_compares_every_byte() {
-    let first = entry("small", &[("api_key", text("sk-ab"))]);
-    let same = entry("small", &[("api_key", text("sk-ab"))]);
-    let swapped = entry("small", &[("api_key", text("sk-ba"))]);
-    let longer = entry("small", &[("api_key", text("sk-ab-longer"))]);
+    let first = entry("small", &[("api_key", text("secret-keys"))]);
+    let same = entry("small", &[("api_key", text("secret-keys"))]);
+    let swapped = entry("small", &[("api_key", text("secret-kept"))]);
+    let longer = entry("small", &[("api_key", text("secret-keys-and-more"))]);
     assert_eq!(first, same);
     assert_ne!(first, swapped);
     assert_ne!(first, longer);
@@ -535,7 +540,7 @@ fn a_parameter_map_exposes_its_entries() {
         entry
             .litellm_params
             .get("max_tokens")
-            .map(TierParam::exposed),
+            .map(|param| Json::from(param.clone())),
         Some(number(512))
     );
     let absent = only(

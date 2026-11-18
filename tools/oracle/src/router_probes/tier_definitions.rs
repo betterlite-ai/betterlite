@@ -6,6 +6,7 @@ use betterlite_router::tier_definitions::checks::{
     ClassifierFallback, ClassifierKind, OrderFeature, TierChecks,
 };
 use betterlite_router::tier_definitions::model::{TierPool, TierSet};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::router_probes::ProbeOutput;
@@ -129,7 +130,7 @@ struct PoolView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct EntryView {
     model_name: String,
-    params: section::TierParams,
+    params: IndexMap<String, section::TierParam>,
 }
 
 pub(crate) fn run(

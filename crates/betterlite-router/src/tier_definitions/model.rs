@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::slice::from_ref;
 
 use betterlite_config::sections::tier_definitions as section;
+use indexmap::IndexMap;
 
 use crate::complexity_scoring::tier::{ComplexityTier, Tier, tier_severity_order};
 
@@ -16,7 +17,7 @@ pub struct TierDefinition {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TierModelEntry {
     pub model_name: String,
-    pub params: section::TierParams,
+    pub params: IndexMap<String, section::TierParam>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

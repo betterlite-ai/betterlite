@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::tier_definitions::{
-    RawFlag, TierDefinition, TierEntry, TierModelEntry, TierParam, TierParams, TierPool,
+    RawFlag, TierDefinition, TierEntry, TierModelEntry, TierParam, TierPool,
 };
 
 pub(super) fn flag(
@@ -31,16 +31,12 @@ pub(super) fn reference(
     path: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<String>, ConfigError> {
-    let Some(name) = text.strip_prefix("os.environ/").map(str::to_owned) else {
-        return Ok(Some(text));
-    };
-    let Some(value) = lookup.lookup(&name) else {
-        return Err(ConfigError::MissingEnvironment {
-            variable: name,
-            path: path.to_owned(),
-        });
-    };
-    Ok((!value.is_empty()).then_some(value))
+    let is_reference = text.starts_with("os.environ/");
+    let value = resolve_string(text, path, lookup)?;
+    if is_reference && value.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(value))
 }
 
 pub(super) fn definitions(
@@ -155,26 +151,26 @@ fn required_model_name(
     let Some(name) = text.strip_prefix("os.environ/").map(str::to_owned) else {
         return Ok(text);
     };
-    let Some(value) = lookup.lookup(&name).filter(|value| !value.is_empty()) else {
-        return Err(ConfigError::MissingEnvironment {
+    match lookup.lookup(&name).filter(|value| !value.is_empty()) {
+        Some(value) => Ok(value),
+        None => Err(ConfigError::MissingEnvironment {
             variable: name,
             path: path.to_owned(),
-        });
-    };
-    Ok(value)
+        }),
+    }
 }
 
 fn resolve_params(
-    params: TierParams,
+    params: IndexMap<String, TierParam>,
     path: &str,
     lookup: &dyn EnvironmentLookup,
-) -> Result<TierParams, ConfigError> {
+) -> Result<IndexMap<String, TierParam>, ConfigError> {
     let mut entries = IndexMap::with_capacity(params.len());
-    for (key, value) in params.0 {
+    for (key, value) in params {
         let path = format!("{path}.{key}");
         entries.extend(resolve_param(value, &path, lookup)?.map(|item| (key, item)));
     }
-    Ok(TierParams(entries))
+    Ok(entries)
 }
 
 fn resolve_param(
