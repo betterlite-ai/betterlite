@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 
 use super::fixtures::{
     FakeTransport, clone_store, close, database, insert_usage, logger, minutes_ago, now, settings,
-    usage,
+    settings_from, usage,
 };
 use crate::finops::cloudzero::schedule::ExportOperation;
 use crate::finops::cloudzero::schedule::error::CloudZeroExportError;
@@ -168,6 +168,51 @@ mod empty_and_failure {
             .expect_err("a refused post");
         assert!(matches!(error, CloudZeroExportError::Delivery(_)));
         assert_eq!(failing_transport.posts().len(), 1);
+        close(fixture, &store).await;
+    }
+}
+
+mod no_valid_records {
+    use super::*;
+
+    #[tokio::test]
+    async fn cloudzero_schedule() {
+        let (fixture, store) = database().await;
+        let mut zero = usage("row-zero", "gpt-4o", Decimal::new(15, 1), minutes_ago(10));
+        zero.successful_requests = 0;
+        insert_usage(&store, &zero).await;
+        let transport = FakeTransport::default();
+        let assembled = logger(settings(), clone_store(&store), transport.clone(), None);
+        export_usage_data(&assembled, None, None, None, None)
+            .await
+            .expect("a skipped export");
+        assert!(transport.posts().is_empty());
+        close(fixture, &store).await;
+    }
+}
+
+mod timezone {
+    use super::*;
+
+    #[tokio::test]
+    async fn cloudzero_schedule() {
+        let (fixture, store) = database().await;
+        let mut offset = usage("row-tz", "gpt-4o", Decimal::ONE, minutes_ago(10));
+        offset.date = "2026-02-01T04:30:00+00:00";
+        insert_usage(&store, &offset).await;
+        let utc_transport = FakeTransport::default();
+        let utc_logger = logger(settings(), clone_store(&store), utc_transport.clone(), None);
+        export_usage_data(&utc_logger, None, None, None, None)
+            .await
+            .expect("a UTC export");
+        assert_eq!(utc_transport.posts()[0].month, "2026-02");
+        let tokyo_transport = FakeTransport::default();
+        let tokyo = settings_from(&[("CLOUDZERO_TIMEZONE", "Asia/Tokyo")]);
+        let tokyo_logger = logger(tokyo, clone_store(&store), tokyo_transport.clone(), None);
+        export_usage_data(&tokyo_logger, None, None, None, None)
+            .await
+            .expect("a Tokyo export");
+        assert_eq!(tokyo_transport.posts()[0].month, "2026-01");
         close(fixture, &store).await;
     }
 }
