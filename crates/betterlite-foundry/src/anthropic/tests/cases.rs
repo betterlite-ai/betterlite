@@ -455,16 +455,20 @@ fn context_management_beta() {
         "type".to_owned(),
         text("clear_tool_uses_20250919"),
     )]))]);
+    let mut optional_params = option(
+        "extra_body",
+        Json::Object(option(
+            "context_management",
+            Json::Object(IndexMap::from([("edits".to_owned(), edits)])),
+        )),
+    );
+    // Opening a stream leaves the pre-call record intact; a buffered reply replaces it in post_call.
+    optional_params.insert("stream".to_owned(), Json::Bool(true));
     let run = execute(&Setup {
-        optional_params: option(
-            "extra_body",
-            Json::Object(option(
-                "context_management",
-                Json::Object(IndexMap::from([("edits".to_owned(), edits)])),
-            )),
-        ),
+        optional_params,
         ..Setup::chat()
     });
+    assert_eq!(run.stream().1, "azure_ai");
     assert_eq!(
         header(&run, "anthropic-beta"),
         Some(CONTEXT_MANAGEMENT_BETA)

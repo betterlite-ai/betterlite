@@ -77,9 +77,10 @@ where
         };
         let TransformOutcome {
             mut body,
-            headers: mapped,
+            headers: AnthropicHeaders {
+                values: mut headers,
+            },
         } = transformed.map_err(|source| ChatCallError::Prepare { source })?;
-        let mut headers = mapped.values;
         deps.config
             .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
             .map_err(|source| ChatCallError::Filter { source })?;
