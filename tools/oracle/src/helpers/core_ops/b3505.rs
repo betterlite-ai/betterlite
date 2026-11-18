@@ -20,7 +20,7 @@ use tokio::runtime::{Builder, Runtime};
 
 use betterlite_http_fixture::error::FixtureError as FixtureThreadError;
 use betterlite_http_fixture::reply::reply;
-use betterlite_http_fixture::server::serve;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
@@ -90,22 +90,24 @@ impl Helper for Op {
             redactor: &harness.redactor,
         };
         let outcome = operate(input.operation, &FixtureConfig, deps, &request, &runtime);
-        let head = match serving.finish() {
-            Ok(request) => request.head,
-            Err(FixtureThreadError::NoRequest) => String::new(),
-            Err(error) => return Err(failed(&error)),
-        };
+        let head = finish_head(serving)?;
         let mut answer = Map::new();
-        answer.insert(
-            "request".to_owned(),
-            projection::request(&head, &wanted(input)),
-        );
+        let sent_report = projection::request(&head, &wanted(input));
+        answer.insert("request".to_owned(), sent_report);
         answer.insert("logging".to_owned(), projection::logging(&harness));
         match outcome {
             Ok(value) => answer.insert("response".to_owned(), value),
             Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
         };
         Ok(Value::Object(answer))
+    }
+}
+
+fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {
+    match serving.finish() {
+        Ok(received) => Ok(received.head),
+        Err(FixtureThreadError::NoRequest) => Ok(String::new()),
+        Err(error) => Err(failed(&error)),
     }
 }
 
