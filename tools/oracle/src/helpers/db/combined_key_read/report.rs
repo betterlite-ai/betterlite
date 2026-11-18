@@ -1,9 +1,11 @@
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex, PoisonError};
-use std::time::Duration;
-
+use super::fakes::{
+    DeprecatedStep, FullJitter, NoopPause, RecordedQuery, RecordedReconnect, RecordingDiagnostics,
+    RecordingHook, RecordingSink, RowStep, ScriptedDatabase, ScriptedReconnect, StepClock,
+};
+use super::trace::Trace;
+use super::{DeprecatedFields, Fault, Input, QueryType, ReconnectStep, Step};
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::combined_key_read::error::{KeyReadError, ReconnectFailure};
+use betterlite_db::combined_key_read::error::{DatabaseFailure, KeyReadError, ReconnectFailure};
 use betterlite_db::combined_key_read::grace::{DeprecatedKeyCache, DeprecatedToken};
 use betterlite_db::combined_key_read::ports::NoSpanResolver;
 use betterlite_db::combined_key_read::reader::{KeyReader, ReadServices};
@@ -15,17 +17,13 @@ use betterlite_db::team_rows::member::Member;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use chrono::{DateTime, Utc};
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 use tokio::runtime::Builder;
 use tokio_util::task::TaskTracker;
-
-use super::fakes::{
-    CountingDiagnostics, CountingHook, DeprecatedStep, FullJitter, NoopPause, RecordedReconnect,
-    RecordingSink, RowStep, ScriptedDatabase, ScriptedReconnect, StepClock,
-};
-use super::{Fault, Input, QueryType, ReconnectStep, Step};
-
 pub(super) fn run(input: &Input) -> HelperResult {
     let runtime = Builder::new_current_thread()
         .enable_all()
@@ -33,7 +31,6 @@ pub(super) fn run(input: &Input) -> HelperResult {
         .or_value_error()?;
     runtime.block_on(execute(input))
 }
-
 async fn execute(input: &Input) -> HelperResult {
     let state = ServiceState::new(input)?;
     let outcome = state.read(input).await;
@@ -47,58 +44,33 @@ struct ServiceState {
     clock: StepClock,
     jitter: FullJitter,
     pause: NoopPause,
-    diagnostics: CountingDiagnostics,
-    hook: CountingHook,
+    diagnostics: RecordingDiagnostics,
+    hook: RecordingHook,
     tasks: TaskTracker,
     cache: Arc<Mutex<DeprecatedKeyCache>>,
+    trace: Trace,
 }
 impl ServiceState {
     fn new(input: &Input) -> Result<Self, Box<HelperError>> {
-        let wall = DateTime::parse_from_rfc3339(&input.now)
-            .or_value_error()?
-            .with_timezone(&Utc);
-        let rows = input
-            .rows
-            .iter()
-            .map(|step| -> Result<RowStep, Box<HelperError>> {
-                match step {
-                    None => Ok(Ok(None)),
-                    Some(Step::Failure { error }) => Ok(Err(database_fault(error)?)),
-                    Some(Step::Data { data }) => Ok(Ok(Some(JsonData::Object(data.clone())))),
-                }
-            })
-            .collect::<Result<Vec<RowStep>, Box<HelperError>>>()?;
-        let deprecated = input
-            .deprecated
-            .iter()
-            .map(|step| -> Result<DeprecatedStep, Box<HelperError>> {
-                match step {
-                    None => Ok(Ok(None)),
-                    Some(Step::Failure { error }) => Ok(Err(database_fault(error)?)),
-                    Some(Step::Data { data }) => {
-                        let revoke_at = DateTime::from_timestamp(data.revoke_at_seconds, 0)
-                            .ok_or_else(|| {
-                                value_error(String::from("revoke_at_seconds is out of range"))
-                            })?;
-                        Ok(Ok(Some(DeprecatedToken {
-                            active_token_id: data.active_token_id.clone(),
-                            revoke_at,
-                        })))
-                    }
-                }
-            })
-            .collect::<Result<Vec<DeprecatedStep>, Box<HelperError>>>()?;
+        let trace = Trace::default();
         Ok(Self {
-            database: ScriptedDatabase::new(rows, deprecated),
+            database: ScriptedDatabase::new(
+                row_steps(&input.rows)?,
+                deprecated_steps(&input.deprecated)?,
+            ),
             reconnect: ScriptedReconnect::new(reconnect_steps(&input.reconnects)),
-            sink: Arc::new(RecordingSink::default()),
-            clock: StepClock::new(Duration::from_millis(input.step_millis), wall),
+            sink: Arc::new(RecordingSink),
+            clock: StepClock::new(
+                Duration::from_millis(input.step_millis),
+                wall_clock(&input.now)?,
+            ),
             jitter: FullJitter,
             pause: NoopPause,
-            diagnostics: CountingDiagnostics::default(),
-            hook: CountingHook::default(),
+            diagnostics: RecordingDiagnostics::new(&trace),
+            hook: RecordingHook::new(&trace),
             tasks: TaskTracker::new(),
             cache: Arc::new(Mutex::new(DeprecatedKeyCache::default())),
+            trace,
         })
     }
     async fn read(&self, input: &Input) -> Result<Option<CombinedKeyView>, KeyReadError> {
@@ -107,7 +79,10 @@ impl ServiceState {
             QueryType::FindAll => KeyQueryType::FindAll,
         };
         let request = CombinedKeyRequest {
-            token: input.token.as_deref(),
+            token: input
+                .token
+                .as_ref()
+                .map(|token| SecretString::from(token.as_str())),
             query_type,
             check_deprecated: input.check_deprecated,
             use_writer: input.use_writer,
@@ -133,6 +108,42 @@ impl ServiceState {
         self.tasks.wait().await;
         outcome
     }
+}
+fn wall_clock(now: &str) -> Result<DateTime<Utc>, Box<HelperError>> {
+    Ok(DateTime::parse_from_rfc3339(now)
+        .or_value_error()?
+        .with_timezone(&Utc))
+}
+fn row_steps(
+    rows: &[Option<Step<BTreeMap<String, JsonData>>>],
+) -> Result<Vec<RowStep>, Box<HelperError>> {
+    rows.iter()
+        .map(|step| match step {
+            None => Ok(Ok(None)),
+            Some(Step::Failure { error }) => Ok(Err(DatabaseFailure::from(database_fault(error)?))),
+            Some(Step::Data { data }) => Ok(Ok(Some(JsonData::Object(data.clone())))),
+        })
+        .collect()
+}
+fn deprecated_steps(
+    steps: &[Option<Step<DeprecatedFields>>],
+) -> Result<Vec<DeprecatedStep>, Box<HelperError>> {
+    steps
+        .iter()
+        .map(|step| match step {
+            None => Ok(Ok(None)),
+            Some(Step::Failure { error }) => Ok(Err(DatabaseFailure::from(database_fault(error)?))),
+            Some(Step::Data { data }) => Ok(Ok(Some(deprecated_token(data)?))),
+        })
+        .collect()
+}
+fn deprecated_token(data: &DeprecatedFields) -> Result<DeprecatedToken, Box<HelperError>> {
+    let revoke_at = DateTime::from_timestamp(data.revoke_at_seconds, 0)
+        .ok_or_else(|| value_error(String::from("revoke_at_seconds is out of range")))?;
+    Ok(DeprecatedToken {
+        active_token_id: SecretString::from(data.active_token_id.clone()),
+        revoke_at,
+    })
 }
 fn reconnect_steps(steps: &[ReconnectStep]) -> Vec<Result<bool, ReconnectFailure>> {
     steps
@@ -175,15 +186,9 @@ struct Report {
     result: &'static str,
     view: Option<ViewReport>,
     error: Option<ErrorReport>,
-    row_queries: u32,
-    deprecated_queries: u32,
+    queries: Vec<RecordedQuery>,
     reconnects: Vec<ReconnectReport>,
-    metric_success: u32,
-    metric_failure: u32,
-    hooks: u32,
-    backoffs: u32,
-    cached_plan_warnings: u32,
-    deprecated_used: bool,
+    events: Vec<String>,
 }
 impl Report {
     fn build(state: &ServiceState, outcome: Result<Option<CombinedKeyView>, KeyReadError>) -> Self {
@@ -203,23 +208,32 @@ impl Report {
             result,
             view,
             error,
-            row_queries: state.database.row_queries.load(Ordering::Relaxed),
-            deprecated_queries: state.database.deprecated_queries.load(Ordering::Relaxed),
+            queries: state.database.queries(),
             reconnects: state
                 .reconnect
                 .requests
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .iter()
-                .map(ReconnectReport::from_recorded)
+                .map(reconnect_report)
                 .collect(),
-            metric_success: state.sink.successes.load(Ordering::Relaxed),
-            metric_failure: state.sink.failures.load(Ordering::Relaxed),
-            hooks: state.hook.hooks.load(Ordering::Relaxed),
-            backoffs: state.diagnostics.backoffs.load(Ordering::Relaxed),
-            cached_plan_warnings: state.diagnostics.cached_plan.load(Ordering::Relaxed),
-            deprecated_used: state.diagnostics.deprecated_used.load(Ordering::Relaxed),
+            events: state
+                .trace
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
         }
+    }
+}
+fn reconnect_report(recorded: &RecordedReconnect) -> ReconnectReport {
+    ReconnectReport {
+        reason: recorded.reason.clone(),
+        force: recorded.force,
+        force_recreate: recorded.force_recreate,
+        timeout_seconds: recorded.timeout.map(|timeout| timeout.as_secs_f64()),
+        lock_timeout_seconds: recorded.lock_timeout.map(|timeout| timeout.as_secs_f64()),
+        stale_present: recorded.stale.is_some(),
+        stale_live: recorded.stale.unwrap_or_default(),
     }
 }
 #[derive(Serialize)]
@@ -271,29 +285,10 @@ struct ErrorReport {
 #[derive(Serialize)]
 struct ReconnectReport {
     reason: String,
+    force: bool,
     force_recreate: bool,
     timeout_seconds: Option<f64>,
     lock_timeout_seconds: Option<f64>,
-    #[serde(flatten)]
-    stale: StaleReport,
-}
-#[derive(Serialize)]
-struct StaleReport {
     stale_present: bool,
     stale_live: bool,
-}
-
-impl ReconnectReport {
-    fn from_recorded(recorded: &RecordedReconnect) -> Self {
-        Self {
-            reason: recorded.reason.clone(),
-            force_recreate: recorded.force_recreate,
-            timeout_seconds: recorded.timeout.map(|timeout| timeout.as_secs_f64()),
-            lock_timeout_seconds: recorded.lock_timeout.map(|timeout| timeout.as_secs_f64()),
-            stale: StaleReport {
-                stale_present: recorded.stale.is_some(),
-                stale_live: recorded.stale.unwrap_or_default(),
-            },
-        }
-    }
 }
