@@ -90,6 +90,7 @@ const CIPHER_ON_DELTA: &str = r#"{"type":"response.output_text.delta","item_id":
 const CIPHER_EMPTY: &str = r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":""}}"#;
 const CIPHER_NUMBER: &str = r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":5}}"#;
 const CIPHER_ALREADY_WRAPPED: &str = r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_1","encrypted_content":"litellm_enc:bW9kZWxfaWQ6ZGVwbG95bWVudF9i;cipher"}}"#;
+const CIPHER_ANNOTATION: &str = r#"{"type":"response.output_text.annotation.added","item_id":"msg_1","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"container_file_citation","encrypted_content":"cipher"}}"#;
 
 const UNRELATED: &str =
     r#"{"type":"response.file_search_call.completed","output_index":0,"item_id":"fs_1"}"#;

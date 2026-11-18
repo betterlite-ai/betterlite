@@ -261,6 +261,23 @@ async fn affinity_guards_leave_the_cipher_untouched(
 }
 
 #[tokio::test]
+async fn affinity_wraps_only_added_and_done_items() {
+    let mut rig = Rig::new(Some(TransformMode::Direct));
+    rig.state = affine_state(true, Some("deployment_a"));
+    let event = rig
+        .process(CIPHER_ANNOTATION)
+        .await
+        .expect("the cipher annotation is processed")
+        .expect("the cipher annotation is handed on");
+    let parsed: Json = serde_json::from_str(CIPHER_ANNOTATION).expect("the fixture parses");
+    assert_eq!(
+        at(&event_json(&event), &["annotation"]),
+        at(&parsed, &["annotation"]),
+        "an annotation keeps its cipher"
+    );
+}
+
+#[tokio::test]
 async fn affinity_keeps_an_existing_wrapper() {
     let mut rig = Rig::new(Some(TransformMode::Direct));
     rig.state = affine_state(true, Some("deployment_a"));
