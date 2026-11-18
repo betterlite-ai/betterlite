@@ -165,7 +165,7 @@ async fn ended_passes_the_assembled_text_and_response() {
         data["response"]["choices"][0]["message"]["content"],
         "Hello"
     );
-    assert_eq!(data["response"]["usage"]["prompt_tokens"], json!(4));
+    assert_eq!(data["response"]["usage"]["prompt_tokens"], 4);
 }
 
 #[tokio::test]
@@ -423,8 +423,8 @@ async fn unended_skips_metadata_without_a_user_key() {
     let (result, _, stored) = process(stream, &guardrail, Some(json!({})), None, false).await;
     result.unwrap();
     let data = stored.unwrap();
-    assert!(data.contains_key("responses"));
-    assert!(!data.contains_key("litellm_metadata"));
+    assert!(data.get("responses").is_some());
+    assert!(data.get("litellm_metadata").is_none());
 }
 
 #[tokio::test]
