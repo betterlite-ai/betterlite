@@ -65,7 +65,6 @@ impl DeploymentCatalog {
             _ => String::new(),
         };
         self.deployment_names.push(model.clone());
-        let row = self.models.len();
         let candidate = Candidate {
             model_id: spec.id().map(str::to_owned),
             model,
@@ -73,7 +72,8 @@ impl DeploymentCatalog {
         if spec.model_name.contains('*') {
             self.pattern_router
                 .add_pattern(&spec.model_name, candidate.clone())?;
-            self.pattern_router.set_last_row(&spec.model_name, row);
+            self.pattern_router
+                .set_last_deployment(&spec.model_name, spec.clone());
             if let Some(id) = spec.id().filter(|id| !id.is_empty()) {
                 self.provider_default_ids.push(id.to_owned());
             }
@@ -87,7 +87,9 @@ impl DeploymentCatalog {
                 .entry(team.to_owned())
                 .or_default();
             patterns.router.add_pattern(public_name, candidate)?;
-            patterns.router.set_last_row(public_name, row);
+            patterns
+                .router
+                .set_last_deployment(public_name, spec.clone());
             patterns.model_ids.push(spec.id().map(str::to_owned));
         }
         Ok(())
@@ -139,10 +141,8 @@ impl DeploymentCatalog {
             .filter(|(_, indices)| !indices.is_empty())
             .collect();
         self.pattern_router.remove_deployment(model_id);
-        self.pattern_router.removed_row(index);
         for patterns in self.team_pattern_routers.values_mut() {
             patterns.router.remove_deployment(model_id);
-            patterns.router.removed_row(index);
             patterns
                 .model_ids
                 .retain(|id| id.as_deref() != Some(model_id));

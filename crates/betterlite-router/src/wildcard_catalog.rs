@@ -4,6 +4,7 @@ pub mod error;
 
 mod tests;
 
+use crate::deployment_identity::spec::DeploymentSpec;
 use crate::wildcard_catalog::error::PatternCatalogError;
 
 const COMPLEXITY_CHARS: [char; 9] = ['*', '+', '?', '\\', '^', '$', '|', '(', ')'];
@@ -19,11 +20,11 @@ pub struct Candidate {
     pub model: String,
 }
 
-// A candidate as registered, beside the model-list row the deployment it came from was pushed at.
+// A candidate as registered, beside the deployment row it came from, which a reordered rebuild cannot move.
 #[derive(Clone, Debug)]
 struct Registered {
     candidate: Candidate,
-    row: Option<usize>,
+    deployment: Option<DeploymentSpec>,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -49,7 +50,7 @@ impl PatternCatalog {
         if let Some(existing) = self.patterns.iter_mut().find(|entry| entry.key == key) {
             existing.candidates.push(Registered {
                 candidate,
-                row: None,
+                deployment: None,
             });
             return Ok(());
         }
@@ -72,7 +73,7 @@ impl PatternCatalog {
                 matcher,
                 candidates: vec![Registered {
                     candidate,
-                    row: None,
+                    deployment: None,
                 }],
                 specificity,
             },
@@ -80,13 +81,13 @@ impl PatternCatalog {
         Ok(())
     }
 
-    // Record the model-list row the deployment of the pattern's last registration was pushed at.
-    pub fn set_last_row(&mut self, pattern: &str, row: usize) {
+    // Record the deployment row the pattern's last registration came from.
+    pub fn set_last_deployment(&mut self, pattern: &str, deployment: DeploymentSpec) {
         let key = compiled_pattern(pattern);
         if let Some(entry) = self.patterns.iter_mut().find(|entry| entry.key == key)
             && let Some(registered) = entry.candidates.last_mut()
         {
-            registered.row = Some(row);
+            registered.deployment = Some(deployment);
         }
     }
 
@@ -95,21 +96,6 @@ impl PatternCatalog {
             entry
                 .candidates
                 .retain(|registered| registered.candidate.model_id.as_deref() != Some(model_id));
-        }
-        self.patterns.retain(|entry| !entry.candidates.is_empty());
-    }
-
-    // A removed model-list row drops the candidates it registered and moves every later row down.
-    pub fn removed_row(&mut self, removed: usize) {
-        for entry in &mut self.patterns {
-            entry
-                .candidates
-                .retain(|registered| registered.row != Some(removed));
-            for registered in &mut entry.candidates {
-                registered.row = registered
-                    .row
-                    .map(|row| row.saturating_sub(usize::from(row > removed)));
-            }
         }
         self.patterns.retain(|entry| !entry.candidates.is_empty());
     }
@@ -161,34 +147,27 @@ impl PatternCatalog {
         Some((entry, segments))
     }
 
-    // The matched candidates, each beside the model-list row that registered it.
-    fn rows_for(&self, request: &str) -> Option<Vec<(Candidate, Option<usize>)>> {
-        let (entry, segments) = self.matched(request, None)?;
-        Some(registered_candidates(entry, request, &segments))
-    }
-
-    // get_pattern's candidates, each beside the model-list row that registered it.
+    // get_pattern's candidates, each beside the deployment row that registered it, with the provider retry.
     #[must_use]
     pub fn get_pattern_rows(
         &self,
         model: &str,
         provider: Option<&str>,
-    ) -> Option<Vec<(Candidate, Option<usize>)>> {
-        if let Some(found) = self.rows_for(model) {
-            return Some(found);
+    ) -> Option<Vec<(Candidate, Option<DeploymentSpec>)>> {
+        if let Some((entry, segments)) = self.matched(model, None) {
+            return Some(registered_candidates(entry, model, &segments));
         }
         let resolved_provider = provider?;
-        self.rows_for(&format!("{resolved_provider}/{model}"))
+        let qualified = format!("{resolved_provider}/{model}");
+        let (entry, segments) = self.matched(&qualified, None)?;
+        Some(registered_candidates(entry, &qualified, &segments))
     }
 
     // the caller resolves custom_llm_provider or the inferred provider, as LiteLLM does before its fallback
     #[must_use]
     pub fn get_pattern(&self, model: &str, provider: Option<&str>) -> Option<Vec<Candidate>> {
-        if let Some(candidates) = self.route(model, None) {
-            return Some(candidates);
-        }
-        let resolved_provider = provider?;
-        self.route(&format!("{resolved_provider}/{model}"), None)
+        self.get_pattern_rows(model, provider)
+            .map(|rows| rows.into_iter().map(|(candidate, _)| candidate).collect())
     }
 
     #[must_use]
@@ -228,12 +207,12 @@ fn pattern_specificity(key: &str) -> (usize, usize) {
     (length, complexity)
 }
 
-// One pattern's candidates for the request, each beside the model-list row that registered it.
+// One pattern's candidates for the request, each beside the deployment row that registered it.
 fn registered_candidates(
     entry: &Pattern,
     request: &str,
     segments: &[&str],
-) -> Vec<(Candidate, Option<usize>)> {
+) -> Vec<(Candidate, Option<DeploymentSpec>)> {
     entry
         .candidates
         .iter()
@@ -243,7 +222,7 @@ fn registered_candidates(
                     model_id: registered.candidate.model_id.clone(),
                     model: substitute_model(&registered.candidate.model, request, segments),
                 },
-                registered.row,
+                registered.deployment.clone(),
             )
         })
         .collect()

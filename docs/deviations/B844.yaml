@@ -31,14 +31,15 @@ deviations:
       reaches the difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11506-L11513
   - what: >-
-      A wildcard candidate registered without a model-list row fails with the typed UnindexedCandidate.
-      LiteLLM's pattern map holds deep copies of the registered deployments, so its lookup cannot reach
-      a missing row and has no answer to compare.
+      A wildcard candidate whose registered deployment is not in the model list fails with the typed
+      UnindexedCandidate. LiteLLM's pattern map holds deep copies of the registered deployments, so its
+      lookup serves them even when no model-list row remains and has no answer to compare.
     why: >-
-      The pattern catalog records the model-list row each registration was pushed at, and a candidate
-      added to the catalog without one, as the crate's own tests and the oracle harness do, has no
-      deployment to resolve. The typed error refuses to return some other deployment, and
-      unindexed_candidate proves the error.
+      The pattern catalog records the deployment each registration came from and serves it only while an
+      identical row is in the model list, so a reordered or partial rebuild cannot swap one deployment's
+      metadata and credentials for another's. A candidate added without a deployment, as the crate's own
+      tests and the oracle harness do, has none to resolve. The typed error refuses to return some other
+      deployment, and unindexed_candidate proves the error.
     link: ""
 kept_bugs:
   - what: >-

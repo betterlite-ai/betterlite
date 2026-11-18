@@ -228,7 +228,7 @@ impl CatalogResolver<'_> {
     }
 }
 
-// The rows a pattern router registered for the request, each carrying the provider model the caller asked for; a candidate registered without a row has no deployment to resolve.
+// The rows a pattern router registered for the request, each carrying the provider model the caller asked for; a registered deployment that left the model list has no row to serve.
 fn pattern_rows(
     catalog: &DeploymentCatalog,
     provider: Option<&str>,
@@ -239,12 +239,12 @@ fn pattern_rows(
         .get_pattern_rows(model, provider)
         .unwrap_or_default()
         .into_iter()
-        .map(|(candidate, row)| {
-            let registered = row.and_then(|row| catalog.models.get(row)).ok_or_else(|| {
-                CatalogLookupError::UnindexedCandidate {
+        .map(|(candidate, deployment)| {
+            let registered = deployment
+                .and_then(|deployment| catalog.models.iter().find(|row| **row == deployment))
+                .ok_or_else(|| CatalogLookupError::UnindexedCandidate {
                     model_id: candidate.model_id.clone(),
-                }
-            })?;
+                })?;
             let mut spec = registered.clone();
             spec.litellm_params
                 .insert("model".to_owned(), Json::Text(candidate.model));
