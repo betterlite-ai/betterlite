@@ -1,0 +1,7 @@
+model_list: []
+router_settings:
+  routing_strategy_args:
+    ttl: os.environ/LATENCY_OBSERVATIONS_TTL
+    lowest_latency_buffer: -0.5
+    max_latency_list_size: 2.5
+    ttft_percentile: 1.5
