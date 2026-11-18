@@ -15,7 +15,6 @@ tests:
       - { equal: { path: 'spec.replicas', value: 3 }, template: gateway/deployment.yaml }
       - { equal: { path: 'spec.replicas', value: 2 }, template: backend/deployment.yaml }
       - { equal: { path: 'spec.replicas', value: 2 }, template: ui/deployment.yaml }
-
   - it: replicaCount 0 scales the gateway to zero instead of being treated as unset
     template: gateway/deployment.yaml
     set:
@@ -23,7 +22,6 @@ tests:
       gateway.replicaCount: 0
     asserts:
       - equal: { path: 'spec.replicas', value: 0 }
-
   - it: a component with HPA disabled but no replicaCount set keeps omitting spec.replicas
     templates: [gateway/deployment.yaml, backend/deployment.yaml, ui/deployment.yaml]
     set:
@@ -32,7 +30,6 @@ tests:
       ui.hpa.enabled: false
     asserts:
       - notExists: { path: 'spec.replicas' }
-
   - it: every component omits spec.replicas when its HPA is enabled, so the autoscaler owns the count
     templates: [gateway/deployment.yaml, backend/deployment.yaml, ui/deployment.yaml]
     set:

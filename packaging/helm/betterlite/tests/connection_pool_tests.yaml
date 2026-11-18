@@ -10,7 +10,6 @@ tests:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: NUM_WORKERS, value: "2" }, any: true }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS }, any: true }
-
   - it: an enabled pool renders the three pgbouncer vars with the configured sizes
     template: gateway/deployment.yaml
     set:
@@ -23,14 +22,12 @@ tests:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "8" }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "250" }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: NUM_WORKERS, value: "4" }, any: true }
-
   - it: backend never gets the pool env
     template: backend/deployment.yaml
     set:
       database.connectionPool.enabled: true
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }
-
   - it: the collector sidecar gets the same pool env as the gateway container, the metrics sidecar none
     template: gateway/deployment.yaml
     set:
@@ -46,7 +43,6 @@ tests:
       - contains: { path: 'spec.template.spec.containers[2].env', content: { name: LITELLM_PGBOUNCER_ENABLED, value: "true" }, any: true }
       - contains: { path: 'spec.template.spec.containers[2].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "8" }, any: true }
       - contains: { path: 'spec.template.spec.containers[2].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "250" }, any: true }
-
   - it: the collector sidecar gets no pool env when the pool is off
     template: gateway/deployment.yaml
     set:

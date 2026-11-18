@@ -6,7 +6,6 @@ tests:
     template: gateway/deployment.yaml
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_HOST }, any: true }
-
   - it: gateway emits host, port and password when redis is configured
     template: gateway/deployment.yaml
     set:
@@ -17,7 +16,6 @@ tests:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_HOST, value: redis.example.com }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_PORT, value: "6380" }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: redis-secret, key: password } } }, any: true }
-
   - it: backend and the migrations Job emit the same redis env vars so every pod coordinates on one redis
     templates: [backend/deployment.yaml, migrations-job.yaml]
     set:
@@ -27,7 +25,6 @@ tests:
     asserts:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_HOST, value: redis.example.com }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_PASSWORD, valueFrom: { secretKeyRef: { name: redis-secret, key: redis-password } } }, any: true }
-
   - it: gateway omits REDIS_PASSWORD for an auth-less redis
     template: gateway/deployment.yaml
     set:
@@ -35,7 +32,6 @@ tests:
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_PASSWORD }, any: true }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_HOST, value: redis.example.com }, any: true }
-
   - it: gateway seeds REDIS_CLUSTER_NODES from host and port in cluster mode
     template: gateway/deployment.yaml
     set:
@@ -44,14 +40,12 @@ tests:
       redis.cluster: true
     asserts:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_CLUSTER_NODES, value: '[{"host":"redis.example.com","port":6380}]' }, any: true }
-
   - it: gateway omits REDIS_CLUSTER_NODES when cluster mode is off
     template: gateway/deployment.yaml
     set:
       redis.host: redis.example.com
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: REDIS_CLUSTER_NODES }, any: true }
-
   - it: the collector sidecar shares the redis configuration
     template: gateway/deployment.yaml
     set:

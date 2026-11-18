@@ -19,9 +19,9 @@ spec:
       {{- include "betterlite.backend.selectorLabels" . | nindent 6 }}
   template:
     metadata:
-      {{- if or .Values.gateway.config.create .Values.backend.podAnnotations }}
+      {{- if or (and .Values.gateway.enabled .Values.gateway.config.create) .Values.backend.podAnnotations }}
       annotations:
-        {{- if .Values.gateway.config.create }}
+        {{- if and .Values.gateway.enabled .Values.gateway.config.create }}
         checksum/config: {{ include (print $.Template.BasePath "/gateway/configmap.yaml") . | sha256sum }}
         {{- end }}
         {{- with .Values.backend.podAnnotations }}
@@ -55,13 +55,13 @@ spec:
           ports: [{ name: http, containerPort: 4001, protocol: TCP }]
           env:
             {{- include "betterlite.serverEnv" (dict "root" $ "component" .Values.backend) | nindent 12 }}
-            {{- if .Values.gateway.config.create }}
+            {{- if and .Values.gateway.enabled .Values.gateway.config.create }}
             - { name: CONFIG_FILE_PATH, value: /etc/betterlite/config.yaml }
             {{- end }}
           {{- include "betterlite.envFrom" .Values.backend | nindent 10 }}
-          {{- if or .Values.gateway.config.create .Values.backend.volumeMounts }}
+          {{- if or (and .Values.gateway.enabled .Values.gateway.config.create) .Values.backend.volumeMounts }}
           volumeMounts:
-            {{- if .Values.gateway.config.create }}
+            {{- if and .Values.gateway.enabled .Values.gateway.config.create }}
             - { name: gateway-config, mountPath: /etc/betterlite/config.yaml, subPath: config.yaml }
             {{- end }}
             {{- with .Values.backend.volumeMounts }}
@@ -89,9 +89,9 @@ spec:
       {{- with .Values.backend.extraContainers }}
         {{- tpl (toYaml .) $ | nindent 8 }}
       {{- end }}
-      {{- if or .Values.gateway.config.create .Values.backend.volumes }}
+      {{- if or (and .Values.gateway.enabled .Values.gateway.config.create) .Values.backend.volumes }}
       volumes:
-        {{- if .Values.gateway.config.create }}
+        {{- if and .Values.gateway.enabled .Values.gateway.config.create }}
         - { name: gateway-config, configMap: { name: {{ include "betterlite.gateway.fullname" . }}-config } }
         {{- end }}
         {{- with .Values.backend.volumes }}

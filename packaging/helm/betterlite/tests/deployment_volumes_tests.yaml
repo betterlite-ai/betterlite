@@ -8,13 +8,11 @@ tests:
       - equal: { path: 'spec.template.spec.volumes', value: [{ name: gateway-config, configMap: { name: RELEASE-NAME-betterlite-gateway-config } }] }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts', value: [{ name: gateway-config, mountPath: /etc/betterlite/config.yaml, subPath: config.yaml }] }
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: CONFIG_FILE_PATH, value: /etc/betterlite/config.yaml }, any: true }
-
   - it: backend mounts the gateway ConfigMap at the same path by default
     template: backend/deployment.yaml
     asserts:
       - equal: { path: 'spec.template.spec.volumes', value: [{ name: gateway-config, configMap: { name: RELEASE-NAME-betterlite-gateway-config } }] }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts', value: [{ name: gateway-config, mountPath: /etc/betterlite/config.yaml, subPath: config.yaml }] }
-
   - it: gateway merges user volumes and volumeMounts with the config volume
     template: gateway/deployment.yaml
     set:
@@ -25,7 +23,6 @@ tests:
       - equal: { path: 'spec.template.spec.volumes[1]', value: { name: custom-callbacks, configMap: { name: custom-callbacks } } }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts[0].name', value: gateway-config }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts[1]', value: { name: custom-callbacks, mountPath: /etc/betterlite/custom_callbacks.py, subPath: custom_callbacks.py } }
-
   - it: gateway renders user volumes even when config creation is disabled
     template: gateway/deployment.yaml
     set:
@@ -35,7 +32,6 @@ tests:
     asserts:
       - equal: { path: 'spec.template.spec.volumes', value: [{ name: certs, secret: { secretName: tls-certs } }] }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts', value: [{ name: certs, mountPath: /etc/certs, readOnly: true }] }
-
   - it: gateway omits the config volume when config creation is disabled and no user volumes are set
     template: gateway/deployment.yaml
     set:
@@ -43,7 +39,6 @@ tests:
     asserts:
       - isNull: { path: 'spec.template.spec.volumes' }
       - isNull: { path: 'spec.template.spec.containers[0].volumeMounts' }
-
   - it: backend merges user volumes and volumeMounts with the shared config volume
     template: backend/deployment.yaml
     set:
@@ -53,7 +48,6 @@ tests:
       - equal: { path: 'spec.template.spec.volumes[0].name', value: gateway-config }
       - equal: { path: 'spec.template.spec.volumes[1]', value: { name: sso-handler, configMap: { name: sso-handler } } }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts[1]', value: { name: sso-handler, mountPath: /etc/betterlite/custom_sso.py, subPath: custom_sso.py } }
-
   - it: backend renders user volumes even when config creation is disabled
     template: backend/deployment.yaml
     set:
@@ -64,13 +58,20 @@ tests:
       - equal: { path: 'spec.template.spec.volumes', value: [{ name: data, emptyDir: {} }] }
       - equal: { path: 'spec.template.spec.containers[0].volumeMounts', value: [{ name: data, mountPath: /data }] }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: CONFIG_FILE_PATH }, any: true }
-
+  - it: backend leaves out the gateway ConfigMap and its env when the gateway is disabled
+    template: backend/deployment.yaml
+    set:
+      gateway.enabled: false
+    asserts:
+      - isNull: { path: 'spec.template.spec.volumes' }
+      - isNull: { path: 'spec.template.spec.containers[0].volumeMounts' }
+      - notExists: { path: 'spec.template.metadata.annotations' }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: CONFIG_FILE_PATH }, any: true }
   - it: ui renders no volumes or volumeMounts by default
     template: ui/deployment.yaml
     asserts:
       - isNull: { path: 'spec.template.spec.volumes' }
       - isNull: { path: 'spec.template.spec.containers[0].volumeMounts' }
-
   - it: ui renders user volumes and volumeMounts
     template: ui/deployment.yaml
     set:

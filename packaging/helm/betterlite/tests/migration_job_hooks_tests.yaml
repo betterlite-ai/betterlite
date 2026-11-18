@@ -8,7 +8,6 @@ tests:
       - equal: { path: 'metadata.annotations["helm.sh/hook-delete-policy"]', value: before-hook-creation }
       - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "0" }
       - notExists: { path: 'metadata.annotations["argocd.argoproj.io/hook"]' }
-
   - it: adds the Argo CD PreSync hook when asked and honours a custom Helm weight
     set:
       migrationJob.hooks.argocd.enabled: true
@@ -17,7 +16,6 @@ tests:
       - equal: { path: 'metadata.annotations["argocd.argoproj.io/hook"]', value: PreSync }
       - equal: { path: 'metadata.annotations["argocd.argoproj.io/hook-delete-policy"]', value: BeforeHookCreation }
       - equal: { path: 'metadata.annotations["helm.sh/hook-weight"]', value: "-5" }
-
   - it: drops the Helm hook so Argo CD owns the Job
     set:
       migrationJob.hooks.argocd.enabled: true
@@ -27,7 +25,6 @@ tests:
       - notExists: { path: 'metadata.annotations["helm.sh/hook"]' }
       - notExists: { path: 'metadata.annotations["helm.sh/hook-delete-policy"]' }
       - notExists: { path: 'metadata.annotations["helm.sh/hook-weight"]' }
-
   - it: renders an ordinary Job when both hooks are disabled
     set:
       migrationJob.hooks.helm.enabled: false
