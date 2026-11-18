@@ -12,7 +12,7 @@ use super::Op;
 use super::input::Input;
 
 const OPERATION: &str = "bedrock_messages";
-const SEED_PREFIX: &str = "bedrock_messages";
+const SEED_PREFIX: &str = "bedrock_messages-";
 
 #[test]
 fn helper_seeds_select_bedrock_messages() {
