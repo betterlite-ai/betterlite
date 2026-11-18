@@ -245,18 +245,17 @@ async def async_switch(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
 
 async def shared_merge(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
     caches = [cache_pair(call, row, pick(fakes, row["client"])) for row in call["caches"]]
-    memory: list[JsonValue] = [
-        [cache.get_cache(key, local_only=True) for key in fields["keys"]]
-        for cache, fields in zip(caches, call["caches"], strict=True)
-    ]
-    ttls: list[JsonValue] = [
-        [await cache.async_get_ttl(key) for key in fields["keys"]]
-        for cache, fields in zip(caches, call["caches"], strict=True)
-    ]
     return {
+        # memory and ttls read after the shared read, so they show its backfill
         "reads": await shared_read(caches, call["caches"]),
-        "memory": memory,
-        "ttls": ttls,
+        "memory": [
+            [cache.get_cache(key, local_only=True) for key in fields["keys"]]
+            for cache, fields in zip(caches, call["caches"], strict=True)
+        ],
+        "ttls": [
+            [await cache.async_get_ttl(key) for key in fields["keys"]]
+            for cache, fields in zip(caches, call["caches"], strict=True)
+        ],
         "shared_mgets": fakes.shared.keys,
         "own_mgets": fakes.separate.keys,
     }
@@ -264,13 +263,13 @@ async def shared_merge(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
 
 async def shared_failures(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
     breaker_caches = [cache_pair(call, row, fakes.rejecting) for row in call["breaker_caches"]]
-    breaker_due: list[JsonValue] = [
-        reserved(cache.reserve_redis_batch_reads(fields["keys"]))
-        for cache, fields in zip(breaker_caches, call["breaker_caches"], strict=True)
-    ]
     return {
+        # the read fails first, so breaker_due shows the reservations it rolled back
         "breaker": await shared_read(breaker_caches, call["breaker_caches"]),
-        "breaker_due": breaker_due,
+        "breaker_due": [
+            reserved(cache.reserve_redis_batch_reads(fields["keys"]))
+            for cache, fields in zip(breaker_caches, call["breaker_caches"], strict=True)
+        ],
         "prepare": await shared_read(
             [cache_pair(call, row, fakes.recording) for row in call["prepare_caches"]],
             call["prepare_caches"],
