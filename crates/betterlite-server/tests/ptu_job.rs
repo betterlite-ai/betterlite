@@ -622,7 +622,6 @@ mod ptu_job {
         );
         drop(client);
         database.close().await;
-        drop(directory);
     }
 
     #[tokio::test]
