@@ -17,6 +17,7 @@ use crate::api::request_destination::RequestData;
 
 use super::callback::{
     GuardrailFailure, GuardrailInput, GuardrailInputType, GuardrailTexts, RealtimeGuardrail,
+    RealtimeGuardrailPolicy,
 };
 use super::error::RealtimeGuardrailsError;
 use super::message;
