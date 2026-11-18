@@ -76,8 +76,8 @@ impl PyYamlTextSpans<'_> {
 }
 
 impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
-    fn on_event(&mut self, event: Event<'input>, span: Span) {
-        match event {
+    fn on_event(&mut self, ev: Event<'input>, span: Span) {
+        match ev {
             Event::MappingStart(..) => {
                 let _ = self.start_value();
                 self.collections.push(YamlCollection::Mapping { key: None });
@@ -93,10 +93,10 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
             Event::SequenceEnd => {
                 let _ = self.collections.pop();
             }
-            Event::Scalar(text, ScalarStyle::Plain, _, None)
-                if self.scalar(text.as_ref()) && !self.non_text.is_match(text.as_ref()) =>
-            {
-                self.spans.push((span, text.into_owned()));
+            Event::Scalar(text, ScalarStyle::Plain, _, None) => {
+                if self.scalar(text.as_ref()) && !self.non_text.is_match(text.as_ref()) {
+                    self.spans.push((span, text.into_owned()));
+                }
             }
             Event::Scalar(text, ..) => {
                 let _ = self.scalar(text.as_ref());
