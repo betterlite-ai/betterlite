@@ -3,6 +3,9 @@ mod tests;
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+use serde_with::rust::double_option;
+
 use crate::attachment::AttachmentRegistry;
 use crate::context::PolicyMatchContext;
 use crate::matcher::{policies_matching_conditions, policy_applies};
@@ -11,27 +14,63 @@ use crate::pipeline::{GuardrailPipeline, PipelineMode};
 use crate::registry::PolicyRegistry;
 use crate::resolver::pipelines::resolve_pipelines_for_context;
 
-pub const RESPONSE_ID: &str = "response_id";
-pub const GUARDRAIL_PIPELINES: &str = "_guardrail_pipelines";
-pub const PIPELINE_MANAGED_GUARDRAILS: &str = "_pipeline_managed_guardrails";
-
 pub type PolicyPipelines = Vec<(String, GuardrailPipeline)>;
 
-pub type RetrievalData = BTreeMap<String, JsonValue>;
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MetadataBucket {
+    #[serde(
+        default,
+        rename = "_guardrail_pipelines",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub guardrail_pipelines: Option<PolicyPipelines>,
+    #[serde(
+        default,
+        rename = "_pipeline_managed_guardrails",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pipeline_managed_guardrails: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_policies: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub applied_guardrails: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_sources: Option<BTreeMap<String, String>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, JsonValue>,
+}
 
-#[derive(Debug, thiserror::Error)]
-pub enum ResponseRetrievalError {
-    #[error("'{field}' must be {expected}")]
-    NotTyped {
-        field: &'static str,
-        expected: &'static str,
-    },
-    #[error("the request metadata bucket must be a JSON object")]
-    MetadataBucket,
-    #[error("'_guardrail_pipelines' must be a list of policy name and pipeline pairs")]
-    Pipelines(#[source] serde_json::Error),
-    #[error("the post_call pipelines could not be written to request metadata")]
-    Serialization(#[source] serde_json::Error),
+// LiteLLM picks the bucket by whether the key is there, and a null bucket is replaced by one
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct RetrievalData {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_id: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    pub metadata: Option<Option<MetadataBucket>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "double_option"
+    )]
+    pub litellm_metadata: Option<Option<MetadataBucket>>,
+    #[serde(flatten)]
+    pub passthrough: BTreeMap<String, JsonValue>,
+}
+
+impl RetrievalData {
+    fn bucket_mut(&mut self) -> &mut MetadataBucket {
+        let slot = if self.litellm_metadata.is_some() {
+            &mut self.litellm_metadata
+        } else {
+            &mut self.metadata
+        };
+        slot.get_or_insert_with(|| Some(MetadataBucket::default()))
+            .get_or_insert_with(MetadataBucket::default)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +127,7 @@ pub struct PostCallPipelines {
     pub sources: BTreeMap<String, String>,
 }
 
+#[must_use]
 pub fn model_group_for_response_id(
     response_id: Option<&str>,
     router: Option<&dyn PolicyRouterView>,
@@ -183,31 +223,32 @@ pub fn attach_retrieval_pipelines(
     data: &mut RetrievalData,
     request: &RetrievalRequest<'_>,
     deps: &RetrievalDependencies<'_>,
-) -> Result<(), ResponseRetrievalError> {
+) {
     if !deps.registry.initialized {
-        return Ok(());
+        return;
     }
     let Some(model_group) = governed_model_group(data, deps) else {
-        return Ok(());
+        return;
     };
     let context = retrieval_context(&request.auth, &model_group, request.tags.clone());
     let found = post_call_pipelines(&context, deps.registry, deps.attachments);
-    let Some((already_attached, added)) = bucket::new_pipelines(data, &found.pipelines)? else {
-        return Ok(());
+    let Some(added) = bucket::attach_new_pipelines(data, &found.pipelines, &found.sources) else {
+        return;
     };
-    bucket::attach_new_pipelines(data, already_attached, &added, &found.sources)?;
     log_attached(data, &model_group, &added);
-    Ok(())
 }
 
 fn governed_model_group(data: &RetrievalData, deps: &RetrievalDependencies<'_>) -> Option<String> {
-    let response_id = bucket::response_id(data);
-    match model_group_for_response_id(response_id, deps.router, deps.model_id_from_response_id) {
+    match model_group_for_response_id(
+        data.response_id.as_deref(),
+        deps.router,
+        deps.model_id_from_response_id,
+    ) {
         Ok(model_group) => Some(model_group),
         Err(ungoverned) => {
             tracing::warn!(
                 "Policy engine: background response {} is retrieved without its post_call policy pipelines ({})",
-                bucket::response_id(data).unwrap_or("None"),
+                data.response_id.as_deref().unwrap_or("None"),
                 ungoverned.reason.message()
             );
             None
@@ -223,7 +264,7 @@ fn log_attached(data: &RetrievalData, model_group: &str, added: &[(String, Guard
         .join(", ");
     tracing::debug!(
         "Policy engine: attached post_call pipelines to the retrieval of background response {} (model group {}): {}",
-        bucket::response_id(data).unwrap_or("None"),
+        data.response_id.as_deref().unwrap_or("None"),
         model_group,
         names
     );

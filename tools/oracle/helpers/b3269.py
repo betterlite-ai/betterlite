@@ -1,8 +1,20 @@
-from typing import NotRequired, TypedDict
+import logging
+from typing import Final, TypedDict
 
-import litellm
-from litellm.responses.utils import ResponsesAPIRequestUtils
-from litellm.router_utils.common_utils import resolve_model_group_alias
+from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.policy_engine.attachment_registry import get_attachment_registry
+from litellm.proxy.policy_engine.policy_registry import get_policy_registry
+from litellm.proxy.policy_engine.response_retrieval import (
+    attach_post_call_pipelines_to_retrieval,
+)
+from litellm.router import Router
+from litellm.types.router import DeploymentTypedDict, RouterModelGroupAliasItem
+from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
+
+# LiteLLM's verbose_proxy_logger writes to the logger named "LiteLLM Proxy"
+POLICY_LOGGER: Final = "LiteLLM Proxy"
+POLICY_PREFIX: Final = "Policy engine: "
 
 
 class Auth(TypedDict):
@@ -10,118 +22,112 @@ class Auth(TypedDict):
     key_alias: str | None
 
 
-class Pipeline(TypedDict):
-    policy_name: str
-    mode: str
-    guardrails: list[str]
+class RouterInput(TypedDict):
+    deployments: dict[str, str]
+    aliases: list[tuple[str, str]]
 
 
 class Input(TypedDict):
-    function: str
-    response_id: str | None
-    router: bool
-    deployments: dict[str, str]
-    aliases: list[tuple[str, str]]
-    model_group: str
+    data: dict[str, JsonValue]
     auth: Auth
-    tags: list[str]
-    pipelines: list[Pipeline]
-    already_attached: list[Pipeline]
+    router: RouterInput | None
+    policies: dict[str, dict[str, JsonValue]] | None
+    attachments: list[dict[str, JsonValue]]
+
+
+class LogEntry(TypedDict):
+    level: str
+    message: str
 
 
 class Output(TypedDict):
-    model_group: NotRequired[str | None]
-    reason: NotRequired[str | None]
-    hidden_by: NotRequired[str | None]
-    attached: NotRequired[bool]
-    team_alias: NotRequired[str | None]
-    key_alias: NotRequired[str | None]
-    model: NotRequired[str]
-    tags: NotRequired[list[str] | None]
-    pipelines: NotRequired[list[Pipeline]]
-    managed_guardrails: NotRequired[list[str]]
+    data: dict[str, JsonValue]
+    logs: list[LogEntry]
 
 
-def hidden_by(model_group: str, aliases: list[tuple[str, str]]) -> str | None:
-    if "*" in model_group:
-        return "a wildcard deployment"
-    alias_map = dict(aliases)
-    matching = [
-        alias
-        for alias, _ in aliases
-        if resolve_model_group_alias(alias_map, alias) == model_group
-    ]
-    if not matching:
+BODY: Final = TypeAdapter(dict[str, object])
+POLICY_CONFIG: Final = TypeAdapter(dict[str, dict[str, object]])
+DECODED: Final = TypeAdapter(dict[str, JsonValue])
+JSON: Final = TypeAdapter(JsonValue)
+ANY: Final = TypeAdapter(object)
+TEXTS: Final = TypeAdapter(list[str])
+
+
+class Warnings(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.entries: list[LogEntry] = []
+
+    @override
+    def emit(self, record: logging.LogRecord) -> None:
+        message = record.getMessage()
+        if not message.startswith(POLICY_PREFIX):
+            return
+        if record.levelno == logging.WARNING:
+            self.entries.append(LogEntry(level="warning", message=message))
+        elif record.levelno == logging.DEBUG:
+            self.entries.append(LogEntry(level="debug", message=message))
+
+
+def install(call: Input) -> None:
+    registry = get_policy_registry()
+    registry.clear()
+    policies = call["policies"]
+    if policies is not None:
+        registry.load_policies(POLICY_CONFIG.validate_python(policies))
+    attachments = get_attachment_registry()
+    attachments.clear()
+    attachments.load_attachments(call["attachments"])
+
+
+def build_router(call: RouterInput | None) -> Router | None:
+    if call is None:
         return None
-    return f"the target of model_group_alias {', '.join(matching)}"
-
-
-def model_group_lookup(input_value: Input) -> Output:
-    if not input_value["router"]:
-        return {"model_group": None, "reason": "no router", "hidden_by": None}
-    model_id = ResponsesAPIRequestUtils.get_model_id_from_response_id(
-        input_value["response_id"]
-    )
-    if model_id is None:
-        return {
-            "model_group": None,
-            "reason": "response id names no deployment",
-            "hidden_by": None,
-        }
-    model_group = input_value["deployments"].get(model_id)
-    if model_group is None:
-        return {
-            "model_group": None,
-            "reason": "deployment no longer in the router",
-            "hidden_by": None,
-        }
-    return {
-        "model_group": model_group,
-        "reason": None,
-        "hidden_by": hidden_by(model_group, input_value["aliases"]),
-    }
-
-
-def retrieval_context(input_value: Input) -> Output:
-    auth = input_value["auth"]
-    tags = input_value["tags"]
-    return {
-        "team_alias": auth.get("team_alias"),
-        "key_alias": auth.get("key_alias"),
-        "model": input_value["model_group"],
-        "tags": None if not tags else tags,
-    }
-
-
-def pipeline_filtering(input_value: Input) -> Output:
-    attached = input_value["already_attached"]
-    attached_names = {pipeline["policy_name"] for pipeline in attached}
-    selected = [
-        pipeline
-        for pipeline in input_value["pipelines"]
-        if pipeline["mode"] == "post_call"
-        and pipeline["policy_name"] not in attached_names
+    deployments: list[DeploymentTypedDict] = [
+        DeploymentTypedDict(
+            model_name=model_name,
+            litellm_params={"model": "openai/gpt-4o"},
+            model_info={"id": model_id},
+        )
+        for model_id, model_name in call["deployments"].items()
     ]
-    managed = sorted(
-        {
-            guardrail
-            for pipeline in [*attached, *selected]
-            for guardrail in pipeline["guardrails"]
-        }
+    aliases: dict[str, str | RouterModelGroupAliasItem] = {}
+    aliases.update(call["aliases"])
+    return Router(model_list=deployments, model_group_alias=aliases)
+
+
+def sorted_managed(decoded: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    normalized: dict[str, JsonValue] = dict(decoded)
+    for name in ("metadata", "litellm_metadata"):
+        value = normalized.get(name)
+        if value is not None:
+            bucket = DECODED.validate_python(value)
+            managed = bucket.get("_pipeline_managed_guardrails")
+            if managed is not None:
+                bucket["_pipeline_managed_guardrails"] = sorted(TEXTS.validate_python(managed))
+            normalized[name] = bucket
+    return normalized
+
+
+def run(call: Input) -> JsonValue:
+    install(call)
+    router = build_router(call["router"])
+    auth = UserAPIKeyAuth(
+        team_alias=call["auth"]["team_alias"],
+        key_alias=call["auth"]["key_alias"],
     )
-    return {"pipelines": selected, "managed_guardrails": managed}
-
-
-def run(input_value: Input) -> Output:
-    function = input_value["function"]
-    if function == "model_group_lookup":
-        return model_group_lookup(input_value)
-    if function == "submit_model_hidden_by":
-        return {"hidden_by": hidden_by(input_value["model_group"], input_value["aliases"])}
-    if function == "retrieval_context":
-        return retrieval_context(input_value)
-    if function in {"pipeline_filtering", "deduplication"}:
-        return pipeline_filtering(input_value)
-    if function == "registry_not_initialized":
-        return {"attached": False}
-    raise ValueError(f"unknown {litellm.__name__} helper function {function}")
+    data = BODY.validate_python(call["data"])
+    warnings = Warnings()
+    logger = logging.getLogger(POLICY_LOGGER)
+    level = logger.level
+    handlers = logger.handlers[:]
+    logger.handlers = [warnings]
+    logger.setLevel(logging.DEBUG)
+    try:
+        attach_post_call_pipelines_to_retrieval(data, auth, router)
+    finally:
+        logger.handlers = handlers
+        logger.setLevel(level)
+    decoded = DECODED.validate_json(ANY.dump_json(data))
+    output: Output = {"data": sorted_managed(decoded), "logs": warnings.entries}
+    return JSON.validate_python(output)

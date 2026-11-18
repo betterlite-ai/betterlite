@@ -2,15 +2,15 @@ kind: helper
 name: policy-response-retrieval-ungoverned-no-router
 call:
   b3269:
-    function: model_group_lookup
-    response_id: null
-    router: false
-    deployments: {}
-    aliases: []
-    model_group: unused
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
+      metadata: {caller: kept}
     auth: {team_alias: null, key_alias: null}
-    tags: []
-    pipelines: []
-    already_attached: []
+    router: null
+    policies:
+      p1:
+        pipeline: {mode: post_call, steps: [{guardrail: g1}]}
+    attachments:
+      - {policy: p1, scope: "*"}
 env: {}
 compare: {ignore: []}

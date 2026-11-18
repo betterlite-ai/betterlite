@@ -2,18 +2,22 @@ kind: helper
 name: policy-response-retrieval-pipeline-filtering
 call:
   b3269:
-    function: pipeline_filtering
-    response_id: null
-    router: false
-    deployments: {}
-    aliases: []
-    model_group: unused
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
     auth: {team_alias: null, key_alias: null}
-    tags: []
-    pipelines:
-      - {policy_name: post, mode: post_call, guardrails: [g1, g2]}
-      - {policy_name: post-two, mode: post_call, guardrails: [g4]}
-      - {policy_name: pre, mode: pre_call, guardrails: [g3]}
-    already_attached: []
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies:
+      post:
+        pipeline: {mode: post_call, steps: [{guardrail: g-post}]}
+      pre:
+        pipeline: {mode: pre_call, steps: [{guardrail: g-pre}]}
+      guards:
+        guardrails: {add: [g-flat]}
+    attachments:
+      - {policy: post, scope: "*"}
+      - {policy: pre, scope: "*"}
+      - {policy: guards, scope: "*"}
 env: {}
 compare: {ignore: []}

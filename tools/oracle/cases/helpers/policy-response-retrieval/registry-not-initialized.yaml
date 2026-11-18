@@ -2,15 +2,14 @@ kind: helper
 name: policy-response-retrieval-registry-not-initialized
 call:
   b3269:
-    function: registry_not_initialized
-    response_id: null
-    router: false
-    deployments: {}
-    aliases: []
-    model_group: unused
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
     auth: {team_alias: null, key_alias: null}
-    tags: []
-    pipelines: []
-    already_attached: []
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies: null
+    attachments:
+      - {policy: p1, scope: "*"}
 env: {}
 compare: {ignore: []}

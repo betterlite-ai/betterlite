@@ -2,18 +2,28 @@ kind: helper
 name: policy-response-retrieval-deduplication
 call:
   b3269:
-    function: deduplication
-    response_id: null
-    router: false
-    deployments: {}
-    aliases: []
-    model_group: unused
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
+      metadata:
+        _guardrail_pipelines:
+          - - existing-policy
+            - mode: post_call
+              steps: [{guardrail: existing-guard}]
+        applied_policies: [existing-policy]
+        applied_guardrails: [existing-guard]
+        policy_sources: {existing-policy: "scope:*"}
+        caller: kept
     auth: {team_alias: null, key_alias: null}
-    tags: []
-    pipelines:
-      - {policy_name: existing, mode: post_call, guardrails: [g0]}
-      - {policy_name: new, mode: post_call, guardrails: [g1]}
-    already_attached:
-      - {policy_name: existing, mode: post_call, guardrails: [g0]}
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies:
+      existing-policy:
+        pipeline: {mode: post_call, steps: [{guardrail: existing-guard}]}
+      new-policy:
+        pipeline: {mode: post_call, steps: [{guardrail: new-guard}]}
+    attachments:
+      - {policy: existing-policy, scope: "*"}
+      - {policy: new-policy, scope: "*"}
 env: {}
 compare: {ignore: []}
