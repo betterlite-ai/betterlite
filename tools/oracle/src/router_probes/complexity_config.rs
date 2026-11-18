@@ -61,29 +61,6 @@ impl ProbeClassifier {
     }
 }
 
-// plugins stay out: a case would have to build a Python plugin object for the reference side
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum ProbeFeature {
-    Adaptive,
-    SessionAffinity,
-    UserTurnClassification,
-    StallEscalation,
-    SemanticKeywordMatching,
-}
-
-impl ProbeFeature {
-    const fn production(self) -> Feature {
-        match self {
-            Self::Adaptive => Feature::Adaptive,
-            Self::SessionAffinity => Feature::SessionAffinity,
-            Self::UserTurnClassification => Feature::UserTurnClassification,
-            Self::StallEscalation => Feature::StallEscalation,
-            Self::SemanticKeywordMatching => Feature::SemanticKeywordMatching,
-        }
-    }
-}
-
 // the rest of the router configuration these validations read, supplied by the keys another task owns
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -108,8 +85,9 @@ struct Knobs {
     embedding_model: Option<String>,
     #[serde(default)]
     stall_escalation: StallWindow,
+    // the production labels; no case sends plugins, since the Python side cannot build a plugin object
     #[serde(default)]
-    features: Vec<ProbeFeature>,
+    features: Vec<Feature>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -138,14 +116,11 @@ pub(crate) fn run(
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
     let knobs = &payload.knobs;
-    let features: Vec<Feature> = knobs
-        .features
-        .iter()
-        .map(|feature| feature.production())
-        .collect();
     let tiers = tier_section::Config {
+        tier_definitions: None,
+        non_reasoning_tier: false,
+        tier_labels: BTreeMap::new(),
         tier_models: payload.tiers.tier_models.clone(),
-        ..tier_section::Config::default()
     };
     let dimensions: [dimensions_section::Config; 0] = [];
     let weights = BTreeMap::new();
@@ -154,7 +129,7 @@ pub(crate) fn run(
         tiers,
         dimensions: &dimensions,
         dimension_weights: &weights,
-        checks: router_checks(knobs, &features),
+        checks: router_checks(knobs),
     })
     .map_err(|source| OperationError::InvalidRequest {
         message: source.to_string(),
@@ -164,7 +139,7 @@ pub(crate) fn run(
     )))))
 }
 
-fn router_checks<'config>(knobs: &'config Knobs, features: &'config [Feature]) -> Checks<'config> {
+fn router_checks(knobs: &Knobs) -> Checks<'_> {
     Checks {
         classifier_type: knobs.classifier_type.production(),
         classifier_fallback: knobs.classifier_fallback,
@@ -176,7 +151,7 @@ fn router_checks<'config>(knobs: &'config Knobs, features: &'config [Feature]) -
         keyword_rule_tiers: &knobs.keyword_rule_tiers,
         embedding_model: knobs.embedding_model.as_deref(),
         stall_escalation: knobs.stall_escalation,
-        features,
+        features: knobs.features.as_slice(),
     }
 }
 

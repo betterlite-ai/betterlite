@@ -7,9 +7,7 @@ use rstest::rstest;
 
 use crate::complexity_config::checks::{Checks, Feature, StallWindow};
 use crate::complexity_config::error::ComplexityConfigError;
-use crate::complexity_config::normalize::{
-    MAX_CLASSIFICATION_EXAMPLES_CHARS, MAX_CLASSIFICATION_PROMPT_CHARS,
-};
+use crate::complexity_config::normalize::{MAX_EXAMPLES_CHARS, MAX_PROMPT_CHARS};
 use crate::tier_definitions::checks::ClassifierKind;
 use crate::tier_definitions::model::TierPool;
 
@@ -54,7 +52,7 @@ fn a_margin_outside_the_endpoints_is_rejected(#[case] margin: f64) {
 
 #[test]
 fn the_prompt_cap_counts_characters() {
-    let at_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_PROMPT_CHARS);
+    let at_cap = "\u{e9}".repeat(MAX_PROMPT_CHARS);
     let accepted = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_prompt: Some(&at_cap),
@@ -62,7 +60,7 @@ fn the_prompt_cap_counts_characters() {
     };
     checked(blank(), tiers(), &accepted);
 
-    let over_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_PROMPT_CHARS + 1);
+    let over_cap = "\u{e9}".repeat(MAX_PROMPT_CHARS + 1);
     let rejected_checks = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_prompt: Some(&over_cap),
@@ -73,12 +71,12 @@ fn the_prompt_cap_counts_characters() {
         panic!("the long prompt must be refused");
     };
     assert_eq!(field, "classification_prompt");
-    assert_eq!(max, MAX_CLASSIFICATION_PROMPT_CHARS);
+    assert_eq!(max, MAX_PROMPT_CHARS);
 }
 
 #[test]
 fn the_examples_cap_counts_characters() {
-    let at_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_EXAMPLES_CHARS);
+    let at_cap = "\u{e9}".repeat(MAX_EXAMPLES_CHARS);
     let accepted = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_examples: Some(&at_cap),
@@ -86,7 +84,7 @@ fn the_examples_cap_counts_characters() {
     };
     checked(blank(), tiers(), &accepted);
 
-    let over_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_EXAMPLES_CHARS + 1);
+    let over_cap = "\u{e9}".repeat(MAX_EXAMPLES_CHARS + 1);
     let rejected_checks = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_examples: Some(&over_cap),
@@ -97,7 +95,7 @@ fn the_examples_cap_counts_characters() {
         panic!("the long examples must be refused");
     };
     assert_eq!(field, "classification_examples");
-    assert_eq!(max, MAX_CLASSIFICATION_EXAMPLES_CHARS);
+    assert_eq!(max, MAX_EXAMPLES_CHARS);
 }
 
 #[rstest]

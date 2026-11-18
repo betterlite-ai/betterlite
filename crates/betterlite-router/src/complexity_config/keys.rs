@@ -1,4 +1,3 @@
-// ComplexityRouterConfig.model_fields: a tier entry's request params must not carry one of these names
 pub const COMPLEXITY_ROUTER_CONFIG_KEYS: [&str; 67] = [
     "tiers",
     "tier_model_configs",
@@ -68,3 +67,5 @@ pub const COMPLEXITY_ROUTER_CONFIG_KEYS: [&str; 67] = [
     "plugins",
     "reminder_markers",
 ];
+
+// ComplexityRouterConfig.model_fields: a tier entry's request params must not carry one of these names

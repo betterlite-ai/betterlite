@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::tier_definitions::checks::{ClassifierFallback, ClassifierKind};
 
-pub const DEFAULT_STALL_ESCALATION_WINDOW: u32 = 6;
-pub const DEFAULT_STALL_ESCALATION_REPEAT_THRESHOLD: u32 = 3;
+pub const STALL_WINDOW_DEFAULT: u32 = 6;
+pub const STALL_REPEAT_DEFAULT: u32 = 3;
 
 // the router capabilities the cross-field rules read; a list-backed one is on when its list is non-empty
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,8 +32,8 @@ pub struct StallWindow {
 impl Default for StallWindow {
     fn default() -> Self {
         Self {
-            window: DEFAULT_STALL_ESCALATION_WINDOW,
-            repeat_threshold: DEFAULT_STALL_ESCALATION_REPEAT_THRESHOLD,
+            window: STALL_WINDOW_DEFAULT,
+            repeat_threshold: STALL_REPEAT_DEFAULT,
         }
     }
 }

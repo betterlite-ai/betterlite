@@ -3,8 +3,8 @@ use betterlite_config::sections::complexity_config as section;
 use crate::complexity_config::checks::Checks;
 use crate::complexity_config::error::ComplexityConfigError;
 
-pub const MAX_CLASSIFICATION_PROMPT_CHARS: usize = 2000;
-pub const MAX_CLASSIFICATION_EXAMPLES_CHARS: usize = 4000;
+pub const MAX_PROMPT_CHARS: usize = 2000;
+pub const MAX_EXAMPLES_CHARS: usize = 4000;
 
 // the six keys and the three text settings they validate, after LiteLLM's field normalizers
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -44,12 +44,12 @@ pub fn apply(
         classification_prompt: operator_section(
             checks.classification_prompt,
             "classification_prompt",
-            MAX_CLASSIFICATION_PROMPT_CHARS,
+            MAX_PROMPT_CHARS,
         )?,
         classification_examples: operator_section(
             checks.classification_examples,
             "classification_examples",
-            MAX_CLASSIFICATION_EXAMPLES_CHARS,
+            MAX_EXAMPLES_CHARS,
         )?,
     };
     if let Some(margin) = normalized.hybrid_boundary_margin
