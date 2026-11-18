@@ -74,6 +74,18 @@ pub(crate) struct Reply {
     pub(crate) body: String,
     #[serde(default)]
     pub(crate) failure: Option<Failure>,
+    #[serde(default)]
+    pub(crate) redirect: Option<Redirect>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Redirect {
+    pub(crate) method: String,
+    pub(crate) url: String,
+    pub(crate) status: u16,
+    pub(crate) headers: BTreeMap<String, String>,
+    pub(crate) body: String,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

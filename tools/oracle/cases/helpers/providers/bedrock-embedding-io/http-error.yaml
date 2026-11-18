@@ -43,10 +43,18 @@ calls:
         texts:
           - redirected
       reply:
-        status: 302
+        status: 303
         headers:
-          Location: /next
+          Location: /final
         body: moved
+        redirect:
+          method: GET
+          url: https://bedrock-runtime.us-west-2.amazonaws.com/final
+          status: 404
+          headers:
+            Content-Type: application/json
+            X-Amzn-Errortype: ResourceNotFoundException
+          body: '{"message":"no such model"}'
   - bedrock_embedding_io:
       function: http_error
       asynchronous: false

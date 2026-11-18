@@ -64,12 +64,22 @@ class Fixture:
     factory_calls: list[FactoryCall] = field(default_factory=list)
     supplied: list[JsonValue] = field(default_factory=list)
     factory: list[JsonValue] = field(default_factory=list)
+    requests: int = 0
 
     def respond(
         self, recorder: list[JsonValue], request: httpx.Request
     ) -> httpx.Response:
-        recorder.append(request_value(self.case, request))
+        self.requests += 1
+        if self.requests == 1:
+            recorder.append(request_value(self.case, request))
         reply = self.case["reply"]
+        redirect = reply.get("redirect")
+        if redirect is not None and self.requests > 1:
+            return httpx.Response(
+                redirect["status"],
+                headers=redirect["headers"],
+                content=redirect["body"].encode(),
+            )
         failure = reply.get("failure")
         if failure == "timeout":
             raise httpx.ReadTimeout("read timed out")
@@ -83,7 +93,10 @@ class Fixture:
         timeout = None if params is None else params.get("timeout")
         self.factory_calls.append(FactoryCall("sync", None, timeout_fields(timeout)))
         return HTTPHandler(
-            client=httpx.Client(transport=httpx.MockTransport(partial(self.respond, self.factory)))
+            client=httpx.Client(
+                transport=httpx.MockTransport(partial(self.respond, self.factory)),
+                follow_redirects=True,
+            )
         )
 
     def async_client(
@@ -133,7 +146,7 @@ def chosen_client(case: HttpRequest, fixture: Fixture) -> Client:
     transport = httpx.MockTransport(partial(fixture.respond, fixture.supplied))
     supplied = case["supplied"]
     if supplied == "sync":
-        return HTTPHandler(client=httpx.Client(transport=transport))
+        return HTTPHandler(client=httpx.Client(transport=transport, follow_redirects=True))
     if supplied == "async":
         return AsyncHTTPHandler(transport=transport)
     return None
@@ -195,5 +208,8 @@ def http_error(case: HttpRequest) -> JsonValue:
         value = run_call(case, fixture)
     except BedrockError as error:
         names = {name.lower() for name in case["reply"]["headers"]}
+        redirect = case["reply"].get("redirect")
+        if redirect is not None:
+            names.update(name.lower() for name in redirect["headers"])
         return failure_value(error, names)
     return {"kind": "ok", "value": value}

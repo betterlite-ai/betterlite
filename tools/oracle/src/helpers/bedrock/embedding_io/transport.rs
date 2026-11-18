@@ -1,10 +1,10 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_bedrock::bedrock_embedding_io::transport::{
-    ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout,
-    TransferError,
+    ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest,
+    Timeout, TransferError,
 };
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_prompts::arguments::json::Object;
@@ -21,11 +21,17 @@ pub(crate) fn case_headers(case: &HttpRequest) -> BTreeSet<String> {
 }
 
 pub(crate) fn reply_headers(case: &HttpRequest) -> BTreeSet<String> {
-    case.reply
-        .headers
-        .keys()
-        .map(|name| name.to_ascii_lowercase())
-        .collect()
+    let names = |headers: &BTreeMap<String, String>| {
+        headers
+            .keys()
+            .map(|name| name.to_ascii_lowercase())
+            .collect::<BTreeSet<String>>()
+    };
+    let mut all = names(&case.reply.headers);
+    if let Some(redirect) = &case.reply.redirect {
+        all.extend(names(&redirect.headers));
+    }
+    all
 }
 
 pub(crate) fn case_timeout(case: &HttpRequest) -> Option<Timeout> {
@@ -88,6 +94,30 @@ impl FixtureClient {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+
+    // a followed redirect answers with the final request the transport actually sent
+    fn answer(&self, request: &EmbeddingRequest) -> EmbeddingReply {
+        if let Some(redirect) = &self.reply.redirect {
+            return EmbeddingReply {
+                status: redirect.status,
+                headers: super::signed::pairs(&redirect.headers),
+                body: redirect.body.as_bytes().to_vec(),
+                request: ReplyRequest {
+                    method: redirect.method.clone(),
+                    url: redirect.url.clone(),
+                },
+            };
+        }
+        EmbeddingReply {
+            status: self.reply.status,
+            headers: super::signed::pairs(&self.reply.headers),
+            body: self.reply.body.as_bytes().to_vec(),
+            request: ReplyRequest {
+                method: "POST".to_owned(),
+                url: request.url.clone(),
+            },
+        }
+    }
 }
 
 impl EmbeddingTransport for FixtureClient {
@@ -95,6 +125,11 @@ impl EmbeddingTransport for FixtureClient {
         &self,
         request: EmbeddingRequest,
     ) -> impl Future<Output = Result<EmbeddingReply, TransferError>> + Send {
+        let reply = match self.reply.failure {
+            Some(ReplyFailure::Timeout) => Err(TransferError::Timeout),
+            Some(ReplyFailure::Failed) => Err(TransferError::Failed(TransportError::Closed)),
+            None => Ok(self.answer(&request)),
+        };
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -103,15 +138,6 @@ impl EmbeddingTransport for FixtureClient {
                 headers: request.headers,
                 body: request.body,
             });
-        let reply = match self.reply.failure {
-            Some(ReplyFailure::Timeout) => Err(TransferError::Timeout),
-            Some(ReplyFailure::Failed) => Err(TransferError::Failed(TransportError::Closed)),
-            None => Ok(EmbeddingReply {
-                status: self.reply.status,
-                headers: super::signed::pairs(&self.reply.headers),
-                body: self.reply.body.as_bytes().to_vec(),
-            }),
-        };
         ready(reply)
     }
 }

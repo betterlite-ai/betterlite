@@ -26,11 +26,20 @@ class TimeoutRecord(TypedDict):
     pool: float
 
 
+class RedirectReply(TypedDict):
+    method: str
+    url: str
+    status: int
+    headers: dict[str, str]
+    body: str
+
+
 class Reply(TypedDict):
     status: int
     headers: dict[str, str]
     body: str
     failure: NotRequired[Literal["timeout", "failed"] | None]
+    redirect: NotRequired[RedirectReply | None]
 
 
 class HttpRequest(TypedDict):
