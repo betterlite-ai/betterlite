@@ -11,12 +11,12 @@ use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_tokenizer::count::error::CountError;
 use rust_decimal::Decimal;
 
-use super::super::billing::{FailurePrice, NativePrice};
+use super::super::billing::{FailurePrice as _, NativePrice};
 use super::super::events::nested_response;
 use super::support::completed_event;
 use crate::cost::call_price::policy::ProviderPricePolicy;
 use crate::cost::completion::args::{CostCalculator, SpecialBorrows, ToolBorrows};
-use crate::cost::completion::tests::rig::{args, rig};
+use crate::cost::completion::tests::rig::{Rig, args, rig};
 use crate::cost::context::ProviderInference;
 use crate::cost::image_dispatch::policy::{ImagePricePolicy, ImageRoute};
 use crate::cost::prepare::{BillingTokenCounter, ResponseView, TypedResponse};
@@ -28,14 +28,14 @@ struct Policy;
 impl ModelResolver for Policy {
     type Failure = Infallible;
     fn resolve_model(&self, _model: &str) -> Result<ResolvedModel, Infallible> {
-        unreachable!("explicit model and provider avoid resolution")
+        panic!("explicit model and provider avoid resolution")
     }
 }
 
 impl ImagePricePolicy for Policy {
     type Error = Infallible;
     fn image_cost(&self, _route: &ImageRoute<'_>) -> Result<Decimal, Infallible> {
-        unreachable!("a Responses token charge is not an image charge")
+        panic!("a Responses token charge is not an image charge")
     }
 }
 
@@ -52,10 +52,40 @@ impl SpecialPricePolicy for Policy {}
 #[async_trait]
 impl BillingTokenCounter for Policy {
     async fn count_messages(&self, _model: &str, _messages: &[Json]) -> Result<usize, CountError> {
-        unreachable!("the failed response already carries usage")
+        panic!("the failed response already carries usage")
     }
     async fn count_text(&self, _model: &str, _text: &str) -> Result<usize, CountError> {
-        unreachable!("the failed response already carries usage")
+        panic!("the failed response already carries usage")
+    }
+}
+
+fn calculator<'rig>(
+    fixture: &'rig Rig,
+    resolution: &'rig ResolutionContext<'rig>,
+) -> CostCalculator<'rig, Policy, Policy, Policy> {
+    CostCalculator {
+        special: SpecialBorrows {
+            lookup: &fixture.catalog,
+            resolver: &Policy,
+            image_policy: &Policy,
+            special_policy: &Policy,
+            size_pattern: &fixture.pattern,
+            database: &fixture.database,
+            replicate_models: &fixture.models,
+            replicate_price: Decimal::ZERO,
+            discount: &fixture.discount,
+            margin: &fixture.margin,
+        },
+        catalog: &fixture.catalog,
+        inference: &Policy,
+        counter: &Policy,
+        price_policy: &Policy,
+        resolution,
+        tools: ToolBorrows {
+            source: &fixture.tools,
+            policy: &fixture.tools,
+            prices: &ToolPrices::PINNED,
+        },
     }
 }
 
@@ -77,30 +107,7 @@ async fn native_failure_billing_uses_completion_cost() {
         policies: ProviderPolicies::default(),
         globals: GlobalCredentials::default(),
     };
-    let services = CostCalculator {
-        special: SpecialBorrows {
-            lookup: &fixture.catalog,
-            resolver: &Policy,
-            image_policy: &Policy,
-            special_policy: &Policy,
-            size_pattern: &fixture.pattern,
-            database: &fixture.database,
-            replicate_models: &fixture.models,
-            replicate_price: Decimal::ZERO,
-            discount: &fixture.discount,
-            margin: &fixture.margin,
-        },
-        catalog: &fixture.catalog,
-        inference: &Policy,
-        counter: &Policy,
-        price_policy: &Policy,
-        resolution: &resolution,
-        tools: ToolBorrows {
-            source: &fixture.tools,
-            policy: &fixture.tools,
-            prices: &ToolPrices::PINNED,
-        },
-    };
+    let services = calculator(&fixture, &resolution);
     let event = completed_event();
     let response = nested_response(&event).unwrap();
     let view = ResponseView::Typed(TypedResponse {

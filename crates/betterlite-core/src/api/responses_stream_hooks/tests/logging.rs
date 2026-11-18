@@ -1,3 +1,4 @@
+use super::super::logging::log_completed_response;
 use super::super::ports::Dispatch;
 use std::sync::Arc;
 
@@ -13,6 +14,17 @@ use super::support::{
 
 fn object(pairs: &[(&str, Json)]) -> Json {
     Json::Object(json_object(pairs))
+}
+
+fn provider_hidden() -> Json {
+    object(&[
+        (
+            "additional_headers",
+            object(&[("x-source", text("provider"))]),
+        ),
+        ("headers", object(&[("x-source-raw", text("raw"))])),
+        ("response_cost", text("9")),
+    ])
 }
 
 #[tokio::test]
@@ -34,10 +46,15 @@ async fn completed_logging_once() {
     let mut callback = ResponsesStreamHookState::default();
     let details = IndexMap::new();
 
-    hooks
-        .log_completed_response(&mut state, &mut callback, &details, Dispatch::Inline)
-        .await
-        .expect("the success path logs");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &details,
+        Dispatch::Inline,
+    )
+    .await
+    .expect("the success path logs");
 
     assert!(state.completed_response_logged);
     assert!(state.completed_response_cached);
@@ -53,11 +70,45 @@ async fn completed_logging_once() {
         path(async_request.result.response(), &["response", "id"]),
         Some(&text("resp_1"))
     );
+}
 
-    hooks
-        .log_completed_response(&mut state, &mut callback, &details, Dispatch::Inline)
-        .await
-        .expect("a second call is a no-op");
+#[tokio::test]
+async fn completed_logging_once_is_idempotent() {
+    let redactor = redactor();
+    let mut hooks = hooks(&redactor);
+    let cache = Cache::succeeding();
+    let handler = Arc::new(CacheHandler::new(json_object(&[(
+        "stream",
+        Json::Bool(true),
+    )])));
+    let success = Success::recording();
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
+    hooks.cache_handler = Some(handler);
+    hooks.success = Some(Arc::<Success>::clone(&success));
+    let mut state = base_state();
+    state.completed_response = Some(completed_event());
+    let mut callback = ResponsesStreamHookState::default();
+    let details = IndexMap::new();
+
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &details,
+        Dispatch::Inline,
+    )
+    .await
+    .expect("the first call logs");
+
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &details,
+        Dispatch::Inline,
+    )
+    .await
+    .expect("a second call is a no-op");
 
     assert_eq!(cache.writes().len(), 1);
     assert_eq!(success.async_calls().len(), 1);
@@ -70,29 +121,22 @@ async fn completed_logging_once_restores_the_provider_headers() {
     let mut hooks = hooks(&redactor);
     let success = Success::recording();
     hooks.success = Some(Arc::<Success>::clone(&success));
-    let source = object(&[
-        (
-            "additional_headers",
-            object(&[("x-source", text("provider"))]),
-        ),
-        ("headers", object(&[("x-source-raw", text("raw"))])),
-        ("response_cost", text("9")),
-    ]);
+    let source = provider_hidden();
     let mut state = base_state();
     state.completed_response = Some(completed_with_hidden(source));
     state.hidden_params.additional_headers = json_object(&[("x-iterator", text("fallback"))]);
     state.raw_response_headers = IndexMap::from([("x-iterator-raw".to_owned(), "raw".to_owned())]);
     let mut callback = ResponsesStreamHookState::default();
 
-    hooks
-        .log_completed_response(
-            &mut state,
-            &mut callback,
-            &IndexMap::new(),
-            Dispatch::Inline,
-        )
-        .await
-        .expect("the success path logs");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &IndexMap::new(),
+        Dispatch::Inline,
+    )
+    .await
+    .expect("the success path logs");
 
     let calls = success.async_calls();
     let payload = calls[0].result.response();
@@ -129,15 +173,15 @@ async fn completed_logging_once_skips_the_cache_when_persistence_is_off() {
     state.completed_response = Some(completed_event());
     state.persist_before_logging = false;
 
-    hooks
-        .log_completed_response(
-            &mut state,
-            &mut ResponsesStreamHookState::default(),
-            &IndexMap::new(),
-            Dispatch::Inline,
-        )
-        .await
-        .expect("the success path logs");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut ResponsesStreamHookState::default(),
+        &IndexMap::new(),
+        Dispatch::Inline,
+    )
+    .await
+    .expect("the success path logs");
 
     assert!(cache.writes().is_empty());
     assert_eq!(success.async_calls().len(), 1);
@@ -160,15 +204,15 @@ async fn completed_logging_once_passes_the_cache_hit_of_a_cached_response() {
     state.completed_response_cached = true;
     state.completed_response_cache_hit = Some(true);
 
-    hooks
-        .log_completed_response(
-            &mut state,
-            &mut ResponsesStreamHookState::default(),
-            &IndexMap::new(),
-            Dispatch::Inline,
-        )
-        .await
-        .expect("the success path logs");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut ResponsesStreamHookState::default(),
+        &IndexMap::new(),
+        Dispatch::Inline,
+    )
+    .await
+    .expect("the success path logs");
 
     assert!(cache.writes().is_empty());
     assert_eq!(success.async_calls()[0].cache_hit, Some(true));
@@ -189,27 +233,27 @@ async fn completed_logging_once_does_not_log_again_after_a_failed_cache_write() 
     state.completed_response = Some(completed_event());
     let mut callback = ResponsesStreamHookState::default();
 
-    let rejected = hooks
-        .log_completed_response(
-            &mut state,
-            &mut callback,
-            &IndexMap::new(),
-            Dispatch::Inline,
-        )
-        .await;
+    let rejected = log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &IndexMap::new(),
+        Dispatch::Inline,
+    )
+    .await;
     assert!(rejected.is_err());
     assert!(state.completed_response_logged);
     assert!(success.async_calls().is_empty());
 
-    hooks
-        .log_completed_response(
-            &mut state,
-            &mut callback,
-            &IndexMap::new(),
-            Dispatch::Inline,
-        )
-        .await
-        .expect("the latch makes the second call a no-op");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &IndexMap::new(),
+        Dispatch::Inline,
+    )
+    .await
+    .expect("the latch makes the second call a no-op");
 
     assert!(success.async_calls().is_empty());
     assert!(success.sync_calls().is_empty());
@@ -230,15 +274,15 @@ async fn completed_logging_once_schedules_the_async_dispatch() {
     let mut state = base_state();
     state.completed_response = Some(completed_event());
 
-    hooks
-        .log_completed_response(
-            &mut state,
-            &mut ResponsesStreamHookState::default(),
-            &IndexMap::new(),
-            Dispatch::Spawned,
-        )
-        .await
-        .expect("the success path logs");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut ResponsesStreamHookState::default(),
+        &IndexMap::new(),
+        Dispatch::Spawned,
+    )
+    .await
+    .expect("the success path logs");
 
     assert!(success.dispatches().is_empty());
     state.pending_tasks.close();
@@ -261,15 +305,15 @@ async fn completed_logging_once_defers_an_armed_dispatch() {
     state.persist_before_logging = false;
     let mut callback = ResponsesStreamHookState::default();
 
-    hooks
-        .log_completed_response(
-            &mut state,
-            &mut callback,
-            &IndexMap::new(),
-            Dispatch::Spawned,
-        )
-        .await
-        .expect("the success path logs");
+    log_completed_response(
+        &hooks,
+        &mut state,
+        &mut callback,
+        &IndexMap::new(),
+        Dispatch::Spawned,
+    )
+    .await
+    .expect("the success path logs");
 
     assert!(success.dispatches().is_empty());
     let stored = callback
@@ -285,19 +329,12 @@ async fn completed_logging_once_defers_an_armed_dispatch() {
 
 #[test]
 fn logging_header_isolation() {
-    let event = completed_with_hidden(object(&[
-        (
-            "additional_headers",
-            object(&[("x-source", text("provider"))]),
-        ),
-        ("headers", object(&[("x-source-raw", text("raw"))])),
-        ("response_cost", text("9")),
-    ]));
+    let event = completed_with_hidden(provider_hidden());
     let mut state = base_state();
     state.hidden_params.additional_headers = json_object(&[("x-iterator", text("fallback"))]);
     state.raw_response_headers = IndexMap::from([("x-iterator-raw".to_owned(), "raw".to_owned())]);
 
-    let mut payload = logging_event(&event, &state.hidden_params, &state.raw_response_headers);
+    let payload = logging_event(&event, &state.hidden_params, &state.raw_response_headers);
 
     assert_eq!(
         path(
@@ -321,6 +358,15 @@ fn logging_header_isolation() {
         ),
         Some(&text("9"))
     );
+}
+
+#[test]
+fn logging_header_isolation_copies_are_independent() {
+    let event = completed_with_hidden(provider_hidden());
+    let mut state = base_state();
+    state.hidden_params.additional_headers = json_object(&[("x-iterator", text("fallback"))]);
+    state.raw_response_headers = IndexMap::from([("x-iterator-raw".to_owned(), "raw".to_owned())]);
+    let mut payload = logging_event(&event, &state.hidden_params, &state.raw_response_headers);
 
     let additional = path_mut(
         &mut payload,

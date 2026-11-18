@@ -1,4 +1,6 @@
 use std::fmt::Debug;
+use std::io::Error as IoError;
+use std::pin::pin;
 use std::str::FromStr as _;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context as TaskContext, Poll, Waker};
@@ -73,8 +75,8 @@ pub(crate) fn response_failed_event(
     usage: Option<&str>,
     error: Option<&str>,
 ) -> ResponsesAPIStreamingResponse {
-    let usage = usage.map_or(String::new(), |usage| format!(r#","usage":{usage}"#));
-    let error = error.map_or(String::new(), |error| format!(r#","error":{error}"#));
+    let usage_field = usage.map_or(String::new(), |value| format!(r#","usage":{value}"#));
+    let error_field = error.map_or(String::new(), |value| format!(r#","error":{value}"#));
     decode(&format!(
         r#"{{"type":"response.failed","sequence_number":2,"response":{{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"failed","output":[]{error}{usage}}}}}"#
     ))
@@ -132,7 +134,10 @@ pub(crate) fn field_mut<'json>(json: &'json mut Json, name: &str) -> Option<&'js
 pub(crate) fn path_mut<'json>(json: &'json mut Json, names: &[&str]) -> Option<&'json mut Json> {
     match names.split_first() {
         None => Some(json),
-        Some((name, rest)) => field_mut(json, name).and_then(|value| path_mut(value, rest)),
+        Some((name, rest)) => {
+            let value = field_mut(json, name)?;
+            path_mut(value, rest)
+        }
     }
 }
 
@@ -331,12 +336,11 @@ impl Cache {
                 dynamic: write.dynamic_cache,
                 asynchronous,
             });
-        match &self.failure {
-            Some(message) => Err(PortFailure {
+        self.failure.as_ref().map_or(Ok(()), |message| {
+            Err(PortFailure {
                 message: message.clone(),
-            }),
-            None => Ok(()),
-        }
+            })
+        })
     }
 }
 
@@ -403,8 +407,14 @@ impl Success {
         label: &'static str,
         request: SuccessRequest,
     ) {
-        self.order.lock().unwrap().push(label);
-        target.lock().unwrap().push(request);
+        self.order
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(label);
+        target
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request);
     }
 
     pub(crate) fn order(&self) -> Vec<&'static str> {
@@ -492,8 +502,14 @@ impl FailureRecorder {
         delivery: &FailureDelivery,
         fails: bool,
     ) -> Result<(), PortFailure> {
-        self.order.lock().unwrap().push(label);
-        target.lock().unwrap().push(delivery.clone());
+        self.order
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(label);
+        target
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(delivery.clone());
         if fails {
             return Err(PortFailure {
                 message: format!("{label} failed"),
@@ -760,11 +776,11 @@ impl Calculator {
 }
 
 impl ResponsesCostCalculator for Calculator {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn response_cost(&self, _target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
         if self.fails {
-            return Err(std::io::Error::other("the cost lookup failed"));
+            return Err(IoError::other("the cost lookup failed"));
         }
         Ok(self.cost)
     }
@@ -785,11 +801,14 @@ pub(crate) fn failure_class() -> ErrorClass {
 }
 
 // polls a future once with a noop waker for the branches that only run without a tokio runtime
-pub(crate) fn block_on_local<F: std::future::Future>(future: F) -> F::Output {
+pub(crate) fn block_on_local<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     let waker = Waker::noop();
     let mut context = TaskContext::from_waker(waker);
-    let mut future = std::pin::pin!(future);
-    match future.as_mut().poll(&mut context) {
+    let mut pending = pin!(future);
+    match pending.as_mut().poll(&mut context) {
         Poll::Ready(output) => output,
         Poll::Pending => panic!("the probe future must not park"),
     }

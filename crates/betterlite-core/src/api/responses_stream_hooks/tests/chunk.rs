@@ -1,5 +1,7 @@
+use super::super::deployment::chunk_hook;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use std::sync::Arc;
 
 use super::super::deployment::ChunkHookContext;
 use super::super::state::ResponsesStreamHookState;
@@ -35,25 +37,25 @@ async fn deployment_chunk_hooks() {
     let replaced = completed_with_id("resp_2");
     let second = ChunkHook::new("second", ChunkAction::Replace(Box::new(replaced.clone())));
     hooks.chunk_hooks = vec![
-        std::sync::Arc::<ChunkHook>::clone(&first),
-        std::sync::Arc::<ChunkHook>::clone(&second),
+        Arc::<ChunkHook>::clone(&first),
+        Arc::<ChunkHook>::clone(&second),
     ];
     let mut callback = ResponsesStreamHookState::default();
     let details = call_details();
     let request_data = json_object(&[("model", text("request-model"))]);
 
-    let returned = hooks
-        .chunk_hook(
-            &mut callback,
-            context(
-                Some("responses"),
-                Some("acompletion"),
-                Some(&request_data),
-                &details,
-            ),
-            completed_event(),
-        )
-        .await;
+    let returned = chunk_hook(
+        &hooks,
+        &mut callback,
+        context(
+            Some("responses"),
+            Some("acompletion"),
+            Some(&request_data),
+            &details,
+        ),
+        completed_event(),
+    )
+    .await;
 
     assert!(callback.post_streaming_hooks_ran);
     assert_eq!(first.calls(), vec!["first"]);
@@ -76,28 +78,28 @@ async fn deployment_chunk_hooks_fall_back_to_the_logging_call_type() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let hook = ChunkHook::new("hook", ChunkAction::Keep);
-    hooks.chunk_hooks = vec![std::sync::Arc::<ChunkHook>::clone(&hook)];
+    hooks.chunk_hooks = vec![Arc::<ChunkHook>::clone(&hook)];
     let details = call_details();
     let mut callback = ResponsesStreamHookState::default();
 
-    hooks
-        .chunk_hook(
-            &mut callback,
-            context(Some("bogus"), Some("acompletion"), None, &details),
-            completed_event(),
-        )
-        .await;
+    chunk_hook(
+        &hooks,
+        &mut callback,
+        context(Some("bogus"), Some("acompletion"), None, &details),
+        completed_event(),
+    )
+    .await;
 
     assert_eq!(hook.call_types(), vec![Some(CallType::Acompletion)]);
 
     let mut unknown = ResponsesStreamHookState::default();
-    hooks
-        .chunk_hook(
-            &mut unknown,
-            context(Some("bogus"), Some("also_bogus"), None, &details),
-            completed_event(),
-        )
-        .await;
+    chunk_hook(
+        &hooks,
+        &mut unknown,
+        context(Some("bogus"), Some("also_bogus"), None, &details),
+        completed_event(),
+    )
+    .await;
 
     assert_eq!(hook.call_types(), vec![Some(CallType::Acompletion), None]);
 }
@@ -107,22 +109,22 @@ async fn deployment_chunk_hooks_let_an_explicit_call_type_win() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let hook = ChunkHook::new("hook", ChunkAction::Keep);
-    hooks.chunk_hooks = vec![std::sync::Arc::<ChunkHook>::clone(&hook)];
+    hooks.chunk_hooks = vec![Arc::<ChunkHook>::clone(&hook)];
     let details = call_details();
     let request_data = json_object(&[("model", text("request-model"))]);
 
-    hooks
-        .chunk_hook(
-            &mut ResponsesStreamHookState::default(),
-            context(
-                Some("acompletion"),
-                Some("responses"),
-                Some(&request_data),
-                &details,
-            ),
-            completed_event(),
-        )
-        .await;
+    chunk_hook(
+        &hooks,
+        &mut ResponsesStreamHookState::default(),
+        context(
+            Some("acompletion"),
+            Some("responses"),
+            Some(&request_data),
+            &details,
+        ),
+        completed_event(),
+    )
+    .await;
 
     assert_eq!(hook.call_types(), vec![Some(CallType::Acompletion)]);
     assert_eq!(
@@ -136,24 +138,24 @@ async fn deployment_chunk_hooks_fall_back_to_the_model_call_details() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let hook = ChunkHook::new("hook", ChunkAction::Keep);
-    hooks.chunk_hooks = vec![std::sync::Arc::<ChunkHook>::clone(&hook)];
+    hooks.chunk_hooks = vec![Arc::<ChunkHook>::clone(&hook)];
     let details = call_details();
     let empty = IndexMap::new();
 
-    hooks
-        .chunk_hook(
-            &mut ResponsesStreamHookState::default(),
-            context(None, None, Some(&empty), &details),
-            completed_event(),
-        )
-        .await;
-    hooks
-        .chunk_hook(
-            &mut ResponsesStreamHookState::default(),
-            context(None, None, None, &details),
-            completed_event(),
-        )
-        .await;
+    chunk_hook(
+        &hooks,
+        &mut ResponsesStreamHookState::default(),
+        context(None, None, Some(&empty), &details),
+        completed_event(),
+    )
+    .await;
+    chunk_hook(
+        &hooks,
+        &mut ResponsesStreamHookState::default(),
+        context(None, None, None, &details),
+        completed_event(),
+    )
+    .await;
 
     let requests = hook.requests();
     assert_eq!(requests.len(), 2);
@@ -172,20 +174,20 @@ async fn deployment_chunk_hooks_stop_at_a_failing_hook() {
         ChunkAction::Replace(Box::new(completed_with_id("resp_3"))),
     );
     hooks.chunk_hooks = vec![
-        std::sync::Arc::<ChunkHook>::clone(&first),
-        std::sync::Arc::<ChunkHook>::clone(&failing),
-        std::sync::Arc::<ChunkHook>::clone(&later),
+        Arc::<ChunkHook>::clone(&first),
+        Arc::<ChunkHook>::clone(&failing),
+        Arc::<ChunkHook>::clone(&later),
     ];
     let details = call_details();
     let mut callback = ResponsesStreamHookState::default();
 
-    let returned = hooks
-        .chunk_hook(
-            &mut callback,
-            context(None, None, None, &details),
-            completed_event(),
-        )
-        .await;
+    let returned = chunk_hook(
+        &hooks,
+        &mut callback,
+        context(None, None, None, &details),
+        completed_event(),
+    )
+    .await;
 
     assert_eq!(first.calls(), vec!["first"]);
     assert_eq!(failing.calls(), vec!["failing"]);
@@ -203,13 +205,13 @@ async fn deployment_chunk_hooks_keep_the_input_when_the_first_hook_fails() {
     let mut callback = ResponsesStreamHookState::default();
     let input = completed_event();
 
-    let returned = hooks
-        .chunk_hook(
-            &mut callback,
-            context(None, None, None, &details),
-            input.clone(),
-        )
-        .await;
+    let returned = chunk_hook(
+        &hooks,
+        &mut callback,
+        context(None, None, None, &details),
+        input.clone(),
+    )
+    .await;
 
     assert!(!callback.post_streaming_hooks_ran);
     assert_eq!(event_json(&returned), event_json(&input));
@@ -223,13 +225,13 @@ async fn deployment_chunk_hooks_without_hooks_leave_the_chunk_alone() {
     let mut callback = ResponsesStreamHookState::default();
     let input = completed_event();
 
-    let returned = hooks
-        .chunk_hook(
-            &mut callback,
-            context(None, None, None, &details),
-            input.clone(),
-        )
-        .await;
+    let returned = chunk_hook(
+        &hooks,
+        &mut callback,
+        context(None, None, None, &details),
+        input.clone(),
+    )
+    .await;
 
     assert!(!callback.post_streaming_hooks_ran);
     assert_eq!(event_json(&returned), event_json(&input));
@@ -242,21 +244,21 @@ async fn chunk_marker_does_not_leak_to_the_next_chunk() {
     hooks.chunk_hooks = vec![ChunkHook::new("first", ChunkAction::Keep)];
     let mut callback = ResponsesStreamHookState::default();
     let details = call_details();
-    hooks
-        .chunk_hook(
-            &mut callback,
-            context(None, None, None, &details),
-            completed_event(),
-        )
-        .await;
+    chunk_hook(
+        &hooks,
+        &mut callback,
+        context(None, None, None, &details),
+        completed_event(),
+    )
+    .await;
     assert!(callback.post_streaming_hooks_ran);
     hooks.chunk_hooks = vec![ChunkHook::new("second", ChunkAction::Fail)];
-    hooks
-        .chunk_hook(
-            &mut callback,
-            context(None, None, None, &details),
-            completed_event(),
-        )
-        .await;
+    chunk_hook(
+        &hooks,
+        &mut callback,
+        context(None, None, None, &details),
+        completed_event(),
+    )
+    .await;
     assert!(!callback.post_streaming_hooks_ran);
 }
