@@ -158,6 +158,60 @@ fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
 }
 
 #[test]
+fn bedrock_embedding_io_managed_worker_drains_before_drop() {
+    let gate = Arc::new((Mutex::new(false), Condvar::new()));
+    let started = Arc::new(tokio::sync::Notify::new());
+    let read_on_runtime = Arc::new(AtomicBool::new(true));
+    let secrets = managed_secrets_reader(Arc::new(PendingReader {
+        gate: Arc::clone(&gate),
+        started: Arc::clone(&started),
+        read_on_runtime: Arc::clone(&read_on_runtime),
+    }));
+    let worker = ManagedRegionWorker::new().expect("the region worker starts");
+    let (release_tx, release_worker) = start_gate_release_worker(Arc::clone(&gate));
+    let runtime = single_worker_runtime();
+    runtime.block_on(async {
+        let mut parameters = raw(&[]);
+        let variables = environment(&[]);
+        let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
+        let lookup = load_credentials(
+            CredentialRequest {
+                optional_params: &mut parameters,
+                environment: &variables,
+                bearer_token: None,
+            },
+            &secrets,
+            &worker,
+            source.resolve(),
+        );
+        tokio::pin!(lookup);
+        tokio::select! {
+            () = started.notified() => {}
+            result = &mut lookup => panic!("managed lookup finished before it became pending: {result:?}"),
+        }
+    });
+
+    let (dropped_tx, dropped_rx) = mpsc::channel();
+    let drop_thread = thread::spawn(move || {
+        drop(worker);
+        dropped_tx.send(()).expect("the drop observer is alive");
+    });
+    assert!(matches!(
+        dropped_rx.recv_timeout(Duration::from_millis(50)),
+        Err(mpsc::RecvTimeoutError::Timeout)
+    ));
+    release_tx.send(()).expect("the release worker is alive");
+    dropped_rx
+        .recv_timeout(Duration::from_secs(1))
+        .expect("dropping the service waits for its running job to drain");
+    drop_thread
+        .join()
+        .expect("the service owner joined its worker");
+    release_worker.join().expect("the release worker completes");
+    assert!(!read_on_runtime.load(Ordering::SeqCst));
+}
+
+#[test]
 fn bedrock_embedding_io_secret_safe_failure() {
     let signed = sign_get_request(
         &credentials(ACCESS_KEY, SECRET_KEY, Some(SESSION_TOKEN)),
