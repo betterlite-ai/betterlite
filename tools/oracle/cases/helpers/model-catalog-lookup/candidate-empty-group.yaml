@@ -1,0 +1,23 @@
+kind: helper
+name: model-catalog-lookup-candidate-empty-group
+call:
+  model_catalog_lookup:
+    function: get_candidate_model_ids_for_route
+    model_list:
+      - model_name: "*"
+        litellm_params:
+          model: openai/*
+        model_info:
+          id: w
+    model_group_alias: {}
+    routing_groups:
+      - group_name: empty-group
+        models: [ghost]
+        routing_strategy: simple-shuffle
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: empty-group
+      team_id: null
+env: {}
+compare: {ignore: []}
