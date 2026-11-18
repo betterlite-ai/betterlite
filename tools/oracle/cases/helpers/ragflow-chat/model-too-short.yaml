@@ -1,0 +1,13 @@
+kind: helper
+name: ragflow-chat-model-too-short
+env: {}
+compare: {ignore: []}
+call:
+  b049:
+    op: provider
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    cases:
+      - {model: 'ragflow/chat', api_base: null, api_key: null}
+      - {model: 'ragflow/chat/abc', api_base: null, api_key: null}
+      - {model: 'ragflow//abc', api_base: null, api_key: null}
