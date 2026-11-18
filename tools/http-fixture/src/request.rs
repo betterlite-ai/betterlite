@@ -9,16 +9,20 @@ pub struct Request {
     pub body: String,
 }
 
-pub fn read_request<Stream: Read>(stream: &mut Stream) -> Result<Request, FixtureError> {
+pub fn read_request<Stream>(stream: &mut Stream) -> Result<Request, FixtureError>
+where
+    Stream: Read,
+{
     let mut raw_head = Vec::new();
     while !raw_head.ends_with(b"\r\n\r\n") {
         let mut byte = [0];
-        stream
-            .read_exact(&mut byte)
-            .map_err(|error| match error.kind() {
-                ErrorKind::UnexpectedEof if raw_head.is_empty() => FixtureError::NoRequest,
-                _other => FixtureError::Io(error),
-            })?;
+        stream.read_exact(&mut byte).map_err(|error| {
+            if raw_head.is_empty() && error.kind() == ErrorKind::UnexpectedEof {
+                FixtureError::NoRequest
+            } else {
+                FixtureError::Io(error)
+            }
+        })?;
         raw_head.extend_from_slice(&byte);
     }
     let head = String::from_utf8(raw_head)?;
