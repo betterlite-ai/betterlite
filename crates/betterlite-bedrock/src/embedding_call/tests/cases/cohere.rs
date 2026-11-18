@@ -4,9 +4,10 @@ use std::time::Duration;
 use betterlite_models::decisions::Json as Decisions;
 use betterlite_openai::cohere_embedding::usage::BilledUnits;
 use betterlite_openai::cohere_legacy_embedding::SYNC_CLIENT_TIMEOUT;
+use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_prompts::arguments::json::Json;
 
-use super::super::fixture::{ClientCall, Reply, fixture_probe, object, run};
+use super::super::fixture::{ClientCall, RawRequest, Reply, fixture_probe, object, run};
 use super::super::support::{argument_fields, decisions_value, legacy, logged_response, phases};
 use crate::bedrock_embedding_io::transport::{ClientKind, Timeout, TimeoutRecord, TransferError};
 use crate::embedding_call::error::EmbeddingCallError;
@@ -50,12 +51,21 @@ fn one_body_holds_every_input() {
     );
     let reply = legacy(outcome.response());
     assert_eq!(reply.object, "list");
+    assert_eq!(reply.model, COHERE_MODEL);
+    assert_every_record(reply);
+    assert_billed_units(reply);
+}
+
+fn assert_every_record(reply: &LegacyEmbeddingResponse) {
     assert_eq!(reply.data.len(), 2);
     assert_eq!(reply.data[0].index, 0);
     assert_eq!(reply.data[1].index, 1);
-    assert_eq!(numbers(&reply.data[0].embedding), [0.1, 0.2]);
-    assert_eq!(numbers(&reply.data[1].embedding), [0.3, 0.4]);
-    assert_eq!(reply.model, COHERE_MODEL);
+    assert_eq!(numbers(&reply.data[0].embedding), [0.1_f64, 0.2_f64]);
+    assert_eq!(numbers(&reply.data[1].embedding), [0.3_f64, 0.4_f64]);
+    assert!(reply.data[0].kind.is_none());
+}
+
+fn assert_billed_units(reply: &LegacyEmbeddingResponse) {
     assert_eq!(reply.usage.prompt_tokens, 7);
     assert_eq!(reply.usage.completion_tokens, 0);
     assert_eq!(reply.usage.total_tokens, 7);
@@ -66,7 +76,6 @@ fn one_body_holds_every_input() {
             image_tokens: None,
         })
     );
-    assert!(reply.data[0].kind.is_none());
 }
 
 fn options_are_filtered_to_declared_fields() {
@@ -237,7 +246,7 @@ fn a_captured_raw_request_never_reaches_the_provider() {
         let mut outcome_probe = fixture_probe();
         outcome_probe.model = String::from(COHERE_MODEL);
         outcome_probe.aembedding = aembedding;
-        outcome_probe.raw_request_only = true;
+        outcome_probe.raw_request = RawRequest::Only;
         outcome_probe.replies = vec![Reply::ok(REPLY)];
         let outcome = run(&outcome_probe);
         assert!(
@@ -320,8 +329,8 @@ fn a_bad_status_is_a_typed_failure() {
     let asynchronous = run(&asynchronous_probe);
     assert_eq!(asynchronous.error().status(), Some(400));
     assert_eq!(
-        logged_response(&asynchronous),
-        Decisions::Text(String::from("bad request"))
+        asynchronous.original_response(),
+        Some(&Decisions::Text(String::from("bad request")))
     );
 }
 
@@ -377,7 +386,9 @@ fn numbers(value: &Json) -> Vec<f64> {
         .iter()
         .map(|item| match item {
             Json::Number(number) => number.as_f64().expect("the vector holds finite numbers"),
-            _ => panic!("the legacy record holds numbers"),
+            Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+                panic!("the legacy record holds numbers")
+            }
         })
         .collect()
 }

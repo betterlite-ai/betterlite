@@ -43,7 +43,7 @@ use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::plan::remaining_options;
 use crate::embedding_call::{
     Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse,
-    EmbeddingEnvironment, LogContext, ParamMap,
+    EmbeddingEnvironment, LogContext, ParamMap, embeddings,
 };
 use crate::signing::executor::AwsSigningExecutor;
 
@@ -226,26 +226,7 @@ impl LegacyEmbeddingTransport for FixtureClient {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let body = match request.body {
-            RequestBody::Json(bytes) => bytes,
-            RequestBody::Bytes { data, .. } => data,
-            RequestBody::Empty | RequestBody::Multipart { .. } => Vec::new(),
-        };
-        self.seen.push(Recorded {
-            url: request.url.to_string(),
-            headers: request
-                .headers
-                .iter()
-                .map(|(name, value)| {
-                    (
-                        name.as_str().to_owned(),
-                        value.to_str().unwrap_or_default().to_owned(),
-                    )
-                })
-                .collect(),
-            body,
-            deadline: Some(request.deadline),
-        });
+        self.seen.push(recorded(request));
         let answer = match self.answer() {
             Reply::Answer {
                 status,
@@ -267,6 +248,29 @@ impl LegacyEmbeddingTransport for FixtureClient {
             Reply::Timeout | Reply::Failed => Err(TransportError::Closed),
         };
         ready(answer)
+    }
+}
+
+fn recorded(request: OutboundRequest) -> Recorded {
+    let payload = match request.body {
+        RequestBody::Json(bytes) => bytes,
+        RequestBody::Bytes { data, .. } => data,
+        RequestBody::Empty | RequestBody::Multipart { .. } => Vec::new(),
+    };
+    Recorded {
+        url: request.url.to_string(),
+        headers: request
+            .headers
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.as_str().to_owned(),
+                    value.to_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect(),
+        body: payload,
+        deadline: Some(request.deadline),
     }
 }
 
@@ -452,11 +456,13 @@ pub(super) fn logging_state(redactor: &Redactor) -> LoggingState {
     .expect("the logging fixture builds")
 }
 
+pub(super) type Logger<'env> = &'env dyn Fn(&Json) -> Result<(), PrePostError>;
+
 pub(super) fn prepost_env<'env>(
     state: &LoggingState,
     redactor: &'env Redactor,
     sink: &'env DiscardingSink,
-    logger: Option<&'env dyn Fn(&Json) -> Result<(), PrePostError>>,
+    logger: Option<Logger<'env>>,
 ) -> PrePostEnv<'env> {
     PrePostEnv {
         debug: DebugSettings::default(),
@@ -498,6 +504,14 @@ pub(super) fn object(text: &str) -> Object {
     serde_json::from_str(text).expect("the fixture JSON is an object")
 }
 
+// the raw request capture either logs the whole call or stops at the captured request
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub(super) enum RawRequest {
+    #[default]
+    Full,
+    Only,
+}
+
 #[derive(Clone)]
 pub(super) struct Probe {
     pub(super) model: String,
@@ -518,7 +532,7 @@ pub(super) struct Probe {
     pub(super) secret_key: String,
     pub(super) session_token: Option<String>,
     pub(super) clock: Vec<SystemTime>,
-    pub(super) raw_request_only: bool,
+    pub(super) raw_request: RawRequest,
 }
 
 pub(super) fn fixture_probe() -> Probe {
@@ -548,7 +562,7 @@ pub(super) fn fixture_probe() -> Probe {
         secret_key: String::from("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
         session_token: Some(String::from("session-token")),
         clock: Vec::new(),
-        raw_request_only: false,
+        raw_request: RawRequest::Full,
     }
 }
 
@@ -566,7 +580,7 @@ pub(super) struct Run {
 
 impl Run {
     pub(super) fn error(&self) -> &EmbeddingCallError {
-        self.outcome.as_ref().err().expect("the call fails")
+        self.outcome.as_ref().expect_err("the call fails")
     }
 
     pub(super) fn response(&self) -> &EmbeddingCallResponse {
@@ -597,10 +611,6 @@ impl Run {
         self.state.model_call_details.get("input")
     }
 
-    pub(super) fn pre_call_args(&self) -> Option<&Json> {
-        self.state.model_call_details.get("additional_args")
-    }
-
     pub(super) fn original_response(&self) -> Option<&Json> {
         self.state.model_call_details.get("original_response")
     }
@@ -620,99 +630,144 @@ pub(super) fn run(probe: &Probe) -> Run {
 }
 
 pub(super) fn run_with_source(probe: &Probe, source: &Source) -> Run {
-    let environment: BTreeMap<String, String> = probe
+    let environment = environment(probe);
+    let api_key = probe.api_key.as_deref().map(secret);
+    let bearer = probe.bearer.as_deref().map(secret);
+    let mut call = probe_call(probe, &environment, api_key.as_ref(), bearer.as_ref());
+    let fixtures = fixtures(probe, source);
+    let redactor = redactor();
+    let sink = DiscardingSink;
+    let mut state = logging_state(&redactor);
+    state.request_logging.raw_request_only = probe.raw_request == RawRequest::Only;
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let capture = capture(&snapshots);
+    let env = prepost_env(&state, &redactor, &sink, Some(&capture));
+    let outcome = call_outcome(&mut call, &fixtures, probe.supplied, &mut state, &env);
+    let remaining = remaining_options(&call.optional_params).expect("the remaining options parse");
+    Run {
+        outcome,
+        factory_requests: fixtures.factory.requests(),
+        supplied_requests: supplied_requests(&fixtures),
+        cohere_requests: fixtures.cohere_client.requests(),
+        calls: fixtures.factory.calls(),
+        regions: source.regions(),
+        remaining,
+        state,
+        snapshots: take_snapshots(&snapshots),
+    }
+}
+
+struct Fixture<'source> {
+    factory: Factory,
+    cohere_client: FixtureClient,
+    supplied_client: Option<FixtureClient>,
+    encoding: Counting,
+    signing: AwsSigningExecutor,
+    source: &'source Source,
+    secrets: SecretLookup,
+    region_worker: ManagedRegionWorker,
+    clock: Arc<dyn Clock>,
+}
+
+fn fixtures<'source>(probe: &Probe, source: &'source Source) -> Fixture<'source> {
+    let replies = Replies::queue(&probe.replies);
+    Fixture {
+        factory: Factory::new(replies.clone()),
+        cohere_client: FixtureClient::new(replies.clone()),
+        supplied_client: probe.supplied.map(|_kind| FixtureClient::new(replies)),
+        encoding: Counting,
+        signing: AwsSigningExecutor::default(),
+        source,
+        secrets: secret_lookup(),
+        region_worker: ManagedRegionWorker::new().expect("the region worker starts"),
+        clock: Arc::new(SteppingClock::new(probe.clock.clone(), now())),
+    }
+}
+
+fn environment(probe: &Probe) -> BTreeMap<String, String> {
+    probe
         .environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    let api_key = probe.api_key.as_deref().map(secret);
-    let bearer = probe.bearer.as_deref().map(secret);
-    let replies = Replies::queue(&probe.replies);
-    let clock: Arc<dyn Clock> = Arc::new(SteppingClock::new(probe.clock.clone(), now()));
-    let mut call = EmbeddingCall {
+        .collect()
+}
+
+fn probe_call<'call>(
+    probe: &'call Probe,
+    environment: &'call BTreeMap<String, String>,
+    api_key: Option<&'call SecretString>,
+    bearer: Option<&'call SecretString>,
+) -> EmbeddingCall<'call> {
+    EmbeddingCall {
         model: &probe.model,
         input: &probe.input,
         optional_params: raw_params(&probe.optional_params),
         api_base: probe.api_base.as_deref(),
         extra_headers: probe.extra_headers.as_deref(),
-        api_key: api_key.as_ref(),
+        api_key,
         timeout: probe.timeout.clone(),
         aembedding: probe.aembedding,
         drop_params: probe.drop_params,
         environment: EmbeddingEnvironment {
-            variables: &environment,
+            variables: environment,
             runtime_endpoint: probe.runtime_endpoint.as_deref(),
-            bearer_token: bearer.as_ref(),
+            bearer_token: bearer,
         },
-    };
-    let secrets = secret_lookup();
-    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
-    let factory = Factory::new(replies.clone());
-    let cohere_client = FixtureClient::new(replies.clone());
-    let supplied_client = probe.supplied.map(|_kind| FixtureClient::new(replies));
-    let encoding = Counting;
-    let signing = AwsSigningExecutor::default();
-    let redactor = redactor();
-    let sink = DiscardingSink;
-    let mut state = logging_state(&redactor);
-    state.request_logging.raw_request_only = probe.raw_request_only;
-    let snapshots = Arc::new(Mutex::new(Vec::new()));
-    let capture = {
-        let snapshots = Arc::clone(&snapshots);
-        move |details: &Json| -> Result<(), PrePostError> {
-            snapshots
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(details.clone());
-            Ok(())
-        }
-    };
-    let env = prepost_env(&state, &redactor, &sink, Some(&capture));
-    let runtime = runtime();
-    let outcome = {
-        let mut log = LogContext {
-            state: &mut state,
-            env: &env,
-        };
-        let dependencies = Dependencies {
-            secrets: &secrets,
-            region_worker: &region_worker,
-            source,
-            factory: &factory,
-            transport: &cohere_client,
-            encoding: &encoding,
-            signing: &signing,
-            clock: Arc::clone(&clock),
-        };
-        let supplied = supplied_client
-            .as_ref()
-            .zip(probe.supplied)
-            .map(|(client, kind)| SuppliedClient {
-                kind,
-                transport: client,
-            });
-        runtime.block_on(crate::embedding_call::embeddings(
-            &mut call,
-            dependencies,
-            supplied,
-            &mut log,
-        ))
-    };
-    let remaining = remaining_options(&call.optional_params).expect("the remaining options parse");
-    Run {
-        outcome,
-        factory_requests: factory.requests(),
-        supplied_requests: supplied_client
-            .as_ref()
-            .map_or_else(Vec::new, FixtureClient::requests),
-        cohere_requests: cohere_client.requests(),
-        calls: factory.calls(),
-        regions: source.regions(),
-        remaining,
-        state,
-        snapshots: snapshots
+    }
+}
+
+fn capture(
+    snapshots: &Arc<Mutex<Vec<Json>>>,
+) -> impl Fn(&Json) -> Result<(), PrePostError> + 'static {
+    let shared = Arc::clone(snapshots);
+    move |details: &Json| -> Result<(), PrePostError> {
+        shared
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
+            .push(details.clone());
+        Ok(())
     }
+}
+
+fn call_outcome(
+    call: &mut EmbeddingCall<'_>,
+    fixtures: &Fixture<'_>,
+    supplied_kind: Option<ClientKind>,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
+) -> Result<EmbeddingCallResponse, EmbeddingCallError> {
+    let supplied = fixtures
+        .supplied_client
+        .as_ref()
+        .zip(supplied_kind)
+        .map(|(client, kind)| SuppliedClient {
+            kind,
+            transport: client,
+        });
+    let dependencies = Dependencies {
+        secrets: &fixtures.secrets,
+        region_worker: &fixtures.region_worker,
+        source: fixtures.source,
+        factory: &fixtures.factory,
+        transport: &fixtures.cohere_client,
+        encoding: &fixtures.encoding,
+        signing: &fixtures.signing,
+        clock: Arc::clone(&fixtures.clock),
+    };
+    let mut log = LogContext { state, env };
+    runtime().block_on(embeddings(call, dependencies, supplied, &mut log))
+}
+
+fn supplied_requests(fixtures: &Fixture<'_>) -> Vec<Recorded> {
+    fixtures
+        .supplied_client
+        .as_ref()
+        .map_or_else(Vec::new, FixtureClient::requests)
+}
+
+fn take_snapshots(snapshots: &Arc<Mutex<Vec<Json>>>) -> Vec<Json> {
+    snapshots
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
 }

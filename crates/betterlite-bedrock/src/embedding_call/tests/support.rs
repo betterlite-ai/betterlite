@@ -35,7 +35,9 @@ pub(super) fn vector(embedding: &EmbeddingVector) -> Vec<f64> {
 pub(super) fn fields(value: &Json) -> &IndexMap<String, Json> {
     match value {
         Json::Object(fields) => fields,
-        _ => panic!("the logged value is an object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the logged value is an object")
+        }
     }
 }
 

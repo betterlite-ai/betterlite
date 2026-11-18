@@ -29,8 +29,11 @@ fn an_http_status_stops_the_loop() {
     ));
     assert_eq!(outcome.error().status(), Some(500));
     assert_eq!(outcome.factory_requests.len(), 2);
-    assert_eq!(phases(&outcome.snapshots), ["pre_api_call"]);
-    assert!(outcome.original_response().is_none());
+    // the first item logs its reply, the failed one logs only its pre call
+    assert_eq!(
+        phases(&outcome.snapshots),
+        ["pre_api_call", "post_api_call", "pre_api_call"]
+    );
 }
 
 fn a_timeout_is_the_handler_error() {
