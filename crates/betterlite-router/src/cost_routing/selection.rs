@@ -49,7 +49,7 @@ pub(super) fn select(
         let name = deployment.id().unwrap_or_default();
         let limits = limits(deployment, name)?;
         let cost = cost(costs, deployment, name)?;
-        let usage = used.get(position).copied().unwrap_or_default();
+        let usage = used.get(position).copied().unwrap_or(WindowUsage::ZERO);
         if over_limits(usage, limits, request.input_tokens) {
             continue;
         }

@@ -154,7 +154,7 @@ impl CostWindows for FakeWindows {
                 minute.to_owned(),
             ))
             .copied()
-            .unwrap_or_default()
+            .unwrap_or(WindowUsage::ZERO)
     }
 
     async fn record(&self, model_group: &str, deployment_id: &str, minute: &str, tokens: i64) {
@@ -178,7 +178,7 @@ pub(super) struct PendingWindows;
 #[async_trait]
 impl CostWindows for PendingWindows {
     fn usage(&self, _model_group: &str, _deployment_id: &str, _minute: &str) -> WindowUsage {
-        WindowUsage::default()
+        WindowUsage::ZERO
     }
 
     async fn record(&self, _model_group: &str, _deployment_id: &str, _minute: &str, _tokens: i64) {

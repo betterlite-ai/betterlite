@@ -33,6 +33,7 @@ enum Boundary {
     RpmExcludedOneOver,
     MissingLimitsAreUnlimited,
     ZeroLimitIsUnlimited,
+    EmptyContainersAreUnlimited,
     TopLevelLimitWins,
     LitellmParamsLimitWins,
     TieKeepsPoolOrder,
@@ -63,6 +64,7 @@ enum Boundary {
 #[case::rpm_excluded_one_over(Boundary::RpmExcludedOneOver)]
 #[case::missing_limits_are_unlimited(Boundary::MissingLimitsAreUnlimited)]
 #[case::zero_limit_is_unlimited(Boundary::ZeroLimitIsUnlimited)]
+#[case::empty_containers_are_unlimited(Boundary::EmptyContainersAreUnlimited)]
 #[case::top_level_limit_wins(Boundary::TopLevelLimitWins)]
 #[case::litellm_params_limit_wins(Boundary::LitellmParamsLimitWins)]
 #[case::tie_keeps_pool_order(Boundary::TieKeepsPoolOrder)]
@@ -93,6 +95,7 @@ async fn cost_routing_boundaries(#[case] boundary: Boundary) {
         Boundary::RpmExcludedOneOver => rpm_excluded_one_over(),
         Boundary::MissingLimitsAreUnlimited => missing_limits_are_unlimited(),
         Boundary::ZeroLimitIsUnlimited => zero_limit_is_unlimited(),
+        Boundary::EmptyContainersAreUnlimited => empty_containers_are_unlimited(),
         Boundary::TopLevelLimitWins => top_level_limit_wins(),
         Boundary::LitellmParamsLimitWins => litellm_params_limit_wins(),
         Boundary::TieKeepsPoolOrder => tie_keeps_pool_order(),
@@ -238,6 +241,18 @@ fn zero_limit_is_unlimited() {
         router.select(&one("0.1", "0.1"), &selection(&zero_info, 0)),
         Ok(Some(0))
     );
+}
+
+// Python truthiness reads an empty string, list or object as absent, so each limit source falls through
+fn empty_containers_are_unlimited() {
+    let router = seeded(&[("a", 100, 0)]);
+    for empty in [text(""), Json::List(Vec::new()), Json::Object(object(&[]))] {
+        let pool = [spec("a", MODEL, &[(TPM, empty)], &[], &[])];
+        assert_eq!(
+            router.select(&one("0.1", "0.1"), &selection(&pool, 0)),
+            Ok(Some(0))
+        );
+    }
 }
 
 fn top_level_limit_wins() {

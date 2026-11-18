@@ -28,6 +28,9 @@ enum Behavior {
     UnknownModelCostsTen,
     NullCatalogPriceTakesFive,
     CatalogEntryFromUnpricedSibling,
+    CatalogEntryKeepsItsOwnFields,
+    NullOverrideKeepsTheCatalog,
+    EqualCatalogSourcesKeepTheFirst,
     ScreensByCapacity,
     AppendsUnseenDeployments,
     KeepsDeploymentsGoneFromThePool,
@@ -50,6 +53,9 @@ enum Behavior {
 #[case::unknown_model_costs_ten(Behavior::UnknownModelCostsTen)]
 #[case::null_catalog_price_takes_five(Behavior::NullCatalogPriceTakesFive)]
 #[case::catalog_entry_from_unpriced_sibling(Behavior::CatalogEntryFromUnpricedSibling)]
+#[case::catalog_entry_keeps_its_own_fields(Behavior::CatalogEntryKeepsItsOwnFields)]
+#[case::null_override_keeps_the_catalog(Behavior::NullOverrideKeepsTheCatalog)]
+#[case::equal_catalog_sources_keep_the_first(Behavior::EqualCatalogSourcesKeepTheFirst)]
 #[case::screens_by_capacity(Behavior::ScreensByCapacity)]
 #[case::appends_unseen_deployments(Behavior::AppendsUnseenDeployments)]
 #[case::keeps_deployments_gone_from_the_pool(Behavior::KeepsDeploymentsGoneFromThePool)]
@@ -72,6 +78,9 @@ async fn cost_routing_behaviors(#[case] behavior: Behavior) {
         Behavior::UnknownModelCostsTen => unknown_model_costs_ten(),
         Behavior::NullCatalogPriceTakesFive => null_catalog_price_takes_five(),
         Behavior::CatalogEntryFromUnpricedSibling => catalog_entry_from_unpriced_sibling(),
+        Behavior::CatalogEntryKeepsItsOwnFields => catalog_entry_keeps_its_own_fields(),
+        Behavior::NullOverrideKeepsTheCatalog => null_override_keeps_the_catalog(),
+        Behavior::EqualCatalogSourcesKeepTheFirst => equal_catalog_sources_keep_the_first(),
         Behavior::ScreensByCapacity => screens_by_capacity(),
         Behavior::AppendsUnseenDeployments => appends_unseen_deployments().await,
         Behavior::KeepsDeploymentsGoneFromThePool => keeps_deployments_gone_from_the_pool().await,
@@ -266,6 +275,74 @@ fn catalog_entry_from_unpriced_sibling() {
     let costs = DeploymentCosts::from_deployments(&pool);
     // the zero override falls back to the sibling's catalog entry (0.7), so the cheap deployment wins
     assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+// a mirrored override hides only its own field, so the other side still reads the catalog for every sibling
+fn catalog_entry_keeps_its_own_fields() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec("d1", MODEL, &[(INPUT_COST, number("0.25"))], &[], &[]),
+        spec("d2", MODEL, &[(OUTPUT_COST, number("0.25"))], &[], &[]),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // d1 reads its own input and the 5.0 default output; d2 reads the masked input as the default, so both cost 5.25
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// Deployment.__init__ does not mirror a null price, so the catalog value the entry carries stays readable
+fn null_override_keeps_the_catalog() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let nulls = spec(
+        "a",
+        "openai/null",
+        &[(INPUT_COST, Json::Null)],
+        &[(INPUT_COST, number("0.3")), (OUTPUT_COST, number("0.3"))],
+        &[],
+    );
+    let pool = [
+        nulls,
+        spec(
+            "b",
+            "openai/other",
+            &[],
+            &[(INPUT_COST, number("2")), (OUTPUT_COST, number("2"))],
+            &[],
+        ),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // a null override leaves a at 0.6; treating the null as mirrored would make its input the 5.0 default
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// the first deployment that overwrote the fewest catalog fields supplies the entry; an equally clean later one does not
+fn equal_catalog_sources_keep_the_first() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec(
+            "m1",
+            "openai/m",
+            &[],
+            &[(INPUT_COST, number("0.1")), (OUTPUT_COST, number("0.1"))],
+            &[],
+        ),
+        spec(
+            "m2",
+            "openai/m",
+            &[],
+            &[(INPUT_COST, number("0.2")), (OUTPUT_COST, number("0.2"))],
+            &[],
+        ),
+        spec(
+            "n",
+            "openai/n",
+            &[],
+            &[(INPUT_COST, number("0.15")), (OUTPUT_COST, number("0.15"))],
+            &[],
+        ),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // m is priced from m1 at 0.2 and beats n at 0.3; taking m2 instead would price m at 0.4
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
 }
 
 fn screens_by_capacity() {

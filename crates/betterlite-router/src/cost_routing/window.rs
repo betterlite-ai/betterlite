@@ -12,10 +12,18 @@ use crate::routing_value_store::{RouteKey, RouteValue, RoutingValueStore, StoreR
 use super::keys::window_keys;
 
 // One deployment's usage inside one minute: the tpm and rpm values the pinned map holds.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct WindowUsage {
     pub tokens: i64,
     pub requests: i64,
+}
+
+impl WindowUsage {
+    // a deployment with no stored counter in this minute, the pinned map's missing-key read
+    pub const ZERO: Self = Self {
+        tokens: 0,
+        requests: 0,
+    };
 }
 
 // The cost windows a success observation writes and a selection reads.
@@ -70,7 +78,7 @@ pub struct ColdWindows;
 #[async_trait]
 impl CostWindows for ColdWindows {
     fn usage(&self, _model_group: &str, _deployment_id: &str, _minute: &str) -> WindowUsage {
-        WindowUsage::default()
+        WindowUsage::ZERO
     }
 
     async fn record(&self, _model_group: &str, _deployment_id: &str, _minute: &str, _tokens: i64) {}
