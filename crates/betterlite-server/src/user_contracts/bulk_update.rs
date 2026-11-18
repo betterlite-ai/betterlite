@@ -21,15 +21,6 @@ struct BulkUpdateUserWire {
     user_updates: Option<JsonData>,
 }
 
-// B8411's decoders take one JSON value and read its raw keys, so each nested record keeps its typed ContractError.
-fn decode_record<T>(
-    value: &JsonData,
-    read: fn(&JsonValue) -> Result<T, ContractError>,
-) -> Result<T, ContractError> {
-    let document = serde_json::to_value(value).map_err(ContractError::from)?;
-    read(&document)
-}
-
 #[derive(Debug, Clone)]
 pub struct BulkUpdateUserRequest {
     pub users: Option<Vec<UpdateUserRequest>>,
@@ -48,14 +39,20 @@ impl BulkUpdateUserRequest {
             .as_ref()
             .map(|rows| {
                 rows.iter()
-                    .map(|row| decode_record(row, UpdateUserRequest::from_value))
+                    .map(|row| {
+                        let document = serde_json::to_value(row).map_err(ContractError::from)?;
+                        UpdateUserRequest::from_value(&document)
+                    })
                     .collect::<Result<Vec<_>, ContractError>>()
             })
             .transpose()?;
         let user_updates: Option<UpdateUserFields> = wire
             .user_updates
             .as_ref()
-            .map(|update| decode_record(update, UpdateUserFields::from_value))
+            .map(|update| {
+                let document = serde_json::to_value(update).map_err(ContractError::from)?;
+                UpdateUserFields::from_value(&document)
+            })
             .transpose()?;
         // pydantic defaults only an absent all_users, so an explicit null stays null
         let all_users = if fields.contains_key("all_users") {
