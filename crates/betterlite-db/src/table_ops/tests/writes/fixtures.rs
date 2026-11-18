@@ -11,27 +11,35 @@ use crate::table_ops::tests::support::{at, json};
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
-pub(super) fn team_clock_rows() -> Vec<BTreeMap<TeamColumn, TokenValue>> {
-    vec![
-        BTreeMap::from([
-            (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
-            (
-                TeamColumn::TeamAlias,
-                TokenValue::Text(String::from("stamped")),
-            ),
-        ]),
-        BTreeMap::from([
-            (TeamColumn::TeamId, TokenValue::Text(String::from("team-2"))),
-            (
-                TeamColumn::TeamAlias,
-                TokenValue::Text(String::from("explicit")),
-            ),
-            (
-                TeamColumn::UpdatedAt,
-                TokenValue::Timestamp(at(1_700_000_000)),
-            ),
-        ]),
-    ]
+pub(super) const ROLLBACK_FIELDS: [[(TokenColumn, &str); 2]; 2] = [
+    [
+        (TokenColumn::Token, "sk-tok-1"),
+        (TokenColumn::KeyAlias, "changed"),
+    ],
+    [
+        (TokenColumn::Token, "sk-tok-2"),
+        (TokenColumn::Spend, "not-a-number"),
+    ],
+];
+
+pub(super) const TEAM_CLOCK_FIELDS: [[(TeamColumn, &str); 2]; 2] = [
+    [
+        (TeamColumn::TeamId, "team-1"),
+        (TeamColumn::TeamAlias, "stamped"),
+    ],
+    [
+        (TeamColumn::TeamId, "team-2"),
+        (TeamColumn::TeamAlias, "explicit"),
+    ],
+];
+
+pub(super) fn text_fields<Column: Ord, const N: usize>(
+    fields: [(Column, &str); N],
+) -> BTreeMap<Column, TokenValue> {
+    fields
+        .into_iter()
+        .map(|(column, value)| (column, TokenValue::Text(value.to_owned())))
+        .collect()
 }
 
 pub(super) fn config_values() -> [(String, JsonData); 2] {
@@ -48,19 +56,14 @@ pub(super) fn config_values() -> [(String, JsonData); 2] {
 }
 
 pub(super) fn spend_payload() -> BTreeMap<SpendColumn, TokenValue> {
-    BTreeMap::from([
-        (
-            SpendColumn::RequestId,
-            TokenValue::Text(String::from("req-1")),
-        ),
-        (
-            SpendColumn::CallType,
-            TokenValue::Text(String::from("completion")),
-        ),
-        (
-            SpendColumn::ApiKey,
-            TokenValue::Text(String::from("sk-fixture")),
-        ),
+    let mut row = text_fields([
+        (SpendColumn::RequestId, "req-1"),
+        (SpendColumn::CallType, "completion"),
+        (SpendColumn::ApiKey, "sk-fixture"),
+        (SpendColumn::Model, "gpt-4"),
+        (SpendColumn::User, "u-1"),
+    ]);
+    row.extend([
         (SpendColumn::Spend, TokenValue::Number(Decimal::new(15, 1))),
         (SpendColumn::TotalTokens, TokenValue::Integer(10)),
         (
@@ -71,94 +74,33 @@ pub(super) fn spend_payload() -> BTreeMap<SpendColumn, TokenValue> {
             SpendColumn::EndTime,
             TokenValue::Timestamp(at(1_000_000_000)),
         ),
-        (SpendColumn::Model, TokenValue::Text(String::from("gpt-4"))),
-        (SpendColumn::User, TokenValue::Text(String::from("u-1"))),
-    ])
+    ]);
+    row
 }
 
-pub(super) fn notification_payload() -> BTreeMap<NotificationColumn, TokenValue> {
-    BTreeMap::from([
-        (
-            NotificationColumn::RequestId,
-            TokenValue::Text(String::from("req-n")),
-        ),
-        (
-            NotificationColumn::UserId,
-            TokenValue::Text(String::from("u-1")),
-        ),
-        (
-            NotificationColumn::Models,
-            TokenValue::TextArray(vec![String::from("gpt-4")]),
-        ),
-        (
-            NotificationColumn::Justification,
-            TokenValue::Text(String::from("needs access")),
-        ),
-        (
-            NotificationColumn::Status,
-            TokenValue::Text(String::from("pending")),
-        ),
-    ])
-}
-
-pub(super) fn rollback_rows() -> Vec<BTreeMap<TokenColumn, TokenValue>> {
-    vec![
-        BTreeMap::from([
-            (
-                TokenColumn::Token,
-                TokenValue::Text(String::from("sk-tok-1")),
-            ),
-            (
-                TokenColumn::KeyAlias,
-                TokenValue::Text(String::from("changed")),
-            ),
-        ]),
-        BTreeMap::from([
-            (
-                TokenColumn::Token,
-                TokenValue::Text(String::from("sk-tok-2")),
-            ),
-            (
-                TokenColumn::Spend,
-                TokenValue::Text(String::from("not-a-number")),
-            ),
-        ]),
-    ]
-}
+pub(super) const NOTIFICATION_FIELDS: [(NotificationColumn, &str); 4] = [
+    (NotificationColumn::RequestId, "req-n"),
+    (NotificationColumn::UserId, "u-1"),
+    (NotificationColumn::Justification, "needs access"),
+    (NotificationColumn::Status, "pending"),
+];
 
 pub(super) fn user_batch_rows() -> Vec<BTreeMap<UserColumn, TokenValue>> {
+    let mut updated = text_fields([(UserColumn::UserId, "u-1")]);
+    updated.extend([
+        (UserColumn::Spend, TokenValue::Number(Decimal::new(25, 1))),
+        (UserColumn::UserAlias, TokenValue::Null),
+    ]);
     vec![
-        BTreeMap::from([
-            (UserColumn::UserId, TokenValue::Text(String::from("u-1"))),
-            (UserColumn::Spend, TokenValue::Number(Decimal::new(25, 1))),
-            (UserColumn::UserAlias, TokenValue::Null),
-        ]),
-        BTreeMap::from([
-            (UserColumn::UserId, TokenValue::Text(String::from("u-2"))),
-            (UserColumn::UserAlias, TokenValue::Text(String::from("new"))),
-        ]),
+        updated,
+        text_fields([(UserColumn::UserId, "u-2"), (UserColumn::UserAlias, "new")]),
     ]
-}
-
-pub(super) fn budget_batch_rows() -> Vec<BTreeMap<BudgetColumn, TokenValue>> {
-    let mut updated = budget_payload("b-1");
-    updated.insert(
-        BudgetColumn::MaxBudget,
-        TokenValue::Number(Decimal::new(1000, 2)),
-    );
-    vec![updated, budget_payload("b-2")]
 }
 
 pub(super) fn budget_payload(id: &str) -> BTreeMap<BudgetColumn, TokenValue> {
-    BTreeMap::from([
-        (BudgetColumn::BudgetId, TokenValue::Text(id.to_owned())),
-        (
-            BudgetColumn::CreatedBy,
-            TokenValue::Text(String::from("created")),
-        ),
-        (
-            BudgetColumn::UpdatedBy,
-            TokenValue::Text(String::from("updated")),
-        ),
+    text_fields([
+        (BudgetColumn::BudgetId, id),
+        (BudgetColumn::CreatedBy, "created"),
+        (BudgetColumn::UpdatedBy, "updated"),
     ])
 }

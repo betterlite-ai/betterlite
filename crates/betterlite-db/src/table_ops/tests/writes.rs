@@ -1,8 +1,8 @@
 #![cfg(test)]
 mod fixtures;
 use fixtures::{
-    budget_batch_rows, budget_payload, config_values, notification_payload, rollback_rows,
-    spend_payload, team_clock_rows, user_batch_rows,
+    NOTIFICATION_FIELDS, ROLLBACK_FIELDS, TEAM_CLOCK_FIELDS, budget_payload, config_values,
+    spend_payload, text_fields, user_batch_rows,
 };
 
 use crate::table_ops::deletes::TableDeletes as _;
@@ -269,7 +269,12 @@ async fn update_many_teams_stamps_updated_at_from_the_injected_clock() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::with_clock(Box::new(ManualClock::new(1_800_000_000)));
     let ops = ports.operations(&client);
-    let rows = team_clock_rows();
+    let [stamped, mut explicit] = TEAM_CLOCK_FIELDS.map(text_fields);
+    explicit.insert(
+        TeamColumn::UpdatedAt,
+        TokenValue::Timestamp(at(1_700_000_000)),
+    );
+    let rows = [stamped, explicit];
     ops.update_many_teams(&rows)
         .await
         .expect("the team batch runs");
@@ -448,7 +453,11 @@ async fn insert_user_notification_writes_the_row_and_keeps_the_first_status() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let data = notification_payload();
+    let mut data = text_fields(NOTIFICATION_FIELDS);
+    data.insert(
+        NotificationColumn::Models,
+        TokenValue::TextArray(vec![String::from("gpt-4")]),
+    );
     let row = ops
         .insert_user_notification(&data)
         .await
@@ -539,7 +548,7 @@ async fn update_many_keys_rolls_back_the_whole_batch() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let rows = rollback_rows();
+    let rows = ROLLBACK_FIELDS.map(text_fields);
     let error = ops
         .update_many_keys(&rows)
         .await
@@ -639,7 +648,12 @@ async fn update_many_budgets_sets_values_and_inserts_rows() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let rows = budget_batch_rows();
+    let mut updated = budget_payload("b-1");
+    updated.insert(
+        BudgetColumn::MaxBudget,
+        TokenValue::Number(Decimal::new(1000, 2)),
+    );
+    let rows = [updated, budget_payload("b-2")];
     ops.update_many_budgets(&rows)
         .await
         .expect("the budget batch runs");
