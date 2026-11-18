@@ -7,7 +7,6 @@ from typing import Literal, NotRequired, Protocol, TypedDict, cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L51-L62
 import httpx
-import litellm
 from litellm.exceptions import Timeout
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.embed import embedding as embedding_module
@@ -250,7 +249,7 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     except BedrockError as error:
         kind = "http"
         status = error.status_code
-    except Timeout:
+    except Timeout:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356
         kind = "bedrock"
         status = 408
     except httpx.TimeoutException:
