@@ -1,14 +1,48 @@
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import TypedDict
 
-from opentelemetry.sdk.trace import ReadableSpan
+from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
+from litellm.types.utils import StandardCallbackDynamicParams
+from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import Tracer
 from opentelemetry.util.types import AttributeValue
 from pydantic import JsonValue, TypeAdapter, ValidationError
+from typing_extensions import override
 
 DICT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+class Probe(OpenTelemetry):
+    probe_calls: list[str]
+    probe_tracer: Tracer
+    dynamic_headers: dict[str, str] | None
+    dynamic_config: OpenTelemetryConfig | None
+
+    @override
+    def _cached_dynamic_tracer(
+        self, cache_key: str, build: Callable[[], TracerProvider], owns_exporter: bool
+    ) -> Tracer:
+        self.probe_calls.append(cache_key)
+        return self.probe_tracer
+
+    @override
+    def construct_dynamic_otel_headers(
+        self,
+        # ast-grep-ignore: no-long-names
+        standard_callback_dynamic_params: StandardCallbackDynamicParams,
+    ) -> dict[str, str] | None:
+        return self.dynamic_headers
+
+    @override
+    def construct_dynamic_otel_config(
+        self,
+        # ast-grep-ignore: no-long-names
+        standard_callback_dynamic_params: StandardCallbackDynamicParams,
+    ) -> OpenTelemetryConfig | None:
+        return self.dynamic_config
 
 
 class SpanLine(TypedDict):

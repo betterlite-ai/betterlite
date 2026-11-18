@@ -1,19 +1,16 @@
 import asyncio
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypeAlias, TypedDict
 
-from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
+from litellm.integrations.opentelemetry import OpenTelemetryConfig
 from litellm.integrations.opentelemetry_utils.gen_ai_semconv import OTELSemconvCategory
-from litellm.types.utils import StandardCallbackDynamicParams
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-from opentelemetry.trace import Span, Tracer, use_span
+from opentelemetry.trace import Span, use_span
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
-from .observe import SpanLine, read_spans
+from .observe import Probe, SpanLine, read_spans
 
 PARENT_SPAN_KEY = "litellm_parent_otel_span"
 DICT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
@@ -65,34 +62,6 @@ Scenario: TypeAlias = LogCall | TracerCall | GuardrailCall
 class Observed(TypedDict):
     choice: str
     spans: list[SpanLine]
-
-
-class Probe(OpenTelemetry):
-    probe_calls: list[str]
-    probe_tracer: Tracer
-    dynamic_headers: dict[str, str] | None
-    dynamic_config: OpenTelemetryConfig | None
-
-    @override
-    def _cached_dynamic_tracer(
-        self, cache_key: str, build: Callable[[], TracerProvider], owns_exporter: bool
-    ) -> Tracer:
-        self.probe_calls.append(cache_key)
-        return self.probe_tracer
-
-    @override
-    def construct_dynamic_otel_headers(
-        self,
-        standard_callback_dynamic_params: StandardCallbackDynamicParams,
-    ) -> dict[str, str] | None:
-        return self.dynamic_headers
-
-    @override
-    def construct_dynamic_otel_config(
-        self,
-        standard_callback_dynamic_params: StandardCallbackDynamicParams,
-    ) -> OpenTelemetryConfig | None:
-        return self.dynamic_config
 
 
 def probe_logger(scenario: Common, provider: TracerProvider) -> Probe:
