@@ -24,6 +24,9 @@ fn replays_the_bedrock_services_realtime_events_corpus() {
     let mut replayed = 0_usize;
     for entry in fs::read_dir(corpus_dir()).expect("the corpus directory") {
         let path = entry.expect("a corpus entry").path();
+        if !path.is_file() {
+            continue;
+        }
         let bytes = fs::read(&path).expect("a corpus file");
         let name = path
             .file_stem()
