@@ -71,7 +71,7 @@ fn failures(
             red: vec![Red::Report],
         }));
     }
-    let verdict = checks::run(worktree, &task, &checks::selection::committed())?;
+    let verdict = checks::run(worktree, &task, &checks::selection::unbuilt())?;
     if verdict.passed {
         return Ok(None);
     }

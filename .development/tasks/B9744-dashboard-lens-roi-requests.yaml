@@ -6,7 +6,7 @@ description: >-
   cases. This task closes only page-form coverage gaps and corrects the worker deployment
   instructions. B147-route-audit.md records method, query, body, response fields and owners.
   No Lens worker protocol, trace reader, GitHub client or ROI algorithm is implemented here.
-  Use the booted HTTP oracle with B9740's independent current-schema fixture and B5076's Prisma
+  Use the booted HTTP oracle with B9740's independent current-schema fixture and B9942's Prisma
   setup. The same typed seed reaches two separate databases. Keep master-key, internal-user
   and admin-viewer credentials distinct and compare the actual role-error envelope.
 
