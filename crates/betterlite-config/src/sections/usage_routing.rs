@@ -39,9 +39,12 @@ enum RawTtl {
 
 // the configured ttl; None keeps the one minute RoutingArgs declares
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Settings {
+pub struct UsageRoutingSettings {
     pub ttl_seconds: Option<i64>,
 }
+
+// boxed so the section adds a pointer to Sections, which sits at clippy's large_futures limit
+pub type Settings = Box<UsageRoutingSettings>;
 
 impl Section for Raw {
     type Settings = Settings;
@@ -62,9 +65,9 @@ impl Section for Raw {
                 value: false,
             });
         };
-        Ok(Settings {
+        Ok(Box::new(UsageRoutingSettings {
             ttl_seconds: resolve_number(Some(number), TTL_PATH, lookup, integer)?,
-        })
+        }))
     }
 }
 
