@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::future::{Future, pending};
 use std::mem;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, Weak};
 use std::thread;
 use std::time::Duration;
@@ -33,123 +34,72 @@ const TTL: Duration = Duration::from_secs(60);
 const RPM_KEY: &str = "global_router:dep-a:gpt-4o:rpm:00-00";
 const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 
-pub(crate) async fn run(name: &str) {
-    if flush_case(name).await {
-        return;
-    }
-    if sync_case(name).await {
-        return;
-    }
-    if callback_case(name).await {
-        return;
-    }
-    counter_case(name).await;
-}
+type CaseFuture = Pin<Box<dyn Future<Output = ()>>>;
+type Case = fn() -> CaseFuture;
 
-// a matched case ran its check, so the dispatcher stops before the next group
-async fn ran<F: Future<Output = ()>>(future: F) -> bool {
-    future.await;
-    true
-}
+// one table keeps the case names and their futures together; the dispatcher only finds the entry
+#[rustfmt::skip]
+const CASES: &[(&str, Case)] = &[
+    ("callback_before_snapshot", || Box::pin(super::flush::before_snapshot())),
+    ("callback_after_snapshot", || Box::pin(super::flush::after_snapshot(1025, 2050, 0, 2, true))),
+    ("refill_at_flush_threshold", || Box::pin(super::flush::after_snapshot(1024, 2049, 0, 2, false))),
+    ("refill_below_flush_threshold", || Box::pin(super::flush::after_snapshot(1023, 1025, 1023, 1, false))),
+    ("callback_after_final_check", || Box::pin(super::flush::after_final_check())),
+    ("sync_merges_the_stored_value", || Box::pin(sync_merges_the_stored_value())),
+    ("sync_keeps_a_value_redis_is_behind_on", || Box::pin(sync_keeps_a_value_redis_is_behind_on())),
+    ("sync_treats_a_missing_reply_as_zero", || Box::pin(sync_treats_a_missing_reply_as_zero())),
+    ("failed_push_discards_its_batch", || Box::pin(failed_push_discards_its_batch())),
+    ("periodic_sync_writes_on_the_interval", || Box::pin(periodic_sync_writes_on_the_interval())),
+    ("no_periodic_task_without_batching", || Box::pin(no_periodic_task_without_batching())),
+    ("cleanup_stops_the_periodic_task", || Box::pin(cleanup_stops_the_periodic_task())),
+    ("retire_pushes_and_stops_the_task", || Box::pin(retire_pushes_and_stops_the_task())),
+    (
+        "sync_compresses_repeated_keys_into_one_operation",
+        || Box::pin(sync_compresses_repeated_keys_into_one_operation()),
+    ),
+    (
+        "concurrent_increment_during_the_push_is_not_double_counted",
+        || Box::pin(concurrent_increment_during_the_push_is_not_double_counted()),
+    ),
+    (
+        "concurrent_increment_under_a_leading_store_is_merged_once",
+        || Box::pin(concurrent_increment_under_a_leading_store_is_merged_once()),
+    ),
+    ("failure_callback_increment_survives_the_merge", || Box::pin(failure_callback_increment_survives_the_merge())),
+    ("real_store_smoke", || Box::pin(real_store_smoke())),
+    ("callback_saturation_flushes_the_whole_queue", || Box::pin(callback_saturation_flushes_the_whole_queue())),
+    ("callback_saturation_honors_the_caller_deadline", || Box::pin(callback_saturation_honors_the_caller_deadline())),
+    ("full_queue_callback_flushes_both_entries", || Box::pin(full_queue_callback_flushes_both_entries())),
+    ("sync_holding_the_gate_drains_queued_callbacks", || Box::pin(sync_holding_the_gate_drains_queued_callbacks())),
+    ("periodic_sync_drains_queued_callbacks", || Box::pin(periodic_sync_drains_queued_callbacks())),
+    (
+        "scheduled_flush_past_the_deadline_drops_queued_callbacks",
+        || Box::pin(flush_discards_callbacks(FlushFailure::Deadline)),
+    ),
+    ("failed_scheduled_flush_drops_queued_callbacks", || Box::pin(flush_discards_callbacks(FlushFailure::Store))),
+    ("cleanup_waits_for_the_scheduled_flush", || Box::pin(cleanup_waits_for_the_scheduled_flush())),
+    (
+        "saturated_flush_past_the_deadline_drops_its_delta",
+        || Box::pin(saturated_flush_past_the_deadline_drops_its_delta()),
+    ),
+    ("window_increment_returns_and_queues", || Box::pin(window_increment_returns_and_queues())),
+    ("window_increment_without_a_store", || Box::pin(window_increment_without_a_store())),
+    ("fractional_spend_is_kept_exactly", || Box::pin(fractional_spend_is_kept_exactly())),
+    ("spend_beyond_i64_adds", || Box::pin(spend_beyond_i64_adds())),
+    ("tracked_key_accessors", || Box::pin(async { tracked_key_accessors(); })),
+    ("success_and_failure_counters", || Box::pin(async { success_and_failure_counters(); })),
+    ("usage_pipeline_increments_locally_and_queues", || Box::pin(usage_pipeline_increments_locally_and_queues())),
+    ("usage_key_merges_the_shared_store_total", || Box::pin(usage_key_merges_the_shared_store_total())),
+    ("counter_write_and_read_round_trip", || Box::pin(async { counter_write_and_read_round_trip(); })),
+    ("metadata_bucket_selection", || Box::pin(async { metadata_bucket_selection(); })),
+    ("key_pattern_is_absent", || Box::pin(async { key_pattern_is_absent(); })),
+];
 
-async fn flush_case(name: &str) -> bool {
-    match name {
-        "callback_before_snapshot" => ran(super::flush::before_snapshot()).await,
-        "callback_after_snapshot" => {
-            ran(super::flush::after_snapshot(1025, 2050, 0, 2, true)).await
-        }
-        "refill_at_flush_threshold" => {
-            ran(super::flush::after_snapshot(1024, 2049, 0, 2, false)).await
-        }
-        "refill_below_flush_threshold" => {
-            ran(super::flush::after_snapshot(1023, 1025, 1023, 1, false)).await
-        }
-        "callback_after_final_check" => ran(super::flush::after_final_check()).await,
-        _ => false,
-    }
-}
-
-async fn sync_case(name: &str) -> bool {
-    match name {
-        "sync_merges_the_stored_value" => ran(sync_merges_the_stored_value()).await,
-        "sync_keeps_a_value_redis_is_behind_on" => {
-            ran(sync_keeps_a_value_redis_is_behind_on()).await
-        }
-        "sync_treats_a_missing_reply_as_zero" => ran(sync_treats_a_missing_reply_as_zero()).await,
-        "failed_push_discards_its_batch" => ran(failed_push_discards_its_batch()).await,
-        "periodic_sync_writes_on_the_interval" => ran(periodic_sync_writes_on_the_interval()).await,
-        "no_periodic_task_without_batching" => ran(no_periodic_task_without_batching()).await,
-        "cleanup_stops_the_periodic_task" => ran(cleanup_stops_the_periodic_task()).await,
-        "retire_pushes_and_stops_the_task" => ran(retire_pushes_and_stops_the_task()).await,
-        "sync_compresses_repeated_keys_into_one_operation" => {
-            ran(sync_compresses_repeated_keys_into_one_operation()).await
-        }
-        "concurrent_increment_during_the_push_is_not_double_counted" => {
-            ran(concurrent_increment_during_the_push_is_not_double_counted()).await
-        }
-        "concurrent_increment_under_a_leading_store_is_merged_once" => {
-            ran(concurrent_increment_under_a_leading_store_is_merged_once()).await
-        }
-        "failure_callback_increment_survives_the_merge" => {
-            ran(failure_callback_increment_survives_the_merge()).await
-        }
-        "real_store_smoke" => ran(real_store_smoke()).await,
-        _ => false,
-    }
-}
-
-async fn callback_case(name: &str) -> bool {
-    match name {
-        "callback_saturation_flushes_the_whole_queue" => {
-            ran(callback_saturation_flushes_the_whole_queue()).await
-        }
-        "callback_saturation_honors_the_caller_deadline" => {
-            ran(callback_saturation_honors_the_caller_deadline()).await
-        }
-        "full_queue_callback_flushes_both_entries" => {
-            ran(full_queue_callback_flushes_both_entries()).await
-        }
-        "sync_holding_the_gate_drains_queued_callbacks" => {
-            ran(sync_holding_the_gate_drains_queued_callbacks()).await
-        }
-        "periodic_sync_drains_queued_callbacks" => {
-            ran(periodic_sync_drains_queued_callbacks()).await
-        }
-        "scheduled_flush_past_the_deadline_drops_queued_callbacks" => {
-            ran(flush_discards_callbacks(FlushFailure::Deadline)).await
-        }
-        "failed_scheduled_flush_drops_queued_callbacks" => {
-            ran(flush_discards_callbacks(FlushFailure::Store)).await
-        }
-        "cleanup_waits_for_the_scheduled_flush" => {
-            ran(cleanup_waits_for_the_scheduled_flush()).await
-        }
-        "saturated_flush_past_the_deadline_drops_its_delta" => {
-            ran(saturated_flush_past_the_deadline_drops_its_delta()).await
-        }
-        _ => false,
-    }
-}
-
-async fn counter_case(name: &str) {
-    match name {
-        "window_increment_returns_and_queues" => window_increment_returns_and_queues().await,
-        "window_increment_without_a_store" => window_increment_without_a_store().await,
-        "fractional_spend_is_kept_exactly" => fractional_spend_is_kept_exactly().await,
-        "spend_beyond_i64_adds" => spend_beyond_i64_adds().await,
-        "tracked_key_accessors" => tracked_key_accessors(),
-        "success_and_failure_counters" => success_and_failure_counters(),
-        "usage_pipeline_increments_locally_and_queues" => {
-            usage_pipeline_increments_locally_and_queues().await;
-        }
-        "usage_key_merges_the_shared_store_total" => {
-            usage_key_merges_the_shared_store_total().await
-        }
-        "counter_write_and_read_round_trip" => counter_write_and_read_round_trip(),
-        "metadata_bucket_selection" => metadata_bucket_selection(),
-        "key_pattern_is_absent" => key_pattern_is_absent(),
-        _ => panic!("unknown case {name}"),
-    }
+pub(crate) fn run(name: &str) -> Pin<Box<dyn Future<Output = ()>>> {
+    let Some((_, case)) = CASES.iter().find(|(case_name, _)| *case_name == name) else {
+        panic!("unknown case {name}");
+    };
+    (*case)()
 }
 
 async fn window_increment_returns_and_queues() {
@@ -352,6 +302,11 @@ async fn periodic_sync_writes_on_the_interval() {
     yield_now().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2_i64)));
     // a failed tick logs and sleeps again, so the next interval retries
+    retry_after_a_failed_tick(&harness).await;
+    harness.counters.cleanup().await;
+}
+
+async fn retry_after_a_failed_tick(harness: &Harness) {
     harness.store.set_down(true);
     fill_window(&harness.counters, RPM_KEY, 1).await;
     advance(Duration::from_millis(250)).await;
@@ -363,7 +318,6 @@ async fn periodic_sync_writes_on_the_interval() {
     yield_now().await;
     assert_eq!(harness.store.calls(), 3);
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(5_i64)));
-    harness.counters.cleanup().await;
 }
 
 async fn no_periodic_task_without_batching() {

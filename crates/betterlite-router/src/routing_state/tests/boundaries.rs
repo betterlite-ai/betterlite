@@ -466,7 +466,7 @@ fn metadata_first_bucket_decides() {
     let empty_model = channels(
         r#"{"litellm_metadata": {"model_info": {}}, "metadata": {"model_info": {"id": "b"}}}"#,
     );
-    let empty_name = deployment_channel(&empty_model).map(|(name, _bucket)| name);
+    let empty_name = deployment_channel(&empty_model).map(|(channel, _bucket)| channel);
     assert_eq!(empty_name, Some("litellm_metadata"));
 }
 
