@@ -244,6 +244,7 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::escaped_long_unicode("\\U000000e9", 2)]
 #[case::named_group_non_ascii("(?P<\u{e9}>a)", 3)]
 #[case::named_group_underscore("(?P<_a>a)", 3)]
+#[case::named_group_inner_underscore("(?P<a_b>a)", 3)]
 #[case::verbose_comment_to_newline("(?x)a#c\nb", 3)]
 #[case::verbose_long_comment("(?x)a#cd\nb", 3)]
 #[case::verbose_escaped_hash("(?x)a\\#b", 4)]
@@ -352,6 +353,7 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::short_unicode("\\u041", PatternProblem::Syntax)]
 #[case::digit_group_name("(?P<1a>a)", PatternProblem::Syntax)]
 #[case::dotted_group_name("(?P<a.b>a)", PatternProblem::Syntax)]
+#[case::bracketed_group_name("(?P<a[b>a)", PatternProblem::Syntax)]
 #[case::repeat_before_brace("a{2}{3}", PatternProblem::Syntax)]
 #[case::counted_over_u32("a{4294967296}", PatternProblem::Syntax)]
 #[case::counted_max("a{4294967295}", PatternProblem::Syntax)]
@@ -566,6 +568,18 @@ fn a_repeated_flag_is_carried_once(#[case] pattern: &str, #[case] expected: &str
         pattern_work(pattern).map(|(matcher, _steps)| matcher),
         Ok(expected.to_owned())
     );
+}
+
+#[rstest]
+#[case::global_multiline("(?m)a$", "(?m)a$")]
+#[case::inherited_global("(?m)(?i)a$", "(?m)(?i)a$")]
+#[case::scoped_multiline("(?m:a$)", "(?m:a$)")]
+#[case::inherited_scoped("(?m:(?i:a$))", "(?m:(?i:a$))")]
+#[case::removed_multiline("(?m)(?-m:a$)", "(?m)(?-m:a(?:\\n?\\z))")]
+#[case::inherited_verbose("(?x)(?i:a b)", "(?x)(?i:ab)")]
+#[case::removed_verbose("(?x)(?-x:a b)", "(?x)(?-x:a b)")]
+fn normalized_flags_keep_their_scope(#[case] pattern: &str, #[case] expected: &str) {
+    assert_eq!(pattern_work(pattern).unwrap().0, expected);
 }
 
 #[test]
