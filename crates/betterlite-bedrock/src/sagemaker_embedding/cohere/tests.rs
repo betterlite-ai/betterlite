@@ -4,6 +4,7 @@ use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::engine::error::EngineError;
+use rstest::rstest;
 
 use crate::sagemaker_embedding::cohere::{
     CohereRequestError, map_openai_params, transform_request, transform_response,
@@ -112,15 +113,17 @@ fn an_empty_list_stays_empty() {
     );
 }
 
-#[test]
-fn a_list_of_integers_is_refused() {
-    for input in ["[1, 2]", r#"[["tokens"]]"#, "[true]", "[null]"] {
-        let error =
-            transform_request("cohere.embed-english-v3", &json(input), &Object::new()).unwrap_err();
+#[rstest]
+#[case::integers("[1, 2]")]
+#[case::nested_list(r#"[["tokens"]]"#)]
+#[case::boolean("[true]")]
+#[case::null("[null]")]
+fn a_list_of_integers_is_refused(#[case] input: &str) {
+    let error =
+        transform_request("cohere.embed-english-v3", &json(input), &Object::new()).unwrap_err();
 
-        assert_eq!(error, CohereRequestError::InputNotText, "{input}");
-        assert_eq!(error.to_string(), "Input must be a list of strings");
-    }
+    assert_eq!(error, CohereRequestError::InputNotText, "{input}");
+    assert_eq!(error.to_string(), "Input must be a list of strings");
 }
 
 #[test]
@@ -135,14 +138,16 @@ fn a_later_non_text_item_is_refused() {
     assert_eq!(error, CohereRequestError::InputNotText);
 }
 
-#[test]
-fn a_value_that_is_not_text_or_a_list_is_refused() {
-    for input in ["7", "true", "null", r#"{"texts": ["a"]}"#] {
-        let error =
-            transform_request("cohere.embed-english-v3", &json(input), &Object::new()).unwrap_err();
+#[rstest]
+#[case::number("7")]
+#[case::boolean("true")]
+#[case::null("null")]
+#[case::object(r#"{"texts": ["a"]}"#)]
+fn a_value_that_is_not_text_or_a_list_is_refused(#[case] input: &str) {
+    let error =
+        transform_request("cohere.embed-english-v3", &json(input), &Object::new()).unwrap_err();
 
-        assert_eq!(error, CohereRequestError::InputNotText, "{input}");
-    }
+    assert_eq!(error, CohereRequestError::InputNotText, "{input}");
 }
 
 #[test]

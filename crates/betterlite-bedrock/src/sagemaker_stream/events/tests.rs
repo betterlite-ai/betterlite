@@ -10,6 +10,7 @@ use aws_smithy_types::str_bytes::StrBytes;
 use betterlite_http::error::HttpError;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
+use rstest::rstest;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
@@ -37,23 +38,19 @@ fn frame(headers: &[(&str, HeaderValue)], payload: &[u8]) -> Vec<u8> {
 }
 
 fn event(payload: &[u8]) -> Vec<u8> {
-    frame(
-        &[
-            (":message-type", text("event")),
-            (":event-type", text("PayloadPart")),
-        ],
-        payload,
-    )
+    let headers = [
+        (":message-type", text("event")),
+        (":event-type", text("PayloadPart")),
+    ];
+    frame(&headers, payload)
 }
 
 fn exception(payload: &[u8]) -> Vec<u8> {
-    frame(
-        &[
-            (":message-type", text("exception")),
-            (":exception-type", text("ModelStreamError")),
-        ],
-        payload,
-    )
+    let headers = [
+        (":message-type", text("exception")),
+        (":exception-type", text("ModelStreamError")),
+    ];
+    frame(&headers, payload)
 }
 
 fn corrupted(frame: &[u8]) -> Vec<u8> {
@@ -386,18 +383,18 @@ fn invalid_utf8_is_skipped_with_a_warning() {
     );
 }
 
-#[test]
-fn a_frame_that_fails_its_checksum_ends_both_policies() {
+#[rstest]
+#[case::propagate(ErrorPolicy::Propagate)]
+#[case::skip(ErrorPolicy::Skip)]
+fn a_frame_that_fails_its_checksum_ends_both_policies(#[case] policy: ErrorPolicy) {
     let chunk = corrupted(&event(br#"{"token": {"text": "lost"}}"#));
-    for policy in [ErrorPolicy::Propagate, ErrorPolicy::Skip] {
-        let items = sync_items(vec![chunk.clone()], false, policy);
+    let items = sync_items(vec![chunk], false, policy);
 
-        assert_eq!(items.len(), 1);
-        assert!(matches!(
-            items[0].as_ref().unwrap_err(),
-            crate::sagemaker_stream::error::SagemakerStreamError::Frame(_)
-        ));
-    }
+    assert_eq!(items.len(), 1);
+    assert!(matches!(
+        items[0].as_ref().unwrap_err(),
+        crate::sagemaker_stream::error::SagemakerStreamError::Frame(_)
+    ));
 }
 
 #[test]
@@ -538,38 +535,50 @@ fn a_non_object_chunk_ends_a_propagating_stream() {
     ));
 }
 
-#[test]
-fn the_async_face_skips_and_propagates_like_the_blocking_one() {
+#[rstest]
+#[case::generic(false)]
+#[case::messages(true)]
+fn the_async_face_propagates_like_the_blocking_one(#[case] messages: bool) {
     let chunks = vec![
         event(br#"{"token": {"text": "first"}}"#),
         exception(br#"{"message": "boom"}"#),
         event(&[0xff]),
         event(br#"{"token": {"text": "after"}}"#),
     ];
-    for messages in [false, true] {
-        let propagated = async_items(chunks.clone(), messages, ErrorPolicy::Propagate);
-        let blocking = sync_items(chunks.clone(), messages, ErrorPolicy::Propagate);
-        assert_eq!(propagated.len(), blocking.len());
-    }
+
+    let propagated = async_items(chunks.clone(), messages, ErrorPolicy::Propagate);
+    let blocking = sync_items(chunks, messages, ErrorPolicy::Propagate);
+    assert_eq!(propagated.len(), blocking.len());
+}
+
+#[test]
+fn the_async_face_skips_like_the_blocking_one() {
+    let chunks = vec![
+        event(br#"{"token": {"text": "first"}}"#),
+        exception(br#"{"message": "boom"}"#),
+        event(&[0xff]),
+        event(br#"{"token": {"text": "after"}}"#),
+    ];
+
     let items = async_items(chunks, false, ErrorPolicy::Skip);
     assert_eq!(items.len(), 2);
     assert_eq!(token(&items[0]).text, "first");
     assert_eq!(token(&items[1]).text, "after");
 }
 
-#[test]
-fn a_source_error_ends_the_stream_in_both_policies() {
-    for policy in [ErrorPolicy::Propagate, ErrorPolicy::Skip] {
-        let decoder = SagemakerStreamDecoder::new(MODEL, false, policy);
-        let mut chunks: Vec<Result<Vec<u8>, HttpError>> = vec![Ok(event(b"{}"))];
-        chunks.push(Err(HttpError::Timeout));
-        let items: Vec<EventItem> = decoder.events(chunks.into_iter()).collect();
+#[rstest]
+#[case::propagate(ErrorPolicy::Propagate)]
+#[case::skip(ErrorPolicy::Skip)]
+fn a_source_error_ends_the_stream_in_both_policies(#[case] policy: ErrorPolicy) {
+    let decoder = SagemakerStreamDecoder::new(MODEL, false, policy);
+    let mut chunks: Vec<Result<Vec<u8>, HttpError>> = vec![Ok(event(b"{}"))];
+    chunks.push(Err(HttpError::Timeout));
+    let items: Vec<EventItem> = decoder.events(chunks.into_iter()).collect();
 
-        assert_eq!(items.len(), 2);
-        assert_eq!(token(&items[0]).index, Some(0));
-        assert!(matches!(
-            items[1].as_ref().unwrap_err(),
-            crate::sagemaker_stream::error::SagemakerStreamError::Body(_)
-        ));
-    }
+    assert_eq!(items.len(), 2);
+    assert_eq!(token(&items[0]).index, Some(0));
+    assert!(matches!(
+        items[1].as_ref().unwrap_err(),
+        crate::sagemaker_stream::error::SagemakerStreamError::Body(_)
+    ));
 }

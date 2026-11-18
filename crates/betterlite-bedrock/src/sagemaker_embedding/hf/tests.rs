@@ -157,7 +157,7 @@ fn an_inputs_option_changes_the_counted_words() {
 }
 
 #[test]
-fn an_unparseable_reply_carries_the_http_status() {
+fn an_unparsable_reply_carries_the_http_status() {
     let error = transform_response(b"not json", 503, "model", &Object::new()).unwrap_err();
 
     assert_eq!(error.status_code, 503);
@@ -199,6 +199,17 @@ fn a_null_reply_names_its_python_type() {
 #[test]
 fn an_integer_reply_names_its_python_type() {
     let error = transform_response(b"7", 200, "model", &Object::new()).unwrap_err();
+
+    assert_eq!(
+        error.message,
+        "Unexpected response format. Expected list or dict with 'embedding' key, got: int"
+    );
+}
+
+// a negative number is an int only through is_i64, so the || guard cannot become &&
+#[test]
+fn a_negative_integer_reply_names_its_python_type() {
+    let error = transform_response(b"-7", 200, "model", &Object::new()).unwrap_err();
 
     assert_eq!(
         error.message,
