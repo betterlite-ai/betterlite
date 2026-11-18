@@ -12,6 +12,9 @@ deviations:
   - what: The deployment mounts no billingMetrics volumes or volume mounts on the proxy or collector containers.
     why: The billingMetrics values and helpers are not ported (B8130), because billable-request metering belongs to LiteLLM Enterprise and betterlite has no enterprise package.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L137-L139
+  - what: When the pod has neither a config checksum nor user pod annotations, and when no Secrets or ConfigMaps are imported, the rendered pod has no annotations or envFrom key, where LiteLLM always writes those keys and renders them as null.
+    why: An absent key and an explicit null mean the same to the API server, the rendered workload behaves identically, and the suites assert the absent key with notExists; the migrations Job's pod annotations follow the same rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L27-L34
 kept_bugs:
   - what: The migrations Job always sets DISABLE_SCHEMA_UPDATE to "false" and no template reads migrationJob.disableSchemaUpdate, so the values.yaml comment that true makes the Job exit with code 0 describes a switch that does nothing.
     why: LiteLLM's Job sets the same unconditional "false" and its proxy helper only reads migrationJob.enabled; a setup that sets disableSchemaUpdate true still gets the migration it already got, and the harmless value stays documented until a task gives it behavior.
