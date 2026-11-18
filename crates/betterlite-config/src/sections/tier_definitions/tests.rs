@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 use secrecy::zeroize::Zeroize;
 use serde_json::Number;
 
@@ -582,6 +583,18 @@ fn parameter_values_serialize_in_the_shape_the_file_spells() {
         "{rendered}"
     );
     assert!(rendered.contains(r#""stop":["END","STOP"]"#), "{rendered}");
+}
+
+#[rstest]
+#[case::text(text("sk-secret"))]
+#[case::number(number(512))]
+#[case::boolean(Json::Bool(true))]
+#[case::null(Json::Null)]
+#[case::list(Json::List(vec![text("END"), number(42)]))]
+#[case::object(object(&[("nested", Json::List(vec![Json::Bool(false), text("value")]))]))]
+fn parameter_conversion_preserves_json(#[case] expected: Json) {
+    let stored = param(&expected);
+    assert_eq!(Json::from(stored), expected);
 }
 
 #[test]

@@ -139,6 +139,7 @@ fn a_built_in_name_inherits_its_description_in_any_case() {
 
 #[rstest]
 #[case::in_the_name("A\nB", Some("asks"))]
+#[case::carriage_return_in_name("A\rB", Some("asks"))]
 #[case::in_the_description("A B", Some("asks\nmore"))]
 #[case::carriage_return("A B", Some("asks\rmore"))]
 fn a_newline_in_a_definition_is_rejected(#[case] name: &str, #[case] description: Option<&str>) {
@@ -384,6 +385,7 @@ fn a_label_for_an_unknown_tier_is_rejected() {
 #[case::heuristic_first(ClassifierKind::HeuristicFirst, false)]
 #[case::hybrid(ClassifierKind::Hybrid, false)]
 #[case::llm(ClassifierKind::Llm, true)]
+#[case::llm_v2(ClassifierKind::LlmV2, true)]
 #[case::custom(ClassifierKind::Custom, true)]
 #[case::jev(ClassifierKind::Jev, true)]
 fn only_llm_custom_and_jev_classifiers_emit_custom_tiers(
