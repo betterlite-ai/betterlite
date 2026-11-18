@@ -1,0 +1,11 @@
+event: content_block_start
+data: {"type":"content_block_start","index":2}
+
+event: content_block_delta
+data: {"delta":{"type":"text_delta","text":"hello"}}
+
+data: invalid
+
+event: message_delta
+data: {"delta":{"stop_reason":"end_turn"}}
+
