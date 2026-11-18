@@ -42,6 +42,8 @@ description: >-
   130, behavior tests in 240 and adapters/fuzz in 180 changed lines.
 scope:
   paths:
+    - "tools/oracle/src/runner/http_scenarios/fixtures/run/tests.rs"
+    - "tools/oracle/src/runner/http_scenarios/fixtures/run.rs"
     - "tools/oracle/src/runner/http_scenarios/fixtures/run/redis.rs"
     - crates/betterlite-db/Cargo.toml
     - crates/betterlite-db/src/queues.rs
