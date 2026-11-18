@@ -1,0 +1,28 @@
+kind: probe
+name: flush-failure-requeues
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_budget_state:
+        provider_budget_config:
+          openai: {budget_limit: "10", time_period: 1d}
+        steps:
+          - {kind: fail_writes}
+          - {kind: success, provider: openai, cost: "0.5"}
+          - {kind: success, provider: openai, cost: "0.25"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: sync}
+          - {kind: redis, key: "provider_spend:openai:1d"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: succeed_writes}
+          - {kind: sync}
+          - {kind: redis, key: "provider_spend:openai:1d"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+compare:
+  expected_difference:
+    - pointer: /output/routing_budget_state/steps/5/value
+      reference: "0.5"
+      rust: null
+      why: LiteLLM writes the first spend of a window straight to the shared store, while betterlite queues every spend and writes it on the next flush; this flush fails, so only the first spend is already stored.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L548-L595
