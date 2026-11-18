@@ -1,0 +1,20 @@
+task: B686
+deviations:
+  - what: >-
+      A litellm_params.timeout that is negative, NaN or infinite is refused with a Timeout error before any request,
+      where LiteLLM forwards it into the Azure SDK client constructor, which accepts the value and sends it as the
+      request timeout.
+    why: >-
+      betterlite carries the request deadline as a std::time::Duration, which cannot represent a negative or
+      non-finite duration; a timeout that can never be a deadline is refused instead of handed to the HTTP client.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L52-L60
+kept_bugs:
+  - what: >-
+      Only the literal True async flag selects the async SDK client: any other truthy facade value, such as 1 or
+      "yes", keeps the sync client. The same predicate guards the create and delete facades.
+    why: >-
+      A caller that passes a truthy flag other than True gets the sync client from LiteLLM today, so its calls run
+      on the sync client here too; widening the check would silently move those calls to the async client.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/assistants.py#L166
