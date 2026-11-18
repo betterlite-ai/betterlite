@@ -104,10 +104,10 @@ pub(super) fn details(
         "metadata".to_owned(),
         OtelModelValue::Object(team_metadata()),
     )]);
-    if let Some(entries) = entries {
+    if let Some(information) = entries {
         logged.insert(
             "guardrail_information".to_owned(),
-            OtelModelValue::Array(entries),
+            OtelModelValue::Array(information),
         );
     }
     let mut details = MetadataMap::from([
@@ -127,26 +127,6 @@ pub(super) fn details(
         carry_in(&mut details, span);
     }
     details
-}
-
-pub(super) fn simple_kwargs(call_id: &str) -> MetadataMap {
-    serde_json::from_str(&format!(
-        r#"{{
-            "model": "gpt-4o",
-            "messages": [{{"role": "user", "content": "hello"}}],
-            "call_type": "completion",
-            "optional_params": {{}},
-            "litellm_params": {{"custom_llm_provider": "openai", "metadata": {{"litellm_call_id": "{call_id}"}}}},
-            "standard_logging_object": {{
-                "id": "chatcmpl-1",
-                "call_type": "completion",
-                "status": "success",
-                "metadata": {{"litellm_call_id": "{call_id}"}},
-                "hidden_params": {{}}
-            }}
-        }}"#
-    ))
-    .expect("kwargs fixture")
 }
 
 pub(super) fn exception(json: &str) -> ExceptionFacts {

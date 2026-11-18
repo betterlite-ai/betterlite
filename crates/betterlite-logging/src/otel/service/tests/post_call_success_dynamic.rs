@@ -39,7 +39,7 @@ impl DynamicOtel for RecordingDynamic {
 fn otel_legacy_service_callbacks_behavior_tests_behavior() {
     let rig = Rig::new();
     let recorder = Arc::new(RecordingDynamic::default());
-    let dynamic: Arc<dyn DynamicOtel> = recorder.clone();
+    let dynamic: Arc<dyn DynamicOtel> = Arc::clone(&recorder);
     let lifecycle = rig.lifecycle_with_dynamic(dynamic);
     let mut call_details = details("call-y", Some(vec![guardrail_entry()]), None);
     let params = MetadataMap::from([(
@@ -51,10 +51,15 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior() {
         OtelModelValue::Object(params),
     );
     async_post_call_success_hook(&lifecycle, &call_details, None).expect("success hook");
-    let seen = recorder.params_seen.lock().expect("recording lock");
-    let recorded = seen.first().expect("the dynamic config hook was consulted");
+    let stored = recorder
+        .params_seen
+        .lock()
+        .expect("recording lock")
+        .first()
+        .expect("the dynamic config hook was consulted")
+        .clone();
     assert_eq!(
-        recorded.get("team_id").and_then(OtelModelValue::as_str),
+        stored.get("team_id").and_then(OtelModelValue::as_str),
         Some("team-dynamic")
     );
     assert_eq!(rig.named("guardrail").len(), 1);

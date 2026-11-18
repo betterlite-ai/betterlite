@@ -18,7 +18,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(#[case] anchor: Anchor)
     let lifecycle = rig.lifecycle();
     let span = match anchor {
         Anchor::Live | Anchor::NoGuardrails => rig.parent(&lifecycle, "proxy", START),
-        Anchor::Detached => rig.detached(&lifecycle),
+        Anchor::Detached => Rig::detached(&lifecycle),
     };
     let entries = match anchor {
         Anchor::Live | Anchor::Detached => Some(vec![guardrail_entry()]),

@@ -7,27 +7,27 @@ use crate::otel::vocabulary::constants::attribute_keys::litellm;
 #[rstest::rstest]
 #[case::litellm_params_metadata(
     r#"{"litellm_params":{"metadata":{"litellm_received_at":1704067200.0}},"first_api_call_start_time":1704067201.5}"#,
-    Some(1500.0)
+    Some(1500.0_f64)
 )]
 #[case::top_level_metadata(
     r#"{"metadata":{"litellm_received_at":1704067200.0},"first_api_call_start_time":1704067201.5}"#,
-    Some(1500.0)
+    Some(1500.0_f64)
 )]
 #[case::litellm_metadata(
     r#"{"litellm_metadata":{"litellm_received_at":1704067200.0},"first_api_call_start_time":1704067201.5}"#,
-    Some(1500.0)
+    Some(1500.0_f64)
 )]
 #[case::params_bucket_wins(
     r#"{"litellm_params":{"metadata":{"litellm_received_at":1704067200.0}},"metadata":{"litellm_received_at":1704067300.0},"first_api_call_start_time":1704067201.5}"#,
-    Some(1500.0)
+    Some(1500.0_f64)
 )]
 #[case::string_with_fraction(
     r#"{"metadata":{"litellm_received_at":"2024-01-01 00:00:00.500000"},"first_api_call_start_time":1704067201.5}"#,
-    Some(1000.0)
+    Some(1000.0_f64)
 )]
 #[case::string_without_fraction(
     r#"{"metadata":{"litellm_received_at":"2024-01-01 00:00:00"},"first_api_call_start_time":1704067201.5}"#,
-    Some(1500.0)
+    Some(1500.0_f64)
 )]
 #[case::unparsable_string(
     r#"{"metadata":{"litellm_received_at":"midnight"},"first_api_call_start_time":1704067201.5}"#,
@@ -39,7 +39,7 @@ use crate::otel::vocabulary::constants::attribute_keys::litellm;
 )]
 #[case::zero_delay_is_kept(
     r#"{"metadata":{"litellm_received_at":1704067200.0},"first_api_call_start_time":1704067200.0}"#,
-    Some(0.0)
+    Some(0.0_f64)
 )]
 fn otel_legacy_service_callbacks_behavior_tests_behavior(
     #[case] container: &str,
@@ -48,8 +48,8 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     let rig = Rig::new();
     let lifecycle = rig.lifecycle();
     let parent = rig.parent(&lifecycle, "proxy", START);
-    let container = kwargs(container);
-    set_preprocessing_duration(Some(&parent), &container);
+    let body = kwargs(container);
+    set_preprocessing_duration(Some(&parent), &body);
     parent.lock().end();
     let span = rig.span("proxy");
     match expected {

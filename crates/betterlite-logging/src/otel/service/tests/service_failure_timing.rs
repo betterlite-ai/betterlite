@@ -23,11 +23,12 @@ use crate::otel::service::hooks::{ServiceSpanCall, async_service_failure_hook};
     instant(1_704_067_200.0),
     instant(1_704_067_202.0)
 )]
-#[case::datetimes_keep_their_nanoseconds(
+// _to_ns reads a datetime through its float seconds, so the nanosecond field can round
+#[case::datetimes_scale_through_float_seconds(
     SpanTime::DateTime(DateTime::<Utc>::from_timestamp(1_704_067_200, 500_000_000).expect("timestamp")),
     SpanTime::DateTime(DateTime::<Utc>::from_timestamp(1_704_067_202, 250_000_000).expect("timestamp")),
     instant_from_ns(1_704_067_200_500_000_000),
-    instant_from_ns(1_704_067_202_250_000_000)
+    instant_from_ns(1_704_067_202_249_999_872)
 )]
 fn otel_legacy_service_callbacks_behavior_tests_behavior(
     #[case] start: SpanTime,

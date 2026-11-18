@@ -77,7 +77,7 @@ impl Rig {
 
     pub(super) fn lifecycle_with_dynamic(&self, dynamic: Arc<dyn DynamicOtel>) -> LegacyLifecycle {
         let init = LegacyOtelInit {
-            config: Some(self.config()),
+            config: Some(Self::config()),
             callback_name: Some("opentelemetry".to_owned()),
             overrides: MetadataKeyOverrides::default(),
             injected: InjectedProviders::default(),
@@ -114,11 +114,6 @@ impl Rig {
         )
     }
 
-    pub(super) fn with_env(mut self, name: &str, value: &str) -> Self {
-        self.env.insert(name.to_owned(), value.to_owned());
-        self
-    }
-
     pub(super) fn parent(&self, lifecycle: &LegacyLifecycle, name: &str, start: f64) -> LiveSpan {
         let builder = lifecycle
             .tracer
@@ -134,7 +129,7 @@ impl Rig {
     }
 
     // a parent that only travels as a traceparent header, which no live registry knows
-    pub(super) fn detached(&self, lifecycle: &LegacyLifecycle) -> LiveSpan {
+    pub(super) fn detached(lifecycle: &LegacyLifecycle) -> LiveSpan {
         let builder = lifecycle
             .tracer
             .span_builder("detached".to_owned())
@@ -164,7 +159,7 @@ impl Rig {
             .unwrap_or_else(|| panic!("span {name} was not exported"))
     }
 
-    fn config(&self) -> OpenTelemetryConfig {
+    fn config() -> OpenTelemetryConfig {
         OpenTelemetryConfig {
             exporter: Exporter::InMemory,
             endpoint: None,

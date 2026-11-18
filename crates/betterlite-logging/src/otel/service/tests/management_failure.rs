@@ -61,14 +61,11 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     );
     assert_eq!(text_attribute(&server, "error.type"), "ValueError");
     assert_eq!(text_attribute(&server, "error.message"), "boom");
-    match expected {
-        Some(code) => {
-            assert_eq!(text_attribute(&server, "error.code"), code.to_string());
-            assert_eq!(i64_attribute(&server, http::RESPONSE_STATUS_CODE), code);
-        }
-        None => {
-            assert!(attribute(&server, "error.code").is_none());
-            assert!(attribute(&server, http::RESPONSE_STATUS_CODE).is_none());
-        }
+    if let Some(code) = expected {
+        assert_eq!(text_attribute(&server, "error.code"), code.to_string());
+        assert_eq!(i64_attribute(&server, http::RESPONSE_STATUS_CODE), code);
+    } else {
+        assert!(attribute(&server, "error.code").is_none());
+        assert!(attribute(&server, http::RESPONSE_STATUS_CODE).is_none());
     }
 }

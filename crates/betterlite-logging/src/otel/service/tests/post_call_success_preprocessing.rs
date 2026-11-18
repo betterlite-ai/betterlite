@@ -28,10 +28,14 @@ fn with_anchors(
 }
 
 #[rstest::rstest]
-#[case::anchors_measure(Some(1_704_067_200.0), Some(1_704_067_201.5), Some(1500.0))]
-#[case::clock_skew_is_omitted(Some(1_704_067_202.0), Some(1_704_067_201.5), None)]
-#[case::missing_received_at(None, Some(1_704_067_201.5), None)]
-#[case::missing_first_handoff(Some(1_704_067_200.0), None, None)]
+#[case::anchors_measure(
+    Some(1_704_067_200.0_f64),
+    Some(1_704_067_201.5_f64),
+    Some(1_500.0_f64)
+)]
+#[case::clock_skew_is_omitted(Some(1_704_067_202.0_f64), Some(1_704_067_201.5_f64), None)]
+#[case::missing_received_at(None, Some(1_704_067_201.5_f64), None)]
+#[case::missing_first_handoff(Some(1_704_067_200.0_f64), None, None)]
 fn otel_legacy_service_callbacks_behavior_tests_behavior(
     #[case] received: Option<f64>,
     #[case] first_handoff: Option<f64>,

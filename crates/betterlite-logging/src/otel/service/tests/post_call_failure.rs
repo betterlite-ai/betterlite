@@ -12,10 +12,7 @@ use crate::otel::vocabulary::constants::attribute_keys::http;
 const TRACEBACK: &str = "Traceback (most recent call last):\n  ValueError: boom\n";
 
 fn facts(code: Option<&str>) -> ExceptionFacts {
-    let raw = match code {
-        Some(value) => format!("\"{value}\""),
-        None => "null".to_owned(),
-    };
+    let raw = code.map_or_else(|| "null".to_owned(), |value| format!("\"{value}\""));
     exception(&format!(
         r#"{{"class_name":"ValueError","message":"boom","code":{raw}}}"#
     ))

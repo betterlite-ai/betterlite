@@ -1,4 +1,4 @@
-use super::fixtures::{error_config, request_data};
+use super::fixtures::{error_config, exception, request_data};
 use super::support::{Rig, START, attribute, text_attribute};
 use crate::logging_metadata::exception::ExceptionFacts;
 use crate::otel::legacy_policy::error_recording::ERROR_STACK_TRACE;
@@ -10,17 +10,10 @@ const TRACEBACK: &str = "Traceback (most recent call last):\n  raise Authenticat
 
 // a provider-originated error keeps its traceback; a proxy 4xx is an expected client error and drops it
 fn facts_for(llm_provider: Option<&str>) -> ExceptionFacts {
-    let value = serde_json::json!({
-        "class_name": "AuthenticationError",
-        "message": "bad key",
-        "status_code": 401,
-        "llm_provider": llm_provider,
-        "traceback_lines": [
-            "Traceback (most recent call last):\n",
-            "  raise AuthenticationError\n",
-        ],
-    });
-    serde_json::from_value(value).expect("exception facts")
+    let value = llm_provider.map_or_else(|| "null".to_owned(), |name| format!("\"{name}\""));
+    exception(&format!(
+        r#"{{"class_name":"AuthenticationError","message":"bad key","status_code":401,"llm_provider":{value},"traceback_lines":["Traceback (most recent call last):\n","  raise AuthenticationError\n"]}}"#
+    ))
 }
 
 #[rstest::rstest]
