@@ -171,6 +171,28 @@ async fn ended_passes_the_assembled_text_and_response() {
 }
 
 #[tokio::test]
+async fn ended_assembles_a_parsed_event_chunk() {
+    let guardrail = FakeGuardrail::echoing();
+    let stream = vec![
+        event(
+            json!({"message": {"id": "msg_1", "model": "claude-test", "role": "assistant", "usage": {"input_tokens": 4, "output_tokens": 1}}, "type": "message_start"}),
+        ),
+        event(
+            json!({"delta": {"text": "Hello", "type": "text_delta"}, "index": 0, "type": "content_block_delta"}),
+        ),
+        event(
+            json!({"delta": {"stop_reason": "end_turn"}, "type": "message_delta", "usage": {"output_tokens": 9}}),
+        ),
+    ];
+    let (result, _, _) = process(stream, &guardrail, None, None, false).await;
+    result.unwrap();
+    assert_eq!(
+        guardrail.calls()[0].inputs.texts,
+        Some(vec!["Hello".to_owned()])
+    );
+}
+
+#[tokio::test]
 async fn ended_passes_the_streamed_tool_call() {
     let guardrail = FakeGuardrail::echoing();
     let stream = vec![bytes(&[START, TOOL_START, TOOL_ARGS, STOP_TOOL])];
