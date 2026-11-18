@@ -51,7 +51,7 @@ description: >-
   public table opened with an internal user's key, sending /model_group/info and
   enabled_only=true with that key. A last case
   sends each publish write as an internal_user and as a proxy_admin_viewer and keeps the 403
-  bodies. Use B860's Postgres fixture with B5076's bootstrap, two configured model groups with
+  bodies. Use B860's Postgres fixture with B9942's bootstrap, two configured model groups with
   model_info metadata, one stored agent, one stored MCP server and two registered plugins.
   About 430 case lines.
 scope:
