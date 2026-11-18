@@ -19,6 +19,13 @@ description: 'Implement CustomDimension validation and pattern work accounting w
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B329 calls this service.'
 scope:
   paths:
+  - "tools/oracle/src/helpers/guardrails/b9450/support.rs"
+  - "tools/oracle/src/helpers/guardrails/b3778.rs"
+  - "tools/oracle/src/helpers/guardrails/b3769.rs"
+  - "tools/oracle/src/helpers/guardrails/b3767.rs"
+  - "tools/oracle/src/helpers/guardrails/b3762/support.rs"
+  - "crates/betterlite-config/src/sections/password_policy/tests.rs"
+  - "crates/betterlite-config/src/sections/azure_default_chain/tests.rs"
   - "crates/betterlite-config/tests/agent_host_settings.rs"
   - "crates/betterlite-config/src/loader/startup.rs"
   - "crates/betterlite-config/src/loader.rs"
