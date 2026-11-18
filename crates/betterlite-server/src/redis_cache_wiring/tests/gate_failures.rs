@@ -1,12 +1,17 @@
 #![cfg(test)]
 
+use std::fmt;
 use std::future;
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_router::redis_failure_policy::classify::FailureClass;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::redis_cache_wiring::gate::classify;
 
@@ -18,6 +23,44 @@ use super::support::{
     described_connection_error, gate_with, master_down_error, max_clients_error, no_auth_error,
     reply_error, settings, status, timeout_error,
 };
+
+struct LogLine {
+    level: Level,
+    message: String,
+}
+
+struct MessageVisitor(String);
+
+impl Visit for MessageVisitor {
+    fn record_debug(&mut self, field: &Field, value: &dyn fmt::Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+struct LogCapture(Arc<Mutex<Vec<LogLine>>>);
+
+impl<S: Subscriber> Layer<S> for LogCapture {
+    fn on_event(&self, event: &Event<'_>, _: Context<'_, S>) {
+        let mut visitor = MessageVisitor(String::new());
+        event.record(&mut visitor);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(LogLine {
+                level: *event.metadata().level(),
+                message: visitor.0,
+            });
+    }
+}
+
+fn capture_logs<F: FnOnce()>(run: F) -> Vec<LogLine> {
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(LogCapture(Arc::clone(&lines)));
+    with_default(subscriber, run);
+    lines.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
 
 #[test]
 fn a_connection_error_counts_as_a_hard_failure() {
@@ -371,4 +414,86 @@ fn swallowed_counts_a_bare_master_down_reply_too() {
     let observed = status(&gate);
     assert_eq!(observed.failure_count, 1);
     assert_eq!(observed.hard_failure_count, 1);
+}
+
+#[test]
+fn a_timeout_failure_logs_an_error_line() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(100), &clock);
+    let error = timeout_error();
+    let lines = capture_logs(|| gate.record_failure(&error));
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].level, Level::ERROR);
+    assert_eq!(lines[0].message, "Redis operation failed");
+}
+
+#[test]
+fn a_connection_failure_logs_every_line_at_error() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(100), &clock);
+    let error = connection_error();
+    let lines = capture_logs(|| {
+        gate.record_failure(&error);
+        gate.record_failure(&error);
+    });
+    let errors: Vec<&str> = lines
+        .iter()
+        .filter(|line| line.level == Level::ERROR)
+        .map(|line| line.message.as_str())
+        .collect();
+    assert_eq!(
+        errors,
+        ["Redis operation failed", "Redis operation failed"],
+        "the timeout throttle leaves hard failures alone"
+    );
+}
+
+#[test]
+fn a_timeout_within_the_interval_logs_at_debug() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(100), &clock);
+    let error = timeout_error();
+    let lines = capture_logs(|| {
+        gate.record_failure(&error);
+        gate.record_failure(&error);
+    });
+    let errors = lines
+        .iter()
+        .filter(|line| line.level == Level::ERROR)
+        .count();
+    assert_eq!(
+        errors, 1,
+        "the second line inside the interval is suppressed"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.level == Level::DEBUG
+                && line.message.as_str() == "Redis operation failed"),
+        "the suppressed line still goes out at DEBUG"
+    );
+}
+
+#[test]
+fn the_timeout_summary_counts_the_suppressed_lines() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(100), &clock);
+    let error = timeout_error();
+    let lines = capture_logs(|| {
+        gate.record_failure(&error);
+        gate.record_failure(&error);
+        clock.advance(60_000);
+        gate.record_failure(&error);
+    });
+    let errors: Vec<&str> = lines
+        .iter()
+        .filter(|line| line.level == Level::ERROR)
+        .map(|line| line.message.as_str())
+        .collect();
+    assert_eq!(errors.len(), 2);
+    assert_eq!(errors[0], "Redis operation failed");
+    assert_eq!(
+        errors[1],
+        "Redis operation failed (1 more Redis timeouts since the previous Redis timeout line were logged at DEBUG)"
+    );
 }
