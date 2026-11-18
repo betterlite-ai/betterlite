@@ -14,7 +14,7 @@ call:
       due_keys: []
       write_keys: []
       duplicate_keys: [d, d]
-      merge_keys: [m, n]
+      merge_keys: [m, "n"]
       replies:
         - [null]
         - [null]
