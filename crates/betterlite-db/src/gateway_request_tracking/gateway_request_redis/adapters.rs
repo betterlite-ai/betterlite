@@ -38,7 +38,7 @@ impl GatewayRequestsList for RedisGatewayRequestsList {
 
     // A live list needs a running Redis, which the db tests fake at the GatewayRequestsList seam.
     #[cfg_attr(test, mutants::skip)]
-    fn take<'call>(&'call self, count: usize) -> ListFuture<'call, Vec<String>> {
+    fn take(&self, count: usize) -> ListFuture<'_, Vec<String>> {
         Box::pin(async move {
             let requested = i64::try_from(count).unwrap_or(i64::MAX);
             let popped = self

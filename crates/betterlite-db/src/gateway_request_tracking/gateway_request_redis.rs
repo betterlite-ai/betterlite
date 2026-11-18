@@ -42,7 +42,7 @@ pub type ListFuture<'call, Value> = BoxFuture<'call, Result<Value, GatewayReques
 pub trait GatewayRequestsList: Send + Sync {
     fn append<'call>(&'call self, entry: &'call str) -> ListFuture<'call, ()>;
 
-    fn take<'call>(&'call self, count: usize) -> ListFuture<'call, Vec<String>>;
+    fn take(&self, count: usize) -> ListFuture<'_, Vec<String>>;
 }
 
 pub type LeaseFuture<'call> = BoxFuture<'call, Option<bool>>;

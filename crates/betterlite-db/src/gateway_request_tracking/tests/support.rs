@@ -173,7 +173,7 @@ impl GatewayRequestsList for FakeList {
         Box::pin(async move { self.append_blocking(entry) })
     }
 
-    fn take<'call>(&'call self, count: usize) -> ListFuture<'call, Vec<String>> {
+    fn take(&self, count: usize) -> ListFuture<'_, Vec<String>> {
         Box::pin(async move { self.take_blocking(count) })
     }
 }
