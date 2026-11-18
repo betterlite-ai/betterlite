@@ -10,6 +10,5 @@ call:
     transform: configured
     estimate: fixed
     cost: missing
-    cache: off
 env: {}
 compare: {ignore: []}

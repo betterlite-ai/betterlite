@@ -34,20 +34,9 @@ use thiserror::Error;
 use tokio_util::task::TaskTracker;
 
 use super::Input;
-use super::TransformMode;
 use super::probe::Probe;
 
-pub(crate) struct ProviderTransform {
-    probe: Arc<Probe>,
-}
-
-impl ProviderTransform {
-    pub(crate) fn new(probe: Arc<Probe>) -> Self {
-        Self { probe }
-    }
-}
-
-impl ResponsesEventTransform for ProviderTransform {
+impl ResponsesEventTransform for Probe {
     type Error = TransformFailure;
 
     fn transform(
@@ -56,9 +45,6 @@ impl ResponsesEventTransform for ProviderTransform {
         chunk: &Json,
         _logging: &mut IndexMap<String, Json>,
     ) -> Result<ResponsesAPIStreamingResponse, TransformFailure> {
-        if matches!(self.probe.transform, TransformMode::Failing) {
-            return Err(TransformFailure);
-        }
         let Json::Object(fields) = chunk else {
             return Err(TransformFailure);
         };
@@ -93,21 +79,11 @@ fn generic_event(fields: IndexMap<String, Json>) -> GenericEvent {
     GenericEvent { r#type, extra }
 }
 
-pub(crate) struct FixedTokens {
-    probe: Arc<Probe>,
-}
-
-impl FixedTokens {
-    pub(crate) fn new(probe: Arc<Probe>) -> Self {
-        Self { probe }
-    }
-}
-
-impl UsageTokenization for FixedTokens {
+impl UsageTokenization for Probe {
     type Error = Infallible;
 
     fn messages(&self, request: &EstimateRequest<'_>) -> Result<Vec<Json>, Infallible> {
-        self.probe.record(json!([
+        self.record(json!([
             "estimate",
             request.model,
             request.request_input,
@@ -119,14 +95,10 @@ impl UsageTokenization for FixedTokens {
 
     fn count(&self, request: TokenCountRequest<'_>) -> Result<i64, Infallible> {
         if request.count_response_tokens {
-            return Ok(as_i64(request.text.map_or(0, str::len)));
+            return Ok(i64::try_from(request.text.map_or(0, str::len)).unwrap_or(i64::MAX));
         }
-        Ok(1000 + as_i64(request.model.len()))
+        Ok(1000 + i64::try_from(request.model.len()).unwrap_or(i64::MAX))
     }
-}
-
-fn as_i64(value: usize) -> i64 {
-    i64::try_from(value).unwrap_or(i64::MAX)
 }
 
 pub(crate) fn state(input: &Input, probe: &Probe) -> ResponsesStreamBaseState {

@@ -19,8 +19,8 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::probe::{Calculator, Probe, hooks};
-use super::support::{FixedTokens, ProviderTransform, TransformFailure, logging_object, state};
+use super::probe::{Probe, hooks};
+use super::support::{TransformFailure, logging_object, state};
 use super::{EstimateMode, Input, TransformMode};
 
 pub(super) async fn run(input: &Input) -> HelperResult {
@@ -37,9 +37,8 @@ struct Rig<'context> {
     hooks: ResponsesStreamHooks<'context>,
     logging: StreamLoggingObject,
     probe: Arc<Probe>,
-    transform: Option<ProviderTransform>,
-    tokenization: Option<FixedTokens>,
-    calculator: Calculator,
+    transform: bool,
+    estimate: bool,
     limits: ApiLimits,
     details: IndexMap<String, Json>,
     base: ResponsesStreamBaseState,
@@ -54,21 +53,12 @@ impl<'context> Rig<'context> {
         probe: &Arc<Probe>,
         redactor: &'context Redactor,
     ) -> Result<Self, Box<HelperError>> {
-        let transform = match input.transform {
-            TransformMode::Configured => Some(ProviderTransform::new(Arc::clone(probe))),
-            TransformMode::Absent => None,
-        };
-        let tokenization = match input.estimate {
-            EstimateMode::Fixed => Some(FixedTokens::new(Arc::clone(probe))),
-            EstimateMode::Absent => None,
-        };
         Ok(Self {
             hooks: hooks(probe, redactor),
             logging: logging_object(redactor).or_value_error()?,
             probe: Arc::clone(probe),
-            transform,
-            tokenization,
-            calculator: Calculator::new(Arc::clone(probe)),
+            transform: matches!(input.transform, TransformMode::Configured),
+            estimate: matches!(input.estimate, EstimateMode::Fixed),
             limits: ApiLimits::default(),
             details: IndexMap::new(),
             base: state(input, probe),
@@ -96,10 +86,11 @@ impl<'context> Rig<'context> {
         &mut self,
         payload: &str,
     ) -> Result<Option<ResponsesAPIStreamingResponse>, ProcessEventError<TransformFailure>> {
+        let probe = self.probe.as_ref();
         let mut processor = ResponsesEventProcessor {
-            transform: self.transform.as_ref(),
-            tokenization: self.tokenization.as_ref(),
-            calculator: Some(&self.calculator),
+            transform: self.transform.then_some(probe),
+            tokenization: self.estimate.then_some(probe),
+            calculator: Some(probe),
             hooks: &self.hooks,
             details: &mut self.details,
             dispatch: Dispatch::Inline,

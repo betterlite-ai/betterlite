@@ -14,7 +14,6 @@ mod tests;
 pub(crate) enum TransformMode {
     Configured,
     Absent,
-    Failing,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -28,16 +27,7 @@ pub(crate) enum EstimateMode {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CostMode {
     Positive,
-    Zero,
     Missing,
-    Error,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum CacheMode {
-    Off,
-    Failing,
 }
 
 #[derive(Debug, Deserialize)]
@@ -54,7 +44,6 @@ pub(crate) struct Input {
     transform: TransformMode,
     estimate: EstimateMode,
     cost: CostMode,
-    cache: CacheMode,
 }
 
 pub(crate) struct Op;
