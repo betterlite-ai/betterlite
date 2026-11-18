@@ -1,0 +1,71 @@
+kind: helper
+name: model-visibility-team-pattern-scope
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: team-group
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: t1
+          team_id: team-a
+          team_public_model_name: team/*
+          discoverable: false
+      - model_name: team/x
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: x1
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      model_names: [team/x, team/y, team-group]
+      user_role: internal_user
+      team_id: team-a
+calls:
+  - model_visibility:
+      function: undiscoverable_model_names
+      model_list:
+        - model_name: team-group
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: team/*
+            discoverable: false
+        - model_name: team/x
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: x1
+            discoverable: false
+      model_group_alias: {}
+      arguments:
+        model_names: [team/x, team/y, team-group]
+        user_role: internal_user
+        team_id: team-b
+  - model_visibility:
+      function: undiscoverable_model_names
+      model_list:
+        - model_name: team-group
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: t1
+            team_id: team-a
+            team_public_model_name: team/*
+            discoverable: false
+        - model_name: team/x
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: x1
+            discoverable: false
+      model_group_alias: {}
+      arguments:
+        model_names: [team/x, team/y, team-group]
+        user_role: internal_user
+env: {}
+compare: {ignore: []}
