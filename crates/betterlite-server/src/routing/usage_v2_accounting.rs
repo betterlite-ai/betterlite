@@ -14,6 +14,7 @@ pub struct Resolved {
     pub counters: CounterSettings,
 }
 
+#[must_use]
 pub fn resolve(section: &config::Settings, state: &state_config::Settings) -> Resolved {
     Resolved {
         ttl: section.ttl,
