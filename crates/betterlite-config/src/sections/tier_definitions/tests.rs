@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use serde_json::Number;
 
 use crate::loader::ConfigLoader;
 use crate::sections::Section;
@@ -67,7 +68,7 @@ fn text(value: &str) -> Json {
 }
 
 fn number(value: u64) -> Json {
-    Json::Number(value.into())
+    Json::Number(Number::from(value))
 }
 
 #[test]

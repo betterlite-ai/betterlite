@@ -25,8 +25,7 @@ pub(super) fn flag(
     }
 }
 
-// the same rule every scalar setting follows: an os.environ/ reference resolves once here, and an
-// empty variable counts as unset
+// an os.environ/ reference resolves once here, and an empty variable counts as unset
 fn reference(
     text: String,
     path: &str,
@@ -71,17 +70,32 @@ pub(super) fn labels(
     prefix: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<BTreeMap<String, String>, ConfigError> {
-    let Some(raw) = raw else {
-        return Ok(BTreeMap::new());
-    };
+    let resolved = resolve_map(
+        raw.unwrap_or_default(),
+        prefix,
+        "tier_labels",
+        lookup,
+        reference,
+    )?;
+    Ok(resolved)
+}
+
+// a tier-keyed map whose null entries are dropped and whose present values resolve once
+fn resolve_map<T>(
+    entries: BTreeMap<String, Option<T>>,
+    prefix: &str,
+    key: &str,
+    lookup: &dyn EnvironmentLookup,
+    resolve: fn(T, &str, &dyn EnvironmentLookup) -> Result<Option<T>, ConfigError>,
+) -> Result<BTreeMap<String, T>, ConfigError> {
     let mut resolved = BTreeMap::new();
-    for (tier, label) in raw {
-        let Some(label) = label else {
+    for (tier, value) in entries {
+        let Some(value) = value else {
             continue;
         };
-        let path = format!("{prefix}.tier_labels.{tier}");
-        if let Some(label) = reference(label, &path, lookup)? {
-            resolved.insert(tier, label);
+        let path = format!("{prefix}.{key}.{tier}");
+        if let Some(value) = resolve(value, &path, lookup)? {
+            resolved.insert(tier, value);
         }
     }
     Ok(resolved)
@@ -101,55 +115,35 @@ pub(super) fn pools(
             continue;
         };
         let path = format!("{prefix}.tier_models.{tier}");
-        if let Some(pool) = pool_value(pool, &path, lookup)? {
-            resolved.insert(tier, pool);
-        }
+        let pool = match pool {
+            TierPool::Single(TierEntry::Model(model)) => reference(model, &path, lookup)?
+                .map(|model| TierPool::Single(TierEntry::Model(model))),
+            TierPool::Single(TierEntry::Detailed(entry)) => detailed(entry, &path, lookup)?
+                .map(|entry| TierPool::Single(TierEntry::Detailed(entry))),
+            TierPool::Pool(entries) => Some(TierPool::Pool(pool_entries(entries, &path, lookup)?)),
+        };
+        resolved.extend(pool.map(|pool| (tier, pool)));
     }
     Ok(Some(resolved))
 }
 
-fn pool_value(
-    pool: TierPool,
+fn pool_entries(
+    entries: Vec<TierEntry>,
     path: &str,
     lookup: &dyn EnvironmentLookup,
-) -> Result<Option<TierPool>, ConfigError> {
-    match pool {
-        TierPool::Single(entry) => Ok(single_entry(entry, path, lookup)?.map(TierPool::Single)),
-        TierPool::Pool(entries) => {
-            let mut resolved = Vec::with_capacity(entries.len());
-            for (position, entry) in entries.into_iter().enumerate() {
-                let path = format!("{path}.{position}");
-                if let Some(entry) = listed_entry(entry, &path, lookup)? {
-                    resolved.push(entry);
-                }
-            }
-            Ok(Some(TierPool::Pool(resolved)))
-        }
+) -> Result<Vec<TierEntry>, ConfigError> {
+    let mut resolved = Vec::with_capacity(entries.len());
+    for (position, entry) in entries.into_iter().enumerate() {
+        let path = format!("{path}.{position}");
+        // the proxy substitutes mapping values only, so a model name inside a list stays literal
+        let TierEntry::Detailed(entry) = entry else {
+            resolved.push(entry);
+            continue;
+        };
+        let entry = detailed(entry, &path, lookup)?;
+        resolved.extend(entry.map(TierEntry::Detailed));
     }
-}
-
-fn single_entry(
-    entry: TierEntry,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<Option<TierEntry>, ConfigError> {
-    let resolved = match entry {
-        TierEntry::Model(model) => reference(model, path, lookup)?.map(TierEntry::Model),
-        TierEntry::Detailed(entry) => detailed(entry, path, lookup)?.map(TierEntry::Detailed),
-    };
     Ok(resolved)
-}
-
-// the proxy substitutes mapping values only, so a model name inside a list stays literal
-fn listed_entry(
-    entry: TierEntry,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<Option<TierEntry>, ConfigError> {
-    match entry {
-        TierEntry::Model(model) => Ok(Some(TierEntry::Model(model))),
-        TierEntry::Detailed(entry) => detailed(entry, path, lookup),
-    }
 }
 
 fn detailed(
@@ -162,55 +156,49 @@ fn detailed(
         return Ok(None);
     };
     let values = entry.litellm_params.unwrap_or_default();
-    let values = params(values, &format!("{path}.litellm_params"), lookup)?;
+    let resolved = resolve_json(
+        Json::Object(values),
+        &format!("{path}.litellm_params"),
+        lookup,
+    )?;
+    let Some(Json::Object(values)) = resolved else {
+        return Ok(None);
+    };
     Ok(Some(TierEntry::Detailed(TierModelEntry {
         model_name,
         litellm_params: Some(values),
     })))
 }
 
-fn params(
-    values: IndexMap<String, Json>,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<IndexMap<String, Json>, ConfigError> {
-    let mut resolved = IndexMap::with_capacity(values.len());
-    for (key, value) in values {
-        let path = format!("{path}.{key}");
-        if let Some(value) = param_value(value, &path, lookup)? {
-            resolved.insert(key, value);
-        }
-    }
-    Ok(resolved)
-}
-
-fn param_value(
+// a JSON value resolves its strings, recursing into mapping values and into the mapping items of lists
+fn resolve_json(
     value: Json,
     path: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<Json>, ConfigError> {
-    match value {
-        Json::Text(text) => Ok(reference(text, path, lookup)?.map(Json::Text)),
-        Json::Object(inner) => Ok(Some(Json::Object(params(inner, path, lookup)?))),
-        Json::List(items) => Ok(Some(Json::List(params_list(items, path, lookup)?))),
-        other => Ok(Some(other)),
-    }
-}
-
-// a list value recurses into its mapping items only, matching the proxy's walk
-fn params_list(
-    items: Vec<Json>,
-    path: &str,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<Vec<Json>, ConfigError> {
-    let mut resolved = Vec::with_capacity(items.len());
-    for (position, item) in items.into_iter().enumerate() {
-        let path = format!("{path}.{position}");
-        let item = match item {
-            Json::Object(inner) => Json::Object(params(inner, &path, lookup)?),
-            other => other,
-        };
-        resolved.push(item);
-    }
-    Ok(resolved)
+    let resolved = match value {
+        Json::Text(text) => return Ok(reference(text, path, lookup)?.map(Json::Text)),
+        Json::Object(inner) => {
+            let mut entries = IndexMap::with_capacity(inner.len());
+            for (key, item) in inner {
+                let item = resolve_json(item, &format!("{path}.{key}"), lookup)?;
+                entries.extend(item.map(|item| (key, item)));
+            }
+            Json::Object(entries)
+        }
+        Json::List(items) => {
+            let mut entries = Vec::with_capacity(items.len());
+            for (position, item) in items.into_iter().enumerate() {
+                let target = format!("{path}.{position}");
+                let Json::Object(inner) = item else {
+                    entries.push(item);
+                    continue;
+                };
+                entries.extend(resolve_json(Json::Object(inner), &target, lookup)?);
+            }
+            Json::List(entries)
+        }
+        other => other,
+    };
+    Ok(Some(resolved))
 }
