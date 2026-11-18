@@ -392,6 +392,19 @@ fn an_invalid_limit_leaves_every_topic(#[case] limit: JsonValue, #[case] expecte
     assert_eq!(response.results.len(), expected);
 }
 
+#[test]
+fn an_out_of_range_limit_leaves_every_topic() {
+    let body = r#"{"RelatedTopics":[
+        {"Text":"A - one","FirstURL":"https://a.test"},
+        {"Text":"B - two","FirstURL":"https://b.test"}
+    ]}"#;
+    let limit = serde_json::from_str::<JsonValue>("-100000000000000000000").unwrap();
+
+    let response = decode(body, Some(limit)).unwrap();
+
+    assert_eq!(response.results.len(), 2);
+}
+
 #[rstest]
 #[case(0_i64)]
 #[case(-3_i64)]

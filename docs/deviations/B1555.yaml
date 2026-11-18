@@ -37,10 +37,12 @@ deviations:
       the limit absent. LiteLLM takes the first _max_results value from the request URL, so a list
       whose first element is an integer caps the results there. A numeric string is read with
       Rust's integer parser, so a spelling only Python's int() accepts, such as a digit separator
-      in "1_0" or non-ASCII digits, leaves the limit absent here and caps the results there.
+      in "1_0" or non-ASCII digits, leaves the limit absent here and caps the results there. A
+      value outside the signed 64-bit range does the same, so a huge negative limit leaves the
+      results uncapped here while Python's unbounded int() caps them at the abstract.
     why: >-
       The task reads _max_results as an integer when possible and leaves the limit absent
-      otherwise, and a JSON list is not an integer.
+      otherwise, and neither a JSON list nor a number outside the 64-bit limit is an integer here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L169
   - what: >-
       The decode limit comes from the params the config stored in transform_search_request,
