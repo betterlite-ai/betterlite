@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use super::*;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, Command, Stdio};
 
 #[test]
 fn function_call_arguments_chunk_and_finish() {
@@ -157,22 +159,6 @@ fn many_empty_function_calls_with_a_huge_response_id_exceed_the_event_budget() {
 
 #[test]
 fn oversized_output_is_rejected_before_it_is_copied() {
-    const CHILD_ENV: &str = "BETTERLITE_MEASURE_SYNTHETIC_OUTPUT_COPY";
-    if std::env::var_os(CHILD_ENV).is_none() {
-        let executable = std::env::current_exe().unwrap();
-        let status = std::process::Command::new(executable)
-            .args([
-                "--exact",
-                "api::response_synthetic_events::tests::items::oversized_output_is_rejected_before_it_is_copied",
-                "--nocapture",
-            ])
-            .env(CHILD_ENV, "1")
-            .status()
-            .unwrap();
-        assert!(status.success());
-        return;
-    }
-
     let input = "x".repeat(90 * 1024 * 1024);
     let output = format!(
         r#"[{{"type":"custom_tool_call","id":"ct_1","call_id":"call_1","name":"g","input":"{input}","status":"completed"}}]"#
@@ -180,13 +166,13 @@ fn oversized_output_is_rejected_before_it_is_copied() {
     let mut transformed = response(&output);
     drop(output);
     drop(input);
-    let peak_before = peak_resident_kib();
+    let allocations = Region::new(GLOBAL);
     let error =
         build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
-    let peak_after = peak_resident_kib();
+    let allocated = allocations.change().bytes_allocated;
     assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
     assert_eq!(transformed.output.len(), 1);
-    assert!(peak_after - peak_before < 32 * 1024);
+    assert!(allocated < 32 * 1024 * 1024);
 }
 
 #[test]
@@ -196,23 +182,89 @@ fn oversized_envelope_keeps_output_after_budget_error() {
     let original_output = transformed.output.clone();
     transformed.instructions = Some("i".repeat(90 * 1024 * 1024));
 
+    let allocations = Region::new(GLOBAL);
     let error =
         build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    let allocated = allocations.change().bytes_allocated;
 
     assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
     assert_eq!(transformed.output, original_output);
+    assert!(allocated < 32 * 1024 * 1024);
 }
 
-fn peak_resident_kib() -> u64 {
-    std::fs::read_to_string("/proc/self/status")
-        .unwrap()
-        .lines()
-        .find_map(|line| {
-            line.strip_prefix("VmHWM:")
-                .and_then(|value| value.split_whitespace().next())
-                .and_then(|value| value.parse().ok())
-        })
-        .unwrap()
+#[test]
+fn protected_child_dies_when_owner_is_terminated() {
+    let executable = std::env::current_exe().unwrap();
+    let mut owner = ChildGuard(
+        Command::new("setpriv")
+            .args(["--pdeathsig", "KILL", "--"])
+            .arg(executable)
+            .args([
+                "--exact",
+                "api::response_synthetic_events::tests::items::protected_child_owner",
+                "--nocapture",
+            ])
+            .env("BETTERLITE_PROTECTED_CHILD_OWNER", "1")
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut output = BufReader::new(owner.0.stdout.take().unwrap());
+    let mut child_id = None;
+    for line in output.lines() {
+        let line = line.unwrap();
+        if let Some(value) = line.strip_prefix("CHILD_PID:") {
+            child_id = Some(value.parse::<u32>().unwrap());
+            break;
+        }
+    }
+    let child_id = child_id.unwrap();
+    owner.0.kill().unwrap();
+    owner.0.wait().unwrap();
+    for _attempt in 0..100 {
+        if !process_is_alive(child_id) {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let _ = Command::new("kill")
+        .args(["-KILL", &child_id.to_string()])
+        .status();
+    panic!("protected child {child_id} survived its owner");
+}
+
+#[test]
+fn protected_child_owner() {
+    if std::env::var_os("BETTERLITE_PROTECTED_CHILD_OWNER").is_none() {
+        return;
+    }
+    let child = ChildGuard(
+        Command::new("setpriv")
+            .args(["--pdeathsig", "KILL", "--", "sleep", "60"])
+            .spawn()
+            .unwrap(),
+    );
+    writeln!(std::io::stdout().lock(), "CHILD_PID:{}", child.0.id()).unwrap();
+    std::io::stdout().lock().flush().unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(60));
+}
+
+struct ChildGuard(Child);
+
+impl Drop for ChildGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+fn process_is_alive(pid: u32) -> bool {
+    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
+        return false;
+    };
+    stat.rsplit_once(')')
+        .and_then(|(_details, state)| state.trim_start().chars().next())
+        .is_some_and(|state| state != 'Z' && state != 'X')
 }
 
 #[test]

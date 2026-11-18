@@ -1,10 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-use std::fmt::Debug;
-use std::mem;
-use std::sync::{Arc, Mutex};
-
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::event_types::{Extra, OutputTextDeltaEvent};
 use betterlite_openai::api::responses_event_records::records::{
@@ -14,6 +9,12 @@ use betterlite_openai::api::responses_objects::{ResponseApiUsage, ResponsesApiRe
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use stats_alloc::{INSTRUMENTED_SYSTEM, Region};
+use std::alloc::System;
+use std::collections::BTreeMap;
+use std::fmt::Debug;
+use std::mem;
+use std::sync::{Arc, Mutex};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Subscriber};
@@ -38,6 +39,9 @@ use super::python_value::{has_content, text_or_empty};
 use super::stamping::{
     CostTarget, ResponsesCostCalculator, stamp_object_usage_cost, stamp_usage_cost,
 };
+
+#[global_allocator]
+static GLOBAL: &stats_alloc::StatsAlloc<System> = &INSTRUMENTED_SYSTEM;
 
 #[derive(Clone, Default)]
 struct Capture(Arc<Mutex<Vec<String>>>);
