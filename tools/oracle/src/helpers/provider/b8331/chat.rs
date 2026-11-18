@@ -4,7 +4,7 @@ use betterlite_openai::watsonx_audio::error::api_status;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_chat::error::WatsonxChatError;
 use betterlite_provider::enterprise_ml_dispatch::transport::SharedTransport;
-use betterlite_provider::enterprise_ml_dispatch::watsonx;
+use betterlite_provider::enterprise_ml_dispatch::watsonx::environment as watsonx_environment;
 
 use super::fixture::Fixture;
 use super::wire::{Failure, failure};
@@ -29,7 +29,7 @@ pub(super) fn chat_failure(error: WatsonxChatError) -> Failure {
 // the IAM auth both watsonx arms build, over the case environment and the fixture transport
 pub(super) fn watsonx_auth(fixture: &Fixture) -> Result<WatsonxAuth<SharedTransport<'_>>, Failure> {
     let environment =
-        watsonx::environment(&fixture.source()).map_err(|error| failure(error.status(), &error))?;
+        watsonx_environment(&fixture.source()).map_err(|error| failure(error.status(), &error))?;
     let transport = SharedTransport {
         inner: &fixture.transport,
     };

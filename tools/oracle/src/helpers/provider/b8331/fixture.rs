@@ -105,12 +105,15 @@ impl Scripted {
     }
 
     // the request an arm keeps without sending, its body serialized as the provider wire form
-    pub(super) fn keep_json<T: Serialize>(
+    pub(super) fn keep_json<T>(
         &self,
         url: String,
         headers: HeaderMap,
         body: &T,
-    ) -> Result<(), Failure> {
+    ) -> Result<(), Failure>
+    where
+        T: Serialize,
+    {
         let bytes = serde_json::to_vec(body).map_err(|error| failure(None, &error))?;
         self.keep(Sent {
             method: String::from("POST"),
