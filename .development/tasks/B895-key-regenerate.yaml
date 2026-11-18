@@ -33,7 +33,8 @@ description: >-
   key, hash, row, caller and header. No write occurs in this handler before that call except B785's
   master branch; B896 owns partial effects and events.
 
-  The route's own except at L5984-L5986 logs and really calls B124.handle_exception_on_proxy.
+  The route's own except at L5984-L5986 logs and really calls B2400's handle_exception_on_proxy
+  (betterlite-server api::proxy_endpoint_support).
   HTTPException retains status/detail but becomes internal_server_error, nullable param and matching
   code; ProxyException preserves its type/status/param/code; other exceptions default to 500
   internal_server_error unless carrying status_code. This is not update_key_fn's auth_error mapper.
@@ -143,7 +144,7 @@ deviations:
     why: Secret redaction; missing_target_redacts_secret checks the response and logs while preserving status/type/param/code.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5892-L5896
 out_of_scope:
-  - B785 owns master-key encryption/rotation, B896 virtual writes, B124 the actually called exception
+  - B785 owns master-key encryption/rotation, B896 virtual writes, B2400 the actually called exception
     projector, B069 master comparison, B2362 SHA256, B770 request/response contracts and B800 member
     permission policy. B896 reads grace settings. This route never encrypts stored callback fields itself.
   - 'litellm/proxy/management_endpoints/key_management_endpoints.py: B055 owns generate_key_fn (L1947-L2150),
