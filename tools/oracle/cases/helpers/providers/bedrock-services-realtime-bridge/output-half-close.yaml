@@ -27,6 +27,7 @@ call:
       frames: []
       chunks:
       - kind: end
+        text: ''
       await_error: null
       block: false
       cancel: false
@@ -42,6 +43,7 @@ call:
       - kind: bytes
         text: '{"event":{"unknownThing":1}}'
       - kind: end
+        text: ''
       await_error: null
       block: false
       cancel: false
@@ -57,6 +59,7 @@ call:
       - kind: bytes
         text: '{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}'
       - kind: end
+        text: ''
       await_error: null
       block: false
       cancel: false

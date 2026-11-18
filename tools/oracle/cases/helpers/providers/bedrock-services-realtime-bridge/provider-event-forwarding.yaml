@@ -35,8 +35,11 @@ call:
       - kind: bytes
         text: '{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}'
       - kind: missing_value
+        text: ''
       - kind: missing_bytes
+        text: ''
       - kind: empty
+        text: ''
       - kind: bytes
         text: '{"event":{"textOutput":{"content":"Hello"}}}'
       - kind: bytes
@@ -44,6 +47,7 @@ call:
       - kind: bytes
         text: '{"event":{"contentEnd":{"stopReason":"END_TURN"}}}'
       - kind: end
+        text: ''
       await_error: null
       block: false
       cancel: false

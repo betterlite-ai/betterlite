@@ -39,6 +39,8 @@ call:
       chunks:
       - kind: bytes
         text: '{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}'
+      - kind: bytes
+        text: '{"event":{"contentEnd":{"stopReason":"END_TURN"}}}'
       await_error: null
       block: true
       cancel: true

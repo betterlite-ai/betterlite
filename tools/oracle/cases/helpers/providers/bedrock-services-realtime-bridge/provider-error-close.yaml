@@ -32,6 +32,18 @@ call:
     - 00000000-0000-4000-8000-000000000010
     - 00000000-0000-4000-8000-000000000011
     - 00000000-0000-4000-8000-000000000012
+    - 00000000-0000-4000-8000-000000000013
+    - 00000000-0000-4000-8000-000000000014
+    - 00000000-0000-4000-8000-000000000015
+    - 00000000-0000-4000-8000-000000000016
+    - 00000000-0000-4000-8000-000000000017
+    - 00000000-0000-4000-8000-000000000018
+    - 00000000-0000-4000-8000-000000000019
+    - 00000000-0000-4000-8000-000000000020
+    - 00000000-0000-4000-8000-000000000021
+    - 00000000-0000-4000-8000-000000000022
+    - 00000000-0000-4000-8000-000000000023
+    - 00000000-0000-4000-8000-000000000024
     runs:
     - kind: provider
       trace_id: trace-await
@@ -66,6 +78,7 @@ call:
       frames: []
       chunks:
       - kind: invalid_utf8
+        text: ''
       await_error: null
       block: false
       cancel: false
@@ -96,14 +109,19 @@ call:
         text: '{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}'
       - kind: bytes
         text: '{"event":{"contentEnd":{"stopReason":"END_TURN"}}}'
+      - kind: bytes
+        text: '{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}'
+      - kind: bytes
+        text: '{"event":{"contentEnd":{"stopReason":"END_TURN"}}}'
       - kind: end
+        text: ''
       await_error: null
       block: false
       cancel: false
       bedrock_send_failures: []
       receive_failures: []
       client_send_failures:
-      - 0
+      - 13
       bedrock_close_error: false
 env: {}
 compare:

@@ -29,6 +29,7 @@ call:
       - kind: bytes
         text: '{"event":{"contentEnd":{"stopReason":"END_TURN"}}}'
       - kind: end
+        text: ''
       await_error: null
       block: false
       cancel: false
