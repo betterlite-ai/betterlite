@@ -1,3 +1,4 @@
+use betterlite_anthropic::tool_names::REVERSE_MAP_KEY;
 use std::future::ready;
 use std::sync::{Mutex, PoisonError};
 
@@ -30,10 +31,27 @@ pub struct Config<'matrix> {
     pub matrix: &'matrix BetaMatrix,
 }
 
+impl Config<'_> {
+    pub(super) fn install(
+        &mut self,
+        prepared: PreparedRequest,
+        litellm_params: &mut IndexMap<String, Json>,
+    ) -> Result<(), serde_json::Error> {
+        if !prepared.tool_name_reverse.is_empty() {
+            litellm_params.insert(
+                REVERSE_MAP_KEY.to_owned(),
+                serde_json::from_value(serde_json::to_value(&prepared.tool_name_reverse)?)?,
+            );
+        }
+        self.prepared = Some(prepared);
+        Ok(())
+    }
+}
+
 impl ChatConfig for Config<'_> {
     fn transform_request(
         &self,
-        input: &TransformRequest<'_>,
+        request: &TransformRequest<'_>,
     ) -> Result<IndexMap<String, Json>, ConfigError> {
         if let Some(prepared) = &self.prepared {
             return Ok(prepared.body.clone());
@@ -42,19 +60,19 @@ impl ChatConfig for Config<'_> {
             .validated
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(Validated {
-            messages: input.messages.to_vec(),
-            optional: input.optional_params.clone(),
-            litellm: input.litellm_params.clone(),
-            headers: input.headers.clone(),
+            messages: request.messages.to_vec(),
+            optional: request.optional_params.clone(),
+            litellm: request.litellm_params.clone(),
+            headers: request.headers.clone(),
         });
         Err(Box::new(PrepareNext))
     }
 
     fn async_transform_request(
         &self,
-        input: &TransformRequest<'_>,
+        request: &TransformRequest<'_>,
     ) -> impl Future<Output = Result<IndexMap<String, Json>, ConfigError>> + Send {
-        ready(self.transform_request(input))
+        ready(self.transform_request(request))
     }
 
     fn filter_request_betas(

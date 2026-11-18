@@ -1,4 +1,5 @@
-use std::str::FromStr;
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use std::str::FromStr as _;
 
 use betterlite_models::identity::provider_id::ProviderId;
 use thiserror::Error;
@@ -30,8 +31,8 @@ pub enum ConfigSelectionError {
 pub fn selected_config(
     model: &str,
     provider: &str,
-    selection: Option<betterlite_context::chat_config_selection::tags::ChatConfigTag>,
-) -> Result<betterlite_context::chat_config_selection::tags::ChatConfigTag, ConfigSelectionError> {
+    selection: Option<ChatConfigTag>,
+) -> Result<ChatConfigTag, ConfigSelectionError> {
     let id = ProviderId::from_str(provider).map_err(|_invalid| {
         ConfigSelectionError::InvalidProvider {
             provider: provider.to_owned(),

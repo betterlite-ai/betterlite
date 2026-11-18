@@ -1,3 +1,4 @@
+use std::error::Error as StdError;
 pub mod base;
 pub mod config;
 
@@ -45,7 +46,7 @@ pub struct CallLogging<'state, 'env> {
 #[derive(Debug, thiserror::Error)]
 pub enum DispatchError<Failure>
 where
-    Failure: std::error::Error + Send + Sync + 'static,
+    Failure: StdError + Send + Sync + 'static,
 {
     #[error(transparent)]
     Selection(config::ConfigSelectionError),

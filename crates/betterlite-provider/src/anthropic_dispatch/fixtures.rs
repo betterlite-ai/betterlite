@@ -1,3 +1,9 @@
+use super::completion::HandlerFuture;
+use betterlite_logging::logging_state::LoggingStateError;
+use betterlite_redact::error::RedactionError;
+use http::header::InvalidHeaderName;
+use http::header::InvalidHeaderValue;
+use std::string::FromUtf8Error;
 mod calls;
 mod recording;
 pub(crate) mod runtime;
@@ -95,21 +101,23 @@ pub enum FixtureError {
     #[error("fixture serialization failed")]
     Json(#[from] serde_json::Error),
     #[error("fixture logging failed")]
-    Logging(#[from] betterlite_logging::logging_state::LoggingStateError),
+    Logging(#[from] LoggingStateError),
     #[error("fixture redactor failed")]
-    Redactor(#[from] betterlite_redact::error::RedactionError),
+    Redactor(#[from] RedactionError),
     #[error("fixture text is not UTF-8")]
-    Utf8(#[from] std::string::FromUtf8Error),
+    Utf8(#[from] FromUtf8Error),
     #[error("fixture header is invalid")]
-    HeaderName(#[from] http::header::InvalidHeaderName),
+    HeaderName(#[from] InvalidHeaderName),
     #[error("fixture header is invalid")]
-    HeaderValue(#[from] http::header::InvalidHeaderValue),
+    HeaderValue(#[from] InvalidHeaderValue),
 }
 
-pub async fn execute(case: &Case) -> Result<Vec<Observation>, FixtureError> {
-    let mut results = Vec::new();
-    for input in &case.inputs {
-        results.push(calls::run(input).await?);
-    }
-    Ok(results)
+pub fn execute(case: &Case) -> HandlerFuture<'_, Vec<Observation>, FixtureError> {
+    Box::pin(async move {
+        let mut results = Vec::new();
+        for input in &case.inputs {
+            results.push(calls::run(input).await?);
+        }
+        Ok(results)
+    })
 }

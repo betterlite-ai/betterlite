@@ -1,4 +1,13 @@
+use crate::anthropic_dispatch::fixtures::runtime::logging;
+use betterlite_anthropic::chat_call::ChatOutcome;
+use betterlite_anthropic::request::error::RequestError;
+use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
+use betterlite_config::sections::anthropic_completion::OptionValues;
+use betterlite_core::cost::completion::lookup::NoHfConfig;
+use betterlite_models::decisions::Json;
 use std::collections::{BTreeMap, BTreeSet};
+use std::convert::Infallible;
+use std::future::ready;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -76,21 +85,26 @@ pub(super) struct Observed {
     pub status: Option<u16>,
     pub logged: String,
     pub tool_name: Option<String>,
-    pub preparation_error:
-        Option<Box<betterlite_anthropic::request::error::RequestError<std::convert::Infallible>>>,
+    pub preparation_error: Option<Box<RequestError<Infallible>>>,
 }
 
 struct Media;
 impl RemoteMediaFetcher for Media {
-    async fn convert_url(&self, _url: &str) -> Result<String, ImageFetchError> {
-        Ok("data:image/png;base64,aGk=".to_owned())
+    fn convert_url(&self, _url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        ready(Ok("data:image/png;base64,aGk=".to_owned()))
     }
-    async fn convert_urls(&self, urls: &[String]) -> Result<Vec<String>, ImageFetchError> {
-        Ok(vec!["data:image/png;base64,aGk=".to_owned(); urls.len()])
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        ready(Ok(vec![
+            "data:image/png;base64,aGk=".to_owned();
+            urls.len()
+        ]))
     }
 }
 impl FileBlocks for Media {
-    type Failure = std::convert::Infallible;
+    type Failure = Infallible;
     fn file_block(&self, element: &Object) -> Result<Object, Self::Failure> {
         Ok(element.clone())
     }
@@ -120,7 +134,7 @@ async fn server(listener: TcpListener, answer: &'static str) -> (Value, String) 
                 .unwrap();
             break (end + 4, length);
         }
-        assert!(input.len() < 16384);
+        assert!(input.len() < 0x4000);
     };
     while input.len() < end + length {
         let mut buf = [0; 4096];
@@ -184,10 +198,10 @@ pub(super) async fn run(
     };
     let mut keys = ModelCostKeys::default();
     let hf = HfConfigClient {
-        client: client.clone(),
+        client: NoHfConfig,
         base_url: base.clone(),
     };
-    let environment = CapabilityEnvironment {
+    let capabilities = CapabilityEnvironment {
         metadata: MetadataEnvironment {
             model_cost: &map.entries,
             vertex: &map.vertex,
@@ -196,7 +210,7 @@ pub(super) async fn run(
             normalizers: NameNormalizers {
                 bedrock_base_model: get_bedrock_base_model,
                 bedrock_routing_prefix: strip_bedrock_routing_prefix,
-                mantle_region_split: betterlite_bedrock::mantle_inputs::region::split_region_prefix,
+                mantle_region_split: split_region_prefix,
             },
         },
         keys: &mut keys,
@@ -227,13 +241,13 @@ pub(super) async fn run(
             stream_logger: &Log,
             ids: &UuidV4,
             now: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
-            max_event_bytes: 65536,
-            max_error_body_bytes: 65536,
+            max_event_bytes: 0x0001_0000,
+            max_error_body_bytes: 0x0001_0000,
             disable_add_prefix_to_prompt: false,
             effort_used: false,
         },
         preparation: Preparation {
-            environment,
+            environment: capabilities,
             catalogs,
             prompts: PromptDeps {
                 fetcher: &Media,
@@ -249,8 +263,8 @@ pub(super) async fn run(
         },
         legacy: Legacy {
             prompts: &prompts,
-            defaults: &betterlite_config::sections::anthropic_completion::OptionValues::default(),
-            body_limit: 65536,
+            defaults: &OptionValues::default(),
+            body_limit: 0x0001_0000,
         },
     };
     let encoding = Encoding::Cl100kBase;
@@ -267,7 +281,7 @@ pub(super) async fn run(
         messages: if key {
             serde_json::from_str(r#"[{"role":"user","content":"hi"}]"#).unwrap()
         } else {
-            vec![betterlite_models::decisions::Json::Bool(true)]
+            vec![Json::Bool(true)]
         },
         model_response: ResponseEnvelope::new("chatcmpl-native".to_owned()),
         optional_params: match surface {
@@ -286,14 +300,9 @@ pub(super) async fn run(
         encoding: engine,
         timeout: TIMEOUT,
     };
-    call.optional_params.extend(
-        serde_json::from_str::<IndexMap<String, betterlite_models::decisions::Json>>(options)
-            .unwrap(),
-    );
-    call.stream = matches!(
-        call.optional_params.get("stream"),
-        Some(betterlite_models::decisions::Json::Bool(true))
-    );
+    call.optional_params
+        .extend(serde_json::from_str::<IndexMap<String, Json>>(options).unwrap());
+    call.stream = matches!(call.optional_params.get("stream"), Some(Json::Bool(true)));
     let globals = Globals::default();
     let environment = Environment::default();
     let completion = CompletionSettings {
@@ -338,8 +347,7 @@ pub(super) async fn run(
         file_client: &file_client,
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, env) =
-        crate::anthropic_dispatch::fixtures::runtime::logging(&redactor).unwrap();
+    let (mut state, env) = logging(&redactor).unwrap();
     let mut log = CallLogging {
         state: &mut state,
         env: &env,
@@ -356,9 +364,7 @@ pub(super) async fn run(
     .unwrap();
     let mut preparation_error = None;
     let (content, status, posted, tool_name) = match outcome {
-        Ok(Outcome::Completion(Reply::Messages(
-            betterlite_anthropic::chat_call::ChatOutcome::Reply(reply),
-        ))) => (
+        Ok(Outcome::Completion(Reply::Messages(ChatOutcome::Reply(reply)))) => (
             reply.choices[0].message.content.clone(),
             None,
             true,
@@ -374,7 +380,7 @@ pub(super) async fn run(
             response,
             ..
         }))) => {
-            let reply = timeout(TIMEOUT, (*response).buffered(65536))
+            let reply = timeout(TIMEOUT, (*response).buffered(0x0001_0000))
                 .await
                 .unwrap()
                 .unwrap();
@@ -398,11 +404,11 @@ pub(super) async fn run(
         _ => panic!("unexpected native outcome"),
     };
     let logged = match state.model_call_details.get("original_response") {
-        Some(betterlite_models::decisions::Json::Text(text)) => text.clone(),
+        Some(Json::Text(text)) => text.clone(),
         _ => String::new(),
     };
     let observed = if posted {
-        let (body, key) = timeout(TIMEOUT, tasks.join_next())
+        let (body, credential) = timeout(TIMEOUT, tasks.join_next())
             .await
             .unwrap()
             .unwrap()
@@ -411,7 +417,7 @@ pub(super) async fn run(
             posts: 1,
             content,
             body,
-            key,
+            key: credential,
             status,
             logged,
             tool_name,

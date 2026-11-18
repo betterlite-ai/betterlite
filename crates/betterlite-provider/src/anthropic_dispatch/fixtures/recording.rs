@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_anthropic::batches::handler::BatchTransport;
@@ -9,7 +10,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
 use http::HeaderMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 
 use super::super::CallLogging;
@@ -40,14 +41,14 @@ impl CompletionHandler<String, String> for Recorder<'_> {
 
     fn complete<'call>(
         &'call mut self,
-        resolved: ResolvedCall<String, String>,
+        call: ResolvedCall<String, String>,
         _log: &'call mut CallLogging<'_, '_>,
     ) -> HandlerFuture<'call, Json, Failure> {
         Box::pin(async move {
             if let Some(status) = self.0.failure {
                 return Err(Failure::Status(status));
             }
-            let reply = Capture::from((resolved, self.0));
+            let reply = Capture::from((call, self.0));
             Ok(json(&reply)?)
         })
     }
@@ -84,7 +85,7 @@ impl From<(ResolvedCall<String, String>, &Input)> for Capture {
         Self {
             model: call.model, provider: call.provider, api_base: call.api_base,
             model_response_id: call.model_response.id, timeout_ms: call.timeout.as_millis(),
-            auth_matches: call.api_key.as_ref().map(|key| key.expose_secret()) == input.expected_key.as_ref().map(|key| key.expose_secret()),
+            auth_matches: call.api_key.as_ref().map(ExposeSecret::expose_secret) == input.expected_key.as_ref().map(ExposeSecret::expose_secret),
             messages: call.messages, headers: call.headers.into_iter().map(|(name, value)| (name, value.expose_secret().to_owned())).collect(), optional_params: call.optional_params, litellm_params: call.litellm_params,
             custom_prompt_dict: match resolved.surface { Surface::Messages => Some(call.custom_prompt_dict), Surface::Legacy => None },
             stream: match resolved.surface { Surface::Messages => None, Surface::Legacy => Some(call.stream) },
@@ -123,7 +124,7 @@ impl Transport {
             .iter()
             .map(|(name, value)| {
                 let matched = if value.to_str().ok()
-                    == self.expected_key.as_ref().map(|key| key.expose_secret())
+                    == self.expected_key.as_ref().map(ExposeSecret::expose_secret)
                 {
                     "matched"
                 } else {
@@ -150,7 +151,7 @@ fn body(request: RequestBody) -> Result<Json, TransportError> {
             Json::Text(String::from_utf8(data).map_err(|_error| TransportError::Closed)?)
         }
         RequestBody::Multipart { boundary, parts } => {
-            let parts: Vec<_> = parts
+            let recorded_parts: Vec<_> = parts
                 .into_iter()
                 .map(|part| {
                     Ok(Part {
@@ -162,7 +163,11 @@ fn body(request: RequestBody) -> Result<Json, TransportError> {
                     })
                 })
                 .collect::<Result<Vec<_>, TransportError>>()?;
-            json(&Multipart { boundary, parts }).map_err(|_error| TransportError::Closed)?
+            json(&Multipart {
+                boundary,
+                parts: recorded_parts,
+            })
+            .map_err(|_error| TransportError::Closed)?
         }
     };
     Ok(value)
@@ -182,26 +187,32 @@ struct Part {
 }
 
 impl CountTokensTransport for Transport {
-    async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        self.answer(request)
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        ready(self.answer(request))
     }
 }
 impl BatchTransport for Transport {
-    async fn send_buffered(
+    fn send_buffered(
         &self,
         request: OutboundRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
-        self.answer(request)
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        ready(self.answer(request))
     }
 }
 impl FileTransport for Transport {
-    async fn send_buffered(
+    fn send_buffered(
         &self,
         request: OutboundRequest,
-    ) -> Result<UpstreamResponse, TransportError> {
-        self.answer(request)
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        ready(self.answer(request))
     }
-    async fn send_stream(&self, _request: OutboundRequest) -> Result<StreamReply, TransportError> {
-        Err(TransportError::Closed)
+    fn send_stream(
+        &self,
+        _request: OutboundRequest,
+    ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
+        ready(Err(TransportError::Closed))
     }
 }

@@ -1,4 +1,6 @@
+use betterlite_anthropic::response::wire::ResponseEnvelope;
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
 use std::time::Duration;
 
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
@@ -19,7 +21,7 @@ pub struct CompletionCall<Client, Encoding> {
     pub model: String,
     pub provider: String,
     pub messages: Vec<Json>,
-    pub model_response: betterlite_anthropic::response::wire::ResponseEnvelope,
+    pub model_response: ResponseEnvelope,
     pub optional_params: IndexMap<String, Json>,
     pub litellm_params: IndexMap<String, Json>,
     pub headers: BTreeMap<String, SecretString>,
@@ -53,7 +55,7 @@ pub type HandlerFuture<'call, Reply, Failure> = LocalBoxFuture<'call, Result<Rep
 // B584's chat call and B010's legacy HTTP call are supplied at their native call seam.
 pub trait CompletionHandler<Client, Encoding> {
     type Reply;
-    type Failure: std::error::Error + Send + Sync + 'static;
+    type Failure: StdError + Send + Sync + 'static;
 
     fn complete<'call>(
         &'call mut self,
@@ -142,7 +144,7 @@ fn resolve<Client, Encoding>(
             )?)
         }
         Surface::Legacy => {
-            call.provider = "anthropic_text".to_owned();
+            "anthropic_text".clone_into(&mut call.provider);
             call.custom_prompt_dict.clear();
             call.client = None;
             None

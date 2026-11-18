@@ -1,3 +1,11 @@
+use super::services::Services;
+use betterlite_anthropic::response::wire::ResponseEnvelope;
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+use betterlite_logging::logging_state::LoggingState;
+use betterlite_logging::python_json::dumps;
+use betterlite_models::identity::provider_id::ProviderId;
+use betterlite_openai::batches::records::BatchStatus;
+use betterlite_openai::batches::records::RequestCounts;
 use std::sync::PoisonError;
 use std::time::Duration;
 
@@ -12,7 +20,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::base::{Globals, Surface};
-use super::super::completion::{CompletionCall, CompletionSettings};
+use super::super::completion::{CompletionCall, CompletionSettings, HandlerFuture};
 use super::super::config::AnthropicConfigKind;
 use super::super::operations::{DispatchDeps, Operation, Outcome};
 use super::super::{CallLogging, DispatchError, dispatch};
@@ -20,38 +28,38 @@ use super::recording::{Failure, Recorder, Transport, json};
 use super::runtime::logging;
 use super::{Action, FixtureError, Input, Observation};
 
-pub(super) async fn run(input: &Input) -> Result<Observation, FixtureError> {
-    let services = super::services::Services::from(input);
-    let globals = Globals {
-        api_base: input.global_base.clone(),
-        anthropic_key: input.anthropic_key.clone(),
-        api_key: input.global_key.clone(),
-    };
-    let completion = CompletionSettings {
-        globals: &globals,
-        environment: &input.environment,
-        custom_prompt_dict: &input.global_prompt_dict,
-        disable_suffix: input.settings.disable_suffix,
-        selection: selection(input),
-    };
-    let mut handler = Recorder(input);
-    let mut deps = DispatchDeps {
-        completion: &completion,
-        handler: &mut handler,
-        count: &services.count,
-        batches: &services.batches,
-        files: &services.files,
-        file_client: &services.client,
-    };
-    invoke(input, &mut deps).await
+pub(super) fn run(input: &Input) -> HandlerFuture<'_, Observation, FixtureError> {
+    Box::pin(async move {
+        let services = Services::from(input);
+        let globals = Globals {
+            api_base: input.global_base.clone(),
+            anthropic_key: input.anthropic_key.clone(),
+            api_key: input.global_key.clone(),
+        };
+        let completion = CompletionSettings {
+            globals: &globals,
+            environment: &input.environment,
+            custom_prompt_dict: &input.global_prompt_dict,
+            disable_suffix: input.settings.disable_suffix,
+            selection: selection(input),
+        };
+        let mut handler = Recorder(input);
+        let mut deps = DispatchDeps {
+            completion: &completion,
+            handler: &mut handler,
+            count: &services.count,
+            batches: &services.batches,
+            files: &services.files,
+            file_client: &services.client,
+        };
+        invoke(input, &mut deps).await
+    })
 }
 
-fn selection(
-    input: &Input,
-) -> Option<betterlite_context::chat_config_selection::tags::ChatConfigTag> {
+fn selection(input: &Input) -> Option<ChatConfigTag> {
     input
         .provider
-        .parse::<betterlite_models::identity::provider_id::ProviderId>()
+        .parse::<ProviderId>()
         .ok()
         .and_then(|provider| {
             PROVIDER_CONFIG_ROWS
@@ -63,47 +71,48 @@ fn selection(
         .filter(|_tag| input.settings.config_present)
 }
 
-async fn invoke(
-    input: &Input,
-    deps: &mut DispatchDeps<'_, Transport, Recorder<'_>>,
-) -> Result<Observation, FixtureError> {
-    let headers = headers(input)?;
-    let file = FileData::Tuple3 {
-        filename: Some("input.jsonl".to_owned()),
-        content: FileBody::Bytes(input.file.as_bytes().to_vec()),
-        content_type: Some("application/jsonl".to_owned()),
-    };
-    let messages = Json::List(input.messages.clone());
-    let missing_key = SecretString::from("");
-    let operation = operation(input, &headers, &file, &messages, &missing_key);
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
-    let (mut state, env) = logging(&redactor)?;
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &env,
-    };
-    let outcome = dispatch(operation, deps, &mut log).await;
-    let result = outcome_value(outcome)?;
-    let request = deps
-        .files
-        .transport
-        .sent
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    Ok(observation(result, &state, request))
+fn invoke<'call>(
+    input: &'call Input,
+    deps: &'call mut DispatchDeps<'_, Transport, Recorder<'_>>,
+) -> HandlerFuture<'call, Observation, FixtureError> {
+    Box::pin(async move {
+        let headers = headers(input)?;
+        let file = FileData::Tuple3 {
+            filename: Some("input.jsonl".to_owned()),
+            content: FileBody::Bytes(input.file.as_bytes().to_vec()),
+            content_type: Some("application/jsonl".to_owned()),
+        };
+        let messages = Json::List(input.messages.clone());
+        let missing_key = SecretString::from("");
+        let operation = operation(input, &headers, &file, &messages, &missing_key);
+        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?;
+        let (mut state, env) = logging(&redactor)?;
+        let mut log = CallLogging {
+            state: &mut state,
+            env: &env,
+        };
+        let outcome = dispatch(operation, deps, &mut log).await;
+        let result = outcome_value(outcome)?;
+        let request = deps
+            .files
+            .transport
+            .sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Ok(observation(result, &state, request))
+    })
 }
 
 fn observation(
     result: Json,
-    state: &betterlite_logging::logging_state::LoggingState,
+    state: &LoggingState,
     request: Option<super::Recorded>,
 ) -> Observation {
     let post_call = state.model_call_details.get("log_event_type")
         == Some(&Json::Text("post_api_call".to_owned()));
     let post_matches = !post_call
-        || state.model_call_details.get("original_response")
-            == Some(&Json::Text(betterlite_logging::python_json::dumps(&result)));
+        || state.model_call_details.get("original_response") == Some(&Json::Text(dumps(&result)));
     Observation {
         result,
         post_call,
@@ -130,9 +139,7 @@ impl From<&Input> for CompletionCall<String, String> {
             model: input.model.clone(),
             provider: input.provider.clone(),
             messages: input.messages.clone(),
-            model_response: betterlite_anthropic::response::wire::ResponseEnvelope::new(
-                "chatcmpl-input".to_owned(),
-            ),
+            model_response: ResponseEnvelope::new("chatcmpl-input".to_owned()),
             optional_params: input.optional_params.clone(),
             litellm_params: input.litellm_params.clone(),
             headers: input.headers.clone(),
@@ -198,7 +205,7 @@ fn outcome_value(
         Err(error) => {
             let status = match error {
                 DispatchError::Completion(Failure::Status(status)) => Some(status),
-                DispatchError::Count(error) => Some(error.status_code()),
+                DispatchError::Count(count_error) => Some(count_error.status_code()),
                 DispatchError::Selection(_)
                 | DispatchError::Batch(_)
                 | DispatchError::File(_)
@@ -221,7 +228,7 @@ struct FailureView {
 #[derive(serde::Serialize)]
 struct BatchView<'reply> {
     id: &'reply str,
-    status: &'reply betterlite_openai::batches::records::BatchStatus,
+    status: &'reply BatchStatus,
     output_file_id: &'reply Option<String>,
-    request_counts: &'reply Option<betterlite_openai::batches::records::RequestCounts>,
+    request_counts: &'reply Option<RequestCounts>,
 }
