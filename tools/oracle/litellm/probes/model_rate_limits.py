@@ -148,17 +148,16 @@ def deployment_dict(deployment: DeploymentInput) -> dict[str, object]:
         "model_info": model_info,
         "litellm_params": params,
     }
-    payload.update(
-        {
-            field: value
-            for field, value in (
-                ("tpm", deployment.tpm),
-                ("rpm", deployment.rpm),
-                ("itpm", deployment.itpm),
-            )
-            if value is not None
-        }
-    )
+    extra: dict[str, int] = {
+        field: value
+        for field, value in (
+            ("tpm", deployment.tpm),
+            ("rpm", deployment.rpm),
+            ("itpm", deployment.itpm),
+        )
+        if value is not None
+    }
+    payload.update(extra)
     return payload
 
 
