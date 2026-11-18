@@ -225,8 +225,12 @@ fn supplied_client_of_the_other_kind_is_not_used() {
     let reply = run_with_supplied(&factory, &client, ClientKind::Sync, true, &data)
         .expect("a fresh async client replies");
     assert_eq!(reply, object(r#"{"factory":true}"#));
+    let reply = run_with_supplied(&factory, &client, ClientKind::Async, false, &data)
+        .expect("a fresh sync client replies");
+    assert_eq!(reply, object(r#"{"factory":true}"#));
     assert!(client.requests().is_empty());
     assert_eq!(factory.async_calls(), vec![("bedrock".to_owned(), None)]);
+    assert_eq!(factory.sync_calls(), vec![None]);
 }
 
 fn provider_json_response() {
