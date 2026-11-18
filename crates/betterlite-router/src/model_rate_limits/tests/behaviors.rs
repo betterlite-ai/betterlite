@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use serde_json::Number;
+
 use crate::model_rate_limits::error::RateLimitChannel;
-use crate::model_rate_limits::service::SuccessUsage;
+use crate::model_rate_limits::service::{IoTokenReservationHook, SuccessUsage};
 
 use super::support::{
     FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, exceeded, request, rpm_key,
@@ -266,7 +268,8 @@ async fn success_event_skips_absent_fields() {
 async fn failure_event_refunds() {
     let io = Arc::new(FakeIo::new());
     let cache = Arc::new(FakeCache::new());
-    let check = service(Arc::clone(&cache), Some(Arc::clone(&io)));
+    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let check = service(Arc::clone(&cache), Some(hook));
     check.async_log_failure_event(&mut request()).await;
     assert_eq!(io.calls.lock().unwrap().refunds, 1);
 }
@@ -278,12 +281,13 @@ async fn io_reservation_before_the_checks() {
             .seed_local(&rpm_key("openai/gpt-4o"), 1)
             .seed_remote(&rpm_key("openai/gpt-4o"), 1),
     );
-    let check = service(Arc::clone(&cache), Some(Arc::clone(&io)));
+    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let check = service(Arc::clone(&cache), Some(hook));
     let deployment = with_param(
         with_info(
             spec("gpt-4o", "a", "openai/gpt-4o"),
             "itpm",
-            betterlite_models::decisions::Json::Number(10.into()),
+            betterlite_models::decisions::Json::Number(Number::from(10_i64)),
         ),
         "rpm",
         1,
@@ -314,7 +318,7 @@ async fn coexist_warning_logs_once() {
         with_info(
             spec("gpt-4o", "a", "openai/gpt-4o"),
             "itpm",
-            betterlite_models::decisions::Json::Number(10.into()),
+            betterlite_models::decisions::Json::Number(Number::from(10_i64)),
         ),
         "tpm",
         100,
@@ -329,7 +333,7 @@ async fn coexist_warning_without_id_logs_every_time() {
         with_info(
             spec("gpt-4o", "a", "openai/gpt-4o"),
             "itpm",
-            betterlite_models::decisions::Json::Number(10.into()),
+            betterlite_models::decisions::Json::Number(Number::from(10_i64)),
         ),
         "tpm",
         100,
@@ -364,7 +368,8 @@ async fn sync_success_event_counts_local_only() {
 
 async fn sync_failure_event_refunds() {
     let io = Arc::new(FakeIo::new());
-    let check = service(Arc::new(FakeCache::new()), Some(io.clone()));
+    let hook: Arc<dyn IoTokenReservationHook> = Arc::clone(&io);
+    let check = service(Arc::new(FakeCache::new()), Some(hook));
     check.log_failure_event(&mut request());
     assert_eq!(
         io.calls.lock().unwrap(),

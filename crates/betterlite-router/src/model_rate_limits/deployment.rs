@@ -5,9 +5,6 @@ use crate::io_token_reservations::limits::IoLimits;
 
 use super::error::ModelRateLimitError;
 
-const LIMIT_FIELDS: [&str; 2] = ["tpm", "rpm"];
-const IO_LIMIT_FIELDS: [&str; 2] = ["itpm", "otpm"];
-
 // ModelRateLimitingCheck._get_deployment_limits: the tpm and rpm a deployment sets, wherever the config put them
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ModelLimits {
@@ -17,16 +14,16 @@ pub struct ModelLimits {
 
 pub fn model_limits(deployment: &DeploymentSpec) -> Result<ModelLimits, ModelRateLimitError> {
     Ok(ModelLimits {
-        tpm: limit(deployment, LIMIT_FIELDS[0])?,
-        rpm: limit(deployment, LIMIT_FIELDS[1])?,
+        tpm: limit(deployment, "tpm")?,
+        rpm: limit(deployment, "rpm")?,
     })
 }
 
 // get_deployment_io_token_limits reads the itpm/otpm pair from the same three places
 pub fn io_limits(deployment: &DeploymentSpec) -> Result<IoLimits, ModelRateLimitError> {
     Ok(IoLimits {
-        itpm: limit(deployment, IO_LIMIT_FIELDS[0])?,
-        otpm: limit(deployment, IO_LIMIT_FIELDS[1])?,
+        itpm: limit(deployment, "itpm")?,
+        otpm: limit(deployment, "otpm")?,
     })
 }
 

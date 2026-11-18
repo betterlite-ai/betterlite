@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
+use serde_json::Number;
 
 use crate::model_rate_limits::error::{ModelRateLimitError, RateLimitChannel, RateLimitExceeded};
 use crate::model_rate_limits::service::ModelRateLimits;
@@ -180,12 +181,16 @@ async fn top_level_limit_wins() {
     let check = service(Arc::clone(&cache), None);
     let deployment = with_info(
         with_param(
-            with_extra(spec("gpt-4o", "a", model()), "tpm", Json::Number(1.into())),
+            with_extra(
+                spec("gpt-4o", "a", model()),
+                "tpm",
+                Json::Number(Number::from(1_i64)),
+            ),
             "tpm",
             99,
         ),
         "tpm",
-        Json::Number(99.into()),
+        Json::Number(Number::from(99_i64)),
     );
     let error = check
         .async_pre_call_check(&deployment, &mut request())
@@ -200,7 +205,7 @@ async fn params_limit_beats_model_info() {
     let deployment = with_info(
         with_param(spec("gpt-4o", "a", model()), "tpm", 2),
         "tpm",
-        Json::Number(9.into()),
+        Json::Number(Number::from(9_i64)),
     );
     let error = check
         .async_pre_call_check(&deployment, &mut request())
@@ -212,7 +217,11 @@ async fn params_limit_beats_model_info() {
 async fn model_info_limit_used_last() {
     let cache = Arc::new(FakeCache::new().seed_local(&tpm_key(model()), 3));
     let check = service(Arc::clone(&cache), None);
-    let deployment = with_info(spec("gpt-4o", "a", model()), "tpm", Json::Number(3.into()));
+    let deployment = with_info(
+        spec("gpt-4o", "a", model()),
+        "tpm",
+        Json::Number(Number::from(3_i64)),
+    );
     let error = check
         .async_pre_call_check(&deployment, &mut request())
         .await
@@ -280,7 +289,7 @@ fn coexist_warning_needs_both_limit_kinds() {
     let io_only = with_info(
         spec("gpt-4o", "a", model()),
         "itpm",
-        Json::Number(10.into()),
+        Json::Number(Number::from(10_i64)),
     );
     assert!(!check.logs_coexist_warning(&io_only).unwrap());
     let tpm_only = with_param(spec("gpt-4o", "b", model()), "tpm", 5);

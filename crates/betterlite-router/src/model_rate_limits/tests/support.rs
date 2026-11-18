@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_tokenizer::reservation::RequestBody;
+use serde_json::Number;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::io_token_reservations::clock::IoClock;
@@ -29,15 +30,15 @@ pub(super) enum RemoteMode {
 
 // The in-memory and Redis tiers of LiteLLM's DualCache, each a key-value map the test seeds and reads back
 pub(super) struct FakeCache {
-    pub local: Mutex<BTreeMap<String, i64>>,
-    pub remote: Mutex<BTreeMap<String, i64>>,
-    pub mode: RemoteMode,
-    pub has_remote: bool,
-    pub remote_reads: AtomicUsize,
+    pub(super) local: Mutex<BTreeMap<String, i64>>,
+    pub(super) remote: Mutex<BTreeMap<String, i64>>,
+    pub(super) mode: RemoteMode,
+    pub(super) has_remote: bool,
+    pub(super) remote_reads: AtomicUsize,
 }
 
 impl FakeCache {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             local: Mutex::new(BTreeMap::new()),
             remote: Mutex::new(BTreeMap::new()),
@@ -47,14 +48,14 @@ impl FakeCache {
         }
     }
 
-    pub fn without_remote() -> Self {
+    pub(super) fn without_remote() -> Self {
         Self {
             has_remote: false,
             ..Self::new()
         }
     }
 
-    pub fn seed_local(self, key: &str, value: i64) -> Self {
+    pub(super) fn seed_local(self, key: &str, value: i64) -> Self {
         self.local
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -62,7 +63,7 @@ impl FakeCache {
         self
     }
 
-    pub fn seed_remote(self, key: &str, value: i64) -> Self {
+    pub(super) fn seed_remote(self, key: &str, value: i64) -> Self {
         self.remote
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -70,11 +71,11 @@ impl FakeCache {
         self
     }
 
-    pub fn mode(self, mode: RemoteMode) -> Self {
+    pub(super) fn mode(self, mode: RemoteMode) -> Self {
         Self { mode, ..self }
     }
 
-    pub fn local_value(&self, key: &str) -> Option<i64> {
+    pub(super) fn local_value(&self, key: &str) -> Option<i64> {
         self.local
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -82,7 +83,7 @@ impl FakeCache {
             .copied()
     }
 
-    pub fn remote_value(&self, key: &str) -> Option<i64> {
+    pub(super) fn remote_value(&self, key: &str) -> Option<i64> {
         self.remote
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -131,23 +132,23 @@ impl RateLimitCache for FakeCache {
 
 #[derive(Debug, Default, Eq, PartialEq)]
 pub(super) struct HookCalls {
-    pub reserved: Vec<IoLimitsSeen>,
-    pub refunds: usize,
+    pub(super) reserved: Vec<IoLimitsSeen>,
+    pub(super) refunds: usize,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct IoLimitsSeen {
-    pub itpm: Option<i64>,
-    pub otpm: Option<i64>,
+    pub(super) itpm: Option<i64>,
+    pub(super) otpm: Option<i64>,
 }
 
 // The reservation B019's ITPM/OTPM part composes: it records the call and stashes a reservation in the request
 pub(super) struct FakeIo {
-    pub calls: Mutex<HookCalls>,
+    pub(super) calls: Mutex<HookCalls>,
 }
 
 impl FakeIo {
-    pub fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             calls: Mutex::new(HookCalls::default()),
         }
@@ -208,7 +209,7 @@ pub(super) fn with_param(
 ) -> DeploymentSpec {
     deployment
         .litellm_params
-        .insert(field.to_owned(), Json::Number(value.into()));
+        .insert(field.to_owned(), Json::Number(Number::from(value)));
     deployment
 }
 
@@ -234,10 +235,11 @@ pub(super) fn request() -> RequestBody {
     RequestBody::new()
 }
 
-pub(super) fn service(cache: Arc<FakeCache>, io: Option<Arc<FakeIo>>) -> ModelRateLimits {
-    let hook: Option<Arc<dyn IoTokenReservationHook>> =
-        io.map(|hook| Arc::clone(&hook) as Arc<dyn IoTokenReservationHook>);
-    ModelRateLimits::new(cache, hook, clock())
+pub(super) fn service(
+    cache: Arc<FakeCache>,
+    io: Option<Arc<dyn IoTokenReservationHook>>,
+) -> ModelRateLimits {
+    ModelRateLimits::new(cache, io, clock())
 }
 
 pub(super) fn tpm_key(model: &str) -> String {

@@ -127,7 +127,7 @@ impl ModelRateLimits {
                 if reserved && let Some(hook) = &self.io {
                     hook.async_refund(request).await;
                 }
-                Err(error.into())
+                Err(ModelRateLimitError::from(error))
             }
         }
     }
@@ -143,9 +143,13 @@ impl ModelRateLimits {
             && let Some(current) = self.cache.local(&keys.tpm)
             && current >= limit
         {
-            return Err(self
-                .exceeded(deployment, RateLimitChannel::Tpm, limit, current, None)
-                .into());
+            return Err(ModelRateLimitError::from(exceeded(
+                deployment,
+                RateLimitChannel::Tpm,
+                limit,
+                current,
+                None,
+            )));
         }
         if let Some(limit) = limits.rpm {
             let Some(current) = self
@@ -155,9 +159,13 @@ impl ModelRateLimits {
                 return Ok(());
             };
             if current > limit {
-                return Err(self
-                    .exceeded(deployment, RateLimitChannel::Rpm, limit, current, None)
-                    .into());
+                return Err(ModelRateLimitError::from(exceeded(
+                    deployment,
+                    RateLimitChannel::Rpm,
+                    limit,
+                    current,
+                    None,
+                )));
             }
         }
         Ok(())
@@ -217,7 +225,7 @@ impl ModelRateLimits {
             match self.async_current_tpm(&keys.tpm, limit).await {
                 CurrentTpm::Unavailable => return Ok(()),
                 CurrentTpm::Known(Some(current)) if current >= limit => {
-                    return Err(self.exceeded(
+                    return Err(exceeded(
                         deployment,
                         RateLimitChannel::Tpm,
                         limit,
@@ -237,7 +245,7 @@ impl ModelRateLimits {
                 return Ok(());
             };
             if current > limit {
-                return Err(self.exceeded(
+                return Err(exceeded(
                     deployment,
                     RateLimitChannel::Rpm,
                     limit,
@@ -261,23 +269,23 @@ impl ModelRateLimits {
             RemoteRead::Failed => CurrentTpm::Unavailable,
         }
     }
+}
 
-    fn exceeded(
-        &self,
-        deployment: &DeploymentSpec,
-        channel: RateLimitChannel,
-        limit: i64,
-        current: i64,
-        num_retries: Option<u32>,
-    ) -> RateLimitExceeded {
-        RateLimitExceeded {
-            channel,
-            limit,
-            current,
-            model_id: model_id(deployment).unwrap_or("None").to_owned(),
-            model: model(deployment).unwrap_or("None").to_owned(),
-            model_group: deployment.model_name.clone(),
-            num_retries,
-        }
+// _raise_rate_limit_error builds the same body the async and blocking checks reject with
+fn exceeded(
+    deployment: &DeploymentSpec,
+    channel: RateLimitChannel,
+    limit: i64,
+    current: i64,
+    num_retries: Option<u32>,
+) -> RateLimitExceeded {
+    RateLimitExceeded {
+        channel,
+        limit,
+        current,
+        model_id: model_id(deployment).unwrap_or("None").to_owned(),
+        model: model(deployment).unwrap_or("None").to_owned(),
+        model_group: deployment.model_name.clone(),
+        num_retries,
     }
 }

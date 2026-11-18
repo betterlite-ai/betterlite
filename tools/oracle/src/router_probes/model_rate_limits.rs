@@ -12,6 +12,7 @@ use betterlite_router::model_rate_limits::keys::cache_keys;
 use betterlite_router::model_rate_limits::service::{ModelRateLimits, SuccessUsage};
 use betterlite_tokenizer::reservation::RequestBody;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use tokio::runtime::Builder;
 
 use self::fakes::FakeCache;
@@ -224,7 +225,7 @@ fn deployment_spec(payload: &Payload) -> DeploymentSpec {
     let mut extra = JsonObject::new();
     for (field, value) in [("tpm", input.tpm), ("rpm", input.rpm), ("itpm", input.itpm)] {
         if let Some(value) = value {
-            extra.insert(field.to_owned(), Json::Number(value.into()));
+            extra.insert(field.to_owned(), Json::Number(Number::from(value)));
         }
     }
     DeploymentSpec {
