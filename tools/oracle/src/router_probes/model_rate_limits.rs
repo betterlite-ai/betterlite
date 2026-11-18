@@ -161,7 +161,10 @@ async fn run_step(
     step: &Step,
 ) -> Result<StepOutput, String> {
     match step.kind {
-        StepKind::Check => check_step(check, deployment).await,
+        StepKind::Check => {
+            let mut request = RequestBody::new();
+            checked_step(check.async_pre_call_check(deployment, &mut request).await)
+        }
         StepKind::Success => {
             success_step(check, step).await;
             Ok(step_output(step.kind))
@@ -173,14 +176,6 @@ async fn run_step(
             Ok(step_output(step.kind))
         }
     }
-}
-
-async fn check_step(
-    check: &ModelRateLimits,
-    deployment: &DeploymentSpec,
-) -> Result<StepOutput, String> {
-    let mut request = RequestBody::new();
-    checked_step(check.async_pre_call_check(deployment, &mut request).await)
 }
 
 fn checked_step(result: Result<(), ModelRateLimitError>) -> Result<StepOutput, String> {
