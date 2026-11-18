@@ -34,9 +34,9 @@ pub async fn database_endpoints(
 
 async fn read_stored(
     reader: &dyn GeneralSettingsReader,
-    access: Option<CallerAccess>,
+    requested_access: Option<CallerAccess>,
 ) -> Option<JsonData> {
-    let access = access.unwrap_or(CallerAccess::FullAdmin);
+    let access = requested_access.unwrap_or(CallerAccess::FullAdmin);
     match reader.general_setting(PASS_THROUGH_FIELD, access).await {
         Ok(stored) => stored,
         Err(error) => {

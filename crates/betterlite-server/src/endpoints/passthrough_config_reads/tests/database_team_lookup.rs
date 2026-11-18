@@ -12,7 +12,7 @@ use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use tokio_postgres::NoTls;
 
-use crate::endpoints::passthrough_config_reads::ports::TeamLookup;
+use crate::endpoints::passthrough_config_reads::ports::TeamLookup as _;
 use crate::endpoints::passthrough_config_reads::support::json;
 use crate::endpoints::passthrough_config_reads::team_lookup::DatabaseTeamLookup;
 

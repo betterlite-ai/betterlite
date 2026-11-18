@@ -110,8 +110,8 @@ async fn serve(
         .map_err(ReadFailure::Endpoint)?;
     let config = config_endpoints(state.config_endpoints.as_ref());
     let mut endpoints = merged_endpoints(config, database, endpoint_id);
-    if let Some(team_id) = team_id {
-        match filter_endpoints_by_team(state.teams.as_ref(), team_id, &endpoints).await {
+    if let Some(filter_team) = team_id {
+        match filter_endpoints_by_team(state.teams.as_ref(), filter_team, &endpoints).await {
             Ok(allowed) => endpoints = allowed,
             Err(TeamFilterError::TeamNotFound) => return Err(PassThroughReadError::TeamNotFound),
             Err(error) => return Err(PassThroughReadError::Internal(ReadFailure::Team(error))),

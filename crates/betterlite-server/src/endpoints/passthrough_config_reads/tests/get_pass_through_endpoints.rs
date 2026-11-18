@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use axum::http::StatusCode;
+use betterlite_db::budget_permission_rows::JsonData;
 
 use crate::endpoints::passthrough_config_reads::caller::CallerAccess::AdminView;
 use crate::endpoints::passthrough_config_reads::caller::CallerAccess::FullAdmin;
@@ -264,7 +265,7 @@ async fn an_empty_read_answers_an_empty_endpoint_list() {
 #[tokio::test]
 async fn the_response_carries_every_declared_field() {
     let settings = Arc::new(FakeSettings::returning(json_list(&[
-        r#"{"id": "db-1", "path": "/db", "target": "https://db.example.com", "headers": {"x-api-key": "secret"}, "default_query_params": {"region": "eu"}, "include_subpath": true, "cost_per_request": 0.25, "timeout": 5, "auth": false, "guardrails": {"pii": {"request_fields": ["prompt"], "response_fields": ["text"]}}, "methods": ["GET", "POST"]}"#,
+        r#"{"id": "db-1", "path": "/db", "target": "https://db.example.com", "headers": {"x-api-key": "secret"}, "default_query_params": {"region": "eu"}, "include_subpath": true, "cost_per_request": 0.25, "timeout": 5, "auth": false, "guardrails": {"pii": null, "word_list": {"request_fields": ["prompt"], "response_fields": ["text"]}}, "methods": ["GET", "POST"]}"#,
     ])));
     let config = Arc::new(FakeConfig::none());
     let teams = Arc::new(FakeTeams::new());
@@ -274,7 +275,7 @@ async fn the_response_carries_every_declared_field() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::OK);
-    let expected = r#"{"endpoints": [{"id": "db-1", "path": "/db", "target": "https://db.example.com", "headers": {"x-api-key": "secret"}, "default_query_params": {"region": "eu"}, "include_subpath": true, "cost_per_request": 0.25, "timeout": 5.0, "auth": false, "guardrails": {"pii": {"request_fields": ["prompt"], "response_fields": ["text"]}}, "is_from_config": false, "methods": ["GET", "POST"]}]}"#;
+    let expected = r#"{"endpoints": [{"id": "db-1", "path": "/db", "target": "https://db.example.com", "headers": {"x-api-key": "secret"}, "default_query_params": {"region": "eu"}, "include_subpath": true, "cost_per_request": 0.25, "timeout": 5.0, "auth": false, "guardrails": {"pii": null, "word_list": {"request_fields": ["prompt"], "response_fields": ["text"]}}, "is_from_config": false, "methods": ["GET", "POST"]}]}"#;
     assert_eq!(reply.data(), json(expected));
 }
 
@@ -325,4 +326,31 @@ async fn an_endpoint_id_and_a_team_filter_are_both_applied() {
     .await;
     assert_eq!(reply.status, StatusCode::OK);
     assert_eq!(paths(&reply), vec!["/db1".to_owned()]);
+}
+
+#[tokio::test]
+async fn a_stored_endpoint_without_an_id_answers_a_null_id() {
+    let settings = Arc::new(FakeSettings::returning(json_list(&[
+        r#"{"path": "/db", "target": "https://db.example.com"}"#,
+    ])));
+    let config = Arc::new(FakeConfig::none());
+    let teams = Arc::new(FakeTeams::new());
+    let reply = call(
+        read_app(&settings, &config, &teams),
+        get(LIST, Some(&admin())),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    let body = reply.data();
+    let JsonData::Object(root) = body else {
+        panic!("the answer is an object");
+    };
+    let Some(JsonData::Array(endpoints)) = root.get("endpoints") else {
+        panic!("the answer holds an endpoints list");
+    };
+    let Some(JsonData::Object(endpoint)) = endpoints.first() else {
+        panic!("the answer holds one endpoint");
+    };
+    assert_eq!(endpoint.get("id"), Some(&JsonData::Null));
+    assert_eq!(endpoint.get("path"), Some(&json(r#""/db""#)));
 }

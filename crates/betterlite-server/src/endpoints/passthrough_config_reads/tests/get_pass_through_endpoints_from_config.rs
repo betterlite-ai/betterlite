@@ -1,12 +1,16 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 
+use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use uuid::Uuid;
 
 use crate::endpoints::passthrough_config_reads::config_read::config_endpoints;
+use crate::endpoints::passthrough_config_reads::record::PassThroughGenericEndpoint;
 use crate::endpoints::passthrough_config_reads::record::PassThroughGuardrailSettings;
 use crate::endpoints::passthrough_config_reads::support::FakeConfig;
 use crate::endpoints::passthrough_config_reads::support::json;
@@ -132,6 +136,29 @@ fn the_declared_config_values_are_read() {
 }
 
 #[test]
+fn guardrail_settings_keep_their_null_defaults() {
+    let read = config_endpoints(&FakeConfig::of(&[
+        r#"{"path": "/a", "target": "https://target", "guardrails": {"pii": null}}"#,
+        r#"{"path": "/b", "target": "https://target", "guardrails": {"pii": {}}}"#,
+    ]));
+    assert_eq!(read.len(), 2);
+    assert_eq!(
+        read[0].guardrails,
+        Some(BTreeMap::from([("pii".to_owned(), None)]))
+    );
+    assert_eq!(
+        read[1].guardrails,
+        Some(BTreeMap::from([(
+            "pii".to_owned(),
+            Some(PassThroughGuardrailSettings {
+                request_fields: None,
+                response_fields: None,
+            }),
+        )]))
+    );
+}
+
+#[test]
 fn an_unknown_config_key_is_ignored() {
     let read = config_endpoints(&FakeConfig::of(&[
         r#"{"path": "/a", "target": "https://target", "unknown": true}"#,
@@ -153,4 +180,32 @@ fn a_malformed_config_endpoint_is_skipped(#[case] broken: &str) {
     let read = config_endpoints(&source);
     assert_eq!(read.len(), 1);
     assert_eq!(read[0].path, "/a");
+}
+
+fn replay_corpus() -> usize {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/pass_through_config_reads");
+    let mut replayed = 0_usize;
+    for entry in fs::read_dir(&root).expect("the corpus directory") {
+        let path = entry.expect("a corpus entry").path();
+        let Ok(text) = fs::read_to_string(path) else {
+            replayed = replayed.saturating_add(1);
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<JsonData>(&text) else {
+            replayed = replayed.saturating_add(1);
+            continue;
+        };
+        drop(PassThroughGenericEndpoint::from_json(&value, true));
+        let source = FakeConfig {
+            entries: Some(vec![value]),
+        };
+        drop(config_endpoints(&source));
+        replayed = replayed.saturating_add(1);
+    }
+    replayed
+}
+
+#[test]
+fn replays_the_pass_through_config_reads_corpus() {
+    assert!(replay_corpus() > 0);
 }

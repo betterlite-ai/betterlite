@@ -107,7 +107,7 @@ async fn a_non_list_allowed_routes_value_is_an_error(#[case] metadata: &str) {
 }
 
 #[rstest]
-#[case::text("text")]
+#[case::text(r#""text""#)]
 #[case::number("3")]
 #[case::flag("true")]
 #[case::list(r#"["/a"]"#)]
