@@ -36,7 +36,8 @@ pub fn pattern_work(pattern: &str) -> Result<(String, u64), PatternProblem> {
     if pattern.chars().count() > MAX_CUSTOM_PATTERN_INPUT {
         return Err(PatternProblem::Syntax);
     }
-    let normalized = normalize::pattern(pattern)?;
+    let normalized = normalize::pattern(pattern, false)?;
     let nodes = model::parse(&normalized)?;
-    Ok((normalized, cost::sequence_cost(&nodes, 0)?.1))
+    let work = cost::sequence_cost(&nodes, 0)?.1;
+    Ok((normalize::pattern(pattern, true)?, work))
 }

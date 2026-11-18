@@ -1,9 +1,9 @@
 import asyncio
-import warnings
-from typing import Final, Literal
+from typing import Final, Literal, assert_never
 
 from litellm.router import Router
 from litellm.router_strategy import complexity_router
+from litellm.router_strategy.complexity_router.config import custom_pattern_work
 from pydantic import Field, TypeAdapter, ValidationError
 from typing_extensions import TypedDict, override
 
@@ -11,10 +11,7 @@ from probes.protocol import Operation, ProbeError, Strict
 
 _TIER: Final = TypeAdapter(complexity_router.ComplexityTier)
 _CONFIG: Final = TypeAdapter(complexity_router.ComplexityRouterConfig)
-# the package exports the model and its dimension type; a validated instance gives the class
-_DIMENSION: Final = _CONFIG.validate_python(
-    {"custom_dimensions": [{"name": "probe", "weight": 1.0, "patterns": ["a"]}]}
-).custom_dimensions[0]
+_WORK: Final = TypeAdapter(int | str)
 
 
 class DimensionInput(TypedDict, total=False):
@@ -47,23 +44,13 @@ class Output(Strict):
 
 
 def _entry(pattern: str) -> Entry:
-    # model_construct skips the field bounds, so the pattern reaches validation's cost walk
-    work = _DIMENSION.model_construct(
-        name="probe", weight=1.0, patterns=(pattern,), keywords=(), scoring_mode="binary"
-    ).pattern_work()
-    if work:
-        return Entry(work=work)
-    # the cost walk ran above, so asking validation again must not repeat the warnings
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        try:
-            _ = _CONFIG.validate_python(
-                {"custom_dimensions": [{"name": "probe", "weight": 1.0, "patterns": [pattern]}]}
-            )
-        except ValidationError as error:
-            prefix = f"Value error, custom dimension pattern {pattern!r} "
-            return Entry(message=error.errors()[0]["msg"].removeprefix(prefix))
-    raise ProbeError("invalid_request", f"pattern {pattern!r} reported neither work nor a refusal")
+    result = _WORK.validate_python(custom_pattern_work(pattern))
+    match result:
+        case int() as work:
+            return Entry(work=work)
+        case str() as message:
+            return Entry(message=message)
+    assert_never(result)
 
 
 class CustomDimensions(Operation):

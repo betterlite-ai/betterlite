@@ -34,7 +34,7 @@ use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
     Err(DimensionsError::Classifier)
 )]
 #[case::match_count_with_hybrid(
-    vec![config("domain", 0.5, &[], &["gamma"], "match_count")],
+    vec![config("domain", 0.5_f64, &[], &["gamma"], "match_count")],
     "hybrid",
     weights(&[]),
     Ok(6)
@@ -60,13 +60,13 @@ use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
 #[case::a_weight_that_belongs_to_dimension_weights(
     vec![named("domain")],
     "heuristic",
-    weights(&[("domain", 0.1)]),
+    weights(&[("domain", 0.1_f64)]),
     Err(DimensionsError::Weights)
 )]
 #[case::a_weight_that_belongs_to_dimension_weights_in_another_case(
     vec![named("domain")],
     "heuristic",
-    weights(&[("DOMAIN", 0.1)]),
+    weights(&[("DOMAIN", 0.1_f64)]),
     Err(DimensionsError::Weights)
 )]
 #[case::the_work_of_every_pattern_is_summed(
@@ -85,13 +85,13 @@ use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
     }))
 )]
 #[case::an_invalid_scoring_mode_is_reported(
-    vec![config("domain", 0.5, &["alpha"], &[], "count")],
+    vec![config("domain", 0.5_f64, &["alpha"], &[], "count")],
     "heuristic",
     weights(&[]),
     Err(DimensionsError::Dimension(section::DimensionProblem::ScoringMode))
 )]
 #[case::a_dimension_without_matchers(
-    vec![config("domain", 0.5, &[], &[], "binary")],
+    vec![config("domain", 0.5_f64, &[], &[], "binary")],
     "heuristic",
     weights(&[]),
     Err(DimensionsError::Dimension(section::DimensionProblem::BlankMatchers))
@@ -131,14 +131,20 @@ fn every_classifier_type_parses_to_its_name(
 
 #[test]
 fn a_validated_dimension_keeps_its_fields_and_mode() {
-    let declared = [config("domain", 0.8, &["alpha"], &["gamma"], "match_count")];
+    let declared = [config(
+        "domain",
+        0.8_f64,
+        &["alpha"],
+        &["gamma"],
+        "match_count",
+    )];
     let validated = validate(&declared, "heuristic", &BTreeMap::new()).unwrap();
     assert_eq!(validated.work, 6);
     assert_eq!(
         validated.dimensions,
         [CustomDimension {
             name: "domain".to_owned(),
-            weight: 0.8,
+            weight: 0.8_f64,
             keywords: vec!["alpha".to_owned()],
             patterns: vec!["gamma".to_owned()],
             scoring_mode: ScoringMode::MatchCount,
@@ -159,7 +165,7 @@ fn scored_with(declared: &[section::Config], prompt: &str) -> Vec<(String, f64)>
 fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
     let declared = [config(
         "domain",
-        0.8,
+        0.8_f64,
         &["alpha", "beta"],
         &["gamma", "[0-9]{2}"],
         mode,
@@ -169,26 +175,31 @@ fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
 
 #[rstest]
 #[case::end_anchor("a\\Z", "a")]
+#[case::dollar_matches_before_one_final_newline("a$", "a\n")]
+#[case::multiline_dollar_matches_before_each_newline("(?m)a$", "a\nb")]
 #[case::class_ampersand("[a&&b]", "&")]
 #[case::octal_three_digits("\\111", "I")]
 #[case::implicit_minimum("a{,3}", "aa")]
 #[case::scoped_dot_all("(?s)a.b", "a\nb")]
 #[case::scoped_multiline("(?m)^b", "a\nb")]
 fn accepted_patterns_keep_their_python_meaning(#[case] pattern: &str, #[case] prompt: &str) {
-    let declared = [config("domain", 0.8, &[], &[pattern], "binary")];
-    assert_eq!(scored_with(&declared, prompt), [("domain".to_owned(), 1.0)]);
+    let declared = [config("domain", 0.8_f64, &[], &[pattern], "binary")];
+    assert_eq!(
+        scored_with(&declared, prompt),
+        [("domain".to_owned(), 1.0_f64)]
+    );
 }
 
 #[rstest]
-#[case::spellings_that_normalize_alike(&["(?x)a b", "(?x)ab"], "xxxxab", 1.0)]
-#[case::one_source_written_twice(&["ab", "ab"], "xxxxab", 0.5)]
-#[case::spellings_the_matcher_reads_apart(&["\\111", "\\x49"], "xxxxI", 1.0)]
+#[case::spellings_that_normalize_alike(&["(?x)a b", "(?x)ab"], "xxxxab", 1.0_f64)]
+#[case::one_source_written_twice(&["ab", "ab"], "xxxxab", 0.5_f64)]
+#[case::spellings_the_matcher_reads_apart(&["\\111", "\\x49"], "xxxxI", 1.0_f64)]
 fn pattern_hits_count_distinct_sources(
     #[case] patterns: &[&str],
     #[case] prompt: &str,
     #[case] expected: f64,
 ) {
-    let declared = [config("domain", 0.8, &[], patterns, "match_count")];
+    let declared = [config("domain", 0.8_f64, &[], patterns, "match_count")];
     assert_eq!(
         scored_with(&declared, prompt),
         [("domain".to_owned(), expected)]
@@ -199,17 +210,20 @@ fn pattern_hits_count_distinct_sources(
 fn binary_scores_one_when_any_matcher_hits() {
     assert_eq!(
         scored("binary", "alpha beta gamma 42"),
-        [("domain".to_owned(), 1.0)]
+        [("domain".to_owned(), 1.0_f64)]
     );
     assert!(scored("binary", "zeta").is_empty());
 }
 
 #[test]
 fn match_count_scores_half_for_one_hit_and_one_for_two() {
-    assert_eq!(scored("match_count", "alpha"), [("domain".to_owned(), 0.5)]);
+    assert_eq!(
+        scored("match_count", "alpha"),
+        [("domain".to_owned(), 0.5_f64)]
+    );
     assert_eq!(
         scored("match_count", "alpha beta"),
-        [("domain".to_owned(), 1.0)]
+        [("domain".to_owned(), 1.0_f64)]
     );
 }
 
@@ -217,6 +231,6 @@ fn match_count_scores_half_for_one_hit_and_one_for_two() {
 fn a_repeated_match_counts_once() {
     assert_eq!(
         scored("match_count", "alpha alpha"),
-        [("domain".to_owned(), 0.5)]
+        [("domain".to_owned(), 0.5_f64)]
     );
 }

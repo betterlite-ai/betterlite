@@ -68,8 +68,8 @@ struct ProbeConfig {
     dimension_weights: Option<BTreeMap<String, f64>>,
     #[serde(default)]
     custom_dimensions: Vec<section::Config>,
-    #[serde(default)]
-    classifier_type: Option<String>,
+    #[serde(default = "default_classifier_type")]
+    classifier_type: String,
 }
 
 // a payload arrives as JSON, whose numbers are finite, so the derived PartialEq is reflexive
@@ -152,9 +152,7 @@ fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationErro
         })?;
     let empty = Vec::new();
     let dimensions = config.map_or(&empty, |settings| &settings.custom_dimensions);
-    let classifier = config
-        .and_then(|settings| settings.classifier_type.as_deref())
-        .unwrap_or("heuristic");
+    let classifier = config.map_or("heuristic", |settings| &settings.classifier_type);
     let validated =
         validate(dimensions, classifier, &resolved.dimension_weights).map_err(|source| {
             OperationError::InvalidRequest {
@@ -163,4 +161,41 @@ fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationErro
         })?;
     resolved.custom_dimensions = validated.dimensions;
     Ok((resolved, validated.work))
+}
+
+fn default_classifier_type() -> String {
+    "heuristic".to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{Input, ProbeConfig, resolved};
+
+    #[test]
+    fn an_omitted_classifier_type_defaults_to_heuristic_in_probe_config() {
+        let input: Input = serde_json::from_value(json!({
+            "function": "validate",
+            "config": {
+                "custom_dimensions": [{
+                    "name": "domain",
+                    "weight": 0.5_f64,
+                    "keywords": ["topic"]
+                }]
+            }
+        }))
+        .expect("the probe config is valid without classifier_type");
+        let serialized = serde_json::to_value(input).expect("the probe config serializes");
+        assert_eq!(serialized["config"]["classifier_type"], "heuristic");
+        let config: ProbeConfig = serde_json::from_value(json!({
+            "custom_dimensions": [{
+                "name": "domain",
+                "weight": 0.5_f64,
+                "keywords": ["topic"]
+            }]
+        }))
+        .expect("the probe config defaults its classifier type");
+        assert!(resolved(Some(&config)).is_ok());
+    }
 }

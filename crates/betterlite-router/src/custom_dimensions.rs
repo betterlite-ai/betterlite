@@ -19,8 +19,7 @@ const BUILT_IN_DIMENSIONS: [&str; 7] = [
     "questionComplexity",
 ];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::EnumString)]
-#[strum(serialize_all = "snake_case")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClassifierType {
     Heuristic,
     HeuristicV2,
@@ -31,6 +30,25 @@ pub enum ClassifierType {
     HeuristicFirst,
     Hybrid,
     Jev,
+}
+
+impl std::str::FromStr for ClassifierType {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "heuristic" => Ok(Self::Heuristic),
+            "heuristic_v2" => Ok(Self::HeuristicV2),
+            "llm" => Ok(Self::Llm),
+            "capability" => Ok(Self::Capability),
+            "llm_v2" => Ok(Self::LlmV2),
+            "custom" => Ok(Self::Custom),
+            "heuristic_first" => Ok(Self::HeuristicFirst),
+            "hybrid" => Ok(Self::Hybrid),
+            "jev" => Ok(Self::Jev),
+            _ => Err(()),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
