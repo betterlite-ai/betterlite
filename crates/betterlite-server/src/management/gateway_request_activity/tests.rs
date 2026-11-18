@@ -25,12 +25,13 @@ use self::support::InternalEnvelope;
 use self::support::Reply;
 use self::support::admin;
 use self::support::app;
+use self::support::cached_plan_error;
 use self::support::caller;
+use self::support::data_error;
 use self::support::gateway_database;
 use self::support::get;
 use self::support::postgres_store;
 use self::support::row;
-use self::support::startup_error;
 
 const ACTIVITY: &str = "/gateway/daily/activity";
 const DB_ERROR: &str = "DB not connected. This endpoint needs a database; set DATABASE_URL to a PostgreSQL connection string (postgresql://...) to enable it. See https://docs.litellm.ai/docs/proxy/virtual_keys";
@@ -350,7 +351,7 @@ async fn a_failed_aggregation_reports_a_pool_timeout_as_no_db_connection() {
 
 #[tokio::test]
 async fn a_failed_aggregation_reports_a_cached_plan_error_as_no_db_connection() {
-    let outage = startup_error("0A000", "cached plan must not change result type").await;
+    let outage = cached_plan_error().await;
     let store = Arc::new(FakeStore::failing_with(outage));
     let reply = get(
         app(Some(FakeStore::erased(&store))),
@@ -367,7 +368,7 @@ async fn a_failed_aggregation_reports_a_cached_plan_error_as_no_db_connection() 
 
 #[tokio::test]
 async fn a_failed_aggregation_reports_a_data_error_as_an_internal_error() {
-    let rejected = startup_error("22P02", "invalid input syntax for type integer").await;
+    let rejected = data_error().await;
     let store = Arc::new(FakeStore::failing_with(rejected));
     let reply = get(
         app(Some(FakeStore::erased(&store))),

@@ -89,7 +89,10 @@ fn driver_message(error: &DbError) -> Option<&str> {
         | DbError::InvalidRecord { .. }
         | DbError::CreateNull => return None,
     };
-    source.driver.as_db_error().map(|error| error.message())
+    source
+        .driver
+        .as_db_error()
+        .map(tokio_postgres::error::DbError::message)
 }
 
 fn database_unavailable() -> Response {
