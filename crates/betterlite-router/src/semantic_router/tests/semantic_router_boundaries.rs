@@ -798,6 +798,21 @@ fn a_large_route_name_and_a_repeated_utterance_stay_one_allocation_and_one_row()
     assert!(Arc::ptr_eq(&index.rows[1].route, &index.groups[0].name));
 }
 
+#[test]
+fn two_routes_with_the_same_sync_string_both_keep_a_row() {
+    let config = r#"{"routes": [
+        {"name": "a", "utterances": ["b: c"]},
+        {"name": "a: b", "utterances": ["c"]}
+    ]}"#;
+    let index = parse_inline(config).expect("both routes parse");
+    assert_eq!(index.groups.len(), 2);
+    assert_eq!(
+        index.rows.len(),
+        2,
+        "a colliding sync string keeps one row per route"
+    );
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_timed_out_build_clears_its_slot_and_releases_the_tracker() {
     let tracker = TaskTracker::new();
