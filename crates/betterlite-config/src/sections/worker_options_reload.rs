@@ -71,7 +71,10 @@ pub enum LogConfig {
     #[default]
     Builtin,
     File(PathBuf),
-    Json,
+    // LiteLLM's JSON config puts the resolved level on every uvicorn logger, DEBUG when LITELLM_LOG is unset
+    Json {
+        level: LogLevel,
+    },
     Level(LogLevel),
 }
 
@@ -166,7 +169,9 @@ where
     let json =
         variable(lookup, JSON_LOGS_VARIABLE).is_some_and(|value| value.to_lowercase() == "true");
     if json {
-        return Ok(LogConfig::Json);
+        return Ok(LogConfig::Json {
+            level: level.unwrap_or(LogLevel::Debug),
+        });
     }
     Ok(level.map_or(LogConfig::Builtin, LogConfig::Level))
 }

@@ -164,7 +164,9 @@ fn worker_options_uvicorn_settings_always_disable_the_server_header() {
 
 #[rstest]
 #[case::flag_over_json(
-    LogConfig::Json,
+    LogConfig::Json {
+        level: LogLevel::Error
+    },
     Some(Path::new("/etc/logging.yaml")),
     LogConfig::File(PathBuf::from("/etc/logging.yaml"))
 )]
@@ -173,7 +175,15 @@ fn worker_options_uvicorn_settings_always_disable_the_server_header() {
     Some(Path::new("/etc/logging.yaml")),
     LogConfig::File(PathBuf::from("/etc/logging.yaml"))
 )]
-#[case::json_without_a_flag(LogConfig::Json, None, LogConfig::Json)]
+#[case::json_without_a_flag(
+    LogConfig::Json {
+        level: LogLevel::Error
+    },
+    None,
+    LogConfig::Json {
+        level: LogLevel::Error
+    }
+)]
 #[case::level_without_a_flag(
     LogConfig::Level(LogLevel::Warning),
     None,
@@ -431,6 +441,17 @@ fn reload_patch_is_idempotent() {
     patch_reload_extra_paths(&mut settings, &root, &[Some(env_file.as_path())])
         .expect("second patch");
     assert_eq!(settings.extra_paths, BTreeSet::from([env_file]));
+}
+
+#[test]
+fn reload_patch_keeps_the_paths_of_earlier_calls() {
+    let (_directory, root) = temporary_directory();
+    let config = root.join("proxy.yaml");
+    let env_file = root.join(".env");
+    let mut settings = ReloadSettings::default();
+    patch_reload_extra_paths(&mut settings, &root, &[Some(config.as_path())]).expect("config path");
+    patch_reload_extra_paths(&mut settings, &root, &[Some(env_file.as_path())]).expect("env path");
+    assert_eq!(settings.extra_paths, BTreeSet::from([config, env_file]));
 }
 
 #[test]

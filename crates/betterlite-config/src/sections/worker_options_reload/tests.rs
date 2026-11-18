@@ -125,9 +125,9 @@ fn malformed_worker_variables_fail_the_load(#[case] environment: &[(&str, &str)]
 }
 
 #[rstest]
-#[case::lowercase("true", LogConfig::Json)]
-#[case::uppercase("TRUE", LogConfig::Json)]
-#[case::mixed_case("tRuE", LogConfig::Json)]
+#[case::lowercase("true", LogConfig::Json { level: LogLevel::Debug })]
+#[case::uppercase("TRUE", LogConfig::Json { level: LogLevel::Debug })]
+#[case::mixed_case("tRuE", LogConfig::Json { level: LogLevel::Debug })]
 #[case::explicit_false("false", LogConfig::Builtin)]
 #[case::zero("0", LogConfig::Builtin)]
 #[case::one("1", LogConfig::Builtin)]
@@ -160,10 +160,27 @@ fn lite_llm_log_selects_the_log_level(#[case] value: &str, #[case] expected: Log
     );
 }
 
+#[rstest]
+#[case::debug("debug", LogLevel::Debug)]
+#[case::error("ERROR", LogLevel::Error)]
+#[case::warning("Warn", LogLevel::Warning)]
+fn json_logs_carry_the_litellm_log_level(#[case] value: &str, #[case] level: LogLevel) {
+    let settings = loaded(&[("JSON_LOGS", "true"), ("LITELLM_LOG", value)]);
+    assert_eq!(
+        settings.worker_options.log_config,
+        LogConfig::Json { level }
+    );
+}
+
 #[test]
-fn json_logs_win_over_the_litellm_log_level() {
-    let settings = loaded(&[("JSON_LOGS", "true"), ("LITELLM_LOG", "debug")]);
-    assert_eq!(settings.worker_options.log_config, LogConfig::Json);
+fn json_logs_default_the_level_to_debug() {
+    let settings = loaded(&[("JSON_LOGS", "true")]);
+    assert_eq!(
+        settings.worker_options.log_config,
+        LogConfig::Json {
+            level: LogLevel::Debug
+        }
+    );
 }
 
 #[test]
