@@ -185,12 +185,18 @@ async fn discovery_ignores_items_without_a_tool_name() {
         key_alias: None,
         user_agent: None,
     };
+    let (logs, guard) = captured_logs();
     batch_upsert_tools(
         Some(&client),
         &[item(None), item(Some("")), named],
         instant(),
     )
     .await;
+    drop(guard);
+    assert!(
+        logs.text()
+            .contains("tool_registry_writer: upserted 1 tool(s)")
+    );
     assert!(get_tool(Some(&client), "").await.is_none());
     let count: i64 = client
         .query_one("SELECT count(*) FROM \"LiteLLM_ToolTable\"", &[])

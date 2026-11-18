@@ -24,7 +24,7 @@ use super::blockers::{
 use super::discovery::batch_upsert_tools;
 use super::policy_update::update_tool_policy;
 use super::records::{BlockedToolRow, ToolDiscoveryItem, ToolPolicyUpdate};
-use super::refresh::{ToolPolicyStore, sync_tool_policy_from_db};
+use super::refresh::{ToolPolicyStore, load_blocked_tools, sync_tool_policy_from_db};
 use super::registry::{ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
 
 #[derive(Default)]
@@ -289,5 +289,17 @@ async fn refresh_reconnects_a_missing_database_with_the_tools_reason() {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .initialized
+    );
+}
+
+#[tokio::test]
+async fn permission_reads_reconnect_with_the_permissions_reason() {
+    let database = PostgresStore { pool: None };
+    let mut reconnect = Reconnect::default();
+    let result = load_blocked_tools(&database, Some(&mut reconnect)).await;
+    assert!(result.is_err());
+    assert_eq!(
+        reconnect.reasons(),
+        ["sync_tool_policy_from_db_perms_lookup_failure".to_owned()]
     );
 }
