@@ -1,6 +1,7 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::complexity_scoring as scoring_section;
 use betterlite_config::sections::custom_dimensions as section;
-use betterlite_models::decisions::Json;
 use betterlite_router::complexity_scoring::classify::{PromptInput, Scorer};
 use betterlite_router::complexity_scoring::config::Config;
 use betterlite_router::complexity_scoring::decision::RoutingDecisionCause;
@@ -22,7 +23,7 @@ struct Payload {
     function: Function,
     // the complexity router config in the key names betterlite resolves, so a case configures the service as a file does
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    config: Option<Json>,
+    config: Option<ProbeConfig>,
     #[serde(default)]
     patterns: Vec<String>,
     #[serde(default)]
@@ -43,7 +44,7 @@ enum Function {
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Fields {
     results: Option<Vec<Entry>>,
     work: Option<u64>,
@@ -61,13 +62,18 @@ struct Entry {
     message: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct Dimensions {
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProbeConfig {
+    dimension_weights: Option<BTreeMap<String, f64>>,
     #[serde(default)]
     custom_dimensions: Vec<section::Config>,
     #[serde(default = "default_classifier")]
     classifier_type: String,
 }
+
+// a payload arrives as JSON, whose numbers are finite, so the derived PartialEq is reflexive
+impl Eq for ProbeConfig {}
 
 fn default_classifier() -> String {
     "heuristic".to_owned()
@@ -90,13 +96,18 @@ fn pattern_work_fields(patterns: &[String]) -> Fields {
     let results = patterns.iter().map(|pattern| entry(pattern)).collect();
     Fields {
         results: Some(results),
-        ..Fields::default()
+        work: None,
+        accepted: None,
+        tier: None,
+        score: None,
+        signals: None,
+        cause: None,
     }
 }
 
 fn entry(pattern: &str) -> Entry {
     match section::pattern_work(pattern) {
-        Ok(work) => Entry {
+        Ok((_matcher, work)) => Entry {
             work: Some(work),
             message: None,
         },
@@ -108,22 +119,18 @@ fn entry(pattern: &str) -> Entry {
 }
 
 // a refused config is an answer, not a probe failure: the reference reports it as a validation error
-fn validate_fields(config: Option<&Json>) -> Fields {
-    match validated_work(config) {
-        Some(work) => Fields {
-            work: Some(work),
-            accepted: Some(true),
-            ..Fields::default()
-        },
-        None => Fields {
-            accepted: Some(false),
-            ..Fields::default()
-        },
+fn validate_fields(config: Option<&ProbeConfig>) -> Fields {
+    let resolved = resolved(config).map(|(_config, work)| work);
+    let accepted = resolved.is_ok();
+    Fields {
+        results: None,
+        work: resolved.ok(),
+        accepted: Some(accepted),
+        tier: None,
+        score: None,
+        signals: None,
+        cause: None,
     }
-}
-
-fn validated_work(config: Option<&Json>) -> Option<u64> {
-    resolved(config).ok().map(|(_config, work)| work)
 }
 
 fn classify_fields(payload: &Payload) -> Result<Fields, OperationError> {
@@ -136,24 +143,26 @@ fn classify_fields(payload: &Payload) -> Result<Fields, OperationError> {
         .and_then(|scorer| scorer.score_and_classify(&prompt))
         .map_err(|source| invalid(source.to_string()))?;
     Ok(Fields {
+        results: None,
+        work: None,
+        accepted: None,
         tier: Some(outcome.tier.name().to_owned()),
         score: Some(format!("{:.6}", outcome.score)),
         signals: Some(outcome.signals),
         cause: Some(outcome.cause),
-        ..Fields::default()
     })
 }
 
 // the section's typed view of the router config, then the service's own validation of its dimensions
-fn resolved(config: Option<&Json>) -> Result<(Config, u64), OperationError> {
-    let (scoring, dimensions) = configured(config)?;
+fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationError> {
+    let mut scoring = scoring_section::Config::default();
+    scoring.dimension_weights = config.and_then(|config| config.dimension_weights.clone());
     let resolved = Config::resolve(&scoring).map_err(|source| invalid(source.to_string()))?;
-    let validated = validate(
-        &dimensions.custom_dimensions,
-        &dimensions.classifier_type,
-        &resolved.dimension_weights,
-    )
-    .map_err(|source| invalid(source.to_string()))?;
+    let empty = Vec::new();
+    let dimensions = config.map_or(&empty, |config| &config.custom_dimensions);
+    let classifier = config.map_or("heuristic", |config| config.classifier_type.as_str());
+    let validated = validate(dimensions, classifier, &resolved.dimension_weights)
+        .map_err(|source| invalid(source.to_string()))?;
     let work = validated.work;
     let config = Config {
         custom_dimensions: validated.dimensions,
@@ -162,27 +171,6 @@ fn resolved(config: Option<&Json>) -> Result<(Config, u64), OperationError> {
     Ok((config, work))
 }
 
-fn configured(
-    config: Option<&Json>,
-) -> Result<(scoring_section::Config, Dimensions), OperationError> {
-    let Some(config) = config else {
-        return Ok((
-            scoring_section::Config::default(),
-            Dimensions {
-                custom_dimensions: Vec::new(),
-                classifier_type: default_classifier(),
-            },
-        ));
-    };
-    let value = serde_json::to_value(config).map_err(|source| invalid(source.to_string()))?;
-    let scoring =
-        serde_json::from_value(value.clone()).map_err(|source| invalid(source.to_string()))?;
-    let dimensions = serde_json::from_value(value).map_err(|source| invalid(source.to_string()))?;
-    Ok((scoring, dimensions))
-}
-
-fn invalid(message: impl Into<String>) -> OperationError {
-    OperationError::InvalidRequest {
-        message: message.into(),
-    }
+fn invalid(message: String) -> OperationError {
+    OperationError::InvalidRequest { message }
 }
