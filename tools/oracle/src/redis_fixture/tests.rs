@@ -336,19 +336,21 @@ async fn lease_events_reach_the_owned_logging_delivery() {
 }
 
 #[tokio::test]
-async fn shutdown_kills_the_process_and_removes_its_directory() {
+async fn shutdown_stops_serving_and_removes_its_directory() {
     let mut fixture = OracleRedis::start().unwrap();
     let address = fixture.address;
     let directory = fixture.directory.as_ref().unwrap().path().to_path_buf();
-    let cache = fixture.cache(None).await.unwrap();
-    assert!(cache.admin.ping(None).await.unwrap());
-    fixture.shutdown().unwrap();
+    {
+        let cache = fixture.cache(None).await.unwrap();
+        assert!(cache.admin.ping(None).await.unwrap());
+    }
+    fixture.shutdown();
     assert!(!directory.exists());
     assert!(TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err());
 }
 
 #[test]
-fn drop_kills_the_process_and_removes_its_directory() {
+fn drop_stops_serving_and_removes_its_directory() {
     let fixture = OracleRedis::start().unwrap();
     let address = fixture.address;
     let directory = fixture.directory.as_ref().unwrap().path().to_path_buf();
