@@ -13,7 +13,7 @@ use super::gate::{DbLookupStallTracker, LookupClock, SystemClock};
 #[error(
     "{} lookup did not answer within {}s",
     .lookup,
-    deadline_text(.deadline_seconds)
+    deadline_text(*.deadline_seconds)
 )]
 pub struct DbLookupDeadlineExceeded {
     pub lookup: String,
@@ -54,7 +54,7 @@ where
     let deadline_seconds = request
         .deadline_seconds
         .unwrap_or(request.default_deadline_seconds);
-    let handle = tasks.spawn(lookup);
+    let mut handle = tasks.spawn(lookup);
     let _cancel = CancelOnDrop(handle.abort_handle());
     let waited = match lookup_budget(deadline_seconds) {
         LookupBudget::Forever => None,
@@ -103,10 +103,12 @@ pub(super) async fn consume_abandoned_lookup<Output>(
 ) where
     Output: Send,
 {
-    if let Err(join_error) = handle.await
-        && !join_error.is_cancelled()
-    {
-        tracing::debug!(%join_error, "an abandoned database lookup failed");
+    match handle.await {
+        Ok(Err(error)) => tracing::debug!(%error, "an abandoned database lookup failed"),
+        Err(join_error) if !join_error.is_cancelled() => {
+            tracing::debug!(%join_error, "an abandoned database lookup failed");
+        }
+        Ok(Ok(_)) | Err(_) => (),
     }
 }
 
@@ -199,15 +201,13 @@ fn fixed_notation(digits: &str, exponent: i32) -> String {
 }
 
 fn scientific_notation(digits: &str, exponent: i32) -> String {
-    let Some((first, rest)) = digits.split_at_checked(1) else {
+    let mut characters = digits.chars();
+    let Some(first) = characters.next() else {
         return "0".to_owned();
     };
-    let mantissa = if rest.is_empty() {
-        first.to_owned()
-    } else {
-        format!("{first}.{rest}")
-    };
+    let rest: String = characters.collect();
+    let separator = if rest.is_empty() { "" } else { "." };
     let sign = if exponent.is_negative() { '-' } else { '+' };
     let magnitude = exponent.unsigned_abs();
-    format!("{mantissa}e{sign}{magnitude:02}")
+    format!("{first}{separator}{rest}e{sign}{magnitude:02}")
 }

@@ -138,13 +138,11 @@ where
     match operation.await {
         Ok(output) => {
             let times = event_times(clock, start_time);
-            if let Some(event) = success_event(call, times, resolver) {
-                drop(tasks.spawn(async move {
-                    if let Err(failure) = sink.success(event).await {
-                        tracing::warn!(%failure, "the database success metric failed");
-                    }
-                }));
-            }
+            schedule_success(
+                success_event(call, times, resolver),
+                Arc::clone(&sink),
+                tasks,
+            );
             Ok(output)
         }
         Err(error) => {
@@ -156,6 +154,20 @@ where
             Err(DbMetricError::Lookup(error))
         }
     }
+}
+
+fn schedule_success<Sink>(event: Option<DbServiceEvent>, sink: Arc<Sink>, tasks: &TaskTracker)
+where
+    Sink: DbServiceEventSink + 'static,
+{
+    let Some(scheduled) = event else {
+        return;
+    };
+    drop(tasks.spawn(async move {
+        if let Err(failure) = sink.success(scheduled).await {
+            tracing::warn!(%failure, "the database success metric failed");
+        }
+    }));
 }
 
 fn db_service_failure(error: &DbLookupError) -> Option<&DbError> {
