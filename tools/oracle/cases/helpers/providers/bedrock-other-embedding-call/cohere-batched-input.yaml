@@ -24,5 +24,30 @@ call:
         headers:
           Content-Type: application/json
         body: '{"embeddings":[[0.5,0.25],[1.5,1.75]],"meta":{"billed_units":{"input_tokens":7}}}'
+calls:
+  - bedrock_other_embedding_call:
+      function: cohere_batched_input
+      model: cohere.embed-english-v3
+      input:
+        - first
+        - second
+      now: 1700000000
+      supplied: async
+      aembedding: true
+      optional_params:
+        aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+        aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        aws_region_name: us-east-1
+        input_type: search_query
+        truncate: NONE
+        dimensions: 128
+      environment:
+        AWS_CONFIG_FILE: /dev/null
+        AWS_SHARED_CREDENTIALS_FILE: /dev/null
+      replies:
+        - status: 200
+          headers:
+            Content-Type: application/json
+          body: '{"embeddings":[[0.5,0.25],[1.5,1.75]],"meta":{"billed_units":{"input_tokens":7}}}'
 env: {}
 compare: {ignore: []}

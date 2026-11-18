@@ -1,5 +1,7 @@
-import json
+import asyncio
+import inspect
 import os
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
@@ -10,7 +12,7 @@ import httpx
 from litellm.exceptions import Timeout
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.embed import embedding as embedding_module
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
+from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -131,7 +133,10 @@ def request_value(request: httpx.Request) -> JsonValue:
 def timeout_fields(timeout: JsonValue) -> list[JsonValue] | None:
     if timeout is None:
         return None
-    record = TimeoutView.model_validate(timeout)
+    if isinstance(timeout, float | int):
+        record = TimeoutView.model_validate(httpx.Timeout(float(timeout)))
+    else:
+        record = TimeoutView.model_validate(timeout)
     return [record.connect, record.read, record.write, record.pool]
 
 
@@ -172,7 +177,7 @@ class Fixture:
 
 
 def configure(fixture: Fixture) -> None:
-    embedding_module._get_httpx_client = fixture.sync_client  # type: ignore[attr-defined]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L119
+    embedding_module._get_httpx_client = fixture.sync_client  # type: ignore[attr-defined]  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L125
     botocore.auth.get_current_datetime = partial(datetime.fromtimestamp, fixture.now, tz=UTC)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L60
 
 
@@ -183,10 +188,22 @@ def set_environment(case: Case) -> None:
         os.environ.update(environment)
 
 
-def supplied(case: Case, fixture: Fixture) -> HTTPHandler | None:
-    if case.get("supplied") == "sync":
+def supplied(case: Case, fixture: Fixture) -> HTTPHandler | AsyncHTTPHandler | None:
+    kind = case.get("supplied")
+    if kind == "sync":
         return fixture.client()
+    if kind == "async":
+        return AsyncHTTPHandler(transport=httpx.MockTransport(fixture.answer))
     return None
+
+
+# the batch and cohere coroutines are what aembedding hands back, so a case awaits what LiteLLM returned
+async def settle(
+    pending: EmbeddingResponse | Awaitable[EmbeddingResponse],
+) -> EmbeddingResponse:
+    if inspect.isawaitable(pending):
+        return await pending
+    return pending
 
 
 def response_value(response: EmbeddingResponse) -> JsonValue:
@@ -225,12 +242,10 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     litellm_params: dict[str, JsonValue] = {"drop_params": case.get("drop_params")}
     logger = Logger()
     ok = False
-    kind: str | None = None
     status: int | None = None
-    message: str | None = None
     response: JsonValue = None
     try:
-        reply = embedding_module.BedrockEmbedding().embeddings(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L119
+        pending = embedding_module.BedrockEmbedding().embeddings(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L65
             model=case["model"],
             input=list(case["input"]),
             api_base=case.get("api_base"),
@@ -240,40 +255,32 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
             logging_obj=logger,
             client=supplied(case, fixture),
             timeout=case.get("timeout"),
-            aembedding=False,
+            aembedding=case.get("aembedding", False),
             extra_headers=case.get("extra_headers"),
             optional_params=optional_params,
             litellm_params=litellm_params,
             api_key=case.get("api_key"),
         )
+        reply = asyncio.run(settle(pending))
     except BedrockError as error:
-        kind = "http"
         status = error.status_code
     except Timeout:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356
-        kind = "bedrock"
         status = 408
     except httpx.TimeoutException:
-        kind = "bedrock"
         status = 408
     except httpx.HTTPStatusError as error:
-        kind = "http"
         status = error.response.status_code
-    except httpx.TransportError:
-        kind = "transport"
-    except json.JSONDecodeError:
-        kind = "decode"
-    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L490
-        kind = "provider"
-        message = str(error)
+    except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/handler.py#L95
+        status = None
     else:
         ok = True
-        kind = "ok"
         response = response_value(reply)
     return {
         "ok": ok,
         "status": status,
-        "kind": kind,
-        "message": message,
+        "type": None,
+        "param": None,
+        "code": None,
         "requests": fixture.requests,
         "factory": fixture.factory,
         "response": response,

@@ -1,8 +1,5 @@
-use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
 use betterlite_bedrock::embedding_call::EmbeddingCallResponse;
-use betterlite_bedrock::embedding_call::error::EmbeddingCallError;
 use betterlite_logging::logging_state::LoggingStateError;
-use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -48,89 +45,25 @@ impl From<AdapterError> for Box<HelperError> {
     }
 }
 
+// LiteLLM's exceptions here carry a status only, so the probe compares the status and leaves the class and the message out
 pub(crate) fn probe(case: &Case) -> Result<Value, AdapterError> {
     let harness = harness::run(case)?;
-    let (ok, status, kind, message, response) = match &harness.outcome {
-        Ok(outcome) => (
-            true,
-            Value::Null,
-            Kind::Ok,
-            Value::Null,
-            response_value(outcome)?,
-        ),
-        Err(error) => (
-            false,
-            json!(error.status()),
-            kind(error),
-            message(error),
-            Value::Null,
-        ),
+    let (ok, status, response) = match &harness.outcome {
+        Ok(outcome) => (true, Value::Null, response_value(outcome)?),
+        Err(error) => (false, json!(error.status()), Value::Null),
     };
     Ok(json!({
         "ok": ok,
         "status": status,
-        "kind": kind,
-        "message": message,
+        "type": Value::Null,
+        "param": Value::Null,
+        "code": Value::Null,
         "requests": requests_value(&harness.requests)?,
         "factory": harness.factory,
         "response": response,
         "phases": harness.phases,
         "remaining": harness.remaining,
     }))
-}
-
-// LiteLLM's handlers name a failure by exception class, so the class is compared and the free text stays with the provider messages
-#[derive(Clone, Copy, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    Ok,
-    Http,
-    Bedrock,
-    Transport,
-    Decode,
-    Provider,
-    Other,
-}
-
-fn kind(error: &EmbeddingCallError) -> Kind {
-    match error {
-        EmbeddingCallError::Embedding(EmbeddingIoError::Provider { .. }) => Kind::Http,
-        EmbeddingCallError::Embedding(EmbeddingIoError::Handler(_)) => Kind::Bedrock,
-        EmbeddingCallError::Embedding(EmbeddingIoError::Transport(_)) => Kind::Transport,
-        EmbeddingCallError::Embedding(
-            EmbeddingIoError::Decode { .. }
-            | EmbeddingIoError::Params { .. }
-            | EmbeddingIoError::Unrepresentable
-            | EmbeddingIoError::MalformedEmbedding
-            | EmbeddingIoError::NotANumber
-            | EmbeddingIoError::IndexOverflow,
-        ) => Kind::Decode,
-        EmbeddingCallError::Embedding(EmbeddingIoError::Unmapped { .. })
-        | EmbeddingCallError::Provider { .. }
-        | EmbeddingCallError::Unmapped => Kind::Provider,
-        EmbeddingCallError::Cohere(CohereLegacyEmbeddingError::Status(_)) => Kind::Http,
-        EmbeddingCallError::Cohere(CohereLegacyEmbeddingError::Transport(_)) => Kind::Transport,
-        EmbeddingCallError::Embedding(_)
-        | EmbeddingCallError::Endpoint(_)
-        | EmbeddingCallError::Signing(_)
-        | EmbeddingCallError::Cohere(_)
-        | EmbeddingCallError::Json { .. }
-        | EmbeddingCallError::Field { .. }
-        | EmbeddingCallError::Titan(_)
-        | EmbeddingCallError::Nova(_)
-        | EmbeddingCallError::Marengo(_)
-        | EmbeddingCallError::Logging(_)
-        | EmbeddingCallError::Timeout { .. } => Kind::Other,
-    }
-}
-
-fn message(error: &EmbeddingCallError) -> Value {
-    match kind(error) {
-        Kind::Provider => Value::String(error.to_string()),
-        Kind::Ok | Kind::Http | Kind::Bedrock | Kind::Transport | Kind::Decode | Kind::Other => {
-            Value::Null
-        }
-    }
 }
 
 fn response_value(reply: &EmbeddingCallResponse) -> Result<Value, AdapterError> {

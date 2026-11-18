@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
@@ -6,8 +7,8 @@ use betterlite_bedrock::bedrock_embedding_io::transport::{ClientKind, SuppliedCl
 use betterlite_bedrock::embedding_call::error::EmbeddingCallError;
 use betterlite_bedrock::embedding_call::plan::remaining_options;
 use betterlite_bedrock::embedding_call::{
-    Dependencies, EmbeddingCall, EmbeddingCallResponse, EmbeddingEnvironment, LogContext, ParamMap,
-    embeddings,
+    Clock, Dependencies, EmbeddingCall, EmbeddingCallResponse, EmbeddingEnvironment, LogContext,
+    ParamMap, embeddings,
 };
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_models::decisions::Json as Decisions;
@@ -64,7 +65,6 @@ pub(crate) fn run(case: &Case) -> Result<Harness, AdapterError> {
                 .map(String::as_str),
             bearer_token: bearer.as_ref(),
         },
-        now: clock(case.now)?,
     };
     let secrets = secret_lookup();
     let region_worker = ManagedRegionWorker::new().map_err(|error| AdapterError::Setup {
@@ -96,6 +96,7 @@ pub(crate) fn run(case: &Case) -> Result<Harness, AdapterError> {
             transport: &transport,
             encoding: &encoding,
             signing: &signing,
+            clock: Arc::new(FixedClock(clock(case.now)?)),
         };
         runtime()?.block_on(embeddings(&mut call, dependencies, supplied_view, &mut log))
     };
@@ -134,6 +135,15 @@ fn supplied(case: &Case, factory: &Factory) -> Option<(ClientKind, FixtureClient
         Supplied::Async => ClientKind::Async,
     };
     Some((kind, supplied_client(factory)))
+}
+
+// the oracle case names one instant, as the pinned LiteLLM clock patch does
+struct FixedClock(SystemTime);
+
+impl Clock for FixedClock {
+    fn now(&self) -> SystemTime {
+        self.0
+    }
 }
 
 fn clock(now: u64) -> Result<SystemTime, AdapterError> {
