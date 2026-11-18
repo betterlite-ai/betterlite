@@ -61,26 +61,22 @@ fn all_selection() {
 
 fn only_selection() {
     let configured = LoggedEventTypes::Only(vec!["a".to_owned(), "*".to_owned()]);
-    assert!(should_log_event(
-        &configured,
-        &support::preface(r#"{"type":"a"}"#)
-    ));
-    assert!(should_log_event(
-        &configured,
-        &support::preface(r#"{"type":"*"}"#)
-    ));
+    for (type_field, logged) in [
+        (r#""type":"a""#, true),
+        (r#""type":"*""#, true),
+        (r#""type":"b""#, false),
+        ("", false),
+        (r#""type":3"#, false),
+    ] {
+        let event = support::preface(&format!("{{{type_field}}}"));
+        assert_eq!(
+            should_log_event(&configured, &event),
+            logged,
+            "with {type_field}"
+        );
+    }
     assert!(!should_log_event(
-        &configured,
-        &support::preface(r#"{"type":"b"}"#)
-    ));
-    assert!(!should_log_event(&configured, &support::preface("{}")));
-    assert!(!should_log_event(
-        &configured,
-        &support::preface(r#"{"type":3}"#)
-    ));
-    let empty = LoggedEventTypes::Only(Vec::new());
-    assert!(!should_log_event(
-        &empty,
+        &LoggedEventTypes::Only(Vec::new()),
         &support::preface(r#"{"type":"a"}"#)
     ));
 }

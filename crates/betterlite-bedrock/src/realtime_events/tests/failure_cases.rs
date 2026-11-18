@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::io;
 
 use betterlite_models::decisions::Json;
 
@@ -11,6 +12,7 @@ use crate::realtime_events::scope::EventScope;
 pub(super) fn provider_failure_event() {
     mapped_classes();
     unknown_class();
+    native_cause();
     redaction();
 }
 
@@ -33,6 +35,7 @@ fn mapped_classes() {
         let failure = ProviderFailure {
             class_name: class_name.to_owned(),
             message: "boom".to_owned(),
+            source: None,
         };
         let error = as_bedrock_error(failure);
         match &error {
@@ -57,10 +60,27 @@ fn unknown_class() {
     let error = as_bedrock_error(ProviderFailure {
         class_name: "Throttling".to_owned(),
         message: SECRET.to_owned(),
+        source: None,
     });
     assert!(matches!(error, ProviderStreamError::Unchanged(_)));
     assert_eq!(error.to_string(), SECRET);
     assert!(Error::source(&error).is_none());
+}
+
+// The mapped error chain reaches the exception the seam caught, not just its message
+fn native_cause() {
+    let failure = ProviderFailure {
+        class_name: "ThrottlingException".to_owned(),
+        message: "slow down".to_owned(),
+        source: Some(Box::new(io::Error::other("connection reset"))),
+    };
+    let error = as_bedrock_error(failure);
+    let cause = Error::source(&error).expect("the provider failure");
+    assert_eq!(cause.to_string(), "slow down");
+    assert_eq!(
+        cause.source().expect("the native cause").to_string(),
+        "connection reset"
+    );
 }
 
 fn redaction() {
@@ -70,6 +90,7 @@ fn redaction() {
     let failure = ProviderFailure {
         class_name: "ThrottlingException".to_owned(),
         message: format!("upstream said {SECRET}"),
+        source: None,
     };
     let error = raise_provider_failure(&mut scope, failure, &support::redactor());
     assert_eq!(
@@ -89,6 +110,7 @@ fn redaction() {
     let failure = ProviderFailure {
         class_name: "ValidationException".to_owned(),
         message: "bad".to_owned(),
+        source: None,
     };
     raise_provider_failure(&mut uncommitted, failure, &support::redactor());
     assert_eq!(uncommitted.committed_failure, Json::Null);

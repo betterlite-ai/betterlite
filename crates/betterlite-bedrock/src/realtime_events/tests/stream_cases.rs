@@ -1,12 +1,17 @@
+use std::error::Error;
+use std::io;
+
 use betterlite_models::decisions::Json;
 
 use super::support::{self, SECRET};
-use crate::realtime_events::client::ClientMessages;
+use crate::realtime_events::client::{ClientError, ClientMessages};
 use crate::realtime_events::decode::decode_realtime_client_preface;
 use crate::realtime_events::scope::EventScope;
+use crate::realtime_events::stream::StreamError;
 
 pub(super) async fn session_update_first() {
     client_messages().await;
+    native_errors();
     preface_decoding();
 }
 
@@ -23,21 +28,51 @@ async fn client_messages() {
         client: &client,
         initial: Some(String::new()),
         redactor: &redactor,
+        done: false,
     };
     assert_eq!(messages.next().await.as_deref(), Some(""));
     assert_eq!(messages.next().await.as_deref(), Some("first"));
     assert_eq!(messages.next().await, None);
+    client
+        .received
+        .lock()
+        .unwrap()
+        .push_back(support::Received::Text("later".to_owned()));
+    assert_eq!(messages.next().await, None);
+    assert_eq!(client.received.lock().unwrap().len(), 1);
     assert!(
         log.text()
             .contains("Client to Bedrock forwarding ended: REDACTED died")
     );
     assert!(!log.text().contains(SECRET));
+    let fresh = support::FakeClient::new();
     let mut empty = ClientMessages {
-        client: &client,
+        client: &fresh,
         initial: None,
         redactor: &redactor,
+        done: false,
     };
     assert_eq!(empty.next().await, None);
+}
+
+// The protocol errors keep the transport error they came from as their cause
+fn native_errors() {
+    let client = ClientError {
+        message: "gone".to_owned(),
+        source: Some(Box::new(io::Error::other("socket closed"))),
+    };
+    assert_eq!(
+        client.source().expect("a connector cause").to_string(),
+        "socket closed"
+    );
+    let stream = StreamError {
+        message: "failed".to_owned(),
+        source: Some(Box::new(io::Error::other("tls"))),
+    };
+    assert_eq!(
+        stream.source().expect("a transport cause").to_string(),
+        "tls"
+    );
 }
 
 fn preface_decoding() {

@@ -15,8 +15,37 @@ pub(super) fn native_completion_dispatch() {
     text_deltas_and_end_turn();
     content_end_variants();
     usage_delta();
+    usage_array_rejected();
     tool_use_output();
     prompt_end_state();
+}
+
+// A payload of the wrong shape is an error and leaves the cumulative counters as they were
+fn usage_array_rejected() {
+    let ids = support::CountingIds::new();
+    let mut session = support::new_session();
+    let mut input = support::input();
+    let response =
+        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    input = support::next_input(&response);
+    support::transform(&mut session, &ids, USAGE_EVENT, &input).expect("a usage event");
+    let error = support::transform(&mut session, &ids, r#"{"event":{"usageEvent":[]}}"#, &input)
+        .expect_err("an array usage event");
+    assert!(matches!(
+        error,
+        EventError::Payload {
+            field: "usageEvent",
+            ..
+        }
+    ));
+    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
+        .expect("a prompt end");
+    let done = json_dict(&support::events(&response)[0]).expect("a response.done object");
+    let object = done
+        .get("response")
+        .and_then(json_dict)
+        .expect("a response object");
+    assert_eq!(object.get("usage"), Some(&support::json(USAGE_JSON)));
 }
 
 fn content_start_events() {
@@ -51,18 +80,17 @@ fn content_start_events() {
     let created = json_dict(&events[0]).expect("a response.created object");
     assert_eq!(
         created.get("event_id"),
-        Some(&Json::Text(format!(
-            "event_{}",
-            support::numbered("event", 4)
-        )))
+        Some(&Json::Text(support::numbered("event", 4)))
     );
 }
 
 fn text_deltas_and_end_turn() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
-    let input = support::input();
-    support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    let mut input = support::input();
+    let response =
+        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    input = support::next_input(&response);
     let response = support::transform(
         &mut session,
         &ids,
@@ -72,13 +100,15 @@ fn text_deltas_and_end_turn() {
     .expect("a text delta");
     assert_eq!(support::events(&response).len(), 1);
     assert!(response.current_delta_chunks.is_some());
-    support::transform(
+    input = support::next_input(&response);
+    let response = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"textOutput":{"content":" world"}}}"#,
         &input,
     )
     .expect("a text delta");
+    input = support::next_input(&response);
     let response = support::transform(
         &mut session,
         &ids,
@@ -96,10 +126,7 @@ fn text_deltas_and_end_turn() {
     );
     assert_eq!(
         done.get("event_id"),
-        Some(&Json::Text(format!(
-            "event_{}",
-            support::numbered("event", 8)
-        )))
+        Some(&Json::Text(support::numbered("event", 7)))
     );
     assert_eq!(
         support::event_type(&events[1]),
@@ -181,8 +208,10 @@ fn invalid_payload() {
 fn usage_delta() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
-    let input = support::input();
-    support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    let mut input = support::input();
+    let response =
+        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    input = support::next_input(&response);
     support::transform(&mut session, &ids, USAGE_EVENT, &input).expect("a usage event");
     let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
         .expect("a prompt end");
@@ -194,7 +223,10 @@ fn usage_delta() {
         .and_then(json_dict)
         .expect("a response object");
     assert_eq!(object.get("usage"), Some(&support::json(USAGE_JSON)));
-    support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    input = support::next_input(&response);
+    let response =
+        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    input = support::next_input(&response);
     let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
         .expect("a prompt end");
     let events = support::events(&response);

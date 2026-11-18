@@ -107,6 +107,19 @@ pub(super) fn transform_events(message: &str, input: &RealtimeResponseTransformI
     events(&response).to_vec()
 }
 
+// The bridge feeds each response's seven state fields back as the next dispatch input
+pub(super) fn next_input(response: &RealtimeResponseTypedDict) -> RealtimeResponseTransformInput {
+    RealtimeResponseTransformInput {
+        session_configuration_request: response.session_configuration_request.clone(),
+        current_output_item_id: response.current_output_item_id.clone(),
+        current_response_id: response.current_response_id.clone(),
+        current_delta_chunks: response.current_delta_chunks.clone(),
+        current_item_chunks: response.current_item_chunks.clone(),
+        current_conversation_id: response.current_conversation_id.clone(),
+        current_delta_type: response.current_delta_type,
+    }
+}
+
 pub(super) fn events(response: &RealtimeResponseTypedDict) -> &[Json] {
     match &response.response {
         Json::List(events) => events,
@@ -195,9 +208,13 @@ impl RealtimeClientWebSocket for FakeClient {
         let mut received = self.received.lock().unwrap();
         match received.pop_front() {
             Some(Received::Text(text)) => Ok(text),
-            Some(Received::Error(message)) => Err(ClientError { message }),
+            Some(Received::Error(message)) => Err(ClientError {
+                message,
+                source: None,
+            }),
             None => Err(ClientError {
                 message: "no more messages".to_owned(),
+                source: None,
             }),
         }
     }
@@ -207,6 +224,7 @@ impl RealtimeClientWebSocket for FakeClient {
         match &self.send_error {
             Some(message) => Err(ClientError {
                 message: message.clone(),
+                source: None,
             }),
             None => Ok(()),
         }
@@ -268,6 +286,7 @@ impl BedrockBidirectionalStream for FakeStream {
         match &self.error {
             Some(message) => Err(StreamError {
                 message: message.clone(),
+                source: None,
             }),
             None => Ok((Json::Null, Box::new(FakeOutput))),
         }
@@ -284,6 +303,7 @@ impl ClosableBedrockRuntimeClient for Closable {
         match &self.error {
             Some(message) => Err(StreamError {
                 message: message.clone(),
+                source: None,
             }),
             None => Ok(()),
         }

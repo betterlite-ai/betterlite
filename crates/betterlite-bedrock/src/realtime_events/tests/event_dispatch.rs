@@ -8,11 +8,64 @@ use crate::realtime_events::error::EventError;
 pub(super) fn native_event_dispatch() {
     decoding_errors();
     malformed_message();
+    syntax_before_shape();
     unknown_payloads();
     branch_priority();
     speech_priority();
     tool_and_end_priority();
+    content_end_payload();
     transcript_content_end();
+}
+
+// A message that does not parse is a warning whatever its first token promises
+fn syntax_before_shape() {
+    let (log, _guard) = support::capture();
+    for message in ["[", "null garbage", "[] garbage", "[] {}"] {
+        let response = support::transform(
+            &mut support::new_session(),
+            &support::CountingIds::new(),
+            message,
+            &support::input(),
+        )
+        .expect("a syntax error is a warning");
+        assert_eq!(support::events(&response).len(), 0);
+        assert_eq!(response.current_output_item_id, None);
+        assert_eq!(response.current_delta_chunks, None);
+    }
+    assert!(log.text().contains(r#"Invalid JSON message: ["#));
+    assert!(log.text().contains("Invalid JSON message: null garbage"));
+}
+
+fn content_end_payload() {
+    let mut input = support::input_with_ids("item", "resp", "conv");
+    input.current_delta_type = Some(AllDeltaType::Text);
+    input.current_delta_chunks = Some(vec![support::json(r#"{"delta":"Hi"}"#)]);
+    let error = support::transform(
+        &mut support::new_session(),
+        &support::CountingIds::new(),
+        r#"{"event":{"contentEnd":[]}}"#,
+        &input,
+    )
+    .expect_err("an array content end");
+    assert!(matches!(
+        error,
+        EventError::Payload {
+            field: "contentEnd",
+            ..
+        }
+    ));
+    let ids = support::CountingIds::new();
+    let mut session = support::new_session();
+    support::transform(
+        &mut session,
+        &ids,
+        r#"{"event":{"contentStart":{"role":"USER","type":"TEXT"}}}"#,
+        &input,
+    )
+    .expect("a user content start");
+    let response = support::transform(&mut session, &ids, r#"{"event":{"contentEnd":[]}}"#, &input)
+        .expect("a transcript end never reads the content end payload");
+    assert_eq!(support::events(&response).len(), 0);
 }
 
 fn decoding_errors() {
@@ -46,6 +99,15 @@ fn decoding_errors() {
 }
 
 fn payload_errors() {
+    for (message, field) in [
+        (r#"{"event":{"contentStart":[]}}"#, "contentStart"),
+        (r#"{"event":{"textOutput":[]}}"#, "textOutput"),
+        (r#"{"event":{"audioOutput":[]}}"#, "audioOutput"),
+        (r#"{"event":{"usageEvent":[]}}"#, "usageEvent"),
+    ] {
+        let error = decode_realtime_native_event(message.as_bytes()).expect_err("an array payload");
+        assert!(matches!(error, EventError::Payload { field: actual, .. } if actual == field));
+    }
     assert!(matches!(
         decode_realtime_native_event(br#"{"event":{"contentStart":3}}"#),
         Err(EventError::Payload {
@@ -114,8 +176,14 @@ fn malformed_message() {
     assert!(!log.text().contains(SECRET));
     let long = format!(r#"{{"broken":{}"#, "x".repeat(250));
     support::transform(&mut session, &ids, &long, &input).expect("a syntax error is a warning");
-    assert!(log.text().contains(&"x".repeat(200)));
-    assert!(!log.text().contains(&"x".repeat(201)));
+    assert!(
+        log.text()
+            .contains(&format!(r#"{{"broken":{}"#, "x".repeat(190)))
+    );
+    assert!(
+        !log.text()
+            .contains(&format!(r#"{{"broken":{}"#, "x".repeat(191)))
+    );
 }
 
 fn unknown_payloads() {
@@ -152,7 +220,7 @@ fn branch_priority() {
 
     let events = support::transform_events(
         r#"{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"},"textOutput":{"content":"x"}}}"#,
-        &input,
+        &support::input(),
     );
     assert_eq!(events.len(), 3);
     assert_eq!(support::event_type(&events[0]), Some("response.created"));
@@ -258,7 +326,10 @@ fn transcript_content_end() {
         r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 4);
-    assert_eq!(support::event_type(&events[0]), Some("response.text.done"));
-    assert_eq!(support::event_type(&events[3]), Some("response.done"));
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        support::event_type(&events[0]),
+        Some("response.output_item.done")
+    );
+    assert_eq!(support::event_type(&events[1]), Some("response.done"));
 }
