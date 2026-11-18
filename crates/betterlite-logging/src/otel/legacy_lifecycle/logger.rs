@@ -20,8 +20,6 @@ use super::lifecycle::{DEFAULT_CALLBACK_NAME, LegacyLifecycle, LifecycleCall};
 pub struct LegacyOtelLogger {
     pub lifecycle: Arc<LegacyLifecycle>,
     callback_name: String,
-    message_logging: bool,
-    turn_off_message_logging: bool,
 }
 
 impl LegacyOtelLogger {
@@ -34,8 +32,6 @@ impl LegacyOtelLogger {
         Self {
             lifecycle,
             callback_name,
-            message_logging: true,
-            turn_off_message_logging: false,
         }
     }
 
@@ -52,8 +48,9 @@ impl LegacyOtelLogger {
             end_time: span_time(event.payload.end_time),
             exception: None,
             flags: LoggingFlags {
-                turn_off_message_logging: self.turn_off_message_logging || dynamic_turn_off(event),
-                message_logging: self.message_logging,
+                turn_off_message_logging: dynamic_turn_off(event),
+                // CustomLogger's deprecated flag defaults to true, and the class never overrides it
+                message_logging: true,
             },
         };
         let result = if failure {
@@ -121,14 +118,6 @@ impl LegacyOtelLogger {
 impl CallbackLogger for LegacyOtelLogger {
     fn callback_name(&self) -> &str {
         &self.callback_name
-    }
-
-    fn turn_off_message_logging(&self) -> bool {
-        self.turn_off_message_logging
-    }
-
-    fn message_logging(&self) -> bool {
-        self.message_logging
     }
 
     fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {

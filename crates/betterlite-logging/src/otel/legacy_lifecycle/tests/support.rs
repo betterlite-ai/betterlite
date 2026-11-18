@@ -309,21 +309,23 @@ pub(super) fn call<'call>(kwargs: &'call MetadataMap) -> LifecycleCall<'call> {
     }
 }
 
-pub(super) fn carry(kwargs: &mut MetadataMap, span: &LiveSpan) {
+pub(super) fn carry_in(kwargs: &mut MetadataMap, bucket: &str, span: &LiveSpan) {
     let mut carrier = HashMap::new();
     TraceContextPropagator::new().inject_context(
         &Context::new().with_remote_span_context(span.context.clone()),
         &mut carrier,
     );
     let traceparent = carrier
-        .get("traceparent")
-        .expect("the propagator writes traceparent")
-        .clone();
+        .remove("traceparent")
+        .expect("the propagator writes traceparent");
     let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
         panic!("litellm_params must be an object");
     };
-    let Some(OtelModelValue::Object(metadata)) = params.get_mut("metadata") else {
-        panic!("metadata must be an object");
+    let fields = params
+        .entry(bucket.to_owned())
+        .or_insert_with(MetadataMap::default);
+    let OtelModelValue::Object(metadata) = fields else {
+        panic!("{bucket} must be an object");
     };
     metadata.insert(
         "litellm_parent_otel_span".to_owned(),

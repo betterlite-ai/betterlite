@@ -214,3 +214,54 @@ fn guardrail_spans_are_skipped_without_guardrail_information() {
         .expect("success lifecycle");
     assert!(guardrails(&rig).is_empty());
 }
+
+#[test]
+fn guardrail_spans_come_from_the_request_data_bucket() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let request_data: MetadataMap = serde_json::from_value(json!({
+        "metadata": {
+            "litellm_call_id": "call-8",
+            "standard_logging_guardrail_information": [entry()]
+        }
+    }))
+    .expect("request data");
+    lifecycle
+        .emit_request_guardrails(&request_data, None)
+        .expect("request data guardrails");
+    let spans = guardrails(&rig);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(text_attribute(&spans[0], "guardrail_name"), "pii");
+}
+
+#[test]
+fn guardrail_spans_skip_null_payload_attributes() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let mut kwargs = simple_kwargs("call-null");
+    with_guardrails(
+        &mut kwargs,
+        json!([{
+            "guardrail_name": "pii-null",
+            "guardrail_mode": "pre_call",
+            "start_time": 1704067200.5,
+            "end_time": 1704067200.75,
+            "masked_entity_count": null,
+            "guardrail_response": null,
+            "guardrail_usage": null,
+            "guardrail_cost": null
+        }]),
+    );
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("success lifecycle");
+    let span = &guardrails(&rig)[0];
+    for key in [
+        "masked_entity_count",
+        "guardrail_response",
+        "guardrail_usage",
+        "guardrail_cost",
+    ] {
+        assert_eq!(attribute(span, key), None);
+    }
+}

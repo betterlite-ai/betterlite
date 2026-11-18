@@ -220,6 +220,10 @@ fn legacy_lifecycle_failure_with_an_ambient_parent_stamps_the_parent() {
         .expect("the parent stays open");
     assert!(matches!(data.status, Status::Error { .. }));
     assert!(!data.attributes.is_empty());
+    assert!(
+        parent.lock().is_recording(),
+        "only a proxy span is closed by the failure hook"
+    );
 }
 
 #[test]
@@ -284,8 +288,34 @@ fn legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity() {
         dedupe.emit_once(Some(&key), &scope)
     }));
 
-    assert!(dedupe.emit_once(Some("call-0"), &scope));
-    assert!(!dedupe.emit_once(Some("call-1"), &scope));
+    assert!(
+        !dedupe.emit_once(Some("call-5"), &scope),
+        "a repeat emits nothing at capacity"
+    );
+    assert!(
+        !dedupe.emit_once(Some("call-0"), &scope),
+        "the oldest request stays tracked"
+    );
+    assert!(
+        dedupe.emit_once(Some("call-10000"), &scope),
+        "a new request at capacity evicts the oldest"
+    );
+    assert!(
+        dedupe.emit_once(Some("call-0"), &scope),
+        "the evicted request emits again"
+    );
+}
+
+#[test]
+fn legacy_lifecycle_keeps_dedupe_state_below_capacity() {
+    let dedupe = RequestDedupe::new("OpenTelemetry".to_owned());
+    let scope = [ScopeValue::Text("success".to_owned())];
+    assert!(dedupe.emit_once(Some("call-a"), &scope));
+    assert!(dedupe.emit_once(Some("call-b"), &scope));
+    assert!(
+        !dedupe.emit_once(Some("call-a"), &scope),
+        "a second request does not evict the first below capacity"
+    );
 }
 
 #[test]

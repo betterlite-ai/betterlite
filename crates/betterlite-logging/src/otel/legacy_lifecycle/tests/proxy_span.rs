@@ -2,7 +2,7 @@ use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Status};
 
 use crate::support::{
-    END, PROXY, Rig, attach, attribute, call, carry, instant, simple_kwargs, text_attribute,
+    END, PROXY, Rig, attach, attribute, call, carry_in, instant, simple_kwargs, text_attribute,
     with_team,
 };
 
@@ -12,7 +12,7 @@ fn proxy_span_success_close_stamps_status_200_and_ok() {
     let lifecycle = rig.in_memory(None);
     let proxy = rig.parent(&lifecycle, PROXY);
     let mut kwargs = simple_kwargs("call-1");
-    carry(&mut kwargs, &proxy);
+    carry_in(&mut kwargs, "metadata", &proxy);
     lifecycle
         .handle_success(&call(&kwargs))
         .expect("success lifecycle");
@@ -36,7 +36,7 @@ fn proxy_span_success_leaves_external_parent_spans_open() {
     let lifecycle = rig.in_memory(None);
     let parent = rig.parent(&lifecycle, "upstream");
     let mut kwargs = simple_kwargs("call-2");
-    carry(&mut kwargs, &parent);
+    carry_in(&mut kwargs, "metadata", &parent);
     lifecycle
         .handle_success(&call(&kwargs))
         .expect("success lifecycle");
@@ -54,7 +54,7 @@ fn proxy_span_success_does_not_close_an_ended_proxy_again() {
     let proxy = rig.parent(&lifecycle, PROXY);
     proxy.lock().end_with_timestamp(instant(END - 0.5));
     let mut kwargs = simple_kwargs("call-ended-proxy");
-    carry(&mut kwargs, &proxy);
+    carry_in(&mut kwargs, "metadata", &proxy);
 
     lifecycle
         .handle_success(&call(&kwargs))
@@ -72,7 +72,7 @@ fn proxy_span_team_attributes_are_stamped_before_the_close() {
     let lifecycle = rig.in_memory(None);
     let proxy = rig.parent(&lifecycle, PROXY);
     let mut kwargs = simple_kwargs("call-3");
-    carry(&mut kwargs, &proxy);
+    carry_in(&mut kwargs, "metadata", &proxy);
     with_team(&mut kwargs);
     lifecycle
         .handle_success(&call(&kwargs))
@@ -118,7 +118,7 @@ fn proxy_span_success_dedupe_skip_still_closes_the_proxy() {
         .expect("first success");
     assert!(proxy.lock().is_recording(), "no carrier closes nothing");
     let mut second = first.clone();
-    carry(&mut second, &proxy);
+    carry_in(&mut second, "metadata", &proxy);
     lifecycle
         .handle_success(&call(&second))
         .expect("duplicate success");
@@ -127,5 +127,46 @@ fn proxy_span_success_dedupe_skip_still_closes_the_proxy() {
     assert_eq!(
         attribute(&span, "http.response.status_code"),
         Some(&opentelemetry::Value::I64(200))
+    );
+}
+
+#[test]
+fn proxy_span_success_closes_the_ambient_proxy_span() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let proxy = rig.parent(&lifecycle, PROXY);
+    let kwargs = simple_kwargs("call-ambient-proxy");
+    let context = attach(&proxy.context);
+    let guard = Context::attach(&context);
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("success lifecycle");
+    drop(guard);
+    let span = rig.span(PROXY);
+    assert_eq!(span.status, Status::Ok);
+    assert_eq!(span.end_time, instant(END));
+    assert_eq!(
+        attribute(&span, "http.response.status_code"),
+        Some(&opentelemetry::Value::I64(200))
+    );
+}
+
+#[test]
+fn proxy_span_team_attributes_read_only_the_provider_bucket() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let proxy = rig.parent(&lifecycle, PROXY);
+    let mut kwargs = simple_kwargs("call-litellm-metadata");
+    carry_in(&mut kwargs, "litellm_metadata", &proxy);
+    with_team(&mut kwargs);
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("success lifecycle");
+    let span = rig.span(PROXY);
+    assert_eq!(span.status, Status::Ok);
+    assert_eq!(
+        attribute(&span, "metadata.user_api_key_team_id"),
+        None,
+        "the litellm_metadata carrier is only the close fallback"
     );
 }

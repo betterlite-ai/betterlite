@@ -113,3 +113,18 @@ fn dynamic_base_hooks_return_no_override() {
     assert!(dynamic.construct_dynamic_otel_headers(&params).is_none());
     assert!(dynamic.construct_dynamic_otel_config(&params).is_none());
 }
+
+#[test]
+fn tracer_selection_branch_names_match_the_choice() {
+    let headers = BTreeMap::from([("x-key".to_owned(), "pk".to_owned())]);
+    assert_eq!(
+        TracerChoice::DynamicConfig(in_memory_config()).branch(),
+        "dynamic_config"
+    );
+    assert_eq!(
+        TracerChoice::DynamicHeaders(headers.clone()).branch(),
+        "dynamic_headers"
+    );
+    assert_eq!(TracerChoice::EnvHeaders(headers).branch(), "env_headers");
+    assert_eq!(TracerChoice::Global.branch(), "global");
+}
