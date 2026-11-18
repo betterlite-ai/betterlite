@@ -5,7 +5,7 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 
 use super::FLUSH_DEADLINE;
-use super::delta::{self, DeltaStore, SyncOutcome, SyncState};
+use super::delta::{self, DeltaStore, FlushGate, SyncOutcome, SyncState};
 
 // the sink's saturated path: the owner's task set runs the flush, so a stalled store never blocks the callback
 pub(super) fn schedule_flush<S>(state: &Arc<SyncState<S>>, flushes: &Mutex<JoinSet<()>>)
@@ -28,39 +28,34 @@ where
     let _task = tasks.spawn(async move {
         let _guard = gate;
         // the task holds the gate already, so it pushes what joined it while it wrote
-        if timeout(FLUSH_DEADLINE, drain(&owned)).await.is_err() {
+        if timeout(FLUSH_DEADLINE, delta::drain(&owned)).await.is_err() {
             delta::discard_joined(&owned);
             tracing::warn!("the scheduled routing flush passed its deadline");
         }
     });
 }
 
-// one bounded inline flush for an async caller: sync_state takes the gate itself and merges the store's totals
-pub(super) async fn flush<S>(state: &SyncState<S>)
+// BaseRoutingStrategy._sync_in_memory_spend_with_redis: one bounded flush, then the merge of the store's totals
+pub(super) async fn sync_state<S>(state: &SyncState<S>) -> SyncOutcome
 where
     S: DeltaStore,
 {
-    if timeout(FLUSH_DEADLINE, delta::sync_state(state))
-        .await
-        .is_err()
-    {
-        tracing::warn!("the routing flush passed its deadline");
+    if state.store.is_none() {
+        return SyncOutcome::Empty;
     }
-}
-
-// push the batch, then push again while a delta that found the queue full joined the running flush
-async fn drain<S>(state: &SyncState<S>) -> SyncOutcome
-where
-    S: DeltaStore,
-{
-    let mut outcome = delta::push_and_merge(state).await;
-    while matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty)
-        && delta::joined_len(state) > 0
-    {
-        outcome = delta::push_and_merge(state).await;
+    let outcome = timeout(FLUSH_DEADLINE, async {
+        let Some(_gate) = FlushGate::acquire(&state.gate, FLUSH_DEADLINE).await else {
+            return SyncOutcome::Busy;
+        };
+        delta::drain(state).await
+    })
+    .await;
+    match outcome {
+        Ok(outcome) => outcome,
+        Err(_elapsed) => {
+            delta::discard_joined(state);
+            tracing::warn!("the routing sync passed its deadline");
+            SyncOutcome::Failed
+        }
     }
-    if !matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) {
-        delta::discard_joined(state);
-    }
-    outcome
 }

@@ -48,7 +48,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             self.state
                 .record_delta(&route_key, &RouteIncrement::Spend(value), ttl)?;
         if joined {
-            sync::flush(self.state.as_ref()).await;
+            let _outcome = sync::sync_state(self.state.as_ref()).await;
         }
         Ok(spend_value(&route_key, &updated))
     }
@@ -170,7 +170,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     // BaseRoutingStrategy._sync_in_memory_spend_with_redis
     pub async fn sync_with_redis(&self) -> bool {
         matches!(
-            delta::sync_state(self.state.as_ref()).await,
+            sync::sync_state(self.state.as_ref()).await,
             SyncOutcome::Pushed
         )
     }

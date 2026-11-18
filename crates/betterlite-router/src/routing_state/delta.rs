@@ -127,10 +127,15 @@ impl<S: DeltaStore> SyncState<S> {
             return Ok((updated, false));
         }
         drop(pending);
-        self.joined
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(delta);
+        let mut joined = self.joined.lock().unwrap_or_else(PoisonError::into_inner);
+        if joined.len() >= MAX_PENDING_DELTAS {
+            tracing::warn!(
+                key = key.as_ref(),
+                "the joined routing deltas are full; the observation is dropped"
+            );
+        } else {
+            joined.push(delta);
+        }
         Ok((updated, true))
     }
 }
@@ -163,20 +168,6 @@ where
     joined.clear();
 }
 
-// BaseRoutingStrategy._sync_in_memory_spend_with_redis: push the queued deltas, then merge the store's totals back
-pub(super) async fn sync_state<S>(state: &SyncState<S>) -> SyncOutcome
-where
-    S: DeltaStore,
-{
-    if state.store.is_none() {
-        return SyncOutcome::Empty;
-    }
-    let Some(_gate) = FlushGate::acquire(&state.gate, FLUSH_DEADLINE).await else {
-        return SyncOutcome::Busy;
-    };
-    push_and_merge(state).await
-}
-
 // the push and the read-back merge, for a caller that already holds the gate
 pub(super) async fn push_and_merge<S>(state: &SyncState<S>) -> SyncOutcome
 where
@@ -191,6 +182,21 @@ where
     };
     merge(state, &keys, &before, &values);
     SyncOutcome::Pushed
+}
+
+// push the batch, then push again while a delta that found the queue full joined the running flush
+pub(super) async fn drain<S>(state: &SyncState<S>) -> SyncOutcome
+where
+    S: DeltaStore,
+{
+    let mut outcome = push_and_merge(state).await;
+    while matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) && joined_len(state) > 0 {
+        outcome = push_and_merge(state).await;
+    }
+    if !matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) {
+        discard_joined(state);
+    }
+    outcome
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
