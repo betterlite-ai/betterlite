@@ -399,6 +399,23 @@ fn billing_metadata_stripped() {
     derived_betas();
     caller_beta_wins();
     vertex_request_has_no_betas();
+    invalid_probe_types();
+}
+
+// a probe value of the wrong type is the environment's typed 400, before either client is used
+fn invalid_probe_types() {
+    for options in [
+        option("tools", text("not a list")),
+        option("mcp_servers", text("not a list")),
+    ] {
+        let run = run(Setup {
+            optional_params: options,
+            ..Setup::chat()
+        });
+        assert_eq!(run.status(), Some(400));
+        assert_eq!(run.posts_supplied, 0);
+        assert_eq!(run.posts_pooled, 0);
+    }
 }
 
 fn derived_betas() {
