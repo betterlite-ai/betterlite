@@ -25,7 +25,7 @@ pub struct DeploymentParameters {
     pub model: Option<String>,
     pub custom_llm_provider: Option<String>,
     #[serde(default)]
-    #[serde_as(deserialize_as = "serde_with::DefaultOnNull<bool>")]
+    #[serde_as(deserialize_as = "serde_with::DefaultOnNull")]
     pub use_in_pass_through: bool,
     pub litellm_credential_name: Option<String>,
     pub api_key: Option<SecretString>,
@@ -227,7 +227,7 @@ fn credential_values(
 
 const fn json_text(value: Option<&Json>) -> Option<&str> {
     match value {
-        Some(Json::Text(text)) => Some(text),
+        Some(Json::Text(text)) => Some(text.as_str()),
         _ => None,
     }
 }
