@@ -91,10 +91,10 @@ impl PolicyRouterView for RouterInput {
 // LiteLLM's registry is initialized by any load, even of an empty config, and never by a null one
 fn registry_for(policies: Option<&BTreeMap<String, Policy>>) -> PolicyRegistry {
     let mut registry = PolicyRegistry::default();
-    let Some(policies) = policies else {
+    let Some(configured) = policies else {
         return registry;
     };
-    for (policy_name, policy) in policies {
+    for (policy_name, policy) in configured {
         registry.add_policy(policy_name, policy.clone(), PolicySource::Config);
     }
     registry.initialized = true;
