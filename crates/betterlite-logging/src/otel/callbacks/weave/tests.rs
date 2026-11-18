@@ -6,7 +6,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use opentelemetry::Context;
 use opentelemetry::propagation::TextMapPropagator as _;
-use opentelemetry::trace::{Span as _, SpanContext, Status, TraceContextExt as _, Tracer as _};
+use opentelemetry::trace::{
+    Span as _, SpanContext, SpanId, Status, TraceContextExt as _, Tracer as _,
+};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
@@ -81,7 +83,7 @@ impl Rig {
 
     fn weave(&self) -> LegacyLifecycle {
         weave_lifecycle(
-            self.init(Some(CALLBACK_NAME)),
+            self.init(in_memory_config(), Some(CALLBACK_NAME)),
             LegacyLifecycleOptions {
                 live: Arc::clone(&self.roots),
                 ..LegacyLifecycleOptions::default()
@@ -91,7 +93,7 @@ impl Rig {
 
     fn base(&self) -> LegacyLifecycle {
         LegacyLifecycle::from_otel(
-            self.init(None),
+            self.init(in_memory_config(), None),
             LegacyLifecycleOptions {
                 live: Arc::clone(&self.roots),
                 ..LegacyLifecycleOptions::default()
@@ -99,10 +101,10 @@ impl Rig {
         )
     }
 
-    fn init(&self, callback_name: Option<&str>) -> LegacyOtel {
+    fn init(&self, config: OpenTelemetryConfig, callback_name: Option<&str>) -> LegacyOtel {
         init_legacy_otel(
             LegacyOtelInit {
-                config: Some(in_memory_config()),
+                config: Some(config),
                 callback_name: callback_name.map(str::to_owned),
                 overrides: MetadataKeyOverrides::default(),
                 injected: InjectedProviders::default(),
@@ -312,6 +314,93 @@ fn weave_handle_success_closes_the_proxy_request_span_litellm_leaks() {
             .count(),
         1
     );
+}
+
+fn with_guardrail(kwargs: &mut MetadataMap) {
+    let Some(OtelModelValue::Object(payload)) = kwargs.get_mut("standard_logging_object") else {
+        panic!("standard_logging_object must be an object");
+    };
+    payload.insert(
+        "guardrail_information".to_owned(),
+        OtelModelValue::Array(vec![
+            serde_json::from_str(
+                r#"{
+                    "guardrail_name": "pii",
+                    "guardrail_mode": "pre_call",
+                    "guardrail_status": "success",
+                    "start_time": 1704067200.5,
+                    "end_time": 1704067200.75
+                }"#,
+            )
+            .expect("guardrail entry"),
+        ]),
+    );
+}
+
+// docs/deviations/B3863.yaml: the Weave override parents the guardrail to ctx, the shared lifecycle to the new span
+#[test]
+fn weave_parents_the_guardrail_span_to_the_litellm_request_span() {
+    let rig = Rig::new();
+    let lifecycle = rig.weave();
+    let mut kwargs = simple_kwargs("call-guardrail");
+    with_guardrail(&mut kwargs);
+    lifecycle
+        .handle(&call(&kwargs), LifecycleEvent::Success)
+        .expect("the weave success lifecycle");
+    let spans = rig.spans();
+    let primary = spans
+        .iter()
+        .find(|span| span.name == "litellm_request")
+        .expect("the primary span");
+    let guardrail = spans
+        .iter()
+        .find(|span| span.name == "guardrail")
+        .expect("the guardrail span");
+    assert_eq!(guardrail.parent_span_id, primary.span_context.span_id());
+}
+
+// docs/deviations/B3863.yaml: the Weave override has no _emit_once, the shared lifecycle keeps it
+#[test]
+fn weave_suppresses_a_duplicate_success_for_one_request() {
+    let rig = Rig::new();
+    let lifecycle = rig.weave();
+    let kwargs = simple_kwargs("call-duplicate");
+    lifecycle
+        .handle(&call(&kwargs), LifecycleEvent::Success)
+        .expect("the first success");
+    lifecycle
+        .handle(&call(&kwargs), LifecycleEvent::Success)
+        .expect("the repeated success");
+    assert_eq!(names(&rig.spans()), vec!["litellm_request".to_owned()]);
+}
+
+// docs/deviations/B3863.yaml: the Weave override never checks ignore_context_propagation
+#[test]
+fn weave_honors_ignore_context_propagation() {
+    let rig = Rig::new();
+    let lifecycle = weave_lifecycle(
+        rig.init(
+            OpenTelemetryConfig {
+                ignore_context_propagation: true,
+                ..in_memory_config()
+            },
+            Some(CALLBACK_NAME),
+        ),
+        LegacyLifecycleOptions {
+            live: Arc::clone(&rig.roots),
+            ..LegacyLifecycleOptions::default()
+        },
+    );
+    let parent = rig.parent(&lifecycle, "wrapper");
+    let kwargs = simple_kwargs("call-ignore");
+    let guard = attach(&parent.context).attach();
+    lifecycle
+        .handle(&call(&kwargs), LifecycleEvent::Success)
+        .expect("the weave success lifecycle");
+    drop(guard);
+    let spans = rig.spans();
+    assert_eq!(names(&spans), vec!["litellm_request".to_owned()]);
+    assert_eq!(spans[0].parent_span_id, SpanId::INVALID);
 }
 
 #[test]
