@@ -148,18 +148,15 @@ impl Session<'_> {
     }
 
     async fn chunk(&mut self, row: &Row) -> Value {
+        let hook_call = ChunkHookContext {
+            explicit_call_type: row.call_type.as_deref(),
+            logging_call_type: row.logging_type.as_deref(),
+            request_data: Some(&row.request),
+            model_call_details: &self.details,
+        };
         let event = self
             .hooks
-            .chunk_hook(
-                &mut self.callback,
-                ChunkHookContext {
-                    explicit_call_type: row.call_type.as_deref(),
-                    logging_call_type: row.logging_type.as_deref(),
-                    request_data: Some(&row.request),
-                    model_call_details: &self.details,
-                },
-                row.event.clone(),
-            )
+            .chunk_hook(&mut self.callback, hook_call, row.event.clone())
             .await;
         json!({"id": nested_response(&event).map(|response| &response.id), "ran": self.callback.post_streaming_hooks_ran})
     }

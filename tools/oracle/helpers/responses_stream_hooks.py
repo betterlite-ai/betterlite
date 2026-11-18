@@ -198,9 +198,9 @@ class Probe(StreamBase):
     def report_failure(self, row: Row) -> None:
         try:
             self._maybe_raise_for_error_event(row.event)
-        except (AuthenticationError, BadRequestError, MidStreamFallbackError, NotFoundError) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L664
-            self._handle_failure(error)
-            self._handle_failure(error)
+        except (AuthenticationError, BadRequestError, MidStreamFallbackError, NotFoundError) as err:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L664
+            self._handle_failure(err)
+            self._handle_failure(err)
 
     async def invoke(self, operation: Operation, recorder: Recorder) -> JsonValue:
         row = recorder.row
