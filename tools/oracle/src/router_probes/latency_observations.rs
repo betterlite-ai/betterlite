@@ -4,7 +4,8 @@ use std::collections::BTreeMap;
 
 use betterlite_router::latency_observations::error::LatencyError;
 use betterlite_router::latency_observations::samples::MinuteUsage;
-use serde::{Deserialize, Serialize};
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
 use crate::router_probes::ProbeOutput;
@@ -12,8 +13,22 @@ use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
 // a wall-clock second as the case spells it, compared bit for bit so both sides answer the same JSON number
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct Seconds(pub f64);
+
+// the reply is an internally tagged enum, so serde buffers it and arbitrary_precision hands a float back as its private number map; Number reads either shape
+impl<'de> Deserialize<'de> for Seconds {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let number = serde_json::Number::deserialize(deserializer)?;
+        number
+            .as_f64()
+            .map(Self)
+            .ok_or_else(|| D::Error::custom("a second value must be a finite JSON number"))
+    }
+}
 
 impl PartialEq for Seconds {
     fn eq(&self, other: &Self) -> bool {
