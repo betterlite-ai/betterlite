@@ -26,6 +26,8 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 
+use crate::api::ocr_request::multipart_form::raw_split::split_items;
+
 use super::{RequestFormBody, RequestFormError, decode_request_form, get_request_body};
 
 const URLENCODED: &[u8] = b"application/x-www-form-urlencoded";
@@ -601,7 +603,27 @@ fn empty_multipart_body_has_no_fields() {
 #[test]
 fn an_unterminated_payload_boundary_is_content() {
     let body = b"--b\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n--b--";
-    let mut items = super::multipart::raw_split::split_items(body, "b");
+    let mut items = split_items(body, "b").unwrap();
     assert_eq!(items.next().unwrap().unwrap().data, b"--b--");
     assert!(items.next().is_none());
+}
+
+#[test]
+fn a_body_that_is_only_the_closing_delimiter_has_no_fields() {
+    for body in [&b"--b--\r\n"[..], &b"--b--"[..]] {
+        let parts = decode_request_form(body, MULTIPART, &ApiLimits::default()).unwrap();
+        assert!(parts.items.is_empty());
+    }
+}
+
+#[rstest]
+#[case(r#"Content-Disposition: form-data; name="x""#)]
+#[case(r#"Content-Disposition:form-data; name="x""#)]
+#[case(r#"Content-Disposition:  form-data; name="x""#)]
+fn a_disposition_header_needs_no_space_after_its_colon(#[case] header: &str) {
+    let body = format!("--b\r\n{header}\r\n\r\nv\r\n--b--\r\n");
+    let parts = decode_request_form(body.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
+    assert_eq!(parts.items.len(), 1);
+    assert_eq!(parts.items[0].name, "x");
+    assert_eq!(parts.items[0].value, PartValue::Text("v".to_owned()));
 }

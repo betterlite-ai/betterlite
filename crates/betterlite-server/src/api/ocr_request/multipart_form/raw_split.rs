@@ -22,12 +22,6 @@ const fn header_kind(name: &[u8]) -> HeaderKind {
     }
 }
 
-fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack
-        .windows(needle.len())
-        .position(|window| window == needle)
-}
-
 // A line is a boundary only when dash_boundary is immediately followed by nothing (an ordinary boundary) or by "--" (the closing boundary). python-multipart stops at the second hyphen and drops everything else on that line, so a closing boundary followed by trailing spaces or an epilogue (no trailing CRLF needed, since it can end the body) is still the closing boundary. Anything else, such as a data line that merely starts with dash_boundary, is not a boundary at all.
 fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
     let rest = line.strip_prefix(dash_boundary)?;
@@ -40,25 +34,33 @@ fn boundary_kind(line: &[u8], dash_boundary: &[u8]) -> Option<bool> {
     }
 }
 
+// python-multipart's HEADER_FIELD ends at the first colon and HEADER_VALUE_START then skips zero or more spaces, so a header whose colon has no following space is still split into a name and a value.
 fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), MultipartError> {
-    let separator = find_subslice(line, b": ").ok_or(MultipartError::InvalidItemHeader)?;
+    let separator = line
+        .iter()
+        .position(|byte| *byte == b':')
+        .ok_or(MultipartError::InvalidItemHeader)?;
     let (name, rest) = line.split_at(separator);
-    let value = rest.get(2..).unwrap_or(&[]);
+    let mut value = rest.get(1..).unwrap_or(&[]);
+    while let Some(stripped) = value.strip_prefix(b" ") {
+        value = stripped;
+    }
     Ok((name, value))
 }
 
-// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF. Each loop below finds only the CRLF's offset, not a slice pair: a caller advancing by that offset plus a literal 2 always shrinks its own cursor, so a mutated offset can at worst spin without allocating, not leak memory on every turn.
-fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> &'body [u8] {
+// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF and whether that line already closed the message. A body with no boundary line at all returns None, which split_items reports as malformed. Each loop below finds only the CRLF's offset, not a slice pair: a caller advancing by that offset plus a literal 2 always shrinks its own cursor, so a mutated offset can at worst spin without allocating, not leak memory on every turn.
+fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> Option<(&'body [u8], bool)> {
     let mut remaining = body;
     while let Some(idx) = remaining.windows(2).position(|pair| pair == b"\r\n") {
         let line = remaining.get(..idx).unwrap_or(remaining);
         let after_crlf = remaining.get(idx.saturating_add(2)..).unwrap_or(&[]);
-        if boundary_kind(line, dash_boundary).is_some() {
-            return after_crlf;
+        if let Some(is_final) = boundary_kind(line, dash_boundary) {
+            return Some((after_crlf, is_final));
         }
         remaining = after_crlf;
     }
-    &[]
+    // The closing delimiter can end the body with no trailing CRLF, so the last unterminated line is checked too.
+    boundary_kind(remaining, dash_boundary).map(|is_final| (&[][..], is_final))
 }
 
 struct PartHeaders<'body> {
@@ -164,13 +166,18 @@ impl<'body> Iterator for SplitItems<'body> {
     }
 }
 
-// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type.
-pub(crate) fn split_items<'body>(body: &'body [u8], boundary: &str) -> SplitItems<'body> {
+// A byte-level split of the multipart body that never requires a header value to be valid UTF-8, unlike multipart-rs's own streaming reader used in parse_body for the boundary and Content-Type. An immediate closing delimiter ends the message with no items, while a body with no boundary line at all is an error.
+pub(crate) fn split_items<'body>(
+    body: &'body [u8],
+    boundary: &str,
+) -> Result<SplitItems<'body>, MultipartError> {
     let dash_boundary = format!("--{boundary}").into_bytes();
-    let remaining = skip_preamble(body, &dash_boundary);
-    SplitItems {
+    let Some((remaining, closed)) = skip_preamble(body, &dash_boundary) else {
+        return Err(MultipartError::InvalidBoundary);
+    };
+    Ok(SplitItems {
         dash_boundary,
         remaining,
-        done: false,
-    }
+        done: closed,
+    })
 }

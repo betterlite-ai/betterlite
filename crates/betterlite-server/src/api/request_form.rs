@@ -10,6 +10,10 @@ use betterlite_core::api::request_form::values::{
 use std::str;
 use thiserror::Error;
 
+use crate::api::ocr_request::multipart_form::charset::decode_part;
+use crate::api::ocr_request::multipart_form::disposition::disposition_param_bytes;
+use crate::api::ocr_request::multipart_form::raw_split::{RawItem, split_items};
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum RequestFormError {
     #[error("request form body is too large")]
@@ -112,9 +116,6 @@ fn decode_multipart(
     content_type: &str,
     limits: &ApiLimits,
 ) -> Result<FormParts, RequestFormError> {
-    use multipart::charset::decode_part;
-    use multipart::disposition::disposition_param_bytes;
-    use multipart::raw_split::split_items;
     let boundary_bytes = disposition_param_bytes(content_type.as_bytes(), "boundary")
         .filter(|value| !value.is_empty())
         .ok_or(RequestFormError::ContentType)?;
@@ -126,7 +127,7 @@ fn decode_multipart(
         return Ok(FormParts { items: Vec::new() });
     }
     let mut items = Vec::new();
-    for item in split_items(bytes, boundary) {
+    for item in split_items(bytes, boundary).map_err(|_error| RequestFormError::InvalidBody)? {
         let raw_item = item.map_err(|_error| RequestFormError::InvalidBody)?;
         check_part_count(items.len().saturating_add(1), limits)?;
         items.push(read_part(&raw_item, &charset)?);
@@ -134,12 +135,7 @@ fn decode_multipart(
     Ok(FormParts { items })
 }
 
-fn read_part(
-    item: &multipart::raw_split::RawItem<'_>,
-    charset: &str,
-) -> Result<FormPart, RequestFormError> {
-    use multipart::charset::decode_part;
-    use multipart::disposition::disposition_param_bytes;
+fn read_part(item: &RawItem<'_>, charset: &str) -> Result<FormPart, RequestFormError> {
     let disposition = item
         .content_disposition
         .ok_or(RequestFormError::InvalidBody)?;
@@ -165,10 +161,8 @@ fn check_part_count(count: usize, limits: &ApiLimits) -> Result<(), RequestFormE
         .check(ApiBoundariesInput::Items(ItemsBoundary {
             known_count: count,
         }))
-        .map(|_result| ())
-        .map_err(|_error| RequestFormError::TooManyParts)
+        .map_err(|_error| RequestFormError::TooManyParts)?;
+    Ok(())
 }
-
-pub(crate) mod multipart;
 
 mod tests;
