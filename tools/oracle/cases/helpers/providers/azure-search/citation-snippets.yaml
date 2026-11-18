@@ -1,0 +1,18 @@
+kind: helper
+name: citation-snippets
+call:
+  azure_search:
+    citations:
+      scenarios:
+        - environment: {BING_GROUNDING_MODEL: gpt-4.1}
+          body: |
+            {"output":[{"type":"reasoning","content":[{"type":"output_text","text":"ignored reasoning","annotations":[{"type":"url_citation","url":"https://ignored.example","title":"Ignored","start_index":0}]}]},{"type":"message","content":[{"type":"text","text":"not output text","annotations":[{"type":"url_citation","url":"https://skipped.example"}]},{"type":"output_text","text":"First claim ([host](https://first.example)). Second claim ([host](https://second.example)).","annotations":[{"type":"url_citation","url":"https://first.example","title":"First","start_index":12,"end_index":43},{"type":"url_citation","url":"https://second.example","start_index":58,"end_index":90},{"type":"file_citation","url":"https://file.example"},{"type":"url_citation","url":""},{"type":"url_citation","url":null}]}]},{"type":"message","content":[{"type":"output_text","text":"Duplicate later","annotations":[{"type":"url_citation","url":"https://first.example","title":"Second title"}]}]},{"type":"message"}]}
+        - environment: {}
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"Line one\nLine two claim ([x](https://line.example)).","annotations":[{"type":"url_citation","url":"https://line.example","start_index":24}]},{"type":"output_text","text":"Only text","annotations":[{"type":"url_citation","url":"https://past.example","start_index":999},{"type":"url_citation","url":"https://negative.example","start_index":-1}]},{"type":"output_text","text":"At zero ([x](https://zero.example)).","annotations":[{"type":"url_citation","url":"https://zero.example","start_index":0}]},{"type":"output_text","text":"At end","annotations":[{"type":"url_citation","url":"https://end.example","start_index":6}]}]}]}
+        - environment: {}
+          body: |
+            {"output":[{"type":"message","content":[{"type":"output_text","text":"012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé","annotations":[{"type":"url_citation","url":"https://long.example"}]},{"type":"output_text","text":"ééé claim ([x](https://unicode.example)).","annotations":[{"type":"url_citation","url":"https://unicode.example","start_index":10}]},{"type":"output_text","text":"éééééééééé","annotations":[{"type":"url_citation","url":"https://prefix.example"}]}]}]}
+env: {}
+compare:
+  ignore: []
