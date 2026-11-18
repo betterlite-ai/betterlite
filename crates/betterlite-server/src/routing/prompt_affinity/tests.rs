@@ -175,14 +175,11 @@ fn inputs(cache: Arc<DualCache<LocalMemoryOps>>) -> PromptAffinityInputs<LocalMe
     }
 }
 
-fn loaded(checks: &[&str], limit: Option<&str>) -> Config {
+fn loaded(checks: &[&str]) -> Config {
     let joined = checks.join(", ");
     let source =
         format!("model_list: []\nrouter_settings:\n  optional_pre_call_checks: [{joined}]\n");
-    let mut lookup = BTreeMap::new();
-    if let Some(value) = limit {
-        lookup.insert("MAX_BASE64_LENGTH_FOR_LOGGING".to_owned(), value.to_owned());
-    }
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
     ConfigLoader { lookup }
         .load(&source)
         .expect("the test config loads")
@@ -218,11 +215,9 @@ async fn pinned_after(services: &RouterServices) -> Option<String> {
 
 #[tokio::test]
 async fn a_success_event_pins_the_deployment_the_next_request_reuses() {
-    let services = RouterServices::from_config(
-        &loaded(&["prompt_caching"], None),
-        inputs(cache_at(clock())),
-    )
-    .expect("the router builds");
+    let services =
+        RouterServices::from_config(&loaded(&["prompt_caching"]), inputs(cache_at(clock())))
+            .expect("the router builds");
     assert_eq!(services.callback_name(), "PromptCachingDeploymentCheck");
     services
         .async_log_success_event(event(payload()))
@@ -234,11 +229,9 @@ async fn a_success_event_pins_the_deployment_the_next_request_reuses() {
 // a standard_logging_object without a model id names no deployment to pin
 #[tokio::test]
 async fn a_success_event_without_a_model_id_never_pins() {
-    let services = RouterServices::from_config(
-        &loaded(&["prompt_caching"], None),
-        inputs(cache_at(clock())),
-    )
-    .expect("the router builds");
+    let services =
+        RouterServices::from_config(&loaded(&["prompt_caching"]), inputs(cache_at(clock())))
+            .expect("the router builds");
     let mut payload = payload();
     payload.model_id = None;
     services
@@ -251,11 +244,9 @@ async fn a_success_event_without_a_model_id_never_pins() {
 // a standard_logging_object whose messages are not a list is skipped
 #[tokio::test]
 async fn a_success_event_without_a_message_list_never_pins() {
-    let services = RouterServices::from_config(
-        &loaded(&["prompt_caching"], None),
-        inputs(cache_at(clock())),
-    )
-    .expect("the router builds");
+    let services =
+        RouterServices::from_config(&loaded(&["prompt_caching"]), inputs(cache_at(clock())))
+            .expect("the router builds");
     let mut payload = payload();
     payload.messages = Some(Json::Text("the prompt".to_owned()));
     services
@@ -268,23 +259,11 @@ async fn a_success_event_without_a_message_list_never_pins() {
 // without the config entry the router registers no check, and a success event leaves no pin
 #[tokio::test]
 async fn a_router_without_the_check_ignores_successes() {
-    let services = RouterServices::from_config(&loaded(&[], None), inputs(cache_at(clock())))
+    let services = RouterServices::from_config(&loaded(&[]), inputs(cache_at(clock())))
         .expect("the router builds");
     assert!(services.prompt_affinity().is_none());
     services
         .async_log_success_event(event(payload()))
         .await
         .expect("an unregistered check ignores the event");
-}
-
-// MAX_BASE64_LENGTH_FOR_LOGGING is read once at setup, and a value that is not a length stops it
-#[tokio::test]
-async fn a_malformed_base64_limit_fails_the_router_setup() {
-    assert!(
-        RouterServices::from_config(
-            &loaded(&["prompt_caching"], Some("many")),
-            inputs(cache_at(clock()))
-        )
-        .is_err()
-    );
 }
