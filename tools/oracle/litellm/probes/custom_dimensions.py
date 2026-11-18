@@ -13,8 +13,6 @@ from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false, reportUnusedCallResult=false
-
 _CONFIG: Final = TypeAdapter(ComplexityRouterConfig)
 _TIER: Final = TypeAdapter(ComplexityTier)
 
@@ -39,9 +37,11 @@ def _entry(pattern: str) -> Entry:
         work = custom_pattern_work(pattern)
     except ValueError as error:
         raise ProbeError("invalid_request", str(error)) from error
-    if isinstance(work, str):
-        return Entry(message=work)
-    return Entry(work=work)
+    match work:
+        case str():
+            return Entry(message=work)
+        case int():
+            return Entry(work=work)
 
 
 class CustomDimensions(Operation):
