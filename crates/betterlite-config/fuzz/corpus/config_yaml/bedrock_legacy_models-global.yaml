@@ -1,0 +1,17 @@
+litellm_settings:
+  maxTokens: 1024
+  maxTokenCount: 512
+  max_tokens: 256
+  max_tokens_to_sample: 128
+  temperature: 0
+  topP: 0.9
+  top_p: 0.8
+  top_k: 4
+  stopSequences: [END]
+  stop_sequences: [STOP]
+  stop: [HALT]
+  frequencePenalty: {scale: 0}
+  presencePenalty: {scale: 1}
+  countPenalty: {scale: 2}
+  return_likelihood: ALL
+  anthropic_version: bedrock-2023-05-31

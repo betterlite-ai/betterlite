@@ -1,0 +1,29 @@
+kind: helper
+name: bedrock-legacy-models-llama-generation-length
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: llama
+          non_default:
+            max_tokens: 64
+            temperature: 0.5
+            top_p: 0.9
+            stream: false
+            max_completion_tokens: 12
+            stop: [x]
+          optional: {}
+          model: meta.llama3-8b-instruct-v1:0
+          drop_params: false
+          global_drop_params: false
+calls:
+  - bedrock_legacy_models:
+      constructors:
+        default_max_tokens: 4096
+        cases:
+          - family: llama
+            calls:
+              - {maxTokenCount: 32, temperature: 0.5, topP: 1}
+              - {}
+env: {}
+compare: {ignore: []}
