@@ -17,7 +17,7 @@ pub const ROLES_WITHIN_ORG: [UserRole; 3] = [
     UserRole::InternalUserViewer,
 ];
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum OneOrMany<T> {
     One(T),
@@ -66,37 +66,23 @@ impl OrgMemberAddRequest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TeamMemberAddRequest {
     pub member: OneOrMany<Member>,
     pub team_id: String,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub max_budget_in_team: Option<Decimal>,
     pub budget_duration: Option<String>,
     pub allowed_models: Option<Vec<String>>,
-}
-
-#[derive(Deserialize)]
-struct TeamMemberAddFields {
-    team_id: String,
-    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
-    max_budget_in_team: Option<Decimal>,
-    budget_duration: Option<String>,
-    allowed_models: Option<Vec<String>>,
 }
 
 impl TeamMemberAddRequest {
     pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         let member = member_field(object, record_from_json::<Member>)?;
-        let fields: TeamMemberAddFields = serde_json::from_str(&serde_json::to_string(value)?)?;
-        Ok(Self {
-            member,
-            team_id: fields.team_id,
-            max_budget_in_team: fields.max_budget_in_team,
-            budget_duration: fields.budget_duration,
-            allowed_models: fields.allowed_models,
-        })
+        let mut request: Self = serde_json::from_str(&serde_json::to_string(value)?)?;
+        request.member = member;
+        Ok(request)
     }
 }
 
