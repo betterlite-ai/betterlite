@@ -1,0 +1,21 @@
+kind: helper
+name: chatgpt-responses-seed-unlabelled-sse
+call:
+  chatgpt_responses:
+    step: response
+    environment: {}
+    model: gpt-5
+    input: hi
+    options: {}
+    body: |-
+      data: {"type":"response.output_text.done","output_index":0,"text":"seed"}
+      data: {"type":"response.completed","response":{"id":"resp_seed","created_at":1700000000,"object":"response"}}
+    status: 200
+    headers: {}
+    now: 1700000000
+    api_base: "https://auth.test/codex"
+    access_token: "seed-token"
+    account_id: "acct-1"
+env: {}
+compare:
+  ignore: []

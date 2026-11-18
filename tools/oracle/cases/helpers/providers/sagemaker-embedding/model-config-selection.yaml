@@ -1,0 +1,10 @@
+kind: helper
+name: model-config-selection
+call:
+  b5961: {"function": "model_config", "model": "sagemaker-voyage-3"}
+calls:
+  - b5961: {"function": "model_config", "model": "cohere-voyage-x"}
+  - b5961: {"function": "model_config", "model": "SAGEMAKER-COHERE-embed"}
+  - b5961: {"function": "model_config", "model": "huggingface-tei"}
+env: {}
+compare: {ignore: []}
