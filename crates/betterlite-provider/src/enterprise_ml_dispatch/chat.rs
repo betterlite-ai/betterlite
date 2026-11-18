@@ -11,7 +11,7 @@ use crate::agent_platform_dispatch::context::headers_or_global;
 use crate::data_cloud_dispatch::handler::ChatCompletionHandler;
 
 use super::call::{convert, signing_params};
-use super::context::{ChatContext, handler_call, passthrough};
+use super::context::{ChatContext, ReplacedCall, handler_call, passthrough};
 use super::error::EnterpriseError;
 use super::sagemaker::{self, SagemakerCompletion, SagemakerDeps, SagemakerReply};
 use super::watsonx;
@@ -82,11 +82,13 @@ fn sap_chat<R>(
     }
     let call = handler_call(
         base,
-        optional_params,
-        base.api_key.cloned(),
-        base.api_base.map(str::to_owned),
-        base.custom_llm_provider,
-        headers_or_global(base.headers.cloned(), base.globals.headers),
+        ReplacedCall {
+            optional_params,
+            api_key: base.api_key.cloned(),
+            api_base: base.api_base.map(str::to_owned),
+            provider: base.custom_llm_provider,
+            headers: headers_or_global(base.headers.cloned(), base.globals.headers),
+        },
     );
     Ok(Completion::Handler(handler.complete(&call)?))
 }
@@ -97,7 +99,7 @@ fn watsonx_chat<R>(
     handler: &dyn ChatCompletionHandler<Reply = R>,
 ) -> Result<Completion<R>, EnterpriseError> {
     Ok(Completion::Handler(
-        handler.complete(&watsonx::chat_call(context))?,
+        handler.complete(&passthrough(&context.base, "watsonx"))?,
     ))
 }
 
@@ -153,10 +155,11 @@ fn builtin_messages(messages: &[Message]) -> Result<Vec<BuiltinMessage>, Enterpr
         .map(|message| {
             let mut value = serde_json::to_value(message)
                 .map_err(|source| EnterpriseError::Encode { source })?;
+            // an absent content becomes the null the prompt renderer reads, as the message dict carries no key
+            let null =
+                serde_json::to_value(()).map_err(|source| EnterpriseError::Encode { source })?;
             if let Some(fields) = value.as_object_mut() {
-                fields
-                    .entry(String::from("content"))
-                    .or_insert(serde_json::Value::Null);
+                fields.entry(String::from("content")).or_insert(null);
             }
             serde_json::from_value(value).map_err(|source| EnterpriseError::Decode { source })
         })

@@ -1,29 +1,17 @@
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use betterlite_openai::compatible_wire::header_map;
-use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
-use betterlite_openai::watsonx_audio::error::body_text;
 use betterlite_openai::watsonx_auth::WatsonxAuth;
-use betterlite_openai::watsonx_auth::credentials::get_watsonx_credentials;
 use betterlite_openai::watsonx_auth::environment::WatsonxEnvironment;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
-use betterlite_prompts::arguments::json::Object;
-use http::Method;
+use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 use uuid::Uuid;
 
-use crate::data_cloud_dispatch::call::{CompletionCall, EmbeddingCall};
-use crate::data_cloud_dispatch::context::EnvironmentSource;
-use crate::watsonx_embed::WatsonxEmbeddingConfig;
-use crate::watsonx_embed::reply::decode_watsonx_embedding_reply;
+use crate::data_cloud_dispatch::call::CompletionCall;
+use crate::data_cloud_dispatch::context::{DispatchContext, EnvironmentSource};
 use crate::watsonx_rerank::WatsonxRerankConfig;
 
 use super::call::convert;
-use super::context::{ChatContext, handler_call};
+use super::context::{ChatContext, ReplacedCall, handler_call};
 use super::error::EnterpriseError;
-use super::transport::{EnterpriseTransport, SharedTransport};
 
 // every name B5970's WatsonxEnvironment carries, read when the call runs
 pub fn environment(source: &EnvironmentSource<'_>) -> Result<WatsonxEnvironment, EnterpriseError> {
@@ -51,201 +39,146 @@ pub fn environment(source: &EnvironmentSource<'_>) -> Result<WatsonxEnvironment,
     })
 }
 
-fn take_truthy(
+// the popped text: an absent or null key takes the next default, and an explicit text is used as given, empty included
+fn pop_text(
     params: &mut WatsonxParams,
     field: &'static str,
 ) -> Result<Option<String>, EnterpriseError> {
     match params.remove(field) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(text)) => Ok(Some(text).filter(|text| !text.is_empty())),
-        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-            Err(EnterpriseError::FieldType { field })
-        }
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => match value.as_str() {
+            Some(text) => Ok(Some(text.to_owned())),
+            None => Err(EnterpriseError::FieldType { field }),
+        },
     }
 }
 
-// a present null value is an empty pick, which keeps the pop running without falling through to the other name
+// an absent or null credentials key takes the other name, and a present object is read as the overrides
 fn take_object(
     params: &mut WatsonxParams,
     field: &'static str,
-) -> Result<Option<serde_json::Map<String, Value>>, EnterpriseError> {
+) -> Result<Option<Object>, EnterpriseError> {
     match params.remove(field) {
-        None => Ok(None),
-        Some(Value::Null) => Ok(Some(serde_json::Map::new())),
-        Some(Value::Object(fields)) => Ok(Some(fields)),
-        Some(Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => match serde_json::from_value::<Object>(value) {
+            Ok(fields) => Ok(Some(fields)),
+            Err(_error) => Err(EnterpriseError::FieldType { field }),
+        },
+    }
+}
+
+// the credentials field: absent or null takes the fallback, and an explicit text is used as given, empty included
+fn credential_text(
+    fields: &Object,
+    field: &'static str,
+) -> Result<Option<String>, EnterpriseError> {
+    match fields.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
+        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
             Err(EnterpriseError::FieldType { field })
         }
     }
 }
 
-fn credential_text(
-    fields: &serde_json::Map<String, Value>,
-    field: &'static str,
-) -> Result<Option<String>, EnterpriseError> {
-    match fields.get(field) {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(text)) => Ok(Some(text.clone())),
-        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-            Err(EnterpriseError::FieldType { field })
+// api_key or popped apikey or WATSONX_APIKEY, WATSONX_API_KEY, WX_API_KEY
+fn text_api_key(
+    base: &DispatchContext<'_>,
+    params: &mut WatsonxParams,
+) -> Result<Option<SecretString>, EnterpriseError> {
+    if let Some(stored) = base.api_key {
+        return Ok(Some(SecretString::from(stored.expose_secret().to_owned())));
+    }
+    if let Some(value) = pop_text(params, "apikey")? {
+        return Ok(Some(SecretString::from(value)));
+    }
+    for name in ["WATSONX_APIKEY", "WATSONX_API_KEY", "WX_API_KEY"] {
+        if let Some(value) = base.env.secret(name)? {
+            return Ok(Some(value));
         }
     }
+    Ok(None)
+}
+
+// api_base or the three pops, else WATSONX_API_BASE, WATSONX_URL, WX_URL, WML_URL
+fn text_api_base(
+    base: &DispatchContext<'_>,
+    params: &mut WatsonxParams,
+) -> Result<Option<String>, EnterpriseError> {
+    if let Some(value) = base.api_base {
+        return Ok(Some(value.to_owned()));
+    }
+    // the inner pop runs first, so all three leave the params even when url wins
+    let base_url = pop_text(params, "base_url")?;
+    let api_base = pop_text(params, "api_base")?;
+    let url = pop_text(params, "url")?;
+    if let Some(value) = url.or(api_base).or(base_url) {
+        return Ok(Some(value));
+    }
+    for name in ["WATSONX_API_BASE", "WATSONX_URL", "WX_URL", "WML_URL"] {
+        if let Some(value) = base.env.text(name)? {
+            return Ok(Some(value));
+        }
+    }
+    Ok(None)
+}
+
+// both credential names are popped, and a present wx_credentials keeps watsonx_credentials from winning
+fn text_credentials(
+    params: &mut WatsonxParams,
+    api_key: &mut Option<SecretString>,
+    api_base: &mut Option<String>,
+) -> Result<(), EnterpriseError> {
+    let nested = take_object(params, "watsonx_credentials")?;
+    let wx = take_object(params, "wx_credentials")?;
+    let Some(fields) = wx.or(nested) else {
+        return Ok(());
+    };
+    if let Some(value) = credential_text(&fields, "url")? {
+        *api_base = Some(value);
+    }
+    let key = match credential_text(&fields, "apikey")? {
+        Some(value) => Some(value),
+        None => credential_text(&fields, "api_key")?,
+    };
+    if let Some(value) = key {
+        *api_key = Some(SecretString::from(value));
+    }
+    let token = match credential_text(&fields, "token")? {
+        Some(value) => Some(value),
+        None => credential_text(&fields, "watsonx_token")?,
+    };
+    if let Some(token) = token {
+        let stored =
+            serde_json::to_value(token).map_err(|source| EnterpriseError::Encode { source })?;
+        params.insert(String::from("token"), stored);
+    }
+    Ok(())
 }
 
 // _complete_watsonx_text: the key, base and credentials chains, popping the keys it reads like the dict pops
 pub fn text_call(context: &ChatContext<'_>) -> Result<CompletionCall, EnterpriseError> {
     let base = &context.base;
     let mut params: WatsonxParams = convert(base.optional_params)?;
-    let mut api_key = base
-        .api_key
-        .filter(|key| !key.expose_secret().is_empty())
-        .map(|key| SecretString::from(key.expose_secret().to_owned()));
-    if api_key.is_none() {
-        api_key = take_truthy(&mut params, "apikey")?.map(SecretString::from);
-    }
-    if api_key.is_none() {
-        api_key = base.env.secret("WATSONX_APIKEY")?;
-    }
-    if api_key.is_none() {
-        api_key = base.env.secret("WATSONX_API_KEY")?;
-    }
-    if api_key.is_none() {
-        api_key = base.env.secret("WX_API_KEY")?;
-    }
-
-    let mut api_base = base
-        .api_base
-        .filter(|value| !value.is_empty())
-        .map(str::to_owned);
-    if api_base.is_none() {
-        // the inner pop runs first, so all three leave the params even when url wins
-        let base_url = take_truthy(&mut params, "base_url")?;
-        let api_base_parameter = take_truthy(&mut params, "api_base")?;
-        let url = take_truthy(&mut params, "url")?;
-        api_base = url.or(api_base_parameter).or(base_url);
-    }
-    if api_base.is_none() {
-        api_base = base.env.text("WATSONX_API_BASE")?;
-    }
-    if api_base.is_none() {
-        api_base = base.env.text("WATSONX_URL")?;
-    }
-    if api_base.is_none() {
-        api_base = base.env.text("WX_URL")?;
-    }
-    if api_base.is_none() {
-        api_base = base.env.text("WML_URL")?;
-    }
-
-    // both names leave the params whatever the base, and a present wx_credentials keeps watsonx_credentials from winning
-    let nested = take_object(&mut params, "watsonx_credentials")?;
-    let wx = take_object(&mut params, "wx_credentials")?;
-    let mut token = None;
-    if let Some(fields) = wx.or(nested) {
-        if let Some(value) = credential_text(&fields, "url")? {
-            api_base = Some(value);
-        }
-        if let Some(value) =
-            credential_text(&fields, "apikey")?.or(credential_text(&fields, "api_key")?)
-        {
-            api_key = Some(SecretString::from(value));
-        }
-        token = credential_text(&fields, "token")?.or(credential_text(&fields, "watsonx_token")?);
-    }
-    if let Some(token) = token {
-        params.insert(String::from("token"), Value::String(token));
-    }
-
+    let mut api_key = text_api_key(base, &mut params)?;
+    let mut api_base = text_api_base(base, &mut params)?;
+    text_credentials(&mut params, &mut api_key, &mut api_base)?;
     let optional_params: Object = convert(&params)?;
     Ok(handler_call(
         base,
-        optional_params,
-        api_key,
-        api_base,
-        "watsonx_text",
-        base.headers.cloned(),
-    ))
-}
-
-// _complete_watsonx hands the context fields over with the literal provider name
-pub fn chat_call(context: &ChatContext<'_>) -> CompletionCall {
-    super::context::passthrough(&context.base, "watsonx")
-}
-
-fn epoch_seconds() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0.0, |elapsed| elapsed.as_secs_f64())
-}
-
-fn source_headers(call: &EmbeddingCall) -> Result<http::HeaderMap, EnterpriseError> {
-    match &call.headers {
-        None => Ok(http::HeaderMap::new()),
-        Some(headers) => header_map(headers).map_err(|source| EnterpriseError::Headers { source }),
-    }
-}
-
-// the watsonx embedding arm: B5970's credentials, then B5842's config over the shared handler's steps
-pub async fn embedding(
-    call: &EmbeddingCall,
-    source: &EnvironmentSource<'_>,
-    transport: &dyn EnterpriseTransport,
-) -> Result<EmbeddingResponse, EnterpriseError> {
-    let environment = environment(source)?;
-    let mut params: WatsonxParams = convert(&call.optional_params)?;
-    let credentials = get_watsonx_credentials(
-        &mut params,
-        call.api_key.as_ref(),
-        call.api_base.as_deref(),
-        &environment,
-    )?;
-    if let Some(token) = &credentials.token {
-        params.insert(
-            String::from("token"),
-            Value::String(token.expose_secret().to_owned()),
-        );
-    }
-    let auth = WatsonxAuth::new(
-        environment,
-        SharedTransport { inner: transport },
-        Arc::new(epoch_seconds),
-    )?;
-    let headers = auth
-        .validate_environment(
-            source_headers(call)?,
-            &mut params,
-            Some(&credentials.api_key),
-        )
-        .await?;
-    let config = WatsonxEmbeddingConfig {
-        environment: &auth.environment,
-    };
-    let url = config.get_complete_url(Some(credentials.api_base.as_str()), &mut params)?;
-    let input: EmbeddingInput = convert(&call.input)?;
-    let body = config.transform_embedding_request(&call.model, &input, params)?;
-    let bytes = serde_json::to_vec(&body).map_err(|source| EnterpriseError::Encode { source })?;
-    let request = super::transport::request(Method::POST, &url, &headers, bytes, call.timeout)?;
-    let response = transport
-        .send(request)
-        .await
-        .map_err(|source| EnterpriseError::Transport { source })?;
-    if !(200..300).contains(&response.status) {
-        return Err(betterlite_openai::watsonx_auth::error::WatsonxError::Api {
-            status_code: response.status,
-            message: body_text(&response.body),
-            headers: Some(response.headers),
-        }
-        .into());
-    }
-    let reply = decode_watsonx_embedding_reply(&response.body)?;
-    Ok(WatsonxEmbeddingConfig::transform_embedding_response(
-        &call.model,
-        reply,
+        ReplacedCall {
+            optional_params,
+            api_key,
+            api_base,
+            provider: "watsonx_text",
+            headers: base.headers.cloned(),
+        },
     ))
 }
 
 // the watsonx rerank selection returns B5842's config over B5970's auth
-pub fn rerank_config<T>(auth: &WatsonxAuth<T>) -> WatsonxRerankConfig<'_, T> {
+#[must_use]
+pub const fn rerank_config<T>(auth: &WatsonxAuth<T>) -> WatsonxRerankConfig<'_, T> {
     WatsonxRerankConfig {
         auth,
         new_id: Uuid::new_v4,

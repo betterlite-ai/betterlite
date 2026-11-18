@@ -27,7 +27,6 @@ use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 use uuid::Uuid;
 
 use super::error::EnterpriseError;
-use super::sap::await_blocking;
 use super::transport::{AwsCredentials, EnterpriseTransport, SharedCredentials, SharedTransport};
 
 // the dependencies B5840 takes as arguments: the pooled client, the credential resolver, the clock and the counter
@@ -102,12 +101,16 @@ pub fn complete(
         prompts: deps.prompts,
     };
     if call.stream {
-        return Ok(SagemakerReply::Stream(await_blocking(
-            completion_call::completion_stream(&runtime, &inner),
-        )?));
+        return Ok(SagemakerReply::Stream(tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current()
+                .block_on(completion_call::completion_stream(&runtime, &inner))
+        })?));
     }
-    Ok(SagemakerReply::Completion(await_blocking(
-        completion_call::completion(&runtime, &inner),
+    Ok(SagemakerReply::Completion(tokio::task::block_in_place(
+        || {
+            tokio::runtime::Handle::current()
+                .block_on(completion_call::completion(&runtime, &inner))
+        },
     )?))
 }
 
@@ -124,7 +127,9 @@ pub fn embedding(
         signing: call.signing,
         encoding: deps.encoding,
     };
-    Ok(await_blocking(embedding_call::embedding(&runtime, &inner))?)
+    Ok(tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(embedding_call::embedding(&runtime, &inner))
+    })?)
 }
 
 // B196's tokenizer engine plugged into B5960's TextTokenCounter and the cohere embedding TextEncoding

@@ -1,16 +1,13 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_prompts::arguments::json::Json;
 use chrono::{DateTime, Utc};
 use http::Method;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
-use thiserror::Error;
 use url::Url;
 
 use crate::data_cloud_dispatch::context::EnvironmentSource;
@@ -28,7 +25,7 @@ use crate::sap_chat::error::SapChatError;
 use crate::sap_embedding::environment::{SapEmbeddingCall, SapEmbeddingConfig};
 use crate::sap_embedding::error::SapEmbeddingError;
 
-use super::error::EnterpriseError;
+use super::error::{EnterpriseError, SapLookupError};
 use super::transport::EnterpriseTransport;
 
 // LiteLLM's _request_token passes timeout=30
@@ -40,30 +37,6 @@ pub struct SapRequest<'request> {
     pub api_key: Option<&'request SecretString>,
     pub sap_service_key: Option<&'request SecretString>,
     pub env: EnvironmentSource<'request>,
-}
-
-#[derive(Debug, Error)]
-pub enum SapLookupError {
-    #[error(transparent)]
-    Auth(#[from] SapAuthError),
-    #[error("the {what} request could not be built: {source}")]
-    Url {
-        what: &'static str,
-        #[source]
-        source: url::ParseError,
-    },
-    #[error("the {what} request failed: {source}")]
-    Transport {
-        what: &'static str,
-        #[source]
-        source: TransportError,
-    },
-    #[error("the {what} reply could not be read: {source}")]
-    Decode {
-        what: &'static str,
-        #[source]
-        source: serde_json::Error,
-    },
 }
 
 // LiteLLM's os.environ and Path reads, over the environment snapshot the call runs with
@@ -89,9 +62,7 @@ impl SapEnvironment for ProcessEnvironment<'_> {
 
     fn home_dir(&self) -> PathBuf {
         self.var("HOME")
-            .map(PathBuf::from)
-            .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
-            .unwrap_or_else(|| PathBuf::from("/"))
+            .map_or_else(|| PathBuf::from("/"), PathBuf::from)
     }
 }
 
@@ -137,9 +108,12 @@ impl SapTokenTransport for TokenTransport<'_> {
             body: RequestBody::Json(form.finish().into_bytes()),
             deadline: REQUEST_TIMEOUT,
         };
-        let response = await_blocking(self.transport.send(outbound))
-            .map_err(|source| TokenTransportError::Transport(Box::new(source)))?;
-        Ok(String::from_utf8_lossy(&response.body).into_owned())
+        let response = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.transport.send(outbound))
+        })
+        .map_err(|source| TokenTransportError::Transport(Box::new(source)))?;
+        String::from_utf8(response.body)
+            .map_err(|source| TokenTransportError::Message(source.to_string()))
     }
 }
 
@@ -152,20 +126,24 @@ pub struct Deployments<'deps> {
 
 impl DeploymentConfigurations for Deployments<'_> {
     fn configuration(&self, configuration_id: &str) -> Result<Json, ConfigurationLookupError> {
-        let missing = || ConfigurationLookupError::Missing(configuration_id.to_owned());
-        let url = Url::parse(&format!(
+        let Ok(url) = Url::parse(&format!(
             "{}/lm/configurations/{configuration_id}",
             self.base_url.trim_end_matches('/')
-        ))
-        .map_err(|_source| missing())?;
-        let response = await_blocking(self.transport.send(OutboundRequest {
-            method: Method::GET,
-            url,
-            query: Vec::new(),
-            headers: self.headers.clone(),
-            body: RequestBody::Empty,
-            deadline: REQUEST_TIMEOUT,
-        }))
+        )) else {
+            return Err(ConfigurationLookupError::Missing(
+                configuration_id.to_owned(),
+            ));
+        };
+        let response = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(self.transport.send(OutboundRequest {
+                method: Method::GET,
+                url,
+                query: Vec::new(),
+                headers: self.headers.clone(),
+                body: RequestBody::Empty,
+                deadline: REQUEST_TIMEOUT,
+            }))
+        })
         .map_err(|source| ConfigurationLookupError::Transport(Box::new(source)))?;
         serde_json::from_slice::<Json>(&response.body).map_err(ConfigurationLookupError::Decode)
     }
@@ -178,7 +156,6 @@ fn credentials(
 ) -> Result<Credentials, SapAuthError> {
     let service_key = request
         .api_key
-        .filter(|key| !key.expose_secret().is_empty())
         .map(|key| Json::Text(key.expose_secret().to_owned()));
     let litellm_key = request
         .sap_service_key
@@ -186,6 +163,37 @@ fn credentials(
     let resolved = fetch_credentials(environment, service_key.as_ref(), litellm_key.as_ref())?;
     validate_credentials(&resolved)?;
     Ok(resolved)
+}
+
+fn deployment_listing(
+    transport: &dyn EnterpriseTransport,
+    base: &str,
+    headers: &HeaderMap,
+) -> Result<Json, SapLookupError> {
+    let url = Url::parse(&format!("{}/lm/deployments", base.trim_end_matches('/'))).map_err(
+        |source| SapLookupError::Url {
+            what: "deployments",
+            source,
+        },
+    )?;
+    let response = tokio::task::block_in_place(|| {
+        tokio::runtime::Handle::current().block_on(transport.send(OutboundRequest {
+            method: Method::GET,
+            url,
+            query: Vec::new(),
+            headers: headers.clone(),
+            body: RequestBody::Empty,
+            deadline: REQUEST_TIMEOUT,
+        }))
+    })
+    .map_err(|source| SapLookupError::Transport {
+        what: "deployments",
+        source,
+    })?;
+    serde_json::from_slice::<Json>(&response.body).map_err(|source| SapLookupError::Decode {
+        what: "deployments",
+        source,
+    })
 }
 
 fn deployment_url(
@@ -199,30 +207,7 @@ fn deployment_url(
         .as_deref()
         .filter(|url| !url.is_empty())
         .ok_or(SapAuthError::MissingCredentials)?;
-    let url = Url::parse(&format!("{}/lm/deployments", base.trim_end_matches('/'))).map_err(
-        |source| SapLookupError::Url {
-            what: "deployments",
-            source,
-        },
-    )?;
-    let response = await_blocking(transport.send(OutboundRequest {
-        method: Method::GET,
-        url,
-        query: Vec::new(),
-        headers: headers.clone(),
-        body: RequestBody::Empty,
-        deadline: REQUEST_TIMEOUT,
-    }))
-    .map_err(|source| SapLookupError::Transport {
-        what: "deployments",
-        source,
-    })?;
-    let listing = serde_json::from_slice::<Json>(&response.body).map_err(|source| {
-        SapLookupError::Decode {
-            what: "deployments",
-            source,
-        }
-    })?;
+    let listing = deployment_listing(transport, base, headers)?;
     let configurations = Deployments {
         transport,
         base_url: base.to_owned(),
@@ -264,7 +249,9 @@ pub fn prepare_chat(
         }
         .prepare()?),
         // LiteLLM wraps the credentials ValueError as a 400 and lets every other setup failure through
-        Err(EnterpriseError::SapAuth(error)) => Err(SapChatError::credentials(error).into()),
+        Err(EnterpriseError::SapAuth(error)) => {
+            Err(EnterpriseError::SapChat(SapChatError::credentials(error)))
+        }
         Err(error) => Err(error),
     }
 }
@@ -281,15 +268,9 @@ pub fn prepare_embedding(
             deployment_url,
         }
         .prepare()?),
-        Err(EnterpriseError::SapAuth(error)) => Err(SapEmbeddingError::Auth(error).into()),
+        Err(EnterpriseError::SapAuth(error)) => Err(EnterpriseError::SapEmbedding(
+            SapEmbeddingError::Auth(error),
+        )),
         Err(error) => Err(error),
     }
-}
-
-// the SAP parts are sync, as B5950 declares them; the pooled client is async, so the call blocks on it here
-pub fn await_blocking<F>(future: F) -> F::Output
-where
-    F: Future,
-{
-    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(future))
 }

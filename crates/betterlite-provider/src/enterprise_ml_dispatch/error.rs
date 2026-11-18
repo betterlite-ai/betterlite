@@ -15,7 +15,30 @@ use crate::sap_stream::SapOrchestrationError;
 use crate::watsonx_embed::error::WatsonxEmbeddingError;
 use crate::watsonx_rerank::error::WatsonxRerankError;
 
-use super::sap::SapLookupError;
+// B5950's deployment lookup failures, kept here so the SAP arm and the dispatch error share one type
+#[derive(Debug, Error)]
+pub enum SapLookupError {
+    #[error(transparent)]
+    Auth(#[from] SapAuthError),
+    #[error("the {what} request could not be built: {source}")]
+    Url {
+        what: &'static str,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("the {what} request failed: {source}")]
+    Transport {
+        what: &'static str,
+        #[source]
+        source: TransportError,
+    },
+    #[error("the {what} reply could not be read: {source}")]
+    Decode {
+        what: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+}
 
 // the failures LiteLLM's sap, watsonx and sagemaker arms raise, with the status the exception carries
 #[derive(Debug, Error)]
@@ -63,6 +86,11 @@ pub enum EnterpriseError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the provider answer is not UTF-8: {source}")]
+    Utf8 {
+        #[source]
+        source: std::str::Utf8Error,
+    },
     #[error("the provider could not be reached: {source}")]
     Transport {
         #[source]
@@ -103,6 +131,7 @@ impl EnterpriseError {
             | Self::FieldType { .. }
             | Self::Encode { .. }
             | Self::Decode { .. }
+            | Self::Utf8 { .. }
             | Self::Transport { .. }
             | Self::Url { .. }
             | Self::Headers { .. } => None,
