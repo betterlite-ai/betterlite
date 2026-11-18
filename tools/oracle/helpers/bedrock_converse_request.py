@@ -49,7 +49,7 @@ def answer(input_value: Input) -> Json:
     transformer = Bound.model_validate(holder).transformer
     messages: list[Json] = list(input_value["messages"])
     optional_params: dict[str, Json] = dict(input_value["optional_params"])
-    # The case lists the metadata members as pairs so their caller order survives YAML and JSON parsing.
+    # The case lists the members as pairs, so their caller order survives YAML and JSON parsing.
     pair_values = input_value.get("request_metadata_order")
     if pair_values is not None:
         optional_params["requestMetadata"] = {
