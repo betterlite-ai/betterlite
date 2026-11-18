@@ -371,9 +371,9 @@ fn chunks_build_a_response_from_sse_lines() {
     let fixture = collected(
         STREAM_ROUTE,
         &[
-            r#"data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"hel"}],"role":"model"},"index":0}]}"#,
+            r#"data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"he"}],"role":"model"},"index":0}]}"#,
             "",
-            r#"data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"lo"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#,
+            r#"data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"llo"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#,
         ],
         None,
     );
@@ -404,8 +404,8 @@ fn chunks_accumulated_mode_builds_and_drops_the_partial_tail() {
     let fixture = collected(
         STREAM_ROUTE,
         &[
-            r#"{"responseId":"r2","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"hel"#,
-            r#"lo"}],"role":"model"},"index":0}]}"#,
+            r#"{"responseId":"r2","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"he"#,
+            r#"llo"}],"role":"model"},"index":0}]}"#,
             r#"{"responseId":"r2","candidates":[{"content":{"parts":[{"text":"tail"#,
         ],
         None,

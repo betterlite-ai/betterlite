@@ -12,7 +12,6 @@ use betterlite_anthropic::stream_state::state::{
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
 use betterlite_models::decisions::Json;
-use betterlite_models::usage_sum::Usage as SumUsage;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
@@ -113,7 +112,14 @@ fn gemini_chunk(chunk: StreamChunk) -> Result<Chunk, CollectedStreamError> {
         model: chunk.model,
         system_fingerprint: None,
         service_tier: chunk.service_tier,
-        usage: chunk.usage.as_ref().map(usage_value).transpose()?,
+        usage: chunk
+            .usage
+            .as_ref()
+            .map(|usage| {
+                let value = serde_json::to_value(super::reply::usage_json(usage))?;
+                Ok(serde_json::from_value(value)?)
+            })
+            .transpose()?,
         choices,
     })
 }
@@ -139,11 +145,6 @@ pub(crate) fn event_chunk(
             .transpose()?,
         choices: serde_json::from_value(choices)?,
     })
-}
-
-fn usage_value(usage: &SumUsage) -> Result<JsonValue, CollectedStreamError> {
-    let value = serde_json::to_value(super::reply::usage_json(usage))?;
-    Ok(serde_json::from_value(value)?)
 }
 
 // LiteLLM builds the logged response with no logging object and no tokenizer in reach, so both stay inert.

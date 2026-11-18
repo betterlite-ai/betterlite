@@ -6,6 +6,7 @@ use betterlite_logging::passthrough_logging_state::response::PassThroughResponse
 use betterlite_logging::passthrough_stream_logging::types::{
     CollectedChunksCall, CollectedChunksHandler, HandlerError, HandlerOutcome,
 };
+use betterlite_models::decisions::Json;
 use betterlite_vertex::gemini_response::complete::{
     CompleteRequest, RawResponse, transform_response,
 };
@@ -20,8 +21,9 @@ use betterlite_vertex::vertex_relay_metadata::url_models::extract_model_from_url
 
 use super::assembly;
 use super::cost::{CostRequest, CostResponse, FactoryCost, completion_body};
+// ast-grep-ignore: no-long-names - B3640 keeps the factory name LiteLLM's Gemini payload builder uses
 use super::payload::{create_gemini_response_logging_payload, request_object, video_body};
-use super::relay::{relay_kwargs, relay_logging, write_relay_logging};
+use super::relay::{RelayLogging, relay_kwargs};
 use super::reply;
 use super::{GeminiPassthroughError, GeminiPassthroughInput, GeminiPassthroughLogger};
 use crate::media_relay_logging::write_spend;
@@ -56,19 +58,19 @@ impl GeminiPassthroughLogger {
             .get("model")
             .and_then(serde_json::Value::as_str)
             .filter(|model| !model.is_empty());
-        let mut relay = relay_logging(input.logging_obj);
+        let mut relay = RelayLogging::project(input.logging_obj);
         let outcome = interactions_handler(
             &FactoryCost(self.cost.as_ref()),
             InteractionsPassthroughInput {
                 response_body: input.response_body,
                 request_model,
-                logging: &mut relay,
+                logging: &mut relay.logging,
                 kwargs: ResponseLoggingKwargs::default(),
                 custom_llm_provider: CustomLlmProvider::Gemini,
                 vertex_location: None,
             },
         )?;
-        write_relay_logging(input.logging_obj, &relay);
+        relay.commit();
         let Some(response) = &outcome.result else {
             return Ok(HandlerOutcome {
                 result: None,
@@ -132,21 +134,8 @@ impl GeminiPassthroughLogger {
         input: GeminiPassthroughInput<'_>,
     ) -> Result<HandlerOutcome, GeminiPassthroughError> {
         let model = extract_model_from_url(input.url_route);
-        let mut ids = uuid::Uuid::new_v4;
-        let response = transform_response(
-            &RawResponse {
-                headers: input.response_headers,
-                body: input.response_body,
-            },
-            &CompleteRequest {
-                model: &model,
-                now: input.end_time.timestamp(),
-                call_mode: CallMode::Tools,
-            },
-            &mut ids,
-        )?;
-        let mut body = reply::logged_response(&response, input.end_time.timestamp())
-            .map_err(|source| GeminiPassthroughError::Encode { source })?;
+        let mut body = decode_generate(&input, &model)?;
+        // ast-grep-ignore: no-long-names
         let kwargs = create_gemini_response_logging_payload(
             self.cost.as_ref(),
             &mut body,
@@ -160,6 +149,28 @@ impl GeminiPassthroughLogger {
             kwargs,
         })
     }
+}
+
+// The decoded body is the ModelResponse LiteLLM would have gotten from httpx_response.json().
+fn decode_generate(
+    input: &GeminiPassthroughInput<'_>,
+    model: &str,
+) -> Result<Json, GeminiPassthroughError> {
+    let mut ids = uuid::Uuid::new_v4;
+    let response = transform_response(
+        &RawResponse {
+            headers: input.response_headers,
+            body: input.response_body,
+        },
+        &CompleteRequest {
+            model,
+            now: input.end_time.timestamp(),
+            call_mode: CallMode::Tools,
+        },
+        &mut ids,
+    )?;
+    reply::logged_response(&response, input.end_time.timestamp())
+        .map_err(|source| GeminiPassthroughError::Encode { source })
 }
 
 impl CollectedChunksHandler for GeminiPassthroughLogger {
@@ -187,6 +198,7 @@ impl CollectedChunksHandler for GeminiPassthroughLogger {
                 kwargs: PassThroughLoggingKwargs::default(),
             });
         };
+        // ast-grep-ignore: no-long-names
         let kwargs = create_gemini_response_logging_payload(
             self.cost.as_ref(),
             &mut body,

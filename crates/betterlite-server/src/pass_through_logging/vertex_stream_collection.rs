@@ -19,7 +19,7 @@ use betterlite_vertex::vertex_relay_metadata::url_models::{
 };
 
 use super::gemini_passthrough_logging::cost::{FactoryCost, PassthroughCompletionCost};
-use super::gemini_passthrough_logging::relay::{relay_kwargs, relay_logging, write_relay_logging};
+use super::gemini_passthrough_logging::relay::{RelayLogging, relay_kwargs};
 
 const VERTEX_LOCATION: &str = "vertex_location";
 
@@ -65,7 +65,6 @@ impl CollectedChunksHandler for VertexStreamCollector {
 
 impl VertexStreamCollector {
     // ast-grep-ignore: no-one-line-functions - B8931 constructs the collector through this fixed name
-    #[must_use]
     pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
         Self { cost }
     }
@@ -79,19 +78,19 @@ impl VertexStreamCollector {
         vertex_location: Option<&str>,
     ) -> PassThroughLoggingKwargs {
         let mut record = build::cost_record(body);
-        let mut relay = relay_logging(call.logging_obj);
+        let mut relay = RelayLogging::project(call.logging_obj);
         let kwargs = response_logging_payload(
             &FactoryCost(self.cost.as_ref()),
             ResponseLoggingPayloadInput {
                 response: &mut record,
                 model,
                 kwargs: ResponseLoggingKwargs::default(),
-                logging: &mut relay,
+                logging: &mut relay.logging,
                 custom_llm_provider: custom_provider_from_url(call.url_route),
                 vertex_location,
             },
         );
-        write_relay_logging(call.logging_obj, &relay);
+        relay.commit();
         // The factory stamps the call id onto the response it logs, so the returned body carries the same id.
         if let Some(id) = record.id
             && let Json::Object(fields) = body

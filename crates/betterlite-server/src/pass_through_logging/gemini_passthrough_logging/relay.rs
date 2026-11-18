@@ -7,47 +7,65 @@ use betterlite_vertex::vertex_relay_metadata::types::{
     CustomLlmProvider, LoggingObject, ModelCallDetails, ResponseLoggingKwargs,
 };
 
-// B3638's factory writes through its own logging object; the fields it changes are copied back.
-pub(crate) fn relay_logging(logging_obj: &StreamLoggingObject) -> LoggingObject {
-    logging_obj
-        .read(&mut |state| LoggingObject {
-            litellm_call_id: state.litellm_call_id.clone(),
-            model: Some(state.model.clone()).filter(|model| !model.is_empty()),
-            custom_llm_provider: state
-                .custom_llm_provider
-                .as_deref()
-                .and_then(provider_named),
-            model_call_details: ModelCallDetails {
-                model: detail_text(state, "model"),
-                custom_llm_provider: detail_text(state, "custom_llm_provider")
-                    .as_deref()
-                    .and_then(provider_named),
-                response_cost: None,
-            },
-        })
-        .unwrap_or_default()
+// B3638's factory writes through its own logging object; the projection carries the fields it changes.
+pub(crate) struct RelayLogging<'target> {
+    target: &'target StreamLoggingObject,
+    pub(crate) logging: LoggingObject,
 }
 
-pub(crate) fn write_relay_logging(logging_obj: &StreamLoggingObject, relay: &LoggingObject) {
-    logging_obj.edit(&mut |state| {
-        if let Some(model) = &relay.model {
-            state.model.clone_from(model);
-        }
-        if let Some(provider) = relay.custom_llm_provider {
-            state.custom_llm_provider = Some(provider.as_str().to_owned());
-        }
-        if let Some(model) = &relay.model_call_details.model {
-            state
-                .model_call_details
-                .insert("model".to_owned(), Json::Text(model.clone()));
-        }
-        if let Some(provider) = relay.model_call_details.custom_llm_provider {
-            state.model_call_details.insert(
-                "custom_llm_provider".to_owned(),
-                Json::Text(provider.as_str().to_owned()),
-            );
-        }
-    });
+impl<'target> RelayLogging<'target> {
+    #[must_use]
+    pub(crate) fn project(target: &'target StreamLoggingObject) -> Self {
+        let logging = target
+            .read(&mut |state| LoggingObject {
+                litellm_call_id: state.litellm_call_id.clone(),
+                model: Some(state.model.clone()).filter(|model| !model.is_empty()),
+                custom_llm_provider: state
+                    .custom_llm_provider
+                    .as_deref()
+                    .and_then(provider_named),
+                model_call_details: ModelCallDetails {
+                    model: detail_text(state, "model"),
+                    custom_llm_provider: detail_text(state, "custom_llm_provider")
+                        .as_deref()
+                        .and_then(provider_named),
+                    response_cost: None,
+                },
+            })
+            .unwrap_or_default();
+        Self { target, logging }
+    }
+
+    pub(crate) fn commit(self) {
+        let Self { target, logging } = self;
+        let provider = logging
+            .custom_llm_provider
+            .map(|named| named.as_str().to_owned());
+        let detail_provider = logging
+            .model_call_details
+            .custom_llm_provider
+            .map(|named| named.as_str().to_owned());
+        let detail_model = logging.model_call_details.model.clone();
+        target.edit(&mut |state| {
+            if let Some(model) = &logging.model {
+                state.model.clone_from(model);
+            }
+            if let Some(provider) = &provider {
+                state.custom_llm_provider = Some(provider.clone());
+            }
+            if let Some(model) = &detail_model {
+                state
+                    .model_call_details
+                    .insert("model".to_owned(), Json::Text(model.clone()));
+            }
+            if let Some(provider) = &detail_provider {
+                state.model_call_details.insert(
+                    "custom_llm_provider".to_owned(),
+                    Json::Text(provider.clone()),
+                );
+            }
+        });
+    }
 }
 
 // B3638's payloads fill a typed kwargs map; the passthrough seam keeps every caller entry beside them.
