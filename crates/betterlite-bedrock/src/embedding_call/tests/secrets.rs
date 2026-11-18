@@ -47,13 +47,13 @@ fn a_signed_request_names_its_headers_only() {
     assert!(shown.contains("Authorization"));
     assert_secret_safe(&shown);
     let request = EmbeddingRequest {
-        url: signed.url.clone(),
-        headers: signed.headers.clone(),
-        body: signed.body.clone(),
+        url: signed.url,
+        headers: signed.headers,
+        body: signed.body,
     };
-    let shown = format!("{request:?}");
-    assert!(shown.contains("Authorization"));
-    assert_secret_safe(&shown);
+    let shown_request = format!("{request:?}");
+    assert!(shown_request.contains("Authorization"));
+    assert_secret_safe(&shown_request);
 }
 
 fn a_signing_failure_carries_no_credentials() {

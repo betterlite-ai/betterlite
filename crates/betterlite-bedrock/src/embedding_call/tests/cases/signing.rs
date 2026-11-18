@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json as Decisions;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 
-use super::super::fixture::{Reply, fixture_probe, run};
+use super::super::fixture::{Recorded, Reply, fixture_probe, run};
 use super::super::support::{
     argument_fields, decisions_object, decisions_value, fields, phases, titan_body,
 };
@@ -43,12 +43,16 @@ fn every_request_carries_its_own_signature() {
             "post_api_call"
         ]
     );
+    assert_first_snapshot(&outcome.snapshots, first);
+}
+
+fn assert_first_snapshot(snapshots: &[Decisions], first: &Recorded) {
     let sent: Object = serde_json::from_slice(&first.body).expect("the first body is an object");
     assert_eq!(
-        fields(&outcome.snapshots[0]).get("input"),
+        fields(&snapshots[0]).get("input"),
         Some(&decisions_object(&sent))
     );
-    let arguments = argument_fields(&outcome.snapshots[0]);
+    let arguments = argument_fields(&snapshots[0]);
     assert_eq!(
         arguments.get("api_base"),
         Some(&Decisions::Text(first.url.clone()))
@@ -57,8 +61,10 @@ fn every_request_carries_its_own_signature() {
         arguments.get("complete_input_dict"),
         Some(&decisions_object(&sent))
     );
-    let reply = snapshot_response(&outcome.snapshots[1]);
-    assert_eq!(reply, parsed(&titan_body("[1.0]", 1)));
+    assert_eq!(
+        snapshot_response(&snapshots[1]),
+        parsed(&titan_body("[1.0]", 1))
+    );
 }
 
 fn custom_headers_merge_before_signing() {
@@ -129,7 +135,6 @@ fn snapshot_response(snapshot: &Decisions) -> Decisions {
 }
 
 fn parsed(text: &str) -> Decisions {
-    let value: betterlite_prompts::arguments::json::Json =
-        serde_json::from_str(text).expect("the expected reply parses");
+    let value: PromptJson = serde_json::from_str(text).expect("the expected reply parses");
     decisions_value(&value)
 }

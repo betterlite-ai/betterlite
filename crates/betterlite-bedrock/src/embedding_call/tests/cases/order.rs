@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use super::super::fixture::{ClientCall, Reply, fixture_probe, now, run};
 use super::super::support::{batch, titan_body, vector};
+use crate::bedrock_embedding_io::response::EmbeddingReply;
 use crate::bedrock_embedding_io::transport::{ClientKind, Timeout};
 
 pub(super) fn ordered_multi_input_result() {
@@ -35,15 +36,7 @@ fn sync_orders_replies() {
         outcome.factory_requests[0].headers["Authorization"],
         outcome.factory_requests[1].headers["Authorization"]
     );
-    let reply = batch(outcome.response());
-    assert_eq!(reply.object, "list");
-    assert_eq!(reply.data.len(), 2);
-    assert_eq!(vector(&reply.data[0].embedding), [1.5]);
-    assert_eq!(vector(&reply.data[1].embedding), [2.5]);
-    assert_eq!(reply.data[1].index, 1);
-    assert_eq!(reply.usage.prompt_tokens, 8);
-    assert_eq!(reply.usage.completion_tokens, 0);
-    assert_eq!(reply.usage.total_tokens, 8);
+    assert_ordered_reply(batch(outcome.response()));
     assert_eq!(
         outcome.calls,
         vec![
@@ -59,6 +52,17 @@ fn sync_orders_replies() {
             },
         ]
     );
+}
+
+fn assert_ordered_reply(reply: &EmbeddingReply) {
+    assert_eq!(reply.object, "list");
+    assert_eq!(reply.data.len(), 2);
+    assert_eq!(vector(&reply.data[0].embedding), [1.5_f64]);
+    assert_eq!(vector(&reply.data[1].embedding), [2.5_f64]);
+    assert_eq!(reply.data[1].index, 1);
+    assert_eq!(reply.usage.prompt_tokens, 8);
+    assert_eq!(reply.usage.completion_tokens, 0);
+    assert_eq!(reply.usage.total_tokens, 8);
 }
 
 fn async_keeps_its_timeout() {
@@ -87,13 +91,21 @@ fn async_keeps_its_timeout() {
             },
         ]
     );
-    assert_eq!(vector(&batch(outcome.response()).data[1].embedding), [2.0]);
+    assert_eq!(
+        vector(&batch(outcome.response()).data[1].embedding),
+        [2.0_f64]
+    );
 }
 
 fn each_signature_reads_the_clock() {
     let mut outcome_probe = fixture_probe();
     outcome_probe.input = vec![String::from("one"), String::from("two")];
-    outcome_probe.clock = vec![now(), now() + Duration::from_secs(60)];
+    outcome_probe.clock = vec![
+        now(),
+        now()
+            .checked_add(Duration::from_secs(60))
+            .expect("the fixture clock is in range"),
+    ];
     outcome_probe.replies = vec![
         Reply::ok(&titan_body("[1.0]", 1)),
         Reply::ok(&titan_body("[2.0]", 1)),
@@ -163,5 +175,4 @@ fn a_failure_stops_later_requests() {
     let outcome = run(&outcome_probe);
     assert_eq!(outcome.error().status(), Some(500));
     assert_eq!(outcome.factory_requests.len(), 2);
-    assert!(outcome.outcome.is_err());
 }

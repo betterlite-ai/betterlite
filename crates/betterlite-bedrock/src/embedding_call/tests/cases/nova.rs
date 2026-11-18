@@ -1,6 +1,6 @@
 use betterlite_prompts::arguments::json::Json;
 
-use super::super::fixture::{Reply, fixture_probe, object, run};
+use super::super::fixture::{Probe, Reply, fixture_probe, object, run};
 use super::super::support::{batch, vector};
 use crate::bedrock_embedding_io::response::PromptTokenCounts;
 use crate::embedding_call::error::EmbeddingCallError;
@@ -35,7 +35,10 @@ fn nova_sync_builds_one_request_per_input() {
         "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.nova-2-multimodal-embed-v1/invoke"
     );
     let reply = batch(outcome.response());
-    assert_eq!(vector(&reply.data[0].embedding), [1.0, 2.0, 3.0, 4.0]);
+    assert_eq!(
+        vector(&reply.data[0].embedding),
+        [1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64]
+    );
     assert_eq!(reply.usage.prompt_tokens, 1);
     assert_eq!(reply.usage.total_tokens, 1);
 }
@@ -85,47 +88,65 @@ fn missing_s3_uri_fails_before_the_endpoint() {
 }
 
 fn endpoint_resolution_prefers_the_caller() {
-    let mut configured = credentials();
-    configured.push((
-        "aws_bedrock_runtime_endpoint",
-        "\"https://configured.example.test\"",
+    from_api_base_wins();
+    from_the_configured_option_wins();
+    from_the_environment_wins();
+}
+
+fn from_api_base_wins() {
+    let outcome = run(&nova_probe(
+        configured(),
+        Some("https://proxy.example.test/"),
+        "https://env.example.test",
     ));
-    let mut from_api_base_probe = fixture_probe();
-    from_api_base_probe.model = String::from(NOVA_MODEL);
-    from_api_base_probe.api_base = Some(String::from("https://proxy.example.test/"));
-    from_api_base_probe.runtime_endpoint = Some(String::from("https://env.example.test"));
-    from_api_base_probe.optional_params = configured.clone();
-    from_api_base_probe.replies = vec![Reply::ok("{\"embedding\":[1,2,3,4]}")];
-    let from_api_base = run(&from_api_base_probe);
     assert_eq!(
-        from_api_base.posted().url,
+        outcome.posted().url,
         "https://proxy.example.test//model/amazon.nova-2-multimodal-embed-v1/invoke"
     );
-    let mut from_configured_probe = fixture_probe();
-    from_configured_probe.model = String::from(NOVA_MODEL);
-    from_configured_probe.runtime_endpoint = Some(String::from("https://env.example.test"));
-    from_configured_probe.optional_params = configured;
-    from_configured_probe.replies = vec![Reply::ok("{\"embedding\":[1,2,3,4]}")];
-    let from_configured = run(&from_configured_probe);
+}
+
+fn from_the_configured_option_wins() {
+    let outcome = run(&nova_probe(configured(), None, "https://env.example.test"));
     assert_eq!(
-        from_configured.posted().url,
+        outcome.posted().url,
         "https://configured.example.test/model/amazon.nova-2-multimodal-embed-v1/invoke"
     );
     assert!(
-        !from_configured
+        !outcome
             .remaining
             .contains_key("aws_bedrock_runtime_endpoint")
     );
-    let mut from_environment_probe = fixture_probe();
-    from_environment_probe.model = String::from(NOVA_MODEL);
-    from_environment_probe.runtime_endpoint = Some(String::from("https://env.example.test"));
-    from_environment_probe.optional_params = credentials();
-    from_environment_probe.replies = vec![Reply::ok("{\"embedding\":[1,2,3,4]}")];
-    let from_environment = run(&from_environment_probe);
+}
+
+fn from_the_environment_wins() {
+    let outcome = run(&nova_probe(credentials(), None, "https://env.example.test"));
     assert_eq!(
-        from_environment.posted().url,
+        outcome.posted().url,
         "https://env.example.test/model/amazon.nova-2-multimodal-embed-v1/invoke"
     );
+}
+
+fn nova_probe(
+    params: Vec<(&'static str, &'static str)>,
+    api_base: Option<&str>,
+    runtime_endpoint: &str,
+) -> Probe {
+    let mut probe = fixture_probe();
+    probe.model = String::from(NOVA_MODEL);
+    probe.api_base = api_base.map(String::from);
+    probe.runtime_endpoint = Some(String::from(runtime_endpoint));
+    probe.optional_params = params;
+    probe.replies = vec![Reply::ok("{\"embedding\":[1,2,3,4]}")];
+    probe
+}
+
+fn configured() -> Vec<(&'static str, &'static str)> {
+    let mut params = credentials();
+    params.push((
+        "aws_bedrock_runtime_endpoint",
+        "\"https://configured.example.test\"",
+    ));
+    params
 }
 
 fn marengo_builds_its_flat_body() {
@@ -143,7 +164,7 @@ fn marengo_builds_its_flat_body() {
         "https://bedrock-runtime.us-east-1.amazonaws.com/model/twelvelabs.marengo-embed-2-7-v1%3A0/invoke"
     );
     let reply = batch(outcome.response());
-    assert_eq!(vector(&reply.data[0].embedding), [0.5, 0.25]);
+    assert_eq!(vector(&reply.data[0].embedding), [0.5_f64, 0.25_f64]);
     assert_eq!(
         reply.usage.prompt_tokens_details,
         Some(PromptTokenCounts {
@@ -173,7 +194,10 @@ fn marengo_three_rejects_its_old_params() {
         dropped.body(),
         object("{\"inputType\":\"text\",\"text\":{\"inputText\":\"hello\"}}")
     );
-    assert_eq!(vector(&batch(dropped.response()).data[0].embedding), [0.5]);
+    assert_eq!(
+        vector(&batch(dropped.response()).data[0].embedding),
+        [0.5_f64]
+    );
 }
 
 fn credentials() -> Vec<(&'static str, &'static str)> {

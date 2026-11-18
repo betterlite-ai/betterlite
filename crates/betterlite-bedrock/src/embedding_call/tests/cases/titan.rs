@@ -69,7 +69,10 @@ fn one_body_per_input_in_order() {
     assert_eq!(outcome.factory_requests.len(), 2);
     assert_eq!(sent_body(&outcome, 0), object("{\"inputText\":\"a\"}"));
     assert_eq!(sent_body(&outcome, 1), object("{\"inputText\":\"b\"}"));
-    assert_eq!(vector(&batch(outcome.response()).data[0].embedding), [1.0]);
+    assert_eq!(
+        vector(&batch(outcome.response()).data[0].embedding),
+        [1.0_f64]
+    );
 }
 
 fn another_amazon_model_unmaps() {
