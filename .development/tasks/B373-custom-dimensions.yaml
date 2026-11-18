@@ -19,6 +19,8 @@ description: 'Implement CustomDimension validation and pattern work accounting w
   Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B329 calls this service.'
 scope:
   paths:
+  - "crates/betterlite-config/src/loader/startup.rs"
+  - "crates/betterlite-config/src/loader.rs"
   - crates/betterlite-router/src/custom_dimensions.rs
   - crates/betterlite-router/src/custom_dimensions/**
   - crates/betterlite-server/src/routing/custom_dimensions.rs
