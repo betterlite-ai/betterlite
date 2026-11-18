@@ -31,32 +31,6 @@ class CountOutput(TypedDict):
     calls: list[CountCall]
 
 
-def count(supplied: Input) -> Observation:
-    payload: dict[str, JsonValue] = {
-        "function": "handle", "cases": [{
-            "model": supplied["model"], "messages": JSON.validate_python(supplied["messages"]),
-            "api_key": supplied["api_key"], "api_base": supplied["api_base"],
-            "system": supplied["system"], "tools": JSON.validate_python(supplied["tools"]),
-            "optional_params": supplied["optional_params"],
-            "reply": {"body": supplied["response"], "status": 200},
-        }],
-    }
-    answer = TypeAdapter(CountOutput).validate_python(anthropic_count_tokens.run(payload))
-    call = answer["calls"][0]
-    request = call["request"]
-    headers = {name: value for name, value in request["headers"].items() if value is not None}
-    key = headers["x-api-key"]
-    headers["x-api-key"] = "matched" if key == supplied["expected_key"] else "mismatch"
-    observed: Recorded = {
-        "method": "POST", "url": request["url"], "query": [],
-        "headers": headers, "body": request["body"],
-    }
-    return {
-        "result": call["response"]["value"], "post_call": False,
-        "post_matches": True, "request": observed,
-    }
-
-
 class BatchRequest(TypedDict):
     method: str
     url: str
@@ -86,32 +60,61 @@ class BatchOutput(TypedDict):
     scenarios: list[BatchScenario]
 
 
-def batch(supplied: Input) -> Observation:
-    if supplied["action"] == "batch_create":
-        anthropic_batches.run({"create_requests": {"environment": {}, "url_bases": []}})
-        return {
-            "result": {"error": True, "status": None}, "post_call": False,
-            "post_matches": True, "request": None,
+def count_or_batch(supplied: Input) -> Observation:
+    observed: Recorded | None
+    result: JsonValue
+    if supplied["action"] == "count":
+        payload: dict[str, JsonValue] = {
+            "function": "handle", "cases": [{
+                "model": supplied["model"], "messages": JSON.validate_python(supplied["messages"]),
+                "api_key": supplied["api_key"], "api_base": supplied["api_base"],
+                "system": supplied["system"], "tools": JSON.validate_python(supplied["tools"]),
+                "optional_params": supplied["optional_params"],
+                "reply": {"body": supplied["response"], "status": 200},
+            }],
         }
-    answer = TypeAdapter(BatchOutput).validate_python(anthropic_batches.run({"retrieve": {
-        "now": 1_700_000_000, "scenarios": [{
-            "batch_id": supplied["id"], "api_base": supplied["api_base"],
-            "api_key": supplied["api_key"], "environment": {},
-            "body": supplied["response"], "sync": False,
-        }],
-    }}))
-    scenario = answer["scenarios"][0]
-    result = TypeAdapter(Batch).validate_json(scenario["batch"].model_dump_json())
-    request = scenario["requests"][0]
-    headers = request["headers"]
-    headers[request["auth_header"]] = "matched"
-    observed: Recorded = {
-        "method": request["method"], "url": request["url"],
-        "query": [], "headers": headers, "body": None,
-    }
+        count_answer = TypeAdapter(CountOutput).validate_python(
+            anthropic_count_tokens.run(payload),
+        )
+        count_call = count_answer["calls"][0]
+        count_request = count_call["request"]
+        headers = {
+            name: value for name, value in count_request["headers"].items() if value is not None
+        }
+        key = headers["x-api-key"]
+        headers["x-api-key"] = "matched" if key == supplied["expected_key"] else "mismatch"
+        observed = {
+            "method": "POST", "url": count_request["url"], "query": [],
+            "headers": headers, "body": count_request["body"],
+        }
+        result = count_call["response"]["value"]
+    elif supplied["action"] == "batch_create":
+        anthropic_batches.run({"create_requests": {"environment": {}, "url_bases": []}})
+        result = {"error": True, "status": None}
+        observed = None
+    else:
+        batch_payload: dict[str, JsonValue] = {"retrieve": {
+            "now": 1_700_000_000, "scenarios": [{
+                "batch_id": supplied["id"], "api_base": supplied["api_base"],
+                "api_key": supplied["api_key"], "environment": {},
+                "body": supplied["response"], "sync": False,
+            }],
+        }}
+        batch_answer = TypeAdapter(BatchOutput).validate_python(
+            anthropic_batches.run(batch_payload),
+        )
+        batch_scenario = batch_answer["scenarios"][0]
+        batch_value = TypeAdapter(Batch).validate_json(batch_scenario["batch"].model_dump_json())
+        batch_request = batch_scenario["requests"][0]
+        headers = batch_request["headers"]
+        headers[batch_request["auth_header"]] = "matched"
+        observed = {
+            "method": batch_request["method"], "url": batch_request["url"],
+            "query": [], "headers": headers, "body": None,
+        }
+        result = JSON.validate_python(batch_value)
     return {
-        "result": JSON.validate_python(result), "post_call": False,
-        "post_matches": True, "request": observed,
+        "result": result, "post_call": False, "post_matches": True, "request": observed,
     }
 
 
@@ -194,7 +197,9 @@ def files(supplied: Input) -> Observation:
         }],
     }}))["scenarios"][0]
     headers = auth["headers"]
-    headers["x-api-key"] = "matched" if headers["x-api-key"] == supplied["expected_key"] else "mismatch"
+    headers["x-api-key"] = (
+        "matched" if headers["x-api-key"] == supplied["expected_key"] else "mismatch"
+    )
     request: Recorded = {
         "method": "GET", "url": auth["urls"][0], "query": [], "headers": headers, "body": None,
     }

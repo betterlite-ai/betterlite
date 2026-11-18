@@ -1,10 +1,13 @@
 import os
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from functools import partial
 from typing import Final, Protocol, Unpack, runtime_checkable
 
 import litellm
 from litellm import main
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import ModelResponse
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -16,8 +19,11 @@ class NativeCompletion(Protocol):
     def completion(self, **kwargs: Unpack[Arguments]) -> ModelResponse: ...
 
 
+ContextValue = JsonValue | ModelResponse | Logging | HTTPHandler
+
+
 class ContextFactory(Protocol):
-    def __call__(self, **kwargs: object) -> Context: ...
+    def __call__(self, **kwargs: ContextValue) -> Context: ...
 
 
 class FixedContext(ContextFactory):
@@ -25,7 +31,7 @@ class FixedContext(ContextFactory):
         self.context = context
 
     @override
-    def __call__(self, **_kwargs: object) -> Context:
+    def __call__(self, **_kwargs: ContextValue) -> Context:
         return self.context
 
 
@@ -43,27 +49,25 @@ MAIN: Final = TypeAdapter(MainFields, config=CONFIG).validate_python(main)
 
 class NativeBindings(MainFields):
     # The public completion entry constructs this context before choosing its native branch.
-    # These typed attributes keep the injected constructors tied to that source seam.
-    @staticmethod
     @contextmanager
     def install(
-        module: MainFields, context: Context, recorder: NativeCompletion, encoding: str,
-    ) -> Iterator[None]:
-        context_factory = module._CompletionDispatchContext
-        get_encoding = module._get_encoding
-        chat = module.anthropic_chat_completions
-        legacy = module.base_llm_http_handler
-        module._CompletionDispatchContext = FixedContext(context)
-        module._get_encoding = lambda: encoding
-        module.anthropic_chat_completions = recorder
-        module.base_llm_http_handler = recorder
+        self: MainFields, context: Context, recorder: NativeCompletion, encoding: str,
+    ) -> Generator[None]:
+        context_factory = self._CompletionDispatchContext
+        get_encoding = self._get_encoding
+        chat = self.anthropic_chat_completions
+        legacy = self.base_llm_http_handler
+        self._CompletionDispatchContext = FixedContext(context)
+        self._get_encoding = partial(str, encoding)
+        self.anthropic_chat_completions = recorder
+        self.base_llm_http_handler = recorder
         try:
             yield
         finally:
-            module._CompletionDispatchContext = context_factory
-            module._get_encoding = get_encoding
-            module.anthropic_chat_completions = chat
-            module.base_llm_http_handler = legacy
+            self._CompletionDispatchContext = context_factory
+            self._get_encoding = get_encoding
+            self.anthropic_chat_completions = chat
+            self.base_llm_http_handler = legacy
 
 
 @runtime_checkable
@@ -78,7 +82,7 @@ GLOBALS: Final = TypeAdapter(Globals, config=CONFIG).validate_python(litellm)
 
 
 @contextmanager
-def environment(supplied: Input) -> Iterator[None]:
+def environment(supplied: Input) -> Generator[None]:
     original_env = dict(os.environ)
     original = (
         GLOBALS.api_base, GLOBALS.api_key, GLOBALS.anthropic_key, GLOBALS.custom_prompt_dict,
@@ -97,4 +101,6 @@ def environment(supplied: Input) -> Iterator[None]:
     finally:
         os.environ.clear()
         os.environ.update(original_env)
-        GLOBALS.api_base, GLOBALS.api_key, GLOBALS.anthropic_key, GLOBALS.custom_prompt_dict = original
+        (
+            GLOBALS.api_base, GLOBALS.api_key, GLOBALS.anthropic_key, GLOBALS.custom_prompt_dict,
+        ) = original

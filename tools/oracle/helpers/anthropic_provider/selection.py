@@ -1,7 +1,8 @@
 from typing import Final, Protocol, runtime_checkable
 
+from litellm.llms.base_llm.chat.transformation import BaseConfig
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import LlmProviders, ModelResponse
 from litellm.utils import ProviderConfigManager
 from pydantic import ConfigDict, TypeAdapter
 from typing_extensions import override
@@ -12,12 +13,12 @@ from .types import Input, Observation
 
 
 class Lookup(Protocol):
-    def __call__(self, *, model: str, provider: object) -> object | None: ...
+    def __call__(self, *, model: str, provider: LlmProviders) -> BaseConfig | None: ...
 
 
 class Missing(Lookup):
     @override
-    def __call__(self, *, model: str, provider: object) -> None:
+    def __call__(self, *, model: str, provider: LlmProviders) -> None:
         return None
 
 

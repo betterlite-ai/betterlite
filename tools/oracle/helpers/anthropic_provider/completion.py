@@ -5,6 +5,7 @@ import litellm
 from litellm.exceptions import APIError
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import ModelResponse
+from openai import APIError as OpenAIError
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -18,6 +19,11 @@ class PublicApi(Protocol):
     def completion(
         self, model: str, messages: list[dict[str, JsonValue]], custom_llm_provider: str
     ) -> ModelResponse: ...
+
+
+@runtime_checkable
+class ErrorStatus(Protocol):
+    status_code: int
 
 
 CONFIG: Final = ConfigDict(arbitrary_types_allowed=True)
@@ -92,8 +98,9 @@ def complete(supplied: Input) -> Observation:
                         "anthropic_text" if supplied["action"] == "legacy" else "anthropic"
                     ),
                 )
-            except APIError as error:
-                recorder.result = {"error": True, "status": error.status_code}
+            except OpenAIError as error:
+                status = TypeAdapter(ErrorStatus, config=CONFIG).validate_python(error)
+                recorder.result = {"error": True, "status": status.status_code}
     return {
         "result": recorder.result, "post_call": recorder.post,
         "post_matches": recorder.post_matches, "request": None,

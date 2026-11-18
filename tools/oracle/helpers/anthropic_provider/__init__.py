@@ -4,7 +4,7 @@ from pydantic import JsonValue, TypeAdapter
 
 from .bindings import environment
 from .completion import complete
-from .native import batch, count, files
+from .native import count_or_batch, files
 from .types import Case, Input, Observation
 
 
@@ -18,10 +18,8 @@ def observe(supplied: Input) -> Observation:
                 "result": config.__name__, "post_call": False,
                 "post_matches": True, "request": None,
             }
-        case "count":
-            return count(supplied)
-        case "batch_create" | "batch_retrieve":
-            return batch(supplied)
+        case "count" | "batch_create" | "batch_retrieve":
+            return count_or_batch(supplied)
         case "batch_results" | "upload" | "retrieve" | "list" | "delete" | "content":
             return files(supplied)
 
