@@ -6,10 +6,10 @@ use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_bedrock::converse_request::{
-    ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseRequestOutcome,
-    ConverseSettings, converse_request,
+    ConverseMedia, ConverseMessageSettings, ConverseRequestBody, ConverseRequestInput,
+    ConverseRequestOutcome, ConverseSettings, converse_request,
 };
-use betterlite_bedrock::model_routes::ParamMap;
+use betterlite_bedrock::model_routes::{ParamMap, ParamValue};
 use betterlite_bedrock::request_policy::BedrockRequestPolicy;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
@@ -23,13 +23,14 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::bedrock_images::remote::{RemoteImage, TRANSPORT_LIMITS};
-use serde_json::json;
+use serde_json::{from_value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{CaseLookup, Fixture};
 use super::input::Input;
 
 const MAX_DOWNLOAD_SIZE_MB: f64 = 50.0;
+const REQUEST_METADATA_FIELD: &str = "requestMetadata";
 
 fn helper_error<E>(error: E, status: Option<u16>) -> Box<HelperError>
 where
@@ -146,9 +147,11 @@ async fn assemble_body(
         litellm_params: Some(&mut *assembly.litellm_params),
         headers: Some(&assembly.input.headers),
         settings: ConverseSettings {
-            global_drop: assembly.input.global_drop,
-            modify_params: assembly.input.modify_params,
-            neutralize_orphans: assembly.input.neutralize_orphaned_blocks,
+            global_drop: assembly.input.global_drop.0,
+            messages: ConverseMessageSettings {
+                modify_params: assembly.input.modify_params.0,
+                neutralize_orphans: assembly.input.neutralize_orphaned_blocks.0,
+            },
             request_metadata: assembly.policy.as_ref(),
         },
         model_cost: &assembly.input.model_cost,
@@ -172,6 +175,23 @@ pub(super) fn run(input: &Input) -> HelperResult {
     let fixture = Fixture::load(&input.model_cost).map_err(|error| helper_error(error, None))?;
     let media = remote()?;
     let mut optional_params = input.optional_params.clone();
+    if !input.request_metadata_order.is_empty() {
+        let metadata = input
+            .request_metadata_order
+            .iter()
+            .map(|pair| {
+                Ok((
+                    pair.key.clone(),
+                    from_value::<ParamValue>(pair.value.clone())
+                        .map_err(|error| helper_error(error, None))?,
+                ))
+            })
+            .collect::<Result<ParamMap, Box<HelperError>>>()?;
+        optional_params.insert(
+            REQUEST_METADATA_FIELD.to_owned(),
+            ParamValue::Mapping(metadata),
+        );
+    }
     let mut litellm_params = input.litellm_params.clone();
     let body = assemble(
         input,

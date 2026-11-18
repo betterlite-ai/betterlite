@@ -51,29 +51,29 @@ calls:
       messages: [{role: user, content: hi}]
       model_cost:
         anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
-      optional_params:
-        requestMetadata:
-          z_first: z
-          a00: "0"
-          a01: "1"
-          a02: "2"
-          a03: "3"
-          a04: "4"
-          a05: "5"
-          a06: "6"
-          a07: "7"
-          a08: "8"
-          a09: "9"
-          a10: "10"
-          a11: "11"
-          a12: "12"
-          a13: "13"
-          a14: "14"
+      optional_params: {}
       litellm_params:
         metadata: {user_api_key_alias: alias-1}
       global_drop: false
       modify_params: false
       neutralize_orphaned_blocks: true
       request_metadata_fields: [user_api_key_alias]
+      request_metadata_order:
+        - {key: z_first, value: z}
+        - {key: a00, value: "0"}
+        - {key: a01, value: "1"}
+        - {key: a02, value: "2"}
+        - {key: a03, value: "3"}
+        - {key: a04, value: "4"}
+        - {key: a05, value: "5"}
+        - {key: a06, value: "6"}
+        - {key: a07, value: "7"}
+        - {key: a08, value: "8"}
+        - {key: a09, value: "9"}
+        - {key: a10, value: "10"}
+        - {key: a11, value: "11"}
+        - {key: a12, value: "12"}
+        - {key: a13, value: "13"}
+        - {key: a14, value: "14"}
 env: {}
 compare: {ignore: []}
