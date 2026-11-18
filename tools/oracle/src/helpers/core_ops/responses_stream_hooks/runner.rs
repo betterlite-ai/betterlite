@@ -1,8 +1,10 @@
+use betterlite_core::api::responses_stream_hooks::ports::Dispatch;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::api::responses_stream_hooks::ResponsesStreamHooks;
 use betterlite_core::api::responses_stream_hooks::deployment::ChunkHookContext;
 use betterlite_core::api::responses_stream_hooks::events::nested_response;
+use betterlite_core::api::responses_stream_hooks::failed::StreamFailure;
 use betterlite_core::api::responses_stream_hooks::failure::await_pending_logging;
 use betterlite_core::api::responses_stream_hooks::logging::logging_event;
 use betterlite_core::api::responses_stream_hooks::state::ResponsesStreamHookState;
@@ -56,8 +58,12 @@ impl Session<'_> {
     async fn invoke(&mut self, operation: Operation, probe: &Probe) -> HelperResult {
         match operation {
             Operation::Cache => {
-                self.hooks.schedule_cache(&mut self.base).or_value_error()?;
-                self.hooks.schedule_cache(&mut self.base).or_value_error()?;
+                self.hooks
+                    .persist_cache(&mut self.base, Dispatch::Spawned)
+                    .or_value_error()?;
+                self.hooks
+                    .persist_cache(&mut self.base, Dispatch::Spawned)
+                    .or_value_error()?;
                 Ok(Value::Null)
             }
             Operation::Logging => self.logging().await,
@@ -106,11 +112,21 @@ impl Session<'_> {
 
     async fn logging(&mut self) -> HelperResult {
         self.hooks
-            .log_completed_response_async(&mut self.base, &mut self.callback, &self.details)
+            .log_completed_response(
+                &mut self.base,
+                &mut self.callback,
+                &self.details,
+                Dispatch::Spawned,
+            )
             .await
             .or_value_error()?;
         self.hooks
-            .log_completed_response_async(&mut self.base, &mut self.callback, &self.details)
+            .log_completed_response(
+                &mut self.base,
+                &mut self.callback,
+                &self.details,
+                Dispatch::Spawned,
+            )
             .await
             .or_value_error()?;
         Ok(json!({"deferred": self.callback.deferred_stream_complete_args.is_some()}))
@@ -125,22 +141,10 @@ impl Session<'_> {
                 Some(probe),
             )
             .await;
-        match self
-            .hooks
+        self.hooks
             .maybe_raise_for_error_event(&self.base, &probe.row.event)
-        {
-            Ok(()) => Value::Null,
-            Err(error) => {
-                let pre = if let ErrorClass::MidStreamFallback(fallback) = &error.exception {
-                    Some(fallback.is_pre_first_chunk)
-                } else {
-                    None
-                };
-                json!({"status": error.exception.metadata().status_code, "pre": pre,
-                    "original": error.original_exception.is_some(),
-                    "billed": self.details.contains_key("combined_usage_object")})
-            }
-        }
+            .err()
+            .map_or(Value::Null, |error| failure_view(&error, &self.details))
     }
 
     async fn chunk(&mut self, row: &Row) -> Value {
@@ -159,4 +163,15 @@ impl Session<'_> {
             .await;
         json!({"id": nested_response(&event).map(|response| &response.id), "ran": self.callback.post_streaming_hooks_ran})
     }
+}
+
+fn failure_view(error: &StreamFailure, details: &IndexMap<String, Json>) -> Value {
+    let pre = if let ErrorClass::MidStreamFallback(fallback) = &error.exception {
+        Some(fallback.is_pre_first_chunk)
+    } else {
+        None
+    };
+    json!({"status": error.exception.metadata().status_code, "pre": pre,
+        "original": error.original_exception.is_some(),
+        "billed": details.contains_key("combined_usage_object")})
 }

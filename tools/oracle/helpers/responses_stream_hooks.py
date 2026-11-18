@@ -2,13 +2,16 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
-from typing import Literal, ParamSpec, TypeVar, TypedDict, cast
+from typing import Literal, ParamSpec, TypedDict, TypeVar, cast
 
 import httpx
 import litellm
 from litellm.caching.caching import Cache
 from litellm.exceptions import (
-    AuthenticationError, BadRequestError, MidStreamFallbackError, NotFoundError,
+    AuthenticationError,
+    BadRequestError,
+    MidStreamFallbackError,
+    NotFoundError,
 )
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -126,7 +129,7 @@ class Recorder:
         self.records.append(["cost"])
         return 1
 
-    def metadata(
+    def metadata(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L833
         self, *, result: BaseModel, logging_obj: Logging, model: str, kwargs: dict[str, JsonValue],
         start_time: datetime, end_time: datetime, include_overhead: bool,
     ) -> None:
@@ -184,13 +187,20 @@ class Probe(StreamBase):
                 "original": error.original_exception is not None,
                 "billed": "combined_usage_object" in recorder.model_call_details,
             }
-        except (AuthenticationError, BadRequestError, NotFoundError) as error:
+        except (AuthenticationError, BadRequestError, NotFoundError) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L664
             return {
                 "status": FailureView.model_validate(error, from_attributes=True).status_code,
                 "pre": None, "original": False,
                 "billed": "combined_usage_object" in recorder.model_call_details,
             }
         return None
+
+    def report_failure(self, row: Row) -> None:
+        try:
+            self._maybe_raise_for_error_event(row.event)
+        except (AuthenticationError, BadRequestError, MidStreamFallbackError, NotFoundError) as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L664
+            self._handle_failure(error)
+            self._handle_failure(error)
 
     async def invoke(self, operation: Operation, recorder: Recorder) -> JsonValue:
         row = recorder.row
@@ -201,11 +211,11 @@ class Probe(StreamBase):
         elif operation == "logging":
             self._log_completed_response(is_async=True)
             self._log_completed_response(is_async=True)
-            extra = {"deferred": recorder._deferred_stream_complete_args is not None}  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L560
+            extra = {"deferred": recorder._deferred_stream_complete_args is not None}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L560
         elif operation == "headers":
             copy = row.event.model_copy(deep=True)
             self._restore_provider_response_headers(copy)
-            extra = JSON.validate_python(copy.response._hidden_params)  # noqa: SLF001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L607
+            extra = JSON.validate_python(copy.response._hidden_params)  # type: ignore[misc]  # noqa: SLF001  # pyright: ignore[reportUnknownMemberType, reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L607
         elif operation == "failed":
             self._handle_logging_failed_response()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L616
             extra = self.failure_result(recorder)
@@ -214,15 +224,9 @@ class Probe(StreamBase):
             view = ChunkView.model_validate(result, from_attributes=True)
             extra = {"id": view.response.id, "ran": view.ran}
         elif operation == "metadata":
-            self._run_post_success_hooks(recorder.start_time)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L809
+            self._run_post_success_hooks(recorder.start_time)
         elif operation == "failure":
-            try:
-                self._maybe_raise_for_error_event(row.event)
-            except (
-                AuthenticationError, BadRequestError, MidStreamFallbackError, NotFoundError,
-            ) as error:
-                self._handle_failure(error)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L886
-                self._handle_failure(error)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L886
+            self.report_failure(row)
         await self._await_pending_logging()
         if self._completed_response_cached:
             await recorder.cache_done.wait()
@@ -254,10 +258,12 @@ async def answer(operation: Operation, values: dict[str, JsonValue]) -> JsonValu
     )
     probe.request_data.update(row.request)
     probe.configure(row)
-    saved = (
-        litellm.cache, litellm.callbacks, streaming_iterator.executor,
-        streaming_iterator.update_response_metadata,
-        streaming_iterator.async_post_call_success_deployment_hook,
+    saved = (  # type: ignore[misc]  # pyright: ignore[reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L49
+        litellm.cache,
+        litellm.callbacks,  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L777
+        streaming_iterator.executor,  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L34
+        streaming_iterator.update_response_metadata,  # type: ignore[attr-defined, misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L32
+        streaming_iterator.async_post_call_success_deployment_hook,  # type: ignore[attr-defined, misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L49
     )
     try:
         litellm.cache = cast(Cache, recorder)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L728
@@ -265,17 +271,19 @@ async def answer(operation: Operation, values: dict[str, JsonValue]) -> JsonValu
             cast(CustomLogger, ChunkProbe(action, recorder))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L780
             for action in row.actions
         ]
-        streaming_iterator.executor = InlineExecutor()
-        streaming_iterator.update_response_metadata = recorder.metadata  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L832
-        streaming_iterator.async_post_call_success_deployment_hook = recorder.post  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L868
+        streaming_iterator.executor = InlineExecutor()  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L34
+        streaming_iterator.update_response_metadata = recorder.metadata  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L832
+        streaming_iterator.async_post_call_success_deployment_hook = recorder.post  # type: ignore[attr-defined, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L868
         return await probe.invoke(operation, recorder)
     finally:
         recorder.close_deferred()
         (
-            litellm.cache, litellm.callbacks, streaming_iterator.executor,
-            streaming_iterator.update_response_metadata,
-            streaming_iterator.async_post_call_success_deployment_hook,
-        ) = saved
+            litellm.cache,
+            litellm.callbacks,
+            streaming_iterator.executor,  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L34
+            streaming_iterator.update_response_metadata,  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L32
+            streaming_iterator.async_post_call_success_deployment_hook,  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L49
+        ) = saved  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L49
 
 
 def run(input_data: Input) -> JsonValue:

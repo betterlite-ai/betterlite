@@ -8,7 +8,7 @@ use indexmap::IndexMap;
 use super::ResponsesStreamHooks;
 use super::cache::value_is_set;
 use super::events::{nested_response, nested_response_mut};
-use super::ports::{PortFailure, SUCCESS_DISPATCH_TASK};
+use super::ports::{Dispatch, PortFailure, SUCCESS_DISPATCH_TASK};
 use super::state::ResponsesStreamHookState;
 use crate::api::response_synthetic_events::copies::{LoggedCopy, LoggingEvent, logging_copy};
 use crate::api::responses_stream_primitives::state::{
@@ -113,13 +113,14 @@ impl ResponsesStreamHooks<'_> {
         state: &mut ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
         details: &IndexMap<String, Json>,
+        dispatch: Dispatch,
     ) -> Result<(), PortFailure> {
         if state.completed_response_logged {
             return Ok(());
         }
         state.completed_response_logged = true;
         if state.persist_before_logging {
-            self.persist_cache(state)?;
+            self.persist_cache(state, dispatch)?;
         }
         let end_time = self.clock.now();
         let request = SuccessRequest {
@@ -127,59 +128,45 @@ impl ResponsesStreamHooks<'_> {
             start_time: Some(state.start_time),
             end_time: Some(end_time),
             cache_hit: state.completed_response_cache_hit,
-            prefer_async_handlers: false,
+            prefer_async_handlers: matches!(dispatch, Dispatch::Spawned),
             standard_logging_object: None,
             guardrail_snapshot: None,
         };
         if let Some(success) = self.success.as_ref() {
-            success.async_success_handler(&request).await;
-            success.success_handler(&request);
+            match dispatch {
+                Dispatch::Inline => {
+                    success.async_success_handler(&request).await;
+                    success.success_handler(&request);
+                }
+                Dispatch::Spawned => self.dispatch_success(state, callback, request).await,
+            }
         }
-        self.run_post_success_hooks(state, callback, details, call_type.as_deref(), end_time)
+        self.run_post_success_hooks(state, callback, details, end_time)
             .await;
         Ok(())
     }
 
-    pub async fn log_completed_response_async(
+    async fn dispatch_success(
         &self,
-        state: &mut ResponsesStreamBaseState,
+        state: &ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
-        details: &IndexMap<String, Json>,
-    ) -> Result<(), PortFailure> {
-        if state.completed_response_logged {
-            return Ok(());
-        }
-        state.completed_response_logged = true;
-        if state.persist_before_logging {
-            self.schedule_cache(state)?;
-        }
-        let end_time = self.clock.now();
-        let request = SuccessRequest {
-            result: SuccessResult::Other(completed_logging_json(state)),
-            start_time: Some(state.start_time),
-            end_time: Some(end_time),
-            cache_hit: state.completed_response_cache_hit,
-            prefer_async_handlers: true,
-            standard_logging_object: None,
-            guardrail_snapshot: None,
+        request: SuccessRequest,
+    ) {
+        let Some(success) = self.success.as_ref().map(Arc::clone) else {
+            return;
         };
-        if let Some(success) = self.success.as_ref().map(Arc::clone) {
-            if success.deferred_armed() {
-                callback.deferred_stream_complete_args = Some(request);
-            } else {
-                let dispatch = request.clone();
-                let port = Arc::clone(&success);
-                let work = async move {
-                    port.dispatch_success_handlers(dispatch).await;
-                    Ok::<(), PortFailure>(())
-                };
-                if spawn_logging_task(&state.pending_tasks, SUCCESS_DISPATCH_TASK, work).is_none() {
-                    success.dispatch_success_handlers(request).await;
-                }
-            }
+        if success.deferred_armed() {
+            callback.deferred_stream_complete_args = Some(request);
+            return;
         }
-        self.run_post_success_hooks(state, callback, details, call_type.as_deref(), end_time)
-            .await;
-        Ok(())
+        let dispatch = request.clone();
+        let port = Arc::clone(&success);
+        let work = async move {
+            port.dispatch_success_handlers(dispatch).await;
+            Ok::<(), PortFailure>(())
+        };
+        if spawn_logging_task(&state.pending_tasks, SUCCESS_DISPATCH_TASK, work).is_none() {
+            success.dispatch_success_handlers(request).await;
+        }
     }
 }

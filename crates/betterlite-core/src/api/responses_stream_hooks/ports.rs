@@ -12,6 +12,12 @@ use thiserror::Error;
 
 use crate::routes::CallType;
 
+#[derive(Clone, Copy)]
+pub enum Dispatch {
+    Inline,
+    Spawned,
+}
+
 pub const CACHE_WRITE_TASK: &str = "Responses stream cache write";
 pub const POST_SUCCESS_TASK: &str = "Responses stream post-call success hook";
 pub const FAILURE_LOGGING_TASK: &str = "Responses stream failure logging";

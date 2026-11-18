@@ -371,13 +371,9 @@ impl Success {
     }
 
     pub(crate) fn deferred() -> Arc<Self> {
-        Arc::new(Self {
-            dispatches: Mutex::new(Vec::new()),
-            async_calls: Mutex::new(Vec::new()),
-            sync_calls: Mutex::new(Vec::new()),
-            order: Mutex::new(Vec::new()),
-            deferred: true,
-        })
+        let mut value = Self::recording();
+        Arc::get_mut(&mut value).unwrap().deferred = true;
+        value
     }
 
     pub(crate) fn dispatches(&self) -> Vec<SuccessRequest> {
@@ -401,6 +397,16 @@ impl Success {
             .clone()
     }
 
+    fn record(
+        &self,
+        target: &Mutex<Vec<SuccessRequest>>,
+        label: &'static str,
+        request: SuccessRequest,
+    ) {
+        self.order.lock().unwrap().push(label);
+        target.lock().unwrap().push(request);
+    }
+
     pub(crate) fn order(&self) -> Vec<&'static str> {
         self.order
             .lock()
@@ -412,36 +418,15 @@ impl Success {
 #[async_trait]
 impl ResponsesStreamSuccessTarget for Success {
     async fn dispatch_success_handlers(&self, request: SuccessRequest) {
-        self.order
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("dispatch");
-        self.dispatches
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
+        self.record(&self.dispatches, "dispatch", request);
     }
 
     async fn async_success_handler(&self, request: &SuccessRequest) {
-        self.order
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("async");
-        self.async_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request.clone());
+        self.record(&self.async_calls, "async", request.clone());
     }
 
     fn success_handler(&self, request: &SuccessRequest) {
-        self.order
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("sync");
-        self.sync_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request.clone());
+        self.record(&self.sync_calls, "sync", request.clone());
     }
 
     fn deferred_armed(&self) -> bool {
@@ -500,6 +485,23 @@ impl FailureRecorder {
             .clone()
     }
 
+    fn record(
+        &self,
+        target: &Mutex<Vec<FailureDelivery>>,
+        label: &'static str,
+        delivery: &FailureDelivery,
+        fails: bool,
+    ) -> Result<(), PortFailure> {
+        self.order.lock().unwrap().push(label);
+        target.lock().unwrap().push(delivery.clone());
+        if fails {
+            return Err(PortFailure {
+                message: format!("{label} failed"),
+            });
+        }
+        Ok(())
+    }
+
     pub(crate) fn order(&self) -> Vec<&'static str> {
         self.order
             .lock()
@@ -511,37 +513,11 @@ impl FailureRecorder {
 #[async_trait]
 impl ResponsesStreamFailureTarget for FailureRecorder {
     async fn async_failure_handler(&self, delivery: &FailureDelivery) -> Result<(), PortFailure> {
-        self.order
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("async");
-        self.async_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(delivery.clone());
-        if self.async_fails {
-            return Err(PortFailure {
-                message: "async failed".to_owned(),
-            });
-        }
-        Ok(())
+        self.record(&self.async_calls, "async", delivery, self.async_fails)
     }
 
     fn failure_handler(&self, delivery: &FailureDelivery) -> Result<(), PortFailure> {
-        self.order
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push("sync");
-        self.sync_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(delivery.clone());
-        if self.submit_fails {
-            return Err(PortFailure {
-                message: "submit failed".to_owned(),
-            });
-        }
-        Ok(())
+        self.record(&self.sync_calls, "sync", delivery, self.submit_fails)
     }
 }
 
@@ -853,7 +829,10 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     }
 }
 
-pub(crate) fn capture<T>(call: impl FnOnce() -> T) -> (T, CapturedLogs) {
+pub(crate) fn capture<T, Call>(call: Call) -> (T, CapturedLogs)
+where
+    Call: FnOnce() -> T,
+{
     let logs = CapturedLogs::default();
     let subscriber = registry().with(logs.clone());
     let value = with_default(subscriber, call);

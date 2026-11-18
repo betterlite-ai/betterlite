@@ -1,3 +1,4 @@
+use super::super::ports::Dispatch;
 use std::sync::Arc;
 
 use betterlite_models::decisions::Json;
@@ -34,7 +35,7 @@ async fn completed_logging_once() {
     let details = IndexMap::new();
 
     hooks
-        .log_completed_response(&mut state, &mut callback, &details)
+        .log_completed_response(&mut state, &mut callback, &details, Dispatch::Inline)
         .await
         .expect("the success path logs");
 
@@ -54,7 +55,7 @@ async fn completed_logging_once() {
     );
 
     hooks
-        .log_completed_response(&mut state, &mut callback, &details)
+        .log_completed_response(&mut state, &mut callback, &details, Dispatch::Inline)
         .await
         .expect("a second call is a no-op");
 
@@ -84,7 +85,12 @@ async fn completed_logging_once_restores_the_provider_headers() {
     let mut callback = ResponsesStreamHookState::default();
 
     hooks
-        .log_completed_response(&mut state, &mut callback, &IndexMap::new())
+        .log_completed_response(
+            &mut state,
+            &mut callback,
+            &IndexMap::new(),
+            Dispatch::Inline,
+        )
         .await
         .expect("the success path logs");
 
@@ -128,6 +134,7 @@ async fn completed_logging_once_skips_the_cache_when_persistence_is_off() {
             &mut state,
             &mut ResponsesStreamHookState::default(),
             &IndexMap::new(),
+            Dispatch::Inline,
         )
         .await
         .expect("the success path logs");
@@ -158,6 +165,7 @@ async fn completed_logging_once_passes_the_cache_hit_of_a_cached_response() {
             &mut state,
             &mut ResponsesStreamHookState::default(),
             &IndexMap::new(),
+            Dispatch::Inline,
         )
         .await
         .expect("the success path logs");
@@ -182,14 +190,24 @@ async fn completed_logging_once_does_not_log_again_after_a_failed_cache_write() 
     let mut callback = ResponsesStreamHookState::default();
 
     let rejected = hooks
-        .log_completed_response(&mut state, &mut callback, &IndexMap::new())
+        .log_completed_response(
+            &mut state,
+            &mut callback,
+            &IndexMap::new(),
+            Dispatch::Inline,
+        )
         .await;
     assert!(rejected.is_err());
     assert!(state.completed_response_logged);
     assert!(success.async_calls().is_empty());
 
     hooks
-        .log_completed_response(&mut state, &mut callback, &IndexMap::new())
+        .log_completed_response(
+            &mut state,
+            &mut callback,
+            &IndexMap::new(),
+            Dispatch::Inline,
+        )
         .await
         .expect("the latch makes the second call a no-op");
 
@@ -213,10 +231,11 @@ async fn completed_logging_once_schedules_the_async_dispatch() {
     state.completed_response = Some(completed_event());
 
     hooks
-        .log_completed_response_async(
+        .log_completed_response(
             &mut state,
             &mut ResponsesStreamHookState::default(),
             &IndexMap::new(),
+            Dispatch::Spawned,
         )
         .await
         .expect("the success path logs");
@@ -243,7 +262,12 @@ async fn completed_logging_once_defers_an_armed_dispatch() {
     let mut callback = ResponsesStreamHookState::default();
 
     hooks
-        .log_completed_response_async(&mut state, &mut callback, &IndexMap::new())
+        .log_completed_response(
+            &mut state,
+            &mut callback,
+            &IndexMap::new(),
+            Dispatch::Spawned,
+        )
         .await
         .expect("the success path logs");
 

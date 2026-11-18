@@ -4,11 +4,13 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 use super::ResponsesStreamHooks;
-use super::events::completed_response;
-use super::ports::{CACHE_WRITE_TASK, CacheWrite, PortFailure};
+use super::ports::{CACHE_WRITE_TASK, CacheWrite, Dispatch, PortFailure};
 use crate::api::response_synthetic_events::model_dump::dump_json_safely;
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 use crate::api::responses_stream_primitives::tasks::spawn_logging_task;
+use betterlite_openai::api::responses_event_records::records::{
+    KnownResponseEvent, ResponsesAPIStreamingResponse,
+};
 
 #[must_use]
 pub fn converted_stream_requested(kwargs: &IndexMap<String, Json>) -> bool {
@@ -59,28 +61,27 @@ pub fn cache_request_kwargs(
 }
 
 impl ResponsesStreamHooks<'_> {
-    pub fn persist_cache(&self, state: &mut ResponsesStreamBaseState) -> Result<(), PortFailure> {
-        let Some(prepared) = self.prepare_cache_write(state)? else {
-            return Ok(());
-        };
-        let Some(cache) = self.cache.as_ref() else {
-            return Ok(());
-        };
-        cache.add_cache(prepared)?;
-        state.completed_response_cached = true;
-        Ok(())
-    }
-
-    pub fn schedule_cache(&self, state: &mut ResponsesStreamBaseState) -> Result<(), PortFailure> {
+    pub fn persist_cache(
+        &self,
+        state: &mut ResponsesStreamBaseState,
+        dispatch: Dispatch,
+    ) -> Result<(), PortFailure> {
         let Some(prepared) = self.prepare_cache_write(state)? else {
             return Ok(());
         };
         let Some(cache) = self.cache.as_ref().map(Arc::clone) else {
             return Ok(());
         };
-        let work = async move { cache.async_add_cache(prepared).await };
-        if spawn_logging_task(&state.pending_tasks, CACHE_WRITE_TASK, work).is_some() {
-            state.completed_response_cached = true;
+        match dispatch {
+            Dispatch::Inline => {
+                cache.add_cache(prepared)?;
+                state.completed_response_cached = true;
+            }
+            Dispatch::Spawned => {
+                let work = async move { cache.async_add_cache(prepared).await };
+                state.completed_response_cached =
+                    spawn_logging_task(&state.pending_tasks, CACHE_WRITE_TASK, work).is_some();
+            }
         }
         Ok(())
     }
@@ -95,7 +96,10 @@ impl ResponsesStreamHooks<'_> {
         let Some(event) = state.completed_response.as_ref() else {
             return Ok(None);
         };
-        let Some(response) = completed_response(event) else {
+        let ResponsesAPIStreamingResponse::Known(known) = event else {
+            return Ok(None);
+        };
+        let KnownResponseEvent::ResponseCompleted(record) = known.as_ref() else {
             return Ok(None);
         };
         let Some(handler) = self.cache_handler.as_ref() else {
@@ -116,7 +120,7 @@ impl ResponsesStreamHooks<'_> {
         if self.cache.is_none() {
             return Ok(None);
         }
-        let Some(payload) = dump_json_safely(response) else {
+        let Some(payload) = dump_json_safely(&record.response) else {
             return Ok(None);
         };
         Ok(Some(CacheWrite {
