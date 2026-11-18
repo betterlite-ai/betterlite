@@ -157,16 +157,62 @@ fn many_empty_function_calls_with_a_huge_response_id_exceed_the_event_budget() {
 
 #[test]
 fn oversized_output_is_rejected_before_it_is_copied() {
-    // the item payload charge rejects this output before any serializer clones it
+    const CHILD_ENV: &str = "BETTERLITE_MEASURE_SYNTHETIC_OUTPUT_COPY";
+    if std::env::var_os(CHILD_ENV).is_none() {
+        let executable = std::env::current_exe().unwrap();
+        let status = std::process::Command::new(executable)
+            .args([
+                "--exact",
+                "api::response_synthetic_events::tests::items::oversized_output_is_rejected_before_it_is_copied",
+                "--nocapture",
+            ])
+            .env(CHILD_ENV, "1")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+
     let input = "x".repeat(90 * 1024 * 1024);
     let output = format!(
         r#"[{{"type":"custom_tool_call","id":"ct_1","call_id":"call_1","name":"g","input":"{input}","status":"completed"}}]"#
     );
     let mut transformed = response(&output);
+    drop(output);
+    drop(input);
+    let peak_before = peak_resident_kib();
     let error =
         build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    let peak_after = peak_resident_kib();
     assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
     assert_eq!(transformed.output.len(), 1);
+    assert!(peak_after - peak_before < 32 * 1024);
+}
+
+#[test]
+fn oversized_envelope_keeps_output_after_budget_error() {
+    let output = format!("[{}]", message_with_text("msg_a", "still present"));
+    let mut transformed = response(&output);
+    let original_output = transformed.output.clone();
+    transformed.instructions = Some("i".repeat(90 * 1024 * 1024));
+
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+    assert_eq!(transformed.output, original_output);
+}
+
+fn peak_resident_kib() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .unwrap()
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("VmHWM:")
+                .and_then(|value| value.split_whitespace().next())
+                .and_then(|value| value.parse().ok())
+        })
+        .unwrap()
 }
 
 #[test]

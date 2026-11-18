@@ -60,11 +60,12 @@ where
     // take the output out first: serializing the response would clone it through its field adapter
     let output = mem::take(&mut transformed.output);
     let envelope = payload_bytes::<ResponsesApiResponse>(transformed);
-    build.budget.charge(3, envelope.saturating_mul(3))?;
-    let mut events = Vec::new();
+    let envelope_charge = build.budget.charge(3, envelope.saturating_mul(3));
     let mut in_progress = transformed.clone();
-    in_progress.status = Some("in_progress".to_owned());
     transformed.output = output;
+    envelope_charge?;
+    let mut events = Vec::new();
+    in_progress.status = Some("in_progress".to_owned());
     push_event!(
         &mut events,
         KnownResponseEvent::ResponseCreated(ResponseEvent {
