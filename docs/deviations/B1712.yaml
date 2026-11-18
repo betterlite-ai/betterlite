@@ -31,4 +31,13 @@ deviations:
       A provider value the decoder cannot place becomes the typed billing failure the task asks
       for, instead of an exception that stops the job before every result is published.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L76-L77
+  - what: >-
+      Response bodies are read as UTF-8: an error body that is not valid UTF-8 is the typed
+      body-text failure and a success body that is not valid UTF-8 is the response-shape
+      failure, where httpx decodes both with replacement characters, so an error detail can
+      carry U+FFFD and a JSON string with invalid bytes can still parse.
+    why: >-
+      The 300-character detail and the decoded page are only meaningful as text, so an
+      unreadable body is reported as unreadable instead of being lossily decoded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L112-L117
 kept_bugs: []
