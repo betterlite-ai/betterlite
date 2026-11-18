@@ -180,6 +180,7 @@ fn object_stamping_ignores_unusable_usage() {
         r#"{"id":"r3"}"#,
         r#"{"id":"r3","usage":null}"#,
         r#"{"id":"r3","usage":{"input_tokens":"many"}}"#,
+        r#"{"id":"r3","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3,"cost":true}}"#,
         r#"{"id":"r3","usage":true}"#,
         r#"{"id":"r3","usage":[1]}"#,
     ] {
