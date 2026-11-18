@@ -20,14 +20,14 @@ pub struct Candidate {
     pub model: String,
 }
 
-// A candidate as registered, beside the deployment row it came from, which a reordered rebuild cannot move.
+// A candidate as registered, beside the deployment row it came from, so a reordered rebuild cannot move it.
 #[derive(Clone)]
 struct Registered {
     candidate: Candidate,
     deployment: Option<DeploymentSpec>,
 }
 
-// The candidate alone: the registered deployment carries credentials, which Debug never prints.
+// The candidate alone: the registered deployment carries credentials, and Debug never prints them.
 impl std::fmt::Debug for Registered {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
