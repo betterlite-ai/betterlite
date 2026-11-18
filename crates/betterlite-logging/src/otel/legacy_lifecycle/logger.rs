@@ -12,8 +12,8 @@ use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
 use crate::fields::payload::StandardLoggingPayload;
-use crate::fields::payload::records::StandardLoggingMetadata;
 use crate::otel::legacy_policy::capture::LoggingFlags;
+use crate::otel::legacy_policy::error_recording::RecordedException;
 use crate::otel::legacy_policy::span_time::SpanTime;
 use crate::otel::model::metadata::wire::MetadataMap;
 
@@ -33,7 +33,7 @@ struct EventKwargs<'event> {
 
 #[derive(Serialize)]
 struct RequestParams<'event> {
-    metadata: &'event StandardLoggingMetadata,
+    metadata: IndexMap<String, Json>,
     litellm_metadata: &'event IndexMap<String, Json>,
     litellm_session_id: &'event str,
     custom_llm_provider: Option<&'event str>,
@@ -64,6 +64,7 @@ impl LegacyOtelLogger {
             Some(value) => Some(self.encoded(value)?),
             None => None,
         };
+        let exception = failure_exception(event, failure);
         let call = LifecycleCall {
             kwargs: &kwargs,
             response: response.as_ref(),
@@ -77,7 +78,7 @@ impl LegacyOtelLogger {
                 .end_time
                 .to_f64()
                 .map_or(SpanTime::Missing, SpanTime::Seconds),
-            exception: None,
+            exception: exception.as_ref(),
             flags: LoggingFlags {
                 turn_off_message_logging: dynamic_turn_off(event),
                 // CustomLogger's deprecated flag defaults to true, and the class never overrides it
@@ -102,10 +103,13 @@ impl LegacyOtelLogger {
         let mut optional_params = event.payload.model_parameters.clone();
         // The event's stream flag is authoritative even if the parameter snapshot carries a stale value.
         optional_params.insert("stream".to_owned(), Json::Bool(event.stream));
+        let mut metadata: IndexMap<String, Json> = self.encoded(&event.payload.metadata)?;
+        // Keep computed fields as defaults while preserving the original request's keys and values.
+        metadata.extend(event.litellm_metadata.as_ref().clone());
         self.encoded(&EventKwargs {
             standard_logging_object: &event.payload,
             litellm_params: RequestParams {
-                metadata: &event.payload.metadata,
+                metadata,
                 litellm_metadata: &event.litellm_metadata,
                 litellm_session_id: &event.payload.session_id,
                 custom_llm_provider: event.payload.custom_llm_provider.as_deref(),
@@ -153,6 +157,26 @@ impl CallbackLogger for LegacyOtelLogger {
     async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
         self.run(&event, true)
     }
+}
+
+fn failure_exception(event: &LoggerEvent, failure: bool) -> Option<RecordedException> {
+    if !failure {
+        return None;
+    }
+    let information = event.payload.error_information.as_ref()?;
+    Some(RecordedException {
+        type_name: information
+            .error_class
+            .clone()
+            .flatten()
+            .unwrap_or_default(),
+        message: information
+            .error_message
+            .clone()
+            .flatten()
+            .unwrap_or_default(),
+        stacktrace: information.traceback.clone().flatten().unwrap_or_default(),
+    })
 }
 
 // the request-level kill switch redacts the payload before the span carries any content

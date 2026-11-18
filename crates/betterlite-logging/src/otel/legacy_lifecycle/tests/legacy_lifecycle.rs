@@ -430,7 +430,7 @@ fn assert_duration_metric(exporter: &InMemoryMetricExporter) {
     assert!(
         histogram
             .data_points()
-            .any(|point| (point.sum() - 1.5_f64).abs() < f64::EPSILON)
+            .any(|point| point.sum().to_bits() == 1.5_f64.to_bits())
     );
 }
 

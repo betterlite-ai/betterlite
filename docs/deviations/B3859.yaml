@@ -1,5 +1,8 @@
 task: B3859
 deviations:
+  - what: Deduplication retains markers for at most 10,000 request keys. A late synchronous or asynchronous callback for an evicted request can emit duplicate success, failure and guardrail spans.
+    why: The callback adapter receives immutable payload snapshots rather than LiteLLM's mutable request-local marker dictionary. The bounded cache limits logger memory; markers are evicted in request insertion order instead of living for the entire request lifetime. The capacity boundary is covered by legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1287-L1306
   - what: Guardrail start_time and end_time are float seconds (Unix timestamps); both are converted to datetime and then to nanoseconds for OTel span timing.
     why: LiteLLM populates guardrail_information with float seconds; datetime.fromtimestamp() handles the conversion, and _to_ns() standardizes timestamps to nanoseconds as required by the OTel SDK.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2022-L2044

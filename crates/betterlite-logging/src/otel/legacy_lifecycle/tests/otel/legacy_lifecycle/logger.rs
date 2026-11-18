@@ -6,10 +6,13 @@ use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::otel::legacy_lifecycle::logger::LegacyOtelLogger;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use opentelemetry::KeyValue;
 use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
 
-use crate::support::{END, Rig, START, attribute, in_memory_config, instant, text_attribute};
+use crate::support::{
+    END, PROXY, Rig, START, attribute, in_memory_config, instant, text_attribute,
+};
 
 const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -89,6 +92,87 @@ fn callback_logger_failure_event_writes_error_span() {
     assert_eq!(spans.len(), 1);
     assert_eq!(spans[0].name, "litellm_request");
     assert!(matches!(spans[0].status, Status::Error { .. }));
+    assert!(spans[0].events.is_empty());
+}
+
+#[rstest::rstest]
+#[case::recorded(r#"{"error_class":"ProviderError","error_message":"request failed","traceback":"provider stack"}"#, "ProviderError", "request failed", "provider stack")]
+#[case::absent_fields("{}", "", "", ": \n")]
+#[case::null_fields(
+    r#"{"error_class":null,"error_message":null,"traceback":null}"#,
+    "",
+    "",
+    ": \n"
+)]
+fn callback_logger_failure_records_exception_event(
+    #[case] information: &str,
+    #[case] type_name: &str,
+    #[case] message: &str,
+    #[case] stacktrace: &str,
+) {
+    let rig = Rig::new();
+    let logger = LegacyOtelLogger::new(Arc::new(rig.in_memory(None)));
+    let mut request = event("failed-call");
+    Arc::make_mut(&mut request.payload).error_information =
+        Some(serde_json::from_str(information).expect("error information"));
+
+    logger.log_failure_event(&request).expect("failure");
+
+    let span = rig.span("litellm_request");
+    assert!(matches!(span.status, Status::Error { .. }));
+    assert_eq!(span.events.len(), 1);
+    let exception = &span.events[0];
+    assert_eq!(exception.name, "exception");
+    assert_eq!(
+        exception.attributes,
+        vec![
+            KeyValue::new("exception.type", type_name.to_owned()),
+            KeyValue::new("exception.message", message.to_owned()),
+            KeyValue::new("exception.stacktrace", stacktrace.to_owned()),
+            KeyValue::new("exception.escaped", "False"),
+        ]
+    );
+}
+
+#[test]
+fn callback_logger_preserves_generation_and_proxy_metadata() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let proxy = rig.parent(&lifecycle, PROXY);
+    let logger = LegacyOtelLogger::new(Arc::new(lifecycle));
+    let mut request = event("metadata-call");
+    request.litellm_metadata = Arc::new(
+        serde_json::from_str(&format!(
+            r#"{{"generation_name":"custom-generation","litellm_parent_otel_span":"00-{}-{}-01"}}"#,
+            proxy.context.trace_id(),
+            proxy.context.span_id()
+        ))
+        .expect("request metadata"),
+    );
+    let payload = Arc::make_mut(&mut request.payload);
+    payload.metadata.user_api_key_team_id = Some("team-1".to_owned());
+    payload.metadata.user_api_key_team_alias = Some("team-alias".to_owned());
+
+    logger.log_success_event(&request).expect("success");
+
+    let named: Vec<SpanData> = rig
+        .spans()
+        .into_iter()
+        .filter(|span| span.name == "custom-generation")
+        .collect();
+    assert_eq!(named.len(), 2, "both the primary and raw span use the name");
+    assert_eq!(named[0].parent_span_id, proxy.context.span_id());
+    assert_eq!(named[1].parent_span_id, named[0].span_context.span_id());
+    let closed_proxy = rig.span(PROXY);
+    assert_eq!(closed_proxy.status, Status::Ok);
+    assert_eq!(
+        text_attribute(&closed_proxy, "metadata.user_api_key_team_id"),
+        "team-1"
+    );
+    assert_eq!(
+        text_attribute(&closed_proxy, "metadata.user_api_key_team_alias"),
+        "team-alias"
+    );
 }
 
 #[tokio::test]
