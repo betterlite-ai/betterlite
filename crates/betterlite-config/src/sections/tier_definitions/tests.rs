@@ -412,6 +412,25 @@ fn a_list_in_a_text_slot_is_a_load_error() {
     only("        tier_labels:\n          SIMPLE: [Cheap]\n", &[]).unwrap_err();
 }
 
+// the loader keeps a plain scalar's written text, where LiteLLM rejects a number for a string field
+#[test]
+fn a_plain_scalar_in_a_text_slot_reads_as_its_text() {
+    let config = only(
+        "        tier_labels:\n          SIMPLE: 3\n          MEDIUM: true\n",
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        config.tier_labels.get("SIMPLE").map(String::as_str),
+        Some("3")
+    );
+    assert_eq!(
+        config.tier_labels.get("MEDIUM").map(String::as_str),
+        Some("true")
+    );
+}
+
 #[test]
 fn a_parameter_entry_without_a_model_name_is_a_load_error() {
     let keys =
