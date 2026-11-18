@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -10,12 +10,10 @@ use rust_decimal::Decimal;
 use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::routing_state::Settings;
 use crate::routing_state::counter::RouterCounters;
-use crate::routing_state::delta::{Batches, Delta, DeltaStore};
+use crate::routing_state::delta::{Delta, DeltaStore};
 use crate::routing_state::error::RoutingStateError;
 use crate::routing_state_store::test_support::FakeRedis;
-use crate::routing_state_store::{
-    BreakerClock, RedisSettings, RoutingStateStore, Settings as RedisStoreSettings,
-};
+use crate::routing_state_store::{BreakerClock, RedisSettings, Settings as RedisStoreSettings};
 use crate::routing_value_store::{
     Clock, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreRead, StoreSettings,
 };
@@ -191,20 +189,13 @@ impl Harness {
         Self::build(settings, None)
     }
 
-    fn batches(&self) -> MutexGuard<'_, Batches> {
+    pub(crate) fn pending_len(&self) -> usize {
         self.counters
             .state
-            .batches
+            .pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-    }
-
-    pub(crate) fn pending_len(&self) -> usize {
-        self.batches().pending.len()
-    }
-
-    pub(crate) fn overflow_len(&self) -> usize {
-        self.batches().overflow.len()
+            .len()
     }
 
     pub(crate) fn tracked_len(&self) -> usize {

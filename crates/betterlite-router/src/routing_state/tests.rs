@@ -15,6 +15,15 @@ fn runtime(paused: bool) -> Runtime {
         .unwrap()
 }
 
+// the callback sink's inline flush needs the multi-threaded runtime the gateway runs on
+fn worker_runtime() -> Runtime {
+    Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .unwrap()
+}
+
 #[rstest]
 #[case::window_increment_returns_and_queues("window_increment_returns_and_queues", false)]
 #[case::window_increment_without_a_store("window_increment_without_a_store", false)]
@@ -34,10 +43,6 @@ fn runtime(paused: bool) -> Runtime {
     false
 )]
 #[case::usage_key_merges_the_shared_store_total("usage_key_merges_the_shared_store_total", false)]
-#[case::usage_overflow_flushes_within_the_deadline(
-    "usage_overflow_flushes_within_the_deadline",
-    false
-)]
 #[case::sync_compresses_repeated_keys_into_one_operation(
     "sync_compresses_repeated_keys_into_one_operation",
     false
@@ -54,7 +59,10 @@ fn runtime(paused: bool) -> Runtime {
 #[case::metadata_bucket_selection("metadata_bucket_selection", false)]
 #[case::key_pattern_is_absent("key_pattern_is_absent", false)]
 #[case::real_store_smoke("real_store_smoke", false)]
-#[case::usage_saturation_flushes_before_dropping("usage_saturation_flushes_before_dropping", false)]
+#[case::callback_saturation_flushes_before_dropping(
+    "callback_saturation_flushes_before_dropping",
+    false
+)]
 #[case::failure_callback_increment_survives_the_merge(
     "failure_callback_increment_survives_the_merge",
     false
@@ -70,7 +78,10 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 
 #[rstest]
 #[case::queue_cap_is_1024("queue_cap_is_1024", false)]
-#[case::usage_overflow_cap_is_1024("usage_overflow_cap_is_1024", false)]
+#[case::callback_saturation_without_a_worker_drops(
+    "callback_saturation_without_a_worker_drops",
+    false
+)]
 #[case::tracked_cap_is_1024("tracked_cap_is_1024", false)]
 #[case::window_increment_rejects_an_oversized_key(
     "window_increment_rejects_an_oversized_key",
@@ -84,7 +95,6 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 #[case::sync_merges_at_the_equality_boundary("sync_merges_at_the_equality_boundary", false)]
 #[case::sync_interval_resolution_boundaries("sync_interval_resolution_boundaries", false)]
 #[case::local_counter_reads_only_whole_values("local_counter_reads_only_whole_values", false)]
-#[case::usage_flush_tasks_do_not_accumulate("usage_flush_tasks_do_not_accumulate", false)]
 fn routing_state_boundaries(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(boundaries::run(name));
 }

@@ -17,11 +17,12 @@ use crate::routing_state::metadata::{
 };
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::test_support::FakeRedis;
-use crate::routing_value_store::{RouteKey, RoutingValueStore};
+use crate::routing_value_store::{RouteIncrement, RouteKey, RoutingValueStore};
 
 use super::support::{
     Harness, TestClock, breaker, local_store, redis_settings, route_key, same_f64, settings,
 };
+use super::worker_runtime;
 
 const TTL: Duration = Duration::from_secs(60);
 const RPM_KEY: &str = "global_router:dep-a:gpt-4o:rpm:00-00";
@@ -52,9 +53,6 @@ pub(crate) async fn run(name: &str) {
         "usage_key_merges_the_shared_store_total" => {
             usage_key_merges_the_shared_store_total().await;
         }
-        "usage_overflow_flushes_within_the_deadline" => {
-            usage_overflow_flushes_within_the_deadline().await;
-        }
         "sync_compresses_repeated_keys_into_one_operation" => {
             sync_compresses_repeated_keys_into_one_operation().await;
         }
@@ -68,8 +66,8 @@ pub(crate) async fn run(name: &str) {
         "metadata_bucket_selection" => metadata_bucket_selection(),
         "key_pattern_is_absent" => key_pattern_is_absent(),
         "real_store_smoke" => real_store_smoke().await,
-        "usage_saturation_flushes_before_dropping" => {
-            usage_saturation_flushes_before_dropping().await;
+        "callback_saturation_flushes_before_dropping" => {
+            callback_saturation_flushes_before_dropping().await;
         }
         "failure_callback_increment_survives_the_merge" => {
             failure_callback_increment_survives_the_merge().await;
@@ -346,7 +344,7 @@ async fn usage_pipeline_increments_locally_and_queues() {
         harness.counters.get_tracked_keys(),
         set(&[RPM_KEY, TPM_KEY])
     );
-    // the sink cannot await the store, so only an overflow arms a flush and the batch waits for the sync
+    // the sink cannot await the store, so the batch waits for the owner's next sync
     for _turn in 0..4 {
         tokio::task::yield_now().await;
     }
@@ -380,96 +378,34 @@ async fn usage_key_merges_the_shared_store_total() {
     assert_eq!(harness.counters.read(TPM_KEY), Some(107));
 }
 
-async fn usage_overflow_flushes_within_the_deadline() {
-    let harness = Harness::with_store(settings(false, None));
-    let filled = vec![
-        Increment {
+// the callback sink flushes a full queue on its own worker, so 2049 synchronous increments drop nothing
+async fn callback_saturation_flushes_before_dropping() {
+    let harness = Arc::new(Harness::with_store(settings(false, None)));
+    let worker = Arc::clone(&harness);
+    on_worker(move || {
+        let sink: &dyn CounterSink = worker.counters.as_ref();
+        let one = [Increment {
             key: TPM_KEY.to_owned(),
             value: 1,
             ttl: TTL,
-        };
-        MAX_PENDING_DELTAS
-    ];
-    harness.counters.increment_pipeline(&filled).unwrap();
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    // the queue is full, so the delta waits in the overflow and arms one flush that runs in its own task
-    harness
-        .counters
-        .increment_pipeline(&[Increment {
-            key: TPM_KEY.to_owned(),
-            value: 1,
-            ttl: TTL,
-        }])
-        .unwrap();
-    assert_eq!(harness.overflow_len(), 1);
-    for _turn in 0..4 {
-        tokio::task::yield_now().await;
-    }
-    assert_eq!(
-        harness.store.amount(TPM_KEY),
-        Some(Decimal::from(1_025_u64))
-    );
-    assert_eq!(harness.pending_len(), 0);
-    assert_eq!(harness.overflow_len(), 0);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
-    // the flag clears when the first flush ends, so a second overflow arms another flush
-    let refill = vec![
-        Increment {
-            key: TPM_KEY.to_owned(),
-            value: 1,
-            ttl: TTL,
-        };
-        MAX_PENDING_DELTAS
-    ];
-    harness.counters.increment_pipeline(&refill).unwrap();
-    harness
-        .counters
-        .increment_pipeline(&[Increment {
-            key: TPM_KEY.to_owned(),
-            value: 1,
-            ttl: TTL,
-        }])
-        .unwrap();
-    for _turn in 0..4 {
-        tokio::task::yield_now().await;
-    }
-    assert_eq!(
-        harness.store.amount(TPM_KEY),
-        Some(Decimal::from(2_050_u64))
-    );
-}
-
-// the awaited callback path flushes a full queue inside its deadline, so healthy storage drops nothing
-async fn usage_saturation_flushes_before_dropping() {
-    let harness = Harness::with_store(settings(false, None));
-    let one = [Increment {
-        key: TPM_KEY.to_owned(),
-        value: 1,
-        ttl: TTL,
-    }];
-    for _step in 0..MAX_PENDING_DELTAS {
-        harness.counters.increment_usage(&one).await.unwrap();
-    }
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    harness.counters.increment_usage(&one).await.unwrap();
-    assert_eq!(harness.store.calls(), 1);
-    assert_eq!(
-        harness.store.amount(TPM_KEY),
-        Some(Decimal::from(1_024_u64))
-    );
-    assert_eq!(harness.pending_len(), 1);
-    for _step in 0..(MAX_PENDING_DELTAS - 1) {
-        harness.counters.increment_usage(&one).await.unwrap();
-    }
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    harness.counters.increment_usage(&one).await.unwrap();
-    assert_eq!(harness.store.calls(), 2);
-    assert_eq!(
-        harness.store.amount(TPM_KEY),
-        Some(Decimal::from(2_048_u64))
-    );
-    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
-    assert_eq!(harness.pending_len(), 1);
+        }];
+        for _step in 0..=MAX_PENDING_DELTAS {
+            sink.increment_pipeline(&one).unwrap();
+        }
+        assert_eq!(worker.pending_len(), 1);
+        assert_eq!(worker.store.calls(), 1);
+        assert_eq!(worker.store.amount(TPM_KEY), Some(Decimal::from(1_024_u64)));
+        assert_eq!(worker.counters.read(TPM_KEY), Some(1_025));
+        for _step in 0..(MAX_PENDING_DELTAS - 1) {
+            sink.increment_pipeline(&one).unwrap();
+        }
+        assert_eq!(worker.pending_len(), MAX_PENDING_DELTAS);
+        sink.increment_pipeline(&one).unwrap();
+        assert_eq!(worker.store.calls(), 2);
+        assert_eq!(worker.store.amount(TPM_KEY), Some(Decimal::from(2_048_u64)));
+        assert_eq!(worker.pending_len(), 1);
+        assert_eq!(worker.counters.read(TPM_KEY), Some(2_049));
+    });
     assert!(harness.counters.sync_with_redis().await);
     assert_eq!(
         harness.store.amount(TPM_KEY),
@@ -477,16 +413,36 @@ async fn usage_saturation_flushes_before_dropping() {
     );
     assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
     assert_eq!(harness.pending_len(), 0);
-    // a failed flush inside the deadline drops only the saturating delta; the local count keeps it
-    let down = Harness::with_store(settings(false, None));
+    // a failing store drops only the delta that found the queue full, and the local count keeps every increment
+    let down = Arc::new(Harness::with_store(settings(false, None)));
     down.store.set_down(true);
-    for _step in 0..MAX_PENDING_DELTAS {
-        down.counters.increment_usage(&one).await.unwrap();
-    }
-    down.counters.increment_usage(&one).await.unwrap();
-    assert_eq!(down.pending_len(), 0);
+    let worker = Arc::clone(&down);
+    on_worker(move || {
+        let sink: &dyn CounterSink = worker.counters.as_ref();
+        let one = [Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        }];
+        for _step in 0..=MAX_PENDING_DELTAS {
+            sink.increment_pipeline(&one).unwrap();
+        }
+        assert_eq!(worker.pending_len(), 0);
+        assert_eq!(worker.store.calls(), 1);
+        assert_eq!(worker.counters.read(TPM_KEY), Some(1_025));
+    });
     assert_eq!(down.store.amount(TPM_KEY), None);
-    assert_eq!(down.counters.read(TPM_KEY), Some(1_025));
+}
+
+// the inline flush needs a runtime that can hand its thread off, which is how the gateway's callbacks run
+fn on_worker<F: FnOnce() + Send>(body: F) {
+    std::thread::scope(|scope| {
+        let _handle = scope.spawn(move || {
+            worker_runtime().block_on(async move {
+                body();
+            });
+        });
+    });
 }
 
 // a store that never answers: the one second deadline ends the caller's wait and the new delta is dropped
@@ -498,16 +454,17 @@ async fn saturated_flush_past_the_deadline_drops_its_delta() {
         Arc::clone(&local),
         Some(Arc::new(HangingStore)),
     );
-    let one = [Increment {
-        key: TPM_KEY.to_owned(),
-        value: 1,
-        ttl: TTL,
-    }];
     for _step in 0..MAX_PENDING_DELTAS {
-        counters.increment_usage(&one).await.unwrap();
+        counters
+            .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
+            .await
+            .unwrap();
     }
-    counters.increment_usage(&one).await.unwrap();
-    assert_eq!(counters.read(TPM_KEY), Some(1_025));
+    counters
+        .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
+        .await
+        .unwrap();
+    assert_eq!(counters.read(RPM_KEY), Some(1_025));
     assert_eq!(pending_len(&counters), 0);
 }
 
@@ -754,7 +711,9 @@ impl DeltaStore for RacingStore {
             let state = self.state.lock().unwrap().as_ref().and_then(Weak::upgrade);
             if let Some(state) = state {
                 let key = route_key(RPM_KEY);
-                let _recorded = state.record(&key, amount, TTL).unwrap();
+                let _recorded = state
+                    .record_delta(&key, RouteIncrement::Spend(amount), TTL)
+                    .unwrap();
             }
         }
         if mem::take(&mut *self.failure_during_push.lock().unwrap()) {
@@ -801,7 +760,7 @@ fn racing_counters() -> (
 }
 
 fn pending_len<S: DeltaStore + 'static>(counters: &RouterCounters<S>) -> usize {
-    counters.state.batches.lock().unwrap().pending.len()
+    counters.state.pending.lock().unwrap().len()
 }
 
 fn channels(text: &str) -> CallbackChannels {

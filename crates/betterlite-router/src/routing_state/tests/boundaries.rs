@@ -11,7 +11,7 @@ use crate::routing_state::error::RoutingStateError;
 use crate::routing_state::metadata::{
     CallbackChannels, deployment_channel, get_counted_usage_tokens,
 };
-use crate::routing_state::{MAX_OVERFLOW_DELTAS, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS, Settings};
+use crate::routing_state::{MAX_PENDING_DELTAS, MAX_TRACKED_KEYS, Settings};
 use crate::routing_value_store::{
     MAX_KEY_BYTES, PinValue, RouteValue, RoutingValueStore, StoreRead,
 };
@@ -27,7 +27,9 @@ const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 pub(crate) async fn run(name: &str) {
     match name {
         "queue_cap_is_1024" => queue_cap_is_1024().await,
-        "usage_overflow_cap_is_1024" => usage_overflow_cap_is_1024().await,
+        "callback_saturation_without_a_worker_drops" => {
+            callback_saturation_without_a_worker_drops().await;
+        }
         "tracked_cap_is_1024" => tracked_cap_is_1024(),
         "window_increment_rejects_an_oversized_key" => {
             window_increment_rejects_an_oversized_key().await;
@@ -94,50 +96,31 @@ async fn queue_cap_is_1024() {
     assert_eq!(down.pending_len(), 0);
 }
 
-// the callback path cannot flush inline, so a full queue fills the overflow and only then drops a delta
-async fn usage_overflow_cap_is_1024() {
+// a sink call that has no multi-threaded worker to flush on keeps the queue at its cap and drops the delta
+async fn callback_saturation_without_a_worker_drops() {
     let harness = Harness::with_store(settings(false, None));
     harness
         .counters
         .increment_pipeline(&usage_batch(MAX_PENDING_DELTAS))
         .unwrap();
-    harness
-        .counters
-        .increment_pipeline(&usage_batch(MAX_OVERFLOW_DELTAS))
-        .unwrap();
-    assert_eq!(harness.overflow_len(), MAX_OVERFLOW_DELTAS);
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
     harness
         .counters
         .increment_pipeline(&usage_batch(1))
         .unwrap();
-    assert_eq!(harness.overflow_len(), MAX_OVERFLOW_DELTAS);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
     assert_eq!(harness.store.calls(), 0);
-}
-
-// repeated saturation must not keep finished flush tasks: the set holds at most the one running flush
-async fn usage_flush_tasks_do_not_accumulate() {
-    let harness = Harness::with_store(settings(false, None));
-    for _round in 0..8 {
-        harness
-            .counters
-            .increment_pipeline(&usage_batch(MAX_PENDING_DELTAS))
-            .unwrap();
-        harness
-            .counters
-            .increment_pipeline(&usage_batch(1))
-            .unwrap();
-        for _turn in 0..4 {
-            tokio::task::yield_now().await;
-        }
-        assert_eq!(harness.pending_len(), 0);
-        assert_eq!(harness.overflow_len(), 0);
-    }
-    let retained = harness.counters.tasks.lock().unwrap().len();
-    assert!(
-        retained <= 1,
-        "the flush set retained {retained} finished tasks"
-    );
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
+    // a thread outside every runtime cannot drive the push either, so its delta is dropped the same way
+    let counters = Arc::clone(&harness.counters);
+    std::thread::scope(|scope| {
+        let _handle = scope.spawn(|| {
+            counters.increment_pipeline(&usage_batch(1)).unwrap();
+        });
+    });
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.store.calls(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_026));
 }
 
 fn usage_batch(count: usize) -> Vec<Increment> {
