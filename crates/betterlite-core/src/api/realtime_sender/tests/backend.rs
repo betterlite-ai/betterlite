@@ -193,7 +193,7 @@ async fn content_after_content_is_still_sent() {
         guardrails: &callbacks,
     };
     assert!(sender.send_to_backend("client-frame").await.unwrap());
-    assert!(state.setup.content_sent_after_setup.0);
+    assert!(sender.state.setup.content_sent_after_setup.0);
     assert!(sender.send_to_backend("client-frame").await.unwrap());
     assert_eq!(fixture.backend_log.sent().len(), 2);
 }
