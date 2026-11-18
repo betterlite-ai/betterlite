@@ -1,4 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use secrecy::SecretString;
+use std::time::SystemTime;
 use thiserror::Error;
 
 use crate::aws_endpoints::provider::{BedrockEmbeddingProvider, embedding_provider};
@@ -34,16 +36,19 @@ pub struct EmbeddingPlan {
 
 pub struct PlanInput<'a> {
     pub model: &'a str,
-    pub model_id: Option<&'a str>,
-    pub optional_params: &'a Object,
+    pub optional_params: &'a mut Object,
     pub endpoint_url: &'a str,
     pub inputs: &'a [String],
     pub drop_params: bool,
 }
 
 pub fn plan(input: PlanInput<'_>) -> Result<EmbeddingPlan, EmbeddingCallError> {
-    let unencoded_id = input
-        .model_id
+    let explicit_model_id = input
+        .optional_params
+        .shift_remove("model_id")
+        .and_then(|value| value.as_str().map(str::to_owned));
+    let unencoded_id = explicit_model_id
+        .as_deref()
         .filter(|value| !value.is_empty())
         .unwrap_or(input.model);
     let model_id = encode_model_id(unencoded_id);
@@ -56,6 +61,9 @@ pub fn plan(input: PlanInput<'_>) -> Result<EmbeddingPlan, EmbeddingCallError> {
     let provider = embedding_provider(&model).ok_or_else(|| EmbeddingCallError::Provider {
         model: model.clone(),
     })?;
+    let _runtime_endpoint = input
+        .optional_params
+        .shift_remove("aws_bedrock_runtime_endpoint");
     let mut inference_params = input.optional_params.clone();
     inference_params.retain(|key, _| !is_auth_key(key) && key != "user");
     let mut batch = Vec::new();
@@ -146,6 +154,220 @@ pub fn plan(input: PlanInput<'_>) -> Result<EmbeddingPlan, EmbeddingCallError> {
     })
 }
 
+pub async fn execute_batch<Factory>(
+    plan: &EmbeddingPlan,
+    timeout: Option<crate::bedrock_embedding_io::transport::Timeout>,
+    headers: &[(String, String)],
+    supplied: Option<(
+        crate::bedrock_embedding_io::transport::ClientKind,
+        &Factory::Client,
+    )>,
+    factory: &Factory,
+) -> Result<
+    crate::bedrock_embedding_io::response::EmbeddingReply,
+    crate::bedrock_embedding_io::error::EmbeddingIoError,
+>
+where
+    Factory: crate::bedrock_embedding_io::transport::ClientFactory + Sync,
+{
+    let batch_data = if let Some(data) = &plan.cohere_data {
+        std::slice::from_ref(data)
+    } else {
+        plan.batch.as_slice()
+    };
+    let mut responses = Vec::with_capacity(batch_data.len());
+    for data in batch_data {
+        let supplied = supplied.map(|(kind, transport)| {
+            crate::bedrock_embedding_io::transport::SuppliedClient { kind, transport }
+        });
+        let response = crate::bedrock_embedding_io::transport::post_embedding(
+            &crate::bedrock_embedding_io::transport::EmbeddingCall {
+                asynchronous: plan.asynchronous,
+                url: &plan.endpoint_url,
+                headers,
+                data,
+                timeout: timeout.clone(),
+            },
+            supplied,
+            factory,
+        )
+        .await?;
+        responses.push(response);
+    }
+    crate::bedrock_embedding_io::response::transform_response(
+        &responses,
+        &plan.model,
+        plan.provider,
+        plan.asynchronous,
+        Some(batch_data),
+    )
+}
+
+pub struct SigningInput<'a> {
+    pub plan: &'a EmbeddingPlan,
+    pub data: &'a Object,
+    pub credentials: Option<&'a crate::aws_settings::sources::Credentials>,
+    pub region: &'a str,
+    pub extra_headers: &'a [(String, String)],
+    pub api_key: Option<&'a SecretString>,
+    pub bearer_token: Option<&'a SecretString>,
+    pub now: SystemTime,
+}
+
+pub fn sign_request(
+    input: SigningInput<'_>,
+) -> Result<crate::signing::request::AwsSignedRequest, crate::signing::error::SigningError> {
+    let body = betterlite_logging::python_json::dumps_object(input.data).into_bytes();
+    let headers = merged_headers(input.extra_headers);
+    crate::signing::endpoint::request_headers(crate::signing::endpoint::RequestHeaders {
+        credentials: input.credentials,
+        region: input.region,
+        extra_headers: input.extra_headers,
+        endpoint: &input.plan.endpoint_url,
+        data: crate::signing::body::Body::Bytes(&body),
+        headers: &headers,
+        api_key: input.api_key,
+        configured_bearer: input.bearer_token,
+        supports_bearer_token: true,
+        now: input.now,
+    })
+}
+
+pub struct AsyncSigningInput {
+    pub plan: EmbeddingPlan,
+    pub data: Object,
+    pub credentials: Option<crate::aws_settings::sources::Credentials>,
+    pub region: String,
+    pub extra_headers: Vec<(String, String)>,
+    pub api_key: Option<SecretString>,
+    pub bearer_token: Option<SecretString>,
+    pub now: SystemTime,
+}
+
+pub struct LogContext<'state, 'env> {
+    pub state: &'state mut betterlite_logging::logging_state::LoggingState,
+    pub env: &'state betterlite_logging::logging_pre_post::env::PrePostEnv<'env>,
+}
+
+pub fn log_pre_call(
+    data: &Object,
+    signed: &crate::signing::request::AwsSignedRequest,
+    log: &mut LogContext<'_, '_>,
+) -> Result<(), betterlite_logging::logging_pre_post::error::PrePostError> {
+    let mut headers = indexmap::IndexMap::new();
+    for (name, value) in &signed.headers {
+        headers.insert(
+            name.clone(),
+            betterlite_models::decisions::Json::Text(value.clone()),
+        );
+    }
+    let value = model_json(data);
+    betterlite_logging::logging_pre_post::pre_call::pre_call(
+        log.state,
+        &betterlite_logging::logging_pre_post::pre_call::PreCall {
+            input: betterlite_models::decisions::Json::Object(value.clone()),
+            model: None,
+            additional_args: betterlite_logging::logging_pre_post::args::AdditionalArgs {
+                api_base: Some(signed.url.clone()),
+                headers: Some(headers),
+                complete_input_dict: Some(
+                    betterlite_logging::logging_pre_post::args::RawBody::Object(value),
+                ),
+                request_str: None,
+                openai_sdk: None,
+                passthrough: indexmap::IndexMap::new(),
+            },
+        },
+        log.env,
+    )?;
+    Ok(())
+}
+
+pub fn log_post_call(data: &Object, response: &Object, log: &mut LogContext<'_, '_>) {
+    let input = model_json(data);
+    let response = model_json(response);
+    betterlite_logging::logging_pre_post::post_call::post_call(
+        log.state,
+        &betterlite_logging::logging_pre_post::post_call::PostCall {
+            original_response: betterlite_models::decisions::Json::Object(response),
+            input: betterlite_models::decisions::Json::Object(input.clone()),
+            additional_args: betterlite_logging::logging_pre_post::args::AdditionalArgs {
+                api_base: None,
+                headers: None,
+                complete_input_dict: Some(
+                    betterlite_logging::logging_pre_post::args::RawBody::Object(input),
+                ),
+                request_str: None,
+                openai_sdk: None,
+                passthrough: indexmap::IndexMap::new(),
+            },
+        },
+        log.env,
+    );
+}
+
+fn model_json(value: &Object) -> indexmap::IndexMap<String, betterlite_models::decisions::Json> {
+    value
+        .iter()
+        .map(|(key, field)| (key.clone(), model_json_value(field)))
+        .collect()
+}
+
+fn model_json_value(value: &Json) -> betterlite_models::decisions::Json {
+    use betterlite_models::decisions::Json as Output;
+    match value {
+        Json::Null => Output::Null,
+        Json::Bool(value) => Output::Bool(*value),
+        Json::Number(value) => Output::Number(value.clone()),
+        Json::Text(value) => Output::Text(value.clone()),
+        Json::List(values) => Output::List(values.iter().map(model_json_value).collect()),
+        Json::Object(values) => Output::Object(model_json(values)),
+    }
+}
+
+pub async fn sign_request_async(
+    executor: &crate::signing::executor::AwsSigningExecutor,
+    input: AsyncSigningInput,
+) -> Result<crate::signing::request::AwsSignedRequest, crate::signing::error::SigningError> {
+    let url = input.plan.endpoint_url;
+    let has_bearer = crate::aws_settings::bedrock_bearer_token(
+        input.api_key.as_ref(),
+        input.bearer_token.as_ref(),
+    )
+    .is_some();
+    crate::signing::executor::sign_request_off_loop_if_aws(executor, !has_bearer, move || {
+        let body = betterlite_logging::python_json::dumps_object(&input.data).into_bytes();
+        let headers = merged_headers(&input.extra_headers);
+        crate::signing::endpoint::request_headers(crate::signing::endpoint::RequestHeaders {
+            credentials: input.credentials.as_ref(),
+            region: &input.region,
+            extra_headers: &input.extra_headers,
+            endpoint: &url,
+            data: crate::signing::body::Body::Bytes(&body),
+            headers: &headers,
+            api_key: input.api_key.as_ref(),
+            configured_bearer: input.bearer_token.as_ref(),
+            supports_bearer_token: true,
+            now: input.now,
+        })
+    })
+    .await?
+}
+
+fn merged_headers(extra_headers: &[(String, String)]) -> Vec<(String, Option<String>)> {
+    let mut headers = vec![(
+        "Content-Type".to_owned(),
+        Some("application/json".to_owned()),
+    )];
+    for (name, value) in extra_headers {
+        match headers.iter_mut().find(|(existing, _)| existing == name) {
+            Some((_, current)) => *current = Some(value.clone()),
+            None => headers.push((name.clone(), Some(value.clone()))),
+        }
+    }
+    headers
+}
+
 fn encode_model_id(value: &str) -> String {
     let mut encoded = String::with_capacity(value.len());
     for byte in value.bytes() {
@@ -160,23 +382,9 @@ fn encode_model_id(value: &str) -> String {
 }
 
 fn is_auth_key(key: &str) -> bool {
-    matches!(
-        key.to_ascii_lowercase().as_str(),
-        "aws_access_key_id"
-            | "aws_secret_access_key"
-            | "aws_session_token"
-            | "aws_bedrock_runtime_endpoint"
-            | "aws_region_name"
-            | "aws_region"
-            | "aws_profile_name"
-            | "aws_role_name"
-            | "aws_role_arn"
-            | "aws_session_name"
-            | "aws_external_id"
-            | "aws_web_identity_token"
-            | "aws_sts_endpoint"
-            | "aws_bedrock_custom_auth"
-    )
+    crate::aws_settings::AUTHENTICATION_PARAMS
+        .iter()
+        .any(|name| key.eq_ignore_ascii_case(name))
 }
 
 fn params_from_object(

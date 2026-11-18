@@ -9,7 +9,10 @@ fn text(value: &str) -> Json {
 }
 
 fn fixture() -> (Vec<String>, Object) {
-    (vec!["first".into(), "second".into()], Object::new())
+    (
+        vec!["first".into(), "second".into()],
+        Object::from_iter([("model_id".to_owned(), text("a/b:c"))]),
+    )
 }
 
 #[rstest]
@@ -21,7 +24,7 @@ fn fixture() -> (Vec<String>, Object) {
 #[case::signing_auth_isolation("amazon.titan-embed-text-v1", "signing_auth_isolation")]
 #[case::embedding_transport_error("amazon.titan-embed-text-v1", "embedding_transport_error")]
 fn embedding_call_cases(#[case] model: &str, #[case] _case: &str) {
-    let (inputs, optional_params) = fixture();
+    let (inputs, mut optional_params) = fixture();
     let model = if model == "nova-embed-1" {
         "async_invoke/nova-embed-1"
     } else {
@@ -29,8 +32,7 @@ fn embedding_call_cases(#[case] model: &str, #[case] _case: &str) {
     };
     let outcome = plan(PlanInput {
         model,
-        model_id: Some("a/b:c"),
-        optional_params: &optional_params,
+        optional_params: &mut optional_params,
         endpoint_url: "https://bedrock.invalid",
         inputs: &inputs,
         drop_params: false,
@@ -48,8 +50,7 @@ fn embedding_call_cases(#[case] model: &str, #[case] _case: &str) {
 fn embedding_call_rejects_unknown_provider() {
     let error = plan(PlanInput {
         model: "unknown-model",
-        model_id: None,
-        optional_params: &Object::new(),
+        optional_params: &mut Object::new(),
         endpoint_url: "https://bedrock.invalid",
         inputs: &[],
         drop_params: false,
@@ -65,7 +66,7 @@ fn embedding_call_rejects_unknown_provider() {
 
 #[test]
 fn embedding_call_filters_authentication_case_insensitively_and_user_exactly() {
-    let optional_params = Object::from_iter([
+    let mut optional_params = Object::from_iter([
         ("AWS_SECRET_ACCESS_KEY".to_owned(), text("secret")),
         ("user".to_owned(), text("private")),
         ("User".to_owned(), text("retained")),
@@ -73,8 +74,7 @@ fn embedding_call_filters_authentication_case_insensitively_and_user_exactly() {
     let inputs = Vec::new();
     let outcome = plan(PlanInput {
         model: "amazon.titan-embed-text-v1",
-        model_id: None,
-        optional_params: &optional_params,
+        optional_params: &mut optional_params,
         endpoint_url: "https://bedrock.invalid",
         inputs: &inputs,
         drop_params: false,
