@@ -2,13 +2,12 @@ import asyncio
 import sys
 import types
 from collections.abc import Sequence
-from typing import TypedDict
+from typing import NamedTuple, NotRequired, TypedDict
 
-from litellm.models.object_permission import LiteLLM_ObjectPermissionTable
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.tool_registry_writer import ToolPolicyRegistry
 from litellm.proxy.utils import PrismaClient
-from litellm.types.tool_management import LiteLLM_ToolTableRow
+from litellm.types.tool_management import ToolInputPolicy, ToolOutputPolicy
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -37,11 +36,33 @@ class Query(TypedDict):
     team_permission_id: str | None
 
 
+class ToolRecord(TypedDict):
+    tool_name: str
+    input_policy: NotRequired[ToolInputPolicy]
+    output_policy: NotRequired[ToolOutputPolicy]
+
+
+class PermissionRecord(TypedDict):
+    object_permission_id: str
+    blocked_tools: NotRequired[list[str] | None]
+
+
 class Input(TypedDict):
-    tools: list[dict[str, JsonValue]]
-    permissions: list[dict[str, JsonValue]]
+    tools: list[ToolRecord]
+    permissions: list[PermissionRecord]
     queries: list[Query]
     output_tools: list[str]
+
+
+class ToolRow(NamedTuple):
+    tool_name: str
+    input_policy: ToolInputPolicy | None
+    output_policy: ToolOutputPolicy | None
+
+
+class PermissionRow(NamedTuple):
+    object_permission_id: str
+    blocked_tools: list[str] | None
 
 
 class QueryAnswer(TypedDict):
@@ -58,19 +79,19 @@ class Answer(TypedDict):
 
 
 class FakeToolTable:
-    def __init__(self, rows: Sequence[LiteLLM_ToolTableRow]) -> None:
+    def __init__(self, rows: Sequence[ToolRow]) -> None:
         self._rows = rows
 
-    async def find_many(self) -> Sequence[LiteLLM_ToolTableRow]:
+    async def find_many(self) -> Sequence[ToolRow]:
         await asyncio.sleep(0)
         return self._rows
 
 
 class FakePermissionTable:
-    def __init__(self, rows: Sequence[LiteLLM_ObjectPermissionTable]) -> None:
+    def __init__(self, rows: Sequence[PermissionRow]) -> None:
         self._rows = rows
 
-    async def find_many(self) -> Sequence[LiteLLM_ObjectPermissionTable]:
+    async def find_many(self) -> Sequence[PermissionRow]:
         await asyncio.sleep(0)
         return self._rows
 
@@ -83,17 +104,22 @@ class FakeDb(PrismaWrapper):
 
 class FakeClient(PrismaClient):
     def __init__(self, input_value: Input) -> None:
-        self.db = FakeDb(
-            FakeToolTable(
-                [LiteLLM_ToolTableRow.model_validate(tool) for tool in input_value["tools"]]
-            ),
-            FakePermissionTable(
-                [
-                    LiteLLM_ObjectPermissionTable.model_validate(permission)
-                    for permission in input_value["permissions"]
-                ]
-            ),
-        )
+        tools = [
+            ToolRow(
+                tool["tool_name"],
+                tool.get("input_policy"),
+                tool.get("output_policy"),
+            )
+            for tool in input_value["tools"]
+        ]
+        permissions = [
+            PermissionRow(
+                permission["object_permission_id"],
+                permission.get("blocked_tools"),
+            )
+            for permission in input_value["permissions"]
+        ]
+        self.db = FakeDb(FakeToolTable(tools), FakePermissionTable(permissions))
 
 
 def run(input_value: Input) -> JsonValue:
