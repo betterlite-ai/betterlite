@@ -18,6 +18,7 @@ use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
+use futures_util::future::LocalBoxFuture;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 
@@ -85,24 +86,27 @@ pub enum EmbeddingCallResponse {
     Legacy(LegacyEmbeddingResponse),
 }
 
-pub async fn embeddings<Source, Factory, Transport>(
-    call: &mut EmbeddingCall<'_>,
-    dependencies: Dependencies<'_, Source, Factory, Transport>,
-    supplied: Option<SuppliedClient<'_, Factory::Client>>,
-    log: &mut LogContext<'_, '_>,
-) -> Result<EmbeddingCallResponse, EmbeddingCallError>
+#[must_use]
+pub fn embeddings<'run, Source, Factory, Transport>(
+    call: &'run mut EmbeddingCall<'_>,
+    dependencies: Dependencies<'run, Source, Factory, Transport>,
+    supplied: Option<SuppliedClient<'run, Factory::Client>>,
+    log: &'run mut LogContext<'_, '_>,
+) -> LocalBoxFuture<'run, Result<EmbeddingCallResponse, EmbeddingCallError>>
 where
     Source: CredentialSource + Sync,
     Factory: ClientFactory + Sync,
     Factory::Client: LegacyEmbeddingTransport,
     Transport: LegacyEmbeddingTransport,
 {
-    let plan = plan::plan(
-        call,
-        dependencies.secrets,
-        dependencies.region_worker,
-        dependencies.source,
-    )
-    .await?;
-    execute::execute(call, &plan, &dependencies, supplied, log).await
+    Box::pin(async move {
+        let plan = plan::plan(
+            call,
+            dependencies.secrets,
+            dependencies.region_worker,
+            dependencies.source,
+        )
+        .await?;
+        execute::execute(call, &plan, &dependencies, supplied, log).await
+    })
 }

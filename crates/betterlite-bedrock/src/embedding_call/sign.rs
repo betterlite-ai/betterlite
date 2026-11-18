@@ -20,7 +20,7 @@ pub struct SigningInput<'source> {
     pub now: SystemTime,
 }
 
-pub fn sign_item(body: &[u8], input: SigningInput<'_>) -> Result<AwsSignedRequest, SigningError> {
+pub fn sign_item(body: &[u8], input: &SigningInput<'_>) -> Result<AwsSignedRequest, SigningError> {
     let headers = merged_headers(input.extra_headers);
     request_headers(RequestHeaders {
         credentials: input.credentials,
@@ -49,16 +49,26 @@ pub struct AsyncSigningInput {
 
 // LiteLLM's run_aws_signing always moves signing off the event loop, bearer or not
 pub fn sign_owned(input: AsyncSigningInput) -> Result<AwsSignedRequest, SigningError> {
+    let AsyncSigningInput {
+        endpoint_url,
+        body,
+        credentials,
+        region,
+        extra_headers,
+        api_key,
+        configured_bearer,
+        clock,
+    } = input;
     sign_item(
-        &input.body,
-        SigningInput {
-            endpoint_url: &input.endpoint_url,
-            credentials: input.credentials.as_ref(),
-            region: &input.region,
-            extra_headers: &input.extra_headers,
-            api_key: input.api_key.as_ref(),
-            configured_bearer: input.configured_bearer.as_ref(),
-            now: input.clock.now(),
+        &body,
+        &SigningInput {
+            endpoint_url: &endpoint_url,
+            credentials: credentials.as_ref(),
+            region: &region,
+            extra_headers: &extra_headers,
+            api_key: api_key.as_ref(),
+            configured_bearer: configured_bearer.as_ref(),
+            now: clock.now(),
         },
     )
 }

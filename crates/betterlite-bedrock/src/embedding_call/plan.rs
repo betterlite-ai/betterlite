@@ -50,7 +50,7 @@ where
     let loaded = credentials(call, secrets, region_worker, source).await?;
     let selected = select(call, &loaded)?;
     let inference_params = inference_params(&call.optional_params)?;
-    let (data, batch) = bodies(Bodies {
+    let (data, batch) = bodies(&Bodies {
         provider: selected.provider,
         model: &selected.model,
         model_id: &selected.model_id,
@@ -197,7 +197,7 @@ struct Bodies<'text> {
     drop_params: bool,
 }
 
-fn bodies(spec: Bodies<'_>) -> Result<(Option<Object>, Option<Vec<Object>>), EmbeddingCallError> {
+fn bodies(spec: &Bodies<'_>) -> Result<(Option<Object>, Option<Vec<Object>>), EmbeddingCallError> {
     let batch = match spec.provider {
         BedrockEmbeddingProvider::Cohere => {
             let data = cohere::transform_request(spec.model, spec.input, spec.inference_params);
@@ -218,8 +218,8 @@ fn bodies(spec: Bodies<'_>) -> Result<(Option<Object>, Option<Vec<Object>>), Emb
             }
             requests
         }
-        BedrockEmbeddingProvider::Twelvelabs => async_bodies(&spec, Family::Marengo)?,
-        BedrockEmbeddingProvider::Nova => async_bodies(&spec, Family::Nova)?,
+        BedrockEmbeddingProvider::Twelvelabs => async_bodies(spec, Family::Marengo)?,
+        BedrockEmbeddingProvider::Nova => async_bodies(spec, Family::Nova)?,
     };
     Ok((None, Some(batch)))
 }

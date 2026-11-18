@@ -1,7 +1,10 @@
+use std::sync::{Mutex, PoisonError};
+
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
+use betterlite_openai::openai_base_config::Headers;
 use http::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::bedrock_embedding_io::transport::{
@@ -19,6 +22,20 @@ pub(super) struct CohereSender<'client, Factory: ClientFactory, Transport> {
     pub(super) fallback: &'client Transport,
     pub(super) asynchronous: bool,
     pub(super) timeout: Option<Timeout>,
+    pub(super) headers: &'client Headers,
+    pub(super) timed_out: Mutex<Option<TransferError>>,
+}
+
+impl<Factory, Transport> CohereSender<'_, Factory, Transport>
+where
+    Factory: ClientFactory,
+{
+    pub(super) fn take_timeout(&self) -> Option<TransferError> {
+        self.timed_out
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+    }
 }
 
 impl<Factory, Transport> LegacyEmbeddingTransport for CohereSender<'_, Factory, Transport>
@@ -30,13 +47,13 @@ where
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
         match (self.asynchronous, self.supplied.as_ref()) {
             (true, Some(client)) if client.kind == ClientKind::Async => {
-                post(client.transport, request).await
+                post(client.transport, request, self.headers, &self.timed_out).await
             }
             (true, _) => {
                 let client = self
                     .factory
                     .async_client(COHERE_CLIENT_PROVIDER, self.timeout.clone());
-                post(&client, request).await
+                post(&client, request, self.headers, &self.timed_out).await
             }
             (false, Some(client)) if client.kind == ClientKind::Sync => {
                 client.transport.send(request).await
@@ -49,36 +66,38 @@ where
 async fn post<Client>(
     client: &Client,
     request: OutboundRequest,
+    headers: &Headers,
+    timed_out: &Mutex<Option<TransferError>>,
 ) -> Result<UpstreamResponse, TransportError>
 where
     Client: EmbeddingTransport,
 {
-    let embedding = EmbeddingRequest {
-        url: request.url.to_string(),
-        headers: request
-            .headers
-            .iter()
-            .map(|(name, value)| {
-                (
-                    name.as_str().to_owned(),
-                    String::from_utf8_lossy(value.as_bytes()).into_owned(),
-                )
+    match client.post(embedding_request(request, headers)).await {
+        Ok(reply) => Ok(upstream(reply)),
+        // the async handler raises litellm.Timeout with status 408, and the recorded cause reaches the caller
+        Err(error @ TransferError::Timeout { .. }) => {
+            *timed_out.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
+            Ok(UpstreamResponse {
+                status: 408,
+                headers: HeaderMap::new(),
+                body: Vec::new(),
             })
+        }
+        Err(TransferError::Failed(error)) => Err(error),
+    }
+}
+
+fn embedding_request(request: OutboundRequest, headers: &Headers) -> EmbeddingRequest {
+    EmbeddingRequest {
+        url: request.url.to_string(),
+        headers: headers
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
         body: match request.body {
             RequestBody::Json(bytes) | RequestBody::Bytes { data: bytes, .. } => bytes,
             RequestBody::Empty | RequestBody::Multipart { .. } => Vec::new(),
         },
-    };
-    match client.post(embedding).await {
-        Ok(reply) => Ok(upstream(reply)),
-        // the async handler wraps a timeout in litellm.Timeout, whose status is 408
-        Err(TransferError::Timeout { .. }) => Ok(UpstreamResponse {
-            status: 408,
-            headers: HeaderMap::new(),
-            body: Vec::new(),
-        }),
-        Err(TransferError::Failed(error)) => Err(error),
     }
 }
 

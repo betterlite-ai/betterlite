@@ -1,3 +1,5 @@
+use std::vec::IntoIter;
+
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
@@ -50,7 +52,7 @@ impl EmbeddingHooks for Recorder {
 
 impl IntoIterator for Recorder {
     type Item = Event;
-    type IntoIter = std::vec::IntoIter<Event>;
+    type IntoIter = IntoIter<Event>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.events.into_iter()
