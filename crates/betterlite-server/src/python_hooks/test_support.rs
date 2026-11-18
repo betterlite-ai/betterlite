@@ -119,9 +119,10 @@ pub(crate) fn gcs_downloader(objects: BTreeMap<String, Vec<u8>>) -> BucketModule
 
 pub(crate) fn s3_downloader(body: &[u8]) -> (BucketModuleDownloader, Arc<FakeS3>) {
     let transport = FakeS3::new(body);
+    let s3: Arc<dyn S3Get> = Arc::<FakeS3>::clone(&transport);
     let downloader = BucketModuleDownloader {
         environment: credential_environment(),
-        s3: Arc::clone(&transport),
+        s3,
         gcs: Arc::new(MemoryOpener {
             objects: BTreeMap::new(),
         }),

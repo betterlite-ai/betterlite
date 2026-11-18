@@ -120,12 +120,12 @@ async fn a_fetched_module_is_imported_by_the_instance_loader() {
         Arc::new(BucketModuleFetcher::supplied(downloader));
     let loader = InstanceLoader::new(runtime.host.clone(), fetcher);
     let url = "gcs://bucket/module.handler";
-    let loaded = loader
+    let instance = loader
         .load(&runtime.tracker, url, Some(workspace.config_path.as_path()))
         .await
         .unwrap();
-    assert_eq!(loaded.value, url);
-    let handle = loaded.handle(&runtime.host).unwrap();
+    assert_eq!(instance.value, url);
+    let handle = instance.handle(&runtime.host).unwrap();
     let result = handle
         .call(
             &runtime.host,

@@ -70,7 +70,7 @@ impl ModuleFetcher for BucketModuleFetcher {
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(BucketFetchError::Runtime)?;
+            .map_err(|source| BucketFetchError::Runtime { source })?;
         runtime.block_on(self.download(request))
     }
 }
