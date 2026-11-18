@@ -3,11 +3,12 @@ import os
 from collections.abc import AsyncIterator, Awaitable, Iterator
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, field
+from http import HTTPStatus
 from typing import Protocol, TypedDict, Unpack, runtime_checkable
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import httpx
-import litellm
+from litellm.exceptions import APIError
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.bedrock.chat.converse_handler import BedrockConverseLLM
 from litellm.llms.bedrock.common_utils import BedrockError
@@ -15,6 +16,7 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 from pydantic import JsonValue as Json
+from typing_extensions import override
 
 
 class Input(TypedDict):
@@ -107,57 +109,72 @@ class Fixture:
             stream=Body(self),
         )
 
+    def arguments(self, client: HTTPHandler | AsyncHTTPHandler) -> CallArgs:
+        details: dict[str, Json] = {}
+        params: dict[str, Json] = {}
+        messages: list[Json] = []
+        return CallArgs(
+            model=self.input["model"],
+            messages=[{"role": "user", "content": "hello"}],
+            api_base="https://bedrock-runtime.us-west-2.amazonaws.com",
+            custom_prompt_dict={},
+            model_response=ModelResponse(id="fixture", created=0),
+            encoding=None,
+            logging_obj=MagicMock(
+                model_call_details=details, litellm_params=params, stream_options=None, messages=messages
+            ),
+            optional_params=dict(self.input["params"]),
+            acompletion=self.input["asynchronous"],
+            timeout=3,
+            litellm_params={},
+            extra_headers=self.input["headers"],
+            client=client,
+            api_key=self.input["bearer"],
+        )
+
+    async def execute(self) -> dict[str, Json]:
+        transport = httpx.MockTransport(self.respond)
+        async with AsyncExitStack() as stack:
+            if self.input["asynchronous"]:
+                handler = AsyncHTTPHandler(transport=transport)
+                await stack.enter_async_context(handler.client)
+                return await observe(self, handler)
+            client = stack.enter_context(httpx.Client(transport=transport))
+            return await observe(self, HTTPHandler(client=client))
+
 
 class Body(httpx.SyncByteStream, httpx.AsyncByteStream):
     def __init__(self, fixture: Fixture) -> None:
         self.fixture = fixture
 
+    @override
     def __iter__(self) -> Iterator[bytes]:
-        data = self.fixture.input
-        chunks = (
-            [bytes(frame) for frame in data["frames"]]
-            if self.fixture.url.endswith("/converse-stream") and data["status"] == httpx.codes.OK
-            else [data["body"].encode()]
-        )
-        for chunk in chunks:
+        if (
+            not self.fixture.url.endswith("/converse-stream")
+            or self.fixture.input["status"] != HTTPStatus.OK
+        ):
             self.fixture.reads += 1
-            yield chunk
+            yield self.fixture.input["body"].encode()
+            return
+        for frame in self.fixture.input["frames"]:
+            self.fixture.reads += 1
+            yield bytes(frame)
 
+    @override
     async def __aiter__(self) -> AsyncIterator[bytes]:
         for chunk in self:
             yield chunk
-
-
-def arguments(fixture: Fixture, client: HTTPHandler | AsyncHTTPHandler) -> CallArgs:
-    data = fixture.input
-    return CallArgs(
-        model=data["model"],
-        messages=[{"role": "user", "content": "hello"}],
-        api_base="https://bedrock-runtime.us-west-2.amazonaws.com",
-        custom_prompt_dict={},
-        model_response=ModelResponse(id="fixture", created=0),
-        encoding=None,
-        logging_obj=MagicMock(
-            model_call_details={}, litellm_params={}, stream_options=None, messages=[]
-        ),
-        optional_params=dict(data["params"]),
-        acompletion=data["asynchronous"],
-        timeout=3,
-        litellm_params={},
-        extra_headers=data["headers"],
-        client=client,
-        api_key=data["bearer"],
-    )
 
 
 async def invoke(
     fixture: Fixture, client: HTTPHandler | AsyncHTTPHandler
 ) -> ModelResponse | CustomStreamWrapper:
     handler = BedrockConverseLLM()
-    bound = Bound.model_validate({"sync": handler, "asynchronous": handler})
+    handlers: dict[str, BedrockConverseLLM] = {"sync": handler, "asynchronous": handler}
+    bound = Bound.model_validate(handlers)
     if fixture.input["asynchronous"]:
-        return await bound.asynchronous.completion(**arguments(fixture, client))
-    return bound.sync.completion(**arguments(fixture, client))
+        return await bound.asynchronous.completion(**fixture.arguments(client))
+    return bound.sync.completion(**fixture.arguments(client))
 
 
 async def stream_items(
@@ -197,9 +214,9 @@ async def observe(fixture: Fixture, client: HTTPHandler | AsyncHTTPHandler) -> d
             content = reply["choices"][0]["message"]["content"]
     except BedrockError as error:
         status = error.status_code
-    except litellm.APIError as error:
+    except APIError as error:
         status = error.status_code
-    headers = {
+    headers: dict[str, Json] = {
         name.lower(): ("sigv4" if value.startswith("AWS4-HMAC-SHA256") else value)
         for name, value in fixture.headers.items()
         if name.lower() in {"authorization", "content-type", "anthropic-beta", "x-custom"}
@@ -215,18 +232,6 @@ async def observe(fixture: Fixture, client: HTTPHandler | AsyncHTTPHandler) -> d
     }
 
 
-async def execute(input_value: Input) -> dict[str, Json]:
-    fixture = Fixture(input_value)
-    transport = httpx.MockTransport(fixture.respond)
-    async with AsyncExitStack() as stack:
-        if input_value["asynchronous"]:
-            handler = AsyncHTTPHandler(transport=transport)
-            await stack.enter_async_context(handler.client)
-            return await observe(fixture, handler)
-        client = stack.enter_context(httpx.Client(transport=transport))
-        return await observe(fixture, HTTPHandler(client=client))
-
-
 def run(input_value: Input) -> Json:
     environment = {
         "AWS_ACCESS_KEY_ID": os.environ["AWS_ACCESS_KEY_ID"],
@@ -238,11 +243,5 @@ def run(input_value: Input) -> Json:
         "LITELLM_RUST": "false",
         "LITELLM_LOCAL_MODEL_COST_MAP": "true",
     }
-    saved = dict(os.environ)
-    try:
-        os.environ.clear()
-        os.environ.update(environment)
-        return asyncio.run(execute(input_value))
-    finally:
-        os.environ.clear()
-        os.environ.update(saved)
+    with patch.dict(os.environ, environment, clear=True):
+        return asyncio.run(Fixture(input_value).execute())

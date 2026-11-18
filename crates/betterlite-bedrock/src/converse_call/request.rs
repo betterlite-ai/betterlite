@@ -1,39 +1,21 @@
 use std::collections::BTreeMap;
 
-use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_http::user_url::validate::Resolve;
 use betterlite_logging::python_json;
-use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
-use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
-use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
-use betterlite_prompts::message_content::Message;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_content::ToolBlock;
-use crate::converse_request::{
-    ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseSettings, converse_request,
-};
+use crate::converse_request::{ConverseRequestInput, converse_request};
 use crate::converse_response::request::OptionalParams;
 use crate::event_frames::beta::BetaHeader;
 use crate::model_routes::{ParamMap, ParamValue};
 
 use super::error::ConverseCallError;
-
-pub struct BodyRequest<'request> {
-    pub model: &'request str,
-    pub messages: &'request [Message],
-    pub params: &'request mut ParamMap,
-    pub litellm_params: &'request mut Object,
-    pub headers: Option<&'request BTreeMap<String, BetaHeader>>,
-    pub settings: ConverseSettings<'request>,
-    pub model_cost: &'request ParamMap,
-    pub catalogs: &'request CatalogSources<'request>,
-    pub packaged: &'request ModelCatalog,
-}
+use super::{ConverseAssembly, ConverseCall};
 
 pub struct PreparedBody {
     pub data: String,
@@ -43,10 +25,9 @@ pub struct PreparedBody {
 
 // transform_request or _async_transform_request, whichever headers the route hands the config, then json.dumps' spacing and escaping over the typed body.
 pub(crate) async fn build_body<Source, Transport, Lookup, R, Ids>(
-    request: BodyRequest<'_>,
-    lookup: &Lookup,
-    media: ConverseMedia<'_, R, Ids>,
-    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+    call: &mut ConverseCall<'_>,
+    headers: Option<&BTreeMap<String, BetaHeader>>,
+    assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
 ) -> Result<PreparedBody, ConverseCallError>
 where
     Source: DynamicMetadataSource,
@@ -55,37 +36,27 @@ where
     R: Resolve,
     Ids: Fn() -> String + Sync,
 {
-    let BodyRequest {
-        model,
-        messages,
-        params,
-        litellm_params,
-        headers,
-        settings,
-        model_cost,
-        catalogs,
-        packaged,
-    } = request;
     let outcome = converse_request(
         ConverseRequestInput {
-            model,
-            messages,
-            optional_params: &mut *params,
-            litellm_params: Some(&mut *litellm_params),
+            model: call.model,
+            messages: call.messages,
+            optional_params: &mut call.optional_params,
+            litellm_params: Some(&mut call.litellm_params),
             headers,
-            settings,
-            model_cost,
-            catalogs,
-            lookup,
-            packaged,
+            settings: call.settings,
+            model_cost: assembly.model_cost,
+            catalogs: assembly.catalogs,
+            lookup: assembly.lookup,
+            packaged: assembly.packaged,
         },
-        media,
-        environment,
+        assembly.media,
+        assembly.environment,
     )
     .await?;
-    let optional = reply_options(&*params)?;
+    let optional = reply_options(&call.optional_params)?;
+    let value: Json = serde_json::from_str(&serde_json::to_string(&outcome.body)?)?;
     Ok(PreparedBody {
-        data: body_text(&outcome.body)?,
+        data: python_json::dumps(&value),
         tool_name_mappings: outcome.tool_name_mappings,
         optional,
     })
@@ -109,11 +80,6 @@ fn reply_options(params: &ParamMap) -> Result<OptionalParams, ConverseCallError>
         }
     };
     Ok(OptionalParams { json_mode, tools })
-}
-
-fn body_text(body: &ConverseRequestBody) -> Result<String, ConverseCallError> {
-    let value: Json = serde_json::from_str(&serde_json::to_string(body)?)?;
-    Ok(python_json::dumps(&value))
 }
 
 #[path = "tests/request.rs"]

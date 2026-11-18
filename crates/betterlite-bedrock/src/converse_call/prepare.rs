@@ -28,7 +28,7 @@ use super::ConverseAssembly;
 use super::ConverseCall;
 use super::ConverseEnvironment;
 use super::error::ConverseCallError;
-use super::request::{BodyRequest, PreparedBody, build_body};
+use super::request::build_body;
 use super::target::{PreparedTarget, TargetInput, converse_model_id, resolve_target};
 use super::transport::ConverseSigner;
 
@@ -129,7 +129,8 @@ where
         credentials,
     )
     .await?;
-    let body = transformed_body(call, &prepared, assembly).await?;
+    let headers = transform_headers(call, &prepared);
+    let body = build_body(call, headers.as_ref(), assembly).await?;
     let signed = sign_payload(call, &prepared, &target, &body.data, signer)?;
     let json_mode = body.optional.json_mode;
     Ok(CallPlan {
@@ -144,46 +145,6 @@ where
         fake_stream: prepared.fake_stream,
         stream_chunk_size: prepared.stream_chunk_size,
     })
-}
-
-async fn transformed_body<Source, Transport, Lookup, R, Ids>(
-    call: &mut ConverseCall<'_>,
-    prepared: &Prepared,
-    assembly: ConverseAssembly<'_, '_, Source, Transport, Lookup, R, Ids>,
-) -> Result<PreparedBody, ConverseCallError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-    R: Resolve,
-    Ids: Fn() -> String + Sync,
-{
-    let ConverseAssembly {
-        environment,
-        lookup,
-        media,
-        model_cost,
-        catalogs,
-        packaged,
-    } = assembly;
-    let headers = transform_headers(call, prepared);
-    Ok(build_body(
-        BodyRequest {
-            model: call.model,
-            messages: call.messages,
-            params: &mut call.optional_params,
-            litellm_params: &mut call.litellm_params,
-            headers: headers.as_ref(),
-            settings: call.settings,
-            model_cost,
-            catalogs,
-            packaged,
-        },
-        lookup,
-        media,
-        environment,
-    )
-    .await?)
 }
 
 fn transform_headers(
@@ -269,9 +230,10 @@ fn merged_headers(extra: Option<&[(String, String)]>) -> Headers {
     headers
 }
 
-fn beta_headers<'pair>(
-    pairs: impl Iterator<Item = (&'pair String, &'pair String)>,
-) -> BTreeMap<String, BetaHeader> {
+fn beta_headers<'pair, Pairs>(pairs: Pairs) -> BTreeMap<String, BetaHeader>
+where
+    Pairs: Iterator<Item = (&'pair String, &'pair String)>,
+{
     pairs
         .map(|(name, value)| (name.clone(), BetaHeader::Text(value.clone())))
         .collect()
