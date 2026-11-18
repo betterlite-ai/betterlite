@@ -17,6 +17,7 @@ from .wire import (
     MockReply,
     Run,
     SyncRecorder,
+    Wrapper,
     async_identity_client,
     async_transport_client,
     control_params,
@@ -33,7 +34,7 @@ litellm.suppress_debug_info = True
 async def async_transport(run: Run) -> JsonValue:
     recorder = AsyncRecorder()
     client = async_transport_client(run)
-    with mock.patch.object(  # ast-grep-ignore: no-string-mocking
+    with mock.patch.object(
         base_invoke_transformation, "make_call", recorder
     ):
         _ = await WRAPPERS.get_async_custom_stream_wrapper(
@@ -55,7 +56,7 @@ async def async_transport(run: Run) -> JsonValue:
 def sync_transport(run: Run) -> JsonValue:
     supplied = sync_transport_client(run)
     recorder = SyncRecorder(supplied)
-    with mock.patch.object(  # ast-grep-ignore: no-string-mocking
+    with mock.patch.object(
         base_invoke_transformation, "make_sync_call", recorder
     ):
         _ = WRAPPERS.get_sync_custom_stream_wrapper(
@@ -114,28 +115,22 @@ def sync_identity(run: Run, logging: LoggingRecorder, reply: MockReply) -> Custo
     )
 
 
-# The caller's read loop: the text the stream carried and whether it failed, the pair the case compares.
-async def drain_async(wrapper: CustomStreamWrapper) -> tuple[str, bool]:
+# The caller's read loop: the text carried and whether it failed, the pair the case compares.
+async def drain(wrapper: CustomStreamWrapper, kind: Wrapper) -> tuple[str, bool]:
     text = ""
     try:
-        async for chunk in wrapper:
-            text += chunk_content(chunk)
+        if kind == "sync":
+            for chunk in wrapper:
+                text += chunk_content(chunk)
+        else:
+            async for chunk in wrapper:
+                text += chunk_content(chunk)
     except MidStreamFallbackError:
         return text, True
     return text, False
 
 
-def drain_sync(wrapper: CustomStreamWrapper) -> tuple[str, bool]:
-    text = ""
-    try:
-        for chunk in wrapper:
-            text += chunk_content(chunk)
-    except MidStreamFallbackError:
-        return text, True
-    return text, False
-
-
-# A real B691 call and B004 wrapper, so the POST, the log entry, the stream and the identity are LiteLLM's.
+# A real B691 call and B004 wrapper: the POST, the log entry and the stream are LiteLLM's.
 async def identity_case(run: Run) -> JsonValue:
     logging = LoggingRecorder()
     reply = MockReply(
@@ -145,10 +140,9 @@ async def identity_case(run: Run) -> JsonValue:
     )
     if run["wrapper"] == "async":
         wrapper = await async_identity(run, logging, reply)
-        text, failed = await drain_async(wrapper)
     else:
         wrapper = sync_identity(run, logging, reply)
-        text, failed = drain_sync(wrapper)
+    text, failed = await drain(wrapper, run["wrapper"])
     return identity_payload(wrapper, logging, reply, text=text, failed=failed)
 
 

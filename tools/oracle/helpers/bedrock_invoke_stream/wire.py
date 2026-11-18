@@ -9,6 +9,7 @@ from litellm.llms.bedrock.chat.invoke_transformations.base_invoke_transformation
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.litellm_params import ControlOptions
 from pydantic import ConfigDict, JsonValue, TypeAdapter
+from typing_extensions import override
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 Wrapper = Literal["async", "sync"]
@@ -79,7 +80,7 @@ class LoggingRecorder:
 
     def _update_completion_start_time(self, completion_start_time: JsonValue) -> None: ...
 
-    # The stream's end and failure hooks: the case compares the drained chunks, not what Logging does with them.
+    # The stream's end and failure hooks: the case compares the drained chunks, not what Logging does.
     async def dispatch_success_handlers(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
 
     async def async_success_handler(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
@@ -130,17 +131,19 @@ class EmptyStream:
         return iter([])
 
 
-# The body the case scripted, then an optional read error; httpx's sync and async clients each iterate this.
+# The body the case scripted, then an optional read error; httpx's clients each iterate this.
 class BodyStream(httpx.SyncByteStream, httpx.AsyncByteStream):
     def __init__(self, body: bytes, *, fails: bool) -> None:
         self.body = body
         self.fails = fails
 
+    @override
     def __iter__(self) -> Iterator[bytes]:
         yield self.body
         if self.fails:
             raise httpx.ReadError("read failed")
 
+    @override
     async def __aiter__(self) -> AsyncIterator[bytes]:
         yield self.body
         if self.fails:
@@ -207,7 +210,6 @@ def seam_call(params: CommonArguments, signed_json_body: bytes | None, *, sync: 
 
 @runtime_checkable
 class WrapperMethods(Protocol):
-    # ast-grep-ignore: no-long-names
     async def get_async_custom_stream_wrapper(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py#L443-L480
         self,
         model: str,
@@ -260,7 +262,9 @@ def async_transport_client(run: Run) -> AsyncHTTPHandler | None:
     if run["client"] == "none":
         return None
     if run["client"] == "async":
-        return AsyncHTTPHandler(transport=httpx.MockTransport(MockReply(run["response_headers"])))
+        return AsyncHTTPHandler(
+            transport=httpx.MockTransport(MockReply(run["response_headers"], b"", fails=False))
+        )
     raise ValueError("the async wrapper takes an async client or none")
 
 
@@ -268,8 +272,10 @@ def sync_transport_client(run: Run) -> HTTPHandler | AsyncHTTPHandler | None:
     if run["client"] == "none":
         return None
     if run["client"] == "async":
-        return AsyncHTTPHandler(transport=httpx.MockTransport(MockReply(run["response_headers"])))
-    reply = MockReply(run["response_headers"])
+        return AsyncHTTPHandler(
+            transport=httpx.MockTransport(MockReply(run["response_headers"], b"", fails=False))
+        )
+    reply = MockReply(run["response_headers"], b"", fails=False)
     return HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(reply)))
 
 

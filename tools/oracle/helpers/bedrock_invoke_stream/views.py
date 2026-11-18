@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from .wire import JSON, LoggingRecorder, MockReply, Recorder
 
 
-# The text a streamed chunk carries in its first choice, read through pydantic like the wrapper's own fields.
+# The text a streamed chunk carries in its first choice, read through pydantic like the wrapper.
 class DeltaView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,11 +82,12 @@ def identity_payload(
     text: str,
     failed: bool,
 ) -> JsonValue:
+    stream: dict[str, JsonValue] = {"text": text, "failed": failed}
     payload: dict[str, JsonValue] = {
         "wrapper": wrapper_payload(wrapper),
         "config": config_payload(),
         "log": JSON.validate_python(logging.calls[0]),
-        "stream": JSON.validate_python({"text": text, "failed": failed}),
+        "stream": JSON.validate_python(stream),
         "post": JSON.validate_python(reply.posts[0]),
     }
     return JSON.validate_python(payload)

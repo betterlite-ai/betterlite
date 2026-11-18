@@ -58,7 +58,7 @@ fn identity_case(run: &Run, runtime: &Runtime) -> Result<Value, Box<HelperError>
     let supplied = Fixture::make(
         kind,
         &run.response_headers,
-        body_of(run)?,
+        hex::decode(&run.response_body).map_err(failure)?,
         run.response_fails,
     )?;
     let shared: Arc<dyn StreamHandler> = Arc::clone(&supplied);
@@ -112,10 +112,6 @@ fn drain(runtime: &Runtime, wrapped: &mut WrappedInvokeStream<'_>) -> (String, b
             Err(_) => return (text, true),
         }
     }
-}
-
-fn body_of(run: &Run) -> Result<Vec<u8>, Box<HelperError>> {
-    hex::decode(&run.response_body).map_err(failure)
 }
 
 fn call_of(run: &Run) -> Result<InvokeStreamCall<'_>, Box<HelperError>> {
