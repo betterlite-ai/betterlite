@@ -155,7 +155,9 @@ fn debug_hides_credentials() {
     let (keyed_api, _keyed_transport) = harness(200, PAGE);
     let keyed_request = keyed.request();
     let keyed_client = keyed_api.get_azure_client(&keyed_request, None).unwrap();
-    assert_clean("client debug", &format!("{keyed_client:?}"));
+    let shown = format!("{keyed_client:?}");
+    assert!(shown.starts_with("AzureAssistantsClient"), "{shown}");
+    assert_clean("client debug", &shown);
     let mut tokened = Fixture::new();
     tokened.params.azure_ad_token = Some(SecretString::from(TOKEN_A));
     let (tokened_api, _tokened_transport) = harness(200, PAGE);

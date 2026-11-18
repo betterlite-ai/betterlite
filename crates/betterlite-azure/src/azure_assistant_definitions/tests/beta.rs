@@ -15,6 +15,7 @@ pub(super) async fn check() {
     environment_version().await;
     trailing_slash().await;
     deployments().await;
+    base_query_version().await;
 }
 
 // Every definition call carries the shared beta namespace header and the B531 endpoint query.
@@ -55,6 +56,26 @@ async fn deployments() {
         &seen,
         "https://example.test/openai/deployments/dep",
         "2024-02-01",
+    );
+}
+
+// The SDK merges the base URL's query with api-version, and api-version wins when both name it.
+async fn base_query_version() {
+    let mut fixture = Fixture::new();
+    fixture.api_base = Some(String::from(
+        "https://example.test/openai/deployments/dep?api-version=old",
+    ));
+    let request = fixture.request();
+    let (api, transport) = harness(200, PAGE);
+    api.get_assistants(&request, None, None).await.unwrap();
+    assert_eq!(
+        transport.requests(),
+        vec![wire(
+            "GET",
+            "https://example.test/openai/deployments/dep?api-version=2024-02-01",
+            None,
+            Auth::Key(KEY)
+        )]
     );
 }
 
