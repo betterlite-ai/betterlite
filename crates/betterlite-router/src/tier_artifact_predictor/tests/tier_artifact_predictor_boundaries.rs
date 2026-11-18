@@ -48,6 +48,7 @@ enum Boundary {
         field: &'static str,
     },
     EmptyDatasetRows,
+    DatasetRowsAboveU32,
     ThresholdSelection {
         threshold: Option<f64>,
         expected: TierNumber,
@@ -104,6 +105,7 @@ enum Boundary {
 })]
 #[case::empty_split_method(Boundary::EmptyArtifactField { field: "split_method" })]
 #[case::empty_dataset_rows(Boundary::EmptyDatasetRows)]
+#[case::dataset_rows_above_u32(Boundary::DatasetRowsAboveU32)]
 #[case::threshold_at_probability(Boundary::ThresholdSelection {
     threshold: None,
     expected: TierNumber::One,
@@ -157,6 +159,7 @@ async fn tier_artifact_predictor_boundaries(#[case] boundary: Boundary) {
         }
         Boundary::EmptyArtifactField { field } => empty_artifact_field(field),
         Boundary::EmptyDatasetRows => empty_dataset_rows(),
+        Boundary::DatasetRowsAboveU32 => dataset_rows_above_u32(),
         Boundary::ThresholdSelection {
             threshold,
             expected,
@@ -477,6 +480,15 @@ fn empty_dataset_rows() {
         ", \"datasets\": [{\"name\": \"n\", \"url\": \"u\", \"license\": \"MIT\", \"rows\": 0}]";
     match parse_error(&four_global(), fields) {
         PredictorError::EmptyDatasetRows { index } => assert_eq!(index, 0),
+        other => panic!("unexpected error: {other:?}"),
+    }
+}
+
+// rows stay a u32, the width the packaged attribution fits, where the reference declares an int
+fn dataset_rows_above_u32() {
+    let fields = ", \"datasets\": [{\"name\": \"n\", \"url\": \"u\", \"license\": \"MIT\", \"rows\": 4294967296}]";
+    match parse_error(&four_global(), fields) {
+        PredictorError::ArtifactJson { .. } => {}
         other => panic!("unexpected error: {other:?}"),
     }
 }
