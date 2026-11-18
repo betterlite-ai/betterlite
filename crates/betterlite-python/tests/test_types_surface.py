@@ -22,7 +22,9 @@ MODULES: Final[list[tuple[str, str]]] = [
     ("proxy.policy_engine", "proxy.policy_engine"),
     ("proxy.guardrails.guardrail_hooks", "proxy.guardrails.guardrail_hooks"),
 ]
-NOT_PORTED: Final = frozenset({"HttpxBinaryResponseContent"})
+NOT_PORTED: Final[dict[str, frozenset[str]]] = {
+    "llms.openai": frozenset({"HttpxBinaryResponseContent"}),
+}
 # re-exporting these 33 takes betterlite/types/llms/openai/__init__.py past the 300-line file limit
 NOT_EXPORTED: Final[dict[str, frozenset[str]]] = {
     "llms.openai": frozenset(
@@ -166,11 +168,19 @@ def test_names_match_litellm() -> None:
     report: dict[str, list[str]] = TypeAdapter(dict[str, list[str]]).validate_json(
         completed.stdout
     )
-    missing: dict[str, list[str]] = {}
+    problems: dict[str, list[str]] = {}
     for litellm_path, betterlite_path in MODULES:
-        unexported = NOT_EXPORTED.get(litellm_path)
-        exempt = NOT_PORTED if unexported is None else NOT_PORTED | unexported
-        absent = sorted(set(report[litellm_path]) - exempt)
-        if absent:
-            missing[f"{litellm_path} as {betterlite_path}"] = absent
-    assert not missing, missing
+        absent = set(report[litellm_path])
+        exempt = set[str]()
+        for skipped in (NOT_PORTED, NOT_EXPORTED):
+            entries = skipped.get(litellm_path)
+            if entries is None:
+                continue
+            exempt |= entries
+        missing = sorted(absent - exempt)
+        stale = sorted(exempt - absent)
+        if missing:
+            problems[f"{litellm_path} as {betterlite_path}: missing"] = missing
+        if stale:
+            problems[f"{litellm_path} as {betterlite_path}: exempted but exported"] = stale
+    assert not problems, problems
