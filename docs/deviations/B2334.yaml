@@ -1,0 +1,21 @@
+task: B2334
+deviations:
+  - what: decode_bulk_user_request bounds the request at 1048576 bytes and JSON depth 64 through betterlite-logging's safe_json_loads, and returns a typed TooLarge or TooDeep; LiteLLM hands the body to Starlette and pydantic, which carry no such bound.
+    why: README bounded parsing; user_contract_input_limits proves both boundaries on the decoder the routes will call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L42-L72
+  - what: A rejected record returns a typed ContractError carrying betterlite's sentence, not pydantic's error list with its loc, input, ctx and url fields.
+    why: The routes that turn it into a 422 own the error body, as on B8411; the rejection and the message a caller reads stay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L42-L72
+  - what: The page counters, key_count and the bulk meta counters are i64, so a JSON integer past i64::MAX is rejected where Python's unbounded int would take it.
+    why: Rust integers have a fixed width, and i64 covers every count these records carry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/management_endpoints/internal_user_endpoints.py#L30-L37
+  - what: The inherited max_budget fields on BulkUpdateUserRequest.user_updates and BulkNewUserItem are B8411's Decimal Amount and serialize as JSON float numbers, where LiteLLM declares float; a decimal needing more precision than an f64 keeps its exact digits until serialized.
+    why: Money is the repository's Decimal Amount type everywhere, and these records reuse the B8411 declarations rather than declaring floats.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1298
+kept_bugs:
+  - what: Raw-query recovery takes the first unanchored user_id=([^&]*) match, so a query whose only identity-shaped key is other_user_id=x resolves the identity to x.
+    why: A setup that reaches the recovery path through a similarly named key relies on the match, and the task pins this exact grammar; the recovered value still goes through percent-decoding and the length and control-character check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L747
+  - what: Normalization returns a supplied user id unchanged, without rechecking its length or control characters, unless the value contains a literal space.
+    why: A setup whose ids contain no space relies on the untouched value being returned, and the task pins the bypass; only the plus-decoded path replaces the id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/internal_user_endpoints.py#L756-L759
