@@ -7,7 +7,7 @@ use super::{
 use serde_json::{Map, Value, json};
 use std::{
     fs, io,
-    path::Path,
+    path::PathBuf,
     slice, str,
     sync::{Arc, Mutex},
 };
@@ -144,13 +144,9 @@ fn scan_key_releases_tool_fingerprint_only_after_end() {
 }
 
 #[rstest::rstest]
-#[case::bundled("bundled")]
-#[case::empty("empty")]
-#[case::invalid_utf8("invalid-utf8")]
-fn replays_the_anthropic_sse_events_corpus(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fuzz/corpus/anthropic_sse_events")
-        .join(name);
+fn replays_the_anthropic_sse_events_corpus(
+    #[files("fuzz/corpus/anthropic_sse_events/*")] path: PathBuf,
+) {
     let chunk = SseChunk::Bytes(fs::read(path).unwrap());
     let _events = iter_sse_events(&chunk);
     let _state = content_block_state(slice::from_ref(&chunk));
