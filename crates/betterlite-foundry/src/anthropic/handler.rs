@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::future::Future;
 
 use betterlite_anthropic::anthropic_http_stream::completion::ParameterError;
 use betterlite_anthropic::anthropic_http_stream::transport::StreamTransport;
@@ -19,8 +20,6 @@ use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
-use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
@@ -45,7 +44,7 @@ pub type CompletionResult<Client, Counter> = Result<
 pub fn completion<'call, Config, Client, Counter>(
     request: ChatRequest<'call>,
     mut deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, CompletionResult<Client, Counter>>
+) -> impl Future<Output = CompletionResult<Client, Counter>> + Send + 'call
 where
     Config: ChatConfig,
     Client: ChatTransport,
@@ -74,7 +73,6 @@ where
         };
         finish(facts, prepared, deps).await.map_err(ChatError::Call)
     }
-    .boxed_local()
 }
 
 fn prepare<'call, Config, Client, Counter>(

@@ -1,10 +1,10 @@
 use std::error::Error as StdError;
+use std::future::Future;
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
-use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use url::Url;
 
@@ -30,13 +30,13 @@ pub fn buffered<'call, Config, Client, Counter>(
     call: CallFacts<'call>,
     prepared: Prepared,
     deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
+) -> impl Future<Output = ChatResult<Client, Counter>> + Send + 'call
 where
     Config: ChatConfig,
     Client: ChatTransport,
-    Counter: ReasoningTokenCounter + 'call,
+    Counter: ReasoningTokenCounter + Send + 'call,
 {
-    Box::pin(async move {
+    async move {
         let counter = deps.counter;
         // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
         let client = match deps.clients.supplied.as_ref() {
@@ -70,7 +70,7 @@ where
             Ok(answer) => reply_outcome(deps.config, facts, answer, logging, &counter),
             Err(failure) => Err(buffered_failure(failure, &facts.call, &facts.body, logging)),
         }
-    })
+    }
 }
 fn reply_outcome<Config, ClientFailure, Counter>(
     config: &Config,

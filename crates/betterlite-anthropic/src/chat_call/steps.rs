@@ -1,6 +1,6 @@
+use std::future::Future;
+
 use betterlite_models::decisions::Json;
-use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
 
 use super::config::ChatConfig;
 use super::prepare::Prepared;
@@ -16,7 +16,7 @@ pub fn finish<'call, Config, Client, Counter>(
     facts: CallFacts<'call>,
     prepared: Prepared,
     deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
+) -> impl Future<Output = ChatResult<Client, Counter>> + Send + 'call
 where
     Config: ChatConfig,
     Client: ChatTransport,
@@ -55,5 +55,4 @@ where
         )
         .await
     }
-    .boxed_local()
 }

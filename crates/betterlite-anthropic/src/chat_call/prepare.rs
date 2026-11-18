@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::future::Future;
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -6,7 +7,6 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
-use futures_util::future::LocalBoxFuture;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
@@ -48,14 +48,14 @@ type PrepareResult<Client, Counter> = Result<
 pub(super) fn prepare<'request, 'deps, Config, Client, Counter>(
     call: &'request ChatCall<'_>,
     deps: &'request mut ChatDeps<'deps, Config, Client, Counter>,
-) -> LocalBoxFuture<'request, PrepareResult<Client, Counter>>
+) -> impl Future<Output = PrepareResult<Client, Counter>> + Send + 'request
 where
     'deps: 'request,
     Config: ChatConfig,
     Client: ChatTransport,
-    Counter: ReasoningTokenCounter,
+    Counter: ReasoningTokenCounter + Send,
 {
-    Box::pin(async move {
+    async move {
         let mut optional_params = call.optional_params.clone();
         let stream = take_bool(&mut optional_params, "stream", false)?;
         let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
@@ -93,7 +93,7 @@ where
             stream,
             json_mode,
         })
-    })
+    }
 }
 async fn map_request<Config>(
     config: &Config,

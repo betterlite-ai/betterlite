@@ -6,13 +6,12 @@ pub mod steps;
 mod tests;
 pub mod transport;
 
+use std::future::Future;
 use std::time::Duration;
 
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
-use futures_util::FutureExt as _;
-use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
@@ -104,7 +103,7 @@ pub type ChatResult<Client, Counter> = Result<
 pub fn chat_call<'call, Config, Client, Counter>(
     call: ChatCall<'call>,
     mut deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
+) -> impl Future<Output = ChatResult<Client, Counter>> + Send + 'call
 where
     Config: ChatConfig,
     Client: ChatTransport,
@@ -117,7 +116,6 @@ where
         let prepared = prepare::prepare(&call, &mut deps).await?;
         finish(CallFacts::from(call), prepared, deps).await
     }
-    .boxed_local()
 }
 
 impl<'call> From<ChatCall<'call>> for CallFacts<'call> {
