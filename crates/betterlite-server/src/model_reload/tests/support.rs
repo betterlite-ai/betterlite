@@ -148,8 +148,8 @@ pub(crate) struct FakeRouter {
 impl FakeRouter {
     pub(crate) fn new(models: &[DeploymentSpec], strategy_names: &[&str]) -> Self {
         let mut strategies = Strategies::default();
-        for name in strategy_names.iter().copied() {
-            let owned = name.to_owned();
+        for name in strategy_names {
+            let owned = String::from(*name);
             strategies.auto.insert(owned.clone());
             strategies.complexity.insert(owned.clone());
             strategies.adaptive.insert(owned.clone());

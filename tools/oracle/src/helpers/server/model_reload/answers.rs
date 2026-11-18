@@ -30,8 +30,8 @@ pub(super) async fn answer(input: &Input) -> HelperResult {
     Ok(json!({ "calls": answers }))
 }
 
-async fn answer_call(call: &Call, environment: Option<&str>) -> Value {
-    match call {
+async fn answer_call(tagged: &Call, environment: Option<&str>) -> Value {
+    match tagged {
         Call::ModelInfoAsMapping(call) => mapping_answer(call),
         Call::ReloadServingVerdict(call) => verdict_answer(call, environment),
         Call::RaiseIfReloadDegradedServing(call) => raise_answer(call, environment),
@@ -40,10 +40,8 @@ async fn answer_call(call: &Call, environment: Option<&str>) -> Value {
 }
 
 fn mapping_answer(call: &MappingCall) -> Value {
-    match model_info_as_mapping(&call.model_info) {
-        Some(mapping) => json!(mapping),
-        None => json!(null),
-    }
+    let mapping = model_info_as_mapping(&call.model_info);
+    mapping.map_or(json!(null), |found| json!(found))
 }
 
 fn verdict_answer(call: &VerdictCall, environment: Option<&str>) -> Value {
