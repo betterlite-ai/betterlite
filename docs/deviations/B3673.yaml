@@ -1,0 +1,18 @@
+task: B3673
+deviations:
+  - what: Responses block builders accept the message, model, original response and explicit ids/time instead of a ModifyResponseException and ambient uuid/time calls.
+    why: The exception type belongs to the caller's task, and pure code receives deterministic identity and time values from its caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1673-L1721
+  - what: Anthropic block builders accept the message id instead of reading uuid.uuid4().
+    why: The exception belongs to the caller's task, and pure code receives deterministic identity values from its caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L365-L385
+  - what: The Responses stream error builder accepts the status code and serialized message instead of an HTTPException.
+    why: The endpoint owns exception detail serialization before passing the values to the stream builder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L1359-L1380
+  - what: The Anthropic stream error builder accepts the already serialized message instead of an HTTPException.
+    why: The endpoint owns exception detail serialization before passing the value to the stream builder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L352-L363
+  - what: Anthropic stream items use the closed SseChunk enum, and strings are ignored.
+    why: LiteLLM reads bytes and dictionaries; other values produce no events, so the enum makes those supported input shapes explicit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L438-L494
+kept_bugs: []

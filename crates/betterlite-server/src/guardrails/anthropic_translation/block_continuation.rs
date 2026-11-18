@@ -6,6 +6,7 @@
 use betterlite_core::api::messages_fake_stream::MessagesFakeStream;
 use betterlite_guardrails::anthropic_sse::error_frames::anthropic_sse_error_frames;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use super::sse_events::{SseChunk, content_block_state};
@@ -96,47 +97,56 @@ pub fn build_block_sse_chunks(
         ("message_delta",json!({"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":usage.get("output_tokens").cloned().unwrap_or(json!(0))}})),
         ("message_stop",json!({"type":"message_stop"})),
     ]);
-    events
+    Ok(events
         .into_iter()
         .map(|(kind, event)| {
-            let data = python_json(&event)?;
-            Ok(format!("event: {kind}\ndata: {data}\n\n").into_bytes())
+            let data = python_json(&event);
+            format!("event: {kind}\ndata: {data}\n\n").into_bytes()
         })
-        .collect()
+        .collect())
 }
 
-fn python_json(value: &Value) -> Result<String, serde_json::Error> {
-    let compact = serde_json::to_string(value)?;
-    let mut escaped = String::new();
-    let mut in_string = false;
-    let mut escaped_char = false;
-    for ch in compact.chars() {
-        if in_string {
-            if ch.is_ascii() {
-                escaped.push(ch);
-            } else {
-                let mut buffer = [0; 2];
-                for unit in ch.encode_utf16(&mut buffer) {
-                    escaped.push_str(&format!("\\u{unit:04x}"));
-                }
+fn python_json(value: &Value) -> String {
+    betterlite_logging::python_json::dumps(&decision_json(value, ""))
+}
+
+fn decision_json(value: &Value, parent: &str) -> Json {
+    match value {
+        Value::Object(fields) => {
+            let mut keys: Vec<&String> = fields.keys().collect();
+            keys.sort_by_key(|key| ordered_key(parent, key));
+            let mut ordered = IndexMap::with_capacity(keys.len());
+            for key in keys {
+                ordered.insert(key.clone(), decision_json(&fields[key], key));
             }
-            if escaped_char {
-                escaped_char = false;
-            } else if ch == '\\' {
-                escaped_char = true;
-            } else if ch == '"' {
-                in_string = false;
-            }
-        } else {
-            match ch {
-                '"' => { in_string = true; escaped.push(ch); }
-                ',' => escaped.push_str(", "),
-                ':' => escaped.push_str(": "),
-                _ => escaped.push(ch),
-            }
+            Json::Object(ordered)
         }
+        Value::Array(values) => Json::List(
+            values
+                .iter()
+                .map(|value| decision_json(value, parent))
+                .collect(),
+        ),
+        Value::Null => Json::Null,
+        Value::Bool(value) => Json::Bool(*value),
+        Value::Number(value) => Json::Number(value.clone()),
+        Value::String(value) => Json::Text(value.clone()),
     }
-    Ok(escaped)
+}
+
+fn ordered_key(parent: &str, key: &str) -> usize {
+    match (parent, key) {
+        ("", "type") => 0,
+        ("", "index") => 1,
+        ("", "content_block" | "delta") => 2,
+        ("", "usage") => 3,
+        ("content_block", "type") => 0,
+        ("content_block", "text") => 1,
+        ("delta", "stop_reason") => 0,
+        ("delta", "stop_sequence") => 1,
+        ("usage", "output_tokens") => 0,
+        _ => 10,
+    }
 }
 
 pub fn build_stream_error_items(message: &str) -> Result<Vec<Vec<u8>>, AnthropicBlockError> {

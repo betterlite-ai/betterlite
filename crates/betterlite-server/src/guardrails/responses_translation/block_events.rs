@@ -12,10 +12,11 @@ use betterlite_guardrails::guardrail_message_scope::{
     Object,
     blocked_usage::{OriginalResponse, blocked_responses_stream_usage},
 };
+use betterlite_guardrails::guardrail_message_scope::{StreamItem, fingerprint::stream_item_field};
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use std::convert::Infallible;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -69,6 +70,23 @@ fn original(value: Option<&Value>) -> OriginalResponse {
     }
 }
 
+fn stream_string_field(event: &Value, field: &str) -> Option<String> {
+    let item = StreamItem::Json(to_guardrail(event));
+    match stream_item_field(&item, field)? {
+        GuardrailValue::Text(value) if !value.is_empty() => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn stream_index(event: &Value) -> Option<i64> {
+    let item = StreamItem::Json(to_guardrail(event));
+    match stream_item_field(&item, "output_index")? {
+        GuardrailValue::SignedInteger(value) => Some(*value),
+        GuardrailValue::UnsignedInteger(value) => i64::try_from(*value).ok(),
+        _ => None,
+    }
+}
+
 struct NoCost;
 impl ResponsesCostCalculator for NoCost {
     type Error = Infallible;
@@ -114,21 +132,13 @@ fn continuation_identity(
         for event in events {
             if let Some(response) = event.get("response") {
                 if id.is_none() {
-                    id = response
-                        .get("id")
-                        .and_then(Value::as_str)
-                        .filter(|value| !value.is_empty())
-                        .map(str::to_owned);
+                    id = stream_string_field(response, "id");
                 }
                 if streamed_model.is_none() {
-                    streamed_model = response
-                        .get("model")
-                        .and_then(Value::as_str)
-                        .filter(|value| !value.is_empty())
-                        .map(str::to_owned);
+                    streamed_model = stream_string_field(response, "model");
                 }
             }
-            if let Some(index) = event.get("output_index").and_then(Value::as_i64) {
+            if let Some(index) = stream_index(event) {
                 highest = Some(highest.map_or(index, |current: i64| current.max(index)));
             }
         }
@@ -150,7 +160,7 @@ fn continuation_events(
     let (id, model, index) = continuation_identity(model, events, stamp);
     let item = blocked_output_item(message, stamp);
     let part = json!({"type":"output_text","text":message,"annotations":[]});
-    let mut result = events.map_or_else(Vec::new, super::open_item::open_item_closing_events);
+    let mut result = events.map_or_else(Vec::new, open_item_closing_events);
     result.extend([
         json!({"type":"response.output_item.added","output_index":index,"item":item}),
         json!({"type":"response.content_part.added","item_id":stamp.message_id,"output_index":index,"content_index":0,"part":part}),
@@ -235,6 +245,127 @@ pub fn build_stream_error_items(
         },
         sequence_number: next_stream_sequence_number(events),
     }]
+}
+
+use serde_json::{Map, Value, json};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct OpenItemState {
+    pub item_id: String,
+    pub item_type: String,
+    pub role: String,
+    pub output_index: i64,
+    pub content_index: i64,
+    pub text: String,
+    pub part_open: bool,
+    pub payload: Value,
+}
+
+pub fn incomplete_item_fields(payload: &Value) -> Map<String, Value> {
+    payload.as_object().cloned().unwrap_or_default()
+}
+
+pub fn open_item_state(events: &[Value]) -> Option<OpenItemState> {
+    let mut added = Vec::<(i64, Value)>::new();
+    let mut done = Vec::<i64>::new();
+    for event in events {
+        let index = event.get("output_index").and_then(Value::as_i64);
+        match event.get("type").and_then(Value::as_str) {
+            Some("response.output_item.added") => {
+                if let (Some(index), Some(item)) = (index, event.get("item")) {
+                    added.push((index, item.clone()));
+                }
+            }
+            Some("response.output_item.done") => {
+                if let Some(index) = index {
+                    done.push(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    let (output_index, payload) = added
+        .into_iter()
+        .rev()
+        .find(|(index, _)| !done.contains(index))?;
+    let item_id = payload.get("id")?.as_str()?.to_owned();
+    if item_id.is_empty() {
+        return None;
+    }
+    let item_type = payload
+        .get("type")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("message")
+        .to_owned();
+    let role = payload
+        .get("role")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("assistant")
+        .to_owned();
+    let mut parts = Vec::<i64>::new();
+    let mut closed = Vec::<i64>::new();
+    let mut text = String::new();
+    for event in events {
+        if event.get("item_id").and_then(Value::as_str) != Some(item_id.as_str()) {
+            continue;
+        }
+        match event.get("type").and_then(Value::as_str) {
+            Some("response.content_part.added") => {
+                if let Some(index) = event.get("content_index").and_then(Value::as_i64) {
+                    parts.push(index);
+                }
+            }
+            Some("response.content_part.done") => {
+                if let Some(index) = event.get("content_index").and_then(Value::as_i64) {
+                    closed.push(index);
+                }
+            }
+            Some("response.output_text.delta") => {
+                if let Some(delta) = event.get("delta").and_then(Value::as_str) {
+                    text.push_str(delta);
+                }
+            }
+            _ => {}
+        }
+    }
+    let content_index = parts
+        .iter()
+        .rev()
+        .find(|index| !closed.contains(index))
+        .copied()
+        .unwrap_or(0);
+    Some(OpenItemState {
+        item_id,
+        item_type,
+        role,
+        output_index,
+        content_index,
+        text,
+        part_open: parts.iter().any(|index| !closed.contains(index)),
+        payload,
+    })
+}
+
+pub fn open_item_closing_events(events: &[Value]) -> Vec<Value> {
+    let Some(state) = open_item_state(events) else {
+        return Vec::new();
+    };
+    if state.item_type != "message" {
+        let mut item = incomplete_item_fields(&state.payload);
+        item.insert("status".into(), json!("incomplete"));
+        return vec![
+            json!({"type":"response.output_item.done","output_index":state.output_index,"item":item}),
+        ];
+    }
+    let mut result = Vec::new();
+    if state.part_open {
+        result.push(json!({"type":"response.output_text.done","item_id":state.item_id,"output_index":state.output_index,"content_index":state.content_index,"text":state.text}));
+        result.push(json!({"type":"response.content_part.done","item_id":state.item_id,"output_index":state.output_index,"content_index":state.content_index,"part":{"type":"output_text","text":state.text,"annotations":[],"logprobs":null}}));
+    }
+    result.push(json!({"type":"response.output_item.done","output_index":state.output_index,"item":{"id":state.item_id,"type":"message","status":"completed","role":state.role,"content":[{"type":"output_text","text":state.text,"annotations":[]} ]}}));
+    result
 }
 
 #[cfg(test)]

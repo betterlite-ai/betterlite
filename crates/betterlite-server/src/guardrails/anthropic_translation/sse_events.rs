@@ -55,7 +55,7 @@ pub fn iter_sse_events(item: &SseChunk) -> Vec<Map<String, Value>> {
         SseChunk::Event(event) => vec![event.clone()],
         SseChunk::Bytes(bytes) => String::from_utf8_lossy(bytes)
             .split("\n\n")
-            .flat_map(|block| block.lines().filter_map(parse_sse_data_line))
+            .flat_map(|block| block.split('\n').filter_map(parse_sse_data_line))
             .collect(),
         SseChunk::Other => Vec::new(),
     }
@@ -86,20 +86,21 @@ pub fn content_block_state(items: &[SseChunk]) -> (Option<i64>, Option<i64>) {
 
 fn event_kind(block: &str) -> Option<&str> {
     block
-        .lines()
+        .split('\n')
         .filter_map(|line| line.trim().strip_prefix("event:").map(str::trim))
         .last()
 }
 
 fn data_line(block: &str) -> Option<&str> {
     block
-        .lines()
+        .split('\n')
         .filter_map(|line| line.trim().strip_prefix("data:").map(str::trim))
         .last()
 }
 
 pub fn extract_text_from_sse(bytes: &[u8]) -> String {
     let Ok(source) = std::str::from_utf8(bytes) else {
+        tracing::error!("Error extracting text from SSE");
         return String::new();
     };
     let mut text = String::new();
@@ -113,15 +114,19 @@ pub fn extract_text_from_sse(bytes: &[u8]) -> String {
         let Some(data) = data_line(block) else {
             continue;
         };
-        if let Ok(value) = serde_json::from_str::<Value>(data)
-            && value.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta")
-        {
-            text.push_str(
-                value
-                    .pointer("/delta/text")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default(),
-            );
+        match serde_json::from_str::<Value>(data) {
+            Ok(value)
+                if value.pointer("/delta/type").and_then(Value::as_str) == Some("text_delta") =>
+            {
+                text.push_str(
+                    value
+                        .pointer("/delta/text")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default(),
+                );
+            }
+            Err(_) => tracing::warn!(data = data, "Failed to parse JSON from SSE data"),
+            Ok(_) => {}
         }
     }
     text
@@ -148,13 +153,7 @@ pub fn streaming_string_so_far(items: &[SseChunk]) -> String {
 
 pub fn streaming_has_ended(items: &[SseChunk]) -> bool {
     items.iter().any(|item| match item {
-        SseChunk::Bytes(bytes) => String::from_utf8_lossy(bytes).split("\n\n").any(|block| {
-            event_kind(block) == Some("message_delta")
-                && data_line(block)
-                    .and_then(|data| serde_json::from_str::<Value>(data).ok())
-                    .and_then(|value| value.pointer("/delta/stop_reason").cloned())
-                    .is_some_and(|value| !value.is_null())
-        }),
+        SseChunk::Bytes(bytes) => has_ended_bytes(bytes),
         SseChunk::Event(event) => {
             event.get("type").and_then(Value::as_str) == Some("message_delta")
                 && event
@@ -163,6 +162,33 @@ pub fn streaming_has_ended(items: &[SseChunk]) -> bool {
         }
         SseChunk::Other => false,
     })
+}
+
+fn has_ended_bytes(bytes: &[u8]) -> bool {
+    let Ok(source) = std::str::from_utf8(bytes) else {
+        tracing::error!("Error checking streaming end in SSE");
+        return false;
+    };
+    for block in source.split("\n\n") {
+        if event_kind(block) != Some("message_delta") {
+            continue;
+        }
+        let Some(data) = data_line(block) else {
+            continue;
+        };
+        match serde_json::from_str::<Value>(data) {
+            Ok(value)
+                if value
+                    .pointer("/delta/stop_reason")
+                    .is_some_and(|value| !value.is_null()) =>
+            {
+                return true;
+            }
+            Err(_) => tracing::warn!(data = data, "Failed to parse JSON from SSE data"),
+            Ok(_) => {}
+        }
+    }
+    false
 }
 
 pub fn streamed_tool_use_fingerprints(items: &[SseChunk]) -> Vec<String> {
