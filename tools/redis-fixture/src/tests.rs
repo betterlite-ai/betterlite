@@ -23,8 +23,8 @@ async fn connect(url: &str) -> MultiplexedConnection {
 #[tokio::test]
 async fn a_fixture_server_answers_ping_over_its_unix_socket() {
     let fixture = RedisFixture::start().await.unwrap();
-    assert!(fixture.url.starts_with("redis+unix:///"));
-    let mut connection = connect(&fixture.url).await;
+    assert!(fixture.as_ref().starts_with("redis+unix:///"));
+    let mut connection = connect(fixture.as_ref()).await;
     let reply: String = cmd("PING").query_async(&mut connection).await.unwrap();
     assert_eq!(reply, "PONG");
 }
@@ -33,9 +33,9 @@ async fn a_fixture_server_answers_ping_over_its_unix_socket() {
 async fn two_fixtures_keep_their_data_apart() {
     let first = RedisFixture::start().await.unwrap();
     let second = RedisFixture::start().await.unwrap();
-    assert_ne!(first.url, second.url);
-    let mut first_connection = connect(&first.url).await;
-    let mut second_connection = connect(&second.url).await;
+    assert_ne!(first.as_ref(), second.as_ref());
+    let mut first_connection = connect(first.as_ref()).await;
+    let mut second_connection = connect(second.as_ref()).await;
     cmd("SET")
         .arg("fixture-key")
         .arg("first")
@@ -60,7 +60,7 @@ async fn two_fixtures_keep_their_data_apart() {
 async fn dropping_a_fixture_stops_the_server_and_removes_its_folder() {
     let fixture = RedisFixture::start().await.unwrap();
     let process = fixture.child.id();
-    let socket = Path::new(fixture.url.trim_start_matches("redis+unix://")).to_path_buf();
+    let socket = Path::new(fixture.as_ref().trim_start_matches("redis+unix://")).to_path_buf();
     let folder = socket.parent().unwrap().to_path_buf();
     assert!(socket.exists());
     drop(fixture);
@@ -92,7 +92,15 @@ async fn a_server_that_never_answers_ping_fails_with_its_log() {
     let error = RedisFixture::launch(&options).await.unwrap_err();
     match error {
         RedisFixtureError::NotReady { log, .. } => assert!(log.contains("Redis version")),
-        other => panic!("expected a readiness failure, got {other:?}"),
+        other @ RedisFixtureError::MissingServer { .. }
+        | other @ RedisFixtureError::Spawn { .. }
+        | other @ RedisFixtureError::Folder { .. }
+        | other @ RedisFixtureError::Log { .. }
+        | other @ RedisFixtureError::NonUtf8Path { .. }
+        | other @ RedisFixtureError::BlockingTaskAborted
+        | other @ RedisFixtureError::BlockingTaskFailed { .. } => {
+            panic!("expected a readiness failure, got {other:?}")
+        }
     }
 }
 

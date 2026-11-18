@@ -19,10 +19,16 @@ pub(crate) const POLL_INTERVAL: Duration = Duration::from_millis(2);
 #[derive(Debug)]
 pub struct RedisFixture {
     // The URL is the whole interface a test gets, so it can never reach a Redis on the machine.
-    pub url: String,
+    url: String,
     pub(crate) child: Child,
     log_path: PathBuf,
     _folder: TempDir,
+}
+
+impl AsRef<str> for RedisFixture {
+    fn as_ref(&self) -> &str {
+        &self.url
+    }
 }
 
 #[derive(Clone)]
@@ -126,9 +132,12 @@ impl Drop for RedisFixture {
 }
 
 // The setup and cleanup file work runs in a JoinSet task, so the runtime thread never waits on it.
-async fn join_blocking<T: 'static>(
+async fn join_blocking<T>(
     set: &mut JoinSet<Result<T, RedisFixtureError>>,
-) -> Result<T, RedisFixtureError> {
+) -> Result<T, RedisFixtureError>
+where
+    T: 'static,
+{
     let joined = set
         .join_next()
         .await
@@ -158,9 +167,10 @@ fn server_command(options: &StartOptions, socket: &Path) -> Command {
 }
 
 fn spawn_error(source: io::Error) -> RedisFixtureError {
-    match source.kind() {
-        io::ErrorKind::NotFound => RedisFixtureError::MissingServer { source },
-        _ => RedisFixtureError::Spawn { source },
+    if source.kind() == io::ErrorKind::NotFound {
+        RedisFixtureError::MissingServer { source }
+    } else {
+        RedisFixtureError::Spawn { source }
     }
 }
 
