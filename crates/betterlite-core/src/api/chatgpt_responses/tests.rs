@@ -851,7 +851,10 @@ fn sse_keeps_a_payload_no_record_holds() {
     let body = vec![completed(r#"{"created_at":5,"object":"response"}"#)];
     let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let fields = lax(&reply);
-    assert_eq!(fields.get("created_at"), Some(&Json::Number(5.into())));
+    assert_eq!(
+        fields.get("created_at"),
+        Some(&Json::Number(serde_json::Number::from(5_u8)))
+    );
     assert_eq!(
         fields.get("object"),
         Some(&Json::Text(String::from("response")))
