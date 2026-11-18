@@ -2,11 +2,10 @@ from collections.abc import Mapping
 from typing import Final, Literal, TypeAlias
 
 from litellm.router_strategy.complexity_router.config import (
-    DEFAULT_TIER_MODELS,
     ComplexityRouterConfig,
     ComplexityTier,
 )
-from pydantic import Field, JsonValue, ValidationError
+from pydantic import Field, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
@@ -18,6 +17,7 @@ OrderFeatureName = Literal["adaptive", "session_affinity", "escalation_keywords"
 
 _PROBE_CLASSIFIER_MODEL: Final[str] = "probe-classifier"
 _ESCALATION_KEYWORD: Final[str] = "escalate"
+_JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 
 
 class TierDefinitionInput(Strict):
@@ -103,7 +103,7 @@ class TierDefinitions(Operation):
             severity_order=[tier.value for tier in config.active_tier_severity_order()],
             labeled_tiers=[LabeledTier(tier=tier.value, label=label) for tier, label in config.labeled_tiers()],
             fallback_tier=config.fallback_tier,
-            pools=_pools(self.config),
+            pools=_pools(config),
             resolved_tiers=[_resolved(config.resolve_classified_tier(query)) for query in self.queries],
             label_tiers=[_tier_name(config.tier_for_label(query)) for query in self.queries],
         )
@@ -181,23 +181,24 @@ def _feature_values(order_features: list[OrderFeatureName]) -> dict[str, object]
     return values
 
 
-def _pools(config: ConfigInput | None) -> dict[str, PoolView]:
-    declared: Mapping[str, TierValue] = (
-        DEFAULT_TIER_MODELS if config is None or config.tier_models is None else config.tier_models
-    )
+def _pools(config: ComplexityRouterConfig) -> dict[str, PoolView]:
     pools: dict[str, PoolView] = {}
-    for tier, pool in declared.items():
-        if isinstance(pool, list):
-            pools[tier] = PoolView(single=False, entries=[_entry_view(entry) for entry in pool])
+    for tier, value in config.tiers.items():
+        if isinstance(value, list):
+            names = value
+            single = False
         else:
-            pools[tier] = PoolView(single=True, entries=[_entry_view(pool)])
+            names = [value]
+            single = True
+        stored = {
+            entry.model_name: _JSON_OBJECT.validate_python(dict(entry.litellm_params))
+            for entry in config.tier_model_configs.get(tier, ())
+        }
+        pools[tier] = PoolView(
+            single=single,
+            entries=[EntryView(model_name=name, params=stored.get(name, {})) for name in names],
+        )
     return pools
-
-
-def _entry_view(entry: str | TierEntryInput) -> EntryView:
-    if isinstance(entry, str):
-        return EntryView(model_name=entry, params={})
-    return EntryView(model_name=entry.model_name, params=dict(entry.litellm_params))
 
 
 def _resolved(tier: ComplexityTier | str | None) -> str | None:

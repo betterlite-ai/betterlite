@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::tier_definitions as section;
-use betterlite_models::decisions::Json;
 use betterlite_router::complexity_scoring::tier::tier_severity_order;
 use betterlite_router::tier_definitions::checks::{
     ClassifierFallback, ClassifierKind, OrderFeature, TierChecks,
@@ -23,10 +22,9 @@ pub struct Input(Box<Payload>);
 struct Payload {
     // the section's typed view, so the probe reads tiers exactly as a config file does
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    config: Option<Json>,
+    config: Option<section::Config>,
     #[serde(default)]
     knobs: Knobs,
-    // the classifier replies the case resolves, in the order it lists them
     #[serde(default)]
     queries: Vec<String>,
 }
@@ -131,7 +129,7 @@ struct PoolView {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct EntryView {
     model_name: String,
-    params: Json,
+    params: section::TierParams,
 }
 
 pub(crate) fn run(
@@ -139,7 +137,7 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let config = resolved_config(payload.config.as_ref())?;
+    let config = payload.config.clone().unwrap_or_default();
     let features: Vec<OrderFeature> = payload
         .knobs
         .order_features
@@ -162,20 +160,6 @@ pub(crate) fn run(
         })?;
     let fields = fields(&set, payload);
     Ok(ProbeOutput::TierDefinitions(Output(Box::new(fields))))
-}
-
-// the section's typed view, so the probe reads tiers exactly as a config file does
-fn resolved_config(configured: Option<&Json>) -> Result<section::Config, OperationError> {
-    configured
-        .map(|config| {
-            serde_json::to_value(config)
-                .and_then(serde_json::from_value::<section::Config>)
-                .map_err(|source| OperationError::InvalidRequest {
-                    message: source.to_string(),
-                })
-        })
-        .transpose()
-        .map(Option::unwrap_or_default)
 }
 
 fn fields(set: &TierSet, payload: &Payload) -> Fields {
@@ -227,7 +211,7 @@ fn pool_view(pool: &TierPool) -> PoolView {
             .iter()
             .map(|entry| EntryView {
                 model_name: entry.model_name.clone(),
-                params: Json::Object(entry.params.clone()),
+                params: entry.params.clone(),
             })
             .collect(),
     }
