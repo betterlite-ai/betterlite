@@ -40,7 +40,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::error::ConverseRequestError;
 use crate::converse_request::{
-    ConverseMedia, ConverseRequestInput, ConverseSettings, converse_request,
+    ConverseMedia, ConverseRequestBody, ConverseRequestInput, ConverseSettings, converse_request,
 };
 use crate::mantle_inputs::region::split_region_prefix;
 use crate::model_routes::{ParamMap, ParamValue};
@@ -328,58 +328,82 @@ pub(super) fn run<R: Resolve>(call: &Call<'_>, remote: &RemoteImage<R>) -> (Outc
     run_on(&runtime(), call, remote)
 }
 
+struct Session<'setup, 'request, R> {
+    call: &'setup Call<'request>,
+    remote: &'setup RemoteImage<R>,
+    model_cost: ParamMap,
+    fixture: Fixture,
+    optional_params: ParamMap,
+    litellm_params: Option<Object>,
+    parsed_messages: Vec<Message>,
+    policy: Option<BedrockRequestPolicy>,
+}
+
+impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
+    fn new(call: &'setup Call<'request>, remote: &'setup RemoteImage<R>) -> Self {
+        let model_cost = params(call.model_cost);
+        Self {
+            call,
+            remote,
+            optional_params: params(call.optional_params),
+            litellm_params: call.litellm_params.map(object),
+            parsed_messages: messages(call.messages),
+            policy: call.policy.map(|fields| BedrockRequestPolicy {
+                fields: fields.iter().map(|field| (*field).to_owned()).collect(),
+            }),
+            fixture: Fixture::load(&model_cost),
+            model_cost,
+        }
+    }
+
+    async fn assemble(&mut self) -> Result<ConverseRequestBody, ConverseRequestError> {
+        let catalogs = self.fixture.catalogs();
+        let lookup = Answers::default();
+        let mut keys = ModelCostKeys::default();
+        let dynamic = NoDynamicMetadata;
+        let resolution = self.fixture.resolution();
+        let mut environment = self.fixture.environment(&resolution, &mut keys, &dynamic);
+        let new_id = || "call_generated".to_owned();
+        let input = ConverseRequestInput {
+            model: self.call.model,
+            messages: &self.parsed_messages,
+            optional_params: &mut self.optional_params,
+            litellm_params: self.litellm_params.as_mut(),
+            headers: None,
+            settings: ConverseSettings {
+                global_drop: self.call.settings.global_drop,
+                modify_params: self.call.settings.modify_params,
+                neutralize_orphans: self.call.settings.neutralize,
+                request_metadata: self.policy.as_ref(),
+            },
+            model_cost: &self.model_cost,
+            catalogs: &catalogs,
+            lookup: &lookup,
+            packaged: self.fixture.packaged(),
+        };
+        let media = ConverseMedia {
+            remote: self.remote,
+            new_id: &new_id,
+        };
+        converse_request(input, media, &mut environment).await
+    }
+}
+
 pub(super) fn run_on<R: Resolve>(
     runtime: &Runtime,
     call: &Call<'_>,
     remote: &RemoteImage<R>,
 ) -> (Outcome, String) {
-    let model_cost = params(call.model_cost);
-    let fixture = Fixture::load(&model_cost);
-    let catalogs = fixture.catalogs();
-    let lookup = Answers::default();
-    let policy = call.policy.map(|fields| BedrockRequestPolicy {
-        fields: fields.iter().map(|field| (*field).to_owned()).collect(),
-    });
-    let mut optional_params = params(call.optional_params);
-    let mut litellm_params = call.litellm_params.map(object);
-    let parsed_messages = messages(call.messages);
-    let mut keys = ModelCostKeys::default();
-    let dynamic = NoDynamicMetadata;
-    let resolution = fixture.resolution();
-    let new_id = || "call_generated".to_owned();
+    let mut session = Session::new(call, remote);
     let warnings = Warnings::default();
     let body = {
         let _captured = warnings.install();
-        runtime.block_on(async {
-            let input = ConverseRequestInput {
-                model: call.model,
-                messages: &parsed_messages,
-                optional_params: &mut optional_params,
-                litellm_params: litellm_params.as_mut(),
-                headers: None,
-                settings: ConverseSettings {
-                    global_drop: call.settings.global_drop,
-                    modify_params: call.settings.modify_params,
-                    neutralize_orphans: call.settings.neutralize,
-                    request_metadata: policy.as_ref(),
-                },
-                model_cost: &model_cost,
-                catalogs: &catalogs,
-                lookup: &lookup,
-                packaged: fixture.packaged(),
-            };
-            let media = ConverseMedia {
-                remote,
-                new_id: &new_id,
-            };
-            let mut environment = fixture.environment(&resolution, &mut keys, &dynamic);
-            converse_request(input, media, &mut environment).await
-        })
+        runtime.block_on(session.assemble())
     };
     let outcome = Outcome {
         body: body.map(|body| value(&body)),
-        optional_params: value(&optional_params),
-        litellm_params: litellm_params.as_ref().map(value),
+        optional_params: value(&session.optional_params),
+        litellm_params: session.litellm_params.as_ref().map(value),
     };
     (outcome, warnings.text())
 }

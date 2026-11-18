@@ -2,39 +2,121 @@ use betterlite_prompts::arguments::json::Json;
 
 use super::support::{CLAUDE_3_5, CLAUDE_4_5, Call, LLAMA, expected, field, remote, run};
 
+const CALLER_OPTIONS: &str = r#"{
+    "_output_config_normalized": false,
+    "json_mode": true,
+    "maxTokens": 256,
+    "stopSequences": ["END"],
+    "temperature": 0.5,
+    "topP": 0.9,
+    "topK": 5,
+    "top_k": 3,
+    "custom_field": {"a": 1},
+    "parallel_tool_calls": true,
+    "client_metadata": {"team": "x"},
+    "guardrailConfig": {"guardrailIdentifier": "gr-1"},
+    "requestMetadata": {"client_key": "caller"}
+}"#;
+
+const CALLER_BODY: &str = r#"{
+    "messages": [{"role": "user", "content": [{"guardContent": {"text": {"text": "hi"}}}]}],
+    "inferenceConfig": {
+        "maxTokens": 256, "stopSequences": ["END"], "temperature": 0.5,
+        "topP": 0.9, "topK": 3
+    },
+    "additionalModelRequestFields": {"custom_field": {"a": 1}, "top_k": 5},
+    "guardrailConfig": {"guardrailIdentifier": "gr-1"},
+    "requestMetadata": {"client_key": "caller"}
+}"#;
+
+const NULL_OPTIONS: &str = r#"{
+    "requestMetadata": null,
+    "outputConfig": null,
+    "performanceConfig": null,
+    "serviceTier": null
+}"#;
+
+const NULL_BODY: &str = r#"{
+    "messages": [{"role": "user", "content": [{"text": "hi"}]}],
+    "inferenceConfig": {}
+}"#;
+
+const TOOL_OPTIONS: &str = r#"{
+    "tools": [{"type": "function", "function": {
+        "name": "lookup",
+        "description": "finds things",
+        "parameters": {"type": "object", "properties": {}}
+    }}],
+    "tool_choice": {"tool": {"name": "lookup"}},
+    "_parallel_tool_use_config": {"tool_choice": {"type": "auto", "disable_parallel_tool_use": true}},
+    "cache_control_injection_points": [
+        {"location": "tool_config", "control": {"ttl": "1h"}},
+        {"location": "tool_config", "control": {"type": "ephemeral"}}
+    ]
+}"#;
+
+const TOOL_LITELLM: &str =
+    r#"{"drop_params": true, "metadata": {"team": "core"}, "model_info": {"id": "deployment-1"}}"#;
+
+const TOOL_LITELLM_CREDITED: &str = r#"{
+    "drop_params": true,
+    "metadata": {"team": "core", "litellm_gateway_injected_cache": "deployment-1"},
+    "model_info": {"id": "deployment-1"}
+}"#;
+
+const TOOL_BODY: &str = r#"{
+    "messages": [{"role": "user", "content": [{"text": "hi"}]}],
+    "inferenceConfig": {},
+    "additionalModelRequestFields": {"tool_choice": {"disable_parallel_tool_use": true}},
+    "toolConfig": {
+        "tools": [
+            {"toolSpec": {
+                "name": "lookup",
+                "description": "finds things",
+                "inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}
+            }},
+            {"cachePoint": {"type": "default", "ttl": "1h"}}
+        ],
+        "toolChoice": {"tool": {"name": "lookup"}}
+    }
+}"#;
+
+const TOOL_CONFIG_UNPLACED: &str = r#"{"tools": [{"toolSpec": {
+    "name": "lookup",
+    "description": "finds things",
+    "inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}
+}}], "toolChoice": {"tool": {"name": "lookup"}}}"#;
+
+const CONTEXT_OPTIONS: &str = r#"{
+    "custom": 1,
+    "context_management": {"edits": [
+        {"type": "clear_tool_uses_20250919"},
+        {"type": "compact_20260112"}
+    ]}
+}"#;
+
+const CONTEXT_COMPACTED: &str = r#"{
+    "custom": 1,
+    "context_management": {"edits": [{"type": "compact_20260112"}]},
+    "anthropic_beta": ["compact-2026-01-12"]
+}"#;
+
+const CONTEXT_WITHOUT_COMPACT: &str = r#"{
+    "custom": 1,
+    "context_management": {"edits": [{"type": "clear_tool_uses_20250919"}]}
+}"#;
+
+const CONTEXT_FOREIGN: &str = r#"{"custom": 1, "context_management": {"edits": []}}"#;
+
 // The body the source builds from mapped options, including the fields it moves out of the way.
 pub(super) fn converse_body_shape() {
-    let optional = r#"{
-        "_output_config_normalized": false,
-        "json_mode": true,
-        "maxTokens": 256,
-        "stopSequences": ["END"],
-        "temperature": 0.5,
-        "topP": 0.9,
-        "topK": 5,
-        "top_k": 3,
-        "custom_field": {"a": 1},
-        "parallel_tool_calls": true,
-        "client_metadata": {"team": "x"},
-        "guardrailConfig": {"guardrailIdentifier": "gr-1"},
-        "requestMetadata": {"client_key": "caller"}
-    }"#;
-    let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, optional), &remote(&[]));
-    assert_eq!(
-        outcome.body(),
-        &expected(
-            r#"{
-                "messages": [{"role": "user", "content": [{"guardContent": {"text": {"text": "hi"}}}]}],
-                "inferenceConfig": {
-                    "maxTokens": 256, "stopSequences": ["END"], "temperature": 0.5,
-                    "topP": 0.9, "topK": 3
-                },
-                "additionalModelRequestFields": {"custom_field": {"a": 1}, "top_k": 5},
-                "guardrailConfig": {"guardrailIdentifier": "gr-1"},
-                "requestMetadata": {"client_key": "caller"}
-            }"#,
-        )
-    );
+    caller_options_move_and_copy();
+    null_options_leave_no_field();
+}
+
+fn caller_options_move_and_copy() {
+    let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, CALLER_OPTIONS), &remote(&[]));
+    assert_eq!(outcome.body(), &expected(CALLER_BODY));
     // Only the internal marker leaves the caller's own options; the copy takes the rest.
     assert!(field(&outcome.optional_params, "_output_config_normalized").is_none());
     assert_eq!(
@@ -49,116 +131,56 @@ pub(super) fn converse_body_shape() {
         field(&outcome.optional_params, "topK"),
         Some(&expected("5"))
     );
+}
 
-    // inferenceConfig is always there, and null-valued pops leave no field behind.
-    let (empty, _warnings) = run(
-        &Call::new(
-            CLAUDE_3_5,
-            r#"{
-                "requestMetadata": null,
-                "outputConfig": null,
-                "performanceConfig": null,
-                "serviceTier": null
-            }"#,
-        ),
-        &remote(&[]),
-    );
-    assert_eq!(
-        empty.body(),
-        &expected(
-            r#"{
-                "messages": [{"role": "user", "content": [{"text": "hi"}]}],
-                "inferenceConfig": {}
-            }"#,
-        )
-    );
+fn null_options_leave_no_field() {
+    let (empty, _warnings) = run(&Call::new(CLAUDE_3_5, NULL_OPTIONS), &remote(&[]));
+    assert_eq!(empty.body(), &expected(NULL_BODY));
 }
 
 // A tool_config breakpoint, its attribution credit, and the toolChoice rewrite.
 pub(super) fn tool_config_injection() {
-    let optional = r#"{
-        "tools": [{"type": "function", "function": {
-            "name": "lookup",
-            "description": "finds things",
-            "parameters": {"type": "object", "properties": {}}
-        }}],
-        "tool_choice": {"tool": {"name": "lookup"}},
-        "_parallel_tool_use_config": {"tool_choice": {"type": "auto", "disable_parallel_tool_use": true}},
-        "cache_control_injection_points": [
-            {"location": "tool_config", "control": {"ttl": "1h"}},
-            {"location": "tool_config", "control": {"type": "ephemeral"}}
-        ]
-    }"#;
-    let litellm = r#"{"drop_params": true, "metadata": {"team": "core"}, "model_info": {"id": "deployment-1"}}"#;
+    tool_config_breakpoint();
+    tool_config_point_outside_tool_config();
+    uncached_model_places_no_breakpoint();
+    tool_choice_without_tools_stays_inference();
+}
+
+fn tool_config_breakpoint() {
     let call = Call {
-        litellm_params: Some(litellm),
-        ..Call::new(CLAUDE_4_5, optional)
+        litellm_params: Some(TOOL_LITELLM),
+        ..Call::new(CLAUDE_4_5, TOOL_OPTIONS)
     };
     let (outcome, _warnings) = run(&call, &remote(&[]));
-    assert_eq!(
-        outcome.body(),
-        &expected(
-            r#"{
-                "messages": [{"role": "user", "content": [{"text": "hi"}]}],
-                "inferenceConfig": {},
-                "additionalModelRequestFields": {"tool_choice": {"disable_parallel_tool_use": true}},
-                "toolConfig": {
-                    "tools": [
-                        {"toolSpec": {
-                            "name": "lookup",
-                            "description": "finds things",
-                            "inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}
-                        }},
-                        {"cachePoint": {"type": "default", "ttl": "1h"}}
-                    ],
-                    "toolChoice": {"tool": {"name": "lookup"}}
-                }
-            }"#,
-        )
-    );
+    assert_eq!(outcome.body(), &expected(TOOL_BODY));
     assert_eq!(
         outcome.litellm_params,
-        Some(expected(
-            r#"{
-                "drop_params": true,
-                "metadata": {"team": "core", "litellm_gateway_injected_cache": "deployment-1"},
-                "model_info": {"id": "deployment-1"}
-            }"#,
-        ))
+        Some(expected(TOOL_LITELLM_CREDITED))
     );
+}
 
-    // A point outside tool_config places nothing and spends no credit.
-    let elsewhere = optional.replace(
+fn tool_config_point_outside_tool_config() {
+    let elsewhere = TOOL_OPTIONS.replace(
         r#"{"location": "tool_config", "control": {"ttl": "1h"}},
             {"location": "tool_config", "control": {"type": "ephemeral"}}"#,
         r#"{"location": "system"}"#,
     );
     let call = Call {
-        litellm_params: Some(litellm),
+        litellm_params: Some(TOOL_LITELLM),
         ..Call::new(CLAUDE_4_5, &elsewhere)
     };
     let (unplaced, _warnings) = run(&call, &remote(&[]));
     assert_eq!(
         field(unplaced.body(), "toolConfig"),
-        Some(&expected(
-            r#"{"tools": [{"toolSpec": {
-                "name": "lookup",
-                "description": "finds things",
-                "inputSchema": {"json": {"type": "object", "properties": {}, "required": []}}
-            }}], "toolChoice": {"tool": {"name": "lookup"}}}"#,
-        ))
+        Some(&expected(TOOL_CONFIG_UNPLACED))
     );
-    assert_eq!(
-        unplaced.litellm_params,
-        Some(expected(
-            r#"{"drop_params": true, "metadata": {"team": "core"}, "model_info": {"id": "deployment-1"}}"#,
-        ))
-    );
+    assert_eq!(unplaced.litellm_params, Some(expected(TOOL_LITELLM)));
+}
 
-    // A model that advertises no prompt caching keeps the tools and spends no credit.
+fn uncached_model_places_no_breakpoint() {
     let call = Call {
-        litellm_params: Some(litellm),
-        ..Call::new(LLAMA, optional)
+        litellm_params: Some(TOOL_LITELLM),
+        ..Call::new(LLAMA, TOOL_OPTIONS)
     };
     let (uncached, _warnings) = run(&call, &remote(&[]));
     let tools = field(uncached.body(), "toolConfig")
@@ -168,14 +190,10 @@ pub(super) fn tool_config_injection() {
         panic!("the toolConfig tools are a list");
     };
     assert_eq!(tools.len(), 1);
-    assert_eq!(
-        uncached.litellm_params,
-        Some(expected(
-            r#"{"drop_params": true, "metadata": {"team": "core"}, "model_info": {"id": "deployment-1"}}"#,
-        ))
-    );
+    assert_eq!(uncached.litellm_params, Some(expected(TOOL_LITELLM)));
+}
 
-    // Without converted tools there is no toolConfig, so tool_choice stays an inference field.
+fn tool_choice_without_tools_stays_inference() {
     let (choiceless, _warnings) = run(
         &Call::new(
             CLAUDE_4_5,
@@ -194,50 +212,34 @@ pub(super) fn tool_config_injection() {
 
 // The compact-only context management filter runs inside the tools stage and its beta reaches the body.
 pub(super) fn context_management_filter() {
-    let optional = r#"{
-        "custom": 1,
-        "context_management": {"edits": [
-            {"type": "clear_tool_uses_20250919"},
-            {"type": "compact_20260112"}
-        ]}
-    }"#;
-    let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, optional), &remote(&[]));
+    compact_edit_keeps_beta();
+    edits_without_compact_drop();
+    foreign_model_keeps_context_management();
+}
+
+fn compact_edit_keeps_beta() {
+    let (outcome, _warnings) = run(&Call::new(CLAUDE_3_5, CONTEXT_OPTIONS), &remote(&[]));
     assert_eq!(
         field(outcome.body(), "additionalModelRequestFields"),
-        Some(&expected(
-            r#"{
-                "custom": 1,
-                "context_management": {"edits": [{"type": "compact_20260112"}]},
-                "anthropic_beta": ["compact-2026-01-12"]
-            }"#,
-        ))
+        Some(&expected(CONTEXT_COMPACTED))
     );
+}
 
-    // An edits list without a compact entry drops the whole field and adds no beta.
+fn edits_without_compact_drop() {
     let (dropped, _warnings) = run(
-        &Call::new(
-            CLAUDE_3_5,
-            r#"{"custom": 1, "context_management": {"edits": [{"type": "clear_tool_uses_20250919"}]}}"#,
-        ),
+        &Call::new(CLAUDE_3_5, CONTEXT_WITHOUT_COMPACT),
         &remote(&[]),
     );
     assert_eq!(
         field(dropped.body(), "additionalModelRequestFields"),
         Some(&expected(r#"{"custom": 1}"#))
     );
+}
 
-    // A model outside the Anthropic base keeps the field untouched: the filter is gated on the family.
-    let (foreign, _warnings) = run(
-        &Call::new(
-            LLAMA,
-            r#"{"custom": 1, "context_management": {"edits": []}}"#,
-        ),
-        &remote(&[]),
-    );
+fn foreign_model_keeps_context_management() {
+    let (foreign, _warnings) = run(&Call::new(LLAMA, CONTEXT_FOREIGN), &remote(&[]));
     assert_eq!(
         field(foreign.body(), "additionalModelRequestFields"),
-        Some(&expected(
-            r#"{"custom": 1, "context_management": {"edits": []}}"#,
-        ))
+        Some(&expected(CONTEXT_FOREIGN))
     );
 }

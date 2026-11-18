@@ -11,47 +11,53 @@ const SCRIPT: &str = r#"[
     {"role": "assistant", "content": "partial"}
 ]"#;
 
+const ORDER_OPTIONS: &str = r#"{
+    "guardrailConfig": {"guardrailIdentifier": "gr-1"},
+    "requestMetadata": {"client_key": "caller", "user_api_key_alias": "spoofed"}
+}"#;
+
+const ORDER_LITELLM: &str = r#"{
+    "user_continue_message": {"role": "user", "content": "continue"},
+    "metadata": {"user_api_key_alias": "alias-1"}
+}"#;
+
+const ORDER_BODY: &str = r#"{
+    "messages": [
+        {"role": "user", "content": [{"text": "hi"}]},
+        {"role": "assistant", "content": [{"text": "partial"}]},
+        {"role": "user", "content": [{"text": "continue"}]}
+    ],
+    "inferenceConfig": {},
+    "system": [{"text": "be brief"}],
+    "guardrailConfig": {"guardrailIdentifier": "gr-1"},
+    "requestMetadata": {"user_api_key_alias": "alias-1", "client_key": "caller"}
+}"#;
+
+const ORDER_LITELLM_AFTER: &str = r#"{"metadata": {"user_api_key_alias": "alias-1"}}"#;
+
+const GUARDED_MESSAGES: &str =
+    r#"[{"role": "user", "content": [{"guardContent": {"text": {"text": "hi"}}}]}]"#;
+
 // System extraction runs first, then the continue message, then metadata ownership replaces the caller's.
 pub(super) fn system_message_order() {
-    let optional = r#"{
-        "guardrailConfig": {"guardrailIdentifier": "gr-1"},
-        "requestMetadata": {"client_key": "caller", "user_api_key_alias": "spoofed"}
-    }"#;
-    let litellm = r#"{
-        "user_continue_message": {"role": "user", "content": "continue"},
-        "metadata": {"user_api_key_alias": "alias-1"}
-    }"#;
+    system_extracted_and_continue_appended();
+    metadata_ownership_empties_caller_copy();
+    guardrail_rewrites_trailing_user_turn();
+}
+
+fn system_extracted_and_continue_appended() {
     let call = Call {
         messages: SCRIPT,
-        litellm_params: Some(litellm),
+        litellm_params: Some(ORDER_LITELLM),
         policy: Some(&["user_api_key_alias"]),
-        ..Call::new(CLAUDE_3_5, optional)
+        ..Call::new(CLAUDE_3_5, ORDER_OPTIONS)
     };
     let (outcome, _warnings) = run(&call, &remote(&[]));
-    assert_eq!(
-        outcome.body(),
-        &expected(
-            r#"{
-                "messages": [
-                    {"role": "user", "content": [{"text": "hi"}]},
-                    {"role": "assistant", "content": [{"text": "partial"}]},
-                    {"role": "user", "content": [{"text": "continue"}]}
-                ],
-                "inferenceConfig": {},
-                "system": [{"text": "be brief"}],
-                "guardrailConfig": {"guardrailIdentifier": "gr-1"},
-                "requestMetadata": {"user_api_key_alias": "alias-1", "client_key": "caller"}
-            }"#,
-        )
-    );
-    assert_eq!(
-        outcome.litellm_params,
-        Some(expected(
-            r#"{"metadata": {"user_api_key_alias": "alias-1"}}"#
-        ))
-    );
+    assert_eq!(outcome.body(), &expected(ORDER_BODY));
+    assert_eq!(outcome.litellm_params, Some(expected(ORDER_LITELLM_AFTER)));
+}
 
-    // Ownership removes the caller's copy even when nothing survives the reserved-prefix filter.
+fn metadata_ownership_empties_caller_copy() {
     let call = Call {
         policy: Some(&["user_api_key_alias"]),
         ..Call::new(
@@ -61,8 +67,9 @@ pub(super) fn system_message_order() {
     };
     let (emptied, _warnings) = run(&call, &remote(&[]));
     assert!(field(emptied.body(), "requestMetadata").is_none());
+}
 
-    // The guardrail rewrites the trailing user turn while guardrailConfig is still in the options.
+fn guardrail_rewrites_trailing_user_turn() {
     let call = Call {
         messages: r#"[{"role": "system", "content": "top"}, {"role": "user", "content": "hi"}]"#,
         ..Call::new(
@@ -73,9 +80,7 @@ pub(super) fn system_message_order() {
     let (guarded, _warnings) = run(&call, &remote(&[]));
     assert_eq!(
         field(guarded.body(), "messages"),
-        Some(&expected(
-            r#"[{"role": "user", "content": [{"guardContent": {"text": {"text": "hi"}}}]}]"#,
-        ))
+        Some(&expected(GUARDED_MESSAGES))
     );
     assert_eq!(
         field(guarded.body(), "system"),
@@ -130,57 +135,64 @@ pub(super) fn inline_document_image() {
 
 const FORMAT_WARNING: &str = "does not advertise `supports_native_structured_output` in model_prices_and_context_window.json. The schema will not be enforced; pass `response_format` to use the synthetic tool-call fallback.";
 const DROP_OUTPUT_CONFIG_WARNING: &str = "Dropping unsupported `output_config` for model=";
+const EFFORT_OPTIONS: &str = r#"{"output_config": {"effort": "high"}}"#;
+const EFFORT_ADDITIONAL: &str =
+    r#"{"output_config": {"effort": "high"}, "anthropic_beta": ["effort-2025-11-24"]}"#;
 
 // The application inference profile ARN forwards remaining output_config verbatim and skips both gates.
 pub(super) fn model_arn_request() {
-    let (arn, warnings) = run(
-        &Call::new(ARN, r#"{"output_config": {"effort": "high"}}"#),
-        &remote(&[]),
-    );
+    arn_forwards_output_config();
+    global_drop_warns_on_unadvertised_effort();
+    per_call_drop_forwards_output_config();
+    foreign_model_drops_output_config_silently();
+    discarded_format_still_warns_before_arn();
+}
+
+fn arn_forwards_output_config() {
+    let (arn, warnings) = run(&Call::new(ARN, EFFORT_OPTIONS), &remote(&[]));
     assert_eq!(
         field(arn.body(), "additionalModelRequestFields"),
-        Some(&expected(r#"{"output_config": {"effort": "high"}}"#))
+        Some(&expected(EFFORT_OPTIONS))
     );
     assert!(field(arn.body(), "outputConfig").is_none());
     assert!(warnings.is_empty(), "{warnings}");
+}
 
-    // Global drop with a model that advertises no effort level warns and omits the field.
+fn global_drop_warns_on_unadvertised_effort() {
     let call = Call {
         settings: Settings {
             global_drop: true,
             modify_params: false,
             neutralize: false,
         },
-        ..Call::new(CLAUDE_4_5, r#"{"output_config": {"effort": "high"}}"#)
+        ..Call::new(CLAUDE_4_5, EFFORT_OPTIONS)
     };
     let (dropped, warnings) = run(&call, &remote(&[]));
     assert!(field(dropped.body(), "additionalModelRequestFields").is_none());
     assert!(warnings.contains(DROP_OUTPUT_CONFIG_WARNING), "{warnings}");
     assert!(warnings.contains(CLAUDE_4_5), "{warnings}");
+}
 
-    // The per-call flag alone does not select that branch: the config is forwarded.
+fn per_call_drop_forwards_output_config() {
     let call = Call {
         litellm_params: Some(r#"{"drop_params": true}"#),
-        ..Call::new(CLAUDE_4_5, r#"{"output_config": {"effort": "high"}}"#)
+        ..Call::new(CLAUDE_4_5, EFFORT_OPTIONS)
     };
     let (per_call, warnings) = run(&call, &remote(&[]));
     assert_eq!(
         field(per_call.body(), "additionalModelRequestFields"),
-        Some(&expected(
-            r#"{"output_config": {"effort": "high"}, "anthropic_beta": ["effort-2025-11-24"]}"#,
-        ))
+        Some(&expected(EFFORT_ADDITIONAL))
     );
     assert!(!warnings.contains(DROP_OUTPUT_CONFIG_WARNING), "{warnings}");
+}
 
-    // A model outside the Anthropic family drops the remaining config without a warning.
-    let (foreign, warnings) = run(
-        &Call::new(LLAMA, r#"{"output_config": {"effort": "high"}}"#),
-        &remote(&[]),
-    );
+fn foreign_model_drops_output_config_silently() {
+    let (foreign, warnings) = run(&Call::new(LLAMA, EFFORT_OPTIONS), &remote(&[]));
     assert!(field(foreign.body(), "additionalModelRequestFields").is_none());
     assert!(warnings.is_empty(), "{warnings}");
+}
 
-    // Format removal happens before the ARN forwarding, so the discarded format still warns.
+fn discarded_format_still_warns_before_arn() {
     let (removed, warnings) = run(
         &Call::new(
             ARN,
@@ -190,13 +202,25 @@ pub(super) fn model_arn_request() {
     );
     assert_eq!(
         field(removed.body(), "additionalModelRequestFields"),
-        Some(&expected(r#"{"output_config": {"effort": "high"}}"#))
+        Some(&expected(EFFORT_OPTIONS))
     );
     assert!(warnings.contains(FORMAT_WARNING), "{warnings}");
 }
 
+const NATIVE_CONFIG: &str = r#"{"textFormat": {"type": "json_schema", "structure": {"jsonSchema": {
+    "schema": "{}",
+    "name": "out"
+}}}}"#;
+
 // The native outputConfig comes from a json_schema format candidate unless camel outputConfig is set.
 pub(super) fn output_format_precedence() {
+    json_schema_builds_native_config();
+    explicit_output_config_wins();
+    unsupported_schema_warns();
+    scalar_format_is_discarded();
+}
+
+fn json_schema_builds_native_config() {
     let (native, warnings) = run(
         &Call::new(
             CLAUDE_3_5,
@@ -206,22 +230,16 @@ pub(super) fn output_format_precedence() {
     );
     assert_eq!(
         field(native.body(), "outputConfig"),
-        Some(&expected(
-            r#"{"textFormat": {"type": "json_schema", "structure": {"jsonSchema": {
-                "schema": "{}",
-                "name": "out"
-            }}}}"#,
-        ))
+        Some(&expected(NATIVE_CONFIG))
     );
     assert_eq!(
         field(native.body(), "additionalModelRequestFields"),
-        Some(&expected(
-            r#"{"output_config": {"effort": "high"}, "anthropic_beta": ["effort-2025-11-24"]}"#,
-        ))
+        Some(&expected(EFFORT_ADDITIONAL))
     );
     assert!(!warnings.contains(FORMAT_WARNING), "{warnings}");
+}
 
-    // An explicit camel outputConfig wins over the format candidate, which drops silently.
+fn explicit_output_config_wins() {
     let (camel, warnings) = run(
         &Call::new(
             CLAUDE_3_5,
@@ -238,7 +256,9 @@ pub(super) fn output_format_precedence() {
     );
     assert!(field(camel.body(), "additionalModelRequestFields").is_none());
     assert!(!warnings.contains(FORMAT_WARNING), "{warnings}");
+}
 
+fn unsupported_schema_warns() {
     // A json_schema format on a model without the native capability warns and builds nothing.
     for model in [CLAUDE_4_5, LLAMA] {
         let (unsupported, warnings) = run(
@@ -251,7 +271,9 @@ pub(super) fn output_format_precedence() {
         assert!(field(unsupported.body(), "outputConfig").is_none());
         assert!(warnings.contains(FORMAT_WARNING), "{model}: {warnings}");
     }
+}
 
+fn scalar_format_is_discarded() {
     // A format that is not an object is discarded without the warning.
     let (scalar, warnings) = run(
         &Call::new(
