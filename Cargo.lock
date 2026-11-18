@@ -2196,6 +2196,7 @@ dependencies = [
  "aws-smithy-runtime-api",
  "axum",
  "base64 0.23.1",
+ "betterlite-anthropic",
  "betterlite-config",
  "betterlite-context",
  "betterlite-db",

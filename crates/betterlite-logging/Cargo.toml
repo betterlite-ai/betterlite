@@ -76,6 +76,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-privacy-openai = { path = "src/logging_privacy/openai" }
