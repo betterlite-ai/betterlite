@@ -188,7 +188,6 @@ struct Report {
     cached_plan_warnings: u32,
     deprecated_used: bool,
 }
-
 impl Report {
     fn build(state: &ServiceState, outcome: Result<Option<CombinedKeyView>, KeyReadError>) -> Self {
         let (result, view, error) = match outcome {
@@ -224,7 +223,6 @@ impl Report {
         }
     }
 }
-
 #[derive(Serialize)]
 struct ViewReport {
     token: Option<String>,
@@ -239,7 +237,6 @@ struct ViewReport {
     team_member_tpm_limit: Option<i64>,
     expires: Option<String>,
 }
-
 impl ViewReport {
     fn from_view(view: &CombinedKeyView) -> Self {
         Self {
@@ -261,26 +258,28 @@ impl ViewReport {
         }
     }
 }
-
 fn expiry_text(expiry: &Expiry) -> String {
     match expiry {
         Expiry::Text(text) => text.clone(),
         Expiry::DateTime(stamp) => stamp.to_rfc3339(),
     }
 }
-
 #[derive(Serialize)]
 struct ErrorReport {
     kind: &'static str,
     status: Option<u16>,
 }
-
 #[derive(Serialize)]
 struct ReconnectReport {
     reason: String,
     force_recreate: bool,
     timeout_seconds: Option<f64>,
     lock_timeout_seconds: Option<f64>,
+    #[serde(flatten)]
+    stale: StaleReport,
+}
+#[derive(Serialize)]
+struct StaleReport {
     stale_present: bool,
     stale_live: bool,
 }
@@ -292,8 +291,10 @@ impl ReconnectReport {
             force_recreate: recorded.force_recreate,
             timeout_seconds: recorded.timeout.map(|timeout| timeout.as_secs_f64()),
             lock_timeout_seconds: recorded.lock_timeout.map(|timeout| timeout.as_secs_f64()),
-            stale_present: recorded.stale_present,
-            stale_live: recorded.stale_live,
+            stale: StaleReport {
+                stale_present: recorded.stale.is_some(),
+                stale_live: recorded.stale.unwrap_or(false),
+            },
         }
     }
 }

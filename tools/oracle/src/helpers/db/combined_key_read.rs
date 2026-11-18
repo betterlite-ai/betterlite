@@ -75,7 +75,7 @@ pub(crate) enum ReconnectStep {
     Missing,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 

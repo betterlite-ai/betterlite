@@ -238,8 +238,8 @@ pub(crate) struct RecordedReconnect {
     pub(crate) force_recreate: bool,
     pub(crate) timeout: Option<Duration>,
     pub(crate) lock_timeout: Option<Duration>,
-    pub(crate) stale_present: bool,
-    pub(crate) stale_live: bool,
+    // Some(live) when the reconnect named a stale engine, None when it did not
+    pub(crate) stale: Option<bool>,
 }
 
 pub(crate) struct ScriptedReconnect {
@@ -290,8 +290,7 @@ impl PlanReconnect for ScriptedReconnect {
             force_recreate: request.force_recreate,
             timeout: request.timeout,
             lock_timeout: request.lock_timeout,
-            stale_present: stale.is_some(),
-            stale_live: stale.is_some_and(|engine| engine.is_still_live(&observed)),
+            stale: stale.map(|engine| engine.is_still_live(&observed)),
         });
         let next = lock(&self.results).pop_front().unwrap_or(Ok(true));
         Box::pin(async move { next })
