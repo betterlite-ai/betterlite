@@ -3,13 +3,12 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::database_replica::client::DatabaseClient;
 use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::identity_rows::user::LiteLLMUserTable;
-use crate::key_repository::decode::decode_token_record;
 use crate::resource_rows::config::ConfigRow;
 
 use super::access::{
     CONFIG_ATTRIBUTE, KEY_ATTRIBUTE, SPEND_ATTRIBUTE, TablePoolAccess, USER_ATTRIBUTE,
 };
-use super::rows::{RowError, SpendLogRow, decode_user_row};
+use super::rows::{RowDecoder, RowError, SpendLogRow};
 use super::{GENERIC_RETRY, OperationCallType, TableOps, TableOpsError};
 
 const USER_FIRST_SQL: &str =
@@ -20,6 +19,29 @@ const CONFIG_FIRST_SQL: &str =
 const SPEND_FIRST_SQL: &str =
     "SELECT row_to_json(s)::text FROM \"LiteLLM_SpendLogs\" s WHERE s.\"request_id\" = $1 LIMIT 1";
 
+// each table's find_first runs on its own routed handle over its own table
+struct GenericSource {
+    attribute: &'static str,
+    sql: &'static str,
+}
+
+const USER_SOURCE: GenericSource = GenericSource {
+    attribute: USER_ATTRIBUTE,
+    sql: USER_FIRST_SQL,
+};
+const KEY_SOURCE: GenericSource = GenericSource {
+    attribute: KEY_ATTRIBUTE,
+    sql: KEY_FIRST_SQL,
+};
+const CONFIG_SOURCE: GenericSource = GenericSource {
+    attribute: CONFIG_ATTRIBUTE,
+    sql: CONFIG_FIRST_SQL,
+};
+const SPEND_SOURCE: GenericSource = GenericSource {
+    attribute: SPEND_ATTRIBUTE,
+    sql: SPEND_FIRST_SQL,
+};
+
 impl<Client> TableOps<'_, Client>
 where
     Client: DatabaseClient,
@@ -29,19 +51,19 @@ where
         &self,
         user_id: &str,
     ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        self.attempt_with(GENERIC_RETRY, OperationCallType::GetGenericData, || {
-            self.generic_user_once(user_id)
-        })
-        .await
+        self.find_generic(USER_SOURCE, user_id, LiteLLMUserTable::decode_row)
+            .await
     }
 
     pub async fn generic_key(
         &self,
         token: &SecretString,
     ) -> Result<Option<LiteLLMVerificationToken>, TableOpsError<Client::Error>> {
-        self.attempt_with(GENERIC_RETRY, OperationCallType::GetGenericData, || {
-            self.generic_key_once(token.expose_secret())
-        })
+        self.find_generic(
+            KEY_SOURCE,
+            token.expose_secret(),
+            LiteLLMVerificationToken::decode_row,
+        )
         .await
     }
 
@@ -49,87 +71,39 @@ where
         &self,
         param_name: &str,
     ) -> Result<Option<ConfigRow>, TableOpsError<Client::Error>> {
-        self.attempt_with(GENERIC_RETRY, OperationCallType::GetGenericData, || {
-            self.generic_config_once(param_name)
-        })
-        .await
+        self.find_generic(CONFIG_SOURCE, param_name, ConfigRow::decode_row)
+            .await
     }
 
     pub async fn generic_spend(
         &self,
         request_id: &str,
     ) -> Result<Option<SpendLogRow>, TableOpsError<Client::Error>> {
-        self.attempt_with(GENERIC_RETRY, OperationCallType::GetGenericData, || {
-            self.generic_spend_once(request_id)
-        })
-        .await
+        self.find_generic(SPEND_SOURCE, request_id, SpendLogRow::decode_row)
+            .await
     }
 
-    async fn generic_user_once(
+    async fn find_generic<Row, Parse>(
         &self,
-        user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        let found = self
-            .text_row(USER_ATTRIBUTE, "find_first", USER_FIRST_SQL, &[&user_id])
-            .await?;
-        match found {
-            Some(text) => Ok(Some(decode_user_row(&text)?)),
-            None => Ok(None),
-        }
-    }
-
-    async fn generic_key_once(
-        &self,
-        stored: &str,
-    ) -> Result<Option<LiteLLMVerificationToken>, TableOpsError<Client::Error>> {
-        let found = self
-            .text_row(KEY_ATTRIBUTE, "find_first", KEY_FIRST_SQL, &[&stored])
-            .await?;
-        match found {
-            Some(text) => Ok(Some(
-                decode_token_record(text.as_bytes()).map_err(RowError::Key)?,
-            )),
-            None => Ok(None),
-        }
-    }
-
-    async fn generic_config_once(
-        &self,
-        param_name: &str,
-    ) -> Result<Option<ConfigRow>, TableOpsError<Client::Error>> {
-        let found = self
-            .text_row(
-                CONFIG_ATTRIBUTE,
+        source: GenericSource,
+        value: &str,
+        parse: Parse,
+    ) -> Result<Option<Row>, TableOpsError<Client::Error>>
+    where
+        Row: Send,
+        Parse: Fn(&str) -> Result<Row, RowError> + Send + Sync,
+    {
+        let rows = self
+            .query_rows(
+                source.attribute,
                 "find_first",
-                CONFIG_FIRST_SQL,
-                &[&param_name],
+                source.sql,
+                &[&value],
+                GENERIC_RETRY,
+                OperationCallType::GetGenericData,
+                parse,
             )
             .await?;
-        match found {
-            Some(text) => Ok(Some(
-                serde_json::from_str::<ConfigRow>(&text).map_err(RowError::Model)?,
-            )),
-            None => Ok(None),
-        }
-    }
-
-    async fn generic_spend_once(
-        &self,
-        request_id: &str,
-    ) -> Result<Option<SpendLogRow>, TableOpsError<Client::Error>> {
-        let found = self
-            .text_row(
-                SPEND_ATTRIBUTE,
-                "find_first",
-                SPEND_FIRST_SQL,
-                &[&request_id],
-            )
-            .await?;
-        match found {
-            Some(text) => Ok(Some(
-                serde_json::from_str::<SpendLogRow>(&text).map_err(RowError::Model)?,
-            )),
-            None => Ok(None),
-        }
+        Ok(rows.into_iter().next())
     }
 }

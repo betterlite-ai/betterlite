@@ -80,16 +80,6 @@ impl OperationCallType {
             Self::DeleteData => "delete_data",
         }
     }
-
-    const fn heading(self) -> &'static str {
-        match self {
-            Self::GetData => "LiteLLM Prisma Client Exception: Error with `get_data`",
-            Self::GetGenericData => "LiteLLM Prisma Client Exception get_generic_data",
-            Self::InsertData => "LiteLLM Prisma Client Exception in insert_data",
-            Self::UpdateData => "LiteLLM Prisma Client Exception - update_data",
-            Self::DeleteData => "LiteLLM Prisma Client Exception - delete_data",
-        }
-    }
 }
 
 pub type FailureFuture<'sink> = Pin<Box<dyn Future<Output = ()> + Send + 'sink>>;
@@ -281,7 +271,14 @@ where
         error: &TableOpsError<Client::Error>,
         duration: Duration,
     ) {
-        let mut traceback = format!("{}: {error}", call_type.heading());
+        let heading = match call_type {
+            OperationCallType::GetData => "LiteLLM Prisma Client Exception: Error with `get_data`",
+            OperationCallType::GetGenericData => "LiteLLM Prisma Client Exception get_generic_data",
+            OperationCallType::InsertData => "LiteLLM Prisma Client Exception in insert_data",
+            OperationCallType::UpdateData => "LiteLLM Prisma Client Exception - update_data",
+            OperationCallType::DeleteData => "LiteLLM Prisma Client Exception - delete_data",
+        };
+        let mut traceback = format!("{heading}: {error}");
         let mut cause = error.source();
         while let Some(source) = cause {
             traceback.push_str("\nCaused by: ");

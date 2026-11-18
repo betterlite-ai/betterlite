@@ -66,21 +66,29 @@ pub enum EndUserColumn {
     ObjectPermissionId,
 }
 
-impl TableColumn for EndUserColumn {
-    const TABLE: &'static str = END_USER_TABLE;
-    const ATTRIBUTE: &'static str = END_USER_ATTRIBUTE;
-    const KEY: Self = Self::UserId;
+macro_rules! end_user_column_definitions {
+    ($($variant:ident => $column:literal : $kind:ident),* $(,)?) => {
+        impl TableColumn for EndUserColumn {
+            const TABLE: &'static str = END_USER_TABLE;
+            const ATTRIBUTE: &'static str = END_USER_ATTRIBUTE;
+            const KEY: Self = Self::UserId;
 
-    fn definition(self) -> (&'static str, TokenSqlType) {
-        match self {
-            Self::UserId => ("user_id", TokenSqlType::Text),
-            Self::Alias => ("alias", TokenSqlType::Text),
-            Self::Spend => ("spend", TokenSqlType::DoublePrecision),
-            Self::AllowedModelRegion => ("allowed_model_region", TokenSqlType::Text),
-            Self::DefaultModel => ("default_model", TokenSqlType::Text),
-            Self::BudgetId => ("budget_id", TokenSqlType::Text),
-            Self::Blocked => ("blocked", TokenSqlType::Boolean),
-            Self::ObjectPermissionId => ("object_permission_id", TokenSqlType::Text),
+            fn definition(self) -> (&'static str, TokenSqlType) {
+                match self {
+                    $(Self::$variant => ($column, TokenSqlType::$kind),)*
+                }
+            }
         }
-    }
+    };
+}
+
+end_user_column_definitions! {
+    UserId => "user_id": Text,
+    Alias => "alias": Text,
+    Spend => "spend": DoublePrecision,
+    AllowedModelRegion => "allowed_model_region": Text,
+    DefaultModel => "default_model": Text,
+    BudgetId => "budget_id": Text,
+    Blocked => "blocked": Boolean,
+    ObjectPermissionId => "object_permission_id": Text,
 }

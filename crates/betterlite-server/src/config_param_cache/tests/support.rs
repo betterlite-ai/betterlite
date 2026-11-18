@@ -6,10 +6,20 @@ use std::sync::{Arc, Mutex};
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_rows::config::ConfigRow;
+use betterlite_db::table_ops::TableOpsError;
 
-use crate::config_param_cache::{ConfigParamCache, ConfigParamCacheError, ConfigParamStore};
+use crate::config_param_cache::{ConfigParamCache, ConfigParamStore};
+
+fn lookup<T>(map: &Mutex<BTreeMap<String, T>>, key: &str) -> Option<T>
+where
+    T: Clone,
+{
+    map.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(key)
+        .cloned()
+}
 
 #[derive(Default)]
 pub(super) struct FakeStore {
@@ -60,51 +70,35 @@ impl ConfigParamStore for FakeStore {
     async fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, ConfigParamCacheError> {
+    ) -> Result<Option<ConfigRow>, TableOpsError<Infallible>> {
         self.param_reads.fetch_add(1, Ordering::SeqCst);
-        Ok(self
-            .rows
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(param_name)
-            .cloned())
+        Ok(lookup(&self.rows, param_name))
     }
 
     async fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigRow>, ConfigParamCacheError> {
+    ) -> Result<Vec<ConfigRow>, TableOpsError<Infallible>> {
         self.batch_reads.fetch_add(1, Ordering::SeqCst);
         *self
             .last_batch
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner) = param_names.to_vec();
         if self.batch_fails.load(Ordering::SeqCst) {
-            return Err(ConfigParamCacheError::Database {
-                source: DbError::NoDbConnected,
-            });
+            return Err(TableOpsError::NoDbConnected);
         }
-        let rows = self
-            .rows
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
         Ok(param_names
             .iter()
-            .filter_map(|name| rows.get(name).cloned())
+            .filter_map(|name| lookup(&self.rows, name))
             .collect())
     }
 
     async fn user_row(
         &self,
         user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, ConfigParamCacheError> {
+    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Infallible>> {
         self.user_reads.fetch_add(1, Ordering::SeqCst);
-        Ok(self
-            .users
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .get(user_id)
-            .cloned())
+        Ok(lookup(&self.users, user_id))
     }
 }
 

@@ -2,7 +2,7 @@ use crate::database_replica::client::DatabaseClient;
 use crate::resource_rows::config::ConfigRow;
 
 use crate::table_ops::access::{CONFIG_ATTRIBUTE, TablePoolAccess};
-use crate::table_ops::rows::decode_model_rows;
+use crate::table_ops::rows::RowDecoder;
 use crate::table_ops::{TableOps, TableOpsError};
 
 const NAMED_SQL: &str = "SELECT row_to_json(c)::text FROM \"LiteLLM_Config\" c WHERE c.\"param_name\" = ANY($1::text[])";
@@ -17,9 +17,13 @@ where
         &self,
         param_names: &[String],
     ) -> Result<Vec<ConfigRow>, TableOpsError<Client::Error>> {
-        let rows = self
+        let texts = self
             .text_rows(CONFIG_ATTRIBUTE, "find_many", NAMED_SQL, &[&param_names])
             .await?;
-        decode_model_rows(&rows)
+        let mut configs = Vec::with_capacity(texts.len());
+        for text in &texts {
+            configs.push(ConfigRow::decode_row(text)?);
+        }
+        Ok(configs)
     }
 }

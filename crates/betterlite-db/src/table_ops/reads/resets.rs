@@ -1,11 +1,12 @@
 use chrono::{DateTime, Utc};
+use tokio_postgres::types::ToSql;
 
 use crate::budget_permission_rows::LiteLLMBudgetTableFull;
 use crate::database_replica::client::DatabaseClient;
 use crate::identity_rows::end_user::LiteLLMEndUserTable;
 
 use crate::table_ops::access::{BUDGET_ATTRIBUTE, END_USER_ATTRIBUTE, TablePoolAccess};
-use crate::table_ops::rows::decode_model_rows;
+use crate::table_ops::rows::RowDecoder;
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
 const BUDGETS_DUE_SQL: &str = "SELECT row_to_json(b)::text FROM \"LiteLLM_BudgetTable\" b WHERE b.\"budget_duration\" IS NOT NULL AND (b.\"budget_reset_at\" IS NULL OR b.\"budget_reset_at\" < $1) LIMIT $2";
@@ -21,51 +22,37 @@ where
         reset_at: DateTime<Utc>,
         limit: Option<i64>,
     ) -> Result<Vec<LiteLLMBudgetTableFull>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.budgets_due_for_reset_once(reset_at, limit)
-        })
-        .await
+        let reset_at = reset_at.naive_utc();
+        self.find_models(BUDGET_ATTRIBUTE, BUDGETS_DUE_SQL, &[&reset_at, &limit])
+            .await
     }
 
     pub async fn end_users_by_budgets(
         &self,
         budget_ids: &[String],
     ) -> Result<Vec<LiteLLMEndUserTable>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.end_users_by_budgets_once(budget_ids)
-        })
+        self.find_models(END_USER_ATTRIBUTE, END_USERS_IN_SQL, &[&budget_ids])
+            .await
+    }
+
+    async fn find_models<Row>(
+        &self,
+        attribute: &str,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<Row>, TableOpsError<Client::Error>>
+    where
+        Row: RowDecoder + Send,
+    {
+        self.query_rows(
+            attribute,
+            "find_many",
+            sql,
+            parameters,
+            DATA_RETRY,
+            OperationCallType::GetData,
+            Row::decode_row,
+        )
         .await
-    }
-
-    async fn budgets_due_for_reset_once(
-        &self,
-        reset_at: DateTime<Utc>,
-        limit: Option<i64>,
-    ) -> Result<Vec<LiteLLMBudgetTableFull>, TableOpsError<Client::Error>> {
-        let reset_at = reset_at.naive_utc();
-        let rows = self
-            .text_rows(
-                BUDGET_ATTRIBUTE,
-                "find_many",
-                BUDGETS_DUE_SQL,
-                &[&reset_at, &limit],
-            )
-            .await?;
-        decode_model_rows(&rows)
-    }
-
-    async fn end_users_by_budgets_once(
-        &self,
-        budget_ids: &[String],
-    ) -> Result<Vec<LiteLLMEndUserTable>, TableOpsError<Client::Error>> {
-        let rows = self
-            .text_rows(
-                END_USER_ATTRIBUTE,
-                "find_many",
-                END_USERS_IN_SQL,
-                &[&budget_ids],
-            )
-            .await?;
-        decode_model_rows(&rows)
     }
 }

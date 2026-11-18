@@ -5,9 +5,9 @@ use betterlite_db::database_replica::client::DatabaseClient;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::resource_rows::config::ConfigRow;
 use betterlite_db::table_ops::access::TablePoolAccess;
-use betterlite_db::table_ops::{ConfigParamInvalidator, InvalidateFuture, TableOps};
+use betterlite_db::table_ops::{ConfigParamInvalidator, InvalidateFuture, TableOps, TableOpsError};
 
-use super::{ConfigChangePublisher, ConfigParamCache, ConfigParamCacheError};
+use super::{ConfigChangePublisher, ConfigParamCache};
 
 // what LiteLLM reaches through PrismaClient.get_generic_data, the config find_many and get_data(user_id)
 pub trait ConfigParamStore {
@@ -16,17 +16,17 @@ pub trait ConfigParamStore {
     async fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, ConfigParamCacheError<Self::ClientError>>;
+    ) -> Result<Option<ConfigRow>, TableOpsError<Self::ClientError>>;
 
     async fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigRow>, ConfigParamCacheError<Self::ClientError>>;
+    ) -> Result<Vec<ConfigRow>, TableOpsError<Self::ClientError>>;
 
     async fn user_row(
         &self,
         user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, ConfigParamCacheError<Self::ClientError>>;
+    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Self::ClientError>>;
 }
 
 pub struct TableConfigParamStore<'service, 'ops, Client>
@@ -46,31 +46,22 @@ where
     async fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, ConfigParamCacheError<Self::ClientError>> {
-        self.operations
-            .generic_config(param_name)
-            .await
-            .map_err(ConfigParamCacheError::from)
+    ) -> Result<Option<ConfigRow>, TableOpsError<Self::ClientError>> {
+        self.operations.generic_config(param_name).await
     }
 
     async fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigRow>, ConfigParamCacheError<Self::ClientError>> {
-        self.operations
-            .configs_named(param_names)
-            .await
-            .map_err(ConfigParamCacheError::from)
+    ) -> Result<Vec<ConfigRow>, TableOpsError<Self::ClientError>> {
+        self.operations.configs_named(param_names).await
     }
 
     async fn user_row(
         &self,
         user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, ConfigParamCacheError<Self::ClientError>> {
-        self.operations
-            .user_unique(user_id)
-            .await
-            .map_err(ConfigParamCacheError::from)
+    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Self::ClientError>> {
+        self.operations.user_unique(user_id).await
     }
 }
 

@@ -1,18 +1,18 @@
-use std::error::Error;
+use std::fmt;
 
 use rust_decimal::Decimal;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::budget_permission_rows::{JsonData, Timestamp};
+use crate::budget_permission_rows::{JsonData, LiteLLMBudgetTableFull, Timestamp};
+use crate::identity_rows::end_user::LiteLLMEndUserTable;
+use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::identity_rows::user::LiteLLMUserTable;
-use crate::key_repository::decode::TokenDecodeError;
+use crate::key_repository::decode::{TokenDecodeError, decode_token_record};
 use crate::postgres_store::diagnostics::DriverError;
+use crate::resource_rows::config::ConfigRow;
 use crate::team_repository::decoder::{TeamRecord, TeamRecordError, decode_team_record};
 use crate::team_rows::team::LiteLLMTeamTable;
 use crate::user_repository::projection::{UserRecordError, decode_user_record};
-
-use super::TableOpsError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum RowError {
@@ -32,22 +32,54 @@ pub enum RowError {
     NotAnObject,
 }
 
-pub fn decode_user_row(text: &str) -> Result<LiteLLMUserTable, RowError> {
-    match decode_user_record(text.as_bytes()).map_err(RowError::User)? {
-        Some(user) => Ok(user),
-        None => Err(RowError::NotAnObject),
+pub trait RowDecoder: Sized {
+    fn decode_row(text: &str) -> Result<Self, RowError>;
+}
+
+impl RowDecoder for LiteLLMUserTable {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        match decode_user_record(text.as_bytes()).map_err(RowError::User)? {
+            Some(user) => Ok(user),
+            None => Err(RowError::NotAnObject),
+        }
     }
 }
 
-pub fn decode_team_row(text: &str) -> Result<LiteLLMTeamTable, RowError> {
-    let record = TeamRecord::parse(text.as_bytes()).map_err(RowError::Team)?;
-    match decode_team_record(record.as_ref()).map_err(RowError::Team)? {
-        Some(team) => Ok(team),
-        None => Err(RowError::NotAnObject),
+impl RowDecoder for LiteLLMTeamTable {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        let record = TeamRecord::parse(text.as_bytes()).map_err(RowError::Team)?;
+        match decode_team_record(record.as_ref()).map_err(RowError::Team)? {
+            Some(team) => Ok(team),
+            None => Err(RowError::NotAnObject),
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl RowDecoder for LiteLLMVerificationToken {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        decode_token_record(text.as_bytes()).map_err(RowError::Key)
+    }
+}
+
+impl RowDecoder for ConfigRow {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        serde_json::from_str(text).map_err(RowError::Model)
+    }
+}
+
+impl RowDecoder for LiteLLMBudgetTableFull {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        serde_json::from_str(text).map_err(RowError::Model)
+    }
+}
+
+impl RowDecoder for LiteLLMEndUserTable {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        serde_json::from_str(text).map_err(RowError::Model)
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SpendLogRow {
     pub request_id: String,
     pub call_type: String,
@@ -123,6 +155,23 @@ pub struct SpendLogRow {
     pub updated_at: Timestamp,
 }
 
+// the stored api_key is hashed before it reaches this row, and Debug prints no part of it
+impl fmt::Debug for SpendLogRow {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SpendLogRow")
+            .field("request_id", &self.request_id)
+            .field("api_key", &"[REDACTED]")
+            .finish_non_exhaustive()
+    }
+}
+
+impl RowDecoder for SpendLogRow {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        serde_json::from_str(text).map_err(RowError::Model)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserNotificationRow {
     pub request_id: String,
@@ -131,6 +180,12 @@ pub struct UserNotificationRow {
     pub models: Vec<String>,
     pub justification: String,
     pub status: String,
+}
+
+impl RowDecoder for UserNotificationRow {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        serde_json::from_str(text).map_err(RowError::Model)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -145,26 +200,12 @@ pub(super) struct UserAliasRow {
     pub key_aliases: Vec<Option<String>>,
 }
 
-pub fn decode_user_with_aliases(text: &str) -> Result<UserWithAliases, RowError> {
-    let aliases: UserAliasRow = serde_json::from_str(text).map_err(RowError::Json)?;
-    Ok(UserWithAliases {
-        user: decode_user_row(text)?,
-        key_aliases: aliases.key_aliases,
-    })
-}
-
-pub fn decode_model_rows<Row, ClientError>(
-    rows: &[String],
-) -> Result<Vec<Row>, TableOpsError<ClientError>>
-where
-    Row: DeserializeOwned,
-    ClientError: Error + Send + Sync + 'static,
-{
-    rows.iter()
-        .map(|text| {
-            serde_json::from_str(text)
-                .map_err(RowError::Model)
-                .map_err(Into::into)
+impl RowDecoder for UserWithAliases {
+    fn decode_row(text: &str) -> Result<Self, RowError> {
+        let aliases: UserAliasRow = serde_json::from_str(text).map_err(RowError::Json)?;
+        Ok(Self {
+            user: LiteLLMUserTable::decode_row(text)?,
+            key_aliases: aliases.key_aliases,
         })
-        .collect()
+    }
 }

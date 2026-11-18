@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use crate::database_replica::client::DatabaseClient;
 use crate::key_repository::table::TokenValue;
+use crate::team_rows::team::LiteLLMTeamTable;
 
 use crate::table_ops::access::{TEAM_ATTRIBUTE, TablePoolAccess};
 use crate::table_ops::columns::TeamColumn;
-use crate::table_ops::rows::decode_team_row;
+use crate::table_ops::rows::RowDecoder;
 use crate::table_ops::sql;
 use crate::table_ops::team_json::jsonify_team_update;
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
@@ -46,7 +47,7 @@ where
         };
         let statement = sql::upsert(&create, Some(&update))?;
         let found = self.run_upsert(TEAM_ATTRIBUTE, &statement).await?;
-        let data = decode_team_row(&found).map_err(Into::into)?;
+        let data = LiteLLMTeamTable::decode_row(&found)?;
         Ok(TeamUpdateResult {
             team_id: resolved,
             data,

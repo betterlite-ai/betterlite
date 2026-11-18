@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use deadpool_postgres::{Client as PooledClient, Pool};
 use tokio_postgres::types::ToSql;
 
@@ -43,7 +45,7 @@ pub(super) fn routed_name<ClientError>(
     source: RouteError<ClientError>,
 ) -> TableOpsError<ClientError>
 where
-    ClientError: std::error::Error + Send + Sync + 'static,
+    ClientError: Error + Send + Sync + 'static,
 {
     match source {
         RouteError::MissingAttribute { name } => TableOpsError::MissingAttribute { name },
@@ -83,12 +85,14 @@ where
             .query(sql, parameters)
             .await
             .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
-        rows.iter()
-            .map(|row| {
+        let mut texts = Vec::with_capacity(rows.len());
+        for row in rows {
+            texts.push(
                 row.try_get(0)
-                    .map_err(|driver| TableOpsError::from(DriverError { driver }))
-            })
-            .collect()
+                    .map_err(|driver| TableOpsError::from(DriverError { driver }))?,
+            );
+        }
+        Ok(texts)
     }
 
     pub(super) async fn text_row(
@@ -98,31 +102,11 @@ where
         sql: &str,
         parameters: &[&(dyn ToSql + Sync)],
     ) -> Result<Option<String>, TableOpsError<Client::Error>> {
-        let client = self.connection(attribute, method).await?;
-        let row = client
-            .query_opt(sql, parameters)
-            .await
-            .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
-        row.map(|found| {
-            found
-                .try_get(0)
-                .map_err(|driver| TableOpsError::from(DriverError { driver }))
-        })
-        .transpose()
-    }
-
-    pub(super) async fn execute(
-        &self,
-        attribute: &str,
-        method: &str,
-        sql: &str,
-        parameters: &[&(dyn ToSql + Sync)],
-    ) -> Result<u64, TableOpsError<Client::Error>> {
-        let client = self.connection(attribute, method).await?;
-        client
-            .execute(sql, parameters)
-            .await
-            .map_err(|driver| TableOpsError::from(DriverError { driver }))
+        Ok(self
+            .text_rows(attribute, method, sql, parameters)
+            .await?
+            .into_iter()
+            .next())
     }
 
     pub(super) async fn run_upsert(
@@ -130,15 +114,15 @@ where
         attribute: &str,
         statement: &Statement,
     ) -> Result<String, TableOpsError<Client::Error>> {
-        let found = self
+        match self
             .text_row(
                 attribute,
                 "upsert",
                 &statement.sql,
                 &statement.parameters.bind_values(),
             )
-            .await?;
-        match found {
+            .await?
+        {
             Some(text) => Ok(text),
             None => Err(TableOpsError::Database {
                 source: DbError::CreateNull,

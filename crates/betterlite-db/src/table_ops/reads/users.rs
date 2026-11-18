@@ -1,15 +1,16 @@
 use chrono::{DateTime, Utc};
+use tokio_postgres::types::ToSql;
 
 use crate::database_replica::client::DatabaseClient;
 use crate::identity_rows::user::LiteLLMUserTable;
 
 use crate::table_ops::access::{RAW_QUERY_ATTRIBUTE, TablePoolAccess, USER_ATTRIBUTE};
-use crate::table_ops::rows::{UserWithAliases, decode_user_row, decode_user_with_aliases};
+use crate::table_ops::rows::{RowDecoder, UserWithAliases};
 use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 
 const UNIQUE_SQL: &str = "SELECT row_to_json(x)::text FROM (SELECT u.*, COALESCE((SELECT json_agg(m.*) FROM \"LiteLLM_OrganizationMembership\" m WHERE m.\"user_id\" = u.\"user_id\"), '[]'::json) AS organization_memberships FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = $1) x";
 const DUE_FOR_RESET_SQL: &str = "SELECT row_to_json(u)::text FROM \"LiteLLM_UserTable\" u WHERE u.\"budget_duration\" IS NOT NULL AND (u.\"budget_reset_at\" IS NULL OR u.\"budget_reset_at\" < $1) LIMIT $2";
-const IN_SQL: &str = "SELECT row_to_json(u)::text FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = ANY($1::text[])";
+const USERS_BY_IDS_SQL: &str = "SELECT row_to_json(u)::text FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = ANY($1::text[])";
 const ALL_SQL: &str = "SELECT u.*, json_agg(v.key_alias) AS key_aliases FROM \"LiteLLM_UserTable\" u LEFT JOIN \"LiteLLM_VerificationToken\" v ON u.user_id = v.user_id GROUP BY u.user_id ORDER BY u.spend DESC LIMIT $1 OFFSET $2";
 
 #[derive(Debug, Clone, Copy)]
@@ -38,68 +39,13 @@ where
         &self,
         user_id: &str,
     ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.user_unique_once(user_id)
-        })
-        .await
+        let rows = self
+            .find_users("find_unique", UNIQUE_SQL, &[&user_id])
+            .await?;
+        Ok(rows.into_iter().next())
     }
 
     pub async fn users_matching(
-        &self,
-        filter: UserFilter<'_>,
-    ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.users_matching_once(filter)
-        })
-        .await
-    }
-
-    pub async fn users_due_for_reset(
-        &self,
-        reset_at: DateTime<Utc>,
-        limit: Option<i64>,
-    ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.users_due_for_reset_once(reset_at, limit)
-        })
-        .await
-    }
-
-    pub async fn users_by_ids(
-        &self,
-        user_ids: &[String],
-    ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.users_by_ids_once(user_ids)
-        })
-        .await
-    }
-
-    pub async fn users_all(
-        &self,
-        limit: Option<i64>,
-        offset: Option<i64>,
-    ) -> Result<Vec<UserWithAliases>, TableOpsError<Client::Error>> {
-        self.attempt_with(DATA_RETRY, OperationCallType::GetData, || {
-            self.users_all_once(limit, offset)
-        })
-        .await
-    }
-
-    async fn user_unique_once(
-        &self,
-        user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        let found = self
-            .text_row(USER_ATTRIBUTE, "find_unique", UNIQUE_SQL, &[&user_id])
-            .await?;
-        found
-            .map(|text| decode_user_row(&text))
-            .transpose()
-            .map_err(Into::into)
-    }
-
-    async fn users_matching_once(
         &self,
         filter: UserFilter<'_>,
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
@@ -107,60 +53,59 @@ where
         let sql = format!(
             "SELECT row_to_json(u)::text FROM \"LiteLLM_UserTable\" u WHERE u.\"{column}\" = $1"
         );
-        let rows = self
-            .text_rows(USER_ATTRIBUTE, "find_many", &sql, &[&value])
-            .await?;
-        rows.iter()
-            .map(|text| decode_user_row(text).map_err(Into::into))
-            .collect()
+        self.find_users("find_many", &sql, &[&value]).await
     }
 
-    async fn users_due_for_reset_once(
+    pub async fn users_due_for_reset(
         &self,
         reset_at: DateTime<Utc>,
         limit: Option<i64>,
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
         let reset_at = reset_at.naive_utc();
-        let rows = self
-            .text_rows(
-                USER_ATTRIBUTE,
-                "find_many",
-                DUE_FOR_RESET_SQL,
-                &[&reset_at, &limit],
-            )
-            .await?;
-        rows.iter()
-            .map(|text| decode_user_row(text).map_err(Into::into))
-            .collect()
+        self.find_users("find_many", DUE_FOR_RESET_SQL, &[&reset_at, &limit])
+            .await
     }
 
-    async fn users_by_ids_once(
+    pub async fn users_by_ids(
         &self,
         user_ids: &[String],
     ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
-        let rows = self
-            .text_rows(USER_ATTRIBUTE, "find_many", IN_SQL, &[&user_ids])
-            .await?;
-        rows.iter()
-            .map(|text| decode_user_row(text).map_err(Into::into))
-            .collect()
+        self.find_users("find_many", USERS_BY_IDS_SQL, &[&user_ids])
+            .await
     }
 
-    async fn users_all_once(
+    pub async fn users_all(
         &self,
         limit: Option<i64>,
         offset: Option<i64>,
     ) -> Result<Vec<UserWithAliases>, TableOpsError<Client::Error>> {
-        let rows = self
-            .text_rows(
-                RAW_QUERY_ATTRIBUTE,
-                "query_raw",
-                ALL_SQL,
-                &[&limit, &offset],
-            )
-            .await?;
-        rows.iter()
-            .map(|text| decode_user_with_aliases(text).map_err(Into::into))
-            .collect()
+        self.query_rows(
+            RAW_QUERY_ATTRIBUTE,
+            "query_raw",
+            ALL_SQL,
+            &[&limit, &offset],
+            DATA_RETRY,
+            OperationCallType::GetData,
+            UserWithAliases::decode_row,
+        )
+        .await
+    }
+
+    async fn find_users(
+        &self,
+        method: &str,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> Result<Vec<LiteLLMUserTable>, TableOpsError<Client::Error>> {
+        self.query_rows(
+            USER_ATTRIBUTE,
+            method,
+            sql,
+            parameters,
+            DATA_RETRY,
+            OperationCallType::GetData,
+            LiteLLMUserTable::decode_row,
+        )
+        .await
     }
 }
