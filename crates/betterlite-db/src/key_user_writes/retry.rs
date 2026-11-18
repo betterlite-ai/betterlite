@@ -7,8 +7,11 @@ use chrono::{DateTime, Utc};
 
 use crate::migration_ledger::lock::JitterSource;
 
+use super::KeyUserWriteError;
+
 pub const MAX_TRIES: u32 = 3;
 pub const MAX_TIME: Duration = Duration::from_secs(10);
+pub const FAILURE_REPORT_DEADLINE: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CallType {
@@ -53,9 +56,9 @@ impl WriteClock for SystemWriteClock {
 }
 
 #[derive(Debug)]
-pub struct FailureEvent {
+pub struct FailureEvent<'error> {
     pub call_type: CallType,
-    pub error: String,
+    pub error: &'error KeyUserWriteError,
     pub traceback: String,
     pub duration: Duration,
 }
@@ -64,7 +67,7 @@ pub type FailureFuture<'sink> = Pin<Box<dyn Future<Output = ()> + Send + 'sink>>
 
 // the source detaches failure_handler from the failed write, so a sink never borrows the write it reports
 pub trait FailureSink: Send + Sync {
-    fn record(&self, event: FailureEvent) -> FailureFuture<'_>;
+    fn record(&self, event: FailureEvent<'_>) -> FailureFuture<'_>;
 }
 
 // backoff's expo wait doubled per attempt, jittered across the whole range and capped by the ten second budget

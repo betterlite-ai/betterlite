@@ -1,3 +1,4 @@
+mod assignments;
 pub mod columns;
 pub mod dispatch;
 pub mod hash;
@@ -20,7 +21,7 @@ use crate::postgres_store::errors::DbError;
 use crate::tool_spend::RetryPause;
 use crate::user_repository::projection::UserRecordError;
 
-use columns::UserWrite;
+use columns::{UserUpdateOps, UserWrite};
 use retry::{FailureSink, WriteClock};
 
 #[derive(Debug, Error)]
@@ -46,10 +47,16 @@ pub enum KeyUserWriteError {
     },
     #[error("the {field} value is missing from the write payload")]
     MissingField { field: &'static str },
+    #[error("the custom update for {column} needs a number")]
+    NonNumericUpdate { column: &'static str },
     #[error(
         "Foreign Key Constraint failed. Organization ID={organization_id} does not exist in LiteLLM_OrganizationTable. Create via `/organization/new`."
     )]
-    OrganizationMissing { organization_id: String },
+    OrganizationMissing {
+        organization_id: String,
+        #[source]
+        source: DbError<WriteRowError>,
+    },
 }
 
 impl KeyUserWriteError {
@@ -60,7 +67,8 @@ impl KeyUserWriteError {
             Self::Database { .. }
             | Self::Row(_)
             | Self::Encode { .. }
-            | Self::MissingField { .. } => None,
+            | Self::MissingField { .. }
+            | Self::NonNumericUpdate { .. } => None,
         }
     }
 }
@@ -82,7 +90,7 @@ pub struct UserUpdate {
     pub user_id: Option<String>,
     pub fields: UserWrite,
     pub update_fields: Option<UserWrite>,
-    pub custom_update_fields: Option<UserWrite>,
+    pub custom_update_fields: Option<UserUpdateOps>,
 }
 
 #[derive(Debug)]

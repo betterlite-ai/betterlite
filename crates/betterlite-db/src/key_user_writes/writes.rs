@@ -1,8 +1,10 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
 
 use deadpool_postgres::GenericClient;
-use secrecy::SecretString;
+use futures_util::FutureExt as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::Row;
 use tokio_postgres::error::SqlState;
 use tokio_postgres::types::ToSql;
@@ -13,11 +15,12 @@ use crate::key_repository::decode::decode_mapping;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_repository::table::{TokenValue, TokenWrite};
 use crate::postgres_store::errors::{DbError, backend};
-use crate::user_repository::projection::decode_user_record;
 
-use super::columns::{UserColumn, UserWrite};
+use super::columns::{UserColumn, UserUpdateOps, UserWrite};
 use super::hash::hash_token;
-use super::retry::{CallType, FailureEvent, MAX_TIME, MAX_TRIES, retry_wait, traceback};
+use super::retry::{
+    CallType, FAILURE_REPORT_DEADLINE, FailureEvent, MAX_TIME, MAX_TRIES, retry_wait, traceback,
+};
 use super::rows;
 use super::sql::{self, Relation, Statement};
 use super::{
@@ -32,10 +35,13 @@ where
 {
     pub async fn insert_key(
         &self,
+        token: &SecretString,
         fields: &TokenWrite,
     ) -> Result<LiteLLMVerificationToken, KeyUserWriteError> {
-        self.run(CallType::InsertData, || self.attempt_insert_key(fields))
-            .await
+        self.run(CallType::InsertData, || {
+            self.attempt_insert_key(token, fields)
+        })
+        .await
     }
 
     pub async fn insert_user(
@@ -94,15 +100,26 @@ where
             let rendered = traceback(call_type, &error);
             let error_msg = rendered.lines().next().unwrap_or_default();
             tracing::debug!("{error_msg}");
-            self.ports
-                .sink
-                .record(FailureEvent {
+            let report = tokio::time::timeout(
+                FAILURE_REPORT_DEADLINE,
+                AssertUnwindSafe(self.ports.sink.record(FailureEvent {
                     call_type,
-                    error: error.to_string(),
+                    error: &error,
                     traceback: rendered,
                     duration,
-                })
-                .await;
+                }))
+                .catch_unwind(),
+            )
+            .await;
+            match report {
+                Ok(Ok(())) => {}
+                Ok(Err(_panic)) => {
+                    tracing::warn!("the failure sink panicked while reporting the failed write");
+                }
+                Err(_elapsed) => {
+                    tracing::warn!("the failure sink did not report the failed write in time");
+                }
+            }
             if tries == MAX_TRIES || elapsed >= MAX_TIME {
                 return Err(error);
             }
@@ -114,12 +131,10 @@ where
 
     async fn attempt_insert_key(
         &self,
+        token: &SecretString,
         fields: &TokenWrite,
     ) -> Result<LiteLLMVerificationToken, KeyUserWriteError> {
-        let Some(TokenValue::Text(token)) = fields.0.get(&TokenColumn::Token) else {
-            return Err(KeyUserWriteError::MissingField { field: "token" });
-        };
-        let hashed = hash_token(token);
+        let hashed = hash_token(token.expose_secret());
         tracing::debug!(payload = ?debug_payload(fields, &hashed), "PrismaClient: insert_data");
         let mut data = fields.clone();
         data.0.insert(TokenColumn::Token, TokenValue::Text(hashed));
@@ -138,6 +153,7 @@ where
             });
         };
         let mut record = rows::row_object(&row)?;
+        rows::fill_null_lists(&mut record, &rows::KEY_LIST_COLUMNS);
         sql::attach_relation(self.client, &mut record, Relation::Budget).await?;
         let decoded = decode_mapping(record).map_err(WriteRowError::Key)?;
         tracing::info!("Data Inserted into Keys Table");
@@ -152,7 +168,10 @@ where
             return Err(KeyUserWriteError::MissingField { field: "user_id" });
         }
         tracing::debug!(payload = ?fields, "PrismaClient: insert_data");
-        match self.upsert_user_row(fields, &UserWrite::default()).await {
+        match self
+            .upsert_user_row(fields, &UserUpdateOps::default())
+            .await
+        {
             Ok(user) => {
                 tracing::info!("Data Inserted into User Table");
                 Ok(user)
@@ -164,7 +183,7 @@ where
     pub(super) async fn upsert_user_row(
         &self,
         fields: &UserWrite,
-        update: &UserWrite,
+        update: &UserUpdateOps,
     ) -> Result<LiteLLMUserTable, KeyUserWriteError> {
         let mut statement = Statement::default();
         let query = sql::upsert_user(&mut statement, fields, update)?;
@@ -173,11 +192,7 @@ where
                 source: DbError::CreateNull,
             });
         };
-        let text = rows::row_text(&row)?;
-        let decoded = decode_user_record(text.as_bytes()).map_err(WriteRowError::User)?;
-        decoded.ok_or(KeyUserWriteError::Database {
-            source: DbError::CreateNull,
-        })
+        rows::decode_user_row(&row)
     }
 
     pub(super) async fn query_row(
@@ -200,32 +215,35 @@ where
 }
 
 fn translate_organization_error(error: KeyUserWriteError, fields: &UserWrite) -> KeyUserWriteError {
-    if !is_named_organization_failure(&error) {
+    let KeyUserWriteError::Database { source } = error else {
         return error;
+    };
+    if !is_named_organization_failure(&source) {
+        return KeyUserWriteError::Database { source };
     }
     match fields.text(UserColumn::OrganizationId) {
         Some(organization_id) => KeyUserWriteError::OrganizationMissing {
             organization_id: organization_id.to_owned(),
+            source,
         },
-        None => error,
+        None => KeyUserWriteError::Database { source },
     }
 }
 
-fn is_named_organization_failure(error: &KeyUserWriteError) -> bool {
+fn is_named_organization_failure(error: &DbError<WriteRowError>) -> bool {
     match error {
-        KeyUserWriteError::Database {
-            source: DbError::SqlState {
-                code, constraint, ..
-            },
+        DbError::SqlState {
+            code, constraint, ..
         } => {
             code == &SqlState::FOREIGN_KEY_VIOLATION
                 && constraint.as_deref() == Some(ORGANIZATION_FOREIGN_KEY)
         }
-        KeyUserWriteError::Database { .. }
-        | KeyUserWriteError::Row(_)
-        | KeyUserWriteError::Encode { .. }
-        | KeyUserWriteError::MissingField { .. }
-        | KeyUserWriteError::OrganizationMissing { .. } => false,
+        DbError::NoDbConnected
+        | DbError::Pool { .. }
+        | DbError::Backend { .. }
+        | DbError::InvalidRecord { .. }
+        | DbError::CreateNull
+        | DbError::UniqueViolation { .. } => false,
     }
 }
 

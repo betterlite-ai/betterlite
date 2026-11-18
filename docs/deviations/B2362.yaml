@@ -1,8 +1,11 @@
 task: B2362
 deviations:
-  - what: A user update writes its data under the selected user_id, whether the caller passed it or the data carried it, so the returned user_id always names the row that was written.
-    why: The source uses the explicit user_id only as the Prisma where clause while create and update data keep their own user_id, so a caller passing two different ids gets a row written under the data's id and a response naming the explicit one. betterlite's typed upsert has no separate where clause, and a working setup passes one id in both places, so the fix only changes a call that could not act on its own response.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5473-L5494
+  - what: A failure event's delivery to the injected sink is bounded by a one second deadline, and an event that times out or panics is logged and dropped while the write retries or returns its original error.
+    why: The source detaches failure_handler with asyncio.create_task, so reporting never delays the write and never changes its exception; betterlite keeps that outcome and caps the wait rather than leaving an unbounded await in the retry loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5416-L5423
+  - what: The custom update map accepts typed set, increment, decrement, multiply and divide operations, so Prisma's list push and unset operations have no variant a caller can express.
+    why: The source forwards the map to Prisma as an untyped dict; betterlite compiles typed operations into atomic SQL so a custom value cannot reach a column through a mismatched JSON cast, and the proxy's own calls pass plain assignment values through this argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5479-L5488
   - what: The failure event's traceback is the LiteLLM-style error line followed by the error's Rust source chain, not CPython's traceback.format_exc frames.
     why: A Rust service has no Python frames to render; the event keeps the same error line, exception text and duration that a failure handler reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5410-L5422

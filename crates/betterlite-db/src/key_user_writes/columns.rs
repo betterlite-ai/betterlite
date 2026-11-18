@@ -178,3 +178,27 @@ impl UserWrite {
         })
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum UserColumnOp {
+    Set(TokenValue),
+    Increment(TokenValue),
+    Decrement(TokenValue),
+    Multiply(TokenValue),
+    Divide(TokenValue),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UserUpdateOps(pub BTreeMap<UserColumn, UserColumnOp>);
+
+impl From<&UserWrite> for UserUpdateOps {
+    fn from(fields: &UserWrite) -> Self {
+        Self(
+            fields
+                .0
+                .iter()
+                .map(|(column, value)| (*column, UserColumnOp::Set(value.clone())))
+                .collect(),
+        )
+    }
+}

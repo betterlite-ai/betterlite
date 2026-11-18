@@ -9,7 +9,8 @@ use crate::key_repository::table::columns::{TokenColumn, TokenSqlType};
 use crate::key_repository::table::{TokenValue, TokenWrite};
 use crate::postgres_store::errors::backend;
 
-use super::columns::UserWrite;
+use super::assignments::{assignments, update_assignments};
+use super::columns::{UserColumn, UserUpdateOps, UserWrite};
 use super::rows;
 use super::{KeyUserWriteError, WriteRowError};
 
@@ -62,7 +63,7 @@ impl Parameter {
         }
     }
 
-    fn marker(&self, index: usize, sql_type: TokenSqlType) -> String {
+    pub(super) fn marker(&self, index: usize, sql_type: TokenSqlType) -> String {
         match self {
             Self::Array(_) => format!("${index}::text[]"),
             Self::Text(_) => match sql_type {
@@ -87,10 +88,13 @@ pub(super) fn upsert_key(
     statement: &mut Statement,
     fields: &TokenWrite,
 ) -> Result<String, KeyUserWriteError> {
+    let mut insert = fields.0.clone();
+    insert
+        .entry(TokenColumn::Models)
+        .or_insert_with(|| TokenValue::TextArray(Vec::new()));
     let (columns, placeholders) = bind_values(
         statement,
-        fields
-            .0
+        insert
             .iter()
             .map(|(column, value)| (column.name(), column.sql_type(), value)),
     )?;
@@ -104,20 +108,49 @@ pub(super) fn upsert_key(
 pub(super) fn upsert_user(
     statement: &mut Statement,
     create: &UserWrite,
-    update: &UserWrite,
+    update: &UserUpdateOps,
 ) -> Result<String, KeyUserWriteError> {
-    let (columns, placeholders) = bind_values(statement, create.bindings())?;
-    let (update_columns, update_placeholders) = bind_values(statement, update.bindings())?;
-    let sets = assignments(&update_columns, &update_placeholders);
-    let conflict = if sets.is_empty() {
+    let (columns, placeholders) = insert_user_values(statement, create)?;
+    let conflict = if update.0.is_empty() {
         String::from("\"user_id\" = EXCLUDED.\"user_id\"")
     } else {
-        sets.join(", ")
+        update_assignments(statement, update)?.join(", ")
     };
     Ok(format!(
         "INSERT INTO {USER_TABLE} AS r ({}) VALUES ({}) ON CONFLICT (\"user_id\") DO UPDATE SET {conflict} RETURNING {ROW_JSON}",
         columns.join(", "),
         placeholders.join(", ")
+    ))
+}
+
+pub(super) fn insert_user(
+    statement: &mut Statement,
+    create: &UserWrite,
+) -> Result<String, KeyUserWriteError> {
+    let (columns, placeholders) = insert_user_values(statement, create)?;
+    Ok(format!(
+        "INSERT INTO {USER_TABLE} AS r ({}) VALUES ({}) RETURNING {ROW_JSON}",
+        columns.join(", "),
+        placeholders.join(", ")
+    ))
+}
+
+pub(super) fn update_user(
+    statement: &mut Statement,
+    lookup: &str,
+    update: &UserUpdateOps,
+) -> Result<String, KeyUserWriteError> {
+    let sets = if update.0.is_empty() {
+        String::from("\"user_id\" = r.\"user_id\"")
+    } else {
+        update_assignments(statement, update)?.join(", ")
+    };
+    let index = statement.parameters.len().saturating_add(1);
+    statement
+        .parameters
+        .push(Parameter::Text(Some(lookup.to_owned())));
+    Ok(format!(
+        "UPDATE {USER_TABLE} AS r SET {sets} WHERE r.\"user_id\" = ${index}::text RETURNING {ROW_JSON}"
     ))
 }
 
@@ -166,15 +199,19 @@ where
     Ok((columns, placeholders))
 }
 
-fn assignments(columns: &[String], placeholders: &[String]) -> Vec<String> {
-    let mut sets = Vec::with_capacity(columns.len());
-    for (column, marker) in columns.iter().zip(placeholders) {
-        sets.push(format!("{column} = {marker}"));
-    }
-    sets
+fn insert_user_values(
+    statement: &mut Statement,
+    create: &UserWrite,
+) -> Result<(Vec<String>, Vec<String>), KeyUserWriteError> {
+    let mut insert = create.clone();
+    insert
+        .0
+        .entry(UserColumn::Models)
+        .or_insert_with(|| TokenValue::TextArray(Vec::new()));
+    bind_values(statement, insert.bindings())
 }
 
-fn parameter_for(
+pub(super) fn parameter_for(
     sql_type: TokenSqlType,
     value: &TokenValue,
 ) -> Result<Parameter, KeyUserWriteError> {
@@ -223,7 +260,7 @@ pub(super) async fn attach_relation<C>(
 where
     C: GenericClient + Sync,
 {
-    let row_value = match relation_id(fields, relation.id_field()) {
+    let row_value = match rows::relation_id(fields, relation.id_field()) {
         Some(id_value) => query_relation(client, relation, &id_value).await?,
         None => JsonData::Null,
     };
@@ -253,12 +290,5 @@ where
     match row {
         Some(found) => rows::row_json(&found),
         None => Ok(JsonData::Null),
-    }
-}
-
-fn relation_id(fields: &BTreeMap<String, JsonData>, name: &str) -> Option<String> {
-    match fields.get(name) {
-        Some(JsonData::String(value)) => Some(value.clone()),
-        _ => None,
     }
 }
