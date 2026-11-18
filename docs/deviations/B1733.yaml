@@ -1,0 +1,97 @@
+task: B1733
+deviations:
+  - what: >-
+      Both in-memory queues drain, aggregate and reinsert their records while holding the queue
+      lock, so a compaction cannot wait on the queue it is refilling. The source drains with an
+      async flush and then awaits a put for every aggregated record.
+    why: >-
+      The source's await put can wait for room that only the flush itself would make; betterlite's
+      owned state machine makes the drain and reinsert one step that always finishes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L52-L69
+  - what: >-
+      A compaction whose aggregation fails puts every drained record back before reporting the
+      error, in both queues. The source has already drained the queue when a later addition
+      raises, so those records are lost.
+    why: >-
+      Losing queued spend is data loss no working setup can rely on; the failure still reaches
+      the caller as a SpendQueueError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L82-L89
+  - what: >-
+      A daily flush drains rows on queue pressure while it waits for interrupted commits, so a
+      settlement that needs room in a full queue still finishes and its row joins that flush.
+    why: >-
+      The source's flush awaits settle_interrupted_commits while a settlement may await queue
+      room, which deadlocks once the queue is full; betterlite breaks that wait instead of
+      hanging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L91-L105
+  - what: >-
+      Interrupted-commit settlements run on an owned task set that removes completed work and
+      is closed and awaited at shutdown. The source keeps asyncio tasks in a bare set and
+      discards each task with a done callback.
+    why: >-
+      Tokio has no loop that reaps a task set; an owned tracker lets shutdown wait for every
+      settlement and surfaces a panicking settlement instead of dropping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L63-L70
+  - what: >-
+      Queue-size service events run on the queue's owned service task set and are awaited at
+      shutdown. The source detaches them with asyncio.create_task.
+    why: >-
+      An owned task set makes shutdown deterministic and reports a sink failure rather than
+      losing it with the event loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L221-L235
+  - what: >-
+      Adding a record emits the inherited queue-size service event with
+      IN_MEMORY_SPEND_UPDATE_QUEUE or IN_MEMORY_DAILY_SPEND_UPDATE_QUEUE. Both source subclasses
+      override add_update without calling the base method, so the event they implement never
+      fires at the pin.
+    why: >-
+      The task requires the inherited event and its service kind; monitoring that no setup can
+      observe at the pin starts working in betterlite instead of staying dead code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L40-L50
+  - what: >-
+      Debug logs carry the item count and never the queued update body, the aggregated
+      transactions or the aggregated daily rows. The source logs all three at debug level.
+    why: >-
+      Spend records carry virtual keys and user identifiers; the repository's logging rules keep
+      bodies and secrets out of every log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L72-L74
+  - what: >-
+      Entity compaction groups records by the entity kind and id pair. The source joins
+      f"{entity_type}:{entity_id}" into one string, so an id containing a colon, or a kind whose
+      text is None, collides with a different pair whose text matches.
+    why: >-
+      A colon inside an id is data, not a separator; no working setup can rely on two distinct
+      entities sharing one transaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L110-L121
+  - what: >-
+      Costs are summed as exact decimals, and a counter that arrives as a fractional number is
+      truncated toward zero. The source adds Python numbers, so a float sum carries binary
+      rounding and a fractional counter keeps its fraction.
+    why: >-
+      Money is a decimal column and a counter is an integer column; the task requires checked
+      Decimal money, and docs/compatibility.md makes a counter an integer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L121-L126
+  - what: >-
+      A cost or counter sum that overflows its stored type reports SpendQueueError. The source's
+      floats become an infinity and its integers never overflow.
+    why: >-
+      An infinity cannot be stored in the decimal or integer column, so the sum fails at the
+      boundary that produces it instead of returning a value the database rejects.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/spend_update_queue.py#L117-L120
+kept_bugs:
+  - what: >-
+      A merge that finds an existing optional metric holding an explicit null raises, exactly as
+      the source's uncoalesced daily_transaction.get does; betterlite reports InvalidAddition
+      for that input rather than reading the null as zero.
+    why: >-
+      The task keeps the source's invalid-addition failure for an existing null, so a row the
+      source refuses is refused here too; the oracle case singleton-absence-and-existing-null
+      pins both sides to an invalid step.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L129-L131
+  - what: >-
+      A merge whose incoming or existing payload is missing a required field raises instead of
+      skipping the row; betterlite reports MissingField for the same field.
+    why: >-
+      The source indexes the six required metrics directly, and every writer that produces a
+      daily row sends them all; the failure is the contract the queue was built against.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_transaction_queue/daily_spend_update_queue.py#L121-L126
