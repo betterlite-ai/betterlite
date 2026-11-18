@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::panic;
-use std::thread;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -43,7 +41,7 @@ where
     let auth = pop_aws_auth_params(request.optional_params)?;
     let region = match explicit_region(request.optional_params)? {
         Some(region) => region,
-        None => environment_region(request.environment, secrets)?,
+        None => environment_region(request.environment, secrets).await?,
     };
     if request.bearer_token.is_some() {
         return Ok(LoadedCredentials {
@@ -71,21 +69,15 @@ fn explicit_region(
 }
 
 // AWS_REGION overrides AWS_REGION_NAME, and a value that is not a string leaves the other lookup standing
-fn environment_region(
+async fn environment_region(
     environment: &BTreeMap<String, String>,
     secrets: &SecretLookup,
 ) -> Result<String, EmbeddingIoError> {
-    // a secret manager read blocks on its own HTTP client, which refuses to run on a tokio worker
+    // Secret manager reads use synchronous HTTP clients; let Tokio replace this worker while they wait.
     let (name, standard) = if secrets.manager.is_some() {
-        thread::scope(|scope| {
-            let handle = thread::Builder::new()
-                .name("bedrock-region-secret".to_owned())
-                .spawn_scoped(scope, || region_secrets(environment, secrets))
-                .map_err(|source| EmbeddingIoError::RegionThread { source })?;
-            handle
-                .join()
-                .unwrap_or_else(|payload| panic::resume_unwind(payload))
-        })?
+        let environment = environment.clone();
+        let secrets = secrets;
+        tokio::task::block_in_place(|| region_secrets(&environment, secrets))?
     } else {
         region_secrets(environment, secrets)?
     };

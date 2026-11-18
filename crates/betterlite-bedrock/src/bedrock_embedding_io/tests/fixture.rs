@@ -305,6 +305,10 @@ impl SyncSecretReader for ManagedReader {
 }
 
 pub(super) fn managed_secrets(reader: Arc<ManagedReader>) -> SecretLookup {
+    managed_secrets_reader(reader)
+}
+
+pub(super) fn managed_secrets_reader(reader: Arc<dyn SyncSecretReader>) -> SecretLookup {
     secret_lookup(Some(ManagerState {
         client: SecretManagerClient::Vault(reader),
         settings: Some(SecretManagerSettings::default()),

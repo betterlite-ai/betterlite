@@ -20,11 +20,6 @@ pub enum EmbeddingIoError {
     },
     #[error(transparent)]
     Secret(#[from] SecretLookupError),
-    #[error("the region secret lookup thread could not start")]
-    RegionThread {
-        #[source]
-        source: std::io::Error,
-    },
     #[error(transparent)]
     Credential(#[from] CredentialError),
     #[error(transparent)]
