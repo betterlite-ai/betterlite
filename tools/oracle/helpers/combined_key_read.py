@@ -100,8 +100,6 @@ class StaleEngine(Protocol):
 
 class DeprecatedTable(Protocol):
     async def find_first(self, where: dict[str, JsonValue]) -> DeprecatedRow | None: ...
-    async def find_many(self, where: dict[str, JsonValue]) -> list[DeprecatedRow]: ...
-    async def create(self, data: dict[str, JsonValue]) -> DeprecatedRow: ...
 
 
 class TraceHandler(logging.Handler):
@@ -150,12 +148,10 @@ class FakeDeprecated(DeprecatedTable):
 
     @override
     async def find_first(self, where: dict[str, JsonValue]) -> DeprecatedRow | None:
-        if self.session.step_millis:
-            await asyncio.sleep(self.session.step_millis / 1000)
-        self.session.queries.append({
-            "target": "litellm_deprecatedverificationtoken", "token_hash": str(where["token"]),
-            "use_writer": self.use_writer, "now_seconds": int(self.session.now.timestamp()),
-        })
+        await self.session.record_query(
+            "litellm_deprecatedverificationtoken", str(where["token"]),
+            use_writer=self.use_writer, now_seconds=int(self.session.now.timestamp()),
+        )
         step = self.session.deprecated.pop(0) if self.session.deprecated else None
         if step is None:
             return None
@@ -164,14 +160,6 @@ class FakeDeprecated(DeprecatedTable):
         row = DeprecatedRow(step["data"])
         # the case clock stands in for the source's wall clock, so both sides filter together
         return None if row.revoke_at <= self.session.now else row
-
-    @override
-    async def find_many(self, _where: dict[str, JsonValue]) -> list[DeprecatedRow]:
-        return []
-
-    @override
-    async def create(self, _data: dict[str, JsonValue]) -> DeprecatedRow:
-        raise NotImplementedError
 
 
 class FakeWrapper(PrismaWrapper):
@@ -182,12 +170,9 @@ class FakeWrapper(PrismaWrapper):
         self.litellm_deprecatedverificationtoken = FakeDeprecated(session, use_writer=use_writer)
 
     async def query_first(self, _sql_query: str, *args: JsonValue) -> dict[str, JsonValue] | None:
-        if self.session.step_millis:
-            await asyncio.sleep(self.session.step_millis / 1000)
-        self.session.queries.append({
-            "target": "combined_view", "token_hash": str(args[0]),
-            "use_writer": self.use_writer, "now_seconds": None,
-        })
+        await self.session.record_query(
+            "combined_view", str(args[0]), use_writer=self.use_writer, now_seconds=None,
+        )
         step = self.session.rows.pop(0) if self.session.rows else None
         if step is None:
             return None
@@ -203,7 +188,7 @@ class FakeClient(PrismaClient):
         self.proxy_logging_obj = session.recorder
 
     @override
-    async def attempt_db_reconnect(  # noqa: E501, PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6435
+    async def attempt_db_reconnect(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6435
         self,
         reason: str,
         force: bool = False,
@@ -239,6 +224,16 @@ class Session:
         self.writer = FakeWrapper(self, use_writer=True)
         self.recorder = Recorder(self)
         self.client = FakeClient(RoutingPrismaWrapper(self.writer, self.reader), self)
+
+    async def record_query(
+        self, target: str, token_hash: str, *, use_writer: bool, now_seconds: int | None,
+    ) -> None:
+        if self.step_millis:
+            await asyncio.sleep(self.step_millis / 1000)
+        self.queries.append({
+            "target": target, "token_hash": token_hash,
+            "use_writer": use_writer, "now_seconds": now_seconds,
+        })
 
     async def execute(self, input_value: Input) -> JsonValue:
         result, view, error = await call(self.client, input_value)
