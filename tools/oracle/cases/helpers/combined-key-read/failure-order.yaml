@@ -1,0 +1,55 @@
+kind: helper
+name: combined-key-read-failure-order
+call:
+  combined_key_read:
+    now: "2023-11-14T22:13:20+00:00"
+    step_millis: 0
+    token: sk-down
+    query_type: find_unique
+    check_deprecated: true
+    use_writer: false
+    rows:
+      - kind: failure
+        error: {type: raw_query, message: "the database is down"}
+      - kind: failure
+        error: {type: raw_query, message: "the database is down"}
+      - kind: failure
+        error: {type: raw_query, message: "the database is down"}
+    deprecated: []
+    reconnects: []
+calls:
+  - combined_key_read:
+      now: "2023-11-14T22:13:20+00:00"
+      step_millis: 0
+      token: null
+      query_type: find_unique
+      check_deprecated: true
+      use_writer: false
+      rows: []
+      deprecated: []
+      reconnects: []
+  - combined_key_read:
+      now: "2023-11-14T22:13:20+00:00"
+      step_millis: 0
+      token: sk-flaky
+      query_type: find_unique
+      check_deprecated: true
+      use_writer: false
+      rows:
+        - kind: failure
+          error: {type: raw_query, message: "the database is down"}
+        - kind: failure
+          error: {type: raw_query, message: "the database is down"}
+        - kind: data
+          data:
+            token: sk-flaky
+            user_id: u1
+            models: []
+            spend: 0
+            team_models: []
+            team_blocked: false
+            team_members_with_roles: null
+      deprecated: []
+      reconnects: []
+env: {}
+compare: {ignore: []}

@@ -7,7 +7,7 @@ description: >-
   missing-messages HTTP cases. Add the missing successful, tool, scope and late-error cases in
   tools/oracle/cases/http/usage-chat/. No production function remains unassigned, and this task
   registers no route, builds no adapter and edits no shared mount. Allow roughly 700-800 lines of
-  compact fixture YAML. B9270 supplies independent daily-spend data, and B5076 makes the pinned
+  compact fixture YAML. B9270 supplies independent daily-spend data, and B9942 makes the pinned
   LiteLLM Prisma client usable. A mismatch belongs to the named implementation owner below;
   keep its failing case rather than replacing a real collaborator with a test hook.
 
@@ -158,7 +158,7 @@ out_of_scope:
   - "B8271 owns ChatMessage, UsageAIChatRequest, usage_ai_chat and usage_endpoints/__init__.py's router re-export; B8673 owns UsageChatFactory's production implementation and the sole route mount."
   - "B3096, B3097 and B3098 own every daily_activity_routes.py helper and handler; B8482 owns register_daily_activity_routes and the six-resolver loop, its mount and deferred key/search/aggregate HTTP cases."
   - "B3098 and B3099 already own export and cache-activity HTTP cases; B8661 owns the analytics and gateway-activity mounts and their deferred HTTP cases."
-  - "B9270 owns daily usage fixture schema/seeding; B860 owns fixture lifecycle and B5076 owns Prisma generation."
+  - "B9270 owns daily usage fixture schema/seeding; B860 owns fixture lifecycle and B9942 owns Prisma generation."
   - "B005/B8271 own idle-ping timing and stream wrapping; B089 owns loading litellm_settings.sse_keepalive_ping_interval_seconds and B8673 passes it to the route."
   - "B8675 backs ProxyUrls with CustomUrls; B7323's description naming B074 for that agent-card wiring is stale."
 pitfalls:
