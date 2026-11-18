@@ -12,6 +12,9 @@ deviations:
   - what: The pod lock, the clock and the registered loggers arrive as constructor and function parameters instead of being read from litellm.proxy.proxy_server.proxy_logging_obj and litellm.logging_callback_manager.
     why: betterlite has no module-level state; the composition root supplies the pod lock manager and the registered loggers.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L112-L122
+  - what: The scheduled run releases the pod lock from a task on a TaskTracker the server drains at shutdown, and the job awaits that task before returning; a cancelled or dropped export still releases the lease.
+    why: Rust drops a future at its await point without running the code after it, so LiteLLM's try/finally release would never run on cancellation; the tracked task keeps the release alive and shutdown waits for it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L127-L130
   - what: Each registry entry carries a FocusLoggerType tag, and the job picks the first entry tagged Focus, instead of filtering a global callback list with type(cb) is FocusLogger so subclasses like VantageLogger are excluded.
     why: Rust has no subclass identity; the tag records the same distinction, and the Vantage logger registers with the Vantage tag.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/focus_logger.py#L140-L146

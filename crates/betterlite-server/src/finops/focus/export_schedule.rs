@@ -1,11 +1,13 @@
 use std::error::Error;
 use std::sync::Arc;
 
-use betterlite_config::sections::focus_export_schedule::DEFAULT_INTERVAL_SECONDS;
 use betterlite_db::queues::pod_lock::{LockCache, PodLockManager};
 use betterlite_logging::focus_records::destinations::FocusTimeWindow;
 use chrono::{DateTime, DurationRound as _, TimeDelta, Utc};
 use futures_util::future::BoxFuture;
+use tokio::sync::Notify;
+use tokio::task::JoinHandle;
+use tokio_util::task::TaskTracker;
 
 use super::error::{FocusError, FocusInitError, ScheduleError};
 use super::export::{FocusEngineFactory, FocusLogger};
@@ -57,6 +59,25 @@ pub enum ScheduleTrigger {
     },
 }
 
+// the frequencies the trigger and the window know: any other configured text rides along so the error can name it
+pub enum ExportFrequency {
+    Hourly,
+    Daily,
+    Interval,
+    Unsupported(String),
+}
+
+impl ExportFrequency {
+    fn parse(frequency: &str) -> Self {
+        match frequency {
+            "hourly" => Self::Hourly,
+            "daily" => Self::Daily,
+            "interval" => Self::Interval,
+            other => Self::Unsupported(other.to_owned()),
+        }
+    }
+}
+
 // type(cb) is FocusLogger on a registered callback: VantageLogger and any other subclass carry their own tag.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FocusLoggerType {
@@ -103,18 +124,53 @@ impl<Cache: LockCache> FocusPodLock for PodLockManager<Cache> {
     }
 }
 
+// The redis lease of one scheduled run: a tracked task releases it whether the export ends or its future is dropped.
+struct PodLockLease {
+    release_now: Arc<Notify>,
+    release_task: Option<JoinHandle<()>>,
+}
+
+impl PodLockLease {
+    fn start(pod_lock: Arc<dyn FocusPodLock>, tasks: &TaskTracker) -> Self {
+        let release_now = Arc::new(Notify::new());
+        let wake = Arc::clone(&release_now);
+        let release_task = tasks.spawn(async move {
+            wake.notified().await;
+            pod_lock.release_lock(FOCUS_USAGE_DATA_JOB_NAME).await;
+        });
+        Self {
+            release_now,
+            release_task: Some(release_task),
+        }
+    }
+
+    async fn release(mut self) {
+        self.release_now.notify_one();
+        if let Some(release_task) = self.release_task.take() {
+            let _released = release_task.await;
+        }
+    }
+}
+
+impl Drop for PodLockLease {
+    fn drop(&mut self) {
+        // a cancelled export never reaches release(): wake the tracked task so the lease is not held until its TTL
+        self.release_now.notify_one();
+    }
+}
+
 impl<F: FocusEngineFactory> FocusLogger<F> {
     pub fn build_scheduler_trigger(&self) -> Result<ScheduleTrigger, ScheduleError> {
-        match self.frequency.as_str() {
-            "interval" => Ok(ScheduleTrigger::Interval {
-                seconds: self.interval_seconds.unwrap_or(DEFAULT_INTERVAL_SECONDS),
+        match ExportFrequency::parse(&self.frequency) {
+            ExportFrequency::Interval => Ok(ScheduleTrigger::Interval {
+                seconds: self.interval_seconds,
             }),
-            "hourly" => Ok(ScheduleTrigger::Cron {
+            ExportFrequency::Hourly => Ok(ScheduleTrigger::Cron {
                 hour: None,
                 minute: self.cron_offset_minute.clamp(0, 59),
                 second: 0,
             }),
-            "daily" => {
+            ExportFrequency::Daily => {
                 let total_minutes = self.cron_offset_minute.max(0);
                 Ok(ScheduleTrigger::Cron {
                     hour: Some(total_minutes.div_euclid(60).min(23)),
@@ -122,9 +178,9 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
                     second: 0,
                 })
             }
-            _ => Err(ScheduleError::UnsupportedFrequency {
-                frequency: self.frequency.clone(),
-            }),
+            ExportFrequency::Unsupported(frequency) => {
+                Err(ScheduleError::UnsupportedFrequency { frequency })
+            }
         }
     }
 
@@ -132,22 +188,19 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
         &self,
         now: DateTime<Utc>,
     ) -> Result<FocusTimeWindow, ScheduleError> {
-        let (start_time, end_time) = match self.frequency.as_str() {
-            "hourly" => truncated_window(now, TimeDelta::try_hours(1))?,
-            "daily" => truncated_window(now, TimeDelta::try_days(1))?,
-            "interval" => {
-                let seconds = self.interval_seconds.unwrap_or(DEFAULT_INTERVAL_SECONDS);
-                let interval =
-                    TimeDelta::try_seconds(seconds).ok_or(ScheduleError::TimeWindowOutOfRange)?;
+        let (start_time, end_time) = match ExportFrequency::parse(&self.frequency) {
+            ExportFrequency::Hourly => truncated_window(now, TimeDelta::try_hours(1))?,
+            ExportFrequency::Daily => truncated_window(now, TimeDelta::try_days(1))?,
+            ExportFrequency::Interval => {
+                let interval = TimeDelta::try_seconds(self.interval_seconds)
+                    .ok_or(ScheduleError::TimeWindowOutOfRange)?;
                 let start_time = now
                     .checked_sub_signed(interval)
                     .ok_or(ScheduleError::TimeWindowOutOfRange)?;
                 (start_time, now)
             }
-            _ => {
-                return Err(ScheduleError::UnsupportedFrequency {
-                    frequency: self.frequency.clone(),
-                });
+            ExportFrequency::Unsupported(frequency) => {
+                return Err(ScheduleError::UnsupportedFrequency { frequency });
             }
         };
         Ok(FocusTimeWindow {
@@ -158,13 +211,13 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
     }
 
     pub async fn initialize_focus_export_job(&self) -> Result<(), FocusError<F::Engine::Error>> {
-        let locked = match self.pod_lock.as_ref() {
+        let lease = match self.pod_lock.as_ref() {
             Some(pod_lock) if pod_lock.has_cache() => {
                 if pod_lock.acquire_lock(FOCUS_USAGE_DATA_JOB_NAME).await != Some(true) {
                     tracing::debug!("Focus export: unable to acquire pod lock");
                     return Ok(());
                 }
-                Some(pod_lock)
+                Some(PodLockLease::start(Arc::clone(pod_lock), &self.tasks))
             }
             _ => None,
         };
@@ -176,8 +229,8 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
             }
             Err(error) => Err(FocusError::Schedule(error)),
         };
-        if let Some(pod_lock) = locked {
-            pod_lock.release_lock(FOCUS_USAGE_DATA_JOB_NAME).await;
+        if let Some(lease) = lease {
+            lease.release().await;
         }
         result
     }

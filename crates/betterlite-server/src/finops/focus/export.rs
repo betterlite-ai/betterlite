@@ -10,6 +10,7 @@ use betterlite_logging::finops::focus::engine::{ExportError, ExportSettings, Foc
 use betterlite_logging::finops::metering::clock::UtcClock;
 use betterlite_logging::focus_records::destinations::{FocusDestination, FocusTimeWindow};
 use chrono::{DateTime, Utc};
+use tokio_util::task::TaskTracker;
 
 use super::error::FocusError;
 use super::export_schedule::FocusPodLock;
@@ -92,6 +93,8 @@ pub struct FocusLoggerDeps<F: FocusEngineFactory> {
     pub factory: F,
     pub clock: Arc<dyn UtcClock>,
     pub pod_lock: Option<Arc<dyn FocusPodLock>>,
+    // the server owns this tracker and drains it at shutdown, so a release a cancelled export leaves behind still runs
+    pub tasks: TaskTracker,
 }
 
 pub struct FocusLogger<F: FocusEngineFactory> {
@@ -99,11 +102,12 @@ pub struct FocusLogger<F: FocusEngineFactory> {
     pub export_format: String,
     pub frequency: String,
     pub cron_offset_minute: i64,
-    pub interval_seconds: Option<i64>,
+    pub interval_seconds: i64,
     pub prefix: String,
     pub destination_config: DestinationOverrides,
     pub(super) pod_lock: Option<Arc<dyn FocusPodLock>>,
     pub(super) clock: Arc<dyn UtcClock>,
+    pub(super) tasks: TaskTracker,
     factory: F,
     exporter: Mutex<Option<Arc<F::Engine>>>,
 }
@@ -132,14 +136,24 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
             cron_offset_minute: params
                 .cron_offset_minute
                 .unwrap_or(settings.cron_offset_minute),
-            interval_seconds: params.interval_seconds.or(settings.interval_seconds),
+            interval_seconds: params
+                .interval_seconds
+                .or(settings.interval_seconds)
+                .unwrap_or(focus_export_schedule::DEFAULT_INTERVAL_SECONDS),
             prefix: params.prefix.unwrap_or(settings.prefix),
             destination_config: params.destination_config.unwrap_or_default(),
             pod_lock: deps.pod_lock,
             clock: deps.clock,
+            tasks: deps.tasks,
             factory: deps.factory,
             exporter: Mutex::new(None),
         })
+    }
+
+    // the composition root calls this once scheduling stops: lock releases a cancelled export left behind finish here
+    pub async fn drain(&self) {
+        self.tasks.close();
+        self.tasks.wait().await;
     }
 
     // _ensure_engine: built on first use, kept afterwards, and built again after a failure
