@@ -119,7 +119,7 @@ pub fn parse_observed_cache(
     )?;
     Some(ObservedCachePrefix {
         prefix,
-        scope: cache_scope(caller_key_hash, deployment_id, provider_key, &model),
+        scope: cache_scope(caller_key_hash, deployment_id, &provider_key, &model),
         cached_tokens: cache_tokens,
         cache_creation_tokens: usage.prompt_tokens_details.cache_creation_tokens,
     })
@@ -141,15 +141,15 @@ fn native_headers(headers: &HeaderMap) -> bool {
         && supported_prediction_headers(headers)
 }
 
-// httpx collapses a repeated header to its last value before LiteLLM validates the dict
-fn native_credentials(headers: &HeaderMap) -> Option<&str> {
-    let version = headers.get_all(VERSION_HEADER).iter().last()?;
+// httpx joins a repeated header's values with ", " before LiteLLM validates the dict
+fn native_credentials(headers: &HeaderMap) -> Option<String> {
+    let version = joined_header(headers, VERSION_HEADER)?;
     if version.as_bytes() != ANTHROPIC_VERSION.as_bytes() {
         return None;
     }
-    let api_key = headers.get_all(API_KEY_HEADER).iter().last()?;
-    let key = api_key.to_str().ok()?;
-    if !supported_provider_key(key) {
+    let key = joined_header(headers, API_KEY_HEADER)?;
+    let provider = key.as_str();
+    if !supported_provider_key(provider) {
         return None;
     }
     Some(key)
@@ -220,4 +220,16 @@ impl ObservationParser for ObservedCacheParser {
             cache_creation_tokens: observed.cache_creation_tokens,
         })
     }
+}
+
+fn joined_header(headers: &HeaderMap, name: &str) -> Option<String> {
+    let values: Vec<&str> = headers
+        .get_all(name)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect();
+    if values.is_empty() {
+        return None;
+    }
+    Some(values.join(", "))
 }

@@ -159,6 +159,41 @@ fn parse_observed_cache_requires_the_native_version() {
     assert!(parse_observed_cache(&wire, &hit(), "caller", "deployment").is_none());
 }
 
+#[test]
+fn parse_observed_cache_joins_repeated_versions_like_httpx() {
+    let url = Url::parse(NATIVE_URL).unwrap();
+    let mut headers = headers();
+    headers.append("anthropic-version", HeaderValue::from_static("2023-06-01"));
+    let wire = WireRequest {
+        url: &url,
+        headers: &headers,
+        body: BODY.as_bytes(),
+    };
+    assert!(parse_observed_cache(&wire, &hit(), "caller", "deployment").is_none());
+}
+
+#[test]
+fn parse_observed_cache_joins_repeated_keys_in_the_scope() {
+    let url = Url::parse(NATIVE_URL).unwrap();
+    let mut headers = headers();
+    headers.append("x-api-key", HeaderValue::from_static("sk-ant-api03-other"));
+    let wire = WireRequest {
+        url: &url,
+        headers: &headers,
+        body: BODY.as_bytes(),
+    };
+    let observed = parse_observed_cache(&wire, &hit(), "caller", "deployment").unwrap();
+    assert_eq!(
+        observed.scope,
+        cache_scope(
+            "caller",
+            "deployment",
+            "sk-ant-api03-key, sk-ant-api03-other",
+            "claude-3-5-sonnet"
+        )
+    );
+}
+
 #[rstest]
 #[case::missing(None)]
 #[case::empty(Some(""))]
