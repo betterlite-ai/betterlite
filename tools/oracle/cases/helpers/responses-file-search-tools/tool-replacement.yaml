@@ -1,0 +1,37 @@
+kind: helper
+name: responses-file-search-tool-replacement
+call:
+  responses_file_search_tools:
+    function: tool_replacement
+    tools: null
+calls:
+  - responses_file_search_tools:
+      function: tool_replacement
+      tools: []
+  - responses_file_search_tools:
+      function: tool_replacement
+      tools:
+        - {type: file_search, vector_store_ids: ["vs_b", "vs_a", "vs_b"]}
+        - {type: custom}
+        - {}
+        - {name: x}
+  - responses_file_search_tools:
+      function: tool_replacement
+      tools:
+        - {type: file_search, vector_store_ids: ["vs_c"]}
+        - {type: file_search, vector_store_ids: ["vs_d", "vs_c"]}
+  - responses_file_search_tools:
+      function: tool_replacement
+      tools:
+        - {type: file_search, vector_store_ids: null}
+        - {type: file_search}
+        - {type: file_search, vector_store_ids: []}
+  - responses_file_search_tools:
+      function: tool_replacement
+      tools:
+        - {type: custom, vector_store_ids: ["vs_z"]}
+        - {vector_store_ids: ["vs_y"]}
+        - plain text
+        - null
+env: {}
+compare: {ignore: []}

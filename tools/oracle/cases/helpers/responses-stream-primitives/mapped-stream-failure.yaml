@@ -1,0 +1,25 @@
+kind: helper
+name: mapped-stream-failure
+call:
+  responses_stream_primitives:
+    operation: mapped_stream_failure
+    rows:
+      - {model: gpt-4o, provider: openai, fields: {message: slow, code: rate_limit_exceeded}}
+      - {model: gpt-4o, provider: openai, fields: {message: "rate limit hit", type: rate_limit_exceeded}}
+      - {model: gpt-4o, provider: openai, fields: {message: quota, code: insufficient_quota}}
+      - {model: gpt-4o, provider: openai, fields: {message: down, code: server_error}}
+      - {model: gpt-4o, provider: openai, fields: {message: later, code: vector_store_timeout}}
+      - {model: gpt-4o, provider: openai, fields: {message: policy, type: invalid_request_error, code: content_policy_violation}}
+      - {model: gpt-4o, provider: openai, fields: {message: key, code: "401"}}
+      - {model: gpt-4o, provider: openai, fields: {message: missing, code: "404"}}
+      - {model: gpt-4o, provider: openai, fields: {message: teapot, code: "418"}}
+      - {model: gpt-4o, provider: openai, fields: {message: busy, code: "503"}}
+      - {model: gpt-4o, provider: openai, fields: {message: gateway, code: "502"}}
+      - {model: gpt-4o, provider: openai, fields: {message: precedence, type: rate_limit_exceeded, code: server_error}}
+      - {model: gpt-4o, provider: openai, fields: {message: bad, type: invalid_request_error, code: invalid_prompt}}
+      - {model: gpt-4o, provider: openai, fields: {message: unknown}}
+      - {model: gpt-4o, provider: openai, fields: {message: null, type: 9, code: false}}
+      - {model: gpt-4o, provider: groq, fields: {message: slow, code: rate_limit_exceeded}}
+      - {model: gpt-4o, provider: groq, fields: {message: down, code: server_error}}
+env: {}
+compare: {ignore: []}
