@@ -1,0 +1,10 @@
+kind: helper
+name: custom-routes-file-invalid-format
+call:
+  b3808:
+    function: build_routes
+    custom_routes_file: |-
+      just a plain sentence
+    global_threshold: 0.75
+env: {}
+compare: {ignore: []}

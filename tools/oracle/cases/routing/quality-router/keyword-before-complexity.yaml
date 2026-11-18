@@ -1,0 +1,26 @@
+kind: probe
+name: quality-router-keyword-before-complexity
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [cheap, strong]
+                  complexity_to_quality: {SIMPLE: 1}
+            - model_name: cheap
+              litellm_params: {model: openai/cheap}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1, keywords: [code]}
+            - model_name: strong
+              litellm_params: {model: openai/strong}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 3, keywords: [code]}
+        messages:
+          - role: user
+            content: please write Code
