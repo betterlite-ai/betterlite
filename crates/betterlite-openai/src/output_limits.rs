@@ -66,13 +66,13 @@ fn decode_body(error_body: &Value) -> Result<Vec<Value>, RejectedFieldsError> {
     let Value::Object(fields) = error_body else {
         return Ok(Vec::new());
     };
-    let Some(message) = fields.get("message").filter(|message| present(message)) else {
+    let Some(raw_message) = fields.get("message").filter(|value| present(value)) else {
         return Ok(Vec::new());
     };
-    let Some(message) = decoded_message(message)? else {
+    let Some(decoded) = decoded_message(raw_message) else {
         return Ok(Vec::new());
     };
-    let Value::Object(message) = message else {
+    let Value::Object(message) = decoded else {
         return Err(RejectedFieldsError::MessageNotObject);
     };
     match message.get("detail") {
@@ -82,13 +82,10 @@ fn decode_body(error_body: &Value) -> Result<Vec<Value>, RejectedFieldsError> {
 }
 
 // a string message is JSON-decoded, and one that is not JSON reads as {detail: message}, which names nothing
-fn decoded_message(message: &Value) -> Result<Option<Value>, RejectedFieldsError> {
+fn decoded_message(message: &Value) -> Option<Value> {
     match message {
-        Value::String(text) => match serde_json::from_str::<Value>(text) {
-            Ok(value) => Ok(Some(value)),
-            Err(_) => Ok(None),
-        },
-        other => Ok(Some(other.clone())),
+        Value::String(text) => serde_json::from_str::<Value>(text).ok(),
+        other => Some(other.clone()),
     }
 }
 
@@ -104,12 +101,10 @@ fn rejected_fields(detail: &[Value]) -> Result<Vec<Value>, RejectedFieldsError> 
         let Value::Object(fields) = entry else {
             return Err(RejectedFieldsError::DetailEntryNotObject { index });
         };
-        if let Some(location) = fields.get("loc").filter(|location| present(location)) {
-            if let Value::Array(location) = location
-                && location.len() == 2
-            {
-                rejected.push(location.get(1).cloned().unwrap_or(Value::Null));
-            }
+        if let Some(Value::Array(location)) = fields.get("loc")
+            && location.len() == 2
+        {
+            rejected.push(location.get(1).cloned().unwrap_or(Value::Null));
         }
     }
     Ok(rejected)
@@ -135,7 +130,7 @@ fn present(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_none_or(|number| number != 0.0),
+        Value::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
         Value::String(text) => !text.is_empty(),
         Value::Array(items) => !items.is_empty(),
         Value::Object(fields) => !fields.is_empty(),

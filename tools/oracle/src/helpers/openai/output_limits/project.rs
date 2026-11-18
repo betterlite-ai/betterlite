@@ -26,17 +26,19 @@ pub(crate) fn raw_failure(error: RawChatError) -> Box<HelperError> {
         }
         RawChatError::Timeout { message } => failure("APITimeoutError", None, message),
         RawChatError::Other { message } => failure("RawChatError", None, message),
+        RawChatError::Count { source } => failure("PromptCountError", None, source.to_string()),
+        RawChatError::Encode { source } => failure("Encode", None, source.to_string()),
     }
 }
 
 pub(crate) fn header_map(headers: &BTreeMap<String, String>) -> HeaderMap {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        if let (Ok(name), Ok(value)) = (
+        if let (Ok(parsed_name), Ok(parsed_value)) = (
             HeaderName::try_from(name.as_str()),
             HeaderValue::try_from(value.as_str()),
         ) {
-            map.insert(name, value);
+            map.insert(parsed_name, parsed_value);
         }
     }
     map
@@ -92,8 +94,8 @@ fn projected_body(value: &Value, body_key: &str) -> Value {
 fn projected_choices(value: &Value, body_key: &str) -> Value {
     let choices = value.get("choices").and_then(Value::as_array);
     let mut projected = Vec::new();
-    if let Some(choices) = choices {
-        for choice in choices {
+    if let Some(entries) = choices {
+        for choice in entries {
             let body = choice.get(body_key);
             let mut fields = Map::new();
             fields.insert(

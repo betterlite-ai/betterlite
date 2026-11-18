@@ -65,7 +65,15 @@ fn completion(id: &str, created: u64, model: &str, prompt_tokens: usize) -> Chat
         model: model.to_owned(),
         choices: vec![ChatChoice {
             index: 0,
-            message: assistant_message(),
+            message: AssistantMessage {
+                role: String::from("assistant"),
+                content: Some(String::new()),
+                tool_calls: None,
+                annotations: None,
+                audio: None,
+                refusal: None,
+                provider_specific_fields: MessageProviderFields::default(),
+            },
             finish_reason: Some(String::from("length")),
             logprobs: None,
             provider_specific_fields: BTreeMap::new(),
@@ -83,28 +91,14 @@ fn completion(id: &str, created: u64, model: &str, prompt_tokens: usize) -> Chat
     }
 }
 
-// the assistant turn both shapes carry: no text, no tool calls, and the same length finish
-fn assistant_message() -> AssistantMessage {
-    AssistantMessage {
-        role: String::from("assistant"),
-        content: Some(String::new()),
-        tool_calls: None,
-        annotations: None,
-        audio: None,
-        refusal: None,
-        provider_specific_fields: MessageProviderFields::default(),
-    }
-}
-
 // LiteLLM sends no usage object on the one chunk even though the prompt was counted
 fn chunk(id: &str, created: u64, model: &str) -> Chunk {
-    let message = assistant_message();
     let choice = Choice {
         index: 0,
         delta: Delta {
-            role: Some(message.role),
-            content: message.content,
-            refusal: message.refusal,
+            role: Some(String::from("assistant")),
+            content: Some(String::new()),
+            refusal: None,
             tool_calls: None,
             function_call: None,
         },

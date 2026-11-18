@@ -3,9 +3,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use http::HeaderMap;
 use serde_json::{Map, Value};
+use thiserror::Error;
 
 use super::ErrorBody;
 use super::build::{Recovery, build_limit_response};
+use super::tokens::PromptCountError;
 
 // the openai SDK's with_raw_response.create(...).parse(): the parsed answer plus the response's own headers
 #[derive(Debug, Clone)]
@@ -22,13 +24,26 @@ pub struct BadRequestReply {
     pub body: Value,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Error)]
 pub enum RawChatError {
     // boxed so the two word-sized failures stay within 3x of it, the limit variant_size_differences enforces
+    #[error("{}", .0.message)]
     BadRequest(Box<BadRequestReply>),
     // the SDK's APITimeoutError, which carries no response
+    #[error("{message}")]
     Timeout { message: String },
+    #[error("{message}")]
     Other { message: String },
+    #[error("the recovery prompt could not be counted: {source}")]
+    Count {
+        #[source]
+        source: Box<PromptCountError>,
+    },
+    #[error("the recovered response could not be encoded: {source}")]
+    Encode {
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
 pub trait SyncRawChatTransport {
@@ -110,12 +125,11 @@ async fn recover(
 ) -> Result<RawChatResponse, RawChatError> {
     let response = build_limit_response(data, headers, recovery)
         .await
-        .map_err(|error| RawChatError::Other {
-            message: error.to_string(),
+        .map_err(|source| RawChatError::Count {
+            source: Box::new(source),
         })?;
-    let body = serde_json::to_value(&response.body).map_err(|error| RawChatError::Other {
-        message: error.to_string(),
-    })?;
+    let body =
+        serde_json::to_value(&response.body).map_err(|source| RawChatError::Encode { source })?;
     Ok(RawChatResponse {
         headers: response.headers,
         body,

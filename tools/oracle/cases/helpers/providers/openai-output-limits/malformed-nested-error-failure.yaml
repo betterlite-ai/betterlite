@@ -8,7 +8,3 @@ call:
         message: '{"detail":[{"loc":["body","temperature"]},5]}'
       data: {"model": "gpt-3.5-turbo", "temperature": 2, "messages": []}
 env: {}
-compare:
-  ignore:
-    - pointer: /error/message
-      why: "LiteLLM raises Python's own AttributeError text for a non-object detail entry; betterlite writes its own message"
