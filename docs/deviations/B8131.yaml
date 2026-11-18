@@ -19,7 +19,7 @@ kept_bugs:
   - what: terminationGracePeriodSeconds goes through sprig default, so an explicit 0 renders as 90 instead of the Kubernetes default of 30.
     why: LiteLLM renders it the same way, and a workload that needs the 30 second default omits the key rather than setting zero; changing it would alter the rendered chart for a configuration LiteLLM already accepted.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/deployment.yaml#L246
-  - what: The bundled-database branch builds DATABASE_URL by pasting postgresql.auth.username, password and database into a URI without URL-escaping, so a password with @, /, : or % produces a URL no client parses correctly.
+  - what: The bundled-database branch builds DATABASE_URL by pasting postgresql.auth.username, password and database into a URI without URL-escaping, so a password containing @, / or a colon produces a URL no client parses correctly.
     why: LiteLLM builds the same unescaped string; the values ship a password without reserved characters, and a setup that changes it to one with them was already broken, so no working setup relies on the fix here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm-helm/templates/migrations-job.yaml#L78-L79
   - what: migrationJob.retries is documented in values.yaml but no template reads it; the Job's retry budget comes from migrationJob.backoffLimit.
