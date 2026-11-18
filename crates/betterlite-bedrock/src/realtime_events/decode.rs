@@ -1,9 +1,10 @@
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::de::Error as _;
+use serde::de::{DeserializeOwned, Error as _};
 use serde_json::value::RawValue;
 
 use super::error::EventError;
@@ -63,21 +64,23 @@ pub fn decode_realtime_native_event(bytes: &[u8]) -> Result<DecodedEvent, EventE
             limit: MAX_MESSAGE_BYTES,
         });
     }
-    let text = std::str::from_utf8(bytes).map_err(|source| EventError::Utf8 { source })?;
+    let text = from_utf8(bytes).map_err(|source| EventError::Utf8 { source })?;
     // The whole message must parse before its shape is judged, so an unterminated array is a syntax warning
     let syntax: Result<&RawValue, serde_json::Error> = serde_json::from_str(text);
     if syntax.is_err() {
         let preview = text.chars().take(PREVIEW_CHARS).collect();
         return Ok(DecodedEvent::InvalidJson { preview });
     }
-    let parsed: Result<EventFields<'_>, serde_json::Error> = serde_json::from_str(text);
-    let fields = parsed.map_err(|source| EventError::NotAnObject { source })?;
+    let fields: EventFields<'_> =
+        serde_json::from_str(text).map_err(|source| EventError::NotAnObject { source })?;
     let Some(event) = fields.get("event").copied() else {
         return Ok(DecodedEvent::Event(NativeEvent::Unknown));
     };
-    let parsed: Result<EventFields<'_>, serde_json::Error> = serde_json::from_str(event.get());
-    let event_fields = parsed.map_err(|source| EventError::EventNotAnObject { source })?;
-    Ok(DecodedEvent::Event(classify(&event_fields)?))
+    let event_fields: EventFields<'_> = serde_json::from_str(event.get())
+        .map_err(|source| EventError::EventNotAnObject { source })?;
+    Ok(DecodedEvent::Event(
+        branch(&event_fields).map_or(Ok(NativeEvent::Unknown), payload)?,
+    ))
 }
 
 // _parse_client_message plus _json_dict: JSON that is not an object reads as the empty mapping, never an error
@@ -105,13 +108,6 @@ pub fn json_str(value: &Json) -> Option<&str> {
     match value {
         Json::Text(text) => Some(text),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
-    }
-}
-
-fn classify(event: &EventFields<'_>) -> Result<NativeEvent, EventError> {
-    match branch(event) {
-        Some(branch) => payload(branch),
-        None => Ok(NativeEvent::Unknown),
     }
 }
 
@@ -191,55 +187,35 @@ pub(super) fn require_object(text: &str, field: &'static str) -> Result<(), Even
 fn payload(branch: Branch<'_>) -> Result<NativeEvent, EventError> {
     match branch {
         Branch::SessionStart => Ok(NativeEvent::SessionStart),
-        Branch::ContentStart(raw) => {
-            require_object(raw.get(), "contentStart")?;
-            serde_json::from_str(raw.get())
-                .map(|event| NativeEvent::ContentStart(Box::new(event)))
-                .map_err(|source| EventError::Payload {
-                    field: "contentStart",
-                    source,
-                })
-        }
-        Branch::TextOutput(raw) => {
-            require_object(raw.get(), "textOutput")?;
-            serde_json::from_str(raw.get())
-                .map(NativeEvent::TextOutput)
-                .map_err(|source| EventError::Payload {
-                    field: "textOutput",
-                    source,
-                })
-        }
-        Branch::AudioOutput(raw) => {
-            require_object(raw.get(), "audioOutput")?;
-            serde_json::from_str(raw.get())
-                .map(NativeEvent::AudioOutput)
-                .map_err(|source| EventError::Payload {
-                    field: "audioOutput",
-                    source,
-                })
-        }
+        Branch::ContentStart(raw) => decode_object(raw, "contentStart")
+            .map(|event| NativeEvent::ContentStart(Box::new(event))),
+        Branch::TextOutput(raw) => decode_object(raw, "textOutput").map(NativeEvent::TextOutput),
+        Branch::AudioOutput(raw) => decode_object(raw, "audioOutput").map(NativeEvent::AudioOutput),
         Branch::ContentEnd(raw) => Ok(NativeEvent::ContentEnd(raw.get().to_owned())),
         Branch::UserSpeechStart => Ok(NativeEvent::UserSpeechStart),
         Branch::UserSpeechEnd => Ok(NativeEvent::UserSpeechEnd),
-        Branch::UsageEvent(raw) => {
-            require_object(raw.get(), "usageEvent")?;
-            require_usage_objects(raw.get())?;
-            serde_json::from_str(raw.get())
-                .map(NativeEvent::UsageEvent)
-                .map_err(|source| EventError::Payload {
-                    field: "usageEvent",
-                    source,
-                })
-        }
-        Branch::ToolUse(raw) => {
-            require_object(raw.get(), "toolUse")?;
-            serde_json::from_str(raw.get())
-                .map(|tool_use: ToolUse| NativeEvent::ToolUse(Box::new(ToolUseEvent { tool_use })))
-                .map_err(|source| EventError::Payload {
-                    field: "toolUse",
-                    source,
-                })
-        }
+        Branch::UsageEvent(raw) => usage_event(raw),
+        Branch::ToolUse(raw) => decode_object(raw, "toolUse")
+            .map(|tool_use: ToolUse| NativeEvent::ToolUse(Box::new(ToolUseEvent { tool_use }))),
         Branch::PromptEnd => Ok(NativeEvent::PromptEnd),
     }
+}
+
+fn decode_object<T>(raw: &RawValue, field: &'static str) -> Result<T, EventError>
+where
+    T: DeserializeOwned,
+{
+    require_object(raw.get(), field)?;
+    serde_json::from_str(raw.get()).map_err(|source| EventError::Payload { field, source })
+}
+
+fn usage_event(raw: &RawValue) -> Result<NativeEvent, EventError> {
+    require_object(raw.get(), "usageEvent")?;
+    require_usage_objects(raw.get())?;
+    serde_json::from_str(raw.get())
+        .map(NativeEvent::UsageEvent)
+        .map_err(|source| EventError::Payload {
+            field: "usageEvent",
+            source,
+        })
 }

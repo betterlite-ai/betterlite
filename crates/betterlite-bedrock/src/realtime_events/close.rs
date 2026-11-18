@@ -7,10 +7,10 @@ pub async fn close_bedrock_client<E>(client: Option<&dyn ClosableBedrockRuntimeC
 where
     E: StdError + Send + Sync + 'static,
 {
-    let Some(client) = client else {
+    let Some(sdk_client) = client else {
         return;
     };
-    if client.close().await.is_ok() {
+    if sdk_client.close().await.is_ok() {
         tracing::debug!("Bedrock Realtime: closed SDK client");
     }
 }

@@ -40,8 +40,8 @@ pub enum ProviderStreamError<E> {
         #[source]
         failure: ProviderFailure<E>,
     },
-    #[error(transparent)]
-    Unchanged(#[from] ProviderFailure<E>),
+    #[error("{0}")]
+    Unchanged(ProviderFailure<E>),
 }
 
 #[must_use]
@@ -49,11 +49,11 @@ pub fn as_bedrock_error<E>(failure: ProviderFailure<E>) -> ProviderStreamError<E
 where
     E: StdError + 'static,
 {
-    let status_code = BEDROCK_STREAM_ERROR_STATUS
+    let mapped_status = BEDROCK_STREAM_ERROR_STATUS
         .iter()
         .find(|(name, _)| *name == failure.class_name.as_str())
         .map(|(_, status)| *status);
-    match status_code {
+    match mapped_status {
         Some(status_code) => ProviderStreamError::Bedrock {
             message: format!("{}: {}", failure.class_name, failure.message),
             status_code,

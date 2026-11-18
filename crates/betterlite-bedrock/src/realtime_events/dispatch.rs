@@ -4,7 +4,7 @@ use betterlite_core::api::realtime_contracts::events::{
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 
-use super::decode::{DecodedEvent, decode_realtime_native_event, json_dict, json_str};
+use super::decode::{json_dict, json_str};
 use super::error::EventError;
 use crate::agentcore_stream::IdSource;
 use crate::realtime_completion::records::{
@@ -21,30 +21,6 @@ pub struct RealtimeEvents<'state> {
     pub session: &'state mut RealtimeSession,
     pub ids: &'state dyn IdSource,
     pub redactor: &'state Redactor,
-}
-
-impl RealtimeEvents<'_> {
-    pub fn transform_realtime_response(
-        &mut self,
-        message: &[u8],
-        input: &RealtimeResponseTransformInput,
-    ) -> Result<RealtimeResponseTypedDict, EventError> {
-        let chunks = input.current_delta_chunks.as_deref().unwrap_or_default();
-        check_delta_limits(
-            chunks.len(),
-            chunks.iter().map(|chunk| delta_text(chunk).len()).sum(),
-        )?;
-        let mut state = TransformState::from(input);
-        let events = match decode_realtime_native_event(message)? {
-            DecodedEvent::InvalidJson { preview } => {
-                let preview = self.redactor.redact_string(&preview);
-                tracing::warn!("Invalid JSON message: {preview}");
-                Vec::new()
-            }
-            DecodedEvent::Event(event) => self.dispatch(event, &mut state)?,
-        };
-        Ok(state.into_response(events))
-    }
 }
 
 // The seven fields transform_realtime_response hands back on every successful dispatch
@@ -127,13 +103,13 @@ impl TransformState {
 
     // _response_done_events hands back no ids and no delta type; the conversation and chunks are the caller's
     pub(super) fn apply_done(&mut self, state: &ResponseState) {
-        self.output_item_id = state.output_item_id.clone();
-        self.response_id = state.response_id.clone();
+        self.output_item_id.clone_from(&state.output_item_id);
+        self.response_id.clone_from(&state.response_id);
         self.delta_type = state.delta_type.map(AllDeltaType::from);
     }
 }
 
-fn delta_text(chunk: &Json) -> &str {
+pub(super) fn delta_text(chunk: &Json) -> &str {
     json_dict(chunk)
         .and_then(|fields| fields.get("delta"))
         .and_then(json_str)
@@ -151,14 +127,14 @@ pub(super) fn append_delta(state: &mut TransformState, chunk: Json) -> Result<()
         .delta_chunks
         .iter()
         .flatten()
-        .map(|chunk| delta_text(chunk).len())
+        .map(|held_chunk| delta_text(held_chunk).len())
         .sum();
     check_delta_limits(count, held.saturating_add(delta_text(&chunk).len()))?;
     state.delta_chunks.get_or_insert_with(Vec::new).push(chunk);
     Ok(())
 }
 
-fn check_delta_limits(count: usize, bytes: usize) -> Result<(), EventError> {
+pub(super) const fn check_delta_limits(count: usize, bytes: usize) -> Result<(), EventError> {
     let (subject, limit) = if count > MAX_DELTA_CHUNKS {
         ("response delta chunks", MAX_DELTA_CHUNKS)
     } else if bytes > MAX_DELTA_BYTES {

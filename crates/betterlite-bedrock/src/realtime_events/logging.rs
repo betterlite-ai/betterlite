@@ -11,11 +11,11 @@ pub fn should_log_event(configured: &LoggedEventTypes, event: &IndexMap<String, 
     let kind = event.get("type").and_then(json_str);
     match configured {
         LoggedEventTypes::Default => {
-            kind.is_some_and(|kind| DEFAULT_LOGGED_EVENT_TYPES.contains(&kind))
+            kind.is_some_and(|event_type| DEFAULT_LOGGED_EVENT_TYPES.contains(&event_type))
         }
         LoggedEventTypes::All => true,
         LoggedEventTypes::Only(types) => {
-            kind.is_some_and(|kind| types.iter().any(|logged| logged == kind))
+            kind.is_some_and(|event_type| types.iter().any(|logged| logged == event_type))
         }
     }
 }

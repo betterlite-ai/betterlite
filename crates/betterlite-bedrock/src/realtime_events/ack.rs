@@ -56,7 +56,7 @@ where
         };
         // _json_dict(parsed.get("session")).get("modalities"), validated as list[str] | None
         let session = self.message.get("session").and_then(json_dict);
-        let modalities = match session.and_then(|session| session.get("modalities")) {
+        let modalities = match session.and_then(|fields| fields.get("modalities")) {
             None | Some(Json::Null) => None,
             Some(Json::List(items)) => Some(
                 items

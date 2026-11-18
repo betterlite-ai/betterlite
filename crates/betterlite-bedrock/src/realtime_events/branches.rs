@@ -1,11 +1,15 @@
-use betterlite_core::api::realtime_contracts::events::AllDeltaType;
+use betterlite_core::api::realtime_contracts::events::{
+    AllDeltaType, RealtimeResponseTransformInput, RealtimeResponseTypedDict,
+};
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use super::decode::{NativeEvent, require_object};
-use super::dispatch::{RealtimeEvents, TransformState, append_delta};
+use super::decode::{DecodedEvent, NativeEvent, decode_realtime_native_event, require_object};
+use super::dispatch::{
+    RealtimeEvents, TransformState, append_delta, check_delta_limits, delta_text,
+};
 use super::error::EventError;
 use crate::realtime_completion::content_end::content_end_events;
 use crate::realtime_completion::tool_input::ToolUseEvent;
@@ -16,7 +20,29 @@ use crate::realtime_output::events::{AudioOutput, ContentStart, ContentStarted, 
 use crate::realtime_session::records::{BedrockContentEnd, UsageEvent};
 
 impl RealtimeEvents<'_> {
-    pub(super) fn dispatch(
+    pub fn transform_realtime_response(
+        &mut self,
+        message: &[u8],
+        input: &RealtimeResponseTransformInput,
+    ) -> Result<RealtimeResponseTypedDict, EventError> {
+        let chunks = input.current_delta_chunks.as_deref().unwrap_or_default();
+        check_delta_limits(
+            chunks.len(),
+            chunks.iter().map(|chunk| delta_text(chunk).len()).sum(),
+        )?;
+        let mut state = TransformState::from(input);
+        let events = match decode_realtime_native_event(message)? {
+            DecodedEvent::InvalidJson { preview } => {
+                let redacted = self.redactor.redact_string(&preview);
+                tracing::warn!("Invalid JSON message: {redacted}");
+                Vec::new()
+            }
+            DecodedEvent::Event(event) => self.dispatch(event, &mut state)?,
+        };
+        Ok(state.into_response(events))
+    }
+
+    fn dispatch(
         &mut self,
         event: NativeEvent,
         state: &mut TransformState,
@@ -181,7 +207,7 @@ impl RealtimeEvents<'_> {
     }
 
     fn tool_use(
-        &mut self,
+        &self,
         state: &TransformState,
         event: &ToolUseEvent,
     ) -> Result<Vec<Json>, EventError> {
