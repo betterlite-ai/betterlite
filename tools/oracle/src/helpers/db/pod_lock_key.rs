@@ -1,4 +1,4 @@
-use betterlite_db::queues::pod_lock::owner::PodLockKey;
+use betterlite_db::queues::pod_lock::owner::lease_key;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
@@ -13,8 +13,6 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        Ok(serde_json::Value::String(
-            PodLockKey(&input.cronjob_id).to_string(),
-        ))
+        Ok(serde_json::Value::String(lease_key(&input.cronjob_id)))
     }
 }

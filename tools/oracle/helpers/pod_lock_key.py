@@ -8,4 +8,5 @@ class Input(TypedDict):
 
 
 def run(input_value: Input) -> str:
-    return PodLockManager.get_redis_lock_key(input_value["cronjob_id"])
+    cronjob_id = input_value["cronjob_id"]
+    return PodLockManager.get_redis_lock_key(cronjob_id)

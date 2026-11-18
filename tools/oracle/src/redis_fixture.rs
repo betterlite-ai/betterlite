@@ -53,7 +53,10 @@ pub struct OracleRedis {
 impl OracleRedis {
     pub fn start() -> Result<Self, RedisFixtureError> {
         let directory = TempDir::new().map_err(RedisFixtureError::Directory)?;
-        let address = free_address()?;
+        let address = {
+            let listener = TcpListener::bind("127.0.0.1:0").map_err(RedisFixtureError::Io)?;
+            listener.local_addr().map_err(RedisFixtureError::Io)?
+        };
         let mut command = Command::new("redis-server");
         command
             .arg("--bind")
@@ -90,8 +93,39 @@ impl OracleRedis {
         namespace: Option<&str>,
     ) -> Result<Arc<RedisCache>, RedisFixtureError> {
         let overrides = RedisOverrides {
-            url: Some(Some(SecretString::from(self.uri()))),
-            ..RedisOverrides::default()
+            host: None,
+            port: None,
+            db: None,
+            username: None,
+            password: None,
+            url: Some(Some(SecretString::from(format!(
+                "redis://{}/0",
+                self.address
+            )))),
+            ssl: None,
+            socket_timeout: None,
+            socket_connect_timeout: None,
+            socket_keepalive: None,
+            max_connections: None,
+            health_check_interval: None,
+            credential_provider: false,
+            startup_nodes: None,
+            sentinel_nodes: None,
+            sentinel_password: None,
+            service_name: None,
+            ssl_password: None,
+            gcp_service_account: None,
+            gcp_ssl_ca_certs: None,
+            azure_redis_ad_token: None,
+            azure_client_id: None,
+            azure_tenant_id: None,
+            azure_client_secret: None,
+            aws_iam_auth: None,
+            aws_iam_user_name: None,
+            aws_iam_cache_name: None,
+            aws_iam_region: None,
+            aws_iam_serverless: None,
+            passthrough: BTreeMap::new(),
         };
         let options = RedisCacheOptions {
             overrides,
@@ -112,15 +146,7 @@ impl OracleRedis {
             .map_err(RedisFixtureError::Cache)
     }
 
-    pub fn shutdown(mut self) -> Result<(), RedisFixtureError> {
-        self.stop()
-    }
-
-    fn uri(&self) -> String {
-        format!("redis://{}/0", self.address)
-    }
-
-    fn stop(&mut self) -> Result<(), RedisFixtureError> {
+    pub fn shutdown(&mut self) -> Result<(), RedisFixtureError> {
         if self
             .child
             .try_wait()
@@ -137,13 +163,8 @@ impl OracleRedis {
 
 impl Drop for OracleRedis {
     fn drop(&mut self) {
-        let _stopped = self.stop();
+        let _stopped = self.shutdown();
     }
-}
-
-fn free_address() -> Result<SocketAddr, RedisFixtureError> {
-    let listener = TcpListener::bind("127.0.0.1:0").map_err(RedisFixtureError::Io)?;
-    listener.local_addr().map_err(RedisFixtureError::Io)
 }
 
 fn wait_for_ping(child: &mut Child, address: SocketAddr) -> Result<(), RedisFixtureError> {

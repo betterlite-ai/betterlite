@@ -14,7 +14,10 @@ use betterlite_logging::logging_service_events::types::{
 };
 use betterlite_logging::logging_service_events::worker_link::Delivery;
 use betterlite_logging::registry::CallbackRegistry;
-use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
+use betterlite_logging::worker::{
+    DEFAULT_EVENT_TIMEOUT, DEFAULT_SHUTDOWN_DRAIN, DEFAULT_TIMEOUT_SUMMARY_WINDOW, LoggingWorker,
+    WorkerSettings,
+};
 use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use chrono::Utc;
@@ -57,24 +60,6 @@ fn manager(
         60,
         sink,
     )
-}
-
-fn acquired(manager: &PodLockManager<RedisLockCache>, job: &str) -> PodLockEvent {
-    PodLockEvent {
-        call_type: PodLockCallType::Acquired,
-        gauge_labels: format!("{job}:{}", manager.pod_id),
-        gauge_value: 1.0,
-        duration_seconds: 60.0,
-    }
-}
-
-fn released(manager: &PodLockManager<RedisLockCache>, job: &str) -> PodLockEvent {
-    PodLockEvent {
-        call_type: PodLockCallType::Released,
-        gauge_labels: format!("{job}:{}", manager.pod_id),
-        gauge_value: 0.0,
-        duration_seconds: 60.0,
-    }
 }
 
 #[tokio::test]
@@ -131,7 +116,15 @@ async fn a_reentrant_acquire_keeps_the_original_expiry_and_emits_once() {
             .unwrap()
             .is_some_and(|ttl| ttl <= 1)
     );
-    assert_eq!(events.events(), vec![acquired(&holder, "job")]);
+    assert_eq!(
+        events.events(),
+        vec![PodLockEvent {
+            call_type: PodLockCallType::Acquired,
+            gauge_labels: format!("job:{}", holder.pod_id),
+            gauge_value: 1.0,
+            duration_seconds: 60.0,
+        }]
+    );
 }
 
 #[tokio::test]
@@ -171,7 +164,15 @@ async fn a_stale_owner_cannot_release_a_reacquired_lease() {
         Some(CachedValue::Text(live.pod_id.clone()))
     );
     assert_eq!(live.acquire_lock("job", None, true).await, Some(true));
-    assert_eq!(live_events.events(), vec![acquired(&live, "job")]);
+    assert_eq!(
+        live_events.events(),
+        vec![PodLockEvent {
+            call_type: PodLockCallType::Acquired,
+            gauge_labels: format!("job:{}", live.pod_id),
+            gauge_value: 1.0,
+            duration_seconds: 60.0,
+        }]
+    );
 }
 
 #[tokio::test]
@@ -183,9 +184,25 @@ async fn release_deletes_the_lease_and_emits_one_event() {
     assert_eq!(holder.acquire_lock("job", None, true).await, Some(true));
     holder.release_lock("job").await;
     assert_eq!(cache.async_get_cache(LEASE_KEY).await.unwrap(), None);
-    assert_eq!(events.events(), vec![released(&holder, "job")]);
+    assert_eq!(
+        events.events(),
+        vec![PodLockEvent {
+            call_type: PodLockCallType::Released,
+            gauge_labels: format!("job:{}", holder.pod_id),
+            gauge_value: 0.0,
+            duration_seconds: 60.0,
+        }]
+    );
     holder.release_lock("job").await;
-    assert_eq!(events.events(), vec![released(&holder, "job")]);
+    assert_eq!(
+        events.events(),
+        vec![PodLockEvent {
+            call_type: PodLockCallType::Released,
+            gauge_labels: format!("job:{}", holder.pod_id),
+            gauge_value: 0.0,
+            duration_seconds: 60.0,
+        }]
+    );
 }
 
 struct RecordingServiceSink(Mutex<Vec<ServiceEvent>>);
@@ -257,7 +274,9 @@ fn lease_delivery() -> LeaseDelivery {
         LoggingWorker::<Delivery>::start(WorkerSettings {
             max_queue_size: 16,
             concurrency: 2,
-            ..WorkerSettings::default()
+            event_timeout: DEFAULT_EVENT_TIMEOUT,
+            shutdown_drain: DEFAULT_SHUTDOWN_DRAIN,
+            timeout_summary_window: DEFAULT_TIMEOUT_SUMMARY_WINDOW,
         })
         .unwrap(),
     );
@@ -323,7 +342,7 @@ async fn shutdown_kills_the_process_and_removes_its_directory() {
     let directory = fixture.directory.as_ref().unwrap().path().to_path_buf();
     let cache = fixture.cache(None).await.unwrap();
     assert!(cache.admin.ping(None).await.unwrap());
-    fixture.stop().unwrap();
+    fixture.shutdown().unwrap();
     assert!(!directory.exists());
     assert!(TcpStream::connect_timeout(&address, Duration::from_millis(100)).is_err());
 }
