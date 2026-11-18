@@ -108,6 +108,15 @@ async fn every_object_group_adds_the_cost_and_the_global_spend_is_written_apart(
         .expect("the global write reaches redis");
     assert_eq!(objects.ttl.to_bits(), 33.0_f64.to_bits());
     assert_eq!(global.ttl.to_bits(), 33.0_f64.to_bits());
+    let queues: Vec<&str> = objects
+        .entries
+        .iter()
+        .map(|(key, _value)| key.as_str())
+        .collect();
+    assert_eq!(
+        queues,
+        ["user-1", "end_user_id:end-1", "team_id:team-1", "tag:qa"]
+    );
     let user = payload::decode::<LiteLLMUserTable>(entry(objects, "user-1"))
         .expect("the user decodes")
         .expect("the user is present");
