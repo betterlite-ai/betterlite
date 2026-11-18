@@ -17,6 +17,7 @@ use crate::io_token_reservations::reservation::IoReservation;
 use crate::model_rate_limits::cache::{RateLimitCache, RemoteRead};
 use crate::model_rate_limits::error::{ModelRateLimitError, RateLimitExceeded};
 use crate::model_rate_limits::service::{IoTokenReservationHook, ModelRateLimits};
+use crate::router_core::services::RouteServices;
 
 pub(crate) const NOW_MILLIS: u64 = 1_700_000_000_000;
 pub(crate) const MINUTE: &str = "22-13";
@@ -29,7 +30,7 @@ pub(super) enum RemoteMode {
 }
 
 // The in-memory and Redis tiers of LiteLLM's DualCache, each a key-value map the test seeds and reads back
-pub(super) struct FakeCache {
+pub(crate) struct FakeCache {
     pub(super) local: Mutex<BTreeMap<String, i64>>,
     pub(super) remote: Mutex<BTreeMap<String, i64>>,
     pub(super) mode: RemoteMode,
@@ -38,7 +39,7 @@ pub(super) struct FakeCache {
 }
 
 impl FakeCache {
-    pub(super) fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             local: Mutex::new(BTreeMap::new()),
             remote: Mutex::new(BTreeMap::new()),
@@ -55,7 +56,7 @@ impl FakeCache {
         }
     }
 
-    pub(super) fn seed_local(self, key: &str, value: i64) -> Self {
+    pub(crate) fn seed_local(self, key: &str, value: i64) -> Self {
         self.local
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -75,7 +76,7 @@ impl FakeCache {
         Self { mode, ..self }
     }
 
-    pub(super) fn local_value(&self, key: &str) -> Option<i64> {
+    pub(crate) fn local_value(&self, key: &str) -> Option<i64> {
         self.local
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -191,7 +192,7 @@ pub(super) fn clock() -> IoClock {
     Arc::new(|| UNIX_EPOCH + Duration::from_millis(NOW_MILLIS))
 }
 
-pub(super) fn spec(group: &str, id: &str, model: &str) -> DeploymentSpec {
+pub(crate) fn spec(group: &str, id: &str, model: &str) -> DeploymentSpec {
     let mut params = JsonObject::new();
     params.insert(String::from("model"), Json::Text(model.to_owned()));
     let mut info = JsonObject::new();
@@ -208,7 +209,7 @@ pub(super) fn number(value: i64) -> Json {
     Json::Number(Number::from(value))
 }
 
-pub(super) fn with_param(mut dep: DeploymentSpec, field: &str, value: i64) -> DeploymentSpec {
+pub(crate) fn with_param(mut dep: DeploymentSpec, field: &str, value: i64) -> DeploymentSpec {
     dep.litellm_params.insert(field.to_owned(), number(value));
     dep
 }
@@ -218,7 +219,7 @@ pub(super) fn with_info(mut dep: DeploymentSpec, field: &str, value: Json) -> De
     dep
 }
 
-pub(super) fn with_extra(mut dep: DeploymentSpec, field: &str, value: Json) -> DeploymentSpec {
+pub(crate) fn with_extra(mut dep: DeploymentSpec, field: &str, value: Json) -> DeploymentSpec {
     dep.extra.insert(field.to_owned(), value);
     dep
 }
@@ -258,18 +259,29 @@ pub(super) fn request() -> RequestBody {
     RequestBody::new()
 }
 
-pub(super) fn service(
+pub(crate) fn service(
     cache: Arc<FakeCache>,
     io: Option<Arc<dyn IoTokenReservationHook>>,
 ) -> ModelRateLimits {
     ModelRateLimits::new(cache, io, clock())
 }
 
-pub(super) fn tpm_key(model: &str) -> String {
+// A router whose config registered the check, as the route pipeline reads the services.
+pub(crate) struct WithRateLimits {
+    pub(crate) check: ModelRateLimits,
+}
+
+impl RouteServices for WithRateLimits {
+    fn model_rate_limits(&self) -> Option<&ModelRateLimits> {
+        Some(&self.check)
+    }
+}
+
+pub(crate) fn tpm_key(model: &str) -> String {
     format!("a:{model}:tpm:{MINUTE}")
 }
 
-pub(super) fn rpm_key(model: &str) -> String {
+pub(crate) fn rpm_key(model: &str) -> String {
     format!("a:{model}:rpm:{MINUTE}")
 }
 

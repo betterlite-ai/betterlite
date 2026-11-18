@@ -4,4 +4,4 @@ pub mod error;
 pub mod keys;
 pub mod service;
 
-mod tests;
+pub(crate) mod tests;

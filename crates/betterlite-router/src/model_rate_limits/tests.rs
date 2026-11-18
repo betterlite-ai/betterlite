@@ -2,7 +2,7 @@
 
 mod behaviors;
 mod boundaries;
-mod support;
+pub(crate) mod support;
 
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};

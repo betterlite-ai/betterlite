@@ -1,12 +1,14 @@
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 
-use crate::deployment_catalog::types::Authority;
+use crate::deployment_catalog::types::{AliasStep, Authority};
 use crate::deployment_clients::clients::{CachedClients, ClientKind};
 use crate::router_core::services::RouteServices;
 use crate::router_predicates::params::ParamSupport;
 use crate::static_eligibility::request::RequestFacts;
 use crate::static_eligibility::tokens::TokenLimits;
+use crate::strategy_dispatch::selector::SelectorId;
+use crate::strategy_dispatch::types::{RequestBindings, Resolution};
 
 // What one request asks the router for, typed: no request dict is read or written.
 pub struct RouteRequest<'request> {
@@ -51,4 +53,14 @@ pub struct RouteContext<'route> {
     pub params: &'route (dyn ParamSupport + Sync),
     pub policy: RoutePolicy<'route>,
     pub clients: Option<ClientAccess<'route>>,
+}
+
+// What one request resolved to, before any filter touched it: the catalog's match and B395's routing decision.
+pub(crate) struct ResolvedRoute {
+    pub(crate) group: String,
+    pub(crate) aliases: Vec<AliasStep>,
+    pub(crate) model_ids: Vec<String>,
+    pub(crate) resolution: Resolution,
+    pub(crate) override_pre_call: Option<SelectorId>,
+    pub(crate) bindings: RequestBindings,
 }

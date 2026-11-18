@@ -14,6 +14,9 @@ use super::support::{
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::model_rate_limits::tests::support::{
+    FakeCache, WithRateLimits, rpm_key, service as rate_limit_service, tpm_key,
+};
 use crate::prompt_affinity::service::PromptAffinity;
 use crate::prompt_affinity::tests::support::{
     FakePins, MARKED_MESSAGES, cache_key, json_messages, messages, pin, service,
@@ -147,6 +150,101 @@ impl RouteServices for Pinned {
         self.calls.fetch_add(1, Ordering::SeqCst);
         Some(&self.affinity)
     }
+}
+
+// A router whose config named enforce_model_rate_limits, over the counters a test seeds.
+fn rate_limited(cache: Arc<FakeCache>) -> WithRateLimits {
+    WithRateLimits {
+        check: rate_limit_service(cache, None),
+    }
+}
+
+// the check runs after the strategy picks, so a deployment at its tpm limit ends the route instead of being called
+pub(super) async fn model_rate_limit_rejects_the_pick() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[("tpm", number(1))])]);
+    let cache = Arc::new(FakeCache::new().seed_local(&tpm_key("openai/a"), 1));
+    let services = rate_limited(cache);
+    let mut random = seeded();
+    let error = run_route(
+        &fixture,
+        &RequestSetup::new("gpt-4o"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, RoutingError::NoDeployment(_)));
+}
+
+// an under-limit deployment is returned, and its attempt is counted before the caller calls the provider
+pub(super) async fn model_rate_limit_counts_the_pick() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[("rpm", number(1))])]);
+    let cache = Arc::new(FakeCache::new());
+    let services = rate_limited(Arc::clone(&cache));
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &RequestSetup::new("gpt-4o"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(cache.local_value(&rpm_key("openai/a")), Some(1));
+}
+
+// a request that names the deployment by id is checked too, as async_get_available_deployment checks every pick
+pub(super) async fn model_rate_limit_rejects_the_named_deployment() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[("tpm", number(1))])]);
+    let cache = Arc::new(FakeCache::new().seed_local(&tpm_key("openai/a"), 1));
+    let services = rate_limited(cache);
+    let mut random = seeded();
+    let error = run_route(
+        &fixture,
+        &RequestSetup::new("a"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap_err();
+    assert!(matches!(error, RoutingError::NoDeployment(_)));
+}
+
+// a router that did not name the check leaves the pick alone
+pub(super) async fn model_rate_limit_unconfigured_keeps_the_pick() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[("tpm", number(1))])]);
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &RequestSetup::new("gpt-4o"),
+        &NoServices,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+}
+
+// a limit the check cannot read never stops a route, as pre_call_check swallows every non-rate-limit failure
+pub(super) async fn model_rate_limit_unreadable_limit_keeps_the_pick() {
+    let fixture = Fixture::plain(vec![deployment("gpt-4o", "a", &[("tpm", text("1"))])]);
+    let services = rate_limited(Arc::new(FakeCache::new()));
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &RequestSetup::new("gpt-4o"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
 }
 
 pub(super) async fn strategy_unbuilt(strategy: RoutingStrategy, entry: &'static str) {

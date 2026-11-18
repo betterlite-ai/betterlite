@@ -9,4 +9,13 @@ deviations:
   - what: A tpm or rpm counter key longer than the routing-value store's 1024-byte limit is not counted and the request proceeds, while LiteLLM's DualCache and Redis accept a key of any size and count it.
     why: The B304 routing-value store rejects a key past MAX_KEY_BYTES, and the adapter reads that rejection as an absent counter. Reaching the limit needs a model id and model name longer than a kilobyte together, which no real deployment carries.
     link: ""
+  - what: The route pipeline ends a rejected check with the router's no-deployment rate-limit error (429, error_type rate_limit_error) instead of the litellm.RateLimitError the pinned check raises (429, type throttling_error, code 429, retry-after 60 and the Deployment over user-defined ratelimit. content line).
+    why: The B016 pipeline reports every stage failure as a RoutingError, which has no rate-limit variant, and crates/betterlite-router/src/router_core/error.rs is outside this task's scope.paths. The typed RateLimitExceeded with every wire field is proven by the check's own tests and the oracle; the pipeline keeps the same failure point and status class, and the request is never sent to the over-limit deployment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L274-L288
+  - what: The pipeline runs the check with an empty request body, so the itpm/otpm reservation is not made and a rejection cannot refund one; LiteLLM's async_pre_call_check reserves through the body's request kwargs.
+    why: The route pipeline carries no request body, and input/output token reservations belong to B019, which composes the hook with the real body at the server boundary. The service's hook seam and its refund behavior are proven by the model_rate_limits tests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L246-L254
+  - what: The pipeline does not put a rejected deployment into cooldown; LiteLLM's async_routing_strategy_pre_call_checks calls _set_cooldown_deployments before it re-raises the rate limit.
+    why: The callback runner and its cooldown recording belong to B364, which owns Router.async_routing_strategy_pre_call_checks, and the server has no cooldown recorder in its RouteServices yet. The check itself answers the same rejection; only the cooldown side effect is absent until B364 wires the runner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8647-L8696
 kept_bugs: []
