@@ -21,6 +21,7 @@ use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 
+use crate::agentcore_stream::line::MAX_LINE_BYTES;
 use crate::sagemaker_stream::error::SagemakerStreamError;
 use crate::sagemaker_stream::events::{EventItem, EventState};
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerEvents};
@@ -413,25 +414,135 @@ fn a_frame_that_fails_its_checksum_ends_both_policies(#[case] policy: ErrorPolic
     ));
 }
 
-#[test]
-fn a_projection_failure_keeps_the_buffer_for_the_next_event() {
-    let (lines, guard) = capture();
-    let items = sync_items(
-        vec![
-            event(br#"{"token": 5}"#),
-            event(br#"{"token": {"text": "second"}}"#),
-        ],
-        false,
-        ErrorPolicy::Skip,
-    );
-    drop(guard);
+#[rstest]
+#[case::wrong_token_shape(r#"{"token": 5}"#)]
+#[case::array("[]")]
+fn a_skipped_projection_failure_clears_the_buffer(#[case] rejected: &str) {
+    let chunks = vec![
+        event(rejected.as_bytes()),
+        event(br#"{"token": {"text": "after"}}"#),
+    ];
 
-    assert!(matches!(items.as_slice(), [Ok(None)]));
-    assert!(
-        lines.text().contains("does not have the declared shape"),
-        "{}",
-        lines.text()
-    );
+    let blocking = sync_items(chunks.clone(), false, ErrorPolicy::Skip);
+    let asynchronous = async_items(chunks, false, ErrorPolicy::Skip);
+
+    assert_eq!(blocking.len(), 1);
+    assert_eq!(token(&blocking[0]).text, "after");
+    assert_eq!(asynchronous.len(), 1);
+    assert_eq!(token(&asynchronous[0]).text, "after");
+}
+
+#[rstest]
+fn an_unfinished_value_past_the_buffer_limit_ends_the_stream(
+    #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
+) {
+    let mut chunks = vec![event(br#"{"token": {"text": ""#)];
+    for _ in 0_usize..16_usize {
+        chunks.push(event(&vec![b'a'; 0x0001_0000]));
+    }
+    chunks.push(event(br#""}}"#));
+
+    let blocking = sync_items(chunks.clone(), false, policy);
+    let asynchronous = async_items(chunks, false, policy);
+
+    assert_eq!(blocking.len(), 1);
+    assert!(matches!(
+        blocking[0].as_ref().unwrap_err(),
+        SagemakerStreamError::BufferLimit {
+            limit: MAX_LINE_BYTES
+        }
+    ));
+    assert_eq!(asynchronous.len(), 1);
+    assert!(matches!(
+        asynchronous[0].as_ref().unwrap_err(),
+        SagemakerStreamError::BufferLimit {
+            limit: MAX_LINE_BYTES
+        }
+    ));
+}
+
+#[rstest]
+fn a_value_under_the_buffer_limit_still_joins(
+    #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
+) {
+    let mut chunks = vec![event(br#"{"token": {"text": ""#)];
+    for _ in 0_usize..15_usize {
+        chunks.push(event(&vec![b'a'; 0x0001_0000]));
+    }
+    chunks.push(event(br#""}}"#));
+
+    let blocking = sync_items(chunks.clone(), false, policy);
+    let asynchronous = async_items(chunks, false, policy);
+
+    assert_eq!(blocking.len(), 1);
+    assert_eq!(token(&blocking[0]).text.len(), 0x000F_0000);
+    assert_eq!(asynchronous.len(), 1);
+    assert_eq!(token(&asynchronous[0]).text.len(), 0x000F_0000);
+}
+
+#[rstest]
+fn a_complete_value_past_the_limit_in_one_event_still_parses(
+    #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
+) {
+    let text = "a".repeat(0x0020_0000);
+    let payload = format!(r#"{{"token": {{"text": "{text}"}}}}"#);
+    let chunks = vec![event(payload.as_bytes())];
+
+    let blocking = sync_items(chunks.clone(), false, policy);
+    let asynchronous = async_items(chunks, false, policy);
+
+    assert_eq!(blocking.len(), 1);
+    assert_eq!(token(&blocking[0]).text, text);
+    assert_eq!(asynchronous.len(), 1);
+    assert_eq!(token(&asynchronous[0]).text, text);
+}
+
+// a pending buffer of exactly the cap still waits for the value to complete
+#[rstest]
+fn a_pending_buffer_at_exactly_the_limit_still_waits(
+    #[values(ErrorPolicy::Propagate, ErrorPolicy::Skip)] policy: ErrorPolicy,
+) {
+    let opening = br#"{"token": {"text": ""#;
+    let filler = MAX_LINE_BYTES.saturating_sub(opening.len());
+    let chunks = vec![event(opening), event(&vec![b'a'; filler]), event(br#""}}"#)];
+
+    let blocking = sync_items(chunks.clone(), false, policy);
+    let asynchronous = async_items(chunks, false, policy);
+
+    assert_eq!(blocking.len(), 1);
+    assert_eq!(token(&blocking[0]).text.len(), filler);
+    assert_eq!(asynchronous.len(), 1);
+    assert_eq!(token(&asynchronous[0]).text.len(), filler);
+}
+
+#[rstest]
+#[case::propagate(ErrorPolicy::Propagate)]
+#[case::skip(ErrorPolicy::Skip)]
+fn a_buffer_past_the_limit_drops_its_text(#[case] policy: ErrorPolicy) {
+    let opening = br#"{"token": {"text": ""#;
+    let filler = MAX_LINE_BYTES
+        .saturating_sub(opening.len())
+        .saturating_add(1);
+    let mut bytes = event(opening);
+    bytes.extend(event(&vec![b'a'; filler]));
+
+    let mut state = EventState {
+        model: MODEL.to_owned(),
+        is_messages_api: false,
+        policy,
+        frames: BytesMut::new(),
+        accumulated: String::new(),
+    };
+    let mut pending = VecDeque::new();
+
+    assert!(!state.absorb(&bytes, &mut pending));
+    assert!(state.accumulated.is_empty());
+    assert!(matches!(
+        pending.pop_front(),
+        Some(Err(SagemakerStreamError::BufferLimit {
+            limit: MAX_LINE_BYTES
+        }))
+    ));
 }
 
 #[test]
@@ -461,7 +572,7 @@ fn a_null_token_text_reads_as_empty() {
 }
 
 #[test]
-fn a_final_projection_failure_is_logged_and_yields_nothing() {
+fn a_skipped_projection_failure_is_logged_and_yields_nothing() {
     let (lines, guard) = capture();
     let items = sync_items(vec![event(br#"{"token": 5}"#)], false, ErrorPolicy::Skip);
     drop(guard);
@@ -469,16 +580,16 @@ fn a_final_projection_failure_is_logged_and_yields_nothing() {
     assert!(items.is_empty(), "{items:?}");
     assert!(
         lines.text().contains(
-            "ERROR Final error parsing accumulated JSON: the SageMaker stream chunk does not have the declared shape"
+            "ERROR Error parsing message: the SageMaker stream chunk does not have the declared shape. Attempting to combine with next event."
         ),
         "{}",
         lines.text()
     );
 }
 
-// a caller that finishes after absorb reported the failure gets the same error from the buffer
+// the rejected text leaves the buffer before the stream ends, so a later finish cannot project it again
 #[test]
-fn a_final_projection_failure_ends_a_propagating_stream() {
+fn a_propagating_projection_failure_clears_the_buffer() {
     let mut state = EventState {
         model: MODEL.to_owned(),
         is_messages_api: false,
@@ -491,10 +602,12 @@ fn a_final_projection_failure_ends_a_propagating_stream() {
     let mut pending = VecDeque::new();
     state.finish(&mut pending);
 
+    assert!(state.accumulated.is_empty());
     assert!(matches!(
-        pending.pop_front(),
+        failed.pop_front(),
         Some(Err(SagemakerStreamError::Json(_)))
     ));
+    assert!(pending.is_empty());
 }
 
 #[test]

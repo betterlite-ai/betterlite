@@ -1,0 +1,34 @@
+kind: helper
+name: model-catalog-lookup-resolve-provider-suffix
+call:
+  model_catalog_lookup:
+    function: resolve_model_name_from_model_id
+    model_list:
+      - model_name: vertex-model
+        litellm_params:
+          model: vertex_ai/veo-2.0-generate-001
+        model_info:
+          id: v1
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_id: veo-2.0-generate-001
+calls:
+  - model_catalog_lookup:
+      function: resolve_model_name_from_model_id
+      model_list:
+        - model_name: colon-model
+          litellm_params:
+            model: vertex_ai/x:turn
+          model_info:
+            id: c1
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_id: turn
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,20 @@
+kind: helper
+name: model-catalog-lookup-candidate-id-stringification
+call:
+  model_catalog_lookup:
+    function: get_candidate_model_ids_for_route
+    model_list:
+      - model_name: num
+        litellm_params:
+          model: openai/num
+        model_info:
+          id: 42
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: num
+      team_id: null
+env: {}
+compare: {ignore: []}

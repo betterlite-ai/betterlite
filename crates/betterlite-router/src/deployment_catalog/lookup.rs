@@ -82,59 +82,6 @@ impl CatalogResolver<'_> {
             .filter_reserved(drop_markers(model, deployments)?, team_id)
     }
 
-    fn wildcard_pool(
-        &self,
-        router: &PatternCatalog,
-        model: &str,
-    ) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
-        let provider = self.view.inferred_provider(model);
-        let candidates = router.get_deployments_by_pattern(model, provider.as_deref());
-        let mut pool = Vec::with_capacity(candidates.len());
-        for candidate in candidates {
-            let registered = candidate
-                .model_id
-                .as_deref()
-                .and_then(|id| self.catalog.id_index.get(id))
-                .and_then(|index| self.catalog.models.get(*index))
-                .ok_or_else(|| CatalogLookupError::UnindexedCandidate {
-                    model_id: candidate.model_id.clone(),
-                })?;
-            let mut spec = registered.clone();
-            spec.litellm_params
-                .insert("model".to_owned(), Json::Text(candidate.model));
-            pool.push(spec);
-        }
-        Ok(pool)
-    }
-
-    // Router._try_early_resolve_deployments_for_model_not_in_names; default_deployment is commented out at the pin.
-    fn early_resolve(
-        &self,
-        model: &str,
-        team_id: Option<&str>,
-        proxy_admin: bool,
-    ) -> Result<Option<Vec<DeploymentSpec>>, CatalogLookupError> {
-        if self.catalog.model_names.contains(model) {
-            return Ok(None);
-        }
-        let named = match team_id {
-            Some(team) => all_deployments(self.catalog, model, Some(team)),
-            None if proxy_admin => across_teams(self.catalog, model)?,
-            None => Vec::new(),
-        };
-        if !named.is_empty() {
-            return Ok(Some(named));
-        }
-        let mut pool = self.wildcard_pool(&self.catalog.pattern_router, model)?;
-        if pool.is_empty()
-            && let Some(patterns) =
-                team_id.and_then(|team| self.catalog.team_pattern_routers.get(team))
-        {
-            pool = self.wildcard_pool(&patterns.router, model)?;
-        }
-        Ok(Some(pool).filter(|found| !found.is_empty()))
-    }
-
     // Router.deployments_for_request
     pub fn deployments_for_request(
         &self,
@@ -206,8 +153,13 @@ impl CatalogResolver<'_> {
         }
         let grouped = self.view.routing_group(&model, team_id);
         if grouped.is_none()
-            && let Some(found) =
-                self.early_resolve(&model, team_id, request.authority.proxy_admin)?
+            && let Some(found) = early_deployments(
+                self.catalog,
+                &|name: &str| self.view.inferred_provider(name),
+                &model,
+                team_id,
+                request.authority.proxy_admin,
+            )?
         {
             let kept = self.reserved(&model, found, team_id)?;
             return matched(model, kept, aliases);
@@ -272,4 +224,70 @@ impl CatalogResolver<'_> {
         }
         matched(model, healthy, aliases)
     }
+}
+
+// The rows a pattern router registered for the request, each carrying the provider model the caller asked for; a candidate whose deployment never joined the model list has nothing to serve.
+fn pattern_rows(
+    provider: Option<&str>,
+    router: &PatternCatalog,
+    model: &str,
+) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
+    router
+        .get_pattern_rows(model, provider)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(candidate, deployment)| {
+            let mut spec = deployment.ok_or_else(|| CatalogLookupError::UnindexedCandidate {
+                model_id: candidate.model_id.clone(),
+            })?;
+            spec.litellm_params
+                .insert("model".to_owned(), Json::Text(candidate.model));
+            Ok(spec)
+        })
+        .collect()
+}
+
+// Router._try_early_resolve_deployments_for_model_not_in_names for a read-only caller: team rows, then patterns, then the team's patterns; default_deployment is commented out at the pin.
+pub fn early_deployments(
+    catalog: &DeploymentCatalog,
+    inferred_provider: &dyn Fn(&str) -> Option<String>,
+    model: &str,
+    team_id: Option<&str>,
+    proxy_admin: bool,
+) -> Result<Option<Vec<DeploymentSpec>>, CatalogLookupError> {
+    if catalog.model_names.contains(model) {
+        return Ok(None);
+    }
+    let named = match team_id {
+        Some(team) => all_deployments(catalog, model, Some(team)),
+        None if proxy_admin => across_teams(catalog, model)?,
+        None => Vec::new(),
+    };
+    if !named.is_empty() {
+        return Ok(Some(named));
+    }
+    let provider = inferred_provider(model);
+    let mut pool = pattern_rows(provider.as_deref(), &catalog.pattern_router, model)?;
+    if pool.is_empty()
+        && let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team))
+    {
+        pool = pattern_rows(provider.as_deref(), &patterns.router, model)?;
+    }
+    Ok(Some(pool).filter(|found| !found.is_empty()))
+}
+
+// get_deployments_by_pattern's rows from the global router and the caller's team router, each carrying the requested provider model.
+pub fn pattern_deployments(
+    catalog: &DeploymentCatalog,
+    inferred_provider: &dyn Fn(&str) -> Option<String>,
+    model: &str,
+    team_id: Option<&str>,
+) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
+    let provider = inferred_provider(model);
+    let mut found = pattern_rows(provider.as_deref(), &catalog.pattern_router, model)?;
+    if let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team)) {
+        let team_rows = pattern_rows(provider.as_deref(), &patterns.router, model)?;
+        found.extend(team_rows);
+    }
+    Ok(found)
 }

@@ -1,0 +1,341 @@
+#![cfg(test)]
+
+use betterlite_openai::api::responses_event_records::event_types::ResponseEvent;
+use rstest::rstest;
+use std::ptr;
+
+use super::*;
+
+#[test]
+fn logging_copy_returns_nonmodel_events_unchanged() {
+    let value = json(r#"{"type":"response.output_text.delta","delta":"x"}"#);
+    match logging_copy(LoggingEvent::Value(&value)) {
+        LoggedCopy::Same(same) => assert!(ptr::eq(same, &raw const value)),
+        LoggedCopy::Detached(_) => panic!("plain JSON is handed back unchanged"),
+    }
+    let generic = ResponsesAPIStreamingResponse::Generic(GenericEvent {
+        r#type: "response.provider.event".to_owned(),
+        extra: BTreeMap::new(),
+    });
+    match logging_copy(LoggingEvent::Event(&generic)) {
+        LoggedCopy::Detached(copied) => assert_eq!(
+            to_json(copied.as_ref()),
+            json(r#"{"type":"response.provider.event"}"#)
+        ),
+        LoggedCopy::Same(_) => panic!("events are detached from the caller"),
+    }
+}
+
+#[test]
+fn logging_copy_round_trips_models_and_detaches_usage() {
+    let output = format!("[{}]", message_with_text("msg_a", "hi"));
+    let mut transformed = response_with(
+        &output,
+        r#","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5}"#,
+    );
+    let events = build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 5).unwrap();
+    let completed = events.last().unwrap();
+    let before = to_json(completed);
+    let LoggedCopy::Detached(mut copied) = logging_copy(LoggingEvent::Event(completed)) else {
+        panic!("model events are copied");
+    };
+    assert_eq!(to_json(copied.as_ref()), before);
+    let ResponsesAPIStreamingResponse::Known(known) = copied.as_mut() else {
+        panic!("known event stays known");
+    };
+    let KnownResponseEvent::ResponseCompleted(event) = known.as_mut() else {
+        panic!("completed event stays completed");
+    };
+    event.response.usage.as_mut().unwrap().cost = Some(Decimal::new(999, 2));
+    let ResponsesAPIStreamingResponse::Known(original) = completed else {
+        panic!("original stays known");
+    };
+    let KnownResponseEvent::ResponseCompleted(stored) = original.as_ref() else {
+        panic!("original stays completed");
+    };
+    assert!(stored.response.usage.as_ref().unwrap().cost.is_none());
+    assert_eq!(text(at(&before, &["response", "status"])), "completed");
+    assert_eq!(
+        at(&before, &["response", "usage", "cost"]),
+        &Json::Null,
+        "the original usage carries no cost"
+    );
+}
+
+#[test]
+fn logging_copy_falls_back_when_validation_fails() {
+    let mut extra = Extra::new();
+    extra.insert("delta".to_owned(), json("5"));
+    let event = ResponsesAPIStreamingResponse::Known(Box::new(
+        KnownResponseEvent::OutputTextDelta(OutputTextDeltaEvent {
+            item_id: "item_1".to_owned(),
+            output_index: 0,
+            content_index: 0,
+            delta: "x".to_owned(),
+            extra,
+        }),
+    ));
+    let LoggedCopy::Detached(mut copied) = logging_copy(LoggingEvent::Event(&event)) else {
+        panic!("events are copied");
+    };
+    if let ResponsesAPIStreamingResponse::Known(known) = copied.as_mut()
+        && let KnownResponseEvent::OutputTextDelta(delta) = known.as_mut()
+    {
+        delta.item_id = "mutated".to_owned();
+    }
+    assert_eq!(
+        to_json(&event),
+        json(
+            r#"{"type":"response.output_text.delta","item_id":"item_1","output_index":0,"content_index":0,"delta":5}"#
+        )
+    );
+    assert_eq!(
+        to_json(copied.as_ref()),
+        json(
+            r#"{"type":"response.output_text.delta","item_id":"mutated","output_index":0,"content_index":0,"delta":5}"#
+        )
+    );
+}
+
+#[test]
+fn logging_copy_fallback_detaches_the_nested_response() {
+    let mut extra = Extra::new();
+    extra.insert("response".to_owned(), json("null"));
+    let event = ResponsesAPIStreamingResponse::Known(Box::new(
+        KnownResponseEvent::ResponseCompleted(ResponseEvent {
+            response: response_with(
+                "[]",
+                r#","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}"#,
+            ),
+            extra,
+        }),
+    ));
+    let LoggedCopy::Detached(mut copied) = logging_copy(LoggingEvent::Event(&event)) else {
+        panic!("a payload that fails validation still gets a copy");
+    };
+    let ResponsesAPIStreamingResponse::Known(known) = copied.as_mut() else {
+        panic!("known event stays known");
+    };
+    let KnownResponseEvent::ResponseCompleted(completed) = known.as_mut() else {
+        panic!("completed event stays completed");
+    };
+    completed.response.usage.as_mut().unwrap().cost = Some(Decimal::new(25, 2));
+    let ResponsesAPIStreamingResponse::Known(original) = &event else {
+        panic!("original stays known");
+    };
+    let KnownResponseEvent::ResponseCompleted(stored) = original.as_ref() else {
+        panic!("original stays completed");
+    };
+    assert!(stored.response.usage.as_ref().unwrap().cost.is_none());
+}
+
+#[test]
+fn usage_as_model_handles_models_dicts_and_malformed_values() {
+    let model = usage(1, 2);
+    assert_eq!(
+        usage_as_model(Some(UsageSource::Model(&model))),
+        Some(model.clone())
+    );
+    assert_eq!(
+        usage_as_model(Some(UsageSource::Value(&json(
+            r#"{"input_tokens":1,"output_tokens":2,"total_tokens":3,"cost":0.4}"#
+        )))),
+        Some(ResponseApiUsage {
+            cost: Some(Decimal::new(4, 1)),
+            ..usage(1, 2)
+        })
+    );
+    let with_extras = usage_as_model(Some(UsageSource::Value(&json(
+        r#"{"input_tokens":1,"output_tokens":2,"total_tokens":3,"extra":"kept"}"#,
+    ))))
+    .unwrap();
+    assert_eq!(
+        with_extras.extra.get("extra"),
+        Some(&Json::Text("kept".to_owned()))
+    );
+    assert!(usage_as_model(None).is_none());
+}
+
+#[rstest]
+#[case::missing_fields(r#"{"input_tokens":1}"#)]
+#[case::empty_object("{}")]
+#[case::null("null")]
+#[case::list("[1,2]")]
+#[case::text(r#""x""#)]
+#[case::bool("true")]
+fn usage_as_model_rejects_malformed_values(#[case] raw: &str) {
+    assert!(usage_as_model(Some(UsageSource::Value(&json(raw)))).is_none());
+}
+
+#[test]
+fn dump_json_safely_serializes_responses() {
+    let output = format!("[{}]", message_with_text("msg_a", "hi"));
+    let transformed = response_with(
+        &output,
+        r#","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"cost":0.5}"#,
+    );
+    let dumped = dump_json_safely(&transformed).unwrap();
+    let value = json(&dumped);
+    assert_eq!(text(field(&value, "id")), "resp_a");
+    assert_eq!(number_text(at(&value, &["usage", "cost"])), "0.5");
+    let message = item_at(field(&value, "output"), 0);
+    assert_eq!(
+        text(field(item_at(field(message, "content"), 0), "text")),
+        "hi"
+    );
+}
+
+#[test]
+fn dump_json_safely_returns_none_and_logs_on_failure() {
+    let (dumped, logs) = capture(|| dump_json_safely(&BrokenResponse));
+    assert!(dumped.is_none());
+    assert_eq!(logs.len(), 1);
+    assert!(logs[0].starts_with("could not serialize completed response for cache: "));
+}
+
+#[test]
+fn reasoning_item_dump_restores_null_fields() {
+    let output = concat!(
+        r#"[{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"think"}],"#,
+        r#""encrypted_content":"enc","status":"completed"}]"#
+    );
+    let mut transformed = response(output);
+    let items = build(&mut transformed, None, 5);
+    let added_item = at(event_of(&items, "response.output_item.added"), &["item"]);
+    assert_eq!(text(field(added_item, "id")), "rs_1");
+    assert_eq!(field(added_item, "content"), &json("null"));
+    assert_eq!(text(field(added_item, "encrypted_content")), "enc");
+    assert_eq!(text(field(added_item, "status")), "completed");
+    let completed_item = item_at(at(items.last().unwrap(), &["response", "output"]), 0);
+    assert!(!has_key(completed_item, "content"));
+    assert_eq!(text(field(completed_item, "encrypted_content")), "enc");
+    let bare = response(r#"[{"type":"reasoning","id":"rs_2","summary":[]}]"#);
+    let typed = &bare.output[0];
+    let dumped = dump_response_object(ResponseObject::Model(typed)).unwrap();
+    let dumped_json = Json::Object(dumped.into_iter().collect());
+    assert_eq!(
+        dumped_json,
+        json(
+            r#"{"type":"reasoning","id":"rs_2","summary":[],"content":null,"encrypted_content":null,"status":null}"#
+        )
+    );
+}
+
+#[test]
+fn custom_call_dump_keeps_null_caller_and_namespace() {
+    let output = concat!(
+        r#"[{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]},"#,
+        r#"{"type":"custom_tool_call","id":"ct_1","call_id":"call_1","name":"g","input":"raw","status":"completed"},"#,
+        r#"{"type":"custom_tool_call","id":"ct_2","call_id":"call_2","name":"g","input":"raw","caller":{"type":"direct"},"namespace":"ns"}]"#
+    );
+    let transformed = response(output);
+    let bare = dump_response_object(ResponseObject::Model(&transformed.output[1])).unwrap();
+    let bare_json = Json::Object(bare.into_iter().collect());
+    assert_eq!(
+        bare_json,
+        json(
+            r#"{"type":"custom_tool_call","call_id":"call_1","input":"raw","name":"g","id":"ct_1","caller":null,"namespace":null,"status":"completed"}"#
+        )
+    );
+    let called = dump_response_object(ResponseObject::Model(&transformed.output[2])).unwrap();
+    let called_json = Json::Object(called.into_iter().collect());
+    assert_eq!(
+        called_json,
+        json(
+            r#"{"type":"custom_tool_call","call_id":"call_2","input":"raw","name":"g","id":"ct_2","caller":{"type":"direct"},"namespace":"ns"}"#
+        )
+    );
+}
+
+#[test]
+fn dump_response_object_handles_models_and_objects() {
+    let object = json(r#"{"type":"mystery","payload":1}"#);
+    assert_eq!(
+        dump_response_object(ResponseObject::Value(&object)).unwrap(),
+        match &object {
+            Json::Object(fields) => fields.clone().into_iter().collect(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                Extra::new()
+            }
+        }
+    );
+    let transformed = response(r#"[{"type":"mystery","id":"m","payload":1}]"#);
+    assert_eq!(
+        Json::Object(
+            dump_response_object(ResponseObject::Model(&transformed.output[0]))
+                .unwrap()
+                .into_iter()
+                .collect()
+        ),
+        json(r#"{"type":"mystery","id":"m","payload":1}"#)
+    );
+}
+
+#[rstest]
+#[case::number("7")]
+#[case::text(r#""x""#)]
+#[case::null("null")]
+#[case::list("[1]")]
+fn dump_response_object_projects_scalars_to_empty_payloads(#[case] raw: &str) {
+    let scalar = json(raw);
+    assert!(
+        dump_response_object(ResponseObject::Value(&scalar))
+            .unwrap()
+            .is_empty()
+    );
+}
+
+fn assert_scalar_truthiness() {
+    assert!(!has_content(&json("null")));
+    assert!(has_content(&json("true")));
+    assert!(!has_content(&json("false")));
+    assert!(!has_content(&json("0")));
+    assert!(!has_content(&json("0.0")));
+    assert!(has_content(&json("1")));
+    assert!(!has_content(&json(r#""""#)));
+    assert!(has_content(&json(r#""x""#)));
+}
+
+fn assert_collection_truthiness() {
+    assert!(!has_content(&json("[]")));
+    assert!(has_content(&json("[0]")));
+    assert!(!has_content(&json("{}")));
+    assert!(has_content(&json(r#"{"a":0}"#)));
+}
+
+fn assert_falsy_text_projections() {
+    assert_eq!(text_or_empty(None), "");
+    assert_eq!(text_or_empty(Some(&json("null"))), "");
+    assert_eq!(text_or_empty(Some(&json("false"))), "");
+    assert_eq!(text_or_empty(Some(&json(r#""""#))), "");
+    assert_eq!(text_or_empty(Some(&json("0"))), "");
+    assert_eq!(text_or_empty(Some(&json("[]"))), "");
+    assert_eq!(text_or_empty(Some(&json("{}"))), "");
+}
+
+fn assert_truthy_text_projections() {
+    assert_eq!(text_or_empty(Some(&json("true"))), "True");
+    assert_eq!(text_or_empty(Some(&json("7"))), "7");
+    assert_eq!(text_or_empty(Some(&json(r#""x""#))), "x");
+    assert_eq!(text_or_empty(Some(&json("[null]"))), "[None]");
+}
+
+#[test]
+fn python_value_semantics_match_litellm() {
+    assert_scalar_truthiness();
+    assert_collection_truthiness();
+    assert_falsy_text_projections();
+    assert_truthy_text_projections();
+}
+
+#[test]
+fn tool_arguments_delta_events_cover_three_types() {
+    assert_eq!(
+        TOOL_ARGUMENTS_DELTA_EVENTS,
+        [
+            "response.custom_tool_call_input.delta",
+            "response.function_call_arguments.delta",
+            "response.mcp_call_arguments.delta",
+        ]
+    );
+}
