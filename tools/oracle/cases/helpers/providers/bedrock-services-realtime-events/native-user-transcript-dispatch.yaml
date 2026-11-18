@@ -1,0 +1,206 @@
+kind: helper
+name: native-user-transcript-dispatch
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    - 00000000-0000-4000-8000-000000000007
+    - 00000000-0000-4000-8000-000000000008
+    - 00000000-0000-4000-8000-000000000009
+    - 00000000-0000-4000-8000-000000000010
+    - 00000000-0000-4000-8000-000000000011
+    - 00000000-0000-4000-8000-000000000012
+    - 00000000-0000-4000-8000-000000000013
+    - 00000000-0000-4000-8000-000000000014
+    - 00000000-0000-4000-8000-000000000015
+    - 00000000-0000-4000-8000-000000000016
+    - 00000000-0000-4000-8000-000000000017
+    steps:
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "USER", "type": "TEXT", "additionalModelFields": "{\"generationStage\":\"SPECULATIVE\"}"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "draft"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": " more"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "assistant text"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "USER", "type": "TEXT", "additionalModelFields": "{\"generationStage\":\"FINAL\"}"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "settled"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": ""}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"userSpeechStart": {}, "userSpeechEnd": {}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"userSpeechEnd": {}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "USER", "type": "AUDIO"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "audio transcript"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentEnd": {}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: null
+        current_response_id: null
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: null
+        current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "USER", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "still listening"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"audioOutput": {"content": "YXVkaW8="}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+env: {}
+compare:
+  ignore: []

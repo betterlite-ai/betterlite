@@ -1249,6 +1249,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
+ "betterlite-sdk",
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
@@ -1630,6 +1631,7 @@ dependencies = [
  "serde_path_to_error",
  "serde_with",
  "sha2 0.11.1",
+ "stats_alloc",
  "strum",
  "tempfile",
  "thiserror",
@@ -1713,6 +1715,7 @@ dependencies = [
  "futures-util",
  "hex",
  "indexmap 2.14.2",
+ "opentelemetry",
  "percent-encoding",
  "rand 0.10.3",
  "rcgen",
@@ -2714,6 +2717,7 @@ dependencies = [
  "betterlite-rag",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-sdk",
  "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
@@ -4230,6 +4234,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_with",
  "sha2 0.11.1",
  "strum",
  "thiserror",
@@ -7603,9 +7608,9 @@ checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 
 [[package]]
 name = "lettre"
-version = "0.11.23"
+version = "0.11.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
+checksum = "f294f3d7cdb313e578acef7d7727d4e8d897e0fcd0d6d58c19959cec95073f19"
 dependencies = [
  "base64 0.23.1",
  "email_address",
@@ -10091,7 +10096,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a253edfdea34032da21af84e16fcc94f4c7a6ba237f9f3bc2dbf43cea8535c44"
 dependencies = [
  "annotate-snippets",
- "base64 0.23.1",
+ "base64 0.22.1",
  "encoding_rs_io",
  "granit-parser",
  "nohash-hasher",
@@ -10499,6 +10504,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "stats_alloc"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c0e04424e733e69714ca1bbb9204c1a57f09f5493439520f9f68c132ad25eec"
+
+[[package]]
 name = "streaming-decompression"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10712,7 +10723,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",

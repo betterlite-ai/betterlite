@@ -110,6 +110,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "semantic_guard_routes"
+path = "fuzz_targets/semantic_guard_routes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "content_regex"
 path = "fuzz_targets/content_regex.rs"
 test = false
