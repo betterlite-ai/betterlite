@@ -21,8 +21,10 @@ pub fn decode_bulk_user_request<T>(
     bytes: &[u8],
     read: fn(&JsonValue) -> Result<T, ContractError>,
 ) -> Result<T, UserContractsError> {
-    let value = safe_json_loads(bytes)?;
-    read(&value).map_err(UserContractsError::from)
+    match safe_json_loads(bytes) {
+        Ok(value) => read(&value).map_err(UserContractsError::from),
+        Err(reason) => Err(UserContractsError::from(reason)),
+    }
 }
 
 // LiteLLM recovers from the raw query only when the query-map value decoded a literal plus as a space.
