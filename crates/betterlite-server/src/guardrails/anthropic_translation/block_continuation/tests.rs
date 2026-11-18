@@ -86,7 +86,7 @@ fn continuation_closes_open_block_and_adds_a_text_block() {
     );
     assert_eq!(
         frame_text(&frames[2]),
-        "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 2, \"delta\": {\"type\": \"text_delta\", \"text\": \"blocked, \\ud83d\\udd5d\"}}\n\n"
+        "event: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 2, \"delta\": {\"type\": \"text_delta\", \"text\": \"blocked, \\ud83d\\udddd\"}}\n\n"
     );
     assert_eq!(
         frame_text(&frames[3]),
