@@ -112,6 +112,7 @@ pub enum FixtureError {
     HeaderValue(#[from] InvalidHeaderValue),
 }
 
+#[must_use]
 pub fn execute(case: &Case) -> HandlerFuture<'_, Vec<Observation>, FixtureError> {
     Box::pin(async move {
         let mut results = Vec::new();

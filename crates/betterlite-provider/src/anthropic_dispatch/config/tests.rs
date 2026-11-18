@@ -1,6 +1,7 @@
 #![cfg(test)]
 
-use super::*;
+use super::{AnthropicConfigKind, ConfigSelectionError, get_anthropic_config, selected_config};
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 
 #[test]
 fn the_batches_config_needs_both_substrings_in_any_order() {
@@ -50,7 +51,6 @@ fn a_provider_without_a_chat_config_names_the_model_and_provider() {
 
 #[test]
 fn the_shared_selection_is_preserved() {
-    use betterlite_context::chat_config_selection::tags::ChatConfigTag;
     assert_eq!(
         selected_config("claude", "anthropic", Some(ChatConfigTag::Anthropic)),
         Ok(ChatConfigTag::Anthropic)
@@ -75,8 +75,7 @@ fn the_shared_selection_is_preserved() {
 #[case::empiriolabs("empiriolabs")]
 #[case::veniceai("veniceai")]
 fn registry_only_provider_is_rejected_with_a_config(#[case] provider: &str) {
-    let selection =
-        Some(betterlite_context::chat_config_selection::tags::ChatConfigTag::JsonProvider);
+    let selection = Some(ChatConfigTag::JsonProvider);
     assert_eq!(
         selected_config("model", provider, selection),
         Err(ConfigSelectionError::InvalidProvider {
@@ -87,7 +86,6 @@ fn registry_only_provider_is_rejected_with_a_config(#[case] provider: &str) {
 
 #[test]
 fn pinned_provider_after_registry_entries_is_accepted() {
-    use betterlite_context::chat_config_selection::tags::ChatConfigTag;
     assert_eq!(
         selected_config("model", "neosantara", Some(ChatConfigTag::JsonProvider)),
         Ok(ChatConfigTag::JsonProvider)

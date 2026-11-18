@@ -97,11 +97,14 @@ where
     }
 }
 
+type Completion<'call, ClientFailure, FileFailure> =
+    HandlerFuture<'call, Reply<ClientFailure>, Failure<ClientFailure, FileFailure>>;
+
 pub(super) fn complete<'call, Client, Source, Metadata, Fetcher, Blocks, Ids>(
     handler: &'call mut Native<'_, Client, Source, Metadata, Fetcher, Blocks, Ids>,
     call: ResolvedCall<ClientHandle<Client>, Engine>,
     log: &'call mut CallLogging<'_, '_>,
-) -> HandlerFuture<'call, Reply<Client::Failure>, Failure<Client::Failure, Blocks::Failure>>
+) -> Completion<'call, Client::Failure, Blocks::Failure>
 where
     Client: ChatTransport + Transport,
     Source: DynamicMetadataSource,

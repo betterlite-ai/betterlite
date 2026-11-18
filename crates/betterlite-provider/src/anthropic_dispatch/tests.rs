@@ -3,6 +3,8 @@
 use super::fixtures::{Case, execute};
 use rstest::rstest;
 use serde::Deserialize;
+use std::{fs, path::Path};
+use tokio::runtime::Builder;
 
 #[derive(Deserialize)]
 struct Calls {
@@ -24,33 +26,37 @@ struct Call {
 #[case::url_suffix_disabled("url-suffix-disabled")]
 #[case::provider_config_selection("provider-config-selection")]
 #[case::config_url_selector("config-url-selector")]
-#[tokio::test]
-async fn anthropic_dispatch_cases(#[case] name: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+#[test]
+fn anthropic_dispatch_cases(#[case] name: &str) {
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tools/oracle/cases/helpers/providers/anthropic-provider")
         .join(format!("{name}.yaml"));
-    let source = std::fs::read_to_string(path).unwrap();
+    let source = fs::read_to_string(path).unwrap();
     let case: Calls = serde_saphyr::from_str(&source).unwrap();
-    let actual = execute(&case.call.anthropic_provider).await.unwrap();
+    let actual = runtime
+        .block_on(execute(&case.call.anthropic_provider))
+        .unwrap();
     assert_eq!(actual, case.call.anthropic_provider.expected);
 }
 
-#[tokio::test]
-async fn anthropic_provider_credential_identity_isolation() {
-    let source = include_str!(
-        "../../../../tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-chat-dispatch.yaml"
-    );
-    let mut case: Calls = serde_saphyr::from_str(source).unwrap();
-    case.call.anthropic_provider.inputs.truncate(1);
+#[test]
+fn anthropic_provider_credential_identity_isolation() {
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let mut case = single_chat_case();
     let mut second = case.call.anthropic_provider.inputs[0].clone();
     second.api_key = Some(secrecy::SecretString::from("sk-second-identity"));
-    second.expected_key = second.api_key.clone();
+    second.expected_key.clone_from(&second.api_key);
     second
         .headers
         .insert("x-oracle".to_owned(), secrecy::SecretString::from("second"));
     case.call.anthropic_provider.inputs.push(second);
-    let first = execute(&case.call.anthropic_provider).await.unwrap();
-    let repeat = execute(&case.call.anthropic_provider).await.unwrap();
+    let first = runtime
+        .block_on(execute(&case.call.anthropic_provider))
+        .unwrap();
+    let repeat = runtime
+        .block_on(execute(&case.call.anthropic_provider))
+        .unwrap();
     assert_eq!(first, repeat);
     assert_ne!(first[0], first[1]);
     let encoded = serde_json::to_string(&first).unwrap();
@@ -59,13 +65,10 @@ async fn anthropic_provider_credential_identity_isolation() {
     assert!(!encoded.contains("sk-oracle-explicit"));
 }
 
-#[tokio::test]
-async fn anthropic_provider_secret_safe_failure() {
-    let source = include_str!(
-        "../../../../tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-chat-dispatch.yaml"
-    );
-    let mut case: Calls = serde_saphyr::from_str(source).unwrap();
-    case.call.anthropic_provider.inputs.truncate(1);
+#[test]
+fn anthropic_provider_secret_safe_failure() {
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let mut case = single_chat_case();
     case.call.anthropic_provider.inputs[0].failure = Some(503);
     let input = &mut case.call.anthropic_provider.inputs[0];
     input.headers.insert(
@@ -88,12 +91,23 @@ async fn anthropic_provider_secret_safe_failure() {
         anthropic_key: None,
     };
     assert!(!format!("{globals:?}").contains("sk-oracle-explicit"));
-    let result = execute(&case.call.anthropic_provider).await.unwrap();
-    let shown = format!("{result:?}");
-    assert!(shown.contains("503"));
-    assert!(!shown.contains("sk-oracle-explicit"));
-    assert!(!shown.contains("sk-header-auth"));
-    assert!(!shown.contains("sk-header-key"));
-    assert!(!shown.contains("sk-environment-key"));
+    let result = runtime
+        .block_on(execute(&case.call.anthropic_provider))
+        .unwrap();
+    let shown_result = format!("{result:?}");
+    assert!(shown_result.contains("503"));
+    assert!(!shown_result.contains("sk-oracle-explicit"));
+    assert!(!shown_result.contains("sk-header-auth"));
+    assert!(!shown_result.contains("sk-header-key"));
+    assert!(!shown_result.contains("sk-environment-key"));
     assert!(!result[0].post_call);
+}
+
+fn single_chat_case() -> Calls {
+    let source = include_str!(
+        "../../../../tools/oracle/cases/helpers/providers/anthropic-provider/anthropic-chat-dispatch.yaml"
+    );
+    let mut case: Calls = serde_saphyr::from_str(source).unwrap();
+    case.call.anthropic_provider.inputs.truncate(1);
+    case
 }

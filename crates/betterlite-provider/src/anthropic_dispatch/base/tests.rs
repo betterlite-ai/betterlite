@@ -1,11 +1,15 @@
 #![cfg(test)]
 
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
+use std::collections::BTreeMap;
 
-use super::*;
+use super::{
+    API_BASE_VARIABLE, API_KEY_VARIABLE, BASE_URL_VARIABLE, Environment, Globals, Surface,
+    resolve_base, resolve_key,
+};
 
 fn environment(pairs: &[(&str, &str)]) -> Environment {
-    let values: std::collections::BTreeMap<_, _> = pairs.iter().copied().collect();
+    let values: BTreeMap<_, _> = pairs.iter().copied().collect();
     serde_json::from_value(serde_json::to_value(values).unwrap()).unwrap()
 }
 
@@ -141,11 +145,11 @@ fn a_configured_key_beats_the_raw_variable() {
         anthropic_key: Some(SecretString::from("sk-global")),
         api_key: None,
     };
-    let key = resolve_key(
+    let global_key = resolve_key(
         None,
         &globals,
         &environment(&[(API_KEY_VARIABLE, "sk-env")]),
     )
     .expect("the global key");
-    assert_eq!(key.expose_secret(), "sk-global");
+    assert_eq!(global_key.expose_secret(), "sk-global");
 }

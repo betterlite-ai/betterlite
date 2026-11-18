@@ -139,7 +139,7 @@ where
             Reply::Legacy(legacy::Reply::Buffered(envelope)) => serde_json::to_value(envelope)?,
             Reply::Messages(ChatOutcome::Stream(stream)) => serde_json::to_value(StreamLog {
                 model: &stream.model,
-                custom_llm_provider: &stream.custom_llm_provider,
+                custom_llm_provider: stream.custom_llm_provider,
             })?,
             Reply::Messages(ChatOutcome::Embedding)
             | Reply::Legacy(legacy::Reply::Stream { .. }) => serde_json::Value::Null,
