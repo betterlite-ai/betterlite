@@ -1,0 +1,4 @@
+# the duration travels through environment_variables and the shared decoder
+environment_variables:
+  LITELLM_MAX_STREAMING_DURATION_SECONDS: "2.5"
+model_list: []
