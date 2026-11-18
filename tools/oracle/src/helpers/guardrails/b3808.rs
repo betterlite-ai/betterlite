@@ -10,14 +10,14 @@ use betterlite_guardrails::semantic_guard::semantic_guard_route_loading::templat
 use serde::Deserialize;
 use serde_json::json;
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
     BuildRoutes(BuildRoutes),
-    ListTemplates(ListTemplates),
+    ListTemplates,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,10 +37,6 @@ pub(crate) struct BuildRoutes {
     environment: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ListTemplates {}
-
 pub(crate) struct Op;
 
 impl Helper for Op {
@@ -49,7 +45,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::BuildRoutes(case) => build(case),
-            Input::ListTemplates(_) => Ok(json!({"templates": templates::list()})),
+            Input::ListTemplates => Ok(json!({"templates": templates::list()})),
         }
     }
 }
