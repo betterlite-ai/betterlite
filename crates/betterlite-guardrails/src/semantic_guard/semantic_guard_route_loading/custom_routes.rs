@@ -1,10 +1,16 @@
+use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Read as _};
 use std::path::Path;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use regex::Regex;
+use serde_saphyr::NonFiniteFloatPolicy;
+use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle, Span, SpannedEventReceiver};
 
-use super::definition::{DefinitionError, RawDefinition, RawDefinitionText, RouteDefinition};
+use super::definition::{
+    DefinitionError, PYYAML_NON_TEXT_SCALAR, RawDefinition, RawDefinitionText, RouteDefinition,
+};
 use super::error::RouteLoadError;
 
 pub const MAX_ROUTES_FILE_BYTES: usize = 0x0010_0000;
@@ -32,33 +38,130 @@ pub enum CustomRoutesError {
     },
 }
 
+struct PyYamlTextSpans<'sink> {
+    spans: &'sink mut Vec<(Span, String)>,
+    non_text: &'sink Regex,
+}
+
+impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
+    fn on_event(&mut self, event: Event<'input>, span: Span) {
+        let Event::Scalar(text, ScalarStyle::Plain, _, None) = event else {
+            return;
+        };
+        if !self.non_text.is_match(text.as_ref()) {
+            self.spans.push((span, text.into_owned()));
+        }
+    }
+}
+
+#[must_use]
+fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
+    let Ok(source) = std::str::from_utf8(bytes) else {
+        return Cow::Borrowed(bytes);
+    };
+    let Ok(non_text) = Regex::new(PYYAML_NON_TEXT_SCALAR) else {
+        return Cow::Borrowed(bytes);
+    };
+    let mut spans = Vec::new();
+    let mut parser = Parser::new_from_str(source);
+    if parser
+        .load(
+            &mut PyYamlTextSpans {
+                spans: &mut spans,
+                non_text: &non_text,
+            },
+            false,
+        )
+        .is_err()
+    {
+        return Cow::Borrowed(bytes);
+    }
+    if spans.is_empty() {
+        return Cow::Borrowed(bytes);
+    }
+    rewritten_source(source, &spans).map_or_else(
+        || Cow::Borrowed(bytes),
+        |rewritten| Cow::Owned(rewritten.into_bytes()),
+    )
+}
+
+fn rewritten_source(source: &str, spans: &[(Span, String)]) -> Option<String> {
+    let mut rewritten = String::with_capacity(source.len());
+    let mut copied = 0;
+    for (span, text) in spans {
+        let Some(range) = span.byte_range() else {
+            continue;
+        };
+        let Some(prefix) = source
+            .get(range.clone())
+            .and_then(|slice| slice.strip_suffix(text.as_str()))
+        else {
+            continue;
+        };
+        let Some(start) = range.start.checked_add(prefix.len()) else {
+            continue;
+        };
+        let Some(before) = source.get(copied..start) else {
+            continue;
+        };
+        let Some(word) = source.get(start..range.end) else {
+            continue;
+        };
+        rewritten.push_str(before);
+        rewritten.push('\'');
+        rewritten.push_str(&word.replace('\'', "''"));
+        rewritten.push('\'');
+        copied = range.end;
+    }
+    let tail = source.get(copied..)?;
+    rewritten.push_str(tail);
+    Some(rewritten)
+}
+
 pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     if bytes.len() > MAX_ROUTES_FILE_BYTES {
         return Err(CustomRoutesError::TooLarge {
             limit: MAX_ROUTES_FILE_BYTES,
         });
     }
+    let input = quote_pyyaml_text_scalars(bytes);
+    let options = serde_saphyr::options! {
+        non_finite_float_policy: NonFiniteFloatPolicy::PassThrough,
+    };
+    let pattern = Regex::new(PYYAML_NON_TEXT_SCALAR).ok();
     // the document is probed once for its shape, then parsed again as the routes it holds
     let document: GuardrailValue =
-        serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
-            source: Box::new(source),
-        })?;
+        serde_saphyr::from_slice_with_options(input.as_ref(), options.clone()).map_err(
+            |source| CustomRoutesError::Yaml {
+                source: Box::new(source),
+            },
+        )?;
     match document {
         GuardrailValue::Array(_) => {
             let raw: Vec<RawDefinition> =
-                serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
-                    source: Box::new(source),
-                })?;
-            let texts: Option<Vec<RawDefinitionText>> = serde_saphyr::from_slice(bytes).ok();
-            definitions(raw, texts)
+                serde_saphyr::from_slice_with_options(input.as_ref(), options.clone()).map_err(
+                    |source| CustomRoutesError::Yaml {
+                        source: Box::new(source),
+                    },
+                )?;
+            let texts: Option<Vec<RawDefinitionText>> =
+                serde_saphyr::from_slice_with_options(input.as_ref(), options).ok();
+            definitions(raw, texts, pattern.as_ref())
         }
         GuardrailValue::Object(_) => {
             let raw: RawDefinition =
-                serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
-                    source: Box::new(source),
-                })?;
-            let text: Option<RawDefinitionText> = serde_saphyr::from_slice(bytes).ok();
-            definitions(vec![raw], text.map(|text| vec![text]))
+                serde_saphyr::from_slice_with_options(input.as_ref(), options.clone()).map_err(
+                    |source| CustomRoutesError::Yaml {
+                        source: Box::new(source),
+                    },
+                )?;
+            let text: Option<RawDefinitionText> =
+                serde_saphyr::from_slice_with_options(input.as_ref(), options).ok();
+            definitions(
+                vec![raw],
+                text.map(|scalars| vec![scalars]),
+                pattern.as_ref(),
+            )
         }
         GuardrailValue::Null
         | GuardrailValue::Boolean(_)
@@ -97,12 +200,13 @@ fn read_error(path: &Path, source: io::Error) -> RouteLoadError {
 fn definitions(
     raw: Vec<RawDefinition>,
     texts: Option<Vec<RawDefinitionText>>,
+    pattern: Option<&Regex>,
 ) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     let mut parsed = Vec::with_capacity(raw.len());
     for (index, item) in raw.into_iter().enumerate() {
-        let text = texts.as_ref().and_then(|texts| texts.get(index));
+        let text = texts.as_ref().and_then(|scalars| scalars.get(index));
         parsed.push(
-            item.with_pyyaml_scalars(text)
+            item.with_pyyaml_scalars(text, pattern)
                 .into_definition()
                 .map_err(|source| CustomRoutesError::Definition { index, source })?,
         );

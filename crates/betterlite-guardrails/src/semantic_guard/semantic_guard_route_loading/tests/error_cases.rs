@@ -492,17 +492,34 @@ fn a_file_underscored_threshold_is_refused_as_a_number() {
 }
 
 #[test]
-fn a_file_non_finite_threshold_is_refused_by_the_yaml_reader() {
+fn a_file_non_finite_threshold_is_refused_by_route_name() {
     let (_folder, path) =
         routes_file("- route_name: x\n  utterances: [\"a\"]\n  similarity_threshold: .nan\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);
-    assert!(matches!(
-        build_routes(&sources),
+    match build_routes(&sources) {
+        Err(RouteLoadError::NonFiniteThreshold { name }) => assert_eq!(name, "x"),
+        other => panic!("expected a non-finite threshold error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_pyyaml_null_utterance_is_rejected_as_a_non_string() {
+    let (_folder, path) = routes_file("- route_name: x\n  utterances: [null, Null, NULL]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
         Err(RouteLoadError::CustomRoutes {
-            source: CustomRoutesError::Yaml { .. },
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
             ..
-        })
-    ));
+        }) => {
+            assert_eq!(field, "utterances");
+            assert_eq!(expected, "a list of strings");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
 }
 
 #[test]

@@ -262,6 +262,27 @@ fn a_file_scalar_pyyaml_reads_as_text_stays_text() {
 }
 
 #[test]
+fn a_file_utterance_that_overflows_f64_stays_text() {
+    let (_folder, path) = routes_file("- route_name: overflow\n  utterances: [1e309, 1e999]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].utterances,
+        vec!["1e309".to_owned(), "1e999".to_owned()]
+    );
+}
+
+#[test]
+fn a_file_case_variant_null_stays_text() {
+    let (_folder, path) =
+        routes_file("- route_name: nUll\n  description: nULL\n  utterances: [NuLL, nuLL]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap(),
+        vec![route("nUll", Some("nULL"), &["NuLL", "nuLL"], 0.5)]
+    );
+}
+
+#[test]
 fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
     let (_folder, path) = routes_file(
         "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n    - 1:30.5\n",

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::OnceLock;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use regex::Regex;
@@ -47,8 +46,7 @@ pub(super) struct RawDefinition {
     _metadata: Option<IgnoredAny>,
 }
 
-// The same definition with its text fields read as raw scalars: the typed parse above already
-// proves every field's shape, so this one only says what PyYAML read each text scalar as.
+// the same definition with its text fields read as raw scalars, whose shapes the typed parse already proves
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawDefinitionText {
@@ -66,24 +64,26 @@ pub(super) struct RawDefinitionText {
 }
 
 impl RawDefinition {
-    // LiteLLM reads a route file with PyYAML, which leaves a plain scalar such as 1e3 or y a
-    // string where serde's inference sees a number or a boolean; the caller passes the same
-    // document read as text so those scalars keep PyYAML's value.
+    // PyYAML leaves a plain scalar such as 1e3 or y a string where serde's inference sees a number or a boolean
     #[must_use]
-    pub(super) fn with_pyyaml_scalars(mut self, text: Option<&RawDefinitionText>) -> Self {
-        let Some(text) = text else {
+    pub(super) fn with_pyyaml_scalars(
+        mut self,
+        text: Option<&RawDefinitionText>,
+        pattern: Option<&Regex>,
+    ) -> Self {
+        let Some(raw) = text else {
             return self;
         };
-        reclassify(&mut self.route_name, text.route_name.as_deref());
-        reclassify(&mut self.description, text.description.as_deref());
+        reclassify(&mut self.route_name, raw.route_name.as_deref(), pattern);
+        reclassify(&mut self.description, raw.description.as_deref(), pattern);
         let (Some(GuardrailValue::Array(utterances)), Some(texts)) =
-            (self.utterances.as_mut(), text.utterances.as_ref())
+            (self.utterances.as_mut(), raw.utterances.as_ref())
         else {
             return self;
         };
         if utterances.len() == texts.len() {
-            for (utterance, raw) in utterances.iter_mut().zip(texts) {
-                reclassify_scalar(utterance, raw);
+            for (utterance, scalar) in utterances.iter_mut().zip(texts) {
+                reclassify_scalar(utterance, scalar, pattern);
             }
         }
         self
@@ -107,14 +107,14 @@ impl RawDefinition {
     }
 }
 
-fn reclassify(field: &mut Option<GuardrailValue>, text: Option<&str>) {
-    let (Some(value), Some(text)) = (field.as_mut(), text) else {
+fn reclassify(field: &mut Option<GuardrailValue>, text: Option<&str>, pattern: Option<&Regex>) {
+    let (Some(value), Some(scalar)) = (field.as_mut(), text) else {
         return;
     };
-    reclassify_scalar(value, text);
+    reclassify_scalar(value, scalar, pattern);
 }
 
-fn reclassify_scalar(value: &mut GuardrailValue, text: &str) {
+fn reclassify_scalar(value: &mut GuardrailValue, text: &str, pattern: Option<&Regex>) {
     let inferred_non_text = matches!(
         value,
         GuardrailValue::Boolean(_)
@@ -122,14 +122,13 @@ fn reclassify_scalar(value: &mut GuardrailValue, text: &str) {
             | GuardrailValue::UnsignedInteger(_)
             | GuardrailValue::Decimal(_)
     );
-    if inferred_non_text && !pyyaml_resolves_scalar_non_text(text) {
+    if inferred_non_text && !pattern.is_none_or(|compiled| compiled.is_match(text)) {
         *value = GuardrailValue::Text(text.to_owned());
     }
 }
 
-// The implicit resolvers of PyYAML 6.0.2's yaml/resolver.py for bool, float, int and null, in one
-// pattern with the re.X whitespace kept for reading; a plain scalar matching one is not text.
-const PYYAML_NON_TEXT_SCALAR: &str = r"(?x)^(?:
+// PyYAML 6.0.2's implicit resolvers for bool, float, int and null, in one pattern with its re.X spacing
+pub(super) const PYYAML_NON_TEXT_SCALAR: &str = r"(?x)^(?:
     yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF
   | [-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
   | \.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
@@ -143,13 +142,3 @@ const PYYAML_NON_TEXT_SCALAR: &str = r"(?x)^(?:
   | [-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+
   | ~|null|Null|NULL|
 )$";
-
-// PyYAML reads a plain scalar as text unless one of those resolvers matches. A timestamp needs no
-// resolver here, because serde already reads one as text and the typed parse never calls this.
-fn pyyaml_resolves_scalar_non_text(text: &str) -> bool {
-    static PATTERN: OnceLock<Option<Regex>> = OnceLock::new();
-    let pattern = PATTERN.get_or_init(|| Regex::new(PYYAML_NON_TEXT_SCALAR).ok());
-    pattern
-        .as_ref()
-        .is_none_or(|pattern| pattern.is_match(text))
-}
