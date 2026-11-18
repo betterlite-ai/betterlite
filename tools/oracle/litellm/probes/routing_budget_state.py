@@ -19,7 +19,7 @@ from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 MONEY: Final = TypeAdapter(float | None)
 DEFAULT_MODEL: Final = "openai/gpt-4o-mini"
@@ -187,7 +187,7 @@ def make_store() -> FakeStore:
 class Context:
     limiter: Limiter
     store: FakeStore
-    cache: DualCache
+    memory_cache: MemoryCache
     sync_task: asyncio.Task[None] | None = None
 
 
@@ -318,8 +318,7 @@ async def end_sync(index: int, step: Step, context: Context) -> Observation:
 
 async def memory(index: int, step: Step, context: Context) -> Observation:
     key = required(step.key, "a key")
-    reader: MemoryCache = context.cache.in_memory_cache
-    value = MONEY.validate_python(await reader.async_get_cache(key))
+    value = MONEY.validate_python(await context.memory_cache.async_get_cache(key))
     return Observation(
         kind=step.kind, step=index, value=None if value is None else money(value)
     )
@@ -395,11 +394,12 @@ async def run_scenario(operation: RoutingBudgetState, router: Router) -> Output:
     if created is None:
         raise ProbeError("invalid_request", "the router did not create a budget limiter")
     store = make_store()
-    cache = DualCache(in_memory_cache=InMemoryCache(), redis_cache=store)
+    memory_cache = InMemoryCache()
+    cache = DualCache(in_memory_cache=memory_cache, redis_cache=store)
     limiter: Limiter = created
     limiter.dual_cache = cache
     limiter.tag_budget_config = tag_budgets(operation.tag_budget_config)
-    context = Context(limiter=limiter, store=store, cache=cache)
+    context = Context(limiter=limiter, store=store, memory_cache=memory_cache)
     observations: list[Observation] = []
     for index, step in enumerate(operation.steps):
         observations.append(await apply(index, step, context))
