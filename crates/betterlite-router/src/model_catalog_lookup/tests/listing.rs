@@ -177,6 +177,23 @@ fn wildcard_listing() {
 }
 
 #[test]
+fn empty_team_wildcard_listing() {
+    let snapshot = Snapshot::new(&[deployment(
+        "team-secret",
+        "openai/team-*",
+        object(vec![
+            ("id", text("tw")),
+            ("team_id", text("")),
+            ("team_public_model_name", text("team/*")),
+        ]),
+    )]);
+    let lookup = snapshot.lookup();
+    let team_rows = lookup.get_model_list(Some("team/alpha"), Some("")).unwrap();
+    assert_eq!(ids(&team_rows), vec!["tw"]);
+    assert_eq!(provider_models(&team_rows), vec!["openai/team-alpha"]);
+}
+
+#[test]
 fn wildcard_provider_fallback() {
     let snapshot = Snapshot::new(&[deployment(
         "openai/*",

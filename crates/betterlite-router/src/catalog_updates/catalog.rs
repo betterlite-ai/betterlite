@@ -41,6 +41,17 @@ fn info_text<'spec>(spec: &'spec DeploymentSpec, key: &str) -> Option<&'spec str
     }
 }
 
+// The team wildcard index_patterns registers and push records for: any text team id, empty included, and a starred public name.
+fn team_wildcard(spec: &DeploymentSpec) -> Option<(&str, &str)> {
+    match (
+        spec.model_info.get("team_id"),
+        info_text(spec, "team_public_model_name").filter(|name| name.contains('*')),
+    ) {
+        (Some(Json::Text(team)), Some(public_name)) => Some((team.as_str(), public_name)),
+        _ => None,
+    }
+}
+
 fn shifted(indices: &[usize], removed: usize) -> Vec<usize> {
     indices
         .iter()
@@ -76,10 +87,7 @@ impl DeploymentCatalog {
                 self.provider_default_ids.push(id.to_owned());
             }
         }
-        if let (Some(Json::Text(team)), Some(public_name)) = (
-            spec.model_info.get("team_id"),
-            info_text(spec, "team_public_model_name").filter(|name| name.contains('*')),
-        ) {
+        if let Some((team, public_name)) = team_wildcard(spec) {
             let patterns = self
                 .team_pattern_routers
                 .entry(team.to_owned())
@@ -106,13 +114,15 @@ impl DeploymentCatalog {
                 .or_default()
                 .push(index);
         }
+        if let Some((owner, pattern_name)) = team_wildcard(&spec)
+            && let Some(patterns) = self.team_pattern_routers.get_mut(owner)
+        {
+            patterns.router.record_deployment(pattern_name, &spec);
+        }
         if let (Some(team), Some(public_name)) = (
             info_text(&spec, "team_id"),
             info_text(&spec, "team_public_model_name"),
         ) {
-            if let Some(patterns) = self.team_pattern_routers.get_mut(team) {
-                patterns.router.record_deployment(public_name, &spec);
-            }
             self.team_index
                 .entry((team.to_owned(), public_name.to_owned()))
                 .or_default()
