@@ -429,3 +429,10 @@ path = "fuzz_targets/realtime_enforcement.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dataforseo_reply"
+path = "fuzz_targets/dataforseo_reply.rs"
+test = false
+doc = false
+bench = false
