@@ -6,8 +6,8 @@ deviations:
       LiteLLM prints the Python set of names, whose order changes between processes.
     why: >-
       The set order is not stable even in LiteLLM, so no working setup can depend on it.
-      The oracle helper rebuilds the same sorted list from the names LiteLLM printed, so
-      the whole message is compared, not just its prefix.
+      The Rust test asserts the sorted list; the oracle compares that the request is
+      rejected, not the error wording.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2345
   - what: >-
       A failing record returns a typed MemberContractError carrying the validator's text, and
@@ -67,7 +67,7 @@ deviations:
       Python members, as in "Input should be <LitellmUserRoles.ORG_ADMIN: 'org_admin'>, ...".
     why: >-
       The enum repr is Python artifact text; the same three values in quotes is what a user reads.
-      The oracle helper strips the enum repr so the message itself is still compared.
+      The Rust test asserts that wording; the oracle compares the rejection, not the message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2148-L2153
   - what: >-
       An unknown enum value, such as a callback_type outside the three, a team member role outside
