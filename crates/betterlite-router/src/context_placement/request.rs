@@ -69,24 +69,13 @@ fn content_bytes(message: &ChatMessage) -> usize {
     }
 }
 
-// body tools win while they are truthy, as the request kwargs tools do otherwise
+// the body's declared tools list is measured as given; only an absent or null body asks the request's list
 fn selected_tools<'request>(out_of_band: &OutOfBand<'request>) -> Option<&'request Json> {
-    if let Some(tools) = out_of_band.body_tools.filter(|tools| is_truthy(*tools)) {
-        return Some(tools);
-    }
-    out_of_band.request_tools.filter(|tools| is_truthy(*tools))
-}
-
-// Python's truthiness decides whether a tools value is carried; a declared value is a list or object
-fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|number| number != 0.0),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
-    }
+    let declared = match out_of_band.body_tools {
+        Some(Json::Null) | None => out_of_band.request_tools,
+        Some(tools) => Some(tools),
+    };
+    declared.filter(|tools| !matches!(*tools, Json::Null))
 }
 
 // a Json value always serializes; the empty fallback keeps the byte estimate total

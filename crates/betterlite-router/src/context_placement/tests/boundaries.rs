@@ -59,8 +59,9 @@ pub(super) fn run(name: &str) {
         "a_float_declared_limit_is_not_a_window" => a_float_declared_limit_is_not_a_window(),
         "a_text_declared_limit_is_not_a_window" => a_text_declared_limit_is_not_a_window(),
         "an_integer_above_u64_is_not_a_window" => an_integer_above_u64_is_not_a_window(),
-        "an_empty_group_has_unknown_facts" => an_empty_group_has_unknown_facts(),
-        "a_wildcard_group_name_has_unknown_facts" => a_wildcard_group_name_has_unknown_facts(),
+        "an_empty_group_has_unknown_facts" | "a_wildcard_group_name_has_unknown_facts" => {
+            groups_outside_the_catalog_have_unknown_facts();
+        }
         "a_zero_output_limit_keeps_the_ceiling" => a_zero_output_limit_keeps_the_ceiling(),
         "an_empty_default_model_is_not_a_candidate" => an_empty_default_model_is_not_a_candidate(),
         "a_named_default_model_joins_the_facts" => a_named_default_model_joins_the_facts(),
@@ -138,7 +139,8 @@ fn one_token_over_the_buffered_window() {
     assert_eq!(placement.tier, Tier::BuiltIn(ComplexityTier::Medium));
 }
 
-fn the_byte_bound_equals_the_buffered_window() {
+// a 100-byte message against a 100-token window at the 0.95 buffer: 95 fits, 96 needs a count
+fn byte_bound_fit(bytes: usize) -> (ContextFit, Vec<(usize, String)>) {
     let config = config(true, 0.95);
     let deployments = catalog(vec![deployment(
         "small",
@@ -149,40 +151,27 @@ fn the_byte_bound_equals_the_buffered_window() {
     let counter = RecordingCounter::new();
     let placement_service = service(&config, &deployments, &info, &counter);
     let set = tier_set(&[("SIMPLE", &["small"])]);
-    let messages = [message(&"x".repeat(95))];
+    let messages = [message(&"x".repeat(bytes))];
     let out_of_band = OutOfBand::default();
     let request = RequestFacts {
         messages: Some(&messages),
         out_of_band,
         compaction_pending: false,
     };
-    assert_eq!(fit(&placement_service, &set, None, &request).needed, None);
-    assert!(counter.seen().is_empty());
+    let computed = fit(&placement_service, &set, None, &request);
+    (computed, counter.seen())
+}
+
+fn the_byte_bound_equals_the_buffered_window() {
+    let (computed, seen) = byte_bound_fit(95);
+    assert_eq!(computed.needed, None);
+    assert!(seen.is_empty());
 }
 
 fn the_byte_bound_is_one_over_the_buffered_window() {
-    let config = config(true, 0.95);
-    let deployments = catalog(vec![deployment(
-        "small",
-        r#"{"model":"openai/gpt-4o"}"#,
-        &window(100),
-    )]);
-    let info = ExtraModelInfo;
-    let counter = RecordingCounter::new();
-    let placement_service = service(&config, &deployments, &info, &counter);
-    let set = tier_set(&[("SIMPLE", &["small"])]);
-    let messages = [message(&"x".repeat(96))];
-    let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
-        out_of_band,
-        compaction_pending: false,
-    };
-    assert_eq!(
-        fit(&placement_service, &set, None, &request).needed,
-        Some(1)
-    );
-    assert_eq!(counter.seen(), vec![(1, String::new())]);
+    let (computed, seen) = byte_bound_fit(96);
+    assert_eq!(computed.needed, Some(1));
+    assert_eq!(seen, vec![(1, String::new())]);
 }
 
 fn a_buffer_of_one_keeps_the_full_window() {
@@ -429,113 +418,67 @@ fn a_zero_declared_limit_is_a_limit() {
     );
 }
 
-fn a_negative_declared_limit_is_not_a_window() {
+// a non-integer declared limit shadows the router's 500-token map entry and yields no window
+fn declared_limit(raw: &str) -> Option<u64> {
     let info = ExtraModelInfo;
     let shadowed = with_router(
         deployment(
             "group",
             r#"{"model":"openai/gpt-4o"}"#,
-            r#"{"max_input_tokens":-1}"#,
+            &format!(r#"{{"max_input_tokens":{raw}}}"#),
         ),
         r#"{"max_input_tokens":500}"#,
     );
-    assert_eq!(
-        deployment_limit(&info, "group", &shadowed, ModelLimitKey::InputTokens),
-        None
-    );
+    deployment_limit(&info, "group", &shadowed, ModelLimitKey::InputTokens)
+}
+
+fn a_negative_declared_limit_is_not_a_window() {
+    let limit = declared_limit("-1");
+    assert_eq!(limit, None);
 }
 
 fn a_boolean_declared_limit_is_not_a_window() {
-    let info = ExtraModelInfo;
-    let shadowed = with_router(
-        deployment(
-            "group",
-            r#"{"model":"openai/gpt-4o"}"#,
-            r#"{"max_input_tokens":true}"#,
-        ),
-        r#"{"max_input_tokens":500}"#,
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &shadowed, ModelLimitKey::InputTokens),
-        None
-    );
+    let limit = declared_limit("true");
+    assert_eq!(limit, None);
 }
 
 fn a_float_declared_limit_is_not_a_window() {
-    let info = ExtraModelInfo;
-    let shadowed = with_router(
-        deployment(
-            "group",
-            r#"{"model":"openai/gpt-4o"}"#,
-            r#"{"max_input_tokens":1.5}"#,
-        ),
-        r#"{"max_input_tokens":500}"#,
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &shadowed, ModelLimitKey::InputTokens),
-        None
-    );
+    let limit = declared_limit("1.5");
+    assert_eq!(limit, None);
 }
 
 fn a_text_declared_limit_is_not_a_window() {
-    let info = ExtraModelInfo;
-    let shadowed = with_router(
-        deployment(
-            "group",
-            r#"{"model":"openai/gpt-4o"}"#,
-            r#"{"max_input_tokens":"100"}"#,
-        ),
-        r#"{"max_input_tokens":500}"#,
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &shadowed, ModelLimitKey::InputTokens),
-        None
-    );
+    let limit = declared_limit(r#""100""#);
+    assert_eq!(limit, None);
 }
 
 fn an_integer_above_u64_is_not_a_window() {
-    let info = ExtraModelInfo;
-    let shadowed = with_router(
-        deployment(
-            "group",
-            r#"{"model":"openai/gpt-4o"}"#,
-            r#"{"max_input_tokens":18446744073709551616}"#,
-        ),
-        r#"{"max_input_tokens":500}"#,
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &shadowed, ModelLimitKey::InputTokens),
-        None
-    );
+    let limit = declared_limit("18446744073709551616");
+    assert_eq!(limit, None);
 }
 
-fn a_wildcard_group_name_has_unknown_facts() {
+// a group name that matches no deployment, wildcard or not, has no window facts to prove anything with
+fn groups_outside_the_catalog_have_unknown_facts() {
     let config = config(true, 0.95);
-    let deployments = catalog(vec![deployment(
+    let wildcard = catalog(vec![deployment(
         "team-*",
         r#"{"model":"openai/gpt-4o"}"#,
         &window(100),
     )]);
+    let empty = catalog(Vec::new());
     let info = ExtraModelInfo;
     let counter = FixedCounter { value: 1 };
-    let placement_service = service(&config, &deployments, &info, &counter);
+    let wildcard_service = service(&config, &wildcard, &info, &counter);
     assert_eq!(
-        placement_service.group_window_facts("team-gpt"),
+        wildcard_service.group_window_facts("team-gpt"),
         WindowFacts::UNKNOWN
     );
-}
-
-fn an_empty_group_has_unknown_facts() {
-    let config = config(true, 0.95);
-    let deployments = catalog(Vec::new());
-    let info = ExtraModelInfo;
-    let counter = FixedCounter { value: 1 };
-    let placement_service = service(&config, &deployments, &info, &counter);
+    let empty_service = service(&config, &empty, &info, &counter);
     assert_eq!(
-        placement_service.group_window_facts("nothing"),
+        empty_service.group_window_facts("nothing"),
         WindowFacts::UNKNOWN
     );
-    assert_eq!(placement_service.group_output_ceiling("nothing"), None);
+    assert_eq!(empty_service.group_output_ceiling("nothing"), None);
 }
 
 fn a_zero_output_limit_keeps_the_ceiling() {

@@ -28,7 +28,7 @@ pub(crate) fn run(
         .map_err(|source| OperationError::InvalidRequest {
             message: format!("the probe runtime could not start: {source}"),
         })?;
-    runtime
-        .block_on(steps::output(&input.0))
-        .map(|output| ProbeOutput::ContextPlacement(Output(Box::new(output))))
+    let probe = steps::probe(&input.0)?;
+    let output = runtime.block_on(probe.output())?;
+    Ok(ProbeOutput::ContextPlacement(Output(Box::new(output))))
 }

@@ -8,6 +8,8 @@ use crate::sections::Section;
 mod tests;
 
 const PATH_ROOT: &str = "litellm_params.complexity_router_config";
+const ENABLED_KEY: &str = "enable_context_window_escalation";
+const BUFFER_KEY: &str = "context_window_escalation_buffer";
 const ENV_MARKER: &str = "os.environ/";
 
 pub const DEFAULT_ENABLED: bool = false;
@@ -33,10 +35,10 @@ struct RawParams {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawRouterConfig {
-    #[serde(default)]
-    enable_context_window_escalation: Option<RawFlag>,
-    #[serde(default)]
-    context_window_escalation_buffer: Option<RawNumber>,
+    #[serde(default, rename = "enable_context_window_escalation")]
+    enabled: Option<RawFlag>,
+    #[serde(default, rename = "context_window_escalation_buffer")]
+    buffer: Option<RawNumber>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,18 +48,17 @@ enum RawFlag {
     Text(String),
 }
 
-// the resolved config a deployment hands the context-window gate; both keys keep the spelling the file uses
 #[derive(Debug, Clone, PartialEq)]
 pub struct Config {
-    pub enable_context_window_escalation: bool,
-    pub context_window_escalation_buffer: f64,
+    pub enabled: bool,
+    pub buffer: f64,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            enable_context_window_escalation: DEFAULT_ENABLED,
-            context_window_escalation_buffer: DEFAULT_BUFFER,
+            enabled: DEFAULT_ENABLED,
+            buffer: DEFAULT_BUFFER,
         }
     }
 }
@@ -94,71 +95,46 @@ impl RawRouterConfig {
         L: EnvironmentLookup,
     {
         let prefix = format!("model_list.{index}.{PATH_ROOT}");
-        let enabled = self
-            .enable_context_window_escalation
-            .map(|flag| {
-                resolve_flag(
-                    flag,
-                    &format!("{prefix}.enable_context_window_escalation"),
-                    lookup,
-                )
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_ENABLED);
-        let buffer = self
-            .context_window_escalation_buffer
-            .map(|value| {
-                resolve_buffer(
-                    value,
-                    &format!("{prefix}.context_window_escalation_buffer"),
-                    lookup,
-                )
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_BUFFER);
-        Ok(Config {
-            enable_context_window_escalation: enabled,
-            context_window_escalation_buffer: buffer,
-        })
-    }
-}
-
-fn resolve_flag<L>(value: RawFlag, path: &str, lookup: &L) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match value {
-        RawFlag::Literal(flag) => Ok(flag),
+        let enabled_path = format!("{prefix}.{ENABLED_KEY}");
         // LiteLLM resolves os.environ/ strings before pydantic reads the field as a bool
-        RawFlag::Text(text) => {
-            let name = text.strip_prefix(ENV_MARKER).unwrap_or(path).to_owned();
-            let resolved = resolve_string(text, path, lookup)?;
-            Ok(betterlite_env::flag(&name, &resolved)?.unwrap_or(DEFAULT_ENABLED))
-        }
-    }
-}
-
-// a declared buffer is a number; only an os.environ reference may be text
-fn resolve_buffer<L>(value: RawNumber, path: &str, lookup: &L) -> Result<Option<f64>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    if let RawNumber::Text(text) = &value
-        && !text.starts_with(ENV_MARKER)
-    {
-        return Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        });
-    }
-    let resolved = resolve_number(Some(value), path, lookup, parse_float)?;
-    // pydantic's gt=0, le=1 bound applies after an environment reference resolves, and a NaN fails it
-    match resolved {
-        Some(buffer) if buffer.is_finite() && buffer > 0.0 && buffer <= 1.0 => Ok(Some(buffer)),
-        Some(_) => Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        }),
-        None => Ok(None),
+        let enabled = match self.enabled {
+            None => DEFAULT_ENABLED,
+            Some(RawFlag::Literal(flag)) => flag,
+            Some(RawFlag::Text(text)) => {
+                let name = text
+                    .strip_prefix(ENV_MARKER)
+                    .unwrap_or(enabled_path.as_str())
+                    .to_owned();
+                let resolved = resolve_string(text, &enabled_path, lookup)?;
+                betterlite_env::flag(&name, &resolved)?.unwrap_or(DEFAULT_ENABLED)
+            }
+        };
+        let buffer_path = format!("{prefix}.{BUFFER_KEY}");
+        // a declared buffer is a number; only an os.environ reference may be text
+        let buffer = match self.buffer {
+            None => DEFAULT_BUFFER,
+            Some(value) => {
+                if let RawNumber::Text(text) = &value
+                    && !text.starts_with(ENV_MARKER)
+                {
+                    return Err(ConfigError::InvalidScalar {
+                        path: buffer_path,
+                        value: false,
+                    });
+                }
+                // pydantic's gt=0, le=1 bound applies after an environment reference resolves, and a NaN fails it
+                match resolve_number(Some(value), &buffer_path, lookup, parse_float)? {
+                    Some(buffer) if buffer.is_finite() && buffer > 0.0 && buffer <= 1.0 => buffer,
+                    Some(_) => {
+                        return Err(ConfigError::InvalidScalar {
+                            path: buffer_path,
+                            value: false,
+                        });
+                    }
+                    None => DEFAULT_BUFFER,
+                }
+            }
+        };
+        Ok(Config { enabled, buffer })
     }
 }

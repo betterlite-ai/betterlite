@@ -4,19 +4,15 @@ use betterlite_models::decisions::Json;
 
 use crate::complexity_scoring::tier::{ComplexityTier, Tier};
 use crate::context_placement::ContextPlacement;
-use crate::context_placement::facts::{
-    CatalogModelInfo, ModelLimitKey, WindowFacts, deployment_limit,
-};
+use crate::context_placement::facts::WindowFacts;
 use crate::context_placement::fit::ContextFit;
 use crate::context_placement::placement::{Placement, PlacementRequest, apply_context_placement};
-use crate::context_placement::request::{
-    OutOfBand, RequestFacts, out_of_band_text, request_byte_upper_bound,
-};
+use crate::context_placement::request::{OutOfBand, RequestFacts};
 use crate::tier_definitions::model::TierSet;
 
 use super::support::{
-    ExtraModelInfo, FixedCounter, RecordingCounter, catalog, config, deployment, json, message,
-    model_catalog, service, tier_set, with_router,
+    ExtraModelInfo, FixedCounter, RecordingCounter, catalog, config, deployment, message, service,
+    tier_set, with_router,
 };
 
 fn fit(service: &ContextPlacement<'_>, set: &TierSet, request: &RequestFacts<'_>) -> ContextFit {
@@ -35,13 +31,11 @@ fn window(input: u64) -> String {
 
 pub(super) fn run(name: &str) {
     match name {
-        "disabled_gate_skips_the_fit_and_placement" => {
-            disabled_gate_skips_the_fit_and_placement();
+        "disabled_gate_skips_the_fit_and_placement" => disabled_gate_skips_the_fit_and_placement(),
+        "compaction_pending_skips_the_fit_and_placement"
+        | "no_messages_skips_the_fit_and_placement" => {
+            an_early_return_skips_the_fit_and_placement();
         }
-        "compaction_pending_skips_the_fit_and_placement" => {
-            compaction_pending_skips_the_fit_and_placement();
-        }
-        "no_messages_skips_the_fit_and_placement" => no_messages_skips_the_fit_and_placement(),
         "a_full_pool_keeps_the_tier" => a_full_pool_keeps_the_tier(),
         "a_partial_pool_restricts_the_allowed_models" => {
             a_partial_pool_restricts_the_allowed_models();
@@ -61,22 +55,13 @@ pub(super) fn run(name: &str) {
         "a_pool_override_replaces_the_tier_pool" => a_pool_override_replaces_the_tier_pool(),
         "an_empty_pool_returns_no_placement" => an_empty_pool_returns_no_placement(),
         "a_named_tier_can_hold_a_partial_pool" => a_named_tier_can_hold_a_partial_pool(),
-        "a_byte_bound_under_the_window_skips_the_count" => {
-            a_byte_bound_under_the_window_skips_the_count();
+        "a_byte_bound_under_the_window_skips_the_count" | "a_byte_bound_over_the_window_counts" => {
+            the_byte_bound_skips_the_count_until_it_reaches_the_window();
         }
-        "a_byte_bound_over_the_window_counts" => a_byte_bound_over_the_window_counts(),
         "the_count_covers_the_out_of_band_text" => the_count_covers_the_out_of_band_text(),
-        "out_of_band_joins_instructions_and_system" => out_of_band_joins_instructions_and_system(),
-        "body_tools_win_over_request_tools" => body_tools_win_over_request_tools(),
-        "empty_body_tools_fall_back_to_request_tools" => {
-            empty_body_tools_fall_back_to_request_tools();
-        }
-        "a_null_or_non_text_value_contributes_nothing" => {
-            a_null_or_non_text_value_contributes_nothing();
-        }
-        "the_output_ceiling_is_the_smallest_limit" => the_output_ceiling_is_the_smallest_limit(),
-        "an_undeclared_output_limit_removes_the_ceiling" => {
-            an_undeclared_output_limit_removes_the_ceiling();
+        "the_output_ceiling_is_the_smallest_limit"
+        | "an_undeclared_output_limit_removes_the_ceiling" => {
+            the_output_ceiling_is_the_smallest_declared_limit();
         }
         "a_declared_limit_beats_the_router_info" => a_declared_limit_beats_the_router_info(),
         "an_authenticating_provider_has_no_router_limit" => {
@@ -85,25 +70,13 @@ pub(super) fn run(name: &str) {
         "a_custom_provider_overrides_the_model_prefix" => {
             a_custom_provider_overrides_the_model_prefix();
         }
-        "catalog_limits_resolve_for_a_declared_model" => {
-            catalog_limits_resolve_for_a_declared_model();
-        }
-        "catalog_azure_resolves_by_base_model" => catalog_azure_resolves_by_base_model(),
-        "catalog_unmapped_models_have_no_limit" => catalog_unmapped_models_have_no_limit(),
-        "message_without_content_adds_no_bytes" => message_without_content_adds_no_bytes(),
-        "message_parts_measure_as_their_json" => message_parts_measure_as_their_json(),
         "a_match_by_name_returns_the_placement_tier" => {
             a_match_by_name_returns_the_placement_tier()
         }
         "no_placement_leaves_the_tier_and_signals" => no_placement_leaves_the_tier_and_signals(),
         "the_fit_accepts_an_unknown_group" => the_fit_accepts_an_unknown_group(),
         "a_disabled_gate_ignores_a_supplied_fit" => a_disabled_gate_ignores_a_supplied_fit(),
-        "catalog_custom_provider_overrides_the_model_prefix" => {
-            catalog_custom_provider_overrides_the_model_prefix();
-        }
-        "an_empty_parts_message_adds_no_bytes" => an_empty_parts_message_adds_no_bytes(),
-        "the_tool_truthiness_follows_python_values" => the_tool_truthiness_follows_python_values(),
-        _ => panic!("unknown behavior case {name}"),
+        _ => super::helpers::run(name),
     }
 }
 
@@ -141,7 +114,8 @@ fn disabled_gate_skips_the_fit_and_placement() {
     assert!(counter.seen().is_empty());
 }
 
-fn compaction_pending_skips_the_fit_and_placement() {
+// a pending compaction and an empty message list both leave the gate with nothing to fit or place
+fn an_early_return_skips_the_fit_and_placement() {
     let config = config(true, 0.95);
     let deployments = catalog(vec![deployment(
         "small",
@@ -153,53 +127,34 @@ fn compaction_pending_skips_the_fit_and_placement() {
     let placement_service = service(&config, &deployments, &info, &counter);
     let set = tier_set(&[("SIMPLE", &["small"])]);
     let tier = Tier::BuiltIn(ComplexityTier::Simple);
-    let messages = [message(&"x".repeat(400))];
+    let messages: &[betterlite_openai::chat::ChatMessage] = &[message(&"x".repeat(400))];
+    let empty: &[betterlite_openai::chat::ChatMessage] = &[];
     let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
-        out_of_band,
-        compaction_pending: true,
-    };
-    assert_eq!(fit(&placement_service, &set, &request).needed, None);
-    let input = PlacementRequest {
-        tier: &tier,
-        set: &set,
-        default_model: None,
-        pool_override: None,
-        request,
-    };
-    assert_eq!(place(&placement_service, &input), None);
+    for request in [
+        RequestFacts {
+            messages: Some(messages),
+            out_of_band,
+            compaction_pending: true,
+        },
+        RequestFacts {
+            messages: Some(empty),
+            out_of_band,
+            compaction_pending: false,
+        },
+    ] {
+        let computed = fit(&placement_service, &set, &request);
+        assert!(computed.facts.is_empty());
+        assert_eq!(computed.needed, None);
+        let input = PlacementRequest {
+            tier: &tier,
+            set: &set,
+            default_model: None,
+            pool_override: None,
+            request,
+        };
+        assert_eq!(place(&placement_service, &input), None);
+    }
     assert!(counter.seen().is_empty());
-}
-
-fn no_messages_skips_the_fit_and_placement() {
-    let config = config(true, 0.95);
-    let deployments = catalog(vec![deployment(
-        "small",
-        r#"{"model":"openai/gpt-4o"}"#,
-        &window(100),
-    )]);
-    let info = ExtraModelInfo;
-    let counter = FixedCounter { value: 400 };
-    let placement_service = service(&config, &deployments, &info, &counter);
-    let set = tier_set(&[("SIMPLE", &["small"])]);
-    let tier = Tier::BuiltIn(ComplexityTier::Simple);
-    let messages: [betterlite_openai::chat::ChatMessage; 0] = [];
-    let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
-        out_of_band,
-        compaction_pending: false,
-    };
-    assert_eq!(fit(&placement_service, &set, &request).needed, None);
-    let input = PlacementRequest {
-        tier: &tier,
-        set: &set,
-        default_model: None,
-        pool_override: None,
-        request,
-    };
-    assert_eq!(place(&placement_service, &input), None);
 }
 
 fn a_full_pool_keeps_the_tier() {
@@ -519,7 +474,8 @@ fn a_named_tier_can_hold_a_partial_pool() {
     assert_eq!(placement.tier, Tier::Named("custom".to_owned()));
 }
 
-fn a_byte_bound_under_the_window_skips_the_count() {
+// a 40-byte prompt fits the 100-token window at the default buffer, so only the 96-byte one is counted
+fn the_byte_bound_skips_the_count_until_it_reaches_the_window() {
     let config = config(true, 0.95);
     let deployments = catalog(vec![deployment(
         "small",
@@ -530,36 +486,22 @@ fn a_byte_bound_under_the_window_skips_the_count() {
     let counter = RecordingCounter::new();
     let placement_service = service(&config, &deployments, &info, &counter);
     let set = tier_set(&[("SIMPLE", &["small"])]);
-    let messages = [message(&"x".repeat(40))];
     let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
+    let under = [message(&"x".repeat(40))];
+    let under_request = RequestFacts {
+        messages: Some(&under),
         out_of_band,
         compaction_pending: false,
     };
-    assert_eq!(fit(&placement_service, &set, &request).needed, None);
+    assert_eq!(fit(&placement_service, &set, &under_request).needed, None);
     assert!(counter.seen().is_empty());
-}
-
-fn a_byte_bound_over_the_window_counts() {
-    let config = config(true, 0.95);
-    let deployments = catalog(vec![deployment(
-        "small",
-        r#"{"model":"openai/gpt-4o"}"#,
-        &window(100),
-    )]);
-    let info = ExtraModelInfo;
-    let counter = RecordingCounter::new();
-    let placement_service = service(&config, &deployments, &info, &counter);
-    let set = tier_set(&[("SIMPLE", &["small"])]);
-    let messages = [message(&"x".repeat(96))];
-    let out_of_band = OutOfBand::default();
-    let request = RequestFacts {
-        messages: Some(&messages),
+    let over = [message(&"x".repeat(96))];
+    let over_request = RequestFacts {
+        messages: Some(&over),
         out_of_band,
         compaction_pending: false,
     };
-    assert_eq!(fit(&placement_service, &set, &request).needed, Some(1));
+    assert_eq!(fit(&placement_service, &set, &over_request).needed, Some(1));
     assert_eq!(counter.seen(), vec![(1, String::new())]);
 }
 
@@ -592,57 +534,10 @@ fn the_count_covers_the_out_of_band_text() {
     assert_eq!(counter.seen(), vec![(1, "helloworld".to_owned())]);
 }
 
-fn out_of_band_joins_instructions_and_system() {
-    let instructions = Json::Text("abc".to_owned());
-    let system = Json::Text("de".to_owned());
-    let out_of_band = OutOfBand {
-        instructions: Some(&instructions),
-        system: Some(&system),
-        body_tools: None,
-        request_tools: None,
-    };
-    assert_eq!(out_of_band_text(&out_of_band), "abcde");
-}
-
-fn body_tools_win_over_request_tools() {
-    let body = json(r#"[{"a":1}]"#);
-    let request = json(r#"[{"b":2}]"#);
-    let out_of_band = OutOfBand {
-        instructions: None,
-        system: None,
-        body_tools: Some(&body),
-        request_tools: Some(&request),
-    };
-    assert_eq!(out_of_band_text(&out_of_band), r#"[{"a":1}]"#);
-}
-
-fn empty_body_tools_fall_back_to_request_tools() {
-    let body = json("[]");
-    let request = json(r#"[{"b":2}]"#);
-    let out_of_band = OutOfBand {
-        instructions: None,
-        system: None,
-        body_tools: Some(&body),
-        request_tools: Some(&request),
-    };
-    assert_eq!(out_of_band_text(&out_of_band), r#"[{"b":2}]"#);
-}
-
-fn a_null_or_non_text_value_contributes_nothing() {
-    let instructions = Json::Bool(true);
-    let system = Json::Null;
-    let out_of_band = OutOfBand {
-        instructions: Some(&instructions),
-        system: Some(&system),
-        body_tools: None,
-        request_tools: None,
-    };
-    assert_eq!(out_of_band_text(&out_of_band), "");
-}
-
-fn the_output_ceiling_is_the_smallest_limit() {
+// the ceiling is the smallest declared limit, and one member without a limit removes it
+fn the_output_ceiling_is_the_smallest_declared_limit() {
     let config = config(true, 0.95);
-    let deployments = catalog(vec![
+    let smallest = catalog(vec![
         with_router(
             deployment("group", r#"{"model":"openai/gpt-4o"}"#, "{}"),
             r#"{"max_output_tokens":300}"#,
@@ -653,15 +548,7 @@ fn the_output_ceiling_is_the_smallest_limit() {
             r#"{"max_output_tokens":200}"#,
         ),
     ]);
-    let info = ExtraModelInfo;
-    let counter = FixedCounter { value: 1 };
-    let placement_service = service(&config, &deployments, &info, &counter);
-    assert_eq!(placement_service.group_output_ceiling("group"), Some(200));
-}
-
-fn an_undeclared_output_limit_removes_the_ceiling() {
-    let config = config(true, 0.95);
-    let deployments = catalog(vec![
+    let undeclared = catalog(vec![
         deployment(
             "group",
             r#"{"model":"openai/gpt-4o"}"#,
@@ -671,8 +558,10 @@ fn an_undeclared_output_limit_removes_the_ceiling() {
     ]);
     let info = ExtraModelInfo;
     let counter = FixedCounter { value: 1 };
-    let placement_service = service(&config, &deployments, &info, &counter);
-    assert_eq!(placement_service.group_output_ceiling("group"), None);
+    let smallest_service = service(&config, &smallest, &info, &counter);
+    assert_eq!(smallest_service.group_output_ceiling("group"), Some(200));
+    let undeclared_service = service(&config, &undeclared, &info, &counter);
+    assert_eq!(undeclared_service.group_output_ceiling("group"), None);
 }
 
 fn a_declared_limit_beats_the_router_info() {
@@ -765,89 +654,6 @@ fn a_custom_provider_overrides_the_model_prefix() {
             has_unknown: true,
         }
     );
-}
-
-fn catalog_limits_resolve_for_a_declared_model() {
-    let catalog = model_catalog(
-        r#"{"gpt-4o":{"litellm_provider":"openai","mode":"chat","max_input_tokens":1000,"max_output_tokens":200}}"#,
-    );
-    let info = CatalogModelInfo { catalog: &catalog };
-    let spec = deployment("group", r#"{"model":"openai/gpt-4o"}"#, "{}");
-    assert_eq!(
-        deployment_limit(&info, "group", &spec, ModelLimitKey::InputTokens),
-        Some(1000)
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &spec, ModelLimitKey::OutputTokens),
-        Some(200)
-    );
-}
-
-fn catalog_azure_resolves_by_base_model() {
-    let catalog = model_catalog(
-        r#"{"azure/gpt-4o":{"litellm_provider":"azure","mode":"chat","max_input_tokens":128000}}"#,
-    );
-    let info = CatalogModelInfo { catalog: &catalog };
-    let spec = deployment(
-        "group",
-        r#"{"model":"azure/my-deployment","base_model":"gpt-4o"}"#,
-        "{}",
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &spec, ModelLimitKey::InputTokens),
-        Some(128000)
-    );
-}
-
-fn catalog_unmapped_models_have_no_limit() {
-    let catalog = model_catalog(
-        r#"{"gpt-4o":{"litellm_provider":"openai","mode":"chat","max_input_tokens":1000}}"#,
-    );
-    let info = CatalogModelInfo { catalog: &catalog };
-    let unknown = deployment("group", r#"{"model":"openai/unmapped"}"#, "{}");
-    assert_eq!(
-        deployment_limit(&info, "group", &unknown, ModelLimitKey::InputTokens),
-        None
-    );
-    let missing = deployment("group", "{}", "{}");
-    assert_eq!(
-        deployment_limit(&info, "group", &missing, ModelLimitKey::InputTokens),
-        None
-    );
-}
-
-fn message_without_content_adds_no_bytes() {
-    let bare = betterlite_openai::chat::ChatMessage {
-        role: betterlite_openai::chat::Role::User,
-        content: None,
-        name: None,
-        tool_calls: None,
-        tool_call_id: None,
-        passthrough: indexmap::IndexMap::new(),
-    };
-    let out_of_band = OutOfBand::default();
-    assert_eq!(request_byte_upper_bound(Some(&[bare]), &out_of_band), 0);
-    assert_eq!(request_byte_upper_bound(None, &out_of_band), 0);
-}
-
-fn message_parts_measure_as_their_json() {
-    let mut fields = indexmap::IndexMap::new();
-    fields.insert("text".to_owned(), serde_json::json!("hi"));
-    let part = betterlite_openai::chat::ContentPart {
-        kind: "text".to_owned(),
-        fields,
-    };
-    let parts = betterlite_openai::chat::ChatMessage {
-        role: betterlite_openai::chat::Role::User,
-        content: Some(betterlite_openai::chat::MessageContent::Parts(vec![part])),
-        name: None,
-        tool_calls: None,
-        tool_call_id: None,
-        passthrough: indexmap::IndexMap::new(),
-    };
-    let out_of_band = OutOfBand::default();
-    // [{"type":"text","text":"hi"}] in bytes
-    assert_eq!(request_byte_upper_bound(Some(&[parts]), &out_of_band), 29);
 }
 
 fn a_match_by_name_returns_the_placement_tier() {
@@ -960,61 +766,4 @@ fn a_disabled_gate_ignores_a_supplied_fit() {
     let outcome = super::runtime()
         .block_on(placement_service.context_window_placement(&input, Some(&supplied)));
     assert_eq!(outcome.unwrap(), None);
-}
-
-fn catalog_custom_provider_overrides_the_model_prefix() {
-    let catalog = model_catalog(
-        r#"{"gpt-4o":{"litellm_provider":"openai","mode":"chat","max_input_tokens":1000}}"#,
-    );
-    let info = CatalogModelInfo { catalog: &catalog };
-    let spec = deployment(
-        "group",
-        r#"{"model":"azure/gpt-4o","custom_llm_provider":"openai"}"#,
-        "{}",
-    );
-    assert_eq!(
-        deployment_limit(&info, "group", &spec, ModelLimitKey::InputTokens),
-        Some(1000)
-    );
-}
-
-fn an_empty_parts_message_adds_no_bytes() {
-    let empty = betterlite_openai::chat::ChatMessage {
-        role: betterlite_openai::chat::Role::User,
-        content: Some(betterlite_openai::chat::MessageContent::Parts(Vec::new())),
-        name: None,
-        tool_calls: None,
-        tool_call_id: None,
-        passthrough: indexmap::IndexMap::new(),
-    };
-    let out_of_band = OutOfBand::default();
-    assert_eq!(request_byte_upper_bound(Some(&[empty]), &out_of_band), 0);
-}
-
-// Python's truthiness decides which tools value is carried: text and a mapping count, a zero does not
-fn the_tool_truthiness_follows_python_values() {
-    let text = Json::Text("tool".to_owned());
-    let object = json(r#"{"a":1}"#);
-    let zero = json("0");
-    let from_text = OutOfBand {
-        instructions: None,
-        system: None,
-        body_tools: Some(&text),
-        request_tools: None,
-    };
-    assert_eq!(out_of_band_text(&from_text), "tool");
-    let from_object = OutOfBand {
-        instructions: None,
-        system: None,
-        body_tools: Some(&object),
-        request_tools: None,
-    };
-    assert_eq!(out_of_band_text(&from_object), r#"{"a":1}"#);
-    let from_zero = OutOfBand {
-        instructions: None,
-        system: None,
-        body_tools: Some(&zero),
-        request_tools: None,
-    };
-    assert_eq!(out_of_band_text(&from_zero), "");
 }

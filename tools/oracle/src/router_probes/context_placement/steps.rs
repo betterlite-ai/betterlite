@@ -54,7 +54,7 @@ impl RequestCounter for ProbeCounter {
     }
 }
 
-struct Probe<'input> {
+pub(super) struct Probe<'input> {
     input: &'input Input,
     config: section::Config,
     set: TierSet,
@@ -77,7 +77,7 @@ impl Probe<'_> {
     }
 
     // the fit is computed once and handed to the placement, as the router does per request
-    async fn output(&self) -> Result<Output, OperationError> {
+    pub(super) async fn output(&self) -> Result<Output, OperationError> {
         let service = self.service();
         let request = RequestFacts {
             messages: Some(&self.messages),
@@ -128,10 +128,7 @@ fn config(input: Option<&ConfigInput>) -> Result<section::Config, OperationError
             })?,
         None => section::DEFAULT_BUFFER,
     };
-    Ok(section::Config {
-        enable_context_window_escalation: enabled,
-        context_window_escalation_buffer: buffer,
-    })
+    Ok(section::Config { enabled, buffer })
 }
 
 fn tier(name: &str) -> Tier {
@@ -190,17 +187,29 @@ fn spec(group: &GroupInput, deployment: &DeploymentInput) -> DeploymentSpec {
     }
     let mut model_info = JsonObject::new();
     if let Some(limit) = deployment.max_input_tokens {
-        model_info.insert("max_input_tokens".to_owned(), number(limit));
+        model_info.insert(
+            "max_input_tokens".to_owned(),
+            Json::Number(serde_json::Number::from(limit)),
+        );
     }
     if let Some(limit) = deployment.max_output_tokens {
-        model_info.insert("max_output_tokens".to_owned(), number(limit));
+        model_info.insert(
+            "max_output_tokens".to_owned(),
+            Json::Number(serde_json::Number::from(limit)),
+        );
     }
     let mut router = JsonObject::new();
     if let Some(limit) = deployment.router_max_input_tokens {
-        router.insert("max_input_tokens".to_owned(), number(limit));
+        router.insert(
+            "max_input_tokens".to_owned(),
+            Json::Number(serde_json::Number::from(limit)),
+        );
     }
     if let Some(limit) = deployment.router_max_output_tokens {
-        router.insert("max_output_tokens".to_owned(), number(limit));
+        router.insert(
+            "max_output_tokens".to_owned(),
+            Json::Number(serde_json::Number::from(limit)),
+        );
     }
     let mut extra = JsonObject::new();
     extra.insert("probe_router".to_owned(), Json::Object(router));
@@ -210,10 +219,6 @@ fn spec(group: &GroupInput, deployment: &DeploymentInput) -> DeploymentSpec {
         model_info,
         extra,
     }
-}
-
-fn number(value: impl Into<serde_json::Number>) -> Json {
-    Json::Number(value.into())
 }
 
 fn messages(texts: &[String]) -> Vec<ChatMessage> {
@@ -234,11 +239,12 @@ fn out_of_band(input: &Input) -> OutOfBand<'_> {
     OutOfBand {
         instructions: input.instructions.as_ref(),
         system: input.system.as_ref(),
-        ..OutOfBand::default()
+        body_tools: None,
+        request_tools: None,
     }
 }
 
-fn probe(input: &Input) -> Result<Probe<'_>, OperationError> {
+pub(super) fn probe(input: &Input) -> Result<Probe<'_>, OperationError> {
     Ok(Probe {
         input,
         config: config(input.config.as_ref())?,
@@ -250,8 +256,4 @@ fn probe(input: &Input) -> Result<Probe<'_>, OperationError> {
         messages: messages(&input.messages),
         out_of_band: out_of_band(input),
     })
-}
-
-pub(super) async fn output(input: &Input) -> Result<Output, OperationError> {
-    probe(input)?.output().await
 }

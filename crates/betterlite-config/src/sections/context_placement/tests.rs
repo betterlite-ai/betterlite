@@ -68,22 +68,16 @@ fn declared_values_replace_the_defaults() {
     assert_eq!(
         resolved.deployments,
         vec![Some(Config {
-            enable_context_window_escalation: true,
-            context_window_escalation_buffer: 0.5,
+            enabled: true,
+            buffer: 0.5,
         })]
     );
 }
 
 #[test]
 fn the_defaults_are_the_pinned_litellm_values() {
-    assert_eq!(
-        Config::default().enable_context_window_escalation,
-        DEFAULT_ENABLED
-    );
-    assert_eq!(
-        Config::default().context_window_escalation_buffer.to_bits(),
-        DEFAULT_BUFFER.to_bits()
-    );
+    assert_eq!(Config::default().enabled, DEFAULT_ENABLED);
+    assert_eq!(Config::default().buffer.to_bits(), DEFAULT_BUFFER.to_bits());
     assert_eq!(DEFAULT_BUFFER.to_bits(), 0.95_f64.to_bits());
     assert!(!DEFAULT_ENABLED);
 }
@@ -93,11 +87,7 @@ fn one_buffer_at_the_upper_bound_is_accepted() {
     let source = router("        context_window_escalation_buffer: 1\n");
     let resolved = settings(&source, &[]).unwrap();
     assert_eq!(
-        resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .context_window_escalation_buffer
-            .to_bits(),
+        resolved.deployments[0].as_ref().unwrap().buffer.to_bits(),
         1.0_f64.to_bits()
     );
 }
@@ -167,11 +157,7 @@ fn an_environment_buffer_resolves_before_the_range_check() {
     let source = router("        context_window_escalation_buffer: os.environ/WINDOW\n");
     let resolved = settings(&source, &[("WINDOW", "0.8")]).unwrap();
     assert_eq!(
-        resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .context_window_escalation_buffer
-            .to_bits(),
+        resolved.deployments[0].as_ref().unwrap().buffer.to_bits(),
         0.8_f64.to_bits()
     );
 }
@@ -191,11 +177,7 @@ fn an_empty_environment_buffer_takes_the_default() {
     let source = router("        context_window_escalation_buffer: os.environ/WINDOW\n");
     let resolved = settings(&source, &[("WINDOW", "")]).unwrap();
     assert_eq!(
-        resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .context_window_escalation_buffer
-            .to_bits(),
+        resolved.deployments[0].as_ref().unwrap().buffer.to_bits(),
         0.95_f64.to_bits()
     );
 }
@@ -211,36 +193,21 @@ fn a_missing_environment_buffer_is_an_error() {
 fn an_environment_flag_resolves_to_a_bool() {
     let source = router("        enable_context_window_escalation: os.environ/ESCALATE\n");
     let resolved = settings(&source, &[("ESCALATE", "yes")]).unwrap();
-    assert!(
-        resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .enable_context_window_escalation
-    );
+    assert!(resolved.deployments[0].as_ref().unwrap().enabled);
 }
 
 #[test]
 fn an_empty_environment_flag_takes_the_default() {
     let source = router("        enable_context_window_escalation: os.environ/ESCALATE\n");
     let resolved = settings(&source, &[("ESCALATE", "")]).unwrap();
-    assert!(
-        !resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .enable_context_window_escalation
-    );
+    assert!(!resolved.deployments[0].as_ref().unwrap().enabled);
 }
 
 #[test]
 fn a_flag_of_explicit_false_stays_off() {
     let source = router("        enable_context_window_escalation: \"off\"\n");
     let resolved = settings(&source, &[]).unwrap();
-    assert!(
-        !resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .enable_context_window_escalation
-    );
+    assert!(!resolved.deployments[0].as_ref().unwrap().enabled);
 }
 
 #[test]
@@ -268,12 +235,7 @@ fn a_sibling_keys_do_not_become_unsupported() {
         "        enable_context_window_escalation: true\n        default_model: openai/gpt-4o\n",
     );
     let resolved = settings(&source, &[]).unwrap();
-    assert!(
-        resolved.deployments[0]
-            .as_ref()
-            .unwrap()
-            .enable_context_window_escalation
-    );
+    assert!(resolved.deployments[0].as_ref().unwrap().enabled);
 }
 
 #[test]

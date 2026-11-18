@@ -17,10 +17,7 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet};
 
 pub(super) fn config(enabled: bool, buffer: f64) -> Config {
-    Config {
-        enable_context_window_escalation: enabled,
-        context_window_escalation_buffer: buffer,
-    }
+    Config { enabled, buffer }
 }
 
 pub(super) fn message(content: &str) -> ChatMessage {

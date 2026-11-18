@@ -2,6 +2,7 @@
 
 mod behaviors;
 mod boundaries;
+mod helpers;
 mod support;
 
 use rstest::rstest;
@@ -39,7 +40,9 @@ fn runtime() -> Runtime {
 #[case::the_count_covers_the_out_of_band_text("the_count_covers_the_out_of_band_text")]
 #[case::out_of_band_joins_instructions_and_system("out_of_band_joins_instructions_and_system")]
 #[case::body_tools_win_over_request_tools("body_tools_win_over_request_tools")]
-#[case::empty_body_tools_fall_back_to_request_tools("empty_body_tools_fall_back_to_request_tools")]
+#[case::an_empty_body_tools_list_is_measured_as_declared(
+    "an_empty_body_tools_list_is_measured_as_declared"
+)]
 #[case::a_null_or_non_text_value_contributes_nothing(
     "a_null_or_non_text_value_contributes_nothing"
 )]
@@ -67,7 +70,7 @@ fn runtime() -> Runtime {
     "catalog_custom_provider_overrides_the_model_prefix"
 )]
 #[case::an_empty_parts_message_adds_no_bytes("an_empty_parts_message_adds_no_bytes")]
-#[case::the_tool_truthiness_follows_python_values("the_tool_truthiness_follows_python_values")]
+#[case::declared_tools_are_measured_as_given("declared_tools_are_measured_as_given")]
 fn context_placement_behaviors(#[case] name: &str) {
     behaviors::run(name);
 }

@@ -97,8 +97,7 @@ impl RouterModelInfo for CatalogModelInfo<'_> {
     }
 }
 
-// _deployment_limit: a declared limit shadows the router's model map even when it is no integer,
-// an authenticating-provider deployment has none, and only an absent or null declaration asks the map
+// _deployment_limit: a declared limit shadows the model map even when it is no integer, an authenticating provider has none, and only an absent or null declaration asks the map
 #[must_use]
 pub fn deployment_limit(
     model_info: &dyn RouterModelInfo,

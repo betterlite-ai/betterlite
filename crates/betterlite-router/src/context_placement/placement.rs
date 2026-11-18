@@ -77,7 +77,7 @@ pub(super) fn placement_for_tokens(
     config: &section::Config,
     input: &TokenInput<'_>,
 ) -> Result<Option<Placement>, PlacementError> {
-    let buffer = config.context_window_escalation_buffer;
+    let buffer = config.buffer;
     let mut in_tier = Vec::new();
     for group in input.pool {
         let window = window_facts(input.facts, group).window;

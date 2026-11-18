@@ -77,9 +77,9 @@ impl ContextPlacement<'_> {
         default_model: Option<&str>,
         request: &RequestFacts<'_>,
     ) -> ContextFit {
-        let buffer = self.config.context_window_escalation_buffer;
+        let buffer = self.config.buffer;
         if request.compaction_pending
-            || !self.config.enable_context_window_escalation
+            || !self.config.enabled
             || request.messages.is_none_or(|messages| messages.is_empty())
         {
             return ContextFit {
@@ -134,7 +134,7 @@ impl ContextPlacement<'_> {
         context_fit: Option<&ContextFit>,
     ) -> Result<Option<Placement>, PlacementError> {
         if input.request.compaction_pending
-            || !self.config.enable_context_window_escalation
+            || !self.config.enabled
             || input
                 .request
                 .messages
