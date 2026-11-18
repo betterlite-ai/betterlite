@@ -85,10 +85,11 @@ fn references_and_entries(
                 let entries: Vec<Value> = entries
                     .iter()
                     .map(|entry| {
+                        let (row, model) = entry.row.names();
                         json!({
                             "key": entry.key,
-                            "row": entry.row.label(),
-                            "model": entry.row.model_name(),
+                            "row": row,
+                            "model": model,
                             "ttl": entry.ttl,
                         })
                     })

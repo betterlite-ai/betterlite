@@ -9,13 +9,13 @@ use super::redis_rows::PrefetchRedis;
 use crate::auth_cache::keys::CacheKey;
 
 // litellm/constants.py: REGISTRY_ERROR_NEGATIVE_CACHE_TTL
-pub const REGISTRY_ERROR_NEGATIVE_CACHE_TTL: f64 = 30.0;
+pub const REGISTRY_ERROR_TTL: f64 = 30.0;
 
 // a registry stored as a string is a sentinel, written with the shorter of the two registry TTLs
 #[must_use]
 pub fn identity_memory_ttl(value: &Json, management_ttl: f64) -> f64 {
     match value {
-        Json::Text(_) => REGISTRY_ERROR_NEGATIVE_CACHE_TTL.min(management_ttl),
+        Json::Text(_) => REGISTRY_ERROR_TTL.min(management_ttl),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             management_ttl
         }

@@ -8,8 +8,6 @@ pub mod permission;
 pub mod redis_rows;
 pub mod rows;
 
-#[cfg(test)]
 #[path = "tests/postgres/mod.rs"]
 mod postgres;
-#[cfg(test)]
 mod tests;

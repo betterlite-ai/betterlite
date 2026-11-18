@@ -10,8 +10,7 @@ const DEFAULT_ORGANIZATION_TTL: f64 = 5.0;
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {}
 
-// the organization entries are the only ones this constant reaches; the membership TTL is fixed at 5
-// and the registry cap at 30, so no other value of this section moves them
+// only the organization entries read this; membership is fixed at 5 and the registry cap at 30
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Settings {
     pub organization_ttl: f64,

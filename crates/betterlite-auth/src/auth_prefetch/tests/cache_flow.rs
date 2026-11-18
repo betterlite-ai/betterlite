@@ -24,10 +24,9 @@ const MANAGEMENT_TTL: f64 = 60.0;
 const ORGANIZATION_TTL: f64 = 7.0;
 
 fn refs_user(user_id: &str) -> AuthObjectRefs {
-    AuthObjectRefs {
-        user_id: Some(user_id.to_owned()),
-        ..AuthObjectRefs::default()
-    }
+    let mut refs = AuthObjectRefs::default();
+    refs.user_id = Some(user_id.to_owned());
+    refs
 }
 
 fn refs_user_team() -> AuthObjectRefs {
@@ -42,11 +41,9 @@ fn refs_user_team() -> AuthObjectRefs {
 
 fn refs_all() -> AuthObjectRefs {
     AuthObjectRefs {
-        user_id: Some("user-1".to_owned()),
-        team_id: Some("team-1".to_owned()),
-        membership_user_id: Some("user-1".to_owned()),
         organization_id: Some("org-1".to_owned()),
         project_id: Some("project-1".to_owned()),
+        ..refs_user_team()
     }
 }
 
@@ -331,10 +328,8 @@ async fn row_kind_validated_once() {
     let cache = FakeCache::new(MANAGEMENT_TTL);
     let database = FakeDatabase::with(&[(RowKind::Organization, json(r#""not a row""#))]);
     let clock = FixedClock { now: 10.0 };
-    let refs = AuthObjectRefs {
-        organization_id: Some("org-1".to_owned()),
-        ..AuthObjectRefs::default()
-    };
+    let mut refs = AuthObjectRefs::default();
+    refs.organization_id = Some("org-1".to_owned());
     owner(&cache, Some(&database), &clock).prefetch(&refs).await;
     assert!(cache.ordinary.writes().is_empty());
     let text = logs.text();
@@ -387,10 +382,8 @@ async fn serialization_all_before_memory() {
     let database =
         FakeDatabase::with(&[(RowKind::Organization, fixtures::organization_row("org-1"))]);
     let clock = FixedClock { now: 10.0 };
-    let refs = AuthObjectRefs {
-        organization_id: Some("org-1".to_owned()),
-        ..AuthObjectRefs::default()
-    };
+    let mut refs = AuthObjectRefs::default();
+    refs.organization_id = Some("org-1".to_owned());
     owner(&cache, Some(&database), &clock).prefetch(&refs).await;
     let writes = cache.ordinary.writes();
     assert_eq!(
@@ -673,10 +666,8 @@ async fn counter_binding_precedes_owner_prefetch() {
     let events: Events = events();
     let binder = RecordingBinder::new(&events);
     let cache = FakeCache::new(MANAGEMENT_TTL);
-    let database = FakeDatabase {
-        events: Some(Arc::clone(&events)),
-        ..FakeDatabase::default()
-    };
+    let mut database = FakeDatabase::default();
+    database.record_events(Arc::clone(&events));
     let clock = FixedClock { now: 10.0 };
     let referenced = ReferencedPrefetch {
         owner: owner(&cache, Some(&database), &clock),

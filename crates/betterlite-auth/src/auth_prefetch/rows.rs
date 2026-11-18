@@ -27,26 +27,15 @@ pub enum RowKind {
 }
 
 impl RowKind {
+    // the column name and the model type it validates as, for the redacted diagnostic
     #[must_use]
-    pub const fn label(self) -> &'static str {
+    pub const fn names(self) -> (&'static str, &'static str) {
         match self {
-            Self::User => "user_row",
-            Self::Team => "team_row",
-            Self::Membership => "membership_row",
-            Self::Organization => "organization_row",
-            Self::Project => "project_row",
-        }
-    }
-
-    // the model type each column validates as, for the redacted diagnostic
-    #[must_use]
-    pub const fn model_name(self) -> &'static str {
-        match self {
-            Self::User => "LiteLLM_UserTable",
-            Self::Team => "LiteLLM_TeamTableCachedObj",
-            Self::Membership => "LiteLLM_TeamMembership",
-            Self::Organization => "LiteLLM_OrganizationTable",
-            Self::Project => "LiteLLM_ProjectTableCachedObj",
+            Self::User => ("user_row", "LiteLLM_UserTable"),
+            Self::Team => ("team_row", "LiteLLM_TeamTableCachedObj"),
+            Self::Membership => ("membership_row", "LiteLLM_TeamMembership"),
+            Self::Organization => ("organization_row", "LiteLLM_OrganizationTable"),
+            Self::Project => ("project_row", "LiteLLM_ProjectTableCachedObj"),
         }
     }
 }
@@ -97,10 +86,11 @@ pub fn validate_row(
     match decode(kind, value, refreshed_at) {
         Ok(object) => Some(object),
         Err(error) => {
+            let (row, model) = kind.names();
             // the rejected columns stay out of the line: payloads can hold keys and user rows
             tracing::warn!(
-                row = kind.label(),
-                model = kind.model_name(),
+                row,
+                model,
                 category = ?error.classify(),
                 "auth prefetch: the row did not validate as its model"
             );

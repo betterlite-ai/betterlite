@@ -629,12 +629,14 @@ async fn permission_no_negative_cache() {
             writer: &writer,
         }),
     };
-    for _ in 0..2 {
-        let outcome = get_object_permission(&source, "perm-1", false)
-            .await
-            .expect("the miss is not an error");
-        assert!(outcome.is_none());
-    }
+    let first = get_object_permission(&source, "perm-1", false)
+        .await
+        .expect("the first miss is not an error");
+    let second = get_object_permission(&source, "perm-1", false)
+        .await
+        .expect("the second miss is not an error");
+    assert!(first.is_none());
+    assert!(second.is_none());
     assert_eq!(
         normal.calls(),
         vec!["perm-1".to_owned(), "perm-1".to_owned()]

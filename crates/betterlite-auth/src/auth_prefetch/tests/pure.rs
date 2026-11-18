@@ -4,6 +4,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::key::LiteLLMVerificationToken;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 use super::fixtures;
@@ -11,7 +12,7 @@ use crate::auth_prefetch::entries::{
     AuthObjectRefs, MEMBERSHIP_AUTH_TTL, PrefetchEntry, iter_entries,
 };
 use crate::auth_prefetch::identity::{
-    REGISTRY_ERROR_NEGATIVE_CACHE_TTL, identity_cache_keys, identity_memory_ttl,
+    REGISTRY_ERROR_TTL, identity_cache_keys, identity_memory_ttl,
 };
 use crate::auth_prefetch::rows::{RowKind, RowObject, validate_row};
 
@@ -166,7 +167,7 @@ fn each_entry_ttl() {
         ]
     );
     assert_eq!(MEMBERSHIP_AUTH_TTL, 5.0);
-    assert_eq!(REGISTRY_ERROR_NEGATIVE_CACHE_TTL, 30.0);
+    assert_eq!(REGISTRY_ERROR_TTL, 30.0);
 }
 
 #[test]
@@ -241,21 +242,17 @@ fn falsey_end_user_skips_both_keys() {
     assert_eq!(none, keys);
 }
 
-#[test]
-fn group_registry_always_last() {
-    let cases = [
-        (false, None),
-        (false, Some("end-1")),
-        (true, None),
-        (true, Some("end-1")),
-    ];
-    for (resolved, end_user) in cases {
-        let keys = identity_cache_keys("sk-abc", end_user, resolved);
-        assert_eq!(
-            keys.last().map(String::as_str),
-            Some("model_access_group_registry")
-        );
-    }
+#[rstest]
+#[case::unresolved_none(false, None)]
+#[case::unresolved_some(false, Some("end-1"))]
+#[case::resolved_none(true, None)]
+#[case::resolved_some(true, Some("end-1"))]
+fn group_registry_always_last(#[case] resolved: bool, #[case] end_user: Option<&str>) {
+    let keys = identity_cache_keys("sk-abc", end_user, resolved);
+    assert_eq!(
+        keys.last().map(String::as_str),
+        Some("model_access_group_registry")
+    );
 }
 
 #[test]
@@ -266,11 +263,14 @@ fn string_value_ttl_min_30() {
     assert_eq!(identity_memory_ttl(&value, 30.0), 30.0);
 }
 
-#[test]
-fn nonstring_value_management_ttl() {
-    for text in ["null", "false", "12", "[1]", r#"{"a": 1}"#] {
-        assert_eq!(identity_memory_ttl(&decoded(text), 12.5), 12.5);
-    }
+#[rstest]
+#[case::null("null")]
+#[case::bool("false")]
+#[case::number("12")]
+#[case::list("[1]")]
+#[case::object(r#"{"a": 1}"#)]
+fn nonstring_value_management_ttl(#[case] text: &str) {
+    assert_eq!(identity_memory_ttl(&decoded(text), 12.5), 12.5);
 }
 
 #[test]
@@ -295,44 +295,29 @@ fn team_project_timestamp_override() {
     assert_eq!(payload_number(&payload, "last_refreshed_at"), Some(9.5));
 }
 
-#[test]
-fn other_rows_not_timestamped() {
-    let rows = [
-        (
-            RowKind::User,
-            with_timestamp(fixtures::user_row("user-1"), 1.5),
-        ),
-        (
-            RowKind::Membership,
-            with_timestamp(fixtures::membership_row("user-1", "team-1"), 1.5),
-        ),
-        (
-            RowKind::Organization,
-            with_timestamp(fixtures::organization_row("org-1"), 1.5),
-        ),
-    ];
-    for (kind, row) in rows {
-        let validated = validate_row(kind, Some(&row), 42.0).expect("the row validates");
-        let payload = validated.payload().expect("the payload");
-        assert!(
-            object(&payload).get("last_refreshed_at").is_none(),
-            "{kind:?} carries no timestamp"
-        );
-    }
+#[rstest]
+#[case::user(RowKind::User, fixtures::user_row("user-1"))]
+#[case::membership(RowKind::Membership, fixtures::membership_row("user-1", "team-1"))]
+#[case::organization(RowKind::Organization, fixtures::organization_row("org-1"))]
+fn other_rows_not_timestamped(#[case] kind: RowKind, #[case] row: JsonData) {
+    let row = with_timestamp(row, 1.5);
+    let validated = validate_row(kind, Some(&row), 42.0).expect("the row validates");
+    let payload = validated.payload().expect("the payload");
+    assert!(
+        object(&payload).get("last_refreshed_at").is_none(),
+        "{kind:?} carries no timestamp"
+    );
 }
 
-#[test]
-fn null_row_silent_skip() {
+#[rstest]
+#[case::user(RowKind::User)]
+#[case::team(RowKind::Team)]
+#[case::membership(RowKind::Membership)]
+#[case::organization(RowKind::Organization)]
+#[case::project(RowKind::Project)]
+fn null_row_silent_skip(#[case] kind: RowKind) {
     let (logs, _guard) = Logs::capture();
-    for kind in [
-        RowKind::User,
-        RowKind::Team,
-        RowKind::Membership,
-        RowKind::Organization,
-        RowKind::Project,
-    ] {
-        assert!(validate_row(kind, None, 42.0).is_none());
-    }
+    assert!(validate_row(kind, None, 42.0).is_none());
     assert_eq!(logs.text(), "");
 }
 

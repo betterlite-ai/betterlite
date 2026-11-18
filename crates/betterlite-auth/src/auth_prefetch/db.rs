@@ -6,7 +6,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use super::entries::AuthObjectRefs;
 use super::rows::{RowKind, RowValues};
 
-// the pinned SELECT keeps relations null and COALESCEs every scalar list to [], as prisma reads them
+// the pinned SELECT keeps relations null and coalesces every scalar list to [], as prisma reads them
 const ROWS_SQL: &str = r#"SELECT
   (SELECT to_jsonb(u) || jsonb_build_object(
     'teams', COALESCE(to_jsonb(u.teams), '[]'::jsonb),
@@ -182,7 +182,7 @@ fn decode_column(
         .map_err(|source| PrefetchDatabaseError::Database(backend(source)))?;
     text.map(|value| {
         serde_json::from_str(&value).map_err(|source| PrefetchDatabaseError::Column {
-            row: kind.label(),
+            row: kind.names().0,
             source,
         })
     })

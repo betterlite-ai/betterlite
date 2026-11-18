@@ -61,10 +61,38 @@ pub(super) struct MemoryWrite {
     pub(super) ttl: Option<f64>,
 }
 
+pub(super) struct WriteLog<T> {
+    entries: Mutex<Vec<T>>,
+}
+
+impl<T> Default for WriteLog<T> {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::default(),
+        }
+    }
+}
+
+impl<T: Clone> WriteLog<T> {
+    pub(super) fn push(&self, entry: T) {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(entry);
+    }
+
+    pub(super) fn all(&self) -> Vec<T> {
+        self.entries
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
 #[derive(Default)]
 pub(super) struct FakeMemory {
     values: Mutex<BTreeMap<String, CacheValue>>,
-    writes: Mutex<Vec<MemoryWrite>>,
+    writes: WriteLog<MemoryWrite>,
     reads: Mutex<Vec<String>>,
     failing: Mutex<BTreeSet<String>>,
 }
@@ -85,10 +113,7 @@ impl FakeMemory {
     }
 
     pub(super) fn writes(&self) -> Vec<MemoryWrite> {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.writes.all()
     }
 
     pub(super) fn write_keys(&self) -> Vec<String> {
@@ -121,24 +146,21 @@ impl PrefetchMemory for FakeMemory {
     }
 
     fn set(&self, key: &str, value: CacheValue, ttl: Option<f64>) -> Result<(), MemoryWriteError> {
-        self.writes
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(MemoryWrite {
-                key: key.to_owned(),
-                value: value.clone(),
-                ttl,
-            });
-        let failing = self
+        if self
             .failing
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .contains(key);
-        if failing {
+            .contains(key)
+        {
             return Err(MemoryWriteError(BackendError::Unsupported(
                 "the test memory refuses this key",
             )));
         }
+        self.writes.push(MemoryWrite {
+            key: key.to_owned(),
+            value: value.clone(),
+            ttl,
+        });
         self.seed(key, value);
         Ok(())
     }
@@ -212,6 +234,16 @@ pub(super) struct QueueWrite {
     pub(super) ttl: Option<f64>,
 }
 
+impl QueueWrite {
+    pub(super) fn new(key: &str, value: &Json, ttl: Option<f64>) -> Self {
+        Self {
+            key: key.to_owned(),
+            value: value.clone(),
+            ttl,
+        }
+    }
+}
+
 #[derive(Default)]
 pub(super) struct FakeRedis {
     values: Mutex<BTreeMap<String, Json>>,
@@ -221,16 +253,15 @@ pub(super) struct FakeRedis {
     batch: AtomicBool,
     fail_pipeline: AtomicBool,
     queue_failure: Mutex<Option<String>>,
-    queued: Mutex<Vec<QueueWrite>>,
+    queued: WriteLog<QueueWrite>,
     pipelines: Mutex<Vec<Vec<QueueWrite>>>,
 }
 
 impl FakeRedis {
     pub(super) fn batch() -> Self {
-        Self {
-            batch: AtomicBool::new(true),
-            ..Self::default()
-        }
+        let redis = Self::default();
+        redis.batch.store(true, Ordering::SeqCst);
+        redis
     }
 
     pub(super) fn seed(&self, key: &str, value: Json) {
@@ -270,10 +301,7 @@ impl FakeRedis {
     }
 
     pub(super) fn queued(&self) -> Vec<QueueWrite> {
-        self.queued
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+        self.queued.all()
     }
 
     pub(super) fn pipelines(&self) -> Vec<Vec<QueueWrite>> {
@@ -339,35 +367,24 @@ impl PrefetchRedis for FakeRedis {
     }
 
     fn queue_set(&self, key: &str, value: &Json, ttl: Option<f64>) -> Result<(), RedisRowsError> {
-        let refused = self
+        let failure = self
             .queue_failure
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .as_deref()
-            == Some(key);
-        if refused {
+            .clone()
+            .filter(|failure| failure == key);
+        if let Some(failure) = failure {
             return Err(RedisRowsError::Write {
-                message: "the test queue refused this key".to_owned(),
+                message: format!("the test queue refused {failure}"),
             });
         }
-        self.queued
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(QueueWrite {
-                key: key.to_owned(),
-                value: value.clone(),
-                ttl,
-            });
+        self.queued.push(QueueWrite::new(key, value, ttl));
         Ok(())
     }
 }
 
 fn queue_write(entry: &(String, Json, Option<f64>)) -> QueueWrite {
-    QueueWrite {
-        key: entry.0.clone(),
-        value: entry.1.clone(),
-        ttl: entry.2,
-    }
+    QueueWrite::new(&entry.0, &entry.1, entry.2)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -397,8 +414,15 @@ impl FakeDatabase {
         }
         Self {
             rows: values,
-            ..Self::default()
+            calls: Mutex::default(),
+            refs: Mutex::default(),
+            failure: Mutex::default(),
+            events: None,
         }
+    }
+
+    pub(super) fn record_events(&mut self, events: Events) {
+        self.events = Some(events);
     }
 
     pub(super) fn fail(&self, failure: DatabaseFailure) {
