@@ -95,6 +95,13 @@ deviations:
     The transport cap bounds the memory one provider answer can take, and a moderation answer for a bounded input is far
     smaller than that.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7858-L7861
+- what: >-
+    A failed provider call answers with betterlite's own message; LiteLLM copies the SDK exception's message, which for
+    a status error is "Error code: N - <provider body>".
+  why: >-
+    The provider body can repeat the caller's input and deployment details, and betterlite redacts each failure's
+    message before it reaches the client.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12500-L12505
 kept_bugs:
 - what: >-
     The error body's code is the stringified HTTP status, so a provider error's own code, such as invalid_input, is
