@@ -3,109 +3,106 @@ use betterlite_models::model_registration::JsonObject;
 
 use super::{ChunkKind, StreamChunk};
 
-// the declared model fields a chunk body can nest models under; any other key holds an
-// arbitrary value, and pydantic's exclude_none leaves entries of those dictionaries alone
+// the declared fields a chunk body nests a model or an array of models under; any other key
+// holds an arbitrary value, and pydantic's exclude_none leaves entries of those dictionaries alone
 #[derive(Clone, Copy)]
 enum Shape {
     Value,
-    Model(&'static [(&'static str, Shape)]),
-    List(&'static [(&'static str, Shape)]),
+    Fields(&'static [(&'static str, Shape)]),
 }
 
 const EMPTY: &[(&str, Shape)] = &[];
 const TOOL_CALL: &[(&str, Shape)] = &[
-    ("custom", Shape::Model(EMPTY)),
-    ("function", Shape::Model(EMPTY)),
+    ("custom", Shape::Fields(EMPTY)),
+    ("function", Shape::Fields(EMPTY)),
 ];
-const THINKING: &[(&str, Shape)] = &[];
-const REASONING: &[(&str, Shape)] = &[("summary", Shape::List(EMPTY))];
-const IMAGE: &[(&str, Shape)] = &[("image_url", Shape::Model(EMPTY))];
-const ANNOTATION: &[(&str, Shape)] = &[("url_citation", Shape::Model(EMPTY))];
-const LOGPROB: &[(&str, Shape)] = &[("top_logprobs", Shape::List(EMPTY))];
-const LOGPROBS: &[(&str, Shape)] = &[("content", Shape::List(LOGPROB))];
+const REASONING: &[(&str, Shape)] = &[("summary", Shape::Fields(EMPTY))];
+const IMAGE: &[(&str, Shape)] = &[("image_url", Shape::Fields(EMPTY))];
+const ANNOTATION: &[(&str, Shape)] = &[("url_citation", Shape::Fields(EMPTY))];
+const LOGPROB: &[(&str, Shape)] = &[("top_logprobs", Shape::Fields(EMPTY))];
+const LOGPROBS: &[(&str, Shape)] = &[("content", Shape::Fields(LOGPROB))];
 const DELTA: &[(&str, Shape)] = &[
-    ("function_call", Shape::Model(EMPTY)),
-    ("reasoning_items", Shape::List(REASONING)),
-    ("thinking_blocks", Shape::List(THINKING)),
-    ("tool_calls", Shape::List(TOOL_CALL)),
+    ("function_call", Shape::Fields(EMPTY)),
+    ("reasoning_items", Shape::Fields(REASONING)),
+    ("thinking_blocks", Shape::Fields(EMPTY)),
+    ("tool_calls", Shape::Fields(TOOL_CALL)),
 ];
 const STREAM_CHOICE: &[(&str, Shape)] = &[
-    ("delta", Shape::Model(DELTA)),
-    ("logprobs", Shape::Model(LOGPROBS)),
+    ("delta", Shape::Fields(DELTA)),
+    ("logprobs", Shape::Fields(LOGPROBS)),
 ];
 const STREAM_BODY: &[(&str, Shape)] = &[
-    ("choices", Shape::List(STREAM_CHOICE)),
-    ("usage", Shape::Model(EMPTY)),
+    ("choices", Shape::Fields(STREAM_CHOICE)),
+    ("usage", Shape::Fields(EMPTY)),
 ];
 const MESSAGE: &[(&str, Shape)] = &[
-    ("annotations", Shape::List(ANNOTATION)),
-    ("audio", Shape::Model(EMPTY)),
-    ("function_call", Shape::Model(EMPTY)),
-    ("images", Shape::List(IMAGE)),
-    ("reasoning_items", Shape::List(REASONING)),
-    ("thinking_blocks", Shape::List(THINKING)),
-    ("tool_calls", Shape::List(TOOL_CALL)),
+    ("annotations", Shape::Fields(ANNOTATION)),
+    ("audio", Shape::Fields(EMPTY)),
+    ("function_call", Shape::Fields(EMPTY)),
+    ("images", Shape::Fields(IMAGE)),
+    ("reasoning_items", Shape::Fields(REASONING)),
+    ("thinking_blocks", Shape::Fields(EMPTY)),
+    ("tool_calls", Shape::Fields(TOOL_CALL)),
 ];
 const FULL_CHOICE: &[(&str, Shape)] = &[
-    ("logprobs", Shape::Model(LOGPROBS)),
-    ("message", Shape::Model(MESSAGE)),
+    ("logprobs", Shape::Fields(LOGPROBS)),
+    ("message", Shape::Fields(MESSAGE)),
 ];
 const FULL_BODY: &[(&str, Shape)] = &[
-    ("choices", Shape::List(FULL_CHOICE)),
-    ("usage", Shape::Model(EMPTY)),
+    ("choices", Shape::Fields(FULL_CHOICE)),
+    ("usage", Shape::Fields(EMPTY)),
 ];
 
 #[must_use]
 pub fn serialize_chunk(chunk: &StreamChunk) -> String {
     let body = Json::Object(chunk.body.clone());
-    let written = match chunk.kind {
-        ChunkKind::Plain => body,
-        ChunkKind::ModelStream => without_nulls(&body, Shape::Model(STREAM_BODY)),
-        ChunkKind::ModelFull => without_nulls(&body, Shape::Model(FULL_BODY)),
-        ChunkKind::Event => without_nulls(&body, Shape::Model(EMPTY)),
-    };
+    let written = without_nulls(&body, body_shape(chunk.kind));
     // Json always serializes; an impossible encoding failure must not lose the stream
     serde_json::to_string(&written).unwrap_or_default()
+}
+
+const fn body_shape(kind: ChunkKind) -> Shape {
+    match kind {
+        ChunkKind::Plain => Shape::Value,
+        ChunkKind::ModelStream => Shape::Fields(STREAM_BODY),
+        ChunkKind::ModelFull => Shape::Fields(FULL_BODY),
+        ChunkKind::Event => Shape::Fields(EMPTY),
+    }
 }
 
 // model_dump_json(exclude_none=True): a null model field goes, a null entry of a dictionary field stays
 fn without_nulls(value: &Json, shape: Shape) -> Json {
     match shape {
         Shape::Value => value.clone(),
-        Shape::Model(fields) => strip_model_nulls(value, fields),
-        Shape::List(fields) => strip_list_nulls(value, fields),
+        Shape::Fields(fields) => strip_nulls(value, fields),
     }
 }
 
-fn strip_model_nulls(value: &Json, fields: &[(&str, Shape)]) -> Json {
-    let Json::Object(entries) = value else {
-        return value.clone();
-    };
-    let mut kept = JsonObject::new();
-    for (name, item) in entries {
-        if !matches!(item, Json::Null) {
-            kept.insert(name.clone(), without_nulls(item, field_shape(fields, name)));
-        }
+// an object is a model at this level, so its null fields go; an array keeps its null items and
+// walks every other item as a model, since the same shape covers both forms
+fn strip_nulls(value: &Json, fields: &[(&str, Shape)]) -> Json {
+    match value {
+        Json::Object(entries) => Json::Object(
+            entries
+                .iter()
+                .filter(|(_name, item)| !matches!(*item, Json::Null))
+                .map(|(name, item)| (name.clone(), without_nulls(item, field_shape(fields, name))))
+                .collect(),
+        ),
+        Json::List(items) => Json::List(
+            items
+                .iter()
+                .map(|item| item_without_nulls(item, fields))
+                .collect(),
+        ),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => value.clone(),
     }
-    Json::Object(kept)
-}
-
-// a null list item is data, so it stays; every other item is a model at this level
-fn strip_list_nulls(value: &Json, fields: &[(&str, Shape)]) -> Json {
-    let Json::List(items) = value else {
-        return value.clone();
-    };
-    let mut kept = Vec::new();
-    for item in items {
-        kept.push(item_without_nulls(item, fields));
-    }
-    Json::List(kept)
 }
 
 fn item_without_nulls(item: &Json, fields: &[(&str, Shape)]) -> Json {
     match item {
         Json::Null => Json::Null,
-        other => without_nulls(other, Shape::Model(fields)),
+        other => without_nulls(other, Shape::Fields(fields)),
     }
 }
 
