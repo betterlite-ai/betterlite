@@ -16,8 +16,9 @@ pub const MAX_VALUE_BYTES: usize = 1024 * 1024;
 
 pub type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 
+// parse checks the limit; the crate-visible field lets a constant key be built where its own length is proven at compile time
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RouteKey(String);
+pub struct RouteKey(pub(crate) String);
 
 impl RouteKey {
     pub fn parse(raw: &str) -> Result<Self, StoreError> {

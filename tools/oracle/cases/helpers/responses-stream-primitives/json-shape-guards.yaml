@@ -1,0 +1,26 @@
+kind: helper
+name: json-shape-guards
+call:
+  responses_stream_primitives:
+    operation: json_shape_guards
+    payloads:
+      - '{"a": 1}'
+      - '{"a": "b"}'
+      - '{"a": null}'
+      - '{"a": 1, "a": 2}'
+      - '[]'
+      - '[1, 2]'
+      - '"text"'
+      - '""'
+      - "7"
+      - "-2.5"
+      - "true"
+      - "false"
+      - "null"
+      - ""
+      - "  "
+      - "{bad"
+      - '{"a": 1} trailing'
+      - "data: {}"
+env: {}
+compare: {ignore: []}

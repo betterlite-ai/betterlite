@@ -1,0 +1,15 @@
+kind: probe
+name: one-nonpriority-owner
+probes:
+  - clock: {unix_millis: 1700000001300, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        groups:
+          - {group_name: group-a, models: [probe-a, probe-shared], routing_strategy: simple-shuffle}
+          - {group_name: group-b, models: [probe-shared, probe-b], routing_strategy: least-busy}
+        deployments:
+          - {model_name: probe-a, identifier: a1, model: "openai/probe-a"}
+          - {model_name: probe-shared, identifier: s1, model: "openai/probe-shared"}
+          - {model_name: probe-b, identifier: b1, model: "openai/probe-b"}
+compare: {ignore: []}

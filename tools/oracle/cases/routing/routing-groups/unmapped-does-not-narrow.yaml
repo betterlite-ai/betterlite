@@ -1,0 +1,33 @@
+kind: probe
+name: unmapped-does-not-narrow
+probes:
+  - clock: {unix_millis: 1700000001600, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        cost_map:
+          probe-mapped:
+            litellm_provider: openai
+            mode: chat
+            supports_reasoning: true
+            supports_low_reasoning_effort: true
+            supports_high_reasoning_effort: true
+          probe-plain: {litellm_provider: openai, mode: chat}
+        efforts:
+          - model_info:
+              litellm_provider: openai
+              key: openai/probe-mapped
+              supports_reasoning: true
+              supports_low_reasoning_effort: true
+              supports_high_reasoning_effort: true
+          - model_info: {litellm_provider: openai, key: openai/probe-plain}
+          - model_info: {litellm_provider: openai, key: openai/probe-plain}
+            resolved_model_info: {mode: chat}
+          - model_info: {litellm_provider: openai, key: openai/probe-plain, mode: chat}
+            resolved_model_info: {mode: chat}
+        intersections:
+          - current: [none, minimal, low, medium, high]
+          - resolved: []
+          - current: [high, low]
+            resolved: [low, high]
+compare: {ignore: []}
