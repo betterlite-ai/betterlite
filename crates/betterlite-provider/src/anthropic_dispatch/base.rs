@@ -52,6 +52,8 @@ pub fn resolve_base(
     environment: &Environment,
     disable_suffix: bool,
 ) -> ResolvedBase {
+    let suffix = surface.suffix();
+    let default_url = format!("{DEFAULT_BASE}{suffix}");
     let base = explicit
         .filter(|value| !value.is_empty())
         .or_else(|| {
@@ -72,8 +74,7 @@ pub fn resolve_base(
                 .map(String::as_str)
                 .filter(|value| !value.is_empty())
         })
-        .unwrap_or(DEFAULT_BASE);
-    let suffix = surface.suffix();
+        .unwrap_or(&default_url);
     if disable_suffix {
         return ResolvedBase {
             url: base.to_owned(),

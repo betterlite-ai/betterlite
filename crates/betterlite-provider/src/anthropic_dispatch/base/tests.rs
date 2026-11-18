@@ -64,6 +64,30 @@ fn disabling_the_suffix_keeps_the_url_and_names_the_notice() {
     );
 }
 
+#[rstest::rstest]
+#[case::messages(Surface::Messages, "https://api.anthropic.com/v1/messages")]
+#[case::legacy(Surface::Legacy, "https://api.anthropic.com/v1/complete")]
+fn disabling_suffix_preserves_the_default_endpoint(
+    #[case] surface: Surface,
+    #[case] expected: &str,
+) {
+    let resolved = resolve_base(
+        surface,
+        None,
+        &Globals::default(),
+        &Environment::new(),
+        true,
+    );
+    assert_eq!(resolved.url, expected);
+    assert_eq!(
+        resolved.notice,
+        Some(format!(
+            "LITELLM_ANTHROPIC_DISABLE_URL_SUFFIX is set, skipping {} suffix",
+            surface.suffix()
+        ))
+    );
+}
+
 #[test]
 fn a_global_base_precedes_both_environment_variables() {
     let globals = Globals {
