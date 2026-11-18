@@ -31,9 +31,3 @@ pub(super) fn client_timeout(timeout: Option<f64>) -> Result<Duration, AzureFile
         None => Ok(DEFAULT_TIMEOUT),
     }
 }
-
-// carried for the client projection only: betterlite's transport never retries, so a value the type
-// cannot hold is reported as no retries rather than failing a request that could not use it anyway
-pub(super) fn retries(max_retries: i64) -> u32 {
-    u32::try_from(max_retries).unwrap_or(0)
-}

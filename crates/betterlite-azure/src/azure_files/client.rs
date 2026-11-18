@@ -15,12 +15,12 @@ use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::source::CredentialSources;
 use crate::endpoints::get_client::{ClientCache, GetClientRequest, get_azure_openai_client};
 use crate::endpoints::projection::{
-    AzureClientInputs, CallableProvider, ClientInputs, ClientKind, ClientOutcome, LiteLlmParams,
-    OpenAiV1ClientInputs, SessionKind, SuppliedClient, V1Key,
+    CallableProvider, ClientInputs, ClientKind, ClientOutcome, LiteLlmParams, SessionKind,
+    SuppliedClient, V1Key,
 };
 
 use self::auth::{AuthHeader, AuthKind, FileAuth, provider_auth, resolve_auth};
-use self::target::{azure_base_url, client_timeout, parse_base, retries};
+use self::target::{azure_base_url, client_timeout, parse_base};
 use super::error::AzureFilesError;
 
 pub(crate) const API_KEY: HeaderName = HeaderName::from_static("api-key");
@@ -86,8 +86,7 @@ impl<'data, M: ClientMaterializer> Connection<'_, 'data, M> {
         let outcome = self.get_openai_client()?;
         let kind = outcome.kind;
         let client = match outcome.inputs.as_ref() {
-            Some(ClientInputs::Azure(azure)) => SelectedClient::from_azure(azure, kind)?,
-            Some(ClientInputs::OpenAiV1(v1)) => SelectedClient::from_v1(v1, kind)?,
+            Some(inputs) => SelectedClient::from_inputs(inputs, kind)?,
             None => self
                 .materializer
                 .materialize(&outcome)?
@@ -135,50 +134,50 @@ impl SelectedClient {
         )
     }
 
-    fn from_azure(
-        azure: &AzureClientInputs<'_>,
-        kind: ClientKind,
-    ) -> Result<Self, AzureFilesError> {
-        let auth = resolve_auth(
-            azure.azure_ad_token.clone(),
-            azure.token_provider.as_ref(),
-            azure.api_key.clone(),
-        )?;
+    // a max_retries the u32 field cannot hold becomes 0, since betterlite's transport never retries
+    fn from_inputs(inputs: &ClientInputs<'_>, kind: ClientKind) -> Result<Self, AzureFilesError> {
+        let (auth, base_url, api_version, timeout, max_retries) = match inputs {
+            ClientInputs::Azure(azure) => (
+                resolve_auth(
+                    azure.azure_ad_token.clone(),
+                    azure.token_provider.as_ref(),
+                    azure.api_key.clone(),
+                )?,
+                azure_base_url(&azure.endpoint)?,
+                Some(azure.api_version.clone()),
+                client_timeout(azure.timeout)?,
+                u32::try_from(azure.max_retries).unwrap_or(0),
+            ),
+            ClientInputs::OpenAiV1(v1) => (
+                // B531 picked the v1 key in LiteLLM's order: api_key, then the provider, then the ad token
+                match v1.key.as_ref() {
+                    Some(V1Key::Static(secret)) if !secret.expose_secret().is_empty() => {
+                        FileAuth::Bearer(secret.clone())
+                    }
+                    Some(V1Key::Static(_)) | None => FileAuth::None,
+                    Some(V1Key::Provider { provider, .. }) => provider_auth(provider)?,
+                },
+                parse_base(
+                    v1.base_url
+                        .as_deref()
+                        .ok_or(AzureFilesError::MissingBaseUrl)?,
+                )?,
+                None,
+                client_timeout(v1.timeout)?,
+                u32::try_from(v1.max_retries).unwrap_or(0),
+            ),
+        };
         let files = FilesClient {
             api_key: auth.secret(),
-            base_url: azure_base_url(&azure.endpoint)?,
+            base_url,
             organization: None,
-            timeout: client_timeout(azure.timeout)?,
-            max_retries: retries(azure.max_retries),
+            timeout,
+            max_retries,
         };
-        Self::new(files, auth, Some(azure.api_version.clone()), kind)
+        Self::new(files, auth, api_version, kind)
     }
 
-    fn from_v1(v1: &OpenAiV1ClientInputs<'_>, kind: ClientKind) -> Result<Self, AzureFilesError> {
-        // B531 picked the v1 key in LiteLLM's order: api_key, then the provider, then the ad token
-        let auth = match v1.key.as_ref() {
-            Some(V1Key::Static(secret)) if !secret.expose_secret().is_empty() => {
-                FileAuth::Bearer(secret.clone())
-            }
-            Some(V1Key::Static(_)) | None => FileAuth::None,
-            Some(V1Key::Provider { provider, .. }) => provider_auth(provider)?,
-        };
-        let raw = v1
-            .base_url
-            .as_deref()
-            .ok_or(AzureFilesError::MissingBaseUrl)?;
-        let files = FilesClient {
-            api_key: auth.secret(),
-            base_url: parse_base(raw)?,
-            organization: None,
-            timeout: client_timeout(v1.timeout)?,
-            max_retries: retries(v1.max_retries),
-        };
-        Self::new(files, auth, None, kind)
-    }
-
-    // The SDK adds its auth header unless the caller's extra headers carry that name, and puts
-    // default_query after any base URL query but before the request's own params
+    // the SDK adds its auth header unless the caller's extra headers carry that name, and keeps its query first
     pub(super) fn sign(
         &self,
         mut request: OutboundRequest,

@@ -5,6 +5,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use super::*;
+use crate::azure_urls::AuthParams;
 
 const DEFAULT_VERSION: &str = "2025-02-01-preview";
 const DEPLOYMENT_BASE: &str = "https://fixture.test/openai/deployments/dep";
@@ -48,9 +49,10 @@ fn retrieve(file_id: &str, reply: Planned) -> Step {
 
 fn params_with(timeout: f64, max_retries: i64) -> LiteLlmParams {
     LiteLlmParams {
+        azure_ad_token: None,
+        auth: AuthParams::default(),
         timeout: Some(timeout),
         max_retries: Some(max_retries),
-        ..LiteLlmParams::default()
     }
 }
 
@@ -109,7 +111,9 @@ fn azure_file_client_inputs() {
     let mut token_step = step(Action::Client);
     token_step.params = LiteLlmParams {
         azure_ad_token: Some(SecretString::from("ad-token".to_owned())),
-        ..LiteLlmParams::default()
+        auth: AuthParams::default(),
+        timeout: None,
+        max_retries: None,
     };
     let token = client_view(token_step);
     assert_eq!(token.auth, AuthKind::Bearer);
@@ -295,7 +299,9 @@ fn azure_file_client_errors() {
     static_token.provider = Some(callable(ProviderReply::Text("provider-token".to_owned())));
     static_token.params = LiteLlmParams {
         azure_ad_token: Some(SecretString::from("ad-token".to_owned())),
-        ..LiteLlmParams::default()
+        auth: AuthParams::default(),
+        timeout: None,
+        max_retries: None,
     };
     let request = only_call(&run(static_token));
     assert_eq!(header(request, "authorization"), Some("Bearer ad-token"));

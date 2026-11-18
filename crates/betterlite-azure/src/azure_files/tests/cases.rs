@@ -279,22 +279,19 @@ fn file_content() {
     );
 }
 
-fn file_content_empty_body() {
-    let observation = run(content_step(reply(200, "")));
+fn file_content_replies() {
+    let empty = run(content_step(reply(200, "")));
     assert_eq!(
-        observation.outcome,
+        empty.outcome,
         Outcome::Content(BinaryContent {
             status: 200,
             headers: IndexMap::new(),
             body: Vec::new(),
         })
     );
-}
-
-fn file_content_status_error() {
-    let observation = run(content_step(reply(404, STATUS_ERROR)));
+    let missing = run(content_step(reply(404, STATUS_ERROR)));
     assert_eq!(
-        observation.outcome,
+        missing.outcome,
         Outcome::Raised(Raised {
             class: "APIStatusError",
             message: Some(format!("Error code: 404 - {STATUS_ERROR}")),
@@ -473,8 +470,7 @@ fn file_upload_empty_and_optional_forms() {
 
 #[test]
 fn file_content_forms() {
-    file_content_empty_body();
-    file_content_status_error();
+    file_content_replies();
 }
 
 #[test]

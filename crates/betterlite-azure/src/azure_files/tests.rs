@@ -27,7 +27,7 @@ use url::Url;
 use super::client::auth::{AuthKind, FileAuth};
 use super::client::{ClientMaterializer, ClientSettings, Connection, SelectedClient};
 use super::error::AzureFilesError;
-use super::{create_file, delete_file, file_content, list_files, retrieve_file};
+use super::{Operation, Reply, call};
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
 use crate::credentials::cache::RefreshProviderCache;
 use crate::credentials::source::{
@@ -428,45 +428,64 @@ async fn perform(
     transport: &Fake,
 ) -> Outcome {
     let result = match step.action {
-        Action::Client => connection.open().map(ClientView::of).map(Outcome::Client),
+        Action::Client => {
+            return connection
+                .open()
+                .map(ClientView::of)
+                .map(Outcome::Client)
+                .unwrap_or_else(|error| Outcome::Raised(raised(&error)));
+        }
         Action::Create => {
             let data = step.data.as_ref().expect("a create step carries data");
-            create_file(connection, transport, data)
+            call(connection, transport, Operation::Create(data))
                 .await
-                .map(Outcome::Object)
+                .map(reply_outcome)
         }
         Action::Content => {
             let request = step
                 .content
                 .as_ref()
                 .expect("a content step carries a request");
-            file_content(connection, transport, request)
+            call(connection, transport, Operation::Content(request))
                 .await
-                .map(Outcome::Content)
+                .map(reply_outcome)
         }
         Action::Retrieve => {
             let file_id = step
                 .file_id
                 .as_deref()
                 .expect("a retrieve step carries a file id");
-            retrieve_file(connection, transport, file_id)
+            call(connection, transport, Operation::Retrieve(file_id))
                 .await
-                .map(Outcome::Object)
+                .map(reply_outcome)
         }
-        Action::List => list_files(connection, transport, step.purpose.as_deref())
-            .await
-            .map(Outcome::Page),
+        Action::List => call(
+            connection,
+            transport,
+            Operation::List(step.purpose.as_deref()),
+        )
+        .await
+        .map(reply_outcome),
         Action::Delete => {
             let file_id = step
                 .file_id
                 .as_deref()
                 .expect("a delete step carries a file id");
-            delete_file(connection, transport, file_id)
+            call(connection, transport, Operation::Delete(file_id))
                 .await
-                .map(Outcome::Deleted)
+                .map(reply_outcome)
         }
     };
     result.unwrap_or_else(|error| Outcome::Raised(raised(&error)))
+}
+
+fn reply_outcome(reply: Reply) -> Outcome {
+    match reply {
+        Reply::Object(object) => Outcome::Object(object),
+        Reply::Content(content) => Outcome::Content(content),
+        Reply::Page(page) => Outcome::Page(page),
+        Reply::Deleted(deleted) => Outcome::Deleted(deleted),
+    }
 }
 
 fn raised(error: &AzureFilesError) -> Raised {
