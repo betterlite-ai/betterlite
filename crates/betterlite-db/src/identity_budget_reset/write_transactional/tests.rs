@@ -36,8 +36,8 @@ async fn write_transactional_commits_every_queued_row() {
         .await
         .unwrap();
     let writes = vec![
-        write("k1", Some(moment(30)), Decimal::from(10)),
-        write("k2", Some(moment(30)), Decimal::from(10)),
+        write("k1", Some(moment(30)), Decimal::from(10_i32)),
+        write("k2", Some(moment(30)), Decimal::from(10_i32)),
     ];
     write_resets(
         &store,
@@ -66,8 +66,8 @@ async fn write_transactional_rolls_back_the_whole_chunk_for_a_missing_row() {
         .await
         .unwrap();
     let writes = vec![
-        write("k1", Some(moment(30)), Decimal::from(10)),
-        write("ghost", Some(moment(30)), Decimal::from(10)),
+        write("k1", Some(moment(30)), Decimal::from(10_i32)),
+        write("ghost", Some(moment(30)), Decimal::from(10_i32)),
     ];
     let error = write_resets(
         &store,
@@ -104,7 +104,7 @@ async fn write_transactional_retries_a_pool_timeout_after_reconnecting() {
     };
     let held = serial.session().await.unwrap();
     let mut reconnect = CountingReconnect::releasing(held);
-    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10))];
+    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10_i32))];
     write_resets(&serial, IdentityPhase::Keys, writes, Some(&mut reconnect))
         .await
         .unwrap();
@@ -125,7 +125,7 @@ async fn write_transactional_does_not_retry_a_commit_rejected_by_the_database() 
         .await
         .unwrap();
     let mut reconnect = CountingReconnect::new(true);
-    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10))];
+    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10_i32))];
     let error = write_resets(&store, IdentityPhase::Keys, writes, Some(&mut reconnect))
         .await
         .unwrap_err();
@@ -147,7 +147,7 @@ async fn write_transactional_does_not_retry_an_unknown_commit_outcome() {
         .await
         .unwrap();
     let mut reconnect = CountingReconnect::new(true);
-    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10))];
+    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10_i32))];
     let error = write_resets(&store, IdentityPhase::Keys, writes, Some(&mut reconnect))
         .await
         .unwrap_err();
@@ -168,7 +168,7 @@ async fn write_transactional_does_not_retry_a_statement_rejected_by_the_database
         .await
         .unwrap();
     let mut reconnect = CountingReconnect::new(true);
-    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10))];
+    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10_i32))];
     let error = write_resets(&store, IdentityPhase::Keys, writes, Some(&mut reconnect))
         .await
         .unwrap_err();
@@ -183,7 +183,7 @@ async fn write_transactional_does_not_retry_a_statement_rejected_by_the_database
 async fn write_transactional_retries_a_missing_connection_once() {
     let store = PostgresStore { pool: None };
     let mut reconnect = CountingReconnect::new(true);
-    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10))];
+    let writes = vec![write("k1", Some(moment(30)), Decimal::from(10_i32))];
     let error = write_resets(&store, IdentityPhase::Keys, writes, Some(&mut reconnect))
         .await
         .unwrap_err();
@@ -202,7 +202,7 @@ async fn write_transactional_updates_users_in_the_user_table() {
         .batch_execute("INSERT INTO \"LiteLLM_UserTable\" (user_id, spend) VALUES ('u1', 10);")
         .await
         .unwrap();
-    let writes = vec![write("u1", Some(past().and_utc()), Decimal::from(10))];
+    let writes = vec![write("u1", Some(past().and_utc()), Decimal::from(10_i32))];
     write_resets(
         &store,
         IdentityPhase::Users,

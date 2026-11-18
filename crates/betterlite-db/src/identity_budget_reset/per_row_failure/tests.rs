@@ -19,8 +19,8 @@ use crate::identity_budget_reset::tests::support::{
 fn identity(identifier: &str, budget_duration: &str) -> DueIdentity {
     DueIdentity {
         identifier: identifier.to_owned(),
-        spend: Decimal::from(10),
-        max_budget: Some(Decimal::from(5)),
+        spend: Decimal::from(10_i32),
+        max_budget: Some(Decimal::from(5_i32)),
         budget_duration: budget_duration.to_owned(),
         budget_reset_at: Some(moment(1)),
     }

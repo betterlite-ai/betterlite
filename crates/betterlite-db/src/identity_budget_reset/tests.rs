@@ -13,7 +13,7 @@ use super::faults::{describe, read_fault, write_fault};
 use super::phase::IdentityPhase;
 
 #[test]
-fn phase_accessors_match_the_litellm_identifiers() {
+fn phase_accessors_match_the_litellm_key_identifiers() {
     let keys = IdentityPhase::Keys;
     assert_eq!(keys.call_type(), "reset_budget_keys");
     assert_eq!(keys.subject(), "keys");
@@ -23,6 +23,10 @@ fn phase_accessors_match_the_litellm_identifiers() {
     assert_eq!(keys.failed_count_key(), "num_keys_failed");
     assert_eq!(keys.read_reason(), "reset_budget_read_keys_failure");
     assert_eq!(keys.write_reason(), "reset_budget_write_keys_failure");
+}
+
+#[test]
+fn phase_accessors_match_the_litellm_user_identifiers() {
     let users = IdentityPhase::Users;
     assert_eq!(users.call_type(), "reset_budget_users");
     assert_eq!(users.subject(), "users");
