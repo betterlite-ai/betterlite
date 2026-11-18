@@ -19,7 +19,7 @@ use super::text::{clamp, last_user_text};
 
 pub const DEFAULT_MAX_INPUT_CHARS: i64 = 2000;
 // litellm.request_timeout's pinned default, the deadline every embedding call behind the encoder gets
-pub const EMBEDDING_TIMEOUT: Duration = Duration::from_secs(6000);
+pub const EMBEDDING_TIMEOUT: Duration = Duration::from_mins(100);
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CallerContext {

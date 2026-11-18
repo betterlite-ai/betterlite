@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::future::Future;
+use std::future::{Future, pending};
 use std::path::PathBuf;
 use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -178,7 +178,7 @@ impl FakeEmbedder {
             },
         );
         if take_failure(&self.document_stalls) {
-            std::future::pending::<()>().await;
+            pending::<()>().await;
         }
         self.wait_and_fail(&self.document_failures).await?;
         let borrowed: Vec<&str> = texts.iter().map(String::as_str).collect();
@@ -209,7 +209,7 @@ impl FakeEmbedder {
             },
         );
         if take_failure(&self.query_stalls) {
-            std::future::pending::<()>().await;
+            pending::<()>().await;
         }
         self.wait_and_fail(&self.query_failures).await?;
         if let Some(vectors) = self.query_answers.get(&text) {

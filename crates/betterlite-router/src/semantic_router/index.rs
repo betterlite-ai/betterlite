@@ -153,17 +153,16 @@ fn assemble(routes: Vec<IndexedRoute>) -> Result<RouteIndex, RouteIndexError> {
             .iter()
             .find(|group| group.name.as_ref() == route.name.as_str())
             .map(|group| (Arc::clone(&group.name), group.threshold));
-        let (name, threshold) = match first {
-            Some(found) => found,
-            None => {
-                let threshold = route.threshold.unwrap_or(DEFAULT_SCORE_THRESHOLD);
-                let name: Arc<str> = Arc::from(route.name.as_str());
-                groups.push(RouteGroup {
-                    name: Arc::clone(&name),
-                    threshold,
-                });
-                (name, threshold)
-            }
+        let (name, threshold) = if let Some(found) = first {
+            found
+        } else {
+            let threshold = route.threshold.unwrap_or(DEFAULT_SCORE_THRESHOLD);
+            let name: Arc<str> = Arc::from(route.name.as_str());
+            groups.push(RouteGroup {
+                name: Arc::clone(&name),
+                threshold,
+            });
+            (name, threshold)
         };
         // one row per distinct text, so a repeated utterance never turns into a second row or a second name clone
         let mut utterances = route.utterances;

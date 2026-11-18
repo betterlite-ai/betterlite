@@ -91,15 +91,15 @@ fn pairwise_square_sum(values: &[f64]) -> f64 {
 fn block_square_sum(values: &[f64]) -> f64 {
     // the first chunk seeds the lanes from zero, which is exact for the non-negative squares
     let mut lanes = [0.0_f64; 8];
-    let mut chunks = values.chunks_exact(8);
-    for chunk in &mut chunks {
+    let (chunks, remainder) = values.as_chunks::<8>();
+    for chunk in chunks {
         for (lane, value) in lanes.iter_mut().zip(chunk) {
             *lane += value * value;
         }
     }
     let [first, second, third, fourth, fifth, sixth, seventh, eighth] = lanes;
     let mut total = ((first + second) + (third + fourth)) + ((fifth + sixth) + (seventh + eighth));
-    for value in chunks.remainder() {
+    for value in remainder {
         total += value * value;
     }
     total

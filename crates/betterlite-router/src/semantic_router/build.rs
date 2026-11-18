@@ -127,7 +127,7 @@ fn zip_entries(index: &RouteIndex, vectors: Vec<Vec<f64>>) -> Vec<BuiltEntry> {
     let mut entries = Vec::with_capacity(index.rows.len());
     for (row, vector) in index.rows.iter().zip(vectors) {
         entries.push(BuiltEntry {
-            route: row.route.clone(),
+            route: Arc::clone(&row.route),
             threshold: row.threshold,
             vector,
         });

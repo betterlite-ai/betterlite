@@ -701,7 +701,7 @@ async fn a_cancelled_waiter_does_not_cancel_the_shared_build() {
 fn the_embedding_deadline_is_litellms_request_timeout() {
     assert_eq!(
         EMBEDDING_TIMEOUT,
-        Duration::from_secs(6000),
+        Duration::from_mins(100),
         "a stalled embedding call ends at litellm's default request timeout"
     );
 }
@@ -731,7 +731,7 @@ fn a_document_norm_reduces_like_the_pinned_numpy_pairwise_sum(
         .take(length)
         .collect();
     let mut query = vec![0.0_f64; length];
-    query[0] = 1.0;
+    query[0] = 1.0_f64;
     let score = cosine_similarity(&query, &document, 0).expect("the vectors are usable");
     assert!(score.total_cmp(&expected).is_eq());
 }
@@ -739,11 +739,14 @@ fn a_document_norm_reduces_like_the_pinned_numpy_pairwise_sum(
 #[test]
 fn a_split_document_reduces_at_the_pinned_split_point() {
     // a seven-value cycle rounds differently at any other split point
-    let document: Vec<f64> = (0_usize..130)
-        .map(|index| EIGHT_DIMENSIONS[index % 7])
+    let document: Vec<f64> = EIGHT_DIMENSIONS[..7]
+        .iter()
+        .copied()
+        .cycle()
+        .take(130)
         .collect();
     let mut query = vec![0.0_f64; document.len()];
-    query[0] = 1.0;
+    query[0] = 1.0_f64;
     let score = cosine_similarity(&query, &document, 0).expect("the vectors are usable");
     assert!(score.total_cmp(&0.150_227_391_023_630_06_f64).is_eq());
 }
@@ -769,8 +772,8 @@ async fn a_self_similar_document_at_threshold_one_selects_the_default_model() {
 }
 
 #[rstest]
-#[case::at_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_7], Some("default"))]
-#[case::just_below_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_9], None)]
+#[case::at_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_7_f64], Some("default"))]
+#[case::just_below_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_9_f64], None)]
 #[tokio::test]
 async fn a_route_without_a_threshold_compares_at_litellms_three_tenths(
     #[case] utterance: Vec<f64>,
