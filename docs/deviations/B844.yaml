@@ -31,15 +31,17 @@ deviations:
       reaches the difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11506-L11513
   - what: >-
-      A wildcard candidate whose registered deployment is not in the model list fails with the typed
-      UnindexedCandidate. LiteLLM's pattern map holds deep copies of the registered deployments, so its
-      lookup serves them even when no model-list row remains and has no answer to compare.
+      A wildcard candidate that never joined the model list fails with the typed UnindexedCandidate.
+      Every candidate whose deployment was pushed serves the snapshot recorded at that push, whatever
+      the model list holds afterwards, as LiteLLM's pattern map serves its deep copies.
     why: >-
-      The pattern catalog records the deployment each registration came from and serves it only while an
-      identical row is in the model list, so a reordered or partial rebuild cannot swap one deployment's
-      metadata and credentials for another's. A candidate added without a deployment, as the crate's own
-      tests and the oracle harness do, has none to resolve. The typed error refuses to return some other
-      deployment, and unindexed_candidate proves the error.
+      The pattern catalog records the deployment when it enters the model list, so a reordered rebuild,
+      a partial rebuild or a row that rejoins with other pricing or credentials cannot move or change
+      what the pattern serves; reordered_rebuild_keeps_wildcard_rows, partial_rebuild_keeps_wildcard_rows
+      and changed_metadata_keeps_registered_row pin each. A candidate added without that push, as the
+      crate's own tests and the oracle harness build them, has no snapshot to serve, and
+      unindexed_candidate proves the typed error. LiteLLM registers a pattern only through
+      _add_deployment, so no configured router holds such a candidate and there is no answer to compare.
     link: ""
 kept_bugs:
   - what: >-

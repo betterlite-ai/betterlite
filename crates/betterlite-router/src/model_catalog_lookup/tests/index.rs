@@ -1,4 +1,5 @@
 use super::*;
+use crate::model_catalog_lookup::index::rebuild_names as rebuild_name_index;
 
 #[test]
 fn rebuild_names() {
@@ -17,7 +18,7 @@ fn rebuild_names() {
         .team_index
         .insert(("stale".to_owned(), "stale".to_owned()), vec![9]);
     catalog.id_index.insert("a".to_owned(), 0);
-    rebuild_names(&mut catalog);
+    rebuild_name_index(&mut catalog);
     assert_eq!(catalog.name_index.get("gpt-4o"), Some(&vec![0, 1]));
     assert_eq!(catalog.name_index.get("internal"), Some(&vec![2]));
     assert!(!catalog.name_index.contains_key("stale"));
@@ -390,7 +391,7 @@ fn reordered_rebuild_keeps_wildcard_rows() {
     assert_eq!(found[0].litellm_params.get("api_key"), Some(&text("key-o")));
 }
 
-// A rebuild that stops on a bad row serves the wildcard that made it in and refuses the dropped row instead of another.
+// A rebuild that stops on a bad row keeps every registered wildcard on its own snapshot, the row it never re-added included.
 #[test]
 fn partial_rebuild_keeps_wildcard_rows() {
     let mut catalog = catalog(&[
@@ -415,10 +416,54 @@ fn partial_rebuild_keeps_wildcard_rows() {
     let found = lookup.get_model_list(Some("openai/gpt-4o"), None).unwrap();
     assert_eq!(ids(&found), vec!["o"]);
     assert_eq!(found[0].litellm_params.get("api_key"), Some(&text("key-o")));
-    assert!(matches!(
-        lookup.get_model_list(Some("anthropic/claude-3"), None),
-        Err(LookupError::Route(CatalogLookupError::UnindexedCandidate {
-            model_id: Some(id)
-        })) if id == "a"
-    ));
+    let dropped = lookup
+        .get_model_list(Some("anthropic/claude-3"), None)
+        .unwrap();
+    assert_eq!(ids(&dropped), vec!["a"]);
+    assert_eq!(
+        dropped[0].litellm_params.get("api_key"),
+        Some(&text("key-a"))
+    );
+}
+
+// A row that rejoins the list with another credential keeps the snapshot its pattern registered, not the changed row.
+#[test]
+fn changed_metadata_keeps_registered_row() {
+    let mut catalog = catalog(&[wildcard("openai/*", "o", "key-o")]);
+    let changed = DeploymentSpec::new(
+        "openai/*".to_owned(),
+        object(vec![
+            ("model", text("openai/*")),
+            ("api_key", text("key-new")),
+        ]),
+        object(vec![("id", text("o")), ("pricing", text("new"))]),
+        JsonObject::new(),
+        String::new,
+    )
+    .unwrap();
+    let slots = Slots::filled();
+    rebuild_ids(&mut catalog, vec![changed], &slots.caches()).unwrap();
+    let snapshot = Snapshot {
+        catalog,
+        aliases: AliasMap::new(),
+        groups: RoutingGroupIndex::default(),
+        provider: Box::new(|_: &str| None),
+    };
+    let found = snapshot
+        .lookup()
+        .get_model_list(Some("openai/gpt-4o"), None)
+        .unwrap();
+    assert_eq!(ids(&found), vec!["o"]);
+    assert_eq!(found[0].litellm_params.get("api_key"), Some(&text("key-o")));
+    assert_eq!(found[0].model_info.get("pricing"), None);
+}
+
+// Formatting the catalog never prints the credential of the deployment a wildcard registered.
+#[test]
+fn registration_debug_redacts_credentials() {
+    let catalog = catalog(&[wildcard("openai/*", "o", "sk-secret")]);
+    let patterns = &catalog.pattern_router;
+    let printed = format!("{patterns:?}");
+    assert!(!printed.contains("sk-secret"));
+    assert!(printed.contains("openai/*"));
 }

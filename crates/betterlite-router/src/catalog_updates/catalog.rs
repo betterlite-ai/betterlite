@@ -72,8 +72,6 @@ impl DeploymentCatalog {
         if spec.model_name.contains('*') {
             self.pattern_router
                 .add_pattern(&spec.model_name, candidate.clone())?;
-            self.pattern_router
-                .set_last_deployment(&spec.model_name, spec.clone());
             if let Some(id) = spec.id().filter(|id| !id.is_empty()) {
                 self.provider_default_ids.push(id.to_owned());
             }
@@ -87,9 +85,6 @@ impl DeploymentCatalog {
                 .entry(team.to_owned())
                 .or_default();
             patterns.router.add_pattern(public_name, candidate)?;
-            patterns
-                .router
-                .set_last_deployment(public_name, spec.clone());
             patterns.model_ids.push(spec.id().map(str::to_owned));
         }
         Ok(())
@@ -98,6 +93,10 @@ impl DeploymentCatalog {
     // _add_model_to_list_and_index_map
     pub fn push(&mut self, spec: DeploymentSpec) {
         let index = self.models.len();
+        if spec.model_name.contains('*') {
+            self.pattern_router
+                .record_deployment(&spec.model_name, &spec);
+        }
         if let Some(id) = spec.id() {
             self.id_index.insert(id.to_owned(), index);
         }
@@ -111,6 +110,9 @@ impl DeploymentCatalog {
             info_text(&spec, "team_id"),
             info_text(&spec, "team_public_model_name"),
         ) {
+            if let Some(patterns) = self.team_pattern_routers.get_mut(team) {
+                patterns.router.record_deployment(public_name, &spec);
+            }
             self.team_index
                 .entry((team.to_owned(), public_name.to_owned()))
                 .or_default()

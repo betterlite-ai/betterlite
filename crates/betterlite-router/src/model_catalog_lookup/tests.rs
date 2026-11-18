@@ -15,7 +15,7 @@ use crate::deployment_identity::stable_id::generate_model_id;
 use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget, from_config};
 use crate::model_catalog_lookup::cache::{CacheSlot, CatalogCaches, Invalidation};
 use crate::model_catalog_lookup::error::LookupError;
-use crate::model_catalog_lookup::index::{deployment_ids, rebuild_ids, rebuild_names};
+use crate::model_catalog_lookup::index::{deployment_ids, rebuild_ids};
 use crate::model_catalog_lookup::listing::{get_all_deployments, should_include_deployment};
 use crate::model_catalog_lookup::lookup::CatalogLookup;
 use crate::routing_groups::group::RoutingGroup;

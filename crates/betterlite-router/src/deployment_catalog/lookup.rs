@@ -81,9 +81,7 @@ impl CatalogResolver<'_> {
         self.view
             .filter_reserved(drop_markers(model, deployments)?, team_id)
     }
-}
 
-impl CatalogResolver<'_> {
     // Router.deployments_for_request
     pub fn deployments_for_request(
         &self,
@@ -228,9 +226,8 @@ impl CatalogResolver<'_> {
     }
 }
 
-// The rows a pattern router registered for the request, each carrying the provider model the caller asked for; a registered deployment that left the model list has no row to serve.
+// The rows a pattern router registered for the request, each carrying the provider model the caller asked for; a candidate whose deployment never joined the model list has nothing to serve.
 fn pattern_rows(
-    catalog: &DeploymentCatalog,
     provider: Option<&str>,
     router: &PatternCatalog,
     model: &str,
@@ -240,12 +237,9 @@ fn pattern_rows(
         .unwrap_or_default()
         .into_iter()
         .map(|(candidate, deployment)| {
-            let registered = deployment
-                .and_then(|deployment| catalog.models.iter().find(|row| **row == deployment))
-                .ok_or_else(|| CatalogLookupError::UnindexedCandidate {
-                    model_id: candidate.model_id.clone(),
-                })?;
-            let mut spec = registered.clone();
+            let mut spec = deployment.ok_or_else(|| CatalogLookupError::UnindexedCandidate {
+                model_id: candidate.model_id.clone(),
+            })?;
             spec.litellm_params
                 .insert("model".to_owned(), Json::Text(candidate.model));
             Ok(spec)
@@ -273,11 +267,11 @@ pub fn early_deployments(
         return Ok(Some(named));
     }
     let provider = inferred_provider(model);
-    let mut pool = pattern_rows(catalog, provider.as_deref(), &catalog.pattern_router, model)?;
+    let mut pool = pattern_rows(provider.as_deref(), &catalog.pattern_router, model)?;
     if pool.is_empty()
         && let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team))
     {
-        pool = pattern_rows(catalog, provider.as_deref(), &patterns.router, model)?;
+        pool = pattern_rows(provider.as_deref(), &patterns.router, model)?;
     }
     Ok(Some(pool).filter(|found| !found.is_empty()))
 }
@@ -290,9 +284,9 @@ pub fn pattern_deployments(
     team_id: Option<&str>,
 ) -> Result<Vec<DeploymentSpec>, CatalogLookupError> {
     let provider = inferred_provider(model);
-    let mut found = pattern_rows(catalog, provider.as_deref(), &catalog.pattern_router, model)?;
+    let mut found = pattern_rows(provider.as_deref(), &catalog.pattern_router, model)?;
     if let Some(patterns) = team_id.and_then(|team| catalog.team_pattern_routers.get(team)) {
-        let team_rows = pattern_rows(catalog, provider.as_deref(), &patterns.router, model)?;
+        let team_rows = pattern_rows(provider.as_deref(), &patterns.router, model)?;
         found.extend(team_rows);
     }
     Ok(found)

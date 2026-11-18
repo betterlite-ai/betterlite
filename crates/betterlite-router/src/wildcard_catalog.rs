@@ -21,10 +21,20 @@ pub struct Candidate {
 }
 
 // A candidate as registered, beside the deployment row it came from, which a reordered rebuild cannot move.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 struct Registered {
     candidate: Candidate,
     deployment: Option<DeploymentSpec>,
+}
+
+// The candidate alone: the registered deployment carries credentials, which Debug never prints.
+impl std::fmt::Debug for Registered {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Registered")
+            .field("candidate", &self.candidate)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -81,13 +91,14 @@ impl PatternCatalog {
         Ok(())
     }
 
-    // Record the deployment row the pattern's last registration came from.
-    pub fn set_last_deployment(&mut self, pattern: &str, deployment: DeploymentSpec) {
+    // Record the deployment a push serves on the pattern's last registration, once, so a rebuild keeps that snapshot.
+    pub fn record_deployment(&mut self, pattern: &str, deployment: &DeploymentSpec) {
         let key = compiled_pattern(pattern);
         if let Some(entry) = self.patterns.iter_mut().find(|entry| entry.key == key)
             && let Some(registered) = entry.candidates.last_mut()
+            && registered.deployment.is_none()
         {
-            registered.deployment = Some(deployment);
+            registered.deployment = Some(deployment.clone());
         }
     }
 
