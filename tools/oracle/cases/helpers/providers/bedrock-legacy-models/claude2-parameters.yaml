@@ -1,0 +1,50 @@
+kind: helper
+name: bedrock-legacy-models-claude2-parameters
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: anthropic
+          non_default:
+            max_tokens: 5
+            max_completion_tokens: 9
+            temperature: 0.3
+            stop: ["\n\nHuman:"]
+            top_p: 0.8
+            unknown: 1
+          optional: {}
+          model: anthropic.claude-v2
+          drop_params: false
+          global_drop_params: false
+        - family: anthropic
+          non_default: {max_completion_tokens: 9, max_tokens: 5}
+          optional: {}
+          model: anthropic.claude-v2
+          drop_params: false
+          global_drop_params: false
+        - family: anthropic
+          non_default: {stream: true}
+          optional: {stream: false}
+          model: anthropic.claude-v2
+          drop_params: false
+          global_drop_params: false
+        - family: anthropic
+          non_default: {stream: false}
+          optional: {stream: true}
+          model: anthropic.claude-v2
+          drop_params: false
+          global_drop_params: false
+        - family: anthropic
+          non_default: {stream: null}
+          optional: {stream: true}
+          model: anthropic.claude-v2
+          drop_params: false
+          global_drop_params: false
+        - family: anthropic
+          non_default: {stream: 1}
+          optional: {keep: true}
+          model: anthropic.claude-v2
+          drop_params: false
+          global_drop_params: false
+env: {}
+compare: {ignore: []}

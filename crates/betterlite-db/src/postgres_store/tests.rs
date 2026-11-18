@@ -18,7 +18,7 @@ async fn database() -> (PostgresFixture, PostgresStore) {
     let url = Environment::parse_from(["postgres-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), Vec::new())
         .resolve()
         .await
         .unwrap();
@@ -633,16 +633,13 @@ async fn postgres_fixture_contracts() {
         Err(FixtureError::MissingConfiguredUrl)
     ));
     let (fixture, store) = database().await;
-    // Start from the server URL, since a new fixture must not inherit the first schema's search path.
-    let raw = fixture.options.url.expose_secret();
-    let server = SecretString::from(raw.split('?').next().unwrap().to_owned());
-    let second = PostgresFixture::provision_schema(Some(&server))
+    let second = PostgresFixture::provision_with_statements(Some(&fixture.options.url), Vec::new())
         .resolve()
         .await
         .unwrap();
     assert_ne!(
-        fixture.options.config.get_options(),
-        second.options.config.get_options()
+        fixture.options.config.get_dbname(),
+        second.options.config.get_dbname()
     );
     let client = store.session().await.unwrap();
     client

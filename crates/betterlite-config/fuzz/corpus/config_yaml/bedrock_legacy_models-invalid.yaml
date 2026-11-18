@@ -1,0 +1,10 @@
+model_list:
+- model_name: jurassic
+  litellm_params:
+    model: bedrock/ai21.j2-mid-v1
+    maxTokens: many
+    temperature: '1.'
+    stopSequences: not-a-list
+litellm_settings:
+  max_tokens_to_sample: os.environ/ABSENT_BEDROCK_MAX_TOKENS
+  return_likelihood: [1, 2]

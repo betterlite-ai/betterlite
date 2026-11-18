@@ -24,7 +24,33 @@ use std::time::Duration;
 use tokio::time::timeout;
 use tokio_postgres::{Config, NoTls};
 
-const STORAGE: &str = include_str!("storage.sql");
+const STORAGE: &str = r#"CREATE TABLE "LiteLLM_TeamTable" (
+    team_id TEXT NOT NULL,
+    team_alias TEXT,
+    organization_id TEXT,
+    admins TEXT[] NOT NULL DEFAULT '{}',
+    members TEXT[] NOT NULL DEFAULT '{}',
+    models TEXT[] NOT NULL DEFAULT '{}',
+    members_with_roles JSONB NOT NULL DEFAULT '{}',
+    metadata JSONB NOT NULL DEFAULT '{}',
+    model_spend JSONB NOT NULL DEFAULT '{}',
+    model_max_budget JSONB NOT NULL DEFAULT '{}',
+    router_settings JSONB DEFAULT '{}',
+    budget_limits JSONB,
+    max_budget DOUBLE PRECISION,
+    spend DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+
+    CONSTRAINT "LiteLLM_TeamTable_pkey" PRIMARY KEY (team_id)
+);
+
+INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, organization_id, members_with_roles, metadata)
+VALUES
+    ('t', 'alpha', 'org-a', '[{"user_id":"u1","role":"admin"}]'::JSONB, '{}'::JSONB),
+    ('empty', 'empty-team', 'org-a', '{}'::JSONB, '{}'::JSONB),
+    ('strings', 'strings-team', 'org-a', '{}'::JSONB, '"{\"stored\": true}"'::JSONB),
+    ('other', 'beta', 'org-b', '{}'::JSONB, '{}'::JSONB);"#;
+const ERROR_TABLE: &str = r#"CREATE TABLE "LiteLLM_TeamTable" (team_id TEXT PRIMARY KEY, members_with_roles JSONB NOT NULL DEFAULT '{}');
+INSERT INTO "LiteLLM_TeamTable" (team_id, members_with_roles) VALUES ('broken', '"not json"'::JSONB), ('kept', '{"u1": "admin"}'::JSONB);"#;
 // the seed array plus these wraps is depth 65, one past the decoder's cap
 const DEPTH_WRAPS: usize = 64;
 const TEAM_ADVISORY_LOCK_SQL: &str = "SELECT pg_advisory_xact_lock(hashtext($1)) IS NULL AS locked";
@@ -102,11 +128,11 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, Pool) {
+async fn database(statements: Vec<String>) -> (PostgresFixture, Pool) {
     let configured = Environment::parse_from(["team-repository-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(configured.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(configured.as_ref(), statements)
         .resolve()
         .await
         .unwrap();
@@ -114,17 +140,6 @@ async fn database() -> (PostgresFixture, Pool) {
     let pool = Pool::builder(Manager::new(config, NoTls))
         .max_size(4)
         .build()
-        .unwrap();
-    (fixture, pool)
-}
-
-async fn seeded() -> (PostgresFixture, Pool) {
-    let (fixture, pool) = database().await;
-    pool.get()
-        .await
-        .unwrap()
-        .batch_execute(STORAGE)
-        .await
         .unwrap();
     (fixture, pool)
 }
@@ -521,7 +536,7 @@ fn default_db_and_explicit_writer() {
 
 #[tokio::test]
 async fn team_id_default_and_missing_row() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let handle = store(&pool);
     let teams = repository(&handle);
     let found = teams.find_by_id("t").await.unwrap().unwrap();
@@ -533,7 +548,7 @@ async fn team_id_default_and_missing_row() {
 
 #[tokio::test]
 async fn organization_id_exact_filter_and_all_rows() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let handle = store(&pool);
     let teams = repository(&handle);
     let found = teams.find_by_organization_id("org-a").await.unwrap();
@@ -549,7 +564,7 @@ async fn organization_id_exact_filter_and_all_rows() {
 
 #[tokio::test]
 async fn raw_table_fields_bypass_conversion() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let handle = store(&pool);
     let teams = repository(&handle);
     let raw = teams.table().find_unique("strings").await.unwrap().unwrap();
@@ -567,7 +582,7 @@ async fn raw_table_fields_bypass_conversion() {
 
 #[tokio::test]
 async fn postgres_roster_explicit_transaction() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let mut client = pool.get().await.unwrap();
     let transaction = client.transaction().await.unwrap();
     transaction
@@ -596,7 +611,7 @@ async fn postgres_roster_explicit_transaction() {
 
 #[tokio::test]
 async fn missing_team_none_existing_empty_team_list() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let mut client = pool.get().await.unwrap();
     let transaction = client.transaction().await.unwrap();
     assert_eq!(
@@ -616,7 +631,7 @@ async fn missing_team_none_existing_empty_team_list() {
 
 #[tokio::test]
 async fn postgres_caller_advisory_lock_serializes_reread() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let mut holder = pool.get().await.unwrap();
     let holding = holder.transaction().await.unwrap();
     holding
@@ -651,7 +666,7 @@ async fn postgres_caller_advisory_lock_serializes_reread() {
 
 #[tokio::test]
 async fn postgres_plain_roster_select_avoids_row_lock() {
-    let (fixture, pool) = seeded().await;
+    let (fixture, pool) = database(vec![STORAGE.to_owned()]).await;
     let mut holder = pool.get().await.unwrap();
     let holding = holder.transaction().await.unwrap();
     let locked = holding
@@ -678,25 +693,6 @@ async fn postgres_plain_roster_select_avoids_row_lock() {
     finish(fixture, pool).await;
 }
 
-async fn seed_error_table(pool: &Pool) {
-    pool.get()
-        .await
-        .unwrap()
-        .batch_execute(
-            r#"CREATE TABLE "LiteLLM_TeamTable" (team_id TEXT PRIMARY KEY, members_with_roles JSONB NOT NULL DEFAULT '{}')"#,
-        )
-        .await
-        .unwrap();
-    pool.get()
-        .await
-        .unwrap()
-        .batch_execute(
-            r#"INSERT INTO "LiteLLM_TeamTable" (team_id, members_with_roles) VALUES ('broken', '"not json"'::JSONB), ('kept', '{"u1": "admin"}'::JSONB)"#,
-        )
-        .await
-        .unwrap();
-}
-
 async fn assert_rows_unchanged(pool: &Pool) {
     let mut client = pool.get().await.unwrap();
     let transaction = client.transaction().await.unwrap();
@@ -717,8 +713,7 @@ async fn assert_rows_unchanged(pool: &Pool) {
 
 #[tokio::test]
 async fn query_error_does_not_write() {
-    let (fixture, pool) = database().await;
-    seed_error_table(&pool).await;
+    let (fixture, pool) = database(vec![ERROR_TABLE.to_owned()]).await;
     let handle = store(&pool);
     let query_failure = repository(&handle)
         .find_by_organization_id("org")

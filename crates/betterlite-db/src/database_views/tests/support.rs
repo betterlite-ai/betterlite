@@ -63,12 +63,14 @@ pub(super) struct Database {
 }
 impl Database {
     pub(super) async fn new() -> Self {
-        let fixture = PostgresFixture::provision_schema(postgres_test_url().as_ref())
-            .resolve()
-            .await
-            .unwrap();
+        let fixture = PostgresFixture::provision_with_statements(
+            postgres_test_url().as_ref(),
+            vec![BASE_SCHEMA.to_owned()],
+        )
+        .resolve()
+        .await
+        .unwrap();
         let (client, tasks) = connect(&fixture).await;
-        client.batch_execute(BASE_SCHEMA).await.unwrap();
         Self {
             fixture,
             client,
@@ -91,7 +93,6 @@ impl Database {
         fixture.close_async().await.unwrap();
     }
 }
-// the fixture's Config carries a schema-mode options value the server rejects; its URL does not
 async fn connect(
     fixture: &PostgresFixture,
 ) -> (Client, JoinSet<Result<(), tokio_postgres::Error>>) {

@@ -1,0 +1,64 @@
+task: B328
+deviations:
+  - what: >-
+      betterlite's configuration section names the tier-to-model map `tier_models` and the token
+      thresholds `complexity_thresholds`, and accepts LiteLLM's `tiers` and `token_thresholds` as
+      aliases of each, where LiteLLM declares only the latter pair.
+    why: >-
+      The task names `tier_models` and `complexity_thresholds` as the configuration boundary this
+      module introduces, and betterlite's own config fixtures spell them that way. A LiteLLM YAML
+      file that spells `tiers` or `token_thresholds` still loads with identical behavior, so no
+      working configuration changes meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L856-L863
+  - what: >-
+      A weight, tier boundary or reasoning floor that is not finite is rejected with an error
+      naming the field, and a weighted score that overflows to infinity is rejected instead of
+      classified, where LiteLLM computes with both.
+    why: >-
+      A NaN boundary makes every comparison false, so LiteLLM's mapping silently lands on
+      REASONING, and a non-finite score reaches the routing-decision JSON that the proxy must
+      serialize, turning a bad tuning value into a lost record or a 500 where a 4xx belongs. The
+      compatibility policy makes a value of the wrong type an error that names the field. A YAML
+      file cannot carry a non-finite number at all, so the field check guards programmatic
+      configuration and the score check guards finite weights whose sum overflows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1747-L1769
+  - what: >-
+      A tier configured with a pool of two or more models has no answer in betterlite's baseline
+      tier-to-model mapping and raises an error, where LiteLLM picks one entry with
+      `random.choice`.
+    why: >-
+      This task builds the single configured model per tier that its description scopes, and a
+      random pick needs the injected random source that B334's pool picking owns. Refusing the
+      request beats picking from an unseeded generator whose answer a test cannot state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2826-L2832
+  - what: >-
+      A context window above u32::MAX is scored as a u32::MAX window, so a request larger than
+      that clamped buffered capacity is refused even where LiteLLM's unbounded integer
+      arithmetic would hold it.
+    why: >-
+      The shared window primitive converts a window with the lossless u32-to-f64 conversion the
+      lint table allows, and a whole-number token capacity then converts to Decimal exactly. No
+      provider reports a context window anywhere near 4.29e9 tokens, so the saturation only
+      bounds a nonsensical configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L1237-L1238
+  - what: >-
+      An os.environ/ reference in reasoning_override_min_score or default_model that names an
+      unset variable fails the load with MissingEnvironment, where LiteLLM's environment walk
+      stores None, so the reasoning override keeps tracking tier_boundaries.simple_medium and a
+      tier with no model falls back to MEDIUM.
+    why: >-
+      betterlite resolves a reference in either key with the same rule as every other scalar
+      setting, so a mistyped variable can't quietly move the reasoning override floor or route
+      to a fallback model the operator did not name. Both fields are declared optional, so
+      leaving either key out of the file still means unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
+  - what: >-
+      A token threshold outside the i64 range is refused with an error naming the key, where
+      LiteLLM's token_thresholds holds unbounded Python ints and the value loads.
+    why: >-
+      betterlite stores each threshold as an i64, while its token estimate saturates at
+      i64::MAX, so a threshold beyond the range always or never fires instead of comparing
+      exactly. Refusing the value names the key instead of accepting a number the estimator
+      cannot reach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L957-L961
+kept_bugs: []
