@@ -32,9 +32,9 @@ pub enum BilledTerminal<'a> {
 }
 
 #[must_use]
-pub fn billed_terminal_response<'a>(
+pub fn billed_terminal_response<'a, E: UsageEstimate>(
     response: &'a ResponsesApiResponse,
-    estimate: Option<&dyn UsageEstimate>,
+    estimate: Option<&E>,
 ) -> BilledTerminal<'a> {
     let Some(estimate) = estimate else {
         return BilledTerminal::Same(response);
@@ -48,9 +48,9 @@ pub fn billed_terminal_response<'a>(
 }
 
 #[must_use]
-pub fn billed_terminal_object(
+pub fn billed_terminal_object<E: UsageEstimate>(
     object: &Json,
-    estimate: Option<&dyn UsageEstimate>,
+    estimate: Option<&E>,
 ) -> Option<IndexMap<String, Json>> {
     let Json::Object(raw) = object else {
         return None;

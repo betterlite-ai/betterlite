@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Final, Literal, TypeAlias, TypedDict, cast
+from typing import Final, Literal, TypedDict, cast
 
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
 from litellm.responses import streaming_iterator as primitives
@@ -14,7 +14,6 @@ from litellm.types.llms.openai import (
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
-JsonObject: TypeAlias = dict[str, JsonValue]
 
 BILLED = primitives._billed_terminal_response  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1490
 STAMP = primitives._stamp_responses_usage_cost  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1580
@@ -40,13 +39,12 @@ class Row(BaseModel):
 
 class Input(TypedDict):
     operation: Literal["build", "terminal", "stamp", "copy", "dump"]
-    rows: list[JsonObject]
+    rows: list[dict[str, JsonValue]]
 
 
 class CostProbe:
     def __init__(self, spec: Spec) -> None:
-        cost = spec.cost
-        self.answer = None if spec.kind != "value" or cost is None else float(cost)
+        self.answer = None if spec.kind != "value" or spec.cost is None else float(spec.cost)
         self.raises = spec.kind == "raise"
         self.calls = 0
 
@@ -72,11 +70,9 @@ class EstimateProbe:
 
     def __call__(self) -> ResponseAPIUsage | None:
         self.calls += 1
-        if self.spec.kind == "empty":
-            return None
         input_tokens = self.spec.input_tokens
         output_tokens = self.spec.output_tokens
-        if input_tokens is None or output_tokens is None:
+        if self.spec.kind == "empty" or input_tokens is None or output_tokens is None:
             return None
         return ResponseAPIUsage(
             input_tokens=input_tokens,
@@ -133,16 +129,14 @@ def terminal_answer(row: Row) -> JsonValue:
     estimate = None if row.estimate is None else EstimateProbe(row.estimate)
     if row.kind in ("dict", "other"):
         constructed = BILLED(row.response, estimate)
-        return {
-            "same": False,
-            "response": None if constructed is None else dumped(constructed),
-            "estimate_calls": 0 if estimate is None else estimate.calls,
-        }
-    response = validated_response(row.response)
-    billed = BILLED(response, estimate)
+        same = False
+    else:
+        response = validated_response(row.response)
+        constructed = BILLED(response, estimate)
+        same = constructed is response
     return {
-        "same": billed is response,
-        "response": None if billed is None else dumped(billed),
+        "same": same,
+        "response": None if constructed is None else dumped(constructed),
         "estimate_calls": 0 if estimate is None else estimate.calls,
     }
 

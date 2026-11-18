@@ -52,7 +52,7 @@ fn billed_typed_response_without_usage_copies_and_estimates() {
 #[test]
 fn billed_typed_response_without_estimator_is_unchanged() {
     let transformed = response("[]");
-    match billed_terminal_response(&transformed, None) {
+    match billed_terminal_response(&transformed, None::<&FixedEstimate>) {
         BilledTerminal::Same(response) => assert!(std::ptr::eq(response, &transformed)),
         BilledTerminal::Estimated(_) => panic!("no estimator means no copy"),
     }
@@ -101,7 +101,7 @@ fn billed_dict_response_fills_defaulted_fields() {
         ))
     );
     assert_eq!(built.len(), 24);
-    let without_estimator = billed_terminal_object(&object, None).unwrap();
+    let without_estimator = billed_terminal_object(&object, None::<&FixedEstimate>).unwrap();
     assert_eq!(without_estimator.get("usage"), Some(&Json::Null));
     assert_eq!(estimate.calls(), 1);
 }
@@ -138,7 +138,7 @@ fn billed_dict_response_filters_null_reasoning_fields() {
     let object = json(
         r#"{"id":"r7","created_at":5,"output":[{"type":"reasoning","id":"rs_1","summary":[],"status":null,"content":null,"encrypted_content":null,"namespace":null}],"usage":null}"#,
     );
-    let built = billed_terminal_object(&object, None).unwrap();
+    let built = billed_terminal_object(&object, None::<&FixedEstimate>).unwrap();
     assert_eq!(
         built.get("output"),
         Some(&json(
@@ -148,7 +148,7 @@ fn billed_dict_response_filters_null_reasoning_fields() {
     let object = json(
         r#"{"id":"r8","created_at":6,"output":[{"type":"message","id":"m1","status":null,"content":null},{"type":"reasoning","id":"rs_2","summary":[],"status":"completed","content":[]}]}"#,
     );
-    let built = billed_terminal_object(&object, None).unwrap();
+    let built = billed_terminal_object(&object, None::<&FixedEstimate>).unwrap();
     assert_eq!(
         built.get("output"),
         Some(&json(
@@ -164,5 +164,5 @@ fn billed_dict_response_filters_null_reasoning_fields() {
 #[case::text(r#""text""#)]
 #[case::list("[1,2]")]
 fn billed_nonresponse_values_yield_none(#[case] raw: &str) {
-    assert!(billed_terminal_object(&json(raw), None).is_none());
+    assert!(billed_terminal_object(&json(raw), None::<&FixedEstimate>).is_none());
 }

@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use betterlite_core::api::response_synthetic_events::billing::{
-    BilledTerminal, UsageEstimate, billed_terminal_object, billed_terminal_response,
+    BilledTerminal, billed_terminal_object, billed_terminal_response,
 };
 // ast-grep-ignore: no-long-names
 use betterlite_core::api::response_synthetic_events::builder::build_synthetic_response_events as build_events;
@@ -28,7 +28,7 @@ use super::probes::{CostProbe, FixedEstimate};
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
-pub(super) struct Row {
+pub(crate) struct Row {
     kind: String,
     response: Value,
     chunk_size: i64,
@@ -75,46 +75,49 @@ fn build_report(
     probe: Option<&CostProbe>,
 ) -> Value {
     let calls = probe.map_or(0, |probe| probe.calls.get());
-    match outcome {
-        Ok(events) => {
-            json!({"raised": false, "message": null, "events": events, "cost_calls": calls})
-        }
-        Err(error) => {
-            json!({"raised": true, "message": error.to_string(), "events": null, "cost_calls": calls})
-        }
-    }
+    let (raised, message, events) = match outcome {
+        Ok(events) => (false, Value::Null, json!(events)),
+        Err(error) => (true, json!(error.to_string()), Value::Null),
+    };
+    json!({"raised": raised, "message": message, "events": events, "cost_calls": calls})
 }
 
 pub(super) fn terminal_answer(row: &Row) -> HelperResult {
     let estimate = estimate_probe(row.estimate.as_ref());
-    let estimator = estimate
-        .as_ref()
-        .map(|estimate| estimate as &dyn UsageEstimate);
-    let calls = estimate.as_ref().map_or(0, |estimate| estimate.calls.get());
     if row.kind == "dict" || row.kind == "other" {
-        let response = serde_json::from_value(row.response.clone()).unwrap_or(Json::Null);
-        let constructed = billed_terminal_object(&response, estimator);
-        return Ok(json!({"same": false, "response": constructed, "estimate_calls": calls}));
+        return terminal_object_answer(row, estimate.as_ref());
     }
+    terminal_model_answer(row, estimate.as_ref())
+}
+
+fn terminal_object_answer(row: &Row, estimate: Option<&FixedEstimate>) -> HelperResult {
+    let object = serde_json::from_value(row.response.clone()).unwrap_or(Json::Null);
+    let constructed = billed_terminal_object(&object, estimate);
+    let calls = estimate.map_or(0, |estimate| estimate.calls.get());
+    Ok(json!({"same": false, "response": constructed, "estimate_calls": calls}))
+}
+
+fn terminal_model_answer(row: &Row, estimate: Option<&FixedEstimate>) -> HelperResult {
     let response: ResponsesApiResponse = serde_json::from_value(row.response.clone())
         .map_err(|error| value_error(error.to_string()))?;
-    let (same, terminal) = match billed_terminal_response(&response, estimator) {
-        BilledTerminal::Same(terminal) => (true, terminal),
+    let billed = billed_terminal_response(&response, estimate);
+    let (same, terminal) = match &billed {
+        BilledTerminal::Same(terminal) => (true, *terminal),
         BilledTerminal::Estimated(terminal) => (false, terminal.as_ref()),
     };
+    let calls = estimate.map_or(0, |estimate| estimate.calls.get());
     Ok(json!({"same": same, "response": terminal, "estimate_calls": calls}))
 }
 
 pub(super) fn stamp_answer(row: &Row) -> HelperResult {
     let probe = CostProbe::new(row.cost.as_ref())?;
     let response = serde_json::from_value(row.response.clone()).unwrap_or(Json::Null);
-    let Some(mut constructed) = billed_terminal_object(&response, None) else {
+    let Some(mut constructed) = billed_terminal_object(&response, None::<&FixedEstimate>) else {
         return Ok(json!({"response": null, "cost_calls": 0}));
     };
     stamp_object_usage_cost(&mut constructed, probe.as_ref());
-    Ok(
-        json!({"response": constructed, "cost_calls": probe.as_ref().map_or(0, |probe| probe.calls.get())}),
-    )
+    let calls = probe.as_ref().map_or(0, |probe| probe.calls.get());
+    Ok(json!({"response": constructed, "cost_calls": calls}))
 }
 
 pub(super) fn copy_answer(row: &Row) -> HelperResult {
@@ -132,7 +135,14 @@ fn copy_value(row: &Row) -> Value {
 }
 
 fn copy_completed(row: &Row) -> HelperResult {
-    let completed = completed_event(&row.response)?;
+    let response: ResponsesApiResponse = serde_json::from_value(row.response.clone())
+        .map_err(|error| value_error(error.to_string()))?;
+    let completed = ResponsesAPIStreamingResponse::Known(Box::new(
+        KnownResponseEvent::ResponseCompleted(ResponseEvent {
+            response,
+            extra: Extra::new(),
+        }),
+    ));
     let mut copied = logging_copy(LoggingEvent::Event(&completed));
     set_copy_cost(&mut copied);
     Ok(json!({"same": false, "original": json!(completed), "copy": copy_json(&copied)}))
@@ -186,17 +196,6 @@ fn estimate_probe(spec: Option<&EstimateSpec>) -> Option<FixedEstimate> {
     })
 }
 
-fn completed_event(response: &Value) -> Result<ResponsesAPIStreamingResponse, Box<HelperError>> {
-    let response: ResponsesApiResponse =
-        serde_json::from_value(response.clone()).map_err(|error| value_error(error.to_string()))?;
-    Ok(ResponsesAPIStreamingResponse::Known(Box::new(
-        KnownResponseEvent::ResponseCompleted(ResponseEvent {
-            response,
-            extra: Extra::new(),
-        }),
-    )))
-}
-
 fn set_copy_cost(copied: &mut LoggedCopy<'_>) {
     if let LoggedCopy::Detached(event) = copied
         && let ResponsesAPIStreamingResponse::Known(known) = event.as_mut()
@@ -207,7 +206,7 @@ fn set_copy_cost(copied: &mut LoggedCopy<'_>) {
     }
 }
 
-fn value_error(message: String) -> Box<HelperError> {
+pub(super) fn value_error(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
