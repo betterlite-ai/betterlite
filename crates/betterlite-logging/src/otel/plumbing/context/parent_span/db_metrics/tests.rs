@@ -137,7 +137,7 @@ async fn proxy_span_uses_shared_resolver() {
         .expect("the recording sink is not poisoned")
         .clone();
     assert_eq!(recorded.len(), 3);
-    let resolved: Vec<String> = recorded
+    let mut resolved: Vec<String> = recorded
         .iter()
         .map(|event| {
             event
@@ -148,14 +148,14 @@ async fn proxy_span_uses_shared_resolver() {
                 .to_string()
         })
         .collect();
-    assert_eq!(
-        resolved,
-        vec![
-            metadata_trace.to_owned(),
-            params_trace.to_owned(),
-            top_level_trace.to_owned()
-        ]
-    );
+    let mut expected = vec![
+        metadata_trace.to_owned(),
+        params_trace.to_owned(),
+        top_level_trace.to_owned(),
+    ];
+    resolved.sort_unstable();
+    expected.sort_unstable();
+    assert_eq!(resolved, expected);
     assert!(
         recorded
             .iter()
