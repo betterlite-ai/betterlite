@@ -13,6 +13,8 @@ description: >-
   path. Successful model-routed delete returns the provider's id without re-encoding it.
 
   Add B900 HTTP scenarios with mock provider, master key sk-test and B1139 ordinary/admin keys.
+  A seeded key passes auth through B755's VirtualKeyValidation stage (betterlite-auth
+  auth_key_validation, registered in B732's server state).
   The family integration case uploads, retrieves, downloads, lists and deletes a native file through
   the composed routes, checking actual upstream effects. Native tests are in
   api::managed_file_routes::tests in server/core; no helper oracle or new decoder. Complete handler

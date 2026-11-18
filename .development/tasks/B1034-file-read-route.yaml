@@ -14,7 +14,9 @@ description: >-
   no managed hook, so list falls back to provider/openai; limit and after are not sent on that path.
 
   Keep the complete functions together and exercise every alias with B900 HTTP cases, master key
-  sk-test, B1139 seeded ordinary keys/teams and mock provider requests. Pure list-page transformation
+  sk-test, B1139 seeded ordinary keys/teams and mock provider requests. A seeded key passes auth through
+  B755's VirtualKeyValidation stage (betterlite-auth auth_key_validation, registered in B732's server
+  state). Pure list-page transformation
   is covered natively; no B171 adapter is needed. Test modules are api::file_read_route::tests in
   server/core. Owned source has 354 nonblank/non-comment lines; budget 280 implementation, 190 tests,
   245 cases and 35 wiring lines, totaling 750. Decoding remains B1100/B1019/provider owned.

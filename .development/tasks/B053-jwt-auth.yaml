@@ -9,6 +9,12 @@ description: >-
   B165-backed callable; no success placeholder is permitted.
 
 
+  B875 declares the ports this task fills. Install the JWT verifier and identity path behind B875's
+  `AuthBackend::jwt`, and install B766's `JwtKeyResolution` (betterlite-auth `jwt_key_resolution`) behind
+  B875's `JwtKeyMapping` port: `resolve` runs B766's claim-to-key lookup and `register_after_policy` runs
+  B766's pending auto-registration. B875 calls only that port, never B766 directly.
+
+
   Build the production jwt_auth module in betterlite-server; reuse the typed dependencies listed in the
   backlog. Keep Rust implementation files below 300 lines by using named domain submodules with adjacent
   tests.rs files.

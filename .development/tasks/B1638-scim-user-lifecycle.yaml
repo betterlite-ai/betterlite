@@ -15,10 +15,11 @@ description: >-
   treats absent/empty groups as unspecified. Reconcile team writes before replacing email,
   alias, sso_user_id, teams and SCIM metadata; unrelated metadata is not merged. Resolve a
   role only for nonempty supplied teams with admin-group mapping enabled. After the user
-  write, broadcast user-cache eviction, then change key blocks only for an explicitly
+  write, evict and broadcast the user cache entry with B878's evict_and_broadcast (betterlite-auth
+  auth_pubsub) and the one key user_id, then change key blocks only for an explicitly
   supplied active transition. DELETE visits the user's teams, removes legacy members
   entries and canonical membership where present, blocks owned keys, deletes referencing
-  rows through B1637, deletes the user, then evicts the user cache. Keep keys blocked in
+  rows through B1637, deletes the user, then calls the same evict_and_broadcast. Keep keys blocked in
   storage rather than deleting them. Return 204 with an empty body; POST/PUT use the
   SCIM JSON content type and B1633 projections. Export deletion as a service for B1643.
   Test every write boundary with PostgreSQL faults, including a PUT error after user update
