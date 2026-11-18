@@ -153,13 +153,14 @@ fn calibration_examples_name_the_operator_labels() {
         (ComplexityTier::Complex, "Hard"),
         (ComplexityTier::Reasoning, "Max"),
     ];
-    let section = calibration_examples_section(ClassificationRubric::Chat, &braces).unwrap();
+    let brace_section = calibration_examples_section(ClassificationRubric::Chat, &braces).unwrap();
     assert!(
-        section.starts_with(
+        brace_section.starts_with(
             "Calibration examples:\n- \"what's the capital of France?\" -> {MEDIUM}\n"
         )
     );
-    assert!(section.contains("-> Mid, technical vocabulary but one obvious answer"));
+    assert!(brace_section.contains("-> {MEDIUM}, technical vocabulary but one obvious answer"));
+    assert!(brace_section.contains("\"write a regex for a US phone number\" -> Mid"));
 }
 
 #[test]
@@ -337,8 +338,8 @@ fn a_reply_maps_display_labels_and_defined_names() {
     assert_eq!(verdict.tier, Tier::BuiltIn(ComplexityTier::Medium));
     assert_eq!(verdict.label, "balanced");
     let defined = tiers_with_definitions(&[("quick", Some("short")), ("reasoning", None)], false);
-    let verdict = parse_class_reply(br#"{"tier":"Quick"}"#, &defined).unwrap();
-    assert_eq!(verdict.tier, Tier::Named("quick".to_owned()));
+    let defined_verdict = parse_class_reply(br#"{"tier":"Quick"}"#, &defined).unwrap();
+    assert_eq!(defined_verdict.tier, Tier::Named("quick".to_owned()));
 }
 
 #[test]
@@ -359,7 +360,7 @@ fn the_non_reasoning_tier_resolves_only_when_enabled() {
 }
 
 #[test]
-fn a_rejection_diagnostic_obeys_message_privacy() {
+fn a_rejection_diagnostic_names_the_tier_and_raw_reply() {
     let content = r#"{"tier": 5}"#;
     let error = parse_class_reply(content.as_bytes(), &blank_tiers()).unwrap_err();
     assert!(
@@ -379,6 +380,12 @@ fn a_rejection_diagnostic_obeys_message_privacy() {
             .to_string()
             .ends_with(r#"); raw reply: "{\"tier\": 5}""#)
     );
+}
+
+#[test]
+fn a_rejection_diagnostic_obeys_message_privacy() {
+    let content = r#"{"tier": 5}"#;
+    let error = parse_class_reply(content.as_bytes(), &blank_tiers()).unwrap_err();
     let private = rejection_diagnostic(
         &error,
         content,

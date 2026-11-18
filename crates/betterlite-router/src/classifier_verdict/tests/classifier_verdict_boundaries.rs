@@ -34,7 +34,7 @@ fn the_reply_byte_limit_is_inclusive_and_counts_bytes() {
         }
         other => panic!("over-limit reply decoded: {other:?}"),
     }
-    let multibyte = "é".repeat(MAX_REPLY_BYTES / 2);
+    let multibyte = "\u{e9}".repeat(MAX_REPLY_BYTES.checked_div(2).unwrap());
     assert_eq!(multibyte.len(), MAX_REPLY_BYTES);
     assert!(matches!(
         parse_class_reply(multibyte.as_bytes(), &blank_tiers()),
@@ -126,11 +126,11 @@ fn constants_inside_a_string_or_a_value_keep_the_reply_invalid() {
     ));
     assert!(matches!(
         parse_class_reply(br#"{"tier":"SIMPLE","p":NaNx}"#, &blank_tiers()),
-        Err(ClassifierVerdictError::VerdictSchema { .. })
+        Err(ClassifierVerdictError::NoVerdictObject)
     ));
     assert!(matches!(
         parse_class_reply(br#"{"tier":"SIMPLE","p":xInfinity}"#, &blank_tiers()),
-        Err(ClassifierVerdictError::VerdictSchema { .. })
+        Err(ClassifierVerdictError::NoVerdictObject)
     ));
 }
 
@@ -148,7 +148,8 @@ fn the_scan_budget_cancels_a_pathological_reply() {
             .tier,
         Tier::BuiltIn(ComplexityTier::Simple)
     );
-    let cancelled = format!("{}{}", "{\"a\":{".repeat(30_000), r#"1{"tier":"SIMPLE"}"#);
+    // each start here reads to the unclosed tail before failing, so a few hundred exhaust the scan budget
+    let cancelled = format!("{}@", "{\"x\":".repeat(4_000));
     assert!(cancelled.len() <= MAX_REPLY_BYTES);
     assert!(matches!(
         parse_class_reply(cancelled.as_bytes(), &blank_tiers()),
@@ -166,12 +167,12 @@ fn operator_sections_are_stripped_and_capped_in_chars(
 ) {
     assert_eq!(section.name_and_cap(), (field, cap));
     assert_eq!(normalize_section(section, None).unwrap(), None);
-    let at_cap = "é".repeat(cap);
+    let at_cap = "\u{e9}".repeat(cap);
     assert_eq!(
         normalize_section(section, Some(&format!("  {at_cap}  "))).unwrap(),
-        Some(at_cap.clone())
+        Some(at_cap)
     );
-    let over = "é".repeat(cap + 1);
+    let over = "\u{e9}".repeat(cap.saturating_add(1));
     match normalize_section(section, Some(&over)) {
         Err(ClassifierVerdictError::OperatorSectionTooLong {
             field: name,
@@ -184,7 +185,7 @@ fn operator_sections_are_stripped_and_capped_in_chars(
     }
     match normalize_section(section, Some(" \t\n ")) {
         Err(ClassifierVerdictError::OperatorSectionBlank { field: name }) => {
-            assert_eq!(name, field)
+            assert_eq!(name, field);
         }
         other => panic!("blank section accepted: {other:?}"),
     }

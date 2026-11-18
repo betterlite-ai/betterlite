@@ -68,9 +68,9 @@ fn replays_the_class_reply_corpus(#[files("fuzz/corpus/class_reply/*")] path: Pa
     let bytes = fs::read(&path).unwrap();
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let outcome = parse_class_reply(&bytes, &blank_tiers());
-    if !name.contains("-valid") {
-        assert!(outcome.is_err(), "{name} must not decode");
-    } else {
+    if name.contains("-valid") {
         assert!(outcome.is_ok(), "{name} must decode");
+    } else {
+        assert!(outcome.is_err(), "{name} must not decode");
     }
 }

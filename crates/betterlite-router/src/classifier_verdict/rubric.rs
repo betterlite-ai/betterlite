@@ -163,20 +163,20 @@ pub fn calibration_examples_section(
     let mut section = String::with_capacity(template.len());
     let mut rest = template;
     while let Some(open) = rest.find('{') {
-        section.push_str(&rest[..open]);
-        let tail = &rest[open + 1..];
+        section.push_str(rest.get(..open).unwrap_or_default());
+        let tail = rest.get(open.saturating_add(1)..).unwrap_or_default();
         let Some(close) = tail.find('}') else {
             return Err(ClassifierVerdictError::RubricExamples { rubric });
         };
-        let tier = ComplexityTier::built_in(&tail[..close])
+        let tier = ComplexityTier::built_in(tail.get(..close).unwrap_or_default())
             .ok_or(ClassifierVerdictError::RubricExamples { rubric })?;
         let label = labeled
             .iter()
             .find(|(candidate, _)| *candidate == tier)
             .map(|(_, label)| *label)
-            .ok_or(ClassifierVerdictError::MissingLabel { tier: tier.name() })?;
+            .ok_or_else(|| ClassifierVerdictError::MissingLabel { tier: tier.name() })?;
         section.push_str(label);
-        rest = &tail[close + 1..];
+        rest = tail.get(close.saturating_add(1)..).unwrap_or_default();
     }
     section.push_str(rest);
     Ok(section)

@@ -61,10 +61,7 @@ pub fn sectioned_prompt(
 
 #[must_use]
 pub fn operator_examples_section(classification_examples: Option<&str>) -> Option<String> {
-    match classification_examples {
-        Some(examples) => Some(format!("{CALIBRATION_EXAMPLES_HEADING}\n{examples}")),
-        None => None,
-    }
+    classification_examples.map(|examples| format!("{CALIBRATION_EXAMPLES_HEADING}\n{examples}"))
 }
 
 pub fn built_in_prompt(
