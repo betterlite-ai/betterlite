@@ -1,5 +1,4 @@
 import asyncio
-from collections.abc import Coroutine
 from logging import Handler, LogRecord, getLogger
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
@@ -125,11 +124,11 @@ class FakePubSub(PubSub):
         await asyncio.sleep(0)
 
     @override
-    def get_message(
+    async def get_message(
         self, ignore_subscribe_messages: bool = False, timeout: float | None = 0.0
-    ) -> Coroutine[None, None, dict[str, str | bytes] | None]:
+    ) -> dict[str, str | bytes] | None:
         del ignore_subscribe_messages
-        return self._poll(timeout)
+        return await self._poll(timeout)
 
     async def _poll(self, interval: float | None) -> dict[str, str | bytes] | None:
         seconds = 0.0 if interval is None else interval
