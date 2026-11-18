@@ -40,9 +40,14 @@ fn split_events(text: &str) -> Vec<String> {
     let mut chunks = Vec::new();
     let mut current = String::new();
     for line in text.split_inclusive('\n') {
-        let content = line.strip_suffix('\n').unwrap_or(line);
-        let content = content.strip_suffix('\r').unwrap_or(content);
-        if content.chars().all(is_blank) {
+        let without_newline = line.strip_suffix('\n').unwrap_or(line);
+        let content = without_newline
+            .strip_suffix('\r')
+            .unwrap_or(without_newline);
+        if content
+            .chars()
+            .all(|character| matches!(character, ' ' | '\t'))
+        {
             let keep = current
                 .strip_suffix("\r\n")
                 .or_else(|| current.strip_suffix('\n'))
@@ -64,10 +69,6 @@ fn data_payload(chunk: &str) -> String {
         .map(lstrip)
         .collect::<Vec<&str>>()
         .join("\n")
-}
-
-const fn is_blank(character: char) -> bool {
-    matches!(character, ' ' | '\t')
 }
 
 const fn is_line_boundary(character: char) -> bool {

@@ -15,7 +15,7 @@ pub(crate) fn text_blocks(response: &IndexMap<String, Json>) -> Vec<&IndexMap<St
     let mut blocks = Vec::new();
     for block in content {
         if let Json::Object(fields) = block
-            && is_text_block(fields)
+            && matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "text")
         {
             blocks.push(fields);
         }
@@ -52,17 +52,6 @@ pub(crate) fn to_search_result(item: &IndexMap<String, Json>) -> SearchResult {
     }
 }
 
-pub(crate) fn is_error_result(fields: &IndexMap<String, Json>) -> bool {
-    match fields.get("isError") {
-        None | Some(Json::Null | Json::Bool(false)) => false,
-        Some(Json::Bool(true)) => true,
-        Some(Json::Number(number)) => number.as_f64().is_none_or(|value| value != 0.0_f64),
-        Some(Json::Text(text)) => !text.is_empty(),
-        Some(Json::List(items)) => !items.is_empty(),
-        Some(Json::Object(object)) => !object.is_empty(),
-    }
-}
-
 pub(crate) fn tool_error_detail(
     response: &IndexMap<String, Json>,
     result: &IndexMap<String, Json>,
@@ -79,10 +68,6 @@ pub(crate) fn tool_error_detail(
         return Ok(rendered.chars().take(500).collect());
     }
     Ok(texts.join(" "))
-}
-
-fn is_text_block(fields: &IndexMap<String, Json>) -> bool {
-    matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "text")
 }
 
 fn parse_result_items(block: &IndexMap<String, Json>) -> Vec<IndexMap<String, Json>> {
