@@ -151,6 +151,7 @@ fn check_field_precedence() {
 fn mcp_sse_results() {
     check_sse_payloads();
     check_sse_selection();
+    check_sse_crlf();
     check_sse_prefixes();
     check_sse_boundaries();
 }
@@ -219,6 +220,29 @@ data: {"result":{"structuredContent":[{"title":"later"}]}}
 
 "#;
     assert!(decode(null_error_first, 200).unwrap().results.is_empty());
+}
+
+fn check_sse_crlf() {
+    for (body, expected) in [
+        (
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\r\n\r\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"windows\"}]}}\r\n\r\n",
+            "windows",
+        ),
+        (
+            "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\r\n \r\n\r\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"spaced\"}]}}\r\n\r\n",
+            "spaced",
+        ),
+    ] {
+        assert_eq!(titles(&decode(body, 200).unwrap()), vec![expected]);
+    }
+
+    let bare_carriage_return = "data: {\"result\":\rdata: {}}";
+    assert!(
+        decode(bare_carriage_return, 200)
+            .unwrap()
+            .results
+            .is_empty()
+    );
 }
 
 fn check_sse_prefixes() {

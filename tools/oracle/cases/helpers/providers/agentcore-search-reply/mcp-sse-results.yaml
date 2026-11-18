@@ -64,5 +64,17 @@ calls:
       status: 200
       headers: [[content-type, text/event-stream]]
       body: "  data: {\"result\":{\"structuredContent\":[{\"title\":\"no\"}]}}"
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\r\n\r\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"windows\"}]}}\r\n\r\n"
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: "data: {\"jsonrpc\":\"2.0\",\"method\":\"notifications/progress\"}\r\n \r\n\r\ndata: {\"result\":{\"structuredContent\":[{\"title\":\"spaced\"}]}}\r\n\r\n"
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: "data: {\"result\":\rdata: {}}"
 env: {}
 compare: {ignore: []}
