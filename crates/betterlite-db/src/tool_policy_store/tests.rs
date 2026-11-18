@@ -260,6 +260,17 @@ async fn discovery_skips_a_batch_that_names_no_tool() {
             deadline: DEADLINE,
             canceller: &TlsCanceller { tls: NoTls },
         },
+        &[],
+        instant(),
+    )
+    .await;
+    batch_upsert_tools(
+        None::<Client>,
+        &FixedIds,
+        StatementBounds {
+            deadline: DEADLINE,
+            canceller: &TlsCanceller { tls: NoTls },
+        },
         &[item(None), item(Some(""))],
         instant(),
     )
