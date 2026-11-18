@@ -192,7 +192,7 @@ fn inline_artifact() -> Artifact {
 
 #[test]
 fn an_inline_artifact_resolves_every_key() {
-    let configured = only(&inline_field_yaml(), &[]).unwrap().unwrap();
+    let configured = only(&inline_field_yaml(), &[]).unwrap();
     assert_eq!(
         configured,
         Some(Config {
@@ -406,15 +406,17 @@ fn config_validation_refuses_a_threshold_outside_the_unit_interval(#[case] thres
     assert!(error.to_string().contains("invalid scalar"), "got {error}");
 }
 
-#[test]
-fn config_validation_accepts_the_declared_thresholds() {
-    for threshold in [None, Some(0.0_f64), Some(0.5_f64), Some(1.0_f64)] {
-        let config = Config {
-            artifact: ArtifactSource::default(),
-            success_threshold: threshold,
-        };
-        assert!(config.validate("heuristic_v2_success_threshold").is_ok());
-    }
+#[rstest]
+#[case::absent(None)]
+#[case::zero(Some(0.0_f64))]
+#[case::midpoint(Some(0.5_f64))]
+#[case::one(Some(1.0_f64))]
+fn config_validation_accepts_the_declared_thresholds(#[case] threshold: Option<f64>) {
+    let config = Config {
+        artifact: ArtifactSource::default(),
+        success_threshold: threshold,
+    };
+    assert!(config.validate("heuristic_v2_success_threshold").is_ok());
 }
 
 #[test]

@@ -14,7 +14,6 @@ const PATH_ROOT: &str = "litellm_params.complexity_router_config";
 const ARTIFACT_KEY: &str = "heuristic_v2_artifact";
 const THRESHOLD_KEY: &str = "heuristic_v2_success_threshold";
 
-// heuristic_v2_artifact defaults to the packaged ultrafeedback artifact
 pub const DEFAULT_ARTIFACT: &str = "ultrafeedback";
 
 #[derive(Debug, Default, Deserialize)]
@@ -41,7 +40,6 @@ struct RawRouterConfig {
     heuristic_v2_success_threshold: Option<RawNumber>,
 }
 
-// heuristic_v2_artifact: TrainedTierArtifact | Literal["ultrafeedback"]
 #[derive(Debug, Deserialize)]
 #[serde(
     untagged,
@@ -72,7 +70,6 @@ pub struct Config {
 }
 
 impl Config {
-    // heuristic_v2_success_threshold: Field(ge=0.0, le=1.0) on the reference's config model
     pub fn validate(&self, path: &str) -> Result<(), ConfigError> {
         if self
             .success_threshold
@@ -86,7 +83,6 @@ impl Config {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Settings {
-    // index-aligned with model_list; None when the deployment configures no complexity router
     pub deployments: Vec<Option<Config>>,
 }
 
@@ -160,7 +156,6 @@ impl RawArtifactValue {
     }
 }
 
-// a declared number is a number; only an os.environ reference may be text
 fn reject_quoted(value: &RawNumber, path: &str) -> Result<(), ConfigError> {
     if let RawNumber::Text(text) = value
         && !text.starts_with("os.environ/")

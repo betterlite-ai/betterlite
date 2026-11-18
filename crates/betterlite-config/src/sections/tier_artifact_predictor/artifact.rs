@@ -1,6 +1,6 @@
 use std::mem::take;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
@@ -11,8 +11,7 @@ pub const DEFAULT_ROUTING_THRESHOLD: f64 = 0.75;
 pub const DEFAULT_SUCCESS_DEFINITION: &str = "quality score meets the dataset success threshold";
 pub const DEFAULT_SPLIT_METHOD: &str = "sha256(prompt): 70% train, 15% validation, 15% test";
 
-// TrainedTierArtifact: the packaged JSON's wire format, and an inline heuristic_v2_artifact value
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Artifact {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,
@@ -35,14 +34,14 @@ pub struct Artifact {
     pub split_method: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GlobalStatistic {
     pub tier: u32,
     pub successes: f64,
     pub observations: f64,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomainStatistic {
     pub tier: u32,
     pub successes: f64,
@@ -50,7 +49,7 @@ pub struct DomainStatistic {
     pub request_type: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CohortStatistic {
     pub tier: u32,
     pub successes: f64,
@@ -58,7 +57,7 @@ pub struct CohortStatistic {
     pub cohort: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Dataset {
     pub name: String,
     pub url: String,
@@ -134,7 +133,6 @@ fn default_split_method() -> String {
     DEFAULT_SPLIT_METHOD.to_owned()
 }
 
-// both the artifact and each dataset carry the same pinned success definition
 fn default_success_definition() -> String {
     DEFAULT_SUCCESS_DEFINITION.to_owned()
 }
