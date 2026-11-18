@@ -1,0 +1,13 @@
+kind: helper
+name: coordination-redis-boot-block-without-target
+call:
+  b8377:
+    operation: config_error
+    config:
+      general_settings:
+        coordination_redis:
+          port: 6379
+          ssl: true
+    environment: {}
+env: {}
+compare: {ignore: []}

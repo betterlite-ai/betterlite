@@ -22,6 +22,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/roi_settings.rs
+    - crates/betterlite-server/src/roi_settings/**
     - crates/betterlite-server/src/roi_settings/tests.rs
     - tools/oracle/helpers/b3158.py
     - tools/oracle/helpers/b3158/**

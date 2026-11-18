@@ -10,8 +10,11 @@ description: >-
   Implement api::messages_compaction with a closed typed editor dispatch. Clear token counting stays off the
   async executor and summary execution is awaited. HelperCall::ContextEditDispatch covers normalization and
   deterministic orchestration with typed injected editor results, including the legacy tuple wrapper. It cannot
-  supply arbitrary functions. SdkHttpCall::ContextEditDispatch runs the real registered editors with B2401 so
-  summary-provider traffic is captured. This dispatcher adds no settings, environment reads or byte parser.
+  supply arbitrary functions. SdkHttpCall::ContextEditDispatch runs the real registered editors so
+  summary-provider traffic is captured. It is a placeholder on main: build its Call (implementing
+  call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/context_edit_dispatch.rs and
+  ContextEditDispatchRequest in tools/oracle/sdk_http/context_edit_dispatch.py, with the shared sdk_http
+  files and dispatch.py left alone. This dispatcher adds no settings, environment reads or byte parser.
   Own 108 nonblank/non-comment dispatcher implementation lines; estimate 140 implementation, 110 tests, 110 fixtures,
   120 adapters and 30 wiring, 510 total.
 scope:
@@ -24,9 +27,8 @@ scope:
   - tools/oracle/helpers/context_edit_dispatch/**
   - tools/oracle/cases/helpers/context-edit-dispatch/**
   - tools/oracle/fuzz/corpus/helper_case/context_edit_dispatch-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/context_edit_dispatch.rs
+  - tools/oracle/src/sdk_http/context_edit_dispatch/**
   - tools/oracle/sdk_http/context_edit_dispatch.py
   - tools/oracle/cases/sdk-http/context-edit-dispatch/**
   - tools/oracle/fuzz/corpus/sdk_http_case/context-edit-dispatch-*
@@ -77,7 +79,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_compaction::/)'
   - id: python-adapters
     why: dispatch or real-editor parity lacks a checked Python adapter
-    run: test -f tools/oracle/helpers/context_edit_dispatch.py && test -f tools/oracle/sdk_http/context_edit_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/context_edit_dispatch.py && ! grep -q not_built tools/oracle/sdk_http/context_edit_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpus
     why: a dispatch operation is absent from its shared decoder
     run: grep -qE '^[[:space:]]+context_edit_dispatch:' tools/oracle/fuzz/corpus/helper_case/context_edit_dispatch-* && grep -qE '^[[:space:]]+context_edit_dispatch:' tools/oracle/fuzz/corpus/sdk_http_case/context-edit-dispatch-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus) | test(/^sdk_http::tests::replays_corpus$/)'

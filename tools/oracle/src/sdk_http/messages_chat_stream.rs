@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
 use super::error::SdkHttpError;
-use super::result::{ChatStreamRun, SdkResult};
+use super::result::ChatStreamRun;
+use super::result::kinds::SdkResult;
 use super::wrapper_stream;
 use call::MessagesChatStreamCall;
 

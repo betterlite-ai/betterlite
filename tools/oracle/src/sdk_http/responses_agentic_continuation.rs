@@ -1,5 +1,6 @@
 use super::error::SdkHttpError;
-use super::result::{AgenticContinuationRun, AgenticFailure, AgenticIdentity, SdkResult};
+use super::result::kinds::SdkResult;
+use super::result::{AgenticContinuationRun, AgenticFailure, AgenticIdentity};
 use async_trait::async_trait;
 use betterlite_context::agentic_callback::error::AgenticHookError;
 use betterlite_context::agentic_callback::{

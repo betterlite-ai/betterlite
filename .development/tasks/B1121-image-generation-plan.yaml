@@ -13,7 +13,11 @@ description: >-
   descriptor. The Rust executor propagates request context without blocking its async runtime. Provider attribution
   falls back to openai only inside the exception handler when provider resolution did not set a truthy provider.
 
-  Use B2401's SDK HTTP driver with sync_mode=async and B998's operation encoding. Add a wrapper-specific adapter
+  Use the SDK HTTP driver through SdkHttpCall::ImageGenerationPlan with sync_mode=async and B998's
+  operation encoding (its Call may embed image_generation_call::Call). The variant is on main as a
+  placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/image_generation_plan.rs
+  (Call implements call_kind::CallKind) and fill ImageGenerationPlanRequest in
+  tools/oracle/sdk_http/image_generation_plan.py; the shared sdk_http files stay untouched. Add a wrapper-specific adapter
   only for result-shape/context fault injection; it must still execute HTTP for normal calls. This function has
   39 nonblank/non-comment lines; 80 implementation/facade, 110 tests, 100 cases, 70 adapters and 40 wiring lines
   fit a 400-line integration task. Generation overloads and all Azure settings now belong to B998.
@@ -21,9 +25,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/image_generation_plan.rs
   - crates/betterlite-core/src/api/image_generation_plan/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/image_generation_plan.rs
+  - tools/oracle/src/sdk_http/image_generation_plan/**
   - tools/oracle/sdk_http/image_generation_plan.py
   - tools/oracle/cases/sdk-http/image-generation-plan/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-plan-*
@@ -64,7 +67,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::image_generation_plan::tests::/)'
   - id: sdk-python
     why: Async generation must be compared through the actual pinned SDK.
-    run: test -f tools/oracle/sdk_http/image_generation_plan.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_generation_plan.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The async invocation tag needs a valid parser seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-plan-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
