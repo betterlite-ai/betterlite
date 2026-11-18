@@ -142,7 +142,9 @@ impl EmbeddingTransport for FixtureClient {
                 }
                 Ok(answer)
             }
-            Reply::Timeout => Err(TransferError::Timeout),
+            Reply::Timeout => Err(TransferError::Timeout {
+                elapsed: Duration::from_millis(125),
+            }),
             Reply::Failed => Err(TransferError::Failed(TransportError::Closed)),
         };
         self.seen.lock().unwrap().push(request);

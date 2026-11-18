@@ -1,5 +1,6 @@
 use std::io;
 
+use betterlite_error::error::ErrorClass;
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
 
@@ -50,6 +51,8 @@ pub enum EmbeddingIoError {
     },
     #[error(transparent)]
     Transport(#[from] TransferError),
+    #[error("HTTP handler request failed")]
+    Handler(ErrorClass),
     #[error("bedrock error ({status})")]
     Provider {
         status: u16,
@@ -77,11 +80,11 @@ pub enum EmbeddingIoError {
 
 impl EmbeddingIoError {
     #[must_use]
-    pub const fn status(&self) -> Option<u16> {
-        if let Self::Provider { status, .. } = self {
-            Some(*status)
-        } else {
-            None
+    pub fn status(&self) -> Option<u16> {
+        match self {
+            Self::Provider { status, .. } => Some(*status),
+            Self::Handler(class) => Some(class.metadata().status_code),
+            _ => None,
         }
     }
 }

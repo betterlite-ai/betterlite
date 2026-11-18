@@ -1,6 +1,10 @@
 use std::fmt::{self, Formatter};
 use std::future::Future;
 use std::str;
+use std::time::Duration;
+
+use betterlite_error::error::details::{TimeoutDetails, TimeoutStatus};
+use betterlite_error::error::{ErrorClass, ErrorContext};
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
@@ -15,9 +19,6 @@ use crate::bedrock_settings::{
 
 // get_async_httpx_client is built with litellm.LlmProviders.BEDROCK
 pub const ASYNC_CLIENT_PROVIDER: &str = "bedrock";
-
-const TIMEOUT_STATUS: u16 = 408;
-const TIMEOUT_MESSAGE: &str = "Timeout error occurred.";
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct EmbeddingRequest {
@@ -56,7 +57,7 @@ pub struct EmbeddingReply {
 #[derive(Debug, Error)]
 pub enum TransferError {
     #[error("the provider request timed out")]
-    Timeout,
+    Timeout { elapsed: Duration },
     #[error(transparent)]
     Failed(#[from] TransportError),
 }
@@ -138,7 +139,9 @@ where
     };
     let reply = match send(call, request, supplied, factory).await {
         Ok(reply) => reply,
-        Err(TransferError::Timeout) => return Err(timeout_error()?),
+        Err(TransferError::Timeout { elapsed }) => {
+            return Err(timeout_error(call.asynchronous, elapsed));
+        }
         Err(error @ TransferError::Failed(_)) => return Err(EmbeddingIoError::Transport(error)),
     };
     // httpx raise_for_status raises for every status outside 2xx
@@ -180,20 +183,29 @@ where
     }
 }
 
-fn timeout_error() -> Result<EmbeddingIoError, HeaderError> {
-    let error = BedrockError::try_from(ErrorInput {
-        status_code: TIMEOUT_STATUS,
-        message: TIMEOUT_MESSAGE.to_owned(),
-        request: None,
-        body: None,
-        status_code_is_synthesized: false,
-        headers: None,
-        response: None,
-    })?;
-    Ok(EmbeddingIoError::Provider {
-        status: TIMEOUT_STATUS,
-        error: Box::new(error),
-    })
+fn timeout_error(asynchronous: bool, elapsed: Duration) -> EmbeddingIoError {
+    let message = if asynchronous {
+        format!(
+            "Connection timed out. Timeout passed=None, time taken={}.{:03} seconds",
+            elapsed.as_secs(),
+            elapsed.subsec_millis(),
+        )
+    } else {
+        "Connection timed out after None seconds.".to_owned()
+    };
+    EmbeddingIoError::Handler(ErrorClass::Timeout(Box::new(TimeoutDetails {
+        context: ErrorContext {
+            message,
+            model: Some("default-model-name".to_owned()),
+            provider: Some("litellm-httpx-handler".to_owned()),
+            max_retries: None,
+            num_retries: None,
+            body_type: None,
+            body_param: None,
+            body_code: None,
+        },
+        original_status: TimeoutStatus(408),
+    })))
 }
 
 fn provider_error(reply: &EmbeddingReply) -> Result<EmbeddingIoError, HeaderError> {

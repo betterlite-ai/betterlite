@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_error::error::ErrorClass;
 use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
@@ -103,7 +104,22 @@ fn signed_request_replaces_stale_headers() {
     assert_eq!(without_token["X-Amz-Security-Token"], "stale-token");
 }
 
+fn supplied_date_uses_the_shared_signer_deviation() {
+    let request = signed_request(
+        &credentials(ACCESS_KEY, SECRET_KEY, None),
+        &headers(&[
+            ("Content-Type", "application/json"),
+            ("Date", "Tue, 14 Nov 2023 22:13:20 GMT"),
+        ]),
+    );
+    let signed = header_map(request.headers);
+    assert!(!signed.keys().any(|name| name.eq_ignore_ascii_case("date")));
+    assert_eq!(signed["X-Amz-Date"], "20231114T221320Z");
+    assert_eq!(signed["Authorization"], SIGNED_WITHOUT_TOKEN);
+}
+
 fn signed_embedding_request() {
+    supplied_date_uses_the_shared_signer_deviation();
     signed_request_with_token();
     signed_request_without_token();
     signed_request_replaces_stale_headers();
@@ -316,34 +332,34 @@ fn status_boundaries_are_the_success_range() {
     }
 }
 
-fn assert_timeout_error(error: EmbeddingIoError) {
-    let EmbeddingIoError::Provider {
-        status,
-        error: bedrock_error,
-    } = error
-    else {
-        panic!("a timeout becomes a bedrock error");
+fn assert_timeout_error(error: EmbeddingIoError, message: &str) {
+    assert_eq!(error.status(), Some(408));
+    let EmbeddingIoError::Handler(ErrorClass::Timeout(details)) = error else {
+        panic!("the HTTP wrapper exposes the shared Timeout class");
     };
-    assert_eq!(status, 408);
-    assert_eq!(bedrock_error.error.message, "Timeout error occurred.");
-    assert_eq!(bedrock_error.error.status_code, 408);
-    assert_eq!(bedrock_error.error.response.status_code, 408);
-    assert!(bedrock_error.headers.is_none());
-    assert_eq!(bedrock_error.response_headers, Vec::new());
+    assert_eq!(details.original_status.0, 408);
+    assert_eq!(details.context.message, message);
+    assert_eq!(details.context.model.as_deref(), Some("default-model-name"));
     assert_eq!(
-        bedrock_error.response_body,
-        ResponseBody::Read(String::new())
+        details.context.provider.as_deref(),
+        Some("litellm-httpx-handler")
     );
+    assert_eq!(details.context.body_type, None);
+    assert_eq!(details.context.body_param, None);
+    assert_eq!(details.context.body_code, None);
 }
 
-fn timeout_is_a_408_bedrock_error() {
+fn timeout_is_the_shared_handler_error() {
     let data = object(BODY);
     let sync_error = run_direct(false, &Factory::new(Reply::Timeout), &data, None)
         .expect_err("the fixture times out");
-    assert_timeout_error(sync_error);
+    assert_timeout_error(sync_error, "Connection timed out after None seconds.");
     let async_error = run_direct(true, &Factory::new(Reply::Timeout), &data, None)
         .expect_err("the fixture times out");
-    assert_timeout_error(async_error);
+    assert_timeout_error(
+        async_error,
+        "Connection timed out. Timeout passed=None, time taken=0.125 seconds",
+    );
 }
 
 fn transport_failure_stays_a_transport_error() {
@@ -417,7 +433,7 @@ fn http_error() {
     provider_status_is_a_bedrock_error();
     provider_status_on_the_async_path_is_a_bedrock_error();
     status_boundaries_are_the_success_range();
-    timeout_is_a_408_bedrock_error();
+    timeout_is_the_shared_handler_error();
     transport_failure_stays_a_transport_error();
     malformed_success_body_is_a_decode_error();
     non_utf8_error_body_names_the_byte_count();
@@ -871,12 +887,12 @@ fn embedding_credentials() {
 }
 
 #[rstest]
-#[case::case_0_signed_embedding_request(signed_embedding_request)]
-#[case::case_1_provider_json_response(provider_json_response)]
-#[case::case_2_embedding_usage(embedding_usage)]
-#[case::case_3_http_error(http_error)]
-#[case::case_4_embedding_credentials(embedding_credentials)]
-#[case::case_5_async_embedding_single_arn(async_embedding_single_arn)]
+#[case::signed_embedding_request(signed_embedding_request)]
+#[case::provider_json_response(provider_json_response)]
+#[case::embedding_usage(embedding_usage)]
+#[case::http_error(http_error)]
+#[case::embedding_credentials(embedding_credentials)]
+#[case::async_embedding_single_arn(async_embedding_single_arn)]
 fn bedrock_embedding_io_cases(#[case] scenario: fn()) {
     scenario();
 }

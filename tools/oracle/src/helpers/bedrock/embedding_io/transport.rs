@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_bedrock::bedrock_embedding_io::transport::{
     ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest,
@@ -127,7 +128,9 @@ impl EmbeddingTransport for FixtureClient {
         request: EmbeddingRequest,
     ) -> impl Future<Output = Result<EmbeddingReply, TransferError>> + Send {
         let reply = match self.reply.failure {
-            Some(ReplyFailure::Timeout) => Err(TransferError::Timeout),
+            Some(ReplyFailure::Timeout) => Err(TransferError::Timeout {
+                elapsed: Duration::from_millis(125),
+            }),
             Some(ReplyFailure::Failed) => Err(TransferError::Failed(TransportError::Closed)),
             None => Ok(self.answer(&request)),
         };
