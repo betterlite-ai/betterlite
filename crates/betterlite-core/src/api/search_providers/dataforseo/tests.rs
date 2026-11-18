@@ -627,7 +627,7 @@ fn dataforseo_request_rejects_a_wrong_option_type(#[case] options: &str, #[case]
 }
 
 fn reply_value(payload: &str) -> IndexMap<String, Json> {
-    let response = decode_dataforse_search(payload.as_bytes()).unwrap();
+    let response = decode_dataforseo_search(payload.as_bytes()).unwrap();
     serde_json::from_str(&serde_json::to_string(&response).unwrap()).unwrap()
 }
 
@@ -699,21 +699,21 @@ fn dataforseo_reply_without_a_usable_task_is_empty(#[case] payload: &str) {
 
 #[test]
 fn dataforseo_reply_rejects_null_tasks() {
-    let error = decode_dataforse_search(br#"{"tasks": null}"#).unwrap_err();
+    let error = decode_dataforseo_search(br#"{"tasks": null}"#).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::TasksShape));
 }
 
 #[test]
 fn dataforseo_reply_rejects_a_null_result() {
     let payload = br#"{"tasks": [{"status_code": 20000, "result": null}]}"#;
-    let error = decode_dataforse_search(payload).unwrap_err();
+    let error = decode_dataforseo_search(payload).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::ResultShape));
 }
 
 #[test]
 fn dataforseo_reply_rejects_null_items() {
     let payload = br#"{"tasks": [{"status_code": 20000, "result": [{"items": null}]}]}"#;
-    let error = decode_dataforse_search(payload).unwrap_err();
+    let error = decode_dataforseo_search(payload).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::ItemsShape));
 }
 
@@ -733,7 +733,7 @@ fn dataforseo_reply_ignores_a_null_result_of_a_failed_task() {
 #[case::invalid_json("{")]
 #[case::trailing_bytes(r#"{"tasks": []}{"#)]
 fn dataforseo_reply_rejects_a_wrong_shape(#[case] payload: &str) {
-    let error = decode_dataforse_search(payload.as_bytes()).unwrap_err();
+    let error = decode_dataforseo_search(payload.as_bytes()).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::ReplyDecode(_)));
 }
 
@@ -747,7 +747,7 @@ fn dataforseo_reply_rejects_a_wrong_shape(#[case] payload: &str) {
 #[case::scalar_item(r#"{"tasks": [{"status_code": 20000, "result": [{"items": [5]}]}]}"#)]
 #[case::null_item(r#"{"tasks": [{"status_code": 20000, "result": [{"items": [null]}]}]}"#)]
 fn dataforseo_reply_rejects_a_value_that_is_not_an_object(#[case] payload: &str) {
-    let error = decode_dataforse_search(payload.as_bytes()).unwrap_err();
+    let error = decode_dataforseo_search(payload.as_bytes()).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::NotAnObject));
 }
 
@@ -765,7 +765,7 @@ fn dataforseo_reply_rejects_a_value_that_is_not_an_object(#[case] payload: &str)
     "description"
 )]
 fn dataforseo_reply_rejects_a_null_member(#[case] payload: &str, #[case] expected: &str) {
-    let error = decode_dataforse_search(payload.as_bytes()).unwrap_err();
+    let error = decode_dataforseo_search(payload.as_bytes()).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::ResultField { field } if field == expected));
 }
 
@@ -786,7 +786,7 @@ fn dataforseo_reply_rejects_a_member_of_the_wrong_type(
     #[case] payload: &str,
     #[case] expected: &str,
 ) {
-    let error = decode_dataforse_search(payload.as_bytes()).unwrap_err();
+    let error = decode_dataforseo_search(payload.as_bytes()).unwrap_err();
     assert!(matches!(error, DataForSeoSearchError::ReplyField { field, .. } if field == expected));
 }
 
@@ -794,7 +794,7 @@ fn dataforseo_reply_rejects_a_member_of_the_wrong_type(
 fn dataforseo_reply_rejects_a_reply_over_the_bound() {
     let oversized = vec![b' '; REPLY_MAX_BYTES + 1];
     assert!(matches!(
-        decode_dataforse_search(&oversized),
+        decode_dataforseo_search(&oversized),
         Err(DataForSeoSearchError::ReplyTooLarge { .. })
     ));
 }
@@ -803,12 +803,12 @@ fn dataforseo_reply_rejects_a_reply_over_the_bound() {
 fn dataforseo_reply_accepts_a_reply_at_the_bound() {
     let mut at_bound = vec![b' '; REPLY_MAX_BYTES];
     at_bound[..2].copy_from_slice(b"{}");
-    let response = decode_dataforse_search(&at_bound).unwrap();
+    let response = decode_dataforseo_search(&at_bound).unwrap();
     assert!(response.results.is_empty());
 }
 
 #[rstest]
 fn replays_the_dataforseo_corpus(#[files("fuzz/corpus/dataforseo_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    drop(decode_dataforse_search(&bytes));
+    drop(decode_dataforseo_search(&bytes));
 }
