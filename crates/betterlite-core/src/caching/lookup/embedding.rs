@@ -4,12 +4,12 @@ use async_trait::async_trait;
 use betterlite_cache::embedding_merge::cached::{
     CacheHitServices, CachedLookup, CompleteHit, process_cached_embeddings,
 };
-use betterlite_cache::embedding_merge::response::{CachedEmbeddingResponse, Embedding};
-use betterlite_cache::embedding_merge::usage::Usage;
+use betterlite_cache::embedding_merge::response::CachedEmbeddingResponse;
 use betterlite_cache::handler::embedding::input_items;
 use betterlite_cache::replay::{ReplayConversions, Replayed, ReplayedBy};
 use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::embedding::{CachedEmbedding, EmbeddingPayload};
+use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::logging_success::types::SuccessResult;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
@@ -26,7 +26,7 @@ use crate::caching::hit_callbacks::job::CacheHitSuccessJob;
 use super::async_lookup::AsyncLookup;
 use super::error::{HitError, LookupError};
 use super::hit::{HitLogging, HitPass, HitTimes, log_hit_async, resolve_provider};
-use super::json::{embedding_entries_cache_value, kwargs_json};
+use super::json::kwargs_json;
 use super::response::LookupResponse;
 use super::services::ResponseTokens;
 
@@ -42,31 +42,17 @@ where
     Conv: ReplayConversions + Sync,
 {
     if pass.services.cache_type == LiteLlmCacheType::S3 {
-        let raw = embedding_entries_cache_value(&entries)
-            .map_err(|source| LookupError::Render { source })?;
+        let raw =
+            serde_json::to_value(&entries).map_err(|source| LookupError::Render { source })?;
+        let raw: CacheValue =
+            serde_json::from_value(raw).map_err(|source| LookupError::Render { source })?;
         return Ok(AsyncLookup {
-            response: Some(LookupResponse {
-                cached_result: Some(Replayed::Unchanged(raw)),
-                ..LookupResponse::default()
-            }),
+            response: Some(LookupResponse::cached(Replayed::Unchanged(raw))),
             logging: Some(logging),
         });
     }
-    merge_cached_embeddings(pass, &entries, logging).await
-}
-
-async fn merge_cached_embeddings<L, C, Conv>(
-    pass: &mut HitPass<'_, L, C, Conv>,
-    entries: &[Option<CachedEmbedding>],
-    logging: HitLogging,
-) -> Result<AsyncLookup<ReplayedBy<Conv>>, LookupError>
-where
-    L: LoggerSink,
-    C: ConsoleSink,
-    Conv: ReplayConversions + Sync,
-{
     let lookup = CachedLookup {
-        cached_result: entries,
+        cached_result: &entries,
         kwargs: &mut pass.handler.request_kwargs,
         model: &pass.request.model,
         start_time: pass.request.start_time.with_timezone(&Utc),
@@ -80,18 +66,22 @@ where
     };
     let outcome = process_cached_embeddings(lookup, None, &services).await?;
     let uncached = input_items(&pass.handler.request_kwargs)?;
-    let returned = services.take_logging()?;
+    let returned = {
+        let mut held = services
+            .logging
+            .lock()
+            .map_err(|_poison| HitError::Poisoned)?;
+        held.take()
+    };
     Ok(AsyncLookup {
-        response: Some(LookupResponse {
-            final_embedding_response: outcome.response,
-            all_embeddings_cached: outcome.all_elements_cached,
-            embedding_uncached_input: Some(uncached),
-            ..LookupResponse::default()
-        }),
+        response: Some(LookupResponse::merged(
+            outcome.response,
+            outcome.all_elements_cached,
+            uncached,
+        )),
         logging: returned,
     })
 }
-
 // What B4303's cached embedding merge needs from the gateway, holding the hit's logging object until the merge finishes
 pub struct EmbeddingHitServices<'svc> {
     pub worker: &'svc LoggingWorker<CacheHitSuccessJob>,
@@ -102,16 +92,10 @@ pub struct EmbeddingHitServices<'svc> {
 }
 
 impl EmbeddingHitServices<'_> {
-    // None when a complete hit already queued the callback job with the logging state
-    pub fn take_logging(&self) -> Result<Option<HitLogging>, HitError> {
-        let mut logging = self.logging.lock().map_err(|_poison| HitError::Poisoned)?;
-        Ok(logging.take())
-    }
-
     fn complete_hit(&self, logging: HitLogging, hit: &CompleteHit<'_>) -> Result<(), HitError> {
         let provider = resolve_provider(self.resolution, hit.model, hit.kwargs)?;
         let kwargs = kwargs_json(hit.kwargs);
-        let response = embedding_response_json(hit.response);
+        let response = embedding_json(hit.response);
         let context = CacheHitContext {
             model: &provider.model,
             custom_llm_provider: Some(provider.provider.as_str()),
@@ -141,14 +125,35 @@ impl CacheHitServices for EmbeddingHitServices<'_> {
     }
 
     fn log_complete_hit(&self, hit: &CompleteHit<'_>) -> Result<(), HitError> {
-        let Some(logging) = self.take_logging()? else {
+        let mut held = self.logging.lock().map_err(|_poison| HitError::Poisoned)?;
+        let Some(logging) = held.take() else {
             return Ok(());
         };
         self.complete_hit(logging, hit)
     }
 }
-
-fn embedding_response_json(response: &CachedEmbeddingResponse) -> Json {
+// The merged response as LiteLLM's EmbeddingResponse dict, which the hit's callbacks log
+fn embedding_json(response: &CachedEmbeddingResponse) -> Json {
+    let data = response
+        .data
+        .iter()
+        .map(|slot| match slot {
+            None => Json::Null,
+            Some(item) => Json::Object(IndexMap::from([
+                (
+                    "embedding".to_owned(),
+                    match &item.embedding {
+                        EmbeddingPayload::Vector(values) => {
+                            Json::List(values.iter().cloned().map(Json::Number).collect())
+                        }
+                        EmbeddingPayload::Text(text) => Json::Text(text.clone()),
+                    },
+                ),
+                ("index".to_owned(), Json::Number(Number::from(item.index))),
+                ("object".to_owned(), Json::Text("embedding".to_owned())),
+            ])),
+        })
+        .collect();
     Json::Object(IndexMap::from([
         (
             "model".to_owned(),
@@ -157,13 +162,33 @@ fn embedding_response_json(response: &CachedEmbeddingResponse) -> Json {
                 .as_ref()
                 .map_or(Json::Null, |model| Json::Text(model.clone())),
         ),
-        (
-            "data".to_owned(),
-            Json::List(response.data.iter().map(embedding_json).collect()),
-        ),
+        ("data".to_owned(), Json::List(data)),
         (
             "usage".to_owned(),
-            response.usage.as_ref().map_or(Json::Null, usage_json),
+            match &response.usage {
+                None => Json::Null,
+                Some(usage) => Json::Object(IndexMap::from([
+                    (
+                        "prompt_tokens".to_owned(),
+                        Json::Number(Number::from(usage.prompt_tokens)),
+                    ),
+                    (
+                        "completion_tokens".to_owned(),
+                        Json::Number(Number::from(usage.completion_tokens)),
+                    ),
+                    (
+                        "total_tokens".to_owned(),
+                        Json::Number(Number::from(usage.total_tokens)),
+                    ),
+                    (
+                        "prompt_tokens_details".to_owned(),
+                        usage
+                            .prompt_tokens_details
+                            .as_ref()
+                            .map_or(Json::Null, |details| Json::Object(details.clone())),
+                    ),
+                ])),
+            },
         ),
         (
             "hidden_params".to_owned(),
@@ -175,50 +200,6 @@ fn embedding_response_json(response: &CachedEmbeddingResponse) -> Json {
                 .response_headers
                 .as_ref()
                 .map_or(Json::Null, |headers| Json::Object(headers.clone())),
-        ),
-    ]))
-}
-
-fn embedding_json(slot: &Option<Embedding>) -> Json {
-    let Some(item) = slot else {
-        return Json::Null;
-    };
-    Json::Object(IndexMap::from([
-        ("embedding".to_owned(), payload_json(&item.embedding)),
-        ("index".to_owned(), Json::Number(Number::from(item.index))),
-        ("object".to_owned(), Json::Text("embedding".to_owned())),
-    ]))
-}
-
-fn payload_json(payload: &EmbeddingPayload) -> Json {
-    match payload {
-        EmbeddingPayload::Vector(values) => {
-            Json::List(values.iter().cloned().map(Json::Number).collect())
-        }
-        EmbeddingPayload::Text(text) => Json::Text(text.clone()),
-    }
-}
-
-fn usage_json(usage: &Usage) -> Json {
-    Json::Object(IndexMap::from([
-        (
-            "prompt_tokens".to_owned(),
-            Json::Number(Number::from(usage.prompt_tokens)),
-        ),
-        (
-            "completion_tokens".to_owned(),
-            Json::Number(Number::from(usage.completion_tokens)),
-        ),
-        (
-            "total_tokens".to_owned(),
-            Json::Number(Number::from(usage.total_tokens)),
-        ),
-        (
-            "prompt_tokens_details".to_owned(),
-            usage
-                .prompt_tokens_details
-                .as_ref()
-                .map_or(Json::Null, |details| Json::Object(details.clone())),
         ),
     ]))
 }

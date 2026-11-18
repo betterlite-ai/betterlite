@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_cache::cache_key::value::KeyValue;
 use betterlite_cache::replay::Replayed;
+use betterlite_cache::types::cache_type::LiteLlmCacheType;
 use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_cache::types::embedding::EMBEDDING_CACHE_FORMAT_VERSION;
 use betterlite_context::local_ttl_cache::CacheValue;
@@ -9,7 +10,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use super::support::{
     Fixture, ReadKind, Tokens, cached_chat, cached_detail, cached_json, chat_kwargs, computed_key,
     embedding_key, embedding_kwargs, embedding_lookup, handler_named, hit_field, lookup,
-    perf_clock, s3_services, services, stored_embedding, worker,
+    perf_clock, services, stored_embedding, worker,
 };
 use crate::caching::hit_callbacks::context::CACHING_DETAILS;
 use crate::caching::lookup::async_lookup::async_get_cache;
@@ -346,13 +347,14 @@ async fn an_s3_partial_embedding_hit_returns_the_stored_entries() {
     let resolution = fixture.resolution.context();
     let tokens = Tokens::default();
     let worker = worker();
-    let services = s3_services(
+    let mut services = services(
         Some(&source),
         &resolution,
         &worker,
         &tokens,
         perf_clock(&[Duration::ZERO, Duration::ZERO]),
     );
+    services.cache_type = LiteLlmCacheType::S3;
     let outcome = async_get_cache(
         &mut handler,
         embedding_lookup(request_kwargs),

@@ -121,6 +121,8 @@ async fn a_sync_hit_records_the_provider_prefixed_model_without_a_duration() {
     let snapshot = &snapshots[0];
     assert_eq!(snapshot.model, "openai/gpt-4o");
     assert_eq!(snapshot.custom_llm_provider.as_deref(), Some("openai"));
+    // the sync path updates the environment after converting, so the converted result is the one recorded
+    assert_eq!(snapshot.original_response, Json::Bool(true));
     assert_eq!(
         snapshot.litellm_params.get("acompletion"),
         Some(&Json::Bool(false))
@@ -266,16 +268,18 @@ fn the_hit_kind_sets_the_async_and_embedding_flags() {
         .expect("the hit record builds");
     assert_eq!(record.provider.model, MODEL);
     assert_eq!(record.provider.provider, "openai");
-    let async_hit = record.context(MODEL, Some("preset-key"), HitKind::AsyncResponse);
+    let cached = &record.cached_result;
+    let async_hit = record.context(MODEL, Some("preset-key"), HitKind::AsyncResponse, cached);
     assert!(async_hit.is_async);
     assert!(!async_hit.is_embedding);
     assert_eq!(async_hit.cache_duration_ms, Some(12.5));
     assert_eq!(async_hit.custom_llm_provider, Some("openai"));
     assert_eq!(async_hit.preset_cache_key, Some("preset-key"));
-    let embedding = record.context(MODEL, None, HitKind::AsyncEmbedding);
+    assert_eq!(async_hit.cached_result, cached);
+    let embedding = record.context(MODEL, None, HitKind::AsyncEmbedding, cached);
     assert!(embedding.is_async);
     assert!(embedding.is_embedding);
-    let sync_hit = record.context(MODEL, None, HitKind::SyncResponse);
+    let sync_hit = record.context(MODEL, None, HitKind::SyncResponse, cached);
     assert!(!sync_hit.is_async);
     assert!(!sync_hit.is_embedding);
 }
@@ -314,7 +318,7 @@ fn a_null_provider_field_names_no_provider() {
 
 #[test]
 fn the_async_hit_writes_the_parent_span_back_as_a_traceparent() {
-    let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9d02b7-01";
     let mut request: KeyObject = chat_kwargs();
     request.insert(
         "metadata".to_owned(),

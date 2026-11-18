@@ -15,7 +15,6 @@ use super::error::LookupError;
 use super::hit::{
     HitKind, HitLogging, HitPass, HitResponse, HitTimes, hit_cache_key, hit_record, log_hit_sync,
 };
-use super::json::embedding_entries_cache_value;
 use super::request::{CacheLookup, replay_request};
 use super::response::LookupResponse;
 use super::services::LookupServices;
@@ -62,26 +61,20 @@ where
     };
     match retrieval {
         Retrieval::Miss => Ok(LookupResponse::default()),
-        Retrieval::Embeddings(entries) => Ok(LookupResponse {
-            cached_result: Some(Replayed::Unchanged(
-                embedding_entries_cache_value(&entries)
-                    .map_err(|source| LookupError::Render { source })?,
-            )),
-            ..LookupResponse::default()
-        }),
+        Retrieval::Embeddings(entries) => {
+            let raw =
+                serde_json::to_value(&entries).map_err(|source| LookupError::Render { source })?;
+            let raw: CacheValue =
+                serde_json::from_value(raw).map_err(|source| LookupError::Render { source })?;
+            Ok(LookupResponse::cached(Replayed::Unchanged(raw)))
+        }
         // a cached error keeps its detail instead of being converted into a response
-        Retrieval::Hit(value) if has_detail(&value) => Ok(LookupResponse {
-            cached_result: Some(Replayed::Unchanged(value)),
-            ..LookupResponse::default()
-        }),
+        Retrieval::Hit(value) if matches!(&value, CacheValue::Object(fields) if fields.contains_key("detail")) => {
+            Ok(LookupResponse::cached(Replayed::Unchanged(value)))
+        }
         Retrieval::Hit(value) => sync_hit(&mut pass, value, logging),
     }
 }
-
-fn has_detail(value: &CacheValue) -> bool {
-    matches!(value, CacheValue::Object(fields) if fields.contains_key("detail"))
-}
-
 fn sync_hit<L, C, Conv>(
     pass: &mut HitPass<'_, L, C, Conv>,
     value: CacheValue,
@@ -109,8 +102,10 @@ where
         pass.conversions,
     )?;
     let model = format!("{}/{}", record.provider.provider, record.provider.model);
+    // LiteLLM converts the sync hit before it updates the logging environment, so the recorded result is the converted one
+    let converted = replayed.success_result();
     // the sync read never fills the handler's preset key, so the environment only reads the request's litellm_params
-    let hit = record.context(&model, None, HitKind::SyncResponse);
+    let hit = record.context(&model, None, HitKind::SyncResponse, converted.response());
     let times = HitTimes {
         start: Some(pass.request.start_time),
         end: end_time,
@@ -122,8 +117,5 @@ where
     }
     let cache_key = hit_cache_key(pass.handler, pass.services.cache)?;
     replayed.stamp_cache_key(cache_key.as_deref());
-    Ok(LookupResponse {
-        cached_result: Some(replayed),
-        ..LookupResponse::default()
-    })
+    Ok(LookupResponse::cached(replayed))
 }

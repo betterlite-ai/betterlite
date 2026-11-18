@@ -146,13 +146,10 @@ pub(super) fn chat_kwargs() -> KeyObject {
 }
 
 pub(super) fn embedding_kwargs(inputs: &[&str]) -> KeyObject {
-    kwargs(&[
-        ("model", text(EMBEDDING_MODEL)),
-        (
-            "input",
-            KeyValue::Array(inputs.iter().map(|value| text(value)).collect()),
-        ),
-    ])
+    let mut request = kwargs(&[("model", text(EMBEDDING_MODEL))]);
+    let values = inputs.iter().map(|value| text(value)).collect();
+    request.insert("input".to_owned(), KeyValue::Array(values));
+    request
 }
 
 pub(super) fn cached_chat() -> CacheValue {
@@ -167,10 +164,13 @@ pub(super) fn cached_chat() -> CacheValue {
 }
 
 pub(super) fn cached_detail() -> CacheValue {
-    CacheValue::Object(BTreeMap::from([(
+    let mut fields = BTreeMap::new();
+    fields.insert(
         "detail".to_owned(),
         CacheValue::Text("the deployment is gone".to_owned()),
-    )]))
+    );
+    fields.insert("code".to_owned(), CacheValue::Integer(404));
+    CacheValue::Object(fields)
 }
 
 pub(super) fn stored_embedding(
@@ -246,19 +246,13 @@ pub(super) enum ReadKind {
     Async,
 }
 
+#[derive(Default)]
 pub(super) struct RecordingBackend {
     stored: Mutex<BTreeMap<String, CacheValue>>,
     reads: Mutex<Vec<ReadKind>>,
 }
 
 impl RecordingBackend {
-    pub(super) fn new() -> Self {
-        Self {
-            stored: Mutex::new(BTreeMap::new()),
-            reads: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(super) fn seed(&self, key: &str, value: CacheValue) {
         self.stored
             .lock()
@@ -273,14 +267,11 @@ impl RecordingBackend {
             .clone()
     }
 
-    fn record(&self, kind: ReadKind) {
+    fn read(&self, key: &str, kind: ReadKind) -> Option<CacheValue> {
         self.reads
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(kind);
-    }
-
-    fn read(&self, key: &str) -> Option<CacheValue> {
         self.stored
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -296,8 +287,7 @@ impl EnvelopeBackend for RecordingBackend {
         key: &str,
         _lookup: &mut EnvelopeLookup,
     ) -> CacheResult<Option<CacheValue>> {
-        self.record(ReadKind::Sync);
-        Ok(self.read(key))
+        Ok(self.read(key, ReadKind::Sync))
     }
 
     fn set_cache(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
@@ -310,18 +300,17 @@ impl EnvelopeBackend for RecordingBackend {
         key: &str,
         _lookup: &mut EnvelopeLookup,
     ) -> CacheResult<Option<CacheValue>> {
-        self.record(ReadKind::Async);
-        Ok(self.read(key))
+        tokio::task::yield_now().await;
+        Ok(self.read(key, ReadKind::Async))
     }
 
-    async fn async_set_cache(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
-        self.seed(key, value);
-        Ok(())
+    async fn async_set_cache(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
+        tokio::task::yield_now().await;
+        self.set_cache(key, value, ttl)
     }
 
-    async fn batch_cache_write(&self, key: &str, value: CacheValue, _ttl: Ttl) -> CacheResult<()> {
-        self.seed(key, value);
-        Ok(())
+    async fn batch_cache_write(&self, key: &str, value: CacheValue, ttl: Ttl) -> CacheResult<()> {
+        self.async_set_cache(key, value, ttl).await
     }
 }
 
@@ -380,17 +369,6 @@ pub(super) struct ResolutionFixture {
 }
 
 impl ResolutionFixture {
-    pub(super) fn new() -> Self {
-        let catalog = ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
-            .expect("the catalog parses");
-        Self {
-            catalog,
-            known: BTreeSet::from([MODEL.to_owned(), EMBEDDING_MODEL.to_owned()]),
-            custom: BTreeSet::new(),
-            environment: BTreeMap::new(),
-        }
-    }
-
     pub(super) fn context(&self) -> ResolutionContext<'_> {
         ResolutionContext {
             catalog: &self.catalog,
@@ -520,8 +498,7 @@ impl CallbackLogger for FakeLogger {
     }
 
     async fn async_log_success_event(&self, _event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
-        self.calls.record("async");
-        Ok(())
+        Ok(self.calls.record("async"))
     }
 }
 
@@ -664,16 +641,22 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        let backend = Arc::new(RecordingBackend::new());
+        let backend = Arc::new(RecordingBackend::default());
         let cache = cache(Arc::clone(&backend));
         Self {
             backend,
             cache,
-            resolution: ResolutionFixture::new(),
+            resolution: ResolutionFixture {
+                catalog: ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject)
+                    .expect("the catalog parses"),
+                known: BTreeSet::from([MODEL.to_owned(), EMBEDDING_MODEL.to_owned()]),
+                custom: BTreeSet::new(),
+                environment: BTreeMap::new(),
+            },
             calls: Arc::new(Calls::default()),
             snapshots: Arc::new(Mutex::new(Vec::new())),
             counter: Arc::new(RecordingCounter::default()),
-            conversions: FakeConversions::new(),
+            conversions: FakeConversions::default(),
         }
     }
 
@@ -759,7 +742,7 @@ impl HitResponse for Model {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(super) struct Recorded {
     pub(super) kinds: Vec<ResponseKind>,
     pub(super) wraps: Vec<Wrap>,
@@ -779,22 +762,12 @@ pub(super) struct Metadata {
     pub(super) elapsed: Duration,
 }
 
+#[derive(Default)]
 pub(super) struct FakeConversions {
     recorded: Arc<Mutex<Recorded>>,
 }
 
 impl FakeConversions {
-    pub(super) fn new() -> Self {
-        Self {
-            recorded: Arc::new(Mutex::new(Recorded {
-                kinds: Vec::new(),
-                wraps: Vec::new(),
-                metadata: Vec::new(),
-                messages_probes: 0,
-            })),
-        }
-    }
-
     pub(super) fn recorded(&self) -> Recorded {
         self.recorded
             .lock()
@@ -915,15 +888,9 @@ pub(super) fn lookup(call_type: CachingSupportedCallType, kwargs: KeyObject) -> 
 
 // The same lookup for an embedding call, whose request names the embedding model
 pub(super) fn embedding_lookup(kwargs: KeyObject) -> CacheLookup {
-    CacheLookup {
-        model: EMBEDDING_MODEL.to_owned(),
-        call_type: CachingSupportedCallType::Aembedding,
-        start_time: time("2024-01-01T00:00:00+00:00"),
-        kwargs,
-        args: Vec::new(),
-        converted_stream_requested: false,
-        agentic_loop_depth: 0,
-    }
+    let mut request = lookup(CachingSupportedCallType::Aembedding, kwargs);
+    request.model = EMBEDDING_MODEL.to_owned();
+    request
 }
 
 pub(super) fn cached_json(value: &CacheValue) -> Json {
@@ -948,19 +915,5 @@ pub(super) fn duration_field(details: &Json) -> Option<f64> {
     match details_fields(details).get("cache_duration_ms") {
         Some(Json::Number(number)) => number.as_f64(),
         None | Some(_) => None,
-    }
-}
-
-// The S3 cache has no bulk embedding writes, so a partial hit there returns the stored entries untouched
-pub(super) fn s3_services<'svc>(
-    cache: Option<&'svc CacheSource<'svc, SilentLogger, SilentConsole>>,
-    resolution: &'svc ResolutionContext<'svc>,
-    worker: &'svc LoggingWorker<CacheHitSuccessJob>,
-    tokens: &'svc dyn ResponseTokens,
-    perf: PerfClock,
-) -> LookupServices<'svc, SilentLogger, SilentConsole> {
-    LookupServices {
-        cache_type: LiteLlmCacheType::S3,
-        ..services(cache, resolution, worker, tokens, perf)
     }
 }

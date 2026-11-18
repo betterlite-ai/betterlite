@@ -18,7 +18,6 @@ pub enum TokenCountError {
         source: Box<dyn Error + Send + Sync>,
     },
 }
-
 #[derive(Debug, Error)]
 pub enum HitError {
     #[error("the {field} value must be {expected}")]

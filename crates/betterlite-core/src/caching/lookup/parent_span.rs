@@ -1,7 +1,6 @@
 use betterlite_cache::cache_key::value::{KeyObject, KeyValue};
 use betterlite_logging::otel::model::metadata::wire::callback::{Params, ProxyRequest};
 use betterlite_logging::otel::model::metadata::wire::payload::Metadata;
-use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::plumbing::context::parent_span::{
     PARENT_SPAN_KEY, ParentSpanSources, parent_otel_span_from_kwargs,
 };
@@ -16,7 +15,10 @@ const LITELLM_PARAMS_KEY: &str = "litellm_params";
 pub fn add_parent_otel_span(kwargs: &mut KeyObject) {
     let metadata = metadata_with_parent(kwargs.get(METADATA_KEY));
     let params = params_with_parent(kwargs.get(LITELLM_PARAMS_KEY));
-    let span = kwargs.get(PARENT_SPAN_KEY).and_then(otel_value);
+    let span = kwargs.get(PARENT_SPAN_KEY).and_then(|value| {
+        let encoded = serde_json::to_value(key_value_json(value)).ok()?;
+        serde_json::from_value(encoded).ok()
+    });
     let found = parent_otel_span_from_kwargs(&ParentSpanSources {
         metadata: metadata.as_ref(),
         params: params.as_ref(),
@@ -37,7 +39,9 @@ fn metadata_with_parent(value: Option<&KeyValue>) -> Option<Metadata> {
     let KeyValue::Object(fields) = value? else {
         return None;
     };
-    let span = otel_value(fields.get(PARENT_SPAN_KEY)?)?;
+    let field = fields.get(PARENT_SPAN_KEY)?;
+    let encoded = serde_json::to_value(key_value_json(field)).ok()?;
+    let span = serde_json::from_value(encoded).ok()?;
     let mut metadata = Metadata::default();
     metadata.extra.insert(PARENT_SPAN_KEY.to_owned(), span);
     Some(metadata)
@@ -54,8 +58,4 @@ fn params_with_parent(value: Option<&KeyValue>) -> Option<Params> {
         litellm_session_id: None,
         proxy_server_request: ProxyRequest { headers: None },
     })
-}
-
-fn otel_value(value: &KeyValue) -> Option<OtelModelValue> {
-    serde_json::from_value(serde_json::to_value(key_value_json(value)).ok()?).ok()
 }

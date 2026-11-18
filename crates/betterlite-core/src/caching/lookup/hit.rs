@@ -11,7 +11,7 @@ use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::logging_state::correlation::CorrelationContext;
 // ast-grep-ignore: no-long-names
-use betterlite_logging::logging_success::dispatch::handle_sync_success_callbacks_for_async_calls;
+use betterlite_logging::logging_success::dispatch::handle_sync_success_callbacks_for_async_calls as dispatch_sync_callbacks;
 use betterlite_logging::logging_success::handler::SuccessHandler;
 use betterlite_logging::logging_success::types::{SuccessRequest, SuccessResult};
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
@@ -44,14 +44,12 @@ pub struct HitTimes {
     pub start: Option<DateTime<FixedOffset>>,
     pub end: DateTime<FixedOffset>,
 }
-
 // The two perf_counter reads around the cache retrieval, which the logged cache duration is measured from
 #[derive(Clone, Copy, Debug)]
 pub struct CacheTiming {
     pub started: Duration,
     pub finished: Duration,
 }
-
 // Which entry point records the hit, and the two flags its environment update reads
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HitKind {
@@ -125,6 +123,7 @@ impl HitRecord {
         model: &'record str,
         preset_cache_key: Option<&'record str>,
         kind: HitKind,
+        cached_result: &'record Json,
     ) -> CacheHitContext<'record> {
         CacheHitContext {
             model,
@@ -132,7 +131,7 @@ impl HitRecord {
             preset_cache_key,
             cache_duration_ms: self.cache_duration_ms,
             kwargs: &self.kwargs,
-            cached_result: &self.cached_result,
+            cached_result,
             is_async: kind != HitKind::SyncResponse,
             is_embedding: kind == HitKind::AsyncEmbedding,
         }
@@ -230,7 +229,7 @@ pub fn log_hit_sync(
         standard_logging_object: None,
         guardrail_snapshot: None,
     };
-    handle_sync_success_callbacks_for_async_calls(
+    dispatch_sync_callbacks(
         &success,
         &mut logging.state,
         &mut logging.correlation,
