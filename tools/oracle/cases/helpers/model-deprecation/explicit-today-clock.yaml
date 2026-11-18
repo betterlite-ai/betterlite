@@ -1,0 +1,13 @@
+kind: helper
+name: model-deprecation-explicit-today-clock
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    today: "2026-06-01"
+    model_cost: {}
+    deployments:
+      - model_name: alpha
+        litellm_params: {model: openai/raw}
+        model_info: {deprecation_date: "2026-05-20"}
+env: {}
+compare: {ignore: []}

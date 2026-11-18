@@ -1,0 +1,13 @@
+kind: helper
+name: model-deprecation-imminent-only-alert
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: alpha
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: azure}
+      - model_name: beta
+        model_info: {deprecation_date: "2026-05-11"}
+env: {}
+compare: {ignore: []}

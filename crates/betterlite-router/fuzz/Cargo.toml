@@ -68,3 +68,10 @@ path = "fuzz_targets/route_index.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tier_data"
+path = "fuzz_targets/tier_data.rs"
+test = false
+doc = false
+bench = false
