@@ -106,11 +106,25 @@ async fn async_rejection_carries_the_retry_header() {
         RpmLimitExceeded::CATEGORY,
         RateLimitCategory::VendorRateLimit
     );
+    // a deployment without num_retries still sends the retry header and leaves num_retries empty
+    let no_retries = DeploymentFacts {
+        model_id: "dep-b",
+        model: "gpt-4o",
+        limits: rpm(Some(0)),
+        num_retries: None,
+    };
+    let absent = harness
+        .accounting
+        .pre_call(&no_retries, at(0))
+        .await
+        .expect_err("an rpm of zero rejects the request");
+    assert_eq!(absent.retry_after_seconds, Some(60));
+    assert_eq!(absent.num_retries, None);
 }
 
 async fn success_zero_tokens_still_writes_the_key() {
     let harness = Harness::new();
-    let event = success_event(payload(
+    let mut event = success_event(payload(
         Some("gpt"),
         Some("dep-a"),
         Some("openai/gpt-4o-mini"),
@@ -125,6 +139,8 @@ async fn success_zero_tokens_still_writes_the_key() {
         Some(TPM_KEY)
     );
     assert_eq!(harness.local(TPM_KEY), Some(0));
+    // a success event without a call type is not a batch retrieve, so the sync callback counts it
+    event.call_type = None;
     assert_eq!(
         harness.accounting.log_success_now(&event, at(0)).as_deref(),
         Some(TPM_KEY)
