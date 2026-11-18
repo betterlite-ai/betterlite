@@ -498,8 +498,14 @@ fn caller_beta_wins() {
 }
 
 fn vertex_request_has_no_betas() {
+    // the same probes and messages that add betas without the flag add none for a vertex request
+    let mut optional_params = probe_options();
+    optional_params.insert("is_vertex_request".to_owned(), Json::Bool(true));
     let vertex = execute(&Setup {
-        optional_params: IndexMap::from([("is_vertex_request".to_owned(), Json::Bool(true))]),
+        messages: Some(
+            serde_json::from_str(include_str!("fixtures/feature-messages.json")).unwrap(),
+        ),
+        optional_params,
         ..Setup::chat()
     });
     assert!(vertex.posted_headers[0].get("anthropic-beta").is_none());
