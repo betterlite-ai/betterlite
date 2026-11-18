@@ -1,0 +1,20 @@
+task: B8134
+deviations:
+  - what: The Job and pods run the betterlite image and the Job command is betterlite-db-admin migrate, not python migrations/run.py in a separate migrations image.
+    why: B1232 owns the native migration command.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/migrations-job.yaml#L50-L60
+  - what: The config file is mounted at /etc/betterlite/config.yaml instead of /app/config/config.yaml.
+    why: The native image has no /app folder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L58-L62
+  - what: The metrics and collector containers run betterlite subcommands from values instead of python -m litellm.proxy.prometheus_metrics_server and litellm.proxy.collector.
+    why: No Python in the image; the commands are overridable values because no task builds those entrypoints yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L125-L175
+  - what: The migrations Job container is named db-migrations where LiteLLM names it prisma-migrations.
+    why: The container runs betterlite-db-admin, not the prisma CLI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/migrations-job.yaml#L58-L60
+  - what: >-
+      The gateway and backend pod templates omit the annotations map when config.create is false and no podAnnotations
+      are set; LiteLLM renders an empty annotations map there.
+    why: the API server treats an absent map and an empty one the same, and no rendered field depends on the key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/helm/litellm/templates/gateway/deployment.yaml#L22-L28
+kept_bugs: []
