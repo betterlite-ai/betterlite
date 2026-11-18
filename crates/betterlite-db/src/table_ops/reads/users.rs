@@ -11,7 +11,7 @@ use crate::table_ops::{DATA_RETRY, OperationCallType, TableOps, TableOpsError};
 const UNIQUE_SQL: &str = "SELECT row_to_json(x)::text FROM (SELECT u.*, COALESCE((SELECT json_agg(m.*) FROM \"LiteLLM_OrganizationMembership\" m WHERE m.\"user_id\" = u.\"user_id\"), '[]'::json) AS organization_memberships FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = $1) x";
 const DUE_FOR_RESET_SQL: &str = "SELECT row_to_json(u)::text FROM \"LiteLLM_UserTable\" u WHERE u.\"budget_duration\" IS NOT NULL AND (u.\"budget_reset_at\" IS NULL OR u.\"budget_reset_at\" < $1) LIMIT $2";
 const USERS_BY_IDS_SQL: &str = "SELECT row_to_json(u)::text FROM \"LiteLLM_UserTable\" u WHERE u.\"user_id\" = ANY($1::text[])";
-const ALL_SQL: &str = "SELECT u.*, json_agg(v.key_alias) AS key_aliases FROM \"LiteLLM_UserTable\" u LEFT JOIN \"LiteLLM_VerificationToken\" v ON u.user_id = v.user_id GROUP BY u.user_id ORDER BY u.spend DESC LIMIT $1 OFFSET $2";
+const ALL_SQL: &str = "SELECT row_to_json(x)::text FROM (SELECT u.*, json_agg(v.key_alias) AS key_aliases FROM \"LiteLLM_UserTable\" u LEFT JOIN \"LiteLLM_VerificationToken\" v ON u.user_id = v.user_id GROUP BY u.user_id ORDER BY u.spend DESC LIMIT $1 OFFSET $2) x";
 
 #[derive(Debug, Clone, Copy)]
 pub enum UserFilter<'value> {
