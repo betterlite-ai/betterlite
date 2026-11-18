@@ -3,10 +3,11 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::loader::EnvironmentLookup as _;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
@@ -721,7 +722,7 @@ fn dataforseo_reply_rejects_null_items() {
 fn dataforseo_reply_ignores_a_null_result_of_a_failed_task() {
     let payload = br#"{"tasks": [{"status_code": 40100, "result": null}]}"#;
     assert_eq!(
-        reply_value(std::str::from_utf8(payload).unwrap()),
+        reply_value(from_utf8(payload).unwrap()),
         expected_reply(r#"{"results": [], "object": "search"}"#)
     );
 }
