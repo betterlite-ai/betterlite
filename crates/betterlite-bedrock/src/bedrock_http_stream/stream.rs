@@ -110,6 +110,8 @@ impl FramedStream<'_> {
                     self.read_failure = Some(failure);
                 }
                 Poll::Ready(None) => {
+                    // The body is spent here whether or not the tally reports it, so mark it first.
+                    self.framing.done = true;
                     self.framing
                         .finish(&mut self.decoder, &mut self.pending, self.redactor);
                 }
@@ -192,7 +194,6 @@ impl Framing {
         let state = self.state(decoder);
         state.finish(pending, redactor);
         self.collect(state);
-        self.done = true;
     }
 
     fn state<'state>(&mut self, decoder: &'state mut InvokeStreamDecoder) -> FramedState<'state> {
