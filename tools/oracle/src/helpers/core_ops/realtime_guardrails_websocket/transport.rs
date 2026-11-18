@@ -29,7 +29,7 @@ pub(crate) struct WireLog {
 }
 
 impl WireLog {
-    pub(crate) fn new(failures: Vec<usize>) -> Self {
+    pub(crate) const fn new(failures: Vec<usize>) -> Self {
         Self {
             attempts: 0,
             failures,
@@ -119,6 +119,7 @@ impl ClientWebSocket for ScriptedClient {
     async fn close(&mut self, _code: u16, _reason: Option<&str>) -> Result<(), WebSocketError> {
         let mut log = self.log.locked();
         log.closes = log.closes.saturating_add(1);
+        drop(log);
         Ok(())
     }
 }

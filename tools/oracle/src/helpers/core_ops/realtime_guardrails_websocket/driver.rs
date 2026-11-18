@@ -1,3 +1,8 @@
+mod step;
+
+use std::future::Future;
+use std::mem::take;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,9 +18,6 @@ use betterlite_core::api::realtime_guardrails::callback::{
     GuardrailInput, GuardrailInputType, RealtimeGuardrail,
 };
 use betterlite_core::api::realtime_guardrails::error::RealtimeGuardrailsError;
-use betterlite_core::api::realtime_guardrails::runner::{
-    RealtimeGuardrails, RunRealtimeGuardrails,
-};
 use betterlite_core::api::realtime_session_state::{ConnectionSetup, RealtimeStreaming};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -23,12 +25,14 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio::time::timeout;
 
-use super::input::{Input, RunDocument};
+use super::input::Input;
 use super::scripted::{Records, ScriptedError, ScriptedGuardrail};
 use super::transport::{Locked as _, ScriptedBackend, ScriptedClient, Timeline, WireLog};
 use super::{Failure, failure};
 
 const DEADLINE: Duration = Duration::from_secs(120);
+
+type DriverFuture<'driver, T> = Pin<Box<dyn Future<Output = Result<T, Failure>> + 'driver>>;
 
 // The runner only needs a provider type to be parameterized by; guardrail frames go through the default send path
 struct ScriptedConfig;
@@ -73,30 +77,6 @@ struct Session {
     timeline: Timeline,
 }
 
-impl Session {
-    // One scripted runner call; the runner borrows the state and is dropped before the frames are read
-    async fn run(
-        &mut self,
-        callbacks: &[&dyn RealtimeGuardrail<Error = ScriptedError>],
-        document: &RunDocument,
-    ) -> Result<bool, RealtimeGuardrailsError<ScriptedError, ScriptedError>> {
-        let mut runner: RealtimeGuardrails<'_, ScriptedConfig, ScriptedError> =
-            RealtimeGuardrails {
-                state: &mut self.state,
-                provider: None,
-                guardrails: callbacks,
-            };
-        runner
-            .run_realtime_guardrails(
-                &document.transcript,
-                document.item_id.as_deref(),
-                document.pre_block_backend_message.as_deref(),
-                document.event_hooks.as_deref(),
-            )
-            .await
-    }
-}
-
 pub(crate) fn drive(input: &Input) -> HelperResult {
     input
         .check()
@@ -115,25 +95,34 @@ pub(crate) fn drive(input: &Input) -> HelperResult {
         })?
 }
 
-async fn observe(input: &Input) -> Result<Value, Failure> {
-    let mut session = open_session(input);
-    let records = Arc::new(Mutex::new(Records::default()));
-    let guardrails: Vec<ScriptedGuardrail> = input
-        .guardrails
-        .iter()
-        .map(|document| ScriptedGuardrail::new(document, &records))
-        .collect();
-    let callbacks = callback_list(input, &guardrails)?;
-    let runs = run_all(&mut session, &callbacks, &input.runs).await;
-    let (checks, applied) = recorded_records(&records);
-    Ok(report(&session, &runs, &checks, &applied))
+fn observe(input: &Input) -> DriverFuture<'_, Value> {
+    Box::pin(async move {
+        let mut session = open_session(input);
+        let records = Arc::new(Mutex::new(Records::default()));
+        let guardrails: Vec<ScriptedGuardrail> = input
+            .guardrails
+            .iter()
+            .map(|document| ScriptedGuardrail::new(document, &records))
+            .collect();
+        let callbacks = callback_list(input, &guardrails)?;
+        let mut runs = Vec::new();
+        for document in &input.runs {
+            let (frame, failed) = session.step(&callbacks, document).await;
+            runs.push(frame);
+            if failed {
+                break;
+            }
+        }
+        let (checks, applied) = recorded_records(&records);
+        Ok(report(&session, &runs, &checks, &applied))
+    })
 }
 
 fn callback_list<'run>(
     input: &Input,
     guardrails: &'run [ScriptedGuardrail],
 ) -> Result<Vec<&'run dyn RealtimeGuardrail<Error = ScriptedError>>, Failure> {
-    let mut callbacks = Vec::new();
+    let mut callbacks: Vec<&'run dyn RealtimeGuardrail<Error = ScriptedError>> = Vec::new();
     for index in &input.callbacks {
         let guardrail = guardrails.get(*index).ok_or_else(|| {
             failure(
@@ -144,52 +133,6 @@ fn callback_list<'run>(
         callbacks.push(guardrail);
     }
     Ok(callbacks)
-}
-
-async fn run_all(
-    session: &mut Session,
-    callbacks: &[&dyn RealtimeGuardrail<Error = ScriptedError>],
-    runs: &[RunDocument],
-) -> Vec<Value> {
-    let mut outcomes = Vec::new();
-    for document in runs {
-        let outcome = session.run(callbacks, document).await;
-        let (backend, client) = frame_log(session);
-        match outcome {
-            Ok(blocked) => {
-                outcomes.push(outcome_frame(
-                    Some(blocked),
-                    &Value::Null,
-                    &backend,
-                    &client,
-                ));
-            }
-            Err(error) => {
-                outcomes.push(outcome_frame(
-                    None,
-                    &Value::from(label(&error)),
-                    &backend,
-                    &client,
-                ));
-                break;
-            }
-        }
-    }
-    outcomes
-}
-
-fn outcome_frame(
-    blocked: Option<bool>,
-    error: &Value,
-    backend: &[Value],
-    client: &[Value],
-) -> Value {
-    json!({
-        "blocked": blocked,
-        "error": error,
-        "backend": backend,
-        "client": client,
-    })
 }
 
 fn report(session: &Session, runs: &[Value], checks: &[Value], applied: &[Value]) -> Value {
@@ -243,8 +186,8 @@ fn open_session(input: &Input) -> Session {
 
 // The frames each socket accepted since the last run, recorded the way the Python helper records them
 fn frame_log(session: &Session) -> (Vec<Value>, Vec<Value>) {
-    let backend = std::mem::take(&mut session.backend.locked().sent);
-    let client = std::mem::take(&mut session.client.locked().sent);
+    let backend = take(&mut session.backend.locked().sent);
+    let client = take(&mut session.client.locked().sent);
     let backend_frames: Vec<Value> = backend.iter().map(|text| recorded_frame(text)).collect();
     let client_frames: Vec<Value> = client.iter().map(|text| recorded_frame(text)).collect();
     (backend_frames, client_frames)
@@ -258,6 +201,7 @@ fn recorded_records(records: &Arc<Mutex<Records>>) -> (Vec<Value>, Vec<Value>) {
         .map(|(event, data)| json!({"event": event, "data": data}))
         .collect();
     let applied = records.applied.iter().map(recorded_input).collect();
+    drop(records);
     (checks, applied)
 }
 
