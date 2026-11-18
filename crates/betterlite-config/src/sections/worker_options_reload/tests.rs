@@ -232,8 +232,8 @@ fn resolve_log_level_rejects_a_name_python_logging_lacks() {
 fn the_log_level_error_keeps_the_parsers_cause() {
     let error = resolve_log_level("verbose").expect_err("verbose is not a logging level");
     assert_eq!(
-        error.source().map(ToString::to_string).as_deref(),
-        Some("LITELLM_LOG is not a known log level")
+        error.source().map(ToString::to_string),
+        Some("LITELLM_LOG is not a known log level".to_owned())
     );
 }
 
