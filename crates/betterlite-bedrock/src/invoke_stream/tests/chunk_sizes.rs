@@ -5,7 +5,7 @@ use http::HeaderMap;
 
 use crate::agentcore_stream::transport::{Chunks, StreamHead};
 use crate::bedrock_http_stream::PendingOpen;
-use crate::invoke_stream::chunking::apply;
+use crate::invoke_stream::chunking::{MAX_CHUNK_SIZE, apply};
 
 use super::support::block_on;
 
@@ -17,6 +17,7 @@ fn chunk_size_cases() {
     keeps_transport_reads_without_a_size();
     keeps_transport_reads_for_zero();
     keeps_a_full_read_and_drops_the_tail_at_a_failure();
+    caps_a_huge_size();
 }
 
 fn pending(reads: Vec<Result<Vec<u8>, HttpError>>) -> PendingOpen {
@@ -99,4 +100,16 @@ fn keeps_a_full_read_and_drops_the_tail_at_a_failure() {
     .head
     .chunks;
     assert_eq!(read(partial), vec![Ok(b"abcd".to_vec()), timeout]);
+}
+
+// A chunk size past the cap yields the body in capped pieces instead of buffering all of it first.
+fn caps_a_huge_size() {
+    let body = vec![b'x'; MAX_CHUNK_SIZE + 1];
+    let requested = (MAX_CHUNK_SIZE as u64) * 4;
+    let pieces = read(apply(pending(vec![Ok(body)]), Some(requested)).head.chunks);
+    let lengths: Vec<usize> = pieces
+        .iter()
+        .map(|piece| piece.as_ref().map_or(0, Vec::len))
+        .collect();
+    assert_eq!(lengths, vec![MAX_CHUNK_SIZE, 1]);
 }
