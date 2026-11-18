@@ -262,6 +262,17 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::ignore_case_and_unicode_flags("(?iu:a)", 3)]
 #[case::duplicate_ascii_flag("(?aa:a)", 3)]
 #[case::two_local_flag_groups("(?a:a)(?u:b)", 5)]
+#[case::dot(".", 2)]
+#[case::literal_hash("a#b", 4)]
+#[case::verbose_alternation("(?x)a|bc", 8)]
+#[case::verbose_non_ascii_space("(?x)a\u{00A0}b", 4)]
+#[case::scoped_verbose_group_then_hash("(?x:a)#b", 5)]
+#[case::global_flag_then_space("(?i) a", 3)]
+#[case::scoped_verbose_space("(?x:a b)", 4)]
+#[case::caret_after_negation("[^^]", 2)]
+#[case::negated_dash_run("[^--a]", 4)]
+#[case::invalid_brace_content("a{2x}", 6)]
+#[case::invalid_bounded_content("a{2,3,4}", 9)]
 fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] expected: u64) {
     assert_eq!(pattern_work(pattern), Ok(expected));
 }
@@ -348,6 +359,10 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::verbose_star_after_space("(?x)a *", PatternProblem::Repeat)]
 #[case::verbose_lazy_star_after_space("(?x)a *?", PatternProblem::Repeat)]
 #[case::verbose_lazy_plus("(?x)a+?", PatternProblem::Repeat)]
+#[case::repeated_word_boundary("\\b{2}", PatternProblem::Syntax)]
+#[case::repeated_assertion("^*", PatternProblem::Syntax)]
+#[case::flag_after_escape("\\d(?i)a", PatternProblem::Syntax)]
+#[case::trailing_flag_dash("(?i-:a)", PatternProblem::Syntax)]
 fn rejected_patterns_report_the_pinned_problem(
     #[case] pattern: &str,
     #[case] expected: PatternProblem,
@@ -391,6 +406,27 @@ fn declared_grammar_deviations_keep_their_measured_values(
     #[case] expected: Result<u64, PatternProblem>,
 ) {
     assert_eq!(pattern_work(pattern), expected);
+}
+
+#[test]
+fn pattern_problems_carry_the_pinned_messages() {
+    assert_eq!(PatternProblem::Syntax.message(), "is not a valid regex");
+    assert_eq!(
+        PatternProblem::Unsupported.message(),
+        "contains an unsupported regex construct"
+    );
+    assert_eq!(
+        PatternProblem::Repeat.message(),
+        "requires a single character or class repeated at most 64 times; use {n,m} instead of *, + or {n,}"
+    );
+    assert_eq!(
+        PatternProblem::Depth.message(),
+        "nests deeper than 16 levels"
+    );
+    assert_eq!(
+        PatternProblem::Work.message(),
+        "exceeds the per-pattern regex work budget"
+    );
 }
 
 #[test]

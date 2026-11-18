@@ -4,9 +4,9 @@ use super::Walker;
 impl Walker<'_> {
     pub(super) fn group(&mut self) -> Result<(), PatternProblem> {
         let mut probe = self.input.clone();
-        if probe.next() != Some('?') {
+        let Some('?') = probe.next() else {
             return self.open_group();
-        }
+        };
         match probe.next() {
             Some('#') => self.comment_group(),
             Some('<') => match probe.next() {
