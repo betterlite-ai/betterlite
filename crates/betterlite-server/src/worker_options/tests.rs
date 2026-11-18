@@ -357,6 +357,20 @@ fn reload_options_follow_a_symlinked_watch_directory_to_its_target() {
 
 #[cfg(unix)]
 #[test]
+fn reload_options_surface_a_watch_directory_that_cannot_be_resolved() {
+    use std::os::unix::fs::symlink;
+
+    let (_directory, root) = temporary_directory();
+    let link = root.join("loop");
+    symlink(&link, &link).expect("symlink");
+    assert!(matches!(
+        resolve_reload_options(&link, None),
+        Err(ReloadError::Resolve { .. })
+    ));
+}
+
+#[cfg(unix)]
+#[test]
 fn reload_options_reject_a_config_name_that_is_not_utf8() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
@@ -366,6 +380,16 @@ fn reload_options_reject_a_config_name_that_is_not_utf8() {
     fs::write(&config, "{}").expect("config file");
     assert!(matches!(
         resolve_reload_options(&root, Some(config.as_path())),
+        Err(ReloadError::FileName { .. })
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn reload_options_reject_a_config_path_without_a_file_name() {
+    let (_directory, root) = temporary_directory();
+    assert!(matches!(
+        resolve_reload_options(&root, Some(Path::new("/"))),
         Err(ReloadError::FileName { .. })
     ));
 }
