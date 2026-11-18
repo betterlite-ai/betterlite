@@ -12,6 +12,7 @@ use axum::http::{Request, StatusCode, header};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_config::types::Config;
+use betterlite_core::cost::prepare::BillingTokenCounter;
 use betterlite_models::catalog::CatalogError;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
@@ -21,6 +22,7 @@ use tower::ServiceExt as _;
 use crate::cost_estimate_route::decode::decode_cost_estimate_request;
 use crate::cost_estimate_route::deployments::DeploymentSet;
 use crate::cost_estimate_route::error::EstimateError;
+use crate::cost_estimate_route::estimate::NeverCounts;
 use crate::cost_estimate_route::estimate::estimate;
 use crate::cost_estimate_route::testing;
 use crate::proxy_request_contracts::cost_estimate::{CostEstimateRequest, CostEstimateResponse};
@@ -212,6 +214,16 @@ fn decode_rejects_a_negative_count() {
     assert!(matches!(error, EstimateError::Request(ref issues)
         if issues[0].kind == "greater_than_equal"
             && issues[0].msg == "Input should be greater than or equal to 0"));
+}
+
+#[test]
+fn decode_rejects_a_negative_cache_count() {
+    let error = decode_cost_estimate_request(
+        br#"{"model":"m","input_tokens":10,"output_tokens":5,"cache_read_input_tokens":-1}"#,
+    )
+    .unwrap_err();
+    assert!(matches!(error, EstimateError::Request(ref issues)
+        if issues[0].kind == "greater_than_equal" && issues[0].loc == ["body", "cache_read_input_tokens"]));
 }
 
 #[test]
@@ -530,6 +542,16 @@ fn prefers_the_declared_base_model() {
 }
 
 #[test]
+fn falls_through_an_empty_base_model() {
+    let response = helper_quote(
+        r#"[{"model_name":"empty-base","litellm_params":{"model":"openai/gpt-4o-mini"},
+            "model_info":{"base_model":""}}]"#,
+        r#"{"model":"empty-base","input_tokens":1024,"output_tokens":256}"#,
+    );
+    assert_eq!(response.cost_per_request.0, dec("0.0003072"));
+}
+
+#[test]
 fn answers_from_the_first_listed_deployment() {
     let response = helper_quote(
         r#"[{"model_name":"shared","litellm_params":{"model":"gpt-4o-mini"}},
@@ -574,6 +596,21 @@ fn rejects_a_record_that_parses_as_no_deployment() {
     let rows: Vec<JsonObject> =
         serde_json::from_str(r#"[{"model_name":"x","model_info":{"id":5}}]"#).unwrap();
     assert!(DeploymentSet::from_records(&rows).is_err());
+}
+
+#[test]
+fn rejects_a_priority_group_shadowed_by_a_model_name() {
+    let owned = config(
+        "general_settings:\n  master_key: oracle-master\nmodel_list:\n  - model_name: shared-name\n    litellm_params: {model: gpt-4o-mini}\nrouter_settings:\n  routing_groups:\n    - group_name: shared-name\n      models: [gpt-4o-mini]\n      routing_strategy: priority\n      model_priorities: {gpt-4o-mini: 1}\n",
+    );
+    assert!(DeploymentSet::from_config(&owned).is_err());
+}
+
+#[tokio::test]
+async fn never_counts_tokens_of_its_own() {
+    let counter = NeverCounts;
+    assert_eq!(counter.count_messages("gpt-4o", &[]).await.unwrap(), 0);
+    assert_eq!(counter.count_text("gpt-4o", "hello").await.unwrap(), 0);
 }
 
 #[tokio::test]

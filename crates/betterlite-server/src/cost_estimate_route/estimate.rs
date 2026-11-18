@@ -155,7 +155,7 @@ fn count_value(count: i64) -> Json {
 }
 
 // completion_cost is never asked to count anything: the quote's only tokens are the ones the request declares.
-struct NeverCounts;
+pub(super) struct NeverCounts;
 
 #[async_trait]
 impl BillingTokenCounter for NeverCounts {
