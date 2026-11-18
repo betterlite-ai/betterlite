@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use super::Probe;
 
 impl Probe {
-    pub fn record(&self, value: Value) {
+    fn record(&self, value: Value) {
         self.records
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

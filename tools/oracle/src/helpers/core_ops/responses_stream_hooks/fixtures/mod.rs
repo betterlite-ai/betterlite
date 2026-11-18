@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use betterlite_core::api::responses_stream_hooks::ResponsesStreamHooks;
+use betterlite_core::api::responses_stream_hooks::ports::ChunkDeploymentHook;
 use betterlite_core::api::responses_stream_primitives::state::{
     ResponsesStreamBaseState, ResponsesStreamHiddenParams,
 };
@@ -66,14 +67,11 @@ pub(crate) fn context<'context>(
             .row
             .actions
             .iter()
-            .map(|action| {
-                let hook: Arc<
-                    dyn betterlite_core::api::responses_stream_hooks::ports::ChunkDeploymentHook,
-                > = Arc::new(ports::Chunk {
+            .map(|action| -> Arc<dyn ChunkDeploymentHook> {
+                Arc::new(ports::Chunk {
                     action: action.clone(),
                     probe: Arc::clone(probe),
-                });
-                hook
+                })
             })
             .collect(),
         clock: Arc::<Probe>::clone(probe),

@@ -1,6 +1,7 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
+use tokio::runtime::Builder;
 
 mod fixtures;
 mod runner;
@@ -30,9 +31,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()?;
+        let runtime = Builder::new_current_thread().enable_all().build()?;
         let rows = input
             .rows
             .iter()
