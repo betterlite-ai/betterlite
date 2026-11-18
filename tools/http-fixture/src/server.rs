@@ -9,6 +9,10 @@ use crate::request::{Request, read_request};
 
 pub const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
+#[expect(
+    clippy::partial_pub_fields,
+    reason = "the tests reach the bound address as a field, and a getter for it is a one-line function the hooks refuse; the listener and the request handle stay private"
+)]
 pub struct Serving {
     pub address: SocketAddr,
     listener: Arc<TcpListener>,
