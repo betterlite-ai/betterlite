@@ -150,7 +150,9 @@ fn tagged_object(value: &Json, variants: &[(&str, Shape)]) -> Json {
                     .map(|item| tagged_object(item, variants))
                     .collect(),
             ),
-            other => other.clone(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+                value.clone()
+            }
         };
     };
     let Some(Json::Text(kind)) = entries.get("type") else {
