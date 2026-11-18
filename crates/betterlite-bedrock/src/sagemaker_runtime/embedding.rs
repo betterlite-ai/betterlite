@@ -67,7 +67,6 @@ where
             region: &region,
             base_url: None,
             stream: false,
-            append_path_to_base: false,
         });
         let signed = sign_aws_json_post(JsonPost {
             service_name: SERVICE,

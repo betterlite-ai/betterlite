@@ -1,0 +1,11 @@
+kind: helper
+name: sagemaker-runtime-signed-call-header-inputs
+call:
+  b5840:
+    function: component_header
+    model_id: null
+    headers:
+      Content-Type: application/json
+      X-Amzn-SageMaker-Inference-Component: supplied
+env: {}
+compare: {ignore: []}

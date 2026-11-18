@@ -1,0 +1,11 @@
+kind: helper
+name: sagemaker-runtime-chat-base-url-replacement
+call:
+  b5840:
+    function: url
+    model: endpoint-chat
+    region: eu-west-1
+    base_url: https://runtime.example/custom
+    stream: true
+env: {}
+compare: {ignore: []}

@@ -30,27 +30,13 @@ pub struct EndpointRequest<'request> {
     pub region: &'request str,
     pub base_url: Option<&'request str>,
     pub stream: bool,
-    pub append_path_to_base: bool,
 }
 
 // _prepare_request and get_complete_url: the runtime endpoint, which sagemaker_base_url replaces whole
 #[must_use]
 pub fn runtime_url(request: &EndpointRequest<'_>) -> String {
     if let Some(base) = request.base_url {
-        if !request.append_path_to_base {
-            return base.to_owned();
-        }
-        let path = if request.stream {
-            RESPONSE_STREAM
-        } else {
-            INVOCATIONS
-        };
-        let suffix = format!("/{path}");
-        return if base.ends_with(&suffix) {
-            base.to_owned()
-        } else {
-            format!("{}{}", base.trim_end_matches('/'), suffix)
-        };
+        return base.to_owned();
     }
     let suffix = get_aws_partition(Some(request.region)).dns_suffix;
     let path = if request.stream {

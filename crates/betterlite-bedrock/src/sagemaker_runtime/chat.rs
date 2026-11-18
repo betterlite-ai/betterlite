@@ -51,7 +51,6 @@ where
             region: &region,
             base_url,
             stream: call.stream,
-            append_path_to_base: true,
         });
         let body = chat_request::transform_request(&TransformInput {
             model: call.model,
