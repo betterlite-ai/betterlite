@@ -3,7 +3,7 @@ use betterlite_core::api::request_form::values::{FormFields, FormValue, UploadFi
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
-use serde_json::{Map, Value};
+use serde_json::{Map, Number, Value};
 
 pub(super) fn file_data_value(data: &FileData) -> HelperResult {
     let mut entries = Map::new();
@@ -88,7 +88,7 @@ fn upload_value(upload: &UploadFile) -> HelperResult {
         "size".to_owned(),
         upload
             .size
-            .map_or(Value::Null, |size| Value::Number(size.into())),
+            .map_or(Value::Null, |size| Value::Number(Number::from(size))),
     );
     Ok(Value::Object(entry))
 }

@@ -100,7 +100,11 @@ pub fn check_file_size_under_limit(
         router,
         limits,
     } = check;
-    let size_mb = mebibytes(file_size.unwrap_or(0)).ok_or(UploadSizeError::Unrepresentable)?;
+    let size_mb = file_size
+        .unwrap_or(0)
+        .to_f64()
+        .ok_or(UploadSizeError::Unrepresentable)?
+        / MEBIBYTE;
     record_size(&mut *request_data, size_mb)?;
     let (configured, lookup_failed) = model_limit(router, router_names, &*request_data)?;
     enforce(size_mb, configured, limits)?;
@@ -169,9 +173,5 @@ fn cap_mebibytes(limits: &ApiLimits) -> Result<f64, UploadSizeError> {
         .max_json_bytes
         .to_u64()
         .ok_or(UploadSizeError::Unrepresentable)?;
-    mebibytes(cap).ok_or(UploadSizeError::Unrepresentable)
-}
-
-fn mebibytes(bytes: u64) -> Option<f64> {
-    Some(bytes.to_f64()? / MEBIBYTE)
+    Ok(cap.to_f64().ok_or(UploadSizeError::Unrepresentable)? / MEBIBYTE)
 }

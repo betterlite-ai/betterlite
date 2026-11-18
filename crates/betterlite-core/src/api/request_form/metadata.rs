@@ -25,6 +25,7 @@ pub struct MetadataWarning {
 }
 
 // extract_nested_form_metadata: litellm_metadata[a][b] nests, a scalar parent drops a deeper path with a warning, and a later scalar leaf overwrites an earlier subtree silently.
+#[must_use]
 pub fn extract_nested_form_metadata(
     fields: &FormFields,
     prefix: &str,

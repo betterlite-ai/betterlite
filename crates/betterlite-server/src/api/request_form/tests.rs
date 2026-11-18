@@ -421,8 +421,9 @@ fn a_payload_that_starts_with_the_boundary_is_not_a_delimiter() {
 #[test]
 fn form_part_count_is_bounded() {
     let limits = ApiLimits {
+        max_json_bytes: 16 * 1024 * 1024,
+        max_event_bytes: 1024 * 1024,
         max_items: 1,
-        ..ApiLimits::default()
     };
     assert_eq!(
         decode_request_form(b"a=1&b=2", URLENCODED, &limits),

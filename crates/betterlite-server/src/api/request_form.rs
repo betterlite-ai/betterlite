@@ -61,7 +61,7 @@ pub fn get_request_body(
     }
 }
 
-/// Decode URL encoded and multipart form bytes while retaining repeated field order.
+// decode_request_form: URL encoded and multipart bytes decode into ordered parts before any field policy runs
 pub fn decode_request_form(
     bytes: &[u8],
     content_type: &[u8],

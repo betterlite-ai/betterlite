@@ -916,7 +916,8 @@ fn a_smaller_api_limit_caps_earlier() {
     let mut data = request_with_model();
     let limits = ApiLimits {
         max_json_bytes: 1_048_576,
-        ..ApiLimits::default()
+        max_event_bytes: 1024 * 1024,
+        max_items: 64 * 1024,
     };
     let error = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
