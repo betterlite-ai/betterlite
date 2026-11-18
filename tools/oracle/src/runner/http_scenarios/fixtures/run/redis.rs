@@ -45,9 +45,10 @@ impl RedisServer {
     }
 
     pub(super) fn polling(&self) -> RedisPolling {
-        let addr = self.addr;
-        let entries = Arc::clone(&self.entries);
-        RedisPolling { addr, entries }
+        RedisPolling {
+            addr: self.addr,
+            entries: Arc::clone(&self.entries),
+        }
     }
 }
 
