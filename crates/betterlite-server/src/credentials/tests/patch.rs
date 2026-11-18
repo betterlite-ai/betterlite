@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};
@@ -7,7 +9,8 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use super::super::registry::CredentialRegistry;
 use super::support::{
     ErrorReply, FakeLookup, FakeStore, StoreFailure, SuccessReply, USER_ID, call, credential,
-    decrypt_text, patch_body, payload, principal, registry, sealed, state, text,
+    credential_values, decrypt_text, patch_body, payload, principal, registry, row, sealed, state,
+    text,
 };
 
 fn seeded() -> (Arc<CredentialRegistry>, Arc<FakeStore>) {
@@ -19,14 +22,14 @@ fn seeded() -> (Arc<CredentialRegistry>, Arc<FakeStore>) {
             ("api_base", text("https://a")),
         ],
     )]);
-    let store = FakeStore::seeded(vec![credential(
+    let store = FakeStore::seeded(vec![row(&credential(
         "openai",
         &[("team", text("ml"))],
         &[
             ("api_key", text(&sealed("old-secret"))),
             ("api_base", text("https://a")),
         ],
-    )]);
+    ))]);
     (registry, store)
 }
 
@@ -61,7 +64,7 @@ async fn patch_encrypts_only_the_supplied_values() {
         writes[0].1.fields.base.credential_info
     );
     assert_eq!(
-        payload(&[
+        credential_values(&[
             ("api_key", text("new-secret")),
             ("api_base", text("https://a")),
         ]),
@@ -72,11 +75,11 @@ async fn patch_encrypts_only_the_supplied_values() {
 #[tokio::test]
 async fn patch_of_a_database_only_credential_does_not_warm_memory() {
     let registry = registry(Vec::new());
-    let store = FakeStore::seeded(vec![credential(
+    let store = FakeStore::seeded(vec![row(&credential(
         "openai",
         &[],
         &[("api_key", text(&sealed("old-secret")))],
-    )]);
+    ))]);
     let reply = call(
         state(&registry, Some(&store), None),
         Method::PATCH,
@@ -109,7 +112,7 @@ async fn patch_rename_writes_under_the_original_name() {
     assert_eq!("renamed", renamed.fields.base.credential_name);
     assert!(registry.find_credential("openai").is_none());
     assert_eq!(
-        payload(&[
+        credential_values(&[
             ("api_key", text("new-secret")),
             ("api_base", text("https://a")),
         ]),
@@ -153,7 +156,7 @@ async fn a_failed_update_is_a_500_and_leaves_memory_alone() {
     assert_eq!("500", body.error.code);
     assert!(store.updated().is_empty());
     assert_eq!(
-        payload(&[
+        credential_values(&[
             ("api_key", text("old-secret")),
             ("api_base", text("https://a")),
         ]),
@@ -185,7 +188,7 @@ async fn patch_without_a_database_is_a_500() {
     );
     assert_eq!("500", body.error.code);
     assert_eq!(
-        payload(&[
+        credential_values(&[
             ("api_key", text("old-secret")),
             ("api_base", text("https://a")),
         ]),
@@ -215,8 +218,6 @@ async fn patch_drops_the_old_info_in_the_store_but_not_in_memory() {
         registry
             .find_credential("openai")
             .expect("the credential stays")
-            .fields
-            .base
             .credential_info
     );
 }
@@ -231,14 +232,14 @@ async fn patch_keeps_the_old_info_that_carries_the_literal_key() {
         ],
         &[("api_key", text("old-secret"))],
     )]);
-    let store = FakeStore::seeded(vec![credential(
+    let store = FakeStore::seeded(vec![row(&credential(
         "openai",
         &[
             ("credential_info", JsonData::Bool(true)),
             ("team", text("ml")),
         ],
         &[("api_key", text(&sealed("old-secret")))],
-    )]);
+    ))]);
     let reply = call(
         state(&registry, Some(&store), None),
         Method::PATCH,
@@ -277,7 +278,7 @@ async fn patch_from_a_model_id_takes_the_deployment_values() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     assert_eq!(
-        payload(&[
+        credential_values(&[
             ("api_key", text("sk-from-deployment")),
             ("api_base", text("https://a")),
         ]),
@@ -307,7 +308,7 @@ async fn patch_with_an_unknown_model_is_a_404() {
     assert_eq!("Model not found", body.error.message);
     assert!(store.updated().is_empty());
     assert_eq!(
-        payload(&[
+        credential_values(&[
             ("api_key", text("old-secret")),
             ("api_base", text("https://a")),
         ]),
@@ -333,4 +334,24 @@ async fn patch_for_a_model_without_a_router_is_a_500() {
         body.error.message
     );
     assert!(store.updated().is_empty());
+}
+
+#[tokio::test]
+async fn an_empty_patch_model_uses_explicit_values() {
+    let (registry, store) = seeded();
+    let reply = call(
+        state(&registry, Some(&store), None),
+        Method::PATCH,
+        "/credentials/openai",
+        r#"{"credential_name":"","credential_info":{},"credential_values":{"api_key":"new-secret"},"model_id":""}"#,
+        None,
+    ).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(
+        registry.get_credential_values("openai"),
+        credential_values(&[
+            ("api_key", text("new-secret")),
+            ("api_base", text("https://a")),
+        ])
+    );
 }

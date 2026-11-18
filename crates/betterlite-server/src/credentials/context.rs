@@ -1,5 +1,5 @@
 use axum::extract::Extension;
-use betterlite_db::identity_rows::Payload;
+use betterlite_config::credentials::CredentialValues;
 
 use crate::auth::auth_identity::AuthContext;
 
@@ -15,11 +15,11 @@ pub(super) fn actor(identity: Option<&Extension<AuthContext>>) -> Option<String>
 pub(super) fn deployment_values(
     lookup: Option<&dyn DeploymentLookup>,
     model_id: &str,
-) -> Result<Payload, CredentialError> {
-    let Some(lookup) = lookup else {
+) -> Result<CredentialValues, CredentialError> {
+    let Some(source) = lookup else {
         return Err(CredentialError::DeploymentRouterMissing);
     };
-    let deployment = lookup
+    let deployment = source
         .deployment_credentials(model_id)
         .ok_or(CredentialError::ModelNotFound)?;
     Ok(deployment.credential_values)

@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use betterlite_db::resource_repository::credential::CredentialError as RepositoryError;
-use betterlite_db::resource_rows::credential::CredentialItem;
+use betterlite_db::resource_rows::credential::CredentialItem as CredentialRow;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -18,19 +18,19 @@ pub enum CredentialStoreError {
 pub trait CredentialStore: Send + Sync {
     async fn create(
         &self,
-        credential: &CredentialItem,
+        credential: &CredentialRow,
         actor: Option<&str>,
     ) -> Result<(), CredentialStoreError>;
 
     async fn find_by_name(
         &self,
         credential_name: &str,
-    ) -> Result<Option<CredentialItem>, CredentialStoreError>;
+    ) -> Result<Option<CredentialRow>, CredentialStoreError>;
 
     async fn update(
         &self,
         credential_name: &str,
-        credential: &CredentialItem,
+        credential: &CredentialRow,
         actor: Option<&str>,
     ) -> Result<(), CredentialStoreError>;
 

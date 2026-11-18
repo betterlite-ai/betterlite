@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::credentials::{CredentialItem, CredentialValues};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
-use betterlite_db::resource_rows::credential::{
-    CredentialBase, CredentialItem, CredentialItemFields,
-};
+
+use super::wire::CredentialView;
 
 const SENSITIVE_KEYWORDS: [&str; 8] = [
     "authorization",
@@ -20,51 +20,67 @@ const MAX_MASK_DEPTH: usize = 20;
 const UNMASKED_LENGTH: usize = 4;
 const VISIBLE_CHARS: usize = 2;
 const ASTERISKS: usize = 4;
+// past the depth limit the container itself is replaced, so a deep value can never answer plaintext
+const REDACTED: &str = "*****";
 
-pub(crate) fn masked_credential(credential: CredentialItem) -> CredentialItem {
-    CredentialItem {
-        fields: CredentialItemFields {
-            base: CredentialBase {
-                credential_name: credential.fields.base.credential_name,
-                credential_info: credential.fields.base.credential_info,
-            },
-            credential_values: Payload(mask_fields(&credential.fields.credential_values.0, 0)),
-        },
+pub(super) fn masked_credential(credential: &CredentialItem) -> CredentialView {
+    CredentialView {
+        credential_name: credential.credential_name.clone(),
+        credential_values: masked_values(&credential.credential_values),
+        credential_info: credential.credential_info.clone(),
     }
 }
 
-pub(crate) fn mask_fields(
-    fields: &BTreeMap<String, JsonData>,
-    depth: usize,
-) -> BTreeMap<String, JsonData> {
-    fields
-        .iter()
-        .map(|(key, value)| {
-            let lowered = key.to_lowercase();
-            let sensitive = SENSITIVE_KEYWORDS
-                .iter()
-                .any(|keyword| lowered.contains(keyword));
-            let masked = if sensitive {
-                mask_value(value, depth)
-            } else {
-                value.clone()
-            };
-            (key.clone(), masked)
-        })
-        .collect()
+pub(crate) fn masked_values(values: &CredentialValues) -> Payload {
+    let plain = Payload(
+        values
+            .0
+            .iter()
+            .map(|(key, value)| (key.clone(), value.expose_json()))
+            .collect(),
+    );
+    mask_object(&plain, MAX_MASK_DEPTH)
 }
 
-fn mask_value(value: &JsonData, depth: usize) -> JsonData {
+// containers_left is the number of nested objects and arrays the walk may still enter
+fn mask_object(fields: &Payload, containers_left: usize) -> Payload {
+    let mut masked = BTreeMap::new();
+    for (key, value) in &fields.0 {
+        let exposed = mask_json(value, containers_left, is_sensitive(key));
+        masked.insert(key.clone(), exposed);
+    }
+    Payload(masked)
+}
+
+fn is_sensitive(key: &str) -> bool {
+    let lowered = key.to_lowercase();
+    SENSITIVE_KEYWORDS
+        .iter()
+        .any(|keyword| lowered.contains(keyword))
+}
+
+// mask_strings covers an array under a sensitive key, where every string is part of the secret
+fn mask_json(value: &JsonData, containers_left: usize, mask_strings: bool) -> JsonData {
     match value {
-        JsonData::Object(fields) => {
-            if depth >= MAX_MASK_DEPTH {
-                value.clone()
-            } else {
-                JsonData::Object(mask_fields(fields, depth.saturating_add(1)))
+        JsonData::Object(fields) => match containers_left.checked_sub(1) {
+            Some(left) => {
+                let nested = Payload(fields.clone());
+                JsonData::Object(mask_object(&nested, left).0)
             }
-        }
-        JsonData::String(text) => JsonData::String(mask_text(text)),
-        _ => value.clone(),
+            None => JsonData::String(REDACTED.to_owned()),
+        },
+        JsonData::Array(items) => match containers_left.checked_sub(1) {
+            Some(left) => JsonData::Array(
+                items
+                    .iter()
+                    .map(|item| mask_json(item, left, mask_strings))
+                    .collect(),
+            ),
+            None => JsonData::String(REDACTED.to_owned()),
+        },
+        JsonData::String(text) if mask_strings => JsonData::String(mask_text(text)),
+        JsonData::String(text) => JsonData::String(text.clone()),
+        leaf @ (JsonData::Null | JsonData::Bool(_) | JsonData::Number(_)) => leaf.clone(),
     }
 }
 
@@ -72,7 +88,7 @@ fn mask_text(text: &str) -> String {
     let characters: Vec<char> = text.chars().collect();
     if characters.len() <= UNMASKED_LENGTH {
         // LiteLLM answers five asterisks for a value four characters or shorter
-        return "*****".to_owned();
+        return REDACTED.to_owned();
     }
     let head: String = characters.iter().take(VISIBLE_CHARS).collect();
     let tail: String = characters

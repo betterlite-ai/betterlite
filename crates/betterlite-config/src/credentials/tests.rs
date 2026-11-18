@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 
+use crate::credentials::CredentialValues;
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::credential_list::Settings;
 
@@ -19,43 +20,71 @@ fn settings(source: &str) -> Result<Settings, ConfigError> {
     .credential_list)
 }
 
+fn text(value: &str) -> JsonData {
+    JsonData::String(value.to_owned())
+}
+
+fn number(value: i64) -> JsonData {
+    JsonData::Number(serde_json::Number::from(value))
+}
+
+fn values(entries: &[(&str, JsonData)]) -> CredentialValues {
+    let fields = entries
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), value.clone()))
+        .collect();
+    CredentialValues::from(Payload(fields))
+}
+
+#[test]
+fn loads_credential_list_credential_values_compare_by_contents() {
+    let text_left = values(&[("api_key", text("sk-one"))]);
+    assert_eq!(text_left, values(&[("api_key", text("sk-one"))]));
+    assert_ne!(text_left, values(&[("api_key", text("sk-two"))]));
+    let port = number(443);
+    let other_port = number(8443);
+    let other_left = values(&[("port", port.clone())]);
+    assert_eq!(other_left, values(&[("port", port)]));
+    assert_ne!(other_left, values(&[("port", other_port)]));
+    assert_ne!(text_left, other_left);
+}
+
 #[test]
 fn loads_credential_list() {
     let configured = settings(VALID).unwrap();
     assert_eq!(configured.credentials.len(), 2);
     let openai = &configured.credentials[0];
-    assert_eq!(openai.fields.base.credential_name, "openai");
+    assert_eq!(openai.credential_name, "openai");
     assert_eq!(
-        openai.fields.credential_values.0.get("api_key"),
-        Some(&JsonData::String("sk-config".to_owned()))
+        values(&[
+            ("api_key", text("sk-config")),
+            ("organization", text("org-1"))
+        ]),
+        openai.credential_values
     );
     assert_eq!(
-        openai.fields.credential_values.0.get("organization"),
-        Some(&JsonData::String("org-1".to_owned()))
-    );
-    assert_eq!(
-        openai.fields.base.credential_info.0.get("team"),
+        openai.credential_info.0.get("team"),
         Some(&JsonData::String("ml".to_owned()))
     );
     let azure = &configured.credentials[1];
-    assert_eq!(azure.fields.base.credential_name, "azure/prod");
-    assert_eq!(azure.fields.base.credential_info, Payload(BTreeMap::new()));
+    assert_eq!(azure.credential_name, "azure/prod");
+    assert_eq!(azure.credential_info, Payload(BTreeMap::new()));
 }
 
 #[test]
-fn a_missing_credential_list_keeps_the_default() {
+fn loads_credential_list_a_missing_credential_list_keeps_the_default() {
     let configured = settings("model_list: []\n").unwrap();
     assert!(configured.credentials.is_empty());
 }
 
 #[test]
-fn a_null_credential_list_keeps_the_default() {
+fn loads_credential_list_a_null_credential_list_keeps_the_default() {
     let configured = settings("credential_list: null\n").unwrap();
     assert!(configured.credentials.is_empty());
 }
 
 #[test]
-fn an_empty_credential_list_stays_empty() {
+fn loads_credential_list_an_empty_credential_list_stays_empty() {
     let configured = settings(include_str!(
         "../../fuzz/corpus/config_yaml/credentials-empty.yaml"
     ))
@@ -64,27 +93,69 @@ fn an_empty_credential_list_stays_empty() {
 }
 
 #[test]
-fn a_credential_list_that_is_not_a_list_is_refused() {
+fn loads_credential_list_a_credential_list_that_is_not_a_list_is_refused() {
     let error = settings("credential_list: not-a-list\n")
         .unwrap_err()
         .to_string();
-    assert!(error.contains("credential_list must be a list"), "{error}");
+    assert!(error.contains("expected a sequence"), "{error}");
 }
 
 #[test]
-fn an_entry_without_values_names_its_index() {
+fn loads_credential_list_an_entry_without_values_is_refused() {
     let error = settings(include_str!(
         "../../fuzz/corpus/config_yaml/credentials-invalid.yaml"
     ))
     .unwrap_err()
     .to_string();
-    assert!(error.contains("credential_list[0]"), "{error}");
+    assert!(error.contains("credential_values"), "{error}");
 }
 
 #[test]
-fn a_non_object_entry_is_refused() {
+fn loads_credential_list_a_non_object_entry_is_refused() {
     let error = settings("credential_list:\n  - 42\n")
         .unwrap_err()
         .to_string();
-    assert!(error.contains("credential_list[0]"), "{error}");
+    assert!(error.contains("invalid type"), "{error}");
+}
+
+#[test]
+fn loads_credential_list_a_non_object_credential_value_is_refused_without_the_value() {
+    let error = settings(
+        "credential_list:\n  - credential_name: leaky\n    credential_info: {}\n    credential_values: sk-secret-leak\n",
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("credential_values"), "{error}");
+    assert!(!error.contains("sk-secret-leak"), "{error}");
+}
+
+#[test]
+fn loads_credential_list_debug_redacts_credential_values() {
+    let configured = settings(VALID).unwrap();
+    let printed = format!("{configured:?}");
+    assert!(printed.contains("REDACTED"), "{printed}");
+    assert!(!printed.contains("sk-config"), "{printed}");
+    assert!(!printed.contains("sk-azure"), "{printed}");
+}
+
+#[test]
+fn loads_credential_list_nested_values_keep_their_shape_and_hide_secrets() {
+    let original = JsonData::Object(BTreeMap::from([
+        ("token".to_owned(), text("nested-secret")),
+        (
+            "flags".to_owned(),
+            JsonData::Array(vec![JsonData::Null, JsonData::Bool(false), number(3)]),
+        ),
+    ]));
+    let protected = crate::credentials::CredentialValue::from(original.clone());
+    assert_eq!(protected.expose_json(), original);
+    let printed = format!("{protected:?}");
+    assert!(!printed.contains("nested-secret"));
+    let crate::credentials::CredentialValue::Object(fields) = protected else {
+        panic!("nested objects retain their structure");
+    };
+    assert!(matches!(
+        fields.get("token"),
+        Some(crate::credentials::CredentialValue::Text(_))
+    ));
 }

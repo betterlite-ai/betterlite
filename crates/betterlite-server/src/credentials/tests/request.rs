@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::fs;
 use std::path::PathBuf;
 
@@ -18,7 +20,10 @@ fn body_of_size(size: usize) -> Vec<u8> {
     let tail = br#""}}"#;
     let mut body = Vec::with_capacity(size);
     body.extend_from_slice(head);
-    body.resize(size - tail.len(), b'a');
+    let padding = size
+        .checked_sub(tail.len())
+        .expect("the size leaves room for the tail");
+    body.resize(padding, b'a');
     body.extend_from_slice(tail);
     assert_eq!(size, body.len());
     body
@@ -73,12 +78,12 @@ fn an_update_request_without_credential_info_is_refused() {
 }
 
 #[rstest]
-#[case(NULL_BODY)]
-#[case(ARRAY_BODY)]
-#[case(TEXT_BODY)]
+#[case::null(NULL_BODY)]
+#[case::array(ARRAY_BODY)]
+#[case::text(TEXT_BODY)]
 fn a_non_object_body_is_refused(#[case] body: &[u8]) {
-    assert!(decode_credential_request::<CreateCredentialItem>(body).is_err());
-    assert!(decode_credential_request::<UpdateCredentialItem>(body).is_err());
+    drop(decode_credential_request::<CreateCredentialItem>(body).unwrap_err());
+    drop(decode_credential_request::<UpdateCredentialItem>(body).unwrap_err());
 }
 
 #[test]
@@ -97,7 +102,7 @@ fn a_non_string_credential_value_is_refused_without_the_value() {
 #[test]
 fn a_body_at_the_size_limit_decodes() {
     let body = body_of_size(MAX_CREDENTIAL_BODY_BYTES);
-    assert!(decode_credential_request::<CreateCredentialItem>(&body).is_ok());
+    drop(decode_credential_request::<CreateCredentialItem>(&body).unwrap());
 }
 
 #[test]

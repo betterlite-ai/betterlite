@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::Arc;
 
 use axum::http::{Method, StatusCode};
@@ -5,8 +7,8 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 
 use super::super::registry::CredentialRegistry;
 use super::support::{
-    ErrorReply, FakeStore, StoreFailure, SuccessReply, call, credential, registry, sealed, state,
-    text,
+    ErrorReply, FakeStore, StoreFailure, SuccessReply, call, credential, registry, row, sealed,
+    state, text,
 };
 
 fn seeded() -> (Arc<CredentialRegistry>, Arc<FakeStore>) {
@@ -15,11 +17,11 @@ fn seeded() -> (Arc<CredentialRegistry>, Arc<FakeStore>) {
         &[],
         &[("api_key", text("sk-abcdefgh"))],
     )]);
-    let store = FakeStore::seeded(vec![credential(
+    let store = FakeStore::seeded(vec![row(&credential(
         "azure/prod",
         &[],
         &[("api_key", text(&sealed("sk-abcdefgh")))],
-    )]);
+    ))]);
     (registry, store)
 }
 

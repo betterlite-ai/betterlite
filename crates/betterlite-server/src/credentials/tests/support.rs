@@ -10,12 +10,13 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey, UserIdentity,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_config::credentials::{CredentialItem, CredentialValues};
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 use betterlite_db::resource_repository::credential::CredentialError as RepositoryError;
 use betterlite_db::resource_rows::credential::{
-    CredentialBase, CredentialItem, CredentialItemFields,
+    CredentialBase, CredentialItem as CredentialRow, CredentialItemFields,
 };
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
@@ -73,10 +74,10 @@ pub(crate) fn open_text(cipher: &DbCipher, text: &str) -> String {
     let opened = cipher
         .decrypt_value(stored, "credential_values", OPEN)
         .expect("the value opens");
-    let StoredValue::Text(opened) = opened else {
+    let StoredValue::Text(plain) = opened else {
         panic!("a string opens as text");
     };
-    opened.expose_secret().to_owned()
+    plain.expose_secret().to_owned()
 }
 
 pub(crate) fn decrypt_text(text: &str) -> String {
@@ -90,10 +91,10 @@ pub(crate) fn sealed(plaintext: &str) -> String {
             None,
         )
         .expect("the test value seals");
-    let StoredValue::Text(sealed) = sealed else {
+    let StoredValue::Text(sealed_text) = sealed else {
         panic!("a string seals as text");
     };
-    sealed.expose_secret().to_owned()
+    sealed_text.expose_secret().to_owned()
 }
 
 pub(crate) fn text(value: &str) -> JsonData {
@@ -115,18 +116,40 @@ pub(crate) fn payload(entries: &[(&str, JsonData)]) -> Payload {
     Payload(fields(entries))
 }
 
+pub(crate) fn credential_values(entries: &[(&str, JsonData)]) -> CredentialValues {
+    CredentialValues::from(payload(entries))
+}
+
+pub(crate) fn plain(values: &CredentialValues) -> Payload {
+    Payload(
+        values
+            .0
+            .iter()
+            .map(|(key, value)| (key.clone(), value.expose_json()))
+            .collect(),
+    )
+}
+
 pub(crate) fn credential(
     name: &str,
     info: &[(&str, JsonData)],
     values: &[(&str, JsonData)],
 ) -> CredentialItem {
     CredentialItem {
+        credential_name: name.to_owned(),
+        credential_info: payload(info),
+        credential_values: credential_values(values),
+    }
+}
+
+pub(crate) fn row(credential: &CredentialItem) -> CredentialRow {
+    CredentialRow {
         fields: CredentialItemFields {
             base: CredentialBase {
-                credential_name: name.to_owned(),
-                credential_info: payload(info),
+                credential_name: credential.credential_name.clone(),
+                credential_info: credential.credential_info.clone(),
             },
-            credential_values: payload(values),
+            credential_values: plain(&credential.credential_values),
         },
     }
 }
@@ -158,15 +181,15 @@ pub(crate) enum StoreFailure {
 
 #[derive(Default)]
 pub(crate) struct FakeStore {
-    rows: Mutex<BTreeMap<String, CredentialItem>>,
+    rows: Mutex<BTreeMap<String, CredentialRow>>,
     failure: Mutex<Option<StoreFailure>>,
-    created: Mutex<Vec<(CredentialItem, Option<String>)>>,
-    updated: Mutex<Vec<(String, CredentialItem, Option<String>)>>,
+    created: Mutex<Vec<(CredentialRow, Option<String>)>>,
+    updated: Mutex<Vec<(String, CredentialRow, Option<String>)>>,
     deleted: Mutex<Vec<String>>,
 }
 
 impl FakeStore {
-    pub(crate) fn seeded(credentials: Vec<CredentialItem>) -> Arc<Self> {
+    pub(crate) fn seeded(credentials: Vec<CredentialRow>) -> Arc<Self> {
         let store = Self::default();
         for credential in credentials {
             store.insert(credential);
@@ -174,7 +197,7 @@ impl FakeStore {
         Arc::new(store)
     }
 
-    pub(crate) fn insert(&self, credential: CredentialItem) {
+    pub(crate) fn insert(&self, credential: CredentialRow) {
         self.rows
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -185,7 +208,7 @@ impl FakeStore {
         *self.failure.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
     }
 
-    pub(crate) fn row(&self, credential_name: &str) -> Option<CredentialItem> {
+    pub(crate) fn row(&self, credential_name: &str) -> Option<CredentialRow> {
         self.rows
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -202,14 +225,14 @@ impl FakeStore {
             .collect()
     }
 
-    pub(crate) fn created(&self) -> Vec<(CredentialItem, Option<String>)> {
+    pub(crate) fn created(&self) -> Vec<(CredentialRow, Option<String>)> {
         self.created
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
 
-    pub(crate) fn updated(&self) -> Vec<(String, CredentialItem, Option<String>)> {
+    pub(crate) fn updated(&self) -> Vec<(String, CredentialRow, Option<String>)> {
         self.updated
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -223,17 +246,42 @@ impl FakeStore {
             .clone()
     }
 
-    fn failing(&self, wanted: StoreFailure) -> Option<CredentialStoreError> {
+    fn check(&self, wanted: StoreFailure) -> Result<(), CredentialStoreError> {
         let failure = *self.failure.lock().unwrap_or_else(PoisonError::into_inner);
         match failure {
             Some(StoreFailure::Duplicate) if wanted == StoreFailure::Create => {
-                Some(CredentialStoreError::Duplicate)
+                Err(CredentialStoreError::Duplicate)
             }
-            Some(active) if active == wanted => Some(CredentialStoreError::Repository {
+            Some(active) if active == wanted => Err(CredentialStoreError::Repository {
                 source: RepositoryError::Table(TableError::MissingRow),
             }),
-            _ => None,
+            Some(_) | None => Ok(()),
         }
+    }
+
+    fn push_created(&self, credential: &CredentialRow, actor: Option<&str>) {
+        self.created
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((credential.clone(), actor.map(str::to_owned)));
+    }
+
+    fn push_updated(&self, credential_name: &str, credential: &CredentialRow, actor: Option<&str>) {
+        let record = (
+            credential_name.to_owned(),
+            credential.clone(),
+            actor.map(str::to_owned),
+        );
+        let mut updated = self.updated.lock().unwrap_or_else(PoisonError::into_inner);
+        updated.push(record);
+    }
+
+    fn replace(&self, credential_name: &str, credential: &CredentialRow) {
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .remove(credential_name);
+        self.insert(credential.clone());
     }
 }
 
@@ -241,16 +289,15 @@ impl FakeStore {
 impl CredentialStore for FakeStore {
     async fn create(
         &self,
-        credential: &CredentialItem,
+        credential: &CredentialRow,
         actor: Option<&str>,
     ) -> Result<(), CredentialStoreError> {
-        if let Some(error) = self.failing(StoreFailure::Create) {
-            return Err(error);
+        self.check(StoreFailure::Create)?;
+        // the unique name constraint a real table carries
+        if self.row(&credential.fields.base.credential_name).is_some() {
+            return Err(CredentialStoreError::Duplicate);
         }
-        self.created
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((credential.clone(), actor.map(str::to_owned)));
+        self.push_created(credential, actor);
         self.insert(credential.clone());
         Ok(())
     }
@@ -258,43 +305,25 @@ impl CredentialStore for FakeStore {
     async fn find_by_name(
         &self,
         credential_name: &str,
-    ) -> Result<Option<CredentialItem>, CredentialStoreError> {
-        if let Some(error) = self.failing(StoreFailure::Find) {
-            return Err(error);
-        }
+    ) -> Result<Option<CredentialRow>, CredentialStoreError> {
+        self.check(StoreFailure::Find)?;
         Ok(self.row(credential_name))
     }
 
     async fn update(
         &self,
         credential_name: &str,
-        credential: &CredentialItem,
+        credential: &CredentialRow,
         actor: Option<&str>,
     ) -> Result<(), CredentialStoreError> {
-        if let Some(error) = self.failing(StoreFailure::Update) {
-            return Err(error);
-        }
-        self.updated
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((
-                credential_name.to_owned(),
-                credential.clone(),
-                actor.map(str::to_owned),
-            ));
-        let _replaced = self
-            .rows
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(credential_name);
-        self.insert(credential.clone());
+        self.check(StoreFailure::Update)?;
+        self.push_updated(credential_name, credential, actor);
+        self.replace(credential_name, credential);
         Ok(())
     }
 
     async fn delete(&self, credential_name: &str) -> Result<bool, CredentialStoreError> {
-        if let Some(error) = self.failing(StoreFailure::Delete) {
-            return Err(error);
-        }
+        self.check(StoreFailure::Delete)?;
         self.deleted
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -311,7 +340,7 @@ impl CredentialStore for FakeStore {
 pub(crate) struct FakeLookup {
     model_id: String,
     model_name: String,
-    values: Payload,
+    values: CredentialValues,
 }
 
 impl FakeLookup {
@@ -323,7 +352,7 @@ impl FakeLookup {
         Arc::new(Self {
             model_id: model_id.to_owned(),
             model_name: model_name.to_owned(),
-            values: payload(values),
+            values: credential_values(values),
         })
     }
 }
@@ -382,7 +411,10 @@ pub(crate) struct Reply {
 }
 
 impl Reply {
-    pub(crate) fn json<T: DeserializeOwned>(&self) -> T {
+    pub(crate) fn json<T>(&self) -> T
+    where
+        T: DeserializeOwned,
+    {
         serde_json::from_str(&self.body).expect("the reply body is the expected JSON")
     }
 }
@@ -394,9 +426,16 @@ pub(crate) struct SuccessReply {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct ReplyCredential {
+    pub(crate) credential_name: String,
+    pub(crate) credential_values: Payload,
+    pub(crate) credential_info: Payload,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct ListReply {
     pub(crate) success: bool,
-    pub(crate) credentials: Vec<CredentialItem>,
+    pub(crate) credentials: Vec<ReplyCredential>,
 }
 
 #[derive(Debug, Deserialize)]

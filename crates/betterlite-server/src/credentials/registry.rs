@@ -1,8 +1,6 @@
-use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError, RwLock};
 
-use betterlite_db::identity_rows::Payload;
-use betterlite_db::resource_rows::credential::CredentialItem;
+use betterlite_config::credentials::{CredentialItem, CredentialValues};
 
 #[derive(Clone, Default)]
 pub struct CredentialRegistry {
@@ -12,18 +10,19 @@ pub struct CredentialRegistry {
 impl CredentialRegistry {
     #[must_use]
     pub fn find_credential(&self, credential_name: &str) -> Option<CredentialItem> {
-        let entries = self.entries.read().unwrap_or_else(PoisonError::into_inner);
-        let found = entries
+        self.entries
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
             .iter()
-            .find(|credential| credential.fields.base.credential_name == credential_name);
-        found.cloned()
+            .find(|credential| credential.credential_name == credential_name)
+            .cloned()
     }
 
     #[must_use]
-    pub fn get_credential_values(&self, credential_name: &str) -> Payload {
+    pub fn get_credential_values(&self, credential_name: &str) -> CredentialValues {
         match self.find_credential(credential_name) {
-            Some(credential) => credential.fields.credential_values,
-            None => Payload(BTreeMap::new()),
+            Some(credential) => credential.credential_values,
+            None => CredentialValues::default(),
         }
     }
 
@@ -40,25 +39,65 @@ impl CredentialRegistry {
         // LiteLLM snapshots the names before the loop, so two entries new to the list both append
         let names: Vec<String> = entries
             .iter()
-            .map(|credential| credential.fields.base.credential_name.clone())
+            .map(|credential| credential.credential_name.clone())
             .collect();
         for credential in credentials {
-            let name = credential.fields.base.credential_name.clone();
-            if !names.contains(&name) {
+            let name = credential.credential_name.clone();
+            if names.contains(&name) {
+                if let Some(slot) = entries
+                    .iter_mut()
+                    .find(|existing| existing.credential_name == name)
+                {
+                    *slot = credential;
+                }
+            } else {
                 entries.push(credential);
-            } else if let Some(slot) = entries
-                .iter_mut()
-                .find(|existing| existing.fields.base.credential_name == name)
-            {
-                *slot = credential;
             }
         }
+        drop(entries);
     }
 
     pub fn remove_credential(&self, credential_name: &str) {
         self.entries
             .write()
             .unwrap_or_else(PoisonError::into_inner)
-            .retain(|credential| credential.fields.base.credential_name != credential_name);
+            .retain(|credential| credential.credential_name != credential_name);
+    }
+
+    // one write lock covers lookup, merge, rename and replacement; a cold credential stays cold
+    pub fn apply_credential_patch(
+        &self,
+        credential_name: &str,
+        merged_name: &str,
+        patch: &CredentialItem,
+    ) {
+        let mut entries = self.entries.write().unwrap_or_else(PoisonError::into_inner);
+        let Some(resident) = entries
+            .iter()
+            .find(|entry| entry.credential_name == credential_name)
+        else {
+            return;
+        };
+        let mut updated = resident.clone();
+        updated
+            .credential_values
+            .0
+            .extend(patch.credential_values.0.clone());
+        updated
+            .credential_info
+            .0
+            .extend(patch.credential_info.0.clone());
+        updated.credential_name = merged_name.to_owned();
+        if merged_name != credential_name {
+            entries.retain(|entry| entry.credential_name != credential_name);
+        }
+        match entries
+            .iter_mut()
+            .find(|entry| entry.credential_name == merged_name)
+        {
+            Some(slot) => *slot = updated,
+            None => entries.push(updated),
+        }
+        drop(entries);
     }
 }

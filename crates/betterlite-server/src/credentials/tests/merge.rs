@@ -1,21 +1,23 @@
+#![cfg(test)]
+
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::resource_rows::credential::CredentialItem;
+use betterlite_db::resource_rows::credential::CredentialItem as CredentialRow;
 
 use super::super::error::CredentialError;
 use super::super::merge::{CredentialUpdate, merged_credential, update_db_credential};
 use super::support::{
-    FakeStore, StoreFailure, USER_ID, cipher, credential, decrypt_text, payload, sealed, text,
+    FakeStore, StoreFailure, USER_ID, cipher, credential, decrypt_text, payload, row, sealed, text,
 };
 
-fn stored() -> CredentialItem {
-    credential(
+fn stored() -> CredentialRow {
+    row(&credential(
         "openai",
         &[("team", text("ml"))],
         &[
             ("api_key", text(&sealed("old-secret"))),
             ("api_base", text("https://a")),
         ],
-    )
+    ))
 }
 
 #[test]

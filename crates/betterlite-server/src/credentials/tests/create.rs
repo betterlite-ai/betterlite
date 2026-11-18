@@ -1,10 +1,13 @@
+#![cfg(test)]
+
 use axum::http::{Method, StatusCode};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
+use rstest::rstest;
 
 use super::support::{
     ErrorReply, FakeLookup, FakeStore, ListReply, StoreFailure, SuccessReply, USER_ID, call,
-    create_body, decrypt_text, payload, principal, registry, state, text,
+    create_body, credential_values, decrypt_text, payload, principal, registry, state, text,
 };
 
 #[tokio::test]
@@ -32,7 +35,7 @@ async fn create_stores_encrypted_values_and_records_the_actor() {
     };
     assert_eq!("sk-abcdefgh", decrypt_text(sealed));
     assert_eq!(
-        payload(&[("api_key", text("sk-abcdefgh"))]),
+        credential_values(&[("api_key", text("sk-abcdefgh"))]),
         registry.get_credential_values("openai")
     );
 }
@@ -56,10 +59,10 @@ async fn create_lists_the_masked_credential_from_memory() {
     let listed: ListReply = reply.json();
     assert!(listed.success);
     assert_eq!(1, listed.credentials.len());
-    assert_eq!("openai", listed.credentials[0].fields.base.credential_name);
+    assert_eq!("openai", listed.credentials[0].credential_name);
     assert_eq!(
         payload(&[("api_key", text("sk****gh"))]),
-        listed.credentials[0].fields.credential_values
+        listed.credentials[0].credential_values
     );
 }
 
@@ -82,7 +85,7 @@ async fn create_from_a_model_id_takes_the_deployment_values() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     assert_eq!(
-        payload(&[("api_key", text("sk-from-deployment"))]),
+        credential_values(&[("api_key", text("sk-from-deployment"))]),
         registry.get_credential_values("m")
     );
     let writes = store.created();
@@ -106,7 +109,7 @@ async fn an_empty_model_id_uses_the_explicit_values() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     assert_eq!(
-        payload(&[("api_key", text("sk-explicit"))]),
+        credential_values(&[("api_key", text("sk-explicit"))]),
         registry.get_credential_values("m")
     );
 }
@@ -221,5 +224,33 @@ async fn create_from_a_model_without_a_router_is_a_500() {
         body.error.message
     );
     assert_eq!("500", body.error.code);
+    assert!(store.created().is_empty());
+}
+
+#[rstest]
+#[case::malformed_post(Method::POST, "/credentials", "{invalid".to_owned())]
+#[case::large_post(Method::POST, "/credentials", " ".repeat(2_097_153))]
+#[case::malformed_patch(Method::PATCH, "/credentials/old", "{invalid".to_owned())]
+#[case::large_patch(Method::PATCH, "/credentials/old", " ".repeat(2_097_153))]
+#[tokio::test]
+async fn invalid_bodies_return_json_errors(
+    #[case] method: Method,
+    #[case] uri: &str,
+    #[case] request: String,
+) {
+    let registry = registry(Vec::new());
+    let store = FakeStore::seeded(Vec::new());
+    let reply = call(
+        state(&registry, Some(&store), None),
+        method,
+        uri,
+        &request,
+        None,
+    )
+    .await;
+    assert_eq!(StatusCode::BAD_REQUEST, reply.status);
+    let error: ErrorReply = reply.json();
+    assert_eq!(error.error.code, "400");
+    assert_eq!(error.error.error_type, "internal_server_error");
     assert!(store.created().is_empty());
 }

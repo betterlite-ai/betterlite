@@ -1,3 +1,4 @@
+use axum::extract::rejection::BytesRejection;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use betterlite_db::resource_rows::ResourceRowsError;
@@ -12,6 +13,11 @@ use crate::error_body::json_error;
 pub enum CredentialError {
     #[error("the credential request body is too large")]
     BodyTooLarge,
+    #[error("the credential request body could not be read within its limit")]
+    ReadBody {
+        #[source]
+        source: BytesRejection,
+    },
     #[error("the credential request body does not decode")]
     Body {
         #[source]
@@ -52,9 +58,11 @@ pub enum CredentialError {
 impl CredentialError {
     const fn status(&self) -> StatusCode {
         match self {
-            Self::BodyTooLarge | Self::Body { .. } | Self::Rows(_) | Self::MissingValues => {
-                StatusCode::BAD_REQUEST
-            }
+            Self::BodyTooLarge
+            | Self::ReadBody { .. }
+            | Self::Body { .. }
+            | Self::Rows(_)
+            | Self::MissingValues => StatusCode::BAD_REQUEST,
             Self::DbNotConnected
             | Self::RouterMissing
             | Self::DeploymentRouterMissing

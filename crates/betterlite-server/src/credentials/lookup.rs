@@ -1,9 +1,9 @@
-use betterlite_db::identity_rows::Payload;
+use betterlite_config::credentials::CredentialValues;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeploymentCredentials {
     pub model_name: String,
-    pub credential_values: Payload,
+    pub credential_values: CredentialValues,
 }
 
 pub trait DeploymentLookup: Send + Sync {

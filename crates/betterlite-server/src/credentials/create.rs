@@ -1,9 +1,9 @@
 use axum::Json;
 use axum::body::Bytes;
+use axum::extract::rejection::BytesRejection;
 use axum::extract::{Extension, State};
-use betterlite_db::resource_rows::credential::{
-    CreateCredentialItem, CredentialBase, CredentialItem, CredentialItemFields,
-};
+use betterlite_config::credentials::{CredentialItem, CredentialValues};
+use betterlite_db::resource_rows::credential::CreateCredentialItem;
 
 use crate::auth::auth_identity::AuthContext;
 
@@ -19,9 +19,10 @@ use super::wire::SuccessResponse;
 pub(super) async fn create_credential(
     State(state): State<CredentialState>,
     identity: Option<Extension<AuthContext>>,
-    body: Bytes,
+    body: Result<Bytes, BytesRejection>,
 ) -> Result<Json<SuccessResponse>, CredentialError> {
-    let request = decode_credential_request::<CreateCredentialItem>(&body)?;
+    let bytes = body.map_err(|source| CredentialError::ReadBody { source })?;
+    let request = decode_credential_request::<CreateCredentialItem>(&bytes)?;
     let Some(store) = state.store.as_deref() else {
         return Err(CredentialError::DbNotConnected);
     };
@@ -32,7 +33,7 @@ pub(super) async fn create_credential(
         Ok(()) => {}
         Err(CredentialStoreError::Duplicate) => {
             return Err(CredentialError::Duplicate {
-                credential_name: credential.fields.base.credential_name,
+                credential_name: credential.credential_name,
             });
         }
         Err(source) => return Err(CredentialError::Store { source }),
@@ -54,19 +55,17 @@ fn created_credential(
         .as_deref()
         .filter(|model_id| !model_id.is_empty());
     let credential_values = match model_id {
-        Some(model_id) => deployment_values(lookup, model_id)?,
-        None => request
-            .fields
-            .credential_values
-            .ok_or(CredentialError::MissingValues)?,
+        Some(deployment_id) => deployment_values(lookup, deployment_id)?,
+        None => CredentialValues::from(
+            request
+                .fields
+                .credential_values
+                .ok_or(CredentialError::MissingValues)?,
+        ),
     };
     Ok(CredentialItem {
-        fields: CredentialItemFields {
-            base: CredentialBase {
-                credential_name: request.fields.base.credential_name,
-                credential_info: request.fields.base.credential_info,
-            },
-            credential_values,
-        },
+        credential_name: request.fields.base.credential_name,
+        credential_info: request.fields.base.credential_info,
+        credential_values,
     })
 }
