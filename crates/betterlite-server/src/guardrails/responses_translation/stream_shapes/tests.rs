@@ -48,6 +48,6 @@ fn stream_chunk_reads_all_fields_and_preserves_zero_and_empty() {
 
 #[test]
 fn stream_chunk_rejects_wrong_declared_field_type() {
-    assert!(serde_json::from_str::<ResponsesStreamChunk>(r#"{"output_index":"2"}"#).is_err());
-    assert!(serde_json::from_str::<ResponseOutputEnvelope>(r#"{"output":{}}"#).is_err());
+    serde_json::from_str::<ResponsesStreamChunk>(r#"{"output_index":"2"}"#).unwrap_err();
+    serde_json::from_str::<ResponseOutputEnvelope>(r#"{"output":{}}"#).unwrap_err();
 }

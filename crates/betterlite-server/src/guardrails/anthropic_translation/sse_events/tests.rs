@@ -11,6 +11,7 @@ use std::{
     slice, str,
     sync::{Arc, Mutex},
 };
+use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
 #[test]
@@ -145,14 +146,14 @@ fn scan_key_releases_tool_fingerprint_only_after_end() {
 #[test]
 fn replays_the_anthropic_sse_events_corpus() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/anthropic_sse_events");
-    fs::read_dir(directory).unwrap().for_each(|entry| {
+    for entry in fs::read_dir(directory).unwrap() {
         let bytes = fs::read(entry.unwrap().path()).unwrap();
         let chunk = SseChunk::Bytes(bytes);
         let _events = iter_sse_events(&chunk);
         let _state = content_block_state(slice::from_ref(&chunk));
         let _text = streaming_string_so_far(slice::from_ref(&chunk));
         let _ended = streaming_has_ended(&[chunk]);
-    });
+    }
 }
 
 #[test]
@@ -233,7 +234,7 @@ fn iter_events_trims_line_and_payload_whitespace() {
 #[case::other_type(json!({"type":"other", "delta":{"stop_reason":"end_turn"}}))]
 #[case::null_delta(json!({"type":"message_delta", "delta":null}))]
 #[case::no_reason(json!({"type":"message_delta", "delta":{}}))]
-fn has_ended_rejects_non_terminal_events(#[case] event: serde_json::Value) {
+fn has_ended_rejects_non_terminal_events(#[case] event: Value) {
     let chunk = SseChunk::Event(event.as_object().unwrap().clone());
     assert!(!streaming_has_ended(&[chunk]));
 }
@@ -274,9 +275,11 @@ fn block_state_reopens_indices_and_retains_highest_seen() {
 struct LogBuffer(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for LogBuffer {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        if let Ok(mut log) = self.0.lock() {
+            log.extend_from_slice(buf);
+        }
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -301,7 +304,7 @@ fn text_and_end_log_malformed_json_and_utf8() {
         .with_target(false)
         .with_writer(logs.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     assert_eq!(
         extract_text_from_sse(b"event: content_block_delta\ndata: bad\n\n"),
         ""
@@ -311,8 +314,10 @@ fn text_and_end_log_malformed_json_and_utf8() {
     )]));
     assert_eq!(extract_text_from_sse(&[0xff]), "");
     assert!(!streaming_has_ended(&[SseChunk::Bytes(vec![0xff])]));
-    let bytes = logs.0.lock().unwrap();
-    let output = str::from_utf8(&bytes).unwrap();
+    let output = {
+        let bytes = logs.0.lock().unwrap();
+        str::from_utf8(&bytes).unwrap().to_owned()
+    };
     assert_eq!(
         output
             .matches("WARN Failed to parse JSON from SSE data")

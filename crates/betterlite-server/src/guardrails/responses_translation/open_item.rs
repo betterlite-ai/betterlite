@@ -3,14 +3,6 @@
     clippy::disallowed_methods,
     reason = "Responses stream events are provider JSON kept so the still-open item can be closed"
 )]
-#![cfg_attr(
-    test,
-    expect(
-        clippy::default_numeric_fallback,
-        reason = "serde_json fixtures compare JSON numbers and construct provider objects"
-    )
-)]
-
 use serde_json::{Map, Value, json};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
