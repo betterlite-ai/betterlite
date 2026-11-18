@@ -4,11 +4,22 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
+use async_trait::async_trait;
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::model_rate_limits as section;
 use betterlite_config::sections::routing_state_store::connection::Connection;
+use betterlite_core::message_utilities::prompt_cache_checks::PromptCacheSettings;
+use betterlite_models::catalog::{ModelCatalog, UnknownFields};
+use betterlite_models::decisions::Json;
+use betterlite_prompts::cache_accounting::dialect::ModelFacts;
+use betterlite_prompts::cache_defaults::CacheFacts;
 use betterlite_router::io_token_reservations::clock::IoClock;
 use betterlite_router::model_rate_limits::cache::RateLimitCache;
+use betterlite_router::prompt_affinity::service::{InjectionDefaults, TokenGate};
 use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
+use betterlite_router::router_core::services::RouteServices;
 use betterlite_router::routing_state_store::test_support::FakeRedis;
 use betterlite_router::routing_state_store::{
     RedisSettings, RoutingStateStore, Settings as StateSettings,
@@ -18,6 +29,8 @@ use betterlite_router::routing_value_store::{
 };
 
 use super::{ModelRateLimitStores, RoutingRateLimitCache, build};
+use crate::routing::prompt_affinity::PromptAffinityInputs;
+use crate::routing::router_core::RouterServices;
 
 fn local() -> Arc<RoutingValueStore> {
     let settings = StoreSettings {
@@ -171,4 +184,82 @@ fn an_oversized_key_is_not_counted() {
     let key = "k".repeat(2048);
     assert_eq!(cache.local(&key), None);
     assert_eq!(cache.increment_local(&key, 1, 60), None);
+}
+
+struct AllowAll;
+
+#[async_trait]
+impl TokenGate for AllowAll {
+    async fn meets_minimum(&self, _model: &str, _messages: &[Json], _minimum: Option<u64>) -> bool {
+        true
+    }
+}
+
+struct NoFacts;
+
+impl ModelFacts for NoFacts {
+    fn cache_breakpoint_flag(&self, _model: &str) -> Option<bool> {
+        None
+    }
+
+    fn provider(&self, _model: &str) -> Option<String> {
+        None
+    }
+}
+
+impl CacheFacts for NoFacts {
+    fn supports_prompt_caching(&self, _model: &str, _provider: &str) -> bool {
+        false
+    }
+}
+
+// the config names no optional check, so the prompt caching check is never built and never reads these inputs
+fn inputs() -> PromptAffinityInputs<LocalMemoryOps> {
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 0.0_f64);
+    let memory = LocalMemoryOps::new(1024, clock).expect("the memory cache opens");
+    PromptAffinityInputs {
+        cache: Arc::new(DualCache::new(
+            Arc::new(memory),
+            None,
+            DualCacheSettings {
+                default_in_memory_ttl: None,
+                default_redis_ttl: None,
+                batch_cache_expiry: None,
+                max_redis_batch_cache_size: 1000,
+                redis_delete_chunk_size: 1000,
+            },
+        )),
+        gate: Arc::new(AllowAll),
+        facts: Arc::new(NoFacts),
+        catalog: Arc::new(
+            ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("an empty catalog parses"),
+        ),
+        settings: PromptCacheSettings::default(),
+        defaults: InjectionDefaults::default(),
+    }
+}
+
+fn router_services() -> RouterServices {
+    let lookup: BTreeMap<String, String> = BTreeMap::new();
+    let config = ConfigLoader { lookup }
+        .load("model_list: []\nrouter_settings:\n  optional_pre_call_checks: []\n")
+        .expect("the test config loads");
+    RouterServices::from_config(&config, inputs()).expect("the router builds")
+}
+
+// Router.add_optional_pre_call_checks: RouterServices carries the check the server registered, and none when it registered none
+#[test]
+fn the_router_services_expose_the_registered_check() {
+    assert!(router_services().model_rate_limits().is_none());
+    let check = build(
+        &section::Settings {
+            enforce_model_rate_limits: true,
+        },
+        stores(local()),
+        None,
+        clock(),
+    )
+    .expect("the check is registered");
+    let services = router_services().with_model_rate_limits(Some(check));
+    assert!(services.model_rate_limits().is_some());
 }
