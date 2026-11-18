@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict, TypeAlias
 
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -16,7 +16,11 @@ from pydantic import JsonValue, TypeAdapter
 from b3859.observe import attribute_map
 
 DICT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-Carried = dict[str, JsonValue | Span | "Carried"]
+CarriedMetadata: TypeAlias = dict[str, JsonValue | Span]
+CarriedParams: TypeAlias = dict[str, JsonValue | CarriedMetadata]
+CarriedKwargs: TypeAlias = dict[str, JsonValue | CarriedMetadata | CarriedParams]
+CarriedRequest: TypeAlias = dict[str, JsonValue | CarriedMetadata]
+Mode: TypeAlias = Literal["success", "failure"]
 
 
 class Parent(TypedDict):
@@ -112,30 +116,30 @@ def exception_of(spec: ExceptionSpec) -> Exception:
     return ValueError(spec["message"])
 
 
-def with_carrier(kwargs: dict[str, JsonValue], parent: Span) -> Carried:
+def with_carrier(kwargs: dict[str, JsonValue], parent: Span) -> CarriedKwargs:
     params = DICT.validate_python(kwargs["litellm_params"])
     metadata = DICT.validate_python(params["metadata"])
-    carried: Carried = {**metadata, "litellm_parent_otel_span": parent}
-    return {**kwargs, "litellm_params": {**params, "metadata": carried}}
+    carried_metadata: CarriedMetadata = {**metadata, "litellm_parent_otel_span": parent}
+    carried_params: CarriedParams = {**params, "metadata": carried_metadata}
+    return {**kwargs, "litellm_params": carried_params}
 
 
 def failure_request(
     input_value: PostCallFailure, parent: Span | None
-) -> tuple[Carried, dict[str, JsonValue]]:
-    params = DICT.validate_python(input_value["kwargs"]["litellm_params"])
-    metadata: Carried = {**DICT.validate_python(params["metadata"])}
+) -> tuple[CarriedKwargs, CarriedRequest]:
+    request_data = DICT.validate_python(input_value["request_data"])
+    bucket = "litellm_metadata" if "litellm_metadata" in request_data else "metadata"
+    carried: CarriedMetadata = {**DICT.validate_python(request_data[bucket])}
     if parent is not None:
-        metadata["litellm_parent_otel_span"] = parent
-    kwargs: Carried = {**input_value["kwargs"], "litellm_params": {**params, "metadata": metadata}}
-    return kwargs, input_value["request_data"]
+        carried["litellm_parent_otel_span"] = parent
+    params = DICT.validate_python(input_value["kwargs"]["litellm_params"])
+    carried_params: CarriedParams = {**params, "metadata": carried}
+    kwargs: CarriedKwargs = {**input_value["kwargs"], "litellm_params": carried_params}
+    return kwargs, {**request_data, bucket: carried}
 
 
 async def service_call(
-    logger: OpenTelemetry,
-    input_value: ServiceFields,
-    parent: Span | None,
-    *,
-    mode: Literal["success", "failure"],
+    logger: OpenTelemetry, input_value: ServiceFields, parent: Span | None, *, mode: Mode
 ) -> None:
     payload = ServiceLoggerPayload(
         is_error=mode == "failure", error=None, service=ServiceTypes(input_value["service"]),
@@ -143,7 +147,7 @@ async def service_call(
         event_metadata=None,
     )
     if mode == "success":
-        await logger.async_service_success_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L792
+        await logger.async_service_success_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L792
             payload,
             parent,
             input_value["start_time"],
@@ -151,7 +155,7 @@ async def service_call(
             input_value.get("event_metadata"),
         )
         return
-    await logger.async_service_failure_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L845
+    await logger.async_service_failure_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L845
         payload=payload,
         error=input_value.get("error"),
         parent_otel_span=parent,
@@ -162,11 +166,7 @@ async def service_call(
 
 
 async def management_call(
-    logger: OpenTelemetry,
-    input_value: ManagementFields,
-    parent: Span | None,
-    *,
-    mode: Literal["success", "failure"],
+    logger: OpenTelemetry, input_value: ManagementFields, parent: Span | None, *, mode: Mode
 ) -> None:
     exception = input_value.get("exception")
     payload = ManagementEndpointLoggingPayload(
@@ -178,11 +178,11 @@ async def management_call(
         end_time=datetime.fromtimestamp(input_value["end_time"], tz=UTC),
     )
     if mode == "success":
-        await logger.async_management_endpoint_success_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3382
+        await logger.async_management_endpoint_success_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3382
             payload, parent
         )
         return
-    await logger.async_management_endpoint_failure_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3440
+    await logger.async_management_endpoint_failure_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3440
         payload, parent
     )
 
@@ -191,7 +191,7 @@ async def success_call(
     logger: OpenTelemetry, input_value: PostCallSuccess, parent: Span | None
 ) -> None:
     kwargs = input_value["kwargs"]
-    details: Carried = {**kwargs} if parent is None else with_carrier(kwargs, parent)
+    details = kwargs if parent is None else with_carrier(kwargs, parent)
     logging_obj = Logging(
         model="gpt-4o", messages=None, stream=False, call_type="completion",
         start_time=datetime.fromtimestamp(input_value["start_time"], tz=UTC),
@@ -199,7 +199,7 @@ async def success_call(
     )
     logging_obj.model_call_details = details
     data: dict[str, Logging] = {"litellm_logging_obj": logging_obj}
-    await logger.async_post_call_success_hook(
+    await logger.async_post_call_success_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1030
         data, UserAPIKeyAuth(parent_otel_span=parent), ModelResponse.model_construct()
     )
 
@@ -220,7 +220,7 @@ async def failure_call(
         key = UserAPIKeyAuth(
             parent_otel_span=parent, team_id=team.get("id"), team_alias=team.get("alias")
         )
-    await logger.async_post_call_failure_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L903
+    await logger.async_post_call_failure_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L903
         request_data, exception_of(input_value["exception"]), key, None
     )
 
@@ -272,11 +272,11 @@ def run(input_value: Scenario) -> JsonValue:
         tracer_provider=provider,
     )
     spec = input_value.get("parent")
-    parent: Span | None = None
-    if spec is not None:
-        start = spec.get("start")
-        start = input_value["start_time"] if start is None else start
-        parent = provider.get_tracer("b3858").start_span(spec["name"], start_time=int(start * 1e9))
+    parent_start = None if spec is None else spec.get("start")
+    start = input_value["start_time"] if parent_start is None else parent_start
+    parent = None if spec is None else provider.get_tracer("b3858").start_span(
+        spec["name"], start_time=int(start * 1e9)
+    )
     match input_value["function"]:
         case "service_success":
             asyncio.run(service_call(logger, input_value, parent, mode="success"))
@@ -292,8 +292,7 @@ def run(input_value: Scenario) -> JsonValue:
             asyncio.run(management_call(logger, input_value, parent, mode="failure"))
         case "error_attributes":
             error_attributes_call(logger, input_value, parent)
-    if parent is not None and spec is not None:
-        end = spec.get("end")
-        end = input_value["end_time"] if end is None else end
+    if parent is not None:
+        end = input_value["end_time"] if spec is None or spec.get("end") is None else spec["end"]
         parent.end(end_time=int(end * 1e9))
     return DICT.validate_python({"spans": read_spans(exporter)})
