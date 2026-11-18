@@ -60,8 +60,10 @@ pub(super) struct Snapshot {
 
 impl Snapshot {
     pub(super) fn with_deployment(mut self, name: &str, id: &str) -> Self {
+        let spec = deployment(name, id);
         self.catalog.model_names.insert(name.to_owned());
-        self.catalog.push(deployment(name, id));
+        self.catalog.index_patterns(&spec).unwrap();
+        self.catalog.push(spec);
         self
     }
 

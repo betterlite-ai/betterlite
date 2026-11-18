@@ -81,9 +81,16 @@ fn is_recognized_accepts_every_served_kind(#[case] model: &str) {
 #[case::unknown_name("unknown")]
 #[case::empty_name("")]
 #[case::prefix_of_a_deployment_name("gpt-4")]
+#[case::provider_model_name("openai/gpt-4o")]
 #[case::alias_target("elsewhere")]
 fn is_recognized_rejects_a_name_it_does_not_serve(#[case] model: &str) {
     assert!(!served().recognition().is_recognized(model));
+}
+
+#[test]
+fn is_recognized_ignores_wildcard_patterns() {
+    let snapshot = Snapshot::default().with_deployment("openai/*", "wild-1");
+    assert!(!snapshot.recognition().is_recognized("openai/gpt-4o"));
 }
 
 #[test]
