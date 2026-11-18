@@ -63,5 +63,4 @@ pub fn is_stream_cache_eligible(
         && (matches!(stream, Some(Json::Bool(true))) || converted_stream_requested(kwargs))
 }
 
-#[cfg(test)]
 mod tests;
