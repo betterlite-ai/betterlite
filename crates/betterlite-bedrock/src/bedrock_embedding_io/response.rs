@@ -175,40 +175,33 @@ fn provider_embedding_reply(
     provider_response: ProviderResponse,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
     match provider_response {
-        ProviderResponse::Nova(nova_response) => nova_embedding_reply(nova_response),
-        ProviderResponse::Marengo(marengo_response) => marengo_embedding_reply(marengo_response),
+        ProviderResponse::Nova(response) => {
+            let records = response
+                .data
+                .into_iter()
+                .enumerate()
+                .map(|(position, record)| {
+                    let index = u32::try_from(position)
+                        .map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+                    Ok((index, embedding_vector(&record.embedding)?))
+                });
+            provider_reply(
+                response.model,
+                records,
+                nova_usage(response.usage),
+                response.invocation_arn.as_ref(),
+            )
+        }
+        ProviderResponse::Marengo(response) => {
+            let records = response.data.into_iter().map(marengo_record);
+            provider_reply(
+                response.model,
+                records,
+                marengo_usage(response.usage),
+                response.invocation_arn.as_ref(),
+            )
+        }
     }
-}
-
-fn nova_embedding_reply(
-    response: NovaEmbeddingResponse,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let records = response.data.into_iter().enumerate().map(nova_record);
-    provider_reply(
-        response.model,
-        records,
-        nova_usage(response.usage),
-        response.invocation_arn.as_ref(),
-    )
-}
-
-fn marengo_embedding_reply(
-    response: MarengoEmbeddingResponse,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let records = response.data.into_iter().map(marengo_record);
-    provider_reply(
-        response.model,
-        records,
-        marengo_usage(response.usage),
-        response.invocation_arn.as_ref(),
-    )
-}
-
-fn nova_record(
-    (position, record): (usize, nova::NovaEmbeddingRecord),
-) -> Result<(u32, EmbeddingVector), EmbeddingIoError> {
-    let index = u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-    Ok((index, embedding_vector(&record.embedding)?))
 }
 
 fn marengo_record(
