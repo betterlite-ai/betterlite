@@ -277,6 +277,37 @@ fn native_user_include_selects_membership_relations() {
         plain_by_id.sql, base.sql,
         "no selection keeps B700's by-id statement"
     );
+    let plain_listed = plain.list(RowsFindMany {
+        filter: None,
+        order: None,
+        skip: None,
+        take: None,
+    });
+    let base_listed = base_table.list(RowsFindMany {
+        filter: None,
+        order: None,
+        skip: None,
+        take: None,
+    });
+    assert_eq!(
+        plain_listed.sql, base_listed.sql,
+        "no selection keeps B700's list statement"
+    );
+    assert_eq!(
+        plain.insert(&()).sql,
+        base_table.insert(&()).sql,
+        "no selection keeps B700's insert statement"
+    );
+    assert_eq!(
+        plain.count(None).sql,
+        base_table.count(None).sql,
+        "a selection keeps B700's count statement"
+    );
+    assert_eq!(
+        plain.membership(KeyColumn::Id),
+        base_table.membership(KeyColumn::Id),
+        "a selection keeps B700's membership statement"
+    );
     let unselected = SelectingTable {
         table: USER_TABLE,
         include: Some(UserInclude {
