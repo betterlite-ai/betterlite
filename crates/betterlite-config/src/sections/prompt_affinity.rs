@@ -24,15 +24,12 @@ struct RawRouter {
 
 // the check is off unless the config names it; the base64 limit is the logging placeholder threshold
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PromptAffinitySettings {
+pub struct Settings {
     pub prompt_caching: bool,
     pub maximum_base64_length: i64,
 }
 
-// one pointer in Sections: the loaded Config sits in futures that await with it, and 16 inline bytes tipped clippy's 16384-byte limit
-pub type Settings = Box<PromptAffinitySettings>;
-
-impl Default for PromptAffinitySettings {
+impl Default for Settings {
     fn default() -> Self {
         Self {
             prompt_caching: false,
@@ -56,9 +53,9 @@ impl Section for Raw {
             Some(text) => betterlite_env::number::<i64>(BASE64_LIMIT_VARIABLE, &text)?,
             None => None,
         };
-        Ok(Box::new(PromptAffinitySettings {
+        Ok(Settings {
             prompt_caching: checks.iter().any(|check| check == PROMPT_CACHING_CHECK),
             maximum_base64_length: configured.unwrap_or(DEFAULT_BASE64_LIMIT),
-        }))
+        })
     }
 }
