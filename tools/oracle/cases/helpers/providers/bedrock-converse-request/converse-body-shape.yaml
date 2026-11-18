@@ -1,0 +1,74 @@
+kind: helper
+name: bedrock-converse-request-converse-body-shape
+call:
+  bedrock_converse_request:
+    model: anthropic.claude-3-5-test
+    messages: [{role: user, content: hi}]
+    model_cost:
+      anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+      meta.llama-test: {litellm_provider: bedrock, supports_prompt_caching: false}
+    optional_params:
+      _output_config_normalized: false
+      json_mode: true
+      maxTokens: 256
+      stopSequences: [END]
+      temperature: 0.5
+      topP: 0.9
+      topK: 5
+      top_k: 3
+      custom_field: {a: 1}
+      parallel_tool_calls: true
+      client_metadata: {team: x}
+      guardrailConfig: {guardrailIdentifier: gr-1}
+      performanceConfig: {latency: optimized}
+      serviceTier: {type: priority}
+      requestMetadata: {client_key: caller}
+    litellm_params: {}
+    headers: {anthropic-beta: interleaved-thinking-2025-05-14}
+    global_drop: false
+    modify_params: false
+    neutralize_orphaned_blocks: true
+    request_metadata_fields: null
+calls:
+  - bedrock_converse_request:
+      model: anthropic.claude-3-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      optional_params:
+        requestMetadata: null
+        outputConfig: null
+        performanceConfig: null
+        serviceTier: null
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-3-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      optional_params:
+        requestMetadata: {"bad!": "x"}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-3-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      optional_params:
+        requestMetadata: {dropped: null, kept: x}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+env: {}
+compare: {ignore: []}
