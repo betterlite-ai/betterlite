@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use opentelemetry::trace::{Span as _, SpanKind, Status, Tracer as _};
 use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
 use opentelemetry_sdk::trace::{SdkTracer, Span as SdkSpan};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::callback_logger::CallbackLogger;
@@ -57,24 +57,22 @@ enum EventLevel {
     Error,
 }
 
+// tracer_wrapper's tracer is the SDK one, so the callback takes the SDK's tracer directly
 pub struct TraceloopLogger {
     tracer: SdkTracer,
 }
 
 impl TraceloopLogger {
-    // tracer_wrapper's tracer is the SDK one, so the callback takes the SDK's tracer directly
-    #[must_use]
-    pub fn new(tracer: SdkTracer) -> Self {
-        Self { tracer }
-    }
-
     fn log_event(&self, event: &LoggerEvent, level: EventLevel, status_message: Option<&str>) {
         let payload = &event.payload;
+        // LiteLLM hands int(seconds) to start_span, whose argument is nanoseconds
         let builder = self
             .tracer
             .span_builder(SPAN_NAME)
             .with_kind(SpanKind::Client)
-            .with_start_time(instant_from_ns(whole_seconds(payload.start_time)));
+            .with_start_time(instant_from_ns(
+                payload.start_time.trunc().to_i64().unwrap_or_default(),
+            ));
         let mut span = self.tracer.build_with_context(builder, &Context::current());
         if span.is_recording() {
             // Python's TypeError and AttributeError inside the try leave the span unended
@@ -93,13 +91,14 @@ impl TraceloopLogger {
             record_exception_on_span(&mut span, Some(&exception), &MetadataMap::new());
             span.set_status(Status::error(message.to_owned()));
         }
-        span.end_with_timestamp(instant_from_ns(whole_seconds(payload.end_time)));
+        span.end_with_timestamp(instant_from_ns(
+            payload.end_time.trunc().to_i64().unwrap_or_default(),
+        ));
     }
 }
 
 fn write_attributes(span: &mut SdkSpan, payload: &StandardLoggingPayload) -> Option<()> {
-    write_request_parameters(span, payload);
-    write_call_parameters(span, payload);
+    write_optional_parameters(span, payload);
     write_prompts(span, payload.messages.as_ref())?;
     let response = object_of(payload.response.as_ref()?)?;
     write_attribute(span, gen_ai::RESPONSE_MODEL, response.get("model"));
@@ -107,61 +106,32 @@ fn write_attributes(span: &mut SdkSpan, payload: &StandardLoggingPayload) -> Opt
     write_completions(span, response.get("choices"))
 }
 
-fn write_request_parameters(span: &mut SdkSpan, payload: &StandardLoggingPayload) {
+fn write_optional_parameters(span: &mut SdkSpan, payload: &StandardLoggingPayload) {
     let optional_params = &payload.model_parameters;
     write_attribute(
         span,
         gen_ai::REQUEST_MODEL,
         Some(&Json::Text(payload.model.clone())),
     );
-    if optional_params.contains_key("stop") {
-        write_attribute(span, LLM_CHAT_STOP_SEQUENCES, optional_params.get("stop"));
+    // the typed event keeps one model-parameter snapshot, so the guard and the value share a lookup
+    for (name, attribute) in [
+        ("stop", LLM_CHAT_STOP_SEQUENCES),
+        ("frequency_penalty", LLM_FREQUENCY_PENALTY),
+        ("presence_penalty", LLM_PRESENCE_PENALTY),
+        ("top_p", gen_ai::REQUEST_TOP_P),
+        ("user", LLM_USER),
+        ("max_tokens", gen_ai::REQUEST_MAX_TOKENS),
+        ("temperature", gen_ai::REQUEST_TEMPERATURE),
+    ] {
+        if optional_params.contains_key(name) {
+            write_attribute(span, attribute, optional_params.get(name));
+        }
     }
-    if optional_params.contains_key("frequency_penalty") {
-        write_attribute(
-            span,
-            LLM_FREQUENCY_PENALTY,
-            optional_params.get("frequency_penalty"),
-        );
-    }
-    if optional_params.contains_key("presence_penalty") {
-        write_attribute(
-            span,
-            LLM_PRESENCE_PENALTY,
-            optional_params.get("presence_penalty"),
-        );
-    }
-    if optional_params.contains_key("top_p") {
-        write_attribute(span, gen_ai::REQUEST_TOP_P, optional_params.get("top_p"));
-    }
-}
-
-// the second half of the same attribute block, split where Python's kwargs lookups move on
-fn write_call_parameters(span: &mut SdkSpan, payload: &StandardLoggingPayload) {
-    let optional_params = &payload.model_parameters;
     if let Some(request_functions) = optional_params
         .get("tools")
         .or_else(|| optional_params.get("functions"))
     {
         write_attribute(span, LLM_REQUEST_FUNCTIONS, Some(request_functions));
-    }
-    if optional_params.contains_key("user") {
-        write_attribute(span, LLM_USER, optional_params.get("user"));
-    }
-    // the typed event keeps one model-parameter snapshot, which carries both the guard and the value
-    if optional_params.contains_key("max_tokens") {
-        write_attribute(
-            span,
-            gen_ai::REQUEST_MAX_TOKENS,
-            optional_params.get("max_tokens"),
-        );
-    }
-    if optional_params.contains_key("temperature") {
-        write_attribute(
-            span,
-            gen_ai::REQUEST_TEMPERATURE,
-            optional_params.get("temperature"),
-        );
     }
 }
 
@@ -171,12 +141,17 @@ fn write_prompts(span: &mut SdkSpan, messages: Option<&Json>) -> Option<()> {
         return None;
     };
     for (index, message) in messages.iter().enumerate() {
-        let fields = object_of(message)?;
-        let prefix = format!("{LLM_PROMPTS}.{index}");
-        write_attribute(span, &format!("{prefix}.role"), fields.get("role"));
-        write_attribute(span, &format!("{prefix}.content"), fields.get("content"));
+        write_role_and_content(span, &format!("{LLM_PROMPTS}.{index}"), object_of(message)?);
     }
     Some(())
+}
+
+fn write_role_and_content<S>(span: &mut S, prefix: &str, fields: &IndexMap<String, Json>)
+where
+    S: opentelemetry::trace::Span,
+{
+    write_attribute(span, &format!("{prefix}.role"), fields.get("role"));
+    write_attribute(span, &format!("{prefix}.content"), fields.get("content"));
 }
 
 fn write_usage(span: &mut SdkSpan, usage: Option<&Json>) {
@@ -199,15 +174,14 @@ fn write_completions(span: &mut SdkSpan, choices: Option<&Json>) -> Option<()> {
     };
     for (index, choice) in choices.iter().enumerate() {
         let fields = object_of(choice)?;
-        let message = fields.get("message").and_then(object_of)?;
         let prefix = format!("{LLM_COMPLETIONS}.{index}");
         write_attribute(
             span,
             &format!("{prefix}.finish_reason"),
             fields.get("finish_reason"),
         );
-        write_attribute(span, &format!("{prefix}.role"), message.get("role"));
-        write_attribute(span, &format!("{prefix}.content"), message.get("content"));
+        let message = fields.get("message").and_then(object_of)?;
+        write_role_and_content(span, &prefix, message);
     }
     Some(())
 }
@@ -242,11 +216,6 @@ fn string_array(items: &[Json]) -> Option<Value> {
         strings.push(StringValue::from(text_of(item)?.to_owned()));
     }
     Some(Value::Array(Array::String(strings)))
-}
-
-// LiteLLM hands int(seconds) to start_span, whose argument is nanoseconds
-fn whole_seconds(seconds: Decimal) -> i64 {
-    seconds.trunc().to_i64().unwrap_or_default()
 }
 
 #[async_trait]

@@ -101,9 +101,33 @@ fn build_payload(
     ids: IdGenerator,
     redact: bool,
 ) -> Json {
-    let response = response_object(payload.response.as_ref());
+    let response = payload
+        .response
+        .as_ref()
+        .and_then(object_of)
+        .cloned()
+        .unwrap_or_default();
     let mut fields = header_fields(payload, ids, &response);
-    fields.extend(request_fields(payload));
+    let user = payload
+        .model_parameters
+        .get("user")
+        .and_then(text_of)
+        .unwrap_or_default();
+    fields.insert("model".to_owned(), Json::Text(payload.model.clone()));
+    fields.insert("user".to_owned(), Json::Text(user.to_owned()));
+    fields.insert(
+        "modelParameters".to_owned(),
+        Json::Object(payload.model_parameters.clone()),
+    );
+    fields.insert(
+        "spend".to_owned(),
+        serde_json::Number::from_str(&payload.response_cost.to_string())
+            .map_or(Json::Null, Json::Number),
+    );
+    fields.insert(
+        "messages".to_owned(),
+        payload.messages.clone().unwrap_or(Json::Null),
+    );
     fields.extend(response_fields(litellm_metadata, &response, redact));
     Json::Object(fields)
 }
@@ -131,28 +155,8 @@ fn header_fields(
         ("endTime".to_owned(), timestamp(payload.end_time)),
         (
             "responseTime (seconds)".to_owned(),
-            amount(payload.response_time),
-        ),
-    ])
-}
-
-fn request_fields(payload: &StandardLoggingPayload) -> IndexMap<String, Json> {
-    let user = payload
-        .model_parameters
-        .get("user")
-        .and_then(text_of)
-        .unwrap_or_default();
-    IndexMap::from([
-        ("model".to_owned(), Json::Text(payload.model.clone())),
-        ("user".to_owned(), Json::Text(user.to_owned())),
-        (
-            "modelParameters".to_owned(),
-            Json::Object(payload.model_parameters.clone()),
-        ),
-        ("spend".to_owned(), amount(payload.response_cost)),
-        (
-            "messages".to_owned(),
-            payload.messages.clone().unwrap_or(Json::Null),
+            serde_json::Number::from_str(&payload.response_time.to_string())
+                .map_or(Json::Null, Json::Number),
         ),
     ])
 }
@@ -176,11 +180,6 @@ fn response_fields(
     ])
 }
 
-// an absent or null response is the empty object Logfire's guard turns it into
-fn response_object(response: Option<&Json>) -> IndexMap<String, Json> {
-    response.and_then(object_of).cloned().unwrap_or_default()
-}
-
 // LiteLLM logs the request's litellm_params metadata, minus the three keys it strips
 fn clean_metadata(litellm_metadata: &IndexMap<String, Json>, redact: bool) -> Json {
     let mut fields = litellm_metadata.clone();
@@ -197,10 +196,6 @@ fn timestamp(seconds: Decimal) -> Json {
         .and_then(|micros| micros.round().to_i64())
         .and_then(DateTime::<Utc>::from_timestamp_micros)
         .map_or(Json::Null, |moment| Json::Text(moment.to_rfc3339()))
-}
-
-fn amount(value: Decimal) -> Json {
-    serde_json::Number::from_str(&value.to_string()).map_or(Json::Null, Json::Number)
 }
 
 #[async_trait]

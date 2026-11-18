@@ -154,4 +154,4 @@ path = "src/otel/legacy_lifecycle/tests/suite.rs"
 
 [[test]]
 name = "levo_partial"
-path = "src/otel/callbacks/levo/partial_target.rs"
+path = "src/otel/callbacks/levo/partial_target/tests.rs"

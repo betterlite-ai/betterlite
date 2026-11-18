@@ -21,8 +21,7 @@ use url::Url;
 use super::transport::{AuthFailure, AuthPost, AuthResponse, AuthTransport, PooledAuthTransport};
 use super::{
     AUTH_ENDPOINT, AUTH_TIMEOUT, AgentOpsCallback, AgentOpsConfig, DEFAULT_DEPLOYMENT_ENVIRONMENT,
-    DEFAULT_SERVICE_NAME, ENDPOINT, RESOURCE_DEPLOYMENT_ENVIRONMENT, RESOURCE_SERVICE_NAME,
-    SDK_NAME,
+    DEFAULT_SERVICE_NAME, ENDPOINT, RESOURCE_ENVIRONMENT, RESOURCE_SERVICE_NAME, SDK_NAME,
 };
 use crate::otel::callbacks::tests::json;
 use crate::otel::legacy_policy::config::{Exporter, OTLP_HTTP_EXPORTER};
@@ -36,9 +35,11 @@ fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 fn config(auth_endpoint: &str, api_key: Option<&str>) -> AgentOpsConfig {
     AgentOpsConfig {
+        endpoint: ENDPOINT.to_owned(),
         api_key: api_key.map(SecretString::from),
+        service_name: None,
+        deployment_environment: None,
         auth_endpoint: auth_endpoint.to_owned(),
-        ..AgentOpsConfig::default()
     }
 }
 
@@ -340,7 +341,7 @@ fn agentops_callback_resource_attributes_default_to_litellm_and_production() {
         BTreeMap::from([
             (
                 "deployment.environment".to_owned(),
-                RESOURCE_DEPLOYMENT_ENVIRONMENT.to_owned()
+                RESOURCE_ENVIRONMENT.to_owned()
             ),
             ("service.name".to_owned(), RESOURCE_SERVICE_NAME.to_owned()),
             ("telemetry.sdk.name".to_owned(), SDK_NAME.to_owned()),
@@ -352,9 +353,11 @@ fn agentops_callback_resource_attributes_default_to_litellm_and_production() {
 fn agentops_callback_resource_attributes_keep_a_configured_service_identity() {
     let callback = AgentOpsCallback {
         config: AgentOpsConfig {
+            endpoint: ENDPOINT.to_owned(),
+            api_key: None,
             service_name: Some("my-service".to_owned()),
             deployment_environment: Some("staging".to_owned()),
-            ..AgentOpsConfig::default()
+            auth_endpoint: AUTH_ENDPOINT.to_owned(),
         },
         auth: None,
     };

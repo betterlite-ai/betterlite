@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
@@ -6,7 +6,9 @@ use http::header::{CONNECTION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
-use crate::otel::legacy_policy::config::{Exporter, OTLP_HTTP_EXPORTER, OpenTelemetryConfig};
+use crate::otel::legacy_policy::config::{
+    Exporter, OTLP_HTTP_EXPORTER, OpenTelemetryConfig, Signals,
+};
 
 pub mod transport;
 
@@ -20,7 +22,7 @@ pub const AUTH_TIMEOUT: Duration = Duration::from_secs(10);
 pub const DEFAULT_SERVICE_NAME: &str = "agentops";
 pub const DEFAULT_DEPLOYMENT_ENVIRONMENT: &str = "production";
 pub const RESOURCE_SERVICE_NAME: &str = "litellm";
-pub const RESOURCE_DEPLOYMENT_ENVIRONMENT: &str = "production";
+pub const RESOURCE_ENVIRONMENT: &str = "production";
 pub const SDK_NAME: &str = "agentops";
 
 #[derive(Clone, Debug)]
@@ -94,14 +96,21 @@ impl AgentOpsCallback {
         let mut attributes = BTreeMap::from([
             (
                 "service.name".to_owned(),
-                identified(self.config.service_name.as_deref(), RESOURCE_SERVICE_NAME),
+                self.config
+                    .service_name
+                    .as_deref()
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or(RESOURCE_SERVICE_NAME)
+                    .to_owned(),
             ),
             (
                 "deployment.environment".to_owned(),
-                identified(
-                    self.config.deployment_environment.as_deref(),
-                    RESOURCE_DEPLOYMENT_ENVIRONMENT,
-                ),
+                self.config
+                    .deployment_environment
+                    .as_deref()
+                    .filter(|text| !text.is_empty())
+                    .unwrap_or(RESOURCE_ENVIRONMENT)
+                    .to_owned(),
             ),
             ("telemetry.sdk.name".to_owned(), SDK_NAME.to_owned()),
         ]);
@@ -126,17 +135,25 @@ impl AgentOpsCallback {
                 .as_ref()
                 .and_then(|auth| auth.token.as_ref())
                 .map(|token| format!("Authorization=Bearer {}", token.expose_secret())),
-            ..OpenTelemetryConfig::default()
+            signals: Signals {
+                enable_metrics: false,
+                enable_events: false,
+            },
+            service_name: String::new(),
+            deployment_environment: String::new(),
+            model_id: String::new(),
+            ignore_context_propagation: false,
+            skip_set_global: false,
+            capture_message_content: None,
+            semconv_stability_opt_in: BTreeSet::new(),
+            baggage_team_metadata_keys: Vec::new(),
+            baggage_metadata_keys: Vec::new(),
+            attributes: None,
         };
         // Python's dataclass constructor fills the service identity from the OTEL_* variables
         config.normalize(env);
         config
     }
-}
-
-fn identified(value: Option<&str>, fallback: &str) -> String {
-    let present = value.filter(|text| !text.is_empty());
-    present.unwrap_or(fallback).to_owned()
 }
 
 #[derive(Serialize)]

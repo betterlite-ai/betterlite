@@ -100,27 +100,26 @@ fn payload_for_call_type(call_type: &str) -> String {
     )
 }
 
-#[test]
-fn logfire_selects_the_message_template_for_each_call_type() {
-    let cases = [
-        ("completion", CHAT_COMPLETION_TEMPLATE),
-        ("acompletion", CHAT_COMPLETION_TEMPLATE),
-        ("embedding", EMBEDDING_TEMPLATE),
-        ("aembedding", EMBEDDING_TEMPLATE),
-        ("image_generation", IMAGE_GENERATION_TEMPLATE),
-        ("aimage_generation", IMAGE_GENERATION_TEMPLATE),
-        ("text_completion", DEFAULT_TEMPLATE),
-    ];
+#[rstest::rstest]
+#[case::completion("completion", CHAT_COMPLETION_TEMPLATE)]
+#[case::acompletion("acompletion", CHAT_COMPLETION_TEMPLATE)]
+#[case::embedding("embedding", EMBEDDING_TEMPLATE)]
+#[case::aembedding("aembedding", EMBEDDING_TEMPLATE)]
+#[case::image_generation("image_generation", IMAGE_GENERATION_TEMPLATE)]
+#[case::aimage_generation("aimage_generation", IMAGE_GENERATION_TEMPLATE)]
+#[case::text_completion("text_completion", DEFAULT_TEMPLATE)]
+fn logfire_selects_the_message_template_for_each_call_type(
+    #[case] call_type: &str,
+    #[case] template: &'static str,
+) {
     let sink = RecordingSink::default();
     let logger = logger(&sink, generated_id, false);
-    for (call_type, template) in cases {
-        logger
-            .log_success_event(&from_payload(&payload_for_call_type(call_type)))
-            .expect("the event is logged");
-        let records = sink.recorded();
-        let last = records.last().expect("the event is recorded");
-        assert_eq!(last.template, template, "call type {call_type}");
-    }
+    logger
+        .log_success_event(&from_payload(&payload_for_call_type(call_type)))
+        .expect("the event is logged");
+    let records = sink.recorded();
+    let last = records.last().expect("the event is recorded");
+    assert_eq!(last.template, template, "call type {call_type}");
 }
 
 #[test]

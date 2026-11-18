@@ -42,16 +42,14 @@ fn dynamic_strings(dynamic_params: &MetadataMap) -> BTreeMap<String, String> {
         .collect()
 }
 
-// WeaveOtelLogger's three overrides on the shared lifecycle:
-// https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/weave/weave_otel.py#L229-L331
+// WeaveOtelLogger's three overrides on the shared lifecycle; docs/deviations/B3863.yaml links each one
 #[must_use]
 pub fn weave_lifecycle(otel: LegacyOtel, mut options: LegacyLifecycleOptions) -> LegacyLifecycle {
     // _start_primary_span always creates a child span, even when a parent span is provided
     options.use_request_span = true;
     options.dynamic = Arc::new(WeaveDynamicOtel);
     let mut lifecycle = LegacyLifecycle::from_otel(otel, options);
-    // _maybe_log_raw_request is overridden to do nothing; an event-only capture policy is the
-    // lifecycle's own way to skip that span, and a vendor callback ignores the mode for its attributes
+    // an event-only capture policy is the lifecycle's own way to skip the raw span
     lifecycle.capture_policy = event_only_policy(&lifecycle.config);
     lifecycle
 }

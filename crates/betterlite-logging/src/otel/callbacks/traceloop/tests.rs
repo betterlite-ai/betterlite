@@ -20,7 +20,7 @@ fn logger() -> (TraceloopLogger, InMemorySpanExporter) {
         .with_simple_exporter(exporter.clone())
         .build();
     let tracer = provider.tracer("traceloop-tests");
-    (TraceloopLogger::new(tracer), exporter)
+    (TraceloopLogger { tracer }, exporter)
 }
 
 fn only_span(exporter: &InMemorySpanExporter) -> SpanData {
