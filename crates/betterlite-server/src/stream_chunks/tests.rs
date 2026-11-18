@@ -25,6 +25,8 @@ use super::{
     ChunkKind, DONE_FRAME, MAX_RAW_SSE_BUFFER_CHARS, SSE_FRAME_DELIMITERS, StreamChunk, StreamItem,
 };
 
+mod fallback_gate;
+mod serializer_cases;
 mod tool_models;
 
 static ROUTER_CALLS: AtomicUsize = AtomicUsize::new(0);
@@ -220,15 +222,6 @@ fn include_errors_needs_both_switches() {
     assert!(!include_fallback_errors(false, &flagged));
     assert!(!include_fallback_errors(true, &plain));
     assert!(!include_fallback_errors(false, &plain));
-}
-
-#[rstest]
-#[case::text(r#"{"include_fallback_errors": "true"}"#)]
-#[case::number(r#"{"include_fallback_errors": 1}"#)]
-#[case::null(r#"{"include_fallback_errors": null}"#)]
-#[case::list(r#"{"include_fallback_errors": [true]}"#)]
-fn include_errors_requires_json_true(#[case] raw: &str) {
-    assert!(!include_fallback_errors(true, &object(raw)), "{raw}");
 }
 
 #[test]

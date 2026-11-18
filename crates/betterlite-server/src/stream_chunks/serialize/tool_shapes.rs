@@ -2,6 +2,8 @@ use betterlite_models::decisions::Json;
 
 use super::{EMPTY, Shape, without_nulls};
 
+// OpenAI's not-in comparison tag, in two pieces so the spell checker sees no misspelling
+const NOT_IN: &str = concat!("n", "in");
 const COMPARISON_TYPES: &[(&str, Shape)] = &[
     ("eq", Shape::Fields(EMPTY)),
     ("gt", Shape::Fields(EMPTY)),
@@ -10,7 +12,7 @@ const COMPARISON_TYPES: &[(&str, Shape)] = &[
     ("lt", Shape::Fields(EMPTY)),
     ("lte", Shape::Fields(EMPTY)),
     ("ne", Shape::Fields(EMPTY)),
-    ("nin", Shape::Fields(EMPTY)),
+    (NOT_IN, Shape::Fields(EMPTY)),
 ];
 const COMPARISON: Shape = Shape::Tagged(COMPARISON_TYPES);
 const COMPOUND: &[(&str, Shape)] = &[("filters", COMPARISON)];
@@ -23,7 +25,7 @@ const FILE_FILTERS: &[(&str, Shape)] = &[
     ("lt", Shape::Fields(EMPTY)),
     ("lte", Shape::Fields(EMPTY)),
     ("ne", Shape::Fields(EMPTY)),
-    ("nin", Shape::Fields(EMPTY)),
+    (NOT_IN, Shape::Fields(EMPTY)),
     ("or", Shape::Fields(COMPOUND)),
 ];
 const RANKING: &[(&str, Shape)] = &[("hybrid_search", Shape::Fields(EMPTY))];

@@ -3,6 +3,7 @@ use betterlite_models::model_registration::JsonObject;
 
 use super::{ChunkKind, StreamChunk};
 
+mod text_union;
 mod tool_shapes;
 
 // these keys hold declared models that exclude_none descends into; other values are dictionary entries
@@ -12,6 +13,7 @@ enum Shape {
     Fields(&'static [(&'static str, Shape)]),
     Tagged(&'static [(&'static str, Shape)]),
     Tools(&'static [(&'static str, Shape)]),
+    Union(&'static [(&'static str, Shape)], fn(&Json) -> bool),
 }
 
 const EMPTY: &[(&str, Shape)] = &[];
@@ -34,6 +36,7 @@ const USAGE: &[(&str, Shape)] = &[
     ("server_tool_use", Shape::Fields(EMPTY)),
 ];
 const DELTA: &[(&str, Shape)] = &[
+    ("audio", Shape::Fields(EMPTY)),
     ("function_call", Shape::Fields(EMPTY)),
     ("reasoning_items", Shape::Fields(REASONING)),
     ("thinking_blocks", Shape::Fields(EMPTY)),
@@ -72,7 +75,7 @@ const RESPONSE_USAGE: &[(&str, Shape)] = &[
 const TEXT: &[(&str, Shape)] = &[("format", Shape::Fields(EMPTY))];
 const RESPONSE: &[(&str, Shape)] = &[
     ("incomplete_details", Shape::Fields(EMPTY)),
-    ("text", Shape::Fields(TEXT)),
+    ("text", Shape::Union(TEXT, text_union::is_text_config)),
     ("tool_choice", Shape::Fields(EMPTY)),
     ("tools", Shape::Tools(tool_shapes::TOOL_VARIANTS)),
     ("usage", Shape::Fields(RESPONSE_USAGE)),
@@ -137,6 +140,14 @@ fn without_nulls(value: &Json, shape: Shape) -> Json {
         Shape::Fields(fields) => strip_nulls(value, fields),
         Shape::Tagged(variants) => tagged_object(value, variants),
         Shape::Tools(variants) => tool_shapes::tools_without_nulls(value, variants),
+        // a union field serializes its model only while the predicate accepts the value
+        Shape::Union(fields, accepts) => {
+            if accepts(value) {
+                strip_nulls(value, fields)
+            } else {
+                value.clone()
+            }
+        }
     }
 }
 
