@@ -1,0 +1,21 @@
+kind: helper
+name: anthropic-batches-error-counts
+call:
+  anthropic_batches:
+    error_counts:
+      now: 1704067200
+      bodies:
+        - '{not json'
+        - '{"request_counts":{"succeeded":"x"}}'
+        - '{"request_counts":null}'
+      errors:
+        - message: rate limited
+          status: 429
+          headers: null
+          headers_object: [[retry-after, "7"]]
+        - message: boom
+          status: 500
+          headers: [[x-request-id, req-1]]
+          headers_object: null
+env: {}
+compare: {ignore: []}

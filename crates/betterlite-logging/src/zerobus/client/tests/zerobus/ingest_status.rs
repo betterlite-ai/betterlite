@@ -172,7 +172,7 @@ async fn a_network_failure_on_insert_is_retryable() {
     assert!(failure.detail.starts_with("insert failed"));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_stalled_insert_past_the_deadline_is_retryable() {
     let fake = FakeZerobus::start(minted(), vec![Reply::stalling()]).await;
     let clock = FakeClock::new(1_000.0);

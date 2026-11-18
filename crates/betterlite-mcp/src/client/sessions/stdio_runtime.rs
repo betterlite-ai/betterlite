@@ -10,7 +10,7 @@ use super::negotiate::ClientSession;
 use super::runtime::{
     HttpClientHandle, McpRuntime, SessionContext, SessionOptions, stdio_transport,
 };
-use super::stdio::{StdioStreams, StdioTransport};
+use super::stdio::{StdioShutdown, StdioStreams, StdioTransport};
 use super::transport::StdioServerParameters;
 
 pub trait StdioSessionFactory: Send + Sync + 'static {
@@ -21,6 +21,7 @@ pub trait StdioSessionFactory: Send + Sync + 'static {
 
 pub struct StdioRuntime<Factory> {
     pub factory: Arc<Factory>,
+    pub shutdown: StdioShutdown,
 }
 
 pub struct UnsupportedHttpClient;
@@ -70,7 +71,7 @@ where
     type Session = StdioSessionContext<Factory>;
 
     fn stdio_client(&self, parameters: StdioServerParameters) -> StdioTransport {
-        stdio_transport(parameters)
+        stdio_transport(parameters, self.shutdown)
     }
 
     fn sse_client(&self, _request: SseRequest) -> StdioTransport {

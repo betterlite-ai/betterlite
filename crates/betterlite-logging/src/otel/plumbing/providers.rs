@@ -57,9 +57,10 @@ pub fn build_resource(config: &OtelConfig) -> Resource {
 pub fn build_metric_reader(
     config: &OtelConfig,
     clients: &HttpClients,
+    interval: Duration,
 ) -> Result<PeriodicReader<MetricSink>, ExporterError> {
     Ok(PeriodicReader::builder(metric_sink(config, clients)?)
-        .with_interval(METRIC_EXPORT_INTERVAL)
+        .with_interval(interval)
         .build())
 }
 
@@ -128,7 +129,7 @@ provider_resolver!(
     |config, clients| {
         Ok(build_meter_provider(
             config,
-            build_metric_reader(config, clients)?,
+            build_metric_reader(config, clients, METRIC_EXPORT_INTERVAL)?,
         ))
     }
 );
