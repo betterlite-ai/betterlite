@@ -2,7 +2,7 @@ id: B020
 title: Budget-aware filtering and policy composition
 description: 'Finish policy routing by filtering B016''s eligible pool against B326 provider, deployment
   and tag budget state. Integrate the filter with tags, reserved access windows, routing groups and affinity
-  using the pinned phase ordering. Connect remaining-budget observations to B012 without implementing
+  using the pinned phase ordering. Connect remaining-budget observations to B189 without implementing
   exporters. Enable MIT tag-budget logic without a paid-tier check, as the project decision requires;
   use component probes on the MIT filter for parity instead of asserting the proprietary gate. Preserve
   zero-budget and missing-spend fail-open behavior, including unavailable shared reads; emit a warning

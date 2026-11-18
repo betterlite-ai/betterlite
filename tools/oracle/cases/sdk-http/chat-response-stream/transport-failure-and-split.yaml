@@ -1,0 +1,50 @@
+kind: sdk_http
+name: sdk-http-chat-response-stream-transport-failure-and-split
+env: {}
+call:
+  chat_response_stream:
+    model: gpt-4o-mini
+    messages:
+      - {role: user, content: hi}
+    api_key: sk-test
+    timeout_seconds: 30
+    request_input: hi
+    runs:
+      - {mode: sync, steps: [next]}
+      - {mode: async, steps: [next]}
+      - {mode: sync, steps: [drain]}
+      - {mode: async, steps: [drain]}
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error: {type: invalid_api_key, message: bad key, param: null, code: invalid_api_key}
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error: {type: invalid_api_key, message: bad key, param: null, code: invalid_api_key}
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"line1\nline2"},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"\n\nline3"},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '[DONE]'
+  - status: 200
+    headers: {content-type: text/event-stream}
+    events:
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"line1\nline2"},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{"content":"\n\nline3"},"finish_reason":null}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}'
+      - '{"id":"chat_a","object":"chat.completion.chunk","created":0,"model":"gpt-4o-mini","choices":[],"usage":{"prompt_tokens":8,"completion_tokens":2,"total_tokens":10,"cost":0.5,"completion_tokens_details":{"reasoning_tokens":0,"text_tokens":2}}}'
+      - '[DONE]'
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization]
+  ignore:
+    - pointer: /chat_response_stream/value/0/failure/message
+      why: LiteLLM prefixes the provider name and betterlite writes its own text
+    - pointer: /chat_response_stream/value/1/failure/message
+      why: LiteLLM prefixes the provider name and betterlite writes its own text

@@ -426,7 +426,11 @@ impl ArcHost for FixtureHost {
     }
 }
 
-pub(super) struct Fixture {
+pub(super) fn redactor() -> Redactor {
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
+}
+
+pub(super) struct Fixture<'redactor> {
     pub(super) environment: ManagedIdentityEnvironment,
     pub(super) host: FixtureHost,
     pub(super) imds: RecordingImds,
@@ -437,12 +441,12 @@ pub(super) struct Fixture {
     pub(super) arc: RecordingArc,
     pub(super) files: FixtureFiles,
     pub(super) oidc: Arc<RecordingOidc>,
-    redactor: Redactor,
+    redactor: &'redactor Redactor,
     exchange: AzureOidcExchange,
 }
 
-impl Fixture {
-    pub(super) fn new(variables: &[(&str, &str)]) -> Self {
+impl<'redactor> Fixture<'redactor> {
+    pub(super) fn new(variables: &[(&str, &str)], redactor: &'redactor Redactor) -> Self {
         let environment_map: BTreeMap<String, String> = variables
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -474,7 +478,7 @@ impl Fixture {
             arc: RecordingArc::default(),
             files: FixtureFiles::default(),
             oidc,
-            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
+            redactor,
             exchange,
         }
     }
@@ -496,7 +500,7 @@ impl Fixture {
             hosted: crate::azure_hosted_identity::request::HostedIo {
                 transport: &self.hosted,
                 clock: &self.clock,
-                redactor: &self.redactor,
+                redactor: self.redactor,
             },
             arc: &self.arc,
             workload: WorkloadIo {

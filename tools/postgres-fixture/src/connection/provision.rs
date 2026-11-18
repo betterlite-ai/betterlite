@@ -2,11 +2,13 @@ use secrecy::SecretString;
 use tokio::task::JoinSet;
 
 use super::cleanup::combine_errors;
-use super::operations::{create_resource, seed_fixture, source_connection};
-use super::resource::{Ownership, Resource};
-use super::{PostgresFixture, select_source};
+use super::operations::{Work, create_resource, fill_resource};
+use super::resource::Resource;
+use super::template::template;
+use super::{PostgresFixture, configured_options, quote_identifier};
 use crate::error::FixtureError;
 use crate::seed::FixtureSeed;
+use crate::seed_sql;
 
 #[must_use = "resolve the fixture or close the task to clean up unclaimed resources"]
 pub struct ProvisionTask {
@@ -37,29 +39,32 @@ impl ProvisionTask {
     }
 }
 
+pub(super) enum Contents {
+    Seed(Box<FixtureSeed>),
+    Statements(Vec<String>),
+}
+
 pub(super) async fn provision_inner(
     configured_url: Option<SecretString>,
-    seed: FixtureSeed,
+    contents: Contents,
     resource: Resource,
 ) -> Result<PostgresFixture, FixtureError> {
-    seed.validate()?;
-    let source = select_source(configured_url.as_ref())?;
-    let (admin, container) = source_connection(source).await?;
-    let admin_url = match &resource {
-        Resource::Database(_) => admin.with_database("postgres")?,
-        Resource::Schema(_) => admin.clone(),
+    let statements = match &contents {
+        Contents::Seed(seed) => {
+            seed.validate()?;
+            seed_sql::schema_statements(seed).await?
+        }
+        Contents::Statements(statements) => statements.clone(),
     };
-    let options = resource.connection(&admin_url)?;
-    create_resource(&admin_url, &resource).await?;
-    if matches!(&resource, Resource::Database(_)) {
-        seed_fixture(&options, &admin_url, &resource, &seed).await?;
+    let admin = configured_options(configured_url.as_ref())?.with_database("postgres")?;
+    let source = quote_identifier(&template(&admin, &statements).await?);
+    let statement = format!(
+        "CREATE DATABASE {} TEMPLATE {source}",
+        quote_identifier(&resource.0)
+    );
+    let fixture = create_resource(&admin, resource, &statement).await?;
+    match contents {
+        Contents::Seed(seed) => fill_resource(fixture, Work::Seed(&seed)).await,
+        Contents::Statements(_) => Ok(fixture),
     }
-    Ok(PostgresFixture {
-        options,
-        ownership: Ownership {
-            resource,
-            admin: Box::new(admin_url),
-        },
-        container,
-    })
 }

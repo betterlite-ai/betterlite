@@ -1,0 +1,72 @@
+task: B1609
+deviations:
+  - what: >-
+      A token pyjwt refuses with InvalidTokenError rather than DecodeError, such as a kid header that is not a string
+      or a crit list pyjwt cannot satisfy, is treated as an opaque token by both the claim merge and the access-token
+      step. LiteLLM catches only DecodeError in process_sso_jwt_access_token, so those errors escape and turn the
+      callback into a 500.
+    why: >-
+      The token comes from the configured OAuth exchange, so its header is provider-side data, and its claims only add
+      teams and a role to an identity that userinfo already supplied. The same token adds no claims in
+      _decode_sso_token_claims, which catches InvalidTokenError, so betterlite makes the two paths agree instead of
+      failing a login with a server error.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L883-L889
+  - what: >-
+      A group claim holding anything other than strings is read as if the claim were absent: a non-string member of
+      the list is skipped and a scalar of another type names no group. LiteLLM converts each value with str(), so a
+      role mapping that lists the text "7", "True" or a dict's repr can match it.
+    why: >-
+      A group name is text, and docs/compatibility.md excludes Python's str and repr coercion. A provider that sends
+      non-string groups sends a value outside the type a role mapping declares.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1192-L1200
+  - what: >-
+      A team id claim must hold only strings: a number or an object raises a typed error that names the claim, in the
+      singular team_id_jwt_field and through the access-token team fill as well. LiteLLM runs str() over the singular
+      claim in get_all_jwt_team_ids and assigns the decoded list raw in process_sso_jwt_access_token, so only the
+      CustomOpenID construction rejects a non-string member.
+    why: >-
+      The team projection is B760's port of get_all_jwt_team_ids, which holds team ids to text, and betterlite's rule
+      is that a value of the wrong type is an error that names the field rather than a converted value.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L428-L448
+  - what: >-
+      A DB team mapping's claim contributes team ids only when it is a list of strings: another type adds none and a
+      list holding a non-string raises a typed error that names the claim. LiteLLM extends the identity's teams with
+      whatever the claim holds, so a string adds its characters and an object its keys, and only a non-string list
+      member fails, later, at CustomOpenID construction.
+    why: >-
+      betterlite's port of get_all_jwt_team_ids reads a plural team claim as a list of strings or nothing at all, so
+      the DB mapping's claim behaves the same, and docs/compatibility.md excludes Python iteration and coercion in
+      favor of a typed error that names the field. A mapping whose claim is a string or an object names no team ids
+      that could be meant.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L1161-L1176
+  - what: >-
+      A configured claim path longer than 8192 bytes or with more than 256 segments raises a typed error instead of
+      being looked up, for the GENERIC_USER_* attribute paths and for each GENERIC_USER_EXTRA_ATTRIBUTES name.
+    why: >-
+      The paths come from operator configuration and go through B213's bounded dot-path lookup, the only dot-path
+      parser in betterlite; no working configuration uses a path near those bounds.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/dot_notation_indexing.py#L32-L77
+kept_bugs:
+  - what: >-
+      The id token and the access token are decoded without checking their signatures, and the access token's teams
+      and role are taken from that payload. LiteLLM reads them with verify_signature False and betterlite does the
+      same.
+    why: >-
+      Keycloak and similar providers put the role only in the access token, so working setups rely on reading it; by
+      the time these functions run, the token came from the configured token endpoint over TLS rather than from a
+      caller, which is what the task means by consuming tokens the exchange already returned.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L880-L889
+  - what: >-
+      The claim merge keeps a non-null but empty or false value from userinfo over the id token and the access token,
+      so a userinfo claim of "", 0 or false wins and only null falls through.
+    why: >-
+      LiteLLM resolves each key with the first source whose value is not None, and setups that send an empty string
+      for a claim they do not know rely on that value staying empty rather than being replaced by the token's.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L965-L974

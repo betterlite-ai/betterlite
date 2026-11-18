@@ -1,3 +1,6 @@
+use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::message_content::Message;
+
 use crate::deployment_catalog::types::Authority;
 use crate::deployment_clients::clients::{CachedClients, ClientKind};
 use crate::router_core::services::RouteServices;
@@ -17,11 +20,19 @@ pub struct RouteRequest<'request> {
     pub retry_skipped_deployment_ids: &'request [String],
 }
 
-// The router settings one route applies, resolved by betterlite-config.
+// The prompt and request arguments the prompt caching check hashes, absent on a route that carries none.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct RoutePolicy {
+pub struct PromptInputs<'request> {
+    pub messages: Option<&'request [Message]>,
+    pub request_kwargs: Option<&'request Object>,
+}
+
+// The router settings one route applies, resolved by betterlite-config, with the request inputs its checks read.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RoutePolicy<'request> {
     pub enable_pre_call_checks: bool,
     pub drop_params: bool,
+    pub prompt: PromptInputs<'request>,
 }
 
 // The client store a route acquires the selected deployment's client from; absent means the attempt carries none.
@@ -38,6 +49,6 @@ pub struct RouteContext<'route> {
     pub services: &'route dyn RouteServices,
     pub limits: &'route (dyn TokenLimits + Sync),
     pub params: &'route (dyn ParamSupport + Sync),
-    pub policy: RoutePolicy,
+    pub policy: RoutePolicy<'route>,
     pub clients: Option<ClientAccess<'route>>,
 }

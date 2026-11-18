@@ -1,0 +1,47 @@
+kind: probe
+name: complexity-scoring-threshold-equality
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          code_keywords: [api, sql]
+          technical_keywords: [architecture, distributed, encryption, authentication]
+          dimension_weights: {codePresence: 1.0, technicalTerms: 0.25}
+          tier_boundaries: {simple_medium: 0.5, medium_complex: 1.0, complex_reasoning: 1.25}
+        prompt: please review the following content and tell me what matters api
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          code_keywords: [api, sql]
+          technical_keywords: [architecture, distributed, encryption, authentication]
+          dimension_weights: {codePresence: 1.0, technicalTerms: 0.25}
+          tier_boundaries: {simple_medium: 0.5, medium_complex: 1.0, complex_reasoning: 1.25}
+        prompt: please review the following content and tell me what matters api sql
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          code_keywords: [api, sql]
+          technical_keywords: [architecture, distributed, encryption, authentication]
+          dimension_weights: {codePresence: 1.0, technicalTerms: 0.25}
+          tier_boundaries: {simple_medium: 0.5, medium_complex: 1.0, complex_reasoning: 1.25}
+        prompt: please review the following content and tell me what matters api sql architecture distributed encryption authentication
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        config:
+          code_keywords: [api, sql]
+          technical_keywords: [architecture, distributed, encryption, authentication]
+          dimension_weights: {codePresence: 1.0, technicalTerms: 0.25}
+          tier_boundaries: {simple_medium: 0.500001, medium_complex: 1.000001, complex_reasoning: 1.250001}
+        prompt: please review the following content and tell me what matters api sql architecture distributed encryption authentication

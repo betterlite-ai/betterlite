@@ -1,0 +1,21 @@
+kind: probe
+name: group-strategy-override
+probes:
+  - clock: {unix_millis: 1700000001500, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        groups:
+          - group_name: latency
+            models: [probe-a, probe-b]
+            routing_strategy: latency-based-routing
+            routing_strategy_args: {ttl: 60, lowest_latency_buffer: 0.5}
+          - {group_name: cheap, models: [probe-c], routing_strategy: cost-based-routing}
+        deployments:
+          - {model_name: probe-a, identifier: a1, model: "openai/probe-a"}
+          - {model_name: probe-a, identifier: a2, model: "openai/probe-a"}
+          - {model_name: probe-b, identifier: b1, model: "openai/probe-b"}
+          - {model_name: probe-c, identifier: c1, model: "openai/probe-c"}
+          - {model_name: probe-d, identifier: d1, model: "openai/probe-d"}
+        names: [latency, cheap, probe-d]
+compare: {ignore: []}

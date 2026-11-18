@@ -1,0 +1,6 @@
+model_list:
+- model_name: nova
+  litellm_params:
+    model: bedrock/amazon.nova-pro-v1:0
+litellm_settings:
+  bedrock_neutralize_orphaned_tool_blocks: false

@@ -14,26 +14,36 @@ use betterlite_core::dispatch::error::DispatchError;
 use betterlite_core::dispatch::log::TracingCallLog;
 use betterlite_core::dispatch::{Dispatch, NoRules};
 use betterlite_core::operation::text_completion::{
-    TextCompletionCall, TextCompletionCallInput, TextCompletionFailure, TextCompletionRequest,
-    TextCompletionResult,
+    ChatCallAnswer, ChatCallMode, TextCompletionCall, TextCompletionCallInput,
+    TextCompletionFailure, TextCompletionRequest, TextCompletionResult,
 };
+use betterlite_core::operation::text_stream::TextStreamAnswer;
 use betterlite_core::operation::{CallResult, Operation};
+use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_openai::completion_chat_bridge::answer::text_answer_body;
+use betterlite_openai::completion_chat_bridge::{CompletionEndpoint, chat_request};
 use betterlite_openai::text_completion_execution::CompletionExecutor;
-use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
+use crate::server::chat_setup::provider_call::answer_chat;
 use crate::state::ServerState;
 
 use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::success_headers;
 
+use self::bridge::{
+    bridge_failure, chat_call_failure, chat_stream_answer, converted, json_response, text_answer,
+    text_result, text_stream,
+};
 use self::error::{FailureAnswer, failure_answer, render};
 
+mod bridge;
 mod error;
+pub(crate) mod streaming;
 mod tests;
 
 pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
@@ -47,6 +57,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         state: Arc::clone(state),
         execution: Arc::new(CompletionExecutor {
             client: executor.client.clone(),
+            bundled_catalog: Arc::clone(&executor.bundled_catalog),
             catalog: OnceCell::new(),
         }),
         dispatch: Arc::new(Dispatch::new(
@@ -82,28 +93,57 @@ impl TextCompletionCall for CompletionCalls {
         &self,
         call: TextCompletionCallInput<'_>,
     ) -> Result<TextCompletionResult, TextCompletionFailure> {
-        let mut logger = TracingCompletionLog;
-        let answered = self
-            .execution
-            .complete(
-                &call.deployment,
-                call.request,
-                &self.state.executor.redactor,
-                &mut logger,
-            )
-            .await;
-        match answered {
-            Ok(answer) => Ok(TextCompletionResult {
-                response: answer.response,
-                upstream_headers: answer.upstream_headers,
-                upstream_time: answer.upstream_time,
-            }),
-            Err(failure) => Err(TextCompletionFailure {
-                status: failure.status,
-                error_type: failure.error_type,
-                param: failure.param,
-                message: failure.message,
-            }),
+        text_answer(self, &call).await
+    }
+
+    async fn endpoint(&self, deployment: &ChatDeployment) -> CompletionEndpoint {
+        self.execution.endpoint(deployment).await
+    }
+
+    async fn stream(
+        &self,
+        call: TextCompletionCallInput<'_>,
+    ) -> Result<TextStreamAnswer, TextCompletionFailure> {
+        text_stream(self, &call).await
+    }
+
+    async fn chat(
+        &self,
+        call: TextCompletionCallInput<'_>,
+        mode: ChatCallMode,
+    ) -> Result<ChatCallAnswer, TextCompletionFailure> {
+        let chat = chat_request(call.request).map_err(bridge_failure)?;
+        let control = ControlOptions::default();
+        match mode {
+            ChatCallMode::Buffered => {
+                let (completion, headers, time) =
+                    answer_chat(&self.state.executor, &chat, &call.deployment, control)
+                        .await
+                        .map_err(|error| chat_call_failure(error, self))?;
+                Ok(ChatCallAnswer::Buffered(text_result(converted(
+                    completion, headers, time,
+                )?)))
+            }
+            ChatCallMode::Streamed => {
+                let started = Instant::now();
+                let upstream = streaming::provider_stream(
+                    &self.state.executor,
+                    &call.deployment,
+                    &chat,
+                    control,
+                    streaming::StreamUsage::Text,
+                )
+                .await
+                .map_err(|error| chat_call_failure(error, self))?;
+                let options = call.request.stream_options.as_ref();
+                let include_usage = options.is_some_and(|chosen| chosen.include_usage);
+                Ok(ChatCallAnswer::Streamed(chat_stream_answer(
+                    upstream,
+                    call.request.model.as_deref(),
+                    include_usage,
+                    started.elapsed(),
+                )))
+            }
         }
     }
 }
@@ -160,6 +200,7 @@ async fn execute(
     started: Instant,
 ) -> Response {
     let asked_model = request.model.clone();
+    let endpoint = state.execution.endpoint(deployment).await;
     let operation = operation(state, request, deployment, call_id);
     let context = DispatchContext::start(CallInputs {
         now: SystemTime::now,
@@ -173,15 +214,21 @@ async fn execute(
             if let Some(model) = asked_model {
                 result.response.model = Some(model);
             }
-            // LiteLLM's completion handler leaves get_custom_headers no provider header, so a 200 carries only x-litellm-*
-            let response_headers = success_headers(
-                &HeaderMap::new(),
-                deployment,
-                call_id,
-                result.upstream_time,
-                started.elapsed(),
-            );
-            (response_headers, Json(result.response)).into_response()
+            // the completion handler leaves get_custom_headers no provider header, so a text answer has only x-litellm-*
+            if matches!(endpoint, CompletionEndpoint::Text) {
+                let headers = success_headers(
+                    &HeaderMap::new(),
+                    deployment,
+                    call_id,
+                    result.upstream_time,
+                    started.elapsed(),
+                );
+                return (headers, Json(result.response)).into_response();
+            }
+            chat_response(&result, deployment, call_id, state, started)
+        }
+        Ok(CallResult::TextStream(result)) => {
+            streaming::render(result, deployment, call_id, started)
         }
         Ok(_) => {
             let unbuilt = DispatchError::NotBuilt {
@@ -190,6 +237,37 @@ async fn execute(
             render(&failure_answer(unbuilt), call_id, state.include_call_id)
         }
         Err(error) => render(&failure_answer(error), call_id, state.include_call_id),
+    }
+}
+
+// A chat answer keeps its provider headers, which the route repeats with llm_provider-
+fn chat_response(
+    result: &TextCompletionResult,
+    deployment: &ChatDeployment,
+    call_id: &str,
+    state: &CompletionState,
+    started: Instant,
+) -> Response {
+    match text_answer_body(&result.response) {
+        Ok(body) => {
+            let headers = success_headers(
+                &result.upstream_headers,
+                deployment,
+                call_id,
+                result.upstream_time,
+                started.elapsed(),
+            );
+            json_response(headers, body)
+        }
+        Err(failure) => {
+            let answer = FailureAnswer {
+                status: failure.status,
+                error_type: failure.error_type,
+                param: failure.param,
+                message: failure.message,
+            };
+            render(&answer, call_id, state.include_call_id)
+        }
     }
 }
 

@@ -6,12 +6,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
 use tokio_postgres::{Client, Config, NoTls, Row};
 
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::session::PostgresStore;
 
-const TOOL_INDEX_SQL: &str =
-    include_str!("../../../migrations/20260226120000_add_spend_log_tool_index/migration.sql");
-const DAILY_TOOL_SPEND_SQL: &str =
-    include_str!("../../../migrations/20260725000000_add_daily_tool_spend/migration.sql");
 const INDEX_ROWS_SQL: &str = r#"SELECT request_id, tool_name, start_time FROM "LiteLLM_SpendLogToolIndex" ORDER BY request_id, tool_name"#;
 const DAILY_ROLLUPS_SQL: &str = r#"SELECT date, tool_name, spend, total_tokens, request_count FROM "LiteLLM_DailyToolSpend" ORDER BY date, tool_name"#;
 
@@ -33,10 +30,13 @@ impl ToolSpendCase {
         let url = Environment::parse_from(["tool-spend"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
-            .resolve()
-            .await
-            .expect("a test schema");
+        let fixture = PostgresFixture::provision_with_statements(
+            url.as_ref(),
+            catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+        )
+        .resolve()
+        .await
+        .expect("a test database");
         let store = store(&fixture);
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
@@ -44,14 +44,6 @@ impl ToolSpendCase {
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .batch_execute(TOOL_INDEX_SQL)
-            .await
-            .expect("the tool index table");
-        client
-            .batch_execute(DAILY_TOOL_SPEND_SQL)
-            .await
-            .expect("the daily tool spend table");
         Self {
             fixture,
             store,
@@ -72,7 +64,10 @@ impl ToolSpendCase {
         if let Some(pool) = store.pool {
             pool.close();
         }
-        fixture.close_async().await.expect("the schema is dropped");
+        fixture
+            .close_async()
+            .await
+            .expect("the database is dropped");
     }
 
     pub(super) async fn execute(&self, sql: &str) {
@@ -115,15 +110,8 @@ impl ToolSpendCase {
     }
 }
 
-// parse the URL: options.config re-encodes the schema option's leading space as '+', which Postgres rejects
 fn store(fixture: &PostgresFixture) -> PostgresStore {
-    let configuration: Config = fixture
-        .options
-        .url
-        .expose_secret()
-        .parse()
-        .expect("the fixture URL parses");
-    let manager = Manager::new(configuration, NoTls);
+    let manager = Manager::new(fixture.options.config.clone(), NoTls);
     let pool = Pool::builder(manager)
         .max_size(1)
         .build()

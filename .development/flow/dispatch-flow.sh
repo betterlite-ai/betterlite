@@ -52,10 +52,13 @@ args=${L}/flows/${id}.args
 jq -n --arg run "${run}" --arg note "${note}" --arg grant "${grant}" --arg ci_rounds "${CI_ROUNDS:-0}" --arg conflicts "${CONFLICTS:-0}" --arg land_only "${LAND_ONLY:-}" '$ARGS.named' > "${args}"
 trap 'rm -f -- "$args"' EXIT
 worktree=${worktrees}/${id}
+rm -f -- "${main}/.git/betterlite/${id}/parked"
 events=${L}/flow-events.log
 say() { printf '%(%H:%M)T %s\n' -1 "${id} $*" >> "${events}"; }
 park() {
   say "blocked: $*"
+  # the gate does not count a parked task as running, so tasks it blocks can go first; the flow clears the mark when it starts again
+  [[ -d "${main}/.git/betterlite/${id}" ]] && : > "${main}/.git/betterlite/${id}/parked"
   # the reason column ends with a space, as every earlier parked.tsv row does
   printf '%(%F %H:%M)T\t%s\t%s\t%s\t%s \n' -1 "${id}" "${run}" "${main}/.git/betterlite/${id}" "${*//[$'\t\n']/ }" >> "${L}/parked.tsv"
 }
@@ -359,33 +362,18 @@ case "${result}" in
       park "CI failed on PR #${pr} (run ${run_id}) after 8 fix rounds"
       exit 5
     }
-    rm -rf -- "${worktree}/target/ci-logs"
-    logs=${worktree}/target/ci-logs/${run_id}
-    gh run download "${run_id}" -D "${logs}" > /dev/null 2>&1
-    failed_log=$(gh run view "${run_id}" --log-failed 2> /dev/null)
-    failed_log=$(awk -F'\t' '$1 != "gate"' <<< "${failed_log}")
-    failed_log=$(cut -f3- <<< "${failed_log}")
-    failed_log=$(sed -E 's/^\xEF\xBB\xBF//; s/^[0-9TZ:.-]+ //; s/(\x1b|\^\[)\[[0-9;]*m//g' <<< "${failed_log}")
-    failed_log=$(grep -v '^##\[' <<< "${failed_log}")
-    # a tests part prints thousands of nextest PASS lines before the one that failed, and its crash cause sits on a four-space thread line
-    failed_log=$(grep -v -E '^ +(PASS|SLOW|SKIP) \[' <<< "${failed_log}")
-    lines=$(grep -m 60 -E "^FAIL |^     |^    thread '" <<< "${failed_log}")
-    # a step outside the gate (the gate's own tests, a tool install) prints no FAIL line, so its last lines go instead
-    [[ -n "${lines}" ]] || lines=$(tail -n 40 <<< "${failed_log}")
-    missed=$(find "${logs}" -path '*/mutants.out/missed.txt' -exec cat {} + 2> /dev/null)
-    missed=$(sort -u <<< "${missed}")
-    missed=$(head -n 40 <<< "${missed}")
-    timed_out=$(find "${logs}" -path '*/mutants.out/timeout.txt' -exec cat {} + 2> /dev/null)
-    timed_out=$(sort -u <<< "${timed_out}")
-    timed_out=$(head -n 20 <<< "${timed_out}")
+    report=$(bash "${P}/ci-failure.sh" "${run_id}" "${worktree}")
+    # deny failing alone on a branch that changes neither Cargo.lock nor deny.toml means new advisories on main, and no fix round can help (B9653 spent five on 11-17, Max)
+    failed_checks=$(grep -E '^FAIL ' <<< "${report}")
+    other_checks=$(grep -v -E '^FAIL deny ' <<< "${failed_checks}")
+    base=$(git -C "${worktree}" merge-base HEAD origin/main)
+    if [[ -n "${failed_checks}" ]] && [[ -z "${other_checks}" ]] && [[ -n "${base}" ]] && git -C "${worktree}" diff --quiet "${base}" -- Cargo.lock deny.toml; then
+      park "CI failed on PR #${pr} (run ${run_id}) only on deny, and the branch changes neither Cargo.lock nor deny.toml, so the cause is on main; land it again once main passes deny"
+      exit 5
+    fi
     say "CI failed on PR #${pr} (run ${run_id}); fix round $((${CI_ROUNDS:-0} + 1))"
     LAND_ONLY='' CI_ROUNDS=$((${CI_ROUNDS:-0} + 1)) exec bash "${P}/dispatch-flow.sh" "${id}" "${run}c" "CI run https://github.com/betterlite-ai/betterlite/actions/runs/${run_id} failed on PR #${pr}.
-${lines}${missed:+
-Mutants CI missed:
-${missed}}${timed_out:+
-Mutants that timed out in CI (the gate counts a timeout as a failure, so a test must fail on the mutant instead of hanging):
-${timed_out}}
-The gate logs of that run are in target/ci-logs/${run_id}/ in your worktree. Fix the cause and finish as usual. The final gate here builds nothing; CI runs clippy and the tests again once the branch is pushed."
+${report} Fix the cause and finish as usual. The final gate here builds nothing; CI runs clippy and the tests again once the branch is pushed."
     ;;
   # main moved under the open PR; the land path merges main again and stops when the merge needs a person, eight rounds at most, since main keeps adding bins next to a task's in a fuzz manifest while its CI runs (B8171, B6414, B3790 on 11-15)
   *" conflicts with main"*)

@@ -28,6 +28,11 @@ description: 'Add typed cooldown records and health snapshots to B304''s store, 
   B016 registers RouteStage::CooldownState as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/cooldown_state.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-router/src/routing_value_store.rs"
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
+  - "crates/betterlite-router/src/router_core/tests.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
+  - "crates/betterlite-router/src/router_core/services.rs"
   - crates/betterlite-router/src/cooldown_state.rs
   - crates/betterlite-router/src/cooldown_state/**
   - crates/betterlite-router/src/context/cooldown_state.rs
@@ -137,5 +142,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0

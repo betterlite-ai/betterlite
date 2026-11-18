@@ -1,0 +1,11 @@
+kind: helper
+name: member-request-contracts-member-add-one-or-many
+call:
+  b8412: {record: MemberAddRequest, value: {member: {user_id: "user-1", role: "admin"}}}
+calls:
+  - b8412: {record: MemberAddRequest, value: {member: [{user_id: "user-1", role: "admin"}, {user_email: "a@b.c", role: "user"}]}}
+  - b8412: {record: MemberAddRequest, value: {member: []}}
+  - b8412: {record: MemberAddRequest, value: {member: {role: "admin"}}}
+  - b8412: {record: MemberAddRequest, value: {member: [{user_id: "user-1", role: "admin"}, "x"]}}
+env: {}
+compare: {ignore: []}

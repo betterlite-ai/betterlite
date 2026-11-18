@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use betterlite_redact::secret::Redactor;
 use rust_decimal::Decimal;
 
 use crate::streamed_response_assembly::records::Chunk;
@@ -5,10 +8,10 @@ use crate::streamed_response_assembly::records::Chunk;
 use super::support::{ProviderSeen, chunks, priced_logging};
 use super::{Harness, chat_of, cost_stream, hidden_stream, plain_stream, value};
 
-pub(super) async fn reported_cost_precedence() {
-    reported_cost_results().await;
-    reported_cost_xai().await;
-    reported_cost_logging_without_reported().await;
+pub(super) async fn reported_cost_precedence(redactor: &Arc<Redactor>) {
+    reported_cost_results(redactor).await;
+    reported_cost_xai(redactor).await;
+    reported_cost_logging_without_reported(redactor).await;
 }
 
 // One stream, what the completion_cost fixture does, and what the response carries afterwards.
@@ -88,9 +91,9 @@ fn fallback_cases() -> [Case; 3] {
     ]
 }
 
-pub(super) async fn reported_cost_results() {
+pub(super) async fn reported_cost_results(redactor: &Arc<Redactor>) {
     for scenario in value_cases().into_iter().chain(fallback_cases()) {
-        let mut harness = Harness::new(Some(scenario.stream));
+        let mut harness = Harness::new(Some(scenario.stream), redactor);
         harness.messages = true;
         harness.counter.response_text = 1;
         harness.costs.completion = scenario.priced;
@@ -108,9 +111,9 @@ pub(super) async fn reported_cost_results() {
     }
 }
 
-pub(super) async fn reported_cost_xai() {
+pub(super) async fn reported_cost_xai(redactor: &Arc<Redactor>) {
     let logging = priced_logging("xai", None);
-    let mut harness = Harness::new(Some(cost_stream(Some("0.25"))));
+    let mut harness = Harness::new(Some(cost_stream(Some("0.25"))), redactor);
     harness.logging = Some(&logging);
     let response = chat_of(&harness).await;
     assert_eq!(response.usage.cost, Some(Decimal::new(25, 2)));
@@ -119,9 +122,9 @@ pub(super) async fn reported_cost_xai() {
     assert_eq!(harness.costs.completion_calls(), 0);
 }
 
-pub(super) async fn reported_cost_logging_without_reported() {
+pub(super) async fn reported_cost_logging_without_reported(redactor: &Arc<Redactor>) {
     let logging = priced_logging("openai", None);
-    let mut harness = Harness::new(Some(plain_stream()));
+    let mut harness = Harness::new(Some(plain_stream()), redactor);
     harness.messages = true;
     harness.counter.response_text = 1;
     harness.logging = Some(&logging);

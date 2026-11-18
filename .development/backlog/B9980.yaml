@@ -1,0 +1,13 @@
+id: B9980
+milestone: R2 bug fixes
+title: Reasoning-effort capability functions move down to betterlite-openai
+status: done
+depends_on: [B323]
+file: tasks/B9980-reasoning-effort-capability-down.yaml
+covers: []
+parent: null
+split_from: null
+resolution: merged
+superseded_by: null
+blocked_reason: null
+pr: 2357

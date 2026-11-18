@@ -1,0 +1,21 @@
+kind: helper
+name: base_field_defaults
+call:
+  key_fields:
+    calls:
+      - {function: base, body: {}}
+      - {function: base, body: {team_id: null}}
+      - {function: base, body: {models: null, metadata: null, spend: null, object_permission: null}}
+      - {function: base, body: {max_budget: ""}}
+      - {function: base, body: {models: [], allowed_cache_controls: [], metadata: {}, config: {}, permissions: {}, model_max_budget: {}, aliases: {}}}
+      - {function: base, body: {spend: 5, max_budget: 10.5, tpm_limit: 7, rpm_limit: 0}}
+      - {function: base, body: {budget_limits: null}}
+      - {function: base, body: {budget_limits: [{budget_duration: "1d", max_budget: 2.5}]}}
+      - {function: base, body: {budget_limits: "[]"}}
+      - {function: base, body: {blocked: true, guardrails: ["g"], policies: [], prompts: ["p"]}}
+      - {function: base, body: {key_alias: "", duration: "1h", budget_fallbacks: {gpt-4: [gpt-4o]}}}
+      - {function: base, body: {object_permission: {}}}
+      - {function: base, body: {object_permission: {models: [], mcp_servers: [], mcp_tool_permissions: {}}}}
+      - {function: base, body: {object_permission: null}}
+env: {}
+compare: {ignore: []}

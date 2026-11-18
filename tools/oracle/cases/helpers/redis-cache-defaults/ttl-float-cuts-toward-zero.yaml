@@ -1,0 +1,5 @@
+kind: helper
+name: redis-cache-defaults-ttl-float-cuts-toward-zero
+call: {b5630: {function: cache_defaults, default_redis_ttl: 60.9, redis_flush_size: null}}
+env: {}
+compare: {ignore: []}

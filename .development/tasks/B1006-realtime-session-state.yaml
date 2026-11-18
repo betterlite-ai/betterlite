@@ -3,7 +3,7 @@ title: Realtime session state and billing records
 description: >-
   Own RealTimeStreaming.__init__ and the ten complete storage/logging methods at 236-425 in
   betterlite-core::api::realtime_session_state. B1004 owns shared protocols and JSON decoding,
-  B1005 header detection, B012 logging callbacks and B191 the bounded logging queue. This task
+  B1005 header detection, B249/B250 logging callbacks and B191 the bounded logging queue. This task
   supplies per-connection mutable state to the sender, buffer and relays; it must not depend on them.
   All message/input/tool arrays start empty; current IDs/chunks/delta type and session configuration
   start None. Sent/setup-content/synthetic-session/guardrail flags are false, violation count and
@@ -26,6 +26,8 @@ description: >-
   55 config tests/seeds and 35 wiring, 600 lines.
 scope:
   paths:
+  - "crates/betterlite-config/src/sections.rs"
+  - "crates/betterlite-config/src/api.rs"
   - crates/betterlite-core/src/api/realtime_session_state.rs
   - crates/betterlite-core/src/api/realtime_session_state/**
   - crates/betterlite-config/src/api/realtime_session_state.rs
@@ -113,7 +115,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B1004 owns BackendClose and socket/normalizer protocols; B1005 beta conversion; B1110 sender/enforcement; B1124 buffer methods and caps; B2455 guardrail predicates/setup policy; B1007 runner; B1008 backend methods; B1009 client methods. _has_realtime_guardrails has no caller at the pin.
-- B191 bounds submitted logging work and owns shutdown; B012 owns success/pre-call callback execution. The setting's module export remains B157.
+- B191 bounds submitted logging work and owns shutdown; B250/B249 own success/pre-call callback execution. The setting's module export remains B157.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as realtime_session_state in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/realtime_session_state.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/realtime_session_state.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Tool-call collection runs before the event filter, so logged_real_time_event_types=[] must not erase tool accounting.

@@ -3,11 +3,9 @@
 use std::fs;
 use std::future::Future;
 use std::path::Path;
-use std::str;
 use std::time::Duration;
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -18,36 +16,16 @@ use tokio_postgres::{NoTls, Row};
 
 use crate::migration_deploy::catalog::{Migration, migration_files};
 use crate::migration_ledger::lock::{JitterSource, MigrationCoordinator};
-use crate::schema_agent_identity::MIGRATION_CATALOG as AGENT_IDENTITY;
-use crate::schema_baseline::MIGRATION_CATALOG as BASELINE;
-use crate::schema_baseline::MigrationCatalog;
-use crate::schema_budget_windows::MIGRATION_CATALOG as BUDGET_WINDOWS;
 use crate::schema_contract::SchemaContract;
-use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE;
-use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY;
-use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES;
-use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES;
-use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE;
 
 pub(super) const PUBLIC_SCHEMA: &str = "public";
 const TEST_TIMEOUT: Duration = Duration::from_secs(240);
 const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
-pub(super) const LEDGER_DDL: &str = "CREATE TABLE _prisma_migrations (id varchar(36) PRIMARY KEY \
+pub(crate) const LEDGER_DDL: &str = "CREATE TABLE _prisma_migrations (id varchar(36) PRIMARY KEY \
     NOT NULL, checksum varchar(64) NOT NULL, finished_at timestamptz, migration_name varchar(255) \
     NOT NULL, logs text, rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), \
     applied_steps_count integer NOT NULL DEFAULT 0)";
-
-const PINNED_CATALOGS: [MigrationCatalog; 8] = [
-    BASELINE,
-    DAILY_USAGE,
-    MANAGED_RESOURCES,
-    IDENTITY_HISTORY,
-    POLICY_RESOURCES,
-    ROUTING_STATE,
-    BUDGET_WINDOWS,
-    AGENT_IDENTITY,
-];
 
 #[derive(Parser)]
 struct Environment {
@@ -69,15 +47,15 @@ pub(super) struct TestDatabase {
     pub url: SecretString,
 }
 
-pub(super) async fn harness<F, Fut>(count: usize, test: F)
+pub(super) async fn harness<F, Fut>(templates: Vec<Vec<String>>, test: F)
 where
     F: FnOnce(Vec<TestDatabase>) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
     let mut fixtures = Vec::new();
     let mut databases = Vec::new();
-    for _ in 0..count {
-        let (fixture, database) = provision().await;
+    for statements in templates {
+        let (fixture, database) = provision(statements).await;
         fixtures.push(fixture);
         databases.push(database);
     }
@@ -97,16 +75,14 @@ where
     result.unwrap();
 }
 
-async fn provision() -> (PostgresFixture, TestDatabase) {
+async fn provision(statements: Vec<String>) -> (PostgresFixture, TestDatabase) {
     let url = Environment::parse_from(["migration-ledger-tests"])
         .url
         .map(SecretString::from);
-    let mut task = PostgresFixture::provision_with_name_generator(
-        url.as_ref(),
-        &FixtureSeed::default(),
-        &mut RandomDatabaseName,
-    );
-    let fixture = task.resolve().await.unwrap();
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .unwrap();
     let pool = Pool::builder(Manager::new(fixture.options.config.clone(), NoTls))
         .max_size(4)
         .build()
@@ -228,48 +204,5 @@ pub(super) fn pinned_manifest() -> Vec<(String, String)> {
             let (sum, file) = line.split_once("  ").unwrap();
             (file.trim_end_matches(".sql").to_owned(), sum.to_owned())
         })
-        .collect()
-}
-
-#[derive(Clone, Copy)]
-pub(super) enum HistorySource {
-    // the pinned SQL files, a source independent of the compiled catalog
-    Pinned,
-    Compiled,
-}
-
-pub(super) async fn apply_history(pool: &Pool, source: HistorySource) {
-    let statements = match source {
-        HistorySource::Pinned => pinned_statements(),
-        HistorySource::Compiled => compiled_statements(),
-    };
-    let client = pool.get().await.unwrap();
-    for statement in statements {
-        client
-            .batch_execute(str::from_utf8(&statement).unwrap())
-            .await
-            .unwrap();
-    }
-}
-
-fn pinned_statements() -> Vec<Vec<u8>> {
-    pinned_manifest()
-        .into_iter()
-        .map(|(name, _sum)| {
-            fs::read(
-                Path::new(env!("CARGO_MANIFEST_DIR"))
-                    .join("src/schema_contract/fixtures/sql")
-                    .join(format!("{name}.sql")),
-            )
-            .unwrap()
-        })
-        .collect()
-}
-
-fn compiled_statements() -> Vec<Vec<u8>> {
-    PINNED_CATALOGS
-        .iter()
-        .flat_map(|catalog| catalog.files.iter())
-        .map(|file| file.bytes.to_vec())
         .collect()
 }

@@ -1,0 +1,28 @@
+kind: helper
+name: ollama-models
+call:
+  b8157:
+    op: ollama_models
+    provider: ollama
+    api_base: "{{upstream}}"
+    answer: {status: 200, body: '{"models":[{"name":"llama3"},{"model":"qwen"},{"name":"llama3"},{"name":"ollama/mistral"}]}'}
+calls:
+  - b8157:
+      op: ollama_models
+      provider: ollama
+      env: {OLLAMA_API_BASE: "{{upstream}}/api/generate", OLLAMA_API_KEY: "sk-env"}
+      answer: {status: 200, body: '{"models":[{"name":"phi"}]}'}
+  - b8157:
+      op: ollama_models
+      provider: ollama
+      api_base: "{{upstream}}"
+      api_key: "sk-passed"
+      answer: {status: 200, body: '[{"name":"gemma"},{"name":""},{"model":7}]'}
+  - b8157:
+      op: ollama_models
+      provider: ollama
+      api_base: "{{upstream}}/api/chat"
+      env: {OLLAMA_API_KEY: "sk-env"}
+      answer: {status: 200, body: '{"models":[{"name":"llama3:8b"}]}'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,45 @@
+kind: probe
+name: declared-empty-intersection
+probes:
+  - clock: {unix_millis: 1700000001700, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        cost_map:
+          openai/probe-empty: {litellm_provider: openai, reasoning_effort_levels: [low]}
+          probe-empty: {litellm_provider: openai, reasoning_effort_levels: []}
+          probe-open: {litellm_provider: openai, reasoning_effort_levels: [low, high, max]}
+        efforts:
+          - model_info:
+              litellm_provider: openai
+              key: openai/probe-empty
+              supports_reasoning: true
+              reasoning_effort_levels: []
+          - model_info: {litellm_provider: openai, key: openai/probe-open}
+            resolved_model_info: {mode: chat}
+          - model_info:
+              litellm_provider: openai
+              key: openai/probe-open
+              supports_reasoning: true
+          - model_info:
+              litellm_provider: openai
+              key: openai/probe-empty
+              supports_reasoning: true
+              supports_low_reasoning_effort: true
+              reasoning_effort_levels: []
+          - model_info:
+              litellm_provider: openai
+              key: openai/probe-empty
+              supports_low_reasoning_effort: true
+        intersections:
+          - current: [low, high]
+            resolved: []
+          - current: []
+            resolved: [low, high]
+          - current: [low, high]
+          - resolved: []
+        lookups:
+          - {model: probe-empty, custom_llm_provider: openai}
+          - {model: probe-open, custom_llm_provider: openai}
+          - {model: probe-absent, custom_llm_provider: openai}
+compare: {ignore: []}

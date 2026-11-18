@@ -9,7 +9,7 @@ description: >-
   (url,request_params). Log and GET that result. No read send passes its accepted timeout argument.
 
   Invoke B2402 _handle_error only around the GET, then call the corresponding B527 response transform
-  outside the catch. Use B1071 wire records and B012 logging. Add VectorFileReadTransport to B2401 for
+  outside the catch. Use B1071 wire records and B249 logging. Add VectorFileReadTransport to B2401 for
   actual handler HTTP comparisons, plus native client/log/error-boundary tests. These four whole functions
   have 232 nonblank/non-comment lines. Estimate 220 implementation, 145 tests, 85 adapters, 85 fixtures,
   35 wiring/corpus lines, 570 total within 610. No new wire parser or proxy route belongs here.

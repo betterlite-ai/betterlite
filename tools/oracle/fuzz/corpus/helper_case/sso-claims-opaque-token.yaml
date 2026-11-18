@@ -1,0 +1,37 @@
+kind: helper
+name: sso-claims-corpus-opaque
+call:
+  sso_claims:
+    attributes: {}
+    emails: [null]
+    groups:
+      - [admins]
+    role_mappings: null
+    merge:
+      - userinfo: {x: null}
+        id_token: opaque-token
+        access_token: null
+    decode_tokens: [opaque-token]
+    process:
+      - access_token: opaque-token
+        sso_settings: {team_ids_jwt_field: team_ids}
+        identity:
+          id: user-1
+          email: user@example.com
+          first_name: null
+          last_name: null
+          display_name: null
+          picture: null
+          provider: null
+          team_ids: []
+          user_role: null
+          extra_fields: null
+        role_mappings: null
+    convert:
+      response: {}
+      jwt_settings: {}
+      sso_settings: null
+      role_mappings: null
+      team_mappings: null
+env: {}
+compare: {ignore: []}

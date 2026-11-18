@@ -1,0 +1,73 @@
+kind: helper
+name: response-synthetic-events-function-and-reasoning-events
+call:
+  response_synthetic_events:
+    operation: build
+    rows:
+      - response:
+          id: resp_f
+          created_at: 1
+          status: completed
+          output:
+            - type: function_call
+              id: fc_1
+              call_id: call_1
+              name: lookup
+              arguments: '{"a": 1}'
+              status: completed
+            - type: function_call
+              id: fc_2
+              call_id: call_2
+              name: ping
+              arguments: ""
+              status: completed
+        chunk_size: 5
+        cost: null
+      - response:
+          id: resp_r
+          created_at: 2
+          status: completed
+          usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3}
+          output:
+            - type: reasoning
+              id: rs_1
+              summary:
+                - {type: summary_text, text: abcde}
+                - {type: summary_text, text: ""}
+        chunk_size: 2
+        cost: null
+      - response:
+          id: resp_c
+          created_at: 3
+          status: completed
+          output:
+            - type: message
+              id: msg_c
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: x, annotations: []}
+            - type: custom_tool_call
+              id: ct_1
+              call_id: call_c
+              name: freeform
+              input: raw input
+        chunk_size: 2
+        cost: null
+      - response:
+          id: resp_inc
+          created_at: 4
+          status: incomplete
+          output: []
+        chunk_size: 2
+        cost: null
+      - response:
+          id: resp_x
+          created_at: 5
+          status: failed
+          error: {code: upstream_error, message: boom}
+          output: []
+        chunk_size: 2
+        cost: null
+env: {}
+compare: {ignore: []}

@@ -2,19 +2,16 @@
 
 use std::future::{Future as _, poll_fn};
 use std::task::Poll;
-use std::{env::split_paths, ffi::OsString, path::Path, process, time::Duration};
+use std::{process, time::Duration};
 
 use clap::Parser;
 use rstest::rstest;
-use testcontainers::core::{IntoContainerPort as _, WaitFor};
-use testcontainers::{ContainerRequest, GenericImage, ImageExt as _, runners::AsyncRunner as _};
-use tokio::process::Command;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 use tokio_postgres::{Client, NoTls, types::FromSqlOwned};
 
 use crate::connection::{
-    DatabaseNameGenerator, FixtureSource, PostgresFixture, RandomDatabaseName, select_source,
+    DatabaseNameGenerator, PostgresFixture, RandomDatabaseName, configured_options,
 };
 use crate::error::FixtureError;
 use crate::seed::{CallerRole, FixtureSeed, KeyRow, Membership, TeamRow, UserRow};
@@ -23,66 +20,16 @@ use secrecy::{ExposeSecret as _, SecretString};
 fn url(value: &str) -> SecretString {
     SecretString::from(value.to_owned())
 }
-fn postgres_image(image: GenericImage) -> ContainerRequest<GenericImage> {
-    image
-        .with_wait_for(WaitFor::message_on_stdout("database system is ready"))
-        .with_wait_for(WaitFor::seconds(2))
-        .with_exposed_port(5432.tcp())
-        .with_env_var("POSTGRES_USER", "fixture")
-        .with_env_var("POSTGRES_PASSWORD", "fixture+secret")
-        .with_env_var("POSTGRES_DB", "postgres")
-}
-pub(crate) async fn postgres_server() -> (
-    Option<testcontainers::ContainerAsync<GenericImage>>,
-    SecretString,
-) {
-    if let Some(configured_url) = test_environment().postgres_test_url {
-        return (None, url(&configured_url));
-    }
-    let server = postgres_image(GenericImage::new("postgres", "17"))
-        .start()
-        .await
-        .unwrap();
-    let connection_url = server_url(&server).await;
-    (Some(server), url(&connection_url))
-}
 #[derive(Parser)]
 struct TestEnvironment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
     postgres_test_url: Option<String>,
-    #[arg(long, env = "PATH")]
-    path: Option<OsString>,
 }
-fn test_environment() -> TestEnvironment {
-    TestEnvironment::parse_from(["postgres-fixture-tests"])
+pub(crate) fn postgres_url() -> SecretString {
+    let configured = TestEnvironment::parse_from(["postgres-fixture-tests"]).postgres_test_url;
+    url(&configured.expect("POSTGRES_TEST_URL is set, by CI or by nextest's postgres setup script"))
 }
-// CI has no docker binary, so configured-URL tests must not try to start one.
-fn docker_available() -> bool {
-    let Some(path) = test_environment().path else {
-        return false;
-    };
-    split_paths(Path::new(&path).as_os_str()).any(|directory| directory.join("docker").is_file())
-}
-macro_rules! skip_without_postgres {
-    () => {
-        if !(test_environment().postgres_test_url.is_some() || docker_available()) {
-            return;
-        }
-    };
-}
-macro_rules! skip_without_docker {
-    () => {
-        if !docker_available() {
-            return;
-        }
-    };
-}
-async fn server_url(server: &testcontainers::ContainerAsync<GenericImage>) -> String {
-    let host = server.get_host().await.unwrap();
-    let port = server.get_host_port_ipv4(5432.tcp()).await.unwrap();
-    format!("postgresql://fixture:fixture+secret@{host}:{port}/postgres")
-}
-async fn connect_client(connection_url: &SecretString) -> (Client, JoinSet<()>) {
+pub(crate) async fn connect_client(connection_url: &SecretString) -> (Client, JoinSet<()>) {
     let (client, connection) = tokio_postgres::connect(connection_url.expose_secret(), NoTls)
         .await
         .unwrap();
@@ -119,33 +66,29 @@ fn fixture_seed(user_id: &str, token: &str) -> FixtureSeed {
 }
 #[test]
 fn configured_url_wins() {
-    assert!(matches!(
-        select_source(Some(&url("postgresql://u:p@localhost/db"))),
-        Ok(FixtureSource::Configured(_))
-    ));
+    configured_options(Some(&url("postgresql://u:p@localhost/db"))).unwrap();
 }
 #[test]
-fn containers_when_unset() {
+fn missing_url_fails() {
     assert!(matches!(
-        select_source(None),
-        Ok(FixtureSource::Testcontainers)
+        configured_options(None),
+        Err(FixtureError::MissingConfiguredUrl)
     ));
 }
 #[test]
 fn empty_configured_url_fails() {
     assert!(matches!(
-        select_source(Some(&url(""))),
+        configured_options(Some(&url(""))),
         Err(FixtureError::EmptyConfiguredUrl)
     ));
     assert!(matches!(
-        select_source(Some(&url("not-postgres"))),
+        configured_options(Some(&url("not-postgres"))),
         Err(FixtureError::InvalidConfiguredUrl { .. })
     ));
 }
 #[tokio::test]
 async fn createdb_privilege_failure() {
-    skip_without_postgres!();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let (admin, _driver) = connect_client(&admin_url).await;
     // CI shares one server across runs and its admin user isn't fixture, so the role is unique, dropped after, and built into the URL
     let role = format!("fixture_nocreatedb_{}", process::id());
@@ -176,25 +119,20 @@ async fn createdb_privilege_failure() {
     ));
 }
 #[tokio::test]
-async fn isolated_schemas() {
-    skip_without_postgres!();
-    let (_server, admin_url) = postgres_server().await;
-    let first = PostgresFixture::provision_schema(Some(&admin_url))
+async fn statement_fixtures_are_separate_copies_of_one_schema() {
+    let admin_url = postgres_url();
+    let statements = vec!["CREATE TABLE rows (value TEXT)".to_owned()];
+    let first = PostgresFixture::provision_with_statements(Some(&admin_url), statements.clone())
         .resolve()
         .await
         .unwrap();
-    let second = PostgresFixture::provision_schema(Some(&admin_url))
+    let second = PostgresFixture::provision_with_statements(Some(&admin_url), statements)
         .resolve()
         .await
         .unwrap();
     let (writer, first_driver) = connect_client(&first.options.url).await;
-    let (reader, second_driver) = connect_client(&second.options.url).await;
     writer
-        .batch_execute("CREATE TABLE rows (value TEXT); INSERT INTO rows VALUES ('first')")
-        .await
-        .unwrap();
-    reader
-        .batch_execute("CREATE TABLE rows (value TEXT)")
+        .batch_execute("INSERT INTO rows VALUES ('first')")
         .await
         .unwrap();
     assert_eq!(
@@ -205,62 +143,16 @@ async fn isolated_schemas() {
         fixture_scalar::<i64>(&second, "SELECT count(*) FROM rows").await,
         0
     );
-    let first_schema = fixture_scalar::<String>(&first, "SELECT current_schema()").await;
-    let second_schema = fixture_scalar::<String>(&second, "SELECT current_schema()").await;
+    let first_database = fixture_scalar::<String>(&first, "SELECT current_database()").await;
+    let second_database = fixture_scalar::<String>(&second, "SELECT current_database()").await;
     close_driver(writer, first_driver).await;
-    close_driver(reader, second_driver).await;
     first.close_async().await.unwrap();
     second.close_async().await.unwrap();
     let (admin, _driver) = connect_client(&admin_url).await;
-    let statement = "SELECT 1 FROM pg_namespace WHERE nspname = ANY($1)";
-    let names = vec![first_schema, second_schema];
-    let schemas = admin.query(statement, &[&names]).await.unwrap();
-    assert!(schemas.is_empty());
-}
-#[tokio::test]
-async fn container_removed_on_drop() {
-    skip_without_docker!();
-    let fixture = PostgresFixture::provision_with_name_generator(
-        None,
-        &FixtureSeed::default(),
-        &mut RandomDatabaseName,
-    )
-    .resolve()
-    .await
-    .unwrap();
-    let id = fixture.container.as_ref().unwrap().id().to_owned();
-    assert!(docker_containers(&id).await.contains(&id));
-    drop(fixture);
-    timeout(Duration::from_secs(10), async {
-        while docker_containers(&id).await.contains(&id) {
-            sleep(Duration::from_millis(25)).await;
-        }
-    })
-    .await
-    .unwrap();
-    assert!(docker_containers(&id).await.is_empty());
-}
-
-async fn docker_containers(id: &str) -> String {
-    let output = timeout(
-        Duration::from_secs(5),
-        Command::new("docker")
-            .args([
-                "ps",
-                "--all",
-                "--quiet",
-                "--no-trunc",
-                "--filter",
-                &format!("id={id}"),
-            ])
-            .kill_on_drop(true)
-            .output(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
-    assert!(output.status.success());
-    String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    let statement = "SELECT 1 FROM pg_database WHERE datname = ANY($1)";
+    let names = vec![first_database, second_database];
+    let databases = admin.query(statement, &[&names]).await.unwrap();
+    assert!(databases.is_empty());
 }
 #[rstest]
 #[case::underscore("verify_full")]
@@ -268,7 +160,7 @@ async fn docker_containers(id: &str) -> String {
 fn rejects_unknown_tls_mode(#[case] value: &str) {
     let configured = url(&format!("postgresql://u:p@localhost/db?sslmode={value}"));
     assert!(
-        matches!(select_source(Some(&configured)), Err(FixtureError::UnknownTlsMode { value: actual }) if actual == value)
+        matches!(configured_options(Some(&configured)), Err(FixtureError::UnknownTlsMode { value: actual }) if actual == value)
     );
 }
 #[rstest]
@@ -294,9 +186,8 @@ fn validates_user_roles(#[case] second_role: CallerRole) {
 }
 #[tokio::test]
 async fn independent_databases_have_all_baseline_foreign_keys() {
-    skip_without_postgres!();
     let seed = membership_seed();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let first = configured_fixture(&admin_url, &seed).await;
     let second = configured_fixture(&admin_url, &seed).await;
     let statement = "SELECT count(*) FROM pg_constraint WHERE contype = 'f'";
@@ -307,8 +198,7 @@ async fn independent_databases_have_all_baseline_foreign_keys() {
 }
 #[tokio::test]
 async fn existing_database_never_dropped() {
-    skip_without_postgres!();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let (admin, _driver) = connect_client(&admin_url).await;
     // CI shares one server across runs and names its admin database differently, so the database is unique and dropped after
     let name = format!("existing_{}", process::id());
@@ -337,10 +227,9 @@ async fn existing_database_never_dropped() {
 }
 #[tokio::test]
 async fn cleanup_after_failure() {
-    skip_without_postgres!();
     let mut seed = fixture_seed("contains\0nul", "token");
     seed.keys.clear();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let mut generator = FixedName("failed_fixture".to_owned());
     let result =
         PostgresFixture::provision_with_name_generator(Some(&admin_url), &seed, &mut generator)
@@ -352,8 +241,7 @@ async fn cleanup_after_failure() {
 }
 #[tokio::test]
 async fn cleanup_after_cancellation() {
-    skip_without_postgres!();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let (admin, _driver) = connect_client(&admin_url).await;
     let mut generator = FixedName("cancelled_fixture".to_owned());
     let mut task = PostgresFixture::provision_with_name_generator(
@@ -380,8 +268,7 @@ async fn cleanup_after_cancellation() {
 }
 #[tokio::test]
 async fn cleanup_after_unclaimed_result() {
-    skip_without_postgres!();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let (admin, _driver) = connect_client(&admin_url).await;
     let mut generator = FixedName("unclaimed_fixture".to_owned());
     let task = PostgresFixture::provision_with_name_generator(
@@ -402,8 +289,7 @@ impl DatabaseNameGenerator for FixedName {
 }
 #[tokio::test]
 async fn concurrent_fixture_roles_do_not_leak() {
-    skip_without_postgres!();
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let mut first_task = PostgresFixture::provision_with_name_generator(
         Some(&admin_url),
         &fixture_seed("first", "first-token"),
@@ -423,16 +309,10 @@ async fn concurrent_fixture_roles_do_not_leak() {
     second.close_async().await.unwrap();
 }
 async fn configured_fixture(admin_url: &SecretString, seed: &FixtureSeed) -> PostgresFixture {
-    let fixture = PostgresFixture::provision_with_name_generator(
-        Some(admin_url),
-        seed,
-        &mut RandomDatabaseName,
-    )
-    .resolve()
-    .await
-    .unwrap();
-    assert!(fixture.container.is_none());
-    fixture
+    PostgresFixture::provision_with_name_generator(Some(admin_url), seed, &mut RandomDatabaseName)
+        .resolve()
+        .await
+        .unwrap()
 }
 async fn fixture_scalar<T>(fixture: &PostgresFixture, statement: &str) -> T
 where
@@ -458,7 +338,7 @@ fn membership_seed() -> FixtureSeed {
 }
 #[test]
 fn connection_credentials_redacted() {
-    let source = select_source(Some(&url("postgresql://user:secret@localhost/db"))).unwrap();
+    let source = configured_options(Some(&url("postgresql://user:secret@localhost/db"))).unwrap();
     assert!(!format!("{source:?}").contains("secret"));
     let seed = fixture_seed("user", "secret-token");
     assert!(!format!("{seed:?}").contains("secret-token"));

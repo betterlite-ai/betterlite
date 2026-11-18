@@ -14,6 +14,7 @@ betterlite-context = { path = "../betterlite-context" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-paths = { path = "../betterlite-paths" }
@@ -24,17 +25,18 @@ betterlite-secrets = { path = "../betterlite-secrets" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
+http = "1.5.0"
 indexmap = "2.14.2"
 lru = "0.18.4"
 pcre2 = "0.2.11"
 regex.workspace = true
 regex-syntax = "0.8.11"
-rust_decimal.workspace = true
+rust_decimal = { workspace = true, features = ["serde-with-float"] }
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_path_to_error = "0.1.20"
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha2.workspace = true
 speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
@@ -43,6 +45,7 @@ tokio.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tracing.workspace = true
 unicode-normalization = "0.1.26"
+url = "2.5.8"
 uuid = { version = "1.29.0", features = ["serde", "v4"] }
 
 [dev-dependencies]

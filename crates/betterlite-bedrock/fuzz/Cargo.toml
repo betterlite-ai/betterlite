@@ -14,6 +14,8 @@ cargo-fuzz = true
 [dependencies]
 async-trait = "0.1.92"
 betterlite-bedrock = { path = ".." }
+betterlite-openai = { path = "../../betterlite-openai" }
+betterlite-prompts = { path = "../../betterlite-prompts" }
 betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 bytes = "1.12.1"
 libfuzzer-sys = "0.4.9"
@@ -97,6 +99,27 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_other_embedding_jobs"
+path = "fuzz_targets/bedrock_other_embedding_jobs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sagemaker_stream"
+path = "fuzz_targets/sagemaker_stream.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sagemaker_embedding_reply"
+path = "fuzz_targets/sagemaker_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_services_vector_stores"
 path = "fuzz_targets/bedrock_services_vector_stores.rs"
 test = false
@@ -162,6 +185,20 @@ bench = false
 [[bin]]
 name = "bedrock_services_passthrough"
 path = "fuzz_targets/bedrock_services_passthrough.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_embedding_io"
+path = "fuzz_targets/bedrock_embedding_io.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_realtime_events"
+path = "fuzz_targets/bedrock_services_realtime_events.rs"
 test = false
 doc = false
 bench = false

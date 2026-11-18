@@ -1,0 +1,20 @@
+kind: helper
+name: routes-concatenation-order
+call:
+  b3808:
+    function: build_routes
+    route_templates: [sql_injection]
+    custom_routes_file: |-
+      - route_name: file_route
+        description: from the routes file
+        utterances: ["file one", "file two", 1e3]
+        similarity_threshold: 0.8
+      - metadata: {note: &n NuLL}
+        route_name: *n
+        utterances: [*n]
+    custom_routes:
+      - route_name: inline_route
+        utterances: ["inline one"]
+    global_threshold: 0.6
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+# only normalize and dimensions belong to AmazonTitanV2Config; titan_extra is an unrelated key
+model_list:
+  - model_name: titan
+    litellm_params:
+      model: bedrock/amazon.titan-embed-text-v2:0
+      normalize: true
+      titan_extra: 1
+litellm_settings:
+  dimensions: 256

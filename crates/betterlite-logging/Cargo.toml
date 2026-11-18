@@ -10,6 +10,7 @@ async-trait = "0.1.92"
 aws-credential-types = "=1.3.1"
 aws-sigv4 = "1.6.2"
 aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
+axum.workspace = true
 base64 = "0.23.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
@@ -21,6 +22,7 @@ betterlite-interactions = { path = "../betterlite-interactions" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 chrono.workspace = true
 csv = "1.4.0"
@@ -33,7 +35,7 @@ http = "1.5.0"
 hyper = { version = "1.12.0", default-features = false }
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
-lettre = { version = "0.11.23", default-features = false, features = ["aws-lc-rs", "hostname", "rustls-native-certs", "rustls-no-provider", "smtp-transport"] }
+lettre = { version = "0.11.24", default-features = false, features = ["aws-lc-rs", "hostname", "rustls-native-certs", "rustls-no-provider", "smtp-transport"] }
 mail-builder = { version = "=2.0.0", default-features = false }
 md-5 = "0.11.0"
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
@@ -81,12 +83,14 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true
 h2 = "0.4.20"
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
+mutants = "0.0.4"
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 temp-env = "0.3.6"
 tokio = { workspace = true, features = ["test-util", "time"] }
 tokio-postgres.workspace = true
+tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true
 
 [[test]]
@@ -139,3 +143,7 @@ path = "src/otel/plumbing/metrics/tests/suite.rs"
 [[test]]
 name = "otel_lifecycle"
 path = "src/otel/logger/tests/suite.rs"
+
+[[test]]
+name = "v2_callback_tests"
+path = "src/otel/v2_callback/tests/suite.rs"

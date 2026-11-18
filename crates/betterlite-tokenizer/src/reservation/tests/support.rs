@@ -123,13 +123,13 @@ fn assemble(
         Arc::new(Instant::now),
     ));
     let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
+        fetcher,
         downloader,
         Arc::clone(&catalog),
         Arc::clone(&service),
         false,
     ));
-    Counter::new(selector, fetcher, service, catalog, Settings::default())
+    Counter::new(selector, service, catalog, Settings::default())
 }
 
 fn service(max_concurrent: usize, facility: Arc<dyn BlockingCounter>) -> Arc<CountingService> {

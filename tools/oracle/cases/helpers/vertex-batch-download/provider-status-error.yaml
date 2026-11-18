@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-batch-download-provider-status-error
+call:
+  vertex_batch_download:
+    operation: buffer
+    content: 'eyJyZXF1ZXN0Ijp7fSwic3RhdHVzIjoiRkFJTEVEX1BSRUNPTkRJVElPTiIsInByb2Nlc3NlZF90aW1lIjoiIiwicmVzcG9uc2UiOnt9fQ=='
+    url: https://storage.googleapis.com/storage/v1/b/b/o/litellm-vertex-files%2Fpublishers%2Fgoogle%2Fmodels%2Fgemini-2.5-flash%2Fbatch.jsonl
+    headers:
+      Content-Type: "application/json"
+      Content-Length: "1"
+    disabled: false
+    now: 1700000000
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/content, why: LiteLLM writes json.dumps spacing and betterlite compact JSON}
+    - {pointer: /value/content_length, why: the length counts each side's own serialization}

@@ -1,0 +1,31 @@
+kind: helper
+name: titan-v2-name-boundary
+call:
+  bedrock_services_batch_embeddings:
+    function: name_boundary
+    models:
+      - "amazon.titan-embed-text-v2:0"
+      - "us.amazon.titan-embed-text-v2:0"
+      - "arn:aws:bedrock:us-east-1:123:inference-profile/us.amazon.titan-embed-text-v2:0"
+      - "bedrock/amazon.titan-embed-text-v2:0"
+      - "bedrock/bedrock/amazon.titan-embed-text-v2:0"
+      - "amazon.titan-embed-text-v20"
+      - "amazon.titan-embed-text-v2-experimental"
+      - "amazon.titan-embed-text-v2"
+      - "AMAZON.TITAN-EMBED-TEXT-V2:0"
+      - "amazon.titan-embed-text-v2-experimental/amazon.titan-embed-text-v2:0"
+      - "amazon.titan-embed-text-v2/foo"
+      - "titan-embed-text-v2"
+      - "notitan-embed-text-v2:0"
+      - "amazon.titan-embed-text-v1"
+calls:
+  - bedrock_services_batch_embeddings:
+      function: name_boundary
+      models:
+        - "amazon.titan-embed-text-v2-"
+        - "bedrock/titan-embed-text-v2"
+        - "titan-embed-text-v2foo"
+        - ""
+env: {}
+compare:
+  ignore: []

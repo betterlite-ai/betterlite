@@ -1,0 +1,25 @@
+kind: helper
+name: new_user_defaults
+call:
+  b8411:
+    calls:
+      - {function: new_user, body: {user_email: "a@example.com"}}
+      - {function: new_user, body: {}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: null}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: proxy_admin}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: proxy_admin_viewer}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: internal_user}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: internal_user_viewer}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: org_admin}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: team}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: customer}}
+      - {function: new_user, body: {user_email: "a@example.com", user_role: superuser}}
+      - {function: new_user, body: {user_email: "a@example.com", user_alias: a, max_budget: 10.5}}
+      - {function: new_user, body: {user_email: "a@example.com", auto_create_key: false, send_invite_email: true, sso_user_id: s1, organizations: [o1, o2]}}
+      - {function: new_user, body: {user_email: "a@example.com", teams: [t1, t2]}}
+      - {function: new_user, body: {user_email: "a@example.com", teams: [{team_id: t1}]}}
+      - {function: new_user, body: {user_email: "a@example.com", teams: [{team_id: t1, max_budget_in_team: 5, user_role: admin}]}}
+      - {function: new_user, body: {user_email: "a@example.com", max_budget: ""}}
+      - {function: new_user, body: {user_email: "a@example.com", max_budget: null, teams: null}}
+env: {}
+compare: {ignore: []}

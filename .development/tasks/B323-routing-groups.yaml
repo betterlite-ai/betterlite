@@ -23,6 +23,12 @@ description: 'Add typed routing_groups that materialize B302 candidates without 
   B016 registers RouteStage::RoutingGroups as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/routing_groups.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-router/src/router_core/tests/support.rs"
+  - "crates/betterlite-router/src/router_core/tests.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
+  - "crates/betterlite-router/src/router_core/services.rs"
+  - "crates/betterlite-router/src/router_core/route.rs"
+  - "crates/betterlite-router/src/router_core/pipeline.rs"
   - crates/betterlite-router/src/routing_groups.rs
   - crates/betterlite-router/src/routing_groups/**
   - crates/betterlite-router/src/context/routing_groups.rs
@@ -149,5 +155,5 @@ pitfalls:
   at the repository 300-line limit.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0

@@ -1,0 +1,103 @@
+id: B9980
+title: Reasoning-effort capability functions move down to betterlite-openai
+description: >-
+  B323 builds LiteLLM's reasoning-effort capability functions (litellm/router_utils/reasoning_effort_capability.py)
+  in betterlite-router, as crates/betterlite-router/src/routing_groups/effort.rs and the files under
+  routing_groups/effort/. LiteLLM also calls them from outside the router: the Mistral chat config rounds a
+  requested effort with declared_reasoning_efforts_for_model and nearest_declared_reasoning_effort, the Together AI
+  chat config reads declared_reasoning_efforts_for_model, and the Anthropic pass-through degrades an effort with
+  resolve_supported_reasoning_efforts. betterlite builds those callers in betterlite-provider (B036 binds B1408's
+  ReasoningEffortSelector) and betterlite-core (B962), and deny.toml lets only betterlite-oracle,
+  betterlite-router-fuzz and betterlite-server depend on betterlite-router. So the functions move down to
+  betterlite-openai. betterlite-core, betterlite-provider and betterlite-router already depend on it, and it already
+  holds azure_model_family in openai_base_config, the gpt-5 family check _supports_none_reasoning_effort needs, so
+  azure_model_family stays where it is.
+
+
+  Move only, no behaviour change. With git mv, crates/betterlite-router/src/routing_groups/effort.rs becomes
+  crates/betterlite-openai/src/reasoning_effort_capability.rs, and every file under routing_groups/effort/ moves
+  under reasoning_effort_capability/ with its name. The plan commit already declares `pub mod
+  reasoning_effort_capability;` in betterlite-openai's lib.rs over an empty reasoning_effort_capability.rs, and the
+  moved file replaces it (git mv -f). Inside the module, `betterlite_openai::openai_base_config` becomes
+  `crate::openai_base_config`, `crate::routing_groups::effort` becomes `crate::reasoning_effort_capability`, and
+  `crate::router_predicates::JsonMap` is written as `IndexMap<String, Json>`. Router's JsonMap is an alias of that
+  same type, so router callers pass theirs unchanged. Every item keeps its name, GroupReasoningEfforts included: it
+  is the aggregate B846 builds for get_model_group_info from betterlite-router, so its supported field becomes pub.
+  Nothing else changes visibility. betterlite-router's routing_groups.rs drops `pub mod effort;`, and no effort
+  module or re-export stays in betterlite-router.
+
+
+  The tests move with the code. B323 tests these functions inside routing_groups::tests: the cases in behaviors.rs
+  from declared_levels_win_over_flags to effort_wire_names_round_trip, the nearest, intersection, aggregate and
+  resolve cases in boundaries.rs, and their #[case] lines. They go to
+  crates/betterlite-openai/src/reasoning_effort_capability/tests.rs with the same case names. The moved tests build
+  model_info and the cost map from JSON literals with serde_json::from_str and ModelCostMap::parse;
+  router's routing_groups/tests/support.rs builders are not copied. A support.rs helper that no remaining router
+  test uses after the move is deleted.
+
+
+  Every other use of a moved item switches to `betterlite_openai::reasoning_effort_capability`. B323 is still being
+  built when this is planned, so find the uses with `git grep -n 'routing_groups::effort'` over crates and tools
+  instead of trusting a list; B323's oracle probe, tools/oracle/src/router_probes/routing_groups.rs, is the likely
+  one. No manifest changes: betterlite-openai already depends on betterlite-models, indexmap and serde_json, and
+  betterlite-router and betterlite-oracle already depend on betterlite-openai. Afterwards B036, B846 and B962 call
+  the functions from betterlite_openai::reasoning_effort_capability.
+scope:
+  paths:
+  - crates/betterlite-router/src/routing_groups.rs
+  - crates/betterlite-router/src/routing_groups/effort.rs
+  - crates/betterlite-router/src/routing_groups/effort/**
+  - crates/betterlite-router/src/routing_groups/tests.rs
+  - crates/betterlite-router/src/routing_groups/tests/**
+  - crates/betterlite-openai/src/reasoning_effort_capability.rs
+  - crates/betterlite-openai/src/reasoning_effort_capability/**
+  - tools/oracle/src/router_probes/routing_groups.rs
+  - tools/oracle/src/router_probes/routing_groups/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L24-L52
+  why: The Mistral chat config imports declared_reasoning_efforts_for_model and nearest_declared_reasoning_effort, a caller outside the router.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L67-L101
+  why: The Anthropic pass-through degrades an effort through resolve_supported_reasoning_efforts, the caller B962 builds in betterlite-core.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/together_ai/chat/transformation.py#L135-L147
+  why: The Together AI chat config reads declared_reasoning_efforts_for_model, a third provider caller.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/reasoning_effort_capability.py#L125-L137
+  why: _supports_none_reasoning_effort asks the Azure gpt-5 config, which is why the new home must reach azure_model_family.
+dod:
+- text: >-
+    The reasoning-effort capability functions and their tests live in betterlite-openai's reasoning_effort_capability
+    module, unchanged, and betterlite-router has no effort module and no import of one.
+  proof: [capability-tests, router-group-tests, moved]
+checks:
+  optional: []
+  commands:
+  - id: capability-tests
+    why: The moved functions' tests are missing from betterlite-openai or fail there.
+    run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^reasoning_effort_capability::/)'
+  - id: router-group-tests
+    why: The routing group tests that stay in betterlite-router no longer build or pass after the move.
+    run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^routing_groups::/)'
+  - id: moved
+    why: The functions are not in betterlite-openai, or an effort module or import of it is left in betterlite-router.
+    run: >-
+      grep -q -E '^pub fn ' crates/betterlite-openai/src/reasoning_effort_capability.rs &&
+      ! test -e crates/betterlite-router/src/routing_groups/effort.rs &&
+      ! test -e crates/betterlite-router/src/routing_groups/effort &&
+      ! grep -q -E '^pub mod effort;' crates/betterlite-router/src/routing_groups.rs &&
+      ! git grep -q -F 'routing_groups::effort' -- crates tools
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Any change to what the functions do. B323's oracle cases keep covering them through its probe.
+- azure_model_family and ModelFamily stay in betterlite-openai's openai_base_config.
+- Binding the functions into B1408's ReasoningEffortSelector (B036), the Messages effort degradation (B962) and get_model_group_info (B846).
+- The rest of routing_groups (group parsing, the index, priority and params) stays in betterlite-router.
+pitfalls:
+- Use git mv so each file keeps its history; the budget counts the move as deleted plus added lines, about 400 each way outside the tests.
+- "pub(super) items inside the moved module keep pub(super): their parent is now betterlite-openai's crate root, so they stay crate-private."
+- "Don't add a JsonMap alias to betterlite-openai; IndexMap<String, Json> is the same type as router's alias, and a second name for it is a copy."
+- "Where a moved test is a #[case] line of one of B323's rstest functions, remove the case line together with its function, or the router tests stop building."
+review_level: standard
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0

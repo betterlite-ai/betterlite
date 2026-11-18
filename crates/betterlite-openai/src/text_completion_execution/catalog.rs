@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use betterlite_models::catalog::BundledCatalog;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::provider_model_sets::{ProviderModelSet, ProviderModelSets};
 
 use crate::chat::deployment::{ChatDeployment, Provider};
@@ -14,9 +14,9 @@ pub struct CompletionCatalog {
 
 impl CompletionCatalog {
     #[must_use]
-    pub fn bundled() -> Self {
+    pub fn new(catalog: &ModelCatalog) -> Self {
         let mut sets = ProviderModelSets::default();
-        sets.add_known_models(&BundledCatalog::default().get());
+        sets.add_known_models(catalog);
         Self {
             chat_models: sets
                 .sets

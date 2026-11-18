@@ -1,0 +1,42 @@
+kind: helper
+name: responses-stream-errors-first-failure
+call:
+  responses_stream_errors:
+    redaction: enabled
+    steps:
+      - function: format_failure
+        failure:
+          kind: plain
+          text: broken
+          message: broken
+          type: null
+          code: null
+          status_code: null
+          body: null
+          original_exception: null
+      - function: format_failure
+        failure:
+          kind: plain
+          text: again
+          message: again
+          type: null
+          code: null
+          status_code: null
+          body: null
+          original_exception: null
+calls:
+  - responses_stream_errors:
+      redaction: enabled
+      steps:
+        - function: format_failure
+          failure:
+            kind: plain
+            text: "upstream http://service.internal:8080/v1 failed"
+            message: "upstream http://service.internal:8080/v1 failed"
+            type: null
+            code: null
+            status_code: null
+            body: null
+            original_exception: null
+env: {}
+compare: {ignore: []}

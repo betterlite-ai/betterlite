@@ -1,0 +1,51 @@
+kind: probe
+name: complexity-scoring-seven-dimension-vectors
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: ""
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: function class def
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: step by step think through
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: architecture distributed encryption authentication
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: hello there
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: first do this then that
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: a b? c d? e f? g h?
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      complexity_scoring:
+        function: classify
+        prompt: please review the following content and tell me what matters api

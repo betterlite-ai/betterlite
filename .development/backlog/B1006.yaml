@@ -1,14 +1,14 @@
 id: B1006
 milestone: M5 api families
 title: Realtime session state
-status: todo
-depends_on: [B002, B012, B171, B191, B1004, B1005]
+status: done
+depends_on: [B002, B171, B191, B1004, B1005, B247, B249, B250]
 file: tasks/B1006-realtime-session-state.yaml
 covers:
   - "litellm/litellm_core_utils/realtime_streaming.py"
 parent: B084
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2322

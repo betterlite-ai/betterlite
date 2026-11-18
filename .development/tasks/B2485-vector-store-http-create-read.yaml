@@ -3,7 +3,7 @@ title: Vector-store HTTP create, retrieve and list
 description: >-
   Own all six complete create/retrieve/list handlers at llm_http_handler.py:10101-10492 in
   core::api::vector_store_http_create_read. They use B173 mode-matched clients/pools, B1058 contracts,
-  B527 transforms, B012 logs, B171 path encoding and B2402 _handle_error. Pool ssl_verify defaults null.
+  B527 transforms, B249 logs, B171 path encoding and B2402 _handle_error. Pool ssl_verify defaults null.
   Header validation precedes overlay of the now-mutated extra_headers. All three accept extra_body but
   ignore it. Create validates capability before headers/URL, transforms optional params, logs and POSTs
   JSON; async passes timeout, sync omits it. Retrieve appends one encoded id to the complete base URL,

@@ -1,0 +1,20 @@
+task: B9983
+deviations:
+  - what: >-
+      A SageMaker response stream whose buffered JSON value is still unfinished after more than 1 MiB (0x0010_0000 bytes)
+      ends with "the SageMaker stream JSON buffer passed 1048576 bytes without a complete value", on the blocking and the
+      async path. A value that completes, even in one large event, projects as before.
+    why: >-
+      LiteLLM appends every event to accumulated_json and reparses the whole string until a value completes, so a stream
+      that never closes its JSON grows memory and parse time without bound.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L100-L122
+  - what: >-
+      On the async path, a complete JSON value that fails to project is logged and dropped from the buffer, so the next
+      event projects on its own. [] followed by {"token": {"text": "after"}} yields the "after" token.
+    why: >-
+      LiteLLM's aiter_bytes keeps the rejected text in accumulated_json, every later event is appended behind it and
+      never parses, and the rest of the stream is lost.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L150-L176
+kept_bugs: []

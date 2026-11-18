@@ -119,7 +119,7 @@ async fn hold_open(listener: TcpListener) {
 }
 
 // a poll is bounded by the client's own read limit, never by the submission's caller timeout
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn the_provider_client_bounds_a_poll_with_its_own_read_limit() {
     let (listener, address, client) = local_server(SHORT_READ_LIMIT).await;
     let url = Url::parse(&format!("http://{address}/v1/get_result?id=1")).expect("the URL");

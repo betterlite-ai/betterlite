@@ -3,7 +3,7 @@ title: Attached-file HTTP update and deletion
 description: >-
   Implement all four vector_store_file_update_handler/vector_store_file_delete_handler sync/async functions
   in core::api::vector_file_http_write. Own llm_http_handler.py:11300-11572. B173 supplies clients, B1071
-  records/contracts, B527 concrete transformations, B012 pre_call and B2402 the shared _handle_error.
+  records/contracts, B527 concrete transformations, B249 pre_call and B2402 the shared _handle_error.
   Match a supplied client to execution mode; a mismatch or omission selects the pool with ssl_verify=null
   unless configured. Validate extra_headers or {}, then overlay that map after any validation mutation.
 

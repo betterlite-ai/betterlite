@@ -46,11 +46,7 @@ impl SchemaDatabase {
     pub(crate) fn settings(&self) -> StartupSettings {
         StartupSettings {
             updates_enabled: StartupSwitch(true),
-            database_url: Some(SecretString::from(format!(
-                "{}&schema={}",
-                self.url.expose_secret(),
-                self.schema
-            ))),
+            database_url: Some(self.url.clone()),
             direct_url: None,
             use_v2_migration_resolver: StartupSwitch(true),
             use_prisma_db_push: StartupSwitch(false),
@@ -94,7 +90,7 @@ async fn provision() -> (SchemaDatabase, PostgresFixture) {
     let configured = Environment::parse_from(["database-startup-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(configured.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(configured.as_ref(), Vec::new())
         .resolve()
         .await
         .expect("the Postgres fixture is available");
@@ -108,18 +104,10 @@ async fn provision() -> (SchemaDatabase, PostgresFixture) {
         .max_size(4)
         .build()
         .expect("the fixture pool builds");
-    let schema: String = pool
-        .get()
-        .await
-        .expect("a fixture connection")
-        .query_one("SELECT current_schema()", &[])
-        .await
-        .expect("current_schema reads")
-        .get(0);
     let database = SchemaDatabase {
         pool,
         url: SecretString::from(fixture.options.url.expose_secret().to_owned()),
-        schema,
+        schema: "public".to_owned(),
     };
     (database, fixture)
 }

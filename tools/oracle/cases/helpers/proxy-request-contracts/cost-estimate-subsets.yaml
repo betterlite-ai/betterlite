@@ -1,0 +1,23 @@
+kind: helper
+name: cost_estimate_subsets
+call:
+  b8411:
+    calls:
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 0, output_tokens: 0}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 6, cache_creation_input_tokens: 4}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 6, cache_creation_input_tokens: 5}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 11}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, reasoning_tokens: 5}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, reasoning_tokens: 6}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 11, reasoning_tokens: 6}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: -1, output_tokens: 5}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, reasoning_tokens: -1}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, num_requests_per_day: -1}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, num_requests_per_day: 100, num_requests_per_month: 3000}}
+      - {function: cost_estimate, body: {input_tokens: 10, output_tokens: 5}}
+      - {function: cost_estimate, body: {model: gpt-4o, output_tokens: 5}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10}}
+      - {function: cost_estimate, body: {model: gpt-4o, input_tokens: 10, output_tokens: 5, cache_read_input_tokens: null, reasoning_tokens: null, num_requests_per_day: null}}
+env: {}
+compare: {ignore: []}

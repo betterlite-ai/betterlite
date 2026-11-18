@@ -5,7 +5,7 @@ description: >-
   metadata, tool, extra_body, reasoning, web-search and response-format methods. B917
   supplies history, B1136 tool choices, B216 custom-tool format conversion, B905 normalized
   stream options and B1138 the optional-field set. B247 supplies logging state whose
-  call_type changes to responses before dispatch; debug diagnostics use B012's sink.
+  call_type changes to responses before dispatch; debug diagnostics use tracing.
   No provider request occurs here.
 
   Load litellm_settings.reasoning_auto_summary through B002 with default false and
@@ -17,6 +17,10 @@ description: >-
   180 tests, 110 cases, 80 adapters, 55 settings/seeds and 25 wiring lines: 730 total.
 scope:
   paths:
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
+  - "crates/betterlite-config/src/sections.rs"
+  - "crates/betterlite-config/src/loader.rs"
+  - "crates/betterlite-config/src/api.rs"
   - crates/betterlite-core/src/api/response_chat_request.rs
   - crates/betterlite-core/src/api/response_chat_request/**
   - crates/betterlite-config/src/api/response_chat_request.rs

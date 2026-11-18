@@ -18,7 +18,7 @@ use crate::error::FixtureError;
 use crate::finops::FinOpsSeed;
 use crate::finops::model::{ConfigName, ConfigRow};
 use crate::seed::{FixtureSeed, KeyRow, UserRow};
-use crate::tests::{FixedName, postgres_server};
+use crate::tests::{FixedName, postgres_url};
 
 const LENS_TABLES: &[&str] = &["LiteLLM_Lens", "LiteLLM_LensRun", "LiteLLM_LensWorker"];
 
@@ -343,7 +343,7 @@ async fn assert_dashboard_fixtures_are_independent(admin_url: &SecretString) {
 
 #[tokio::test]
 async fn dashboard_schema_is_independent() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     assert_schema_selection(&admin_url).await;
     assert_dashboard_fixtures_are_independent(&admin_url).await;
 }
@@ -508,7 +508,7 @@ async fn assert_duplicate_request_id_fails(client: &Client, seed: &FixtureSeed) 
 
 #[tokio::test]
 async fn dashboard_spend_rows_round_trip() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let seed = dashboard_seed(round_trip_logs());
     let fixture = provision(&admin_url, &seed).await;
     let (client, driver) = connect(&fixture.options.url).await;
@@ -698,7 +698,7 @@ fn dashboard_seed_rejects_bad_rows(
 
 #[tokio::test]
 async fn dashboard_seed_rejects_bad_rows_before_creating_a_database() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let seed = dashboard_seed(unknown_key_logs());
     let mut generator = FixedName("dashboard_bad_seed".to_owned());
     let result =
@@ -719,7 +719,7 @@ async fn dashboard_seed_rejects_bad_rows_before_creating_a_database() {
 
 #[tokio::test]
 async fn dashboard_seed_rejects_bad_rows_and_cleans_up_insert_failures() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
     let mut log = spend_log("req-time", 0);
     log.start_time = "not-a-timestamp".to_owned();
     let seed = dashboard_seed(vec![log]);
@@ -805,7 +805,7 @@ async fn assert_combined_seed(client: &Client) -> Vec<String> {
 
 #[tokio::test]
 async fn dashboard_daily_seed_interop() {
-    let (_server, admin_url) = postgres_server().await;
+    let admin_url = postgres_url();
 
     let combined = provision(&admin_url, &interop_seed()).await;
     let (client, driver) = connect(&combined.options.url).await;

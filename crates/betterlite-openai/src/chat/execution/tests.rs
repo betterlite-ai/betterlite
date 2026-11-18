@@ -134,6 +134,7 @@ fn executor(
         mock_chat: echo_mock,
         mock_embedding: unused_embedding,
         redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
+        bundled_catalog: Arc::default(),
     }
 }
 

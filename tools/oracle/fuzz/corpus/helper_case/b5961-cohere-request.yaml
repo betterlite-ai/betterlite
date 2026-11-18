@@ -1,0 +1,6 @@
+kind: helper
+name: b5961-cohere-request
+call:
+  b5961: {"function": "cohere_request", "model": "endpoint", "input": "a b", "optional_params": {"input_type": "search_query"}}
+env: {}
+compare: {ignore: []}

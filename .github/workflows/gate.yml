@@ -168,9 +168,16 @@ jobs:
     needs: [find, checks]
     if: always() && github.ref == 'refs/heads/main' && contains(needs.find.outputs.first, 'tests-')
     runs-on: ubuntu-24.04
+    # actions/cache keeps a path outside the workspace relative to it, so the save has to run in the shards' image or their restore lands outside $HOME (11-17)
+    container:
+      image: rust:1.98.0-slim-trixie@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
     timeout-minutes: 10
     permissions: {}
     steps:
+      # the compression method is part of the cache version, and the shards compress with zstd
+      - name: Install zstd
+        run: apt-get update && apt-get install --yes --no-install-recommends zstd
+
       - name: Restore the answers so far
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -182,8 +189,19 @@ jobs:
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: oracle-answers-tests-*
-          path: ~/.cache/betterlite-oracle
+          path: oracle-answers-new
           merge-multiple: true
+
+      # download-artifact wrote the answers to /home/runner/.cache, outside what the save picked up, so the saved cache stayed near 238 KB (11-17); a run step's ~ is the one the shards restore into
+      - name: Merge the new answers into the cache folder
+        run: |
+          cache=~/.cache/betterlite-oracle
+          mkdir -p "${cache}" oracle-answers-new/used
+          find oracle-answers-new -maxdepth 1 -name '*.json' -exec cp -n -t "${cache}" {} +
+          find oracle-answers-new/used -type f -printf '%f\n' | (cd "${cache}" && xargs -r touch -c --)
+          # a changed pin, dispatch.py or helper module gives every affected answer a new key, so an answer no run read or wrote for 7 days goes; the 01:17 UTC run reads every live one daily
+          find "${cache}" -name '*.json' -mtime +7 -delete
+          echo "answers in the cache: $(find "${cache}" -name '*.json' | wc -l)"
 
       - name: Save every answer under one key
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
