@@ -265,6 +265,14 @@ pitfalls:
 - 'docs/deviations/B9988.yaml holds the second-422 row: after the second 422 the provider''s error reaches the
   client, where LiteLLM''s two-iteration loop falls out of the function and returns None. Copy its what, why and link
   from B505''s log at 672ada1dc5:docs/deviations/B505.yaml; B505 drops it from its own log.'
+- >-
+  B9986 and this task share files: server/chat_setup/provider_call.rs, provider_call/embedding.rs,
+  crates/betterlite-provider/src/operation.rs, operation/tests.rs, prepared/deployment.rs,
+  aiohttp_openai_dispatch/tests.rs and provider/tests/openai.rs. free.pl runs them one after the other, so the second
+  one merges main and finds the other's variants: B9986 adds OperationError::Anthropic, OperationError::UnsupportedParams,
+  Upstream::Anthropic, the two-variant AnthropicResult in OperationResult::Anthropic and Deployment.anthropic. Keep its
+  arms in chat_error and its embedding twin, add RejectedFields beside them, and set every field B9986 added in the
+  Deployment literals.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

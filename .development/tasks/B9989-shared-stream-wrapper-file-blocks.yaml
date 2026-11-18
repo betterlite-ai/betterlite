@@ -156,6 +156,6 @@ pitfalls:
   File sizes. Every file stays at or under 300 lines. stream.rs is 232 lines today and shrinks;
   crates/betterlite-models/src/params.rs is 194.
 budget:
-  max_changed_lines: 800
+  max_changed_lines: 1500
   max_new_expects: 0
 review_level: standard

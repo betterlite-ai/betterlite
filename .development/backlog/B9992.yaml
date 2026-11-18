@@ -1,0 +1,13 @@
+id: B9992
+milestone: M3 providers
+title: Per-deployment drop_params reaches the provider adapters
+status: todo
+depends_on: [B9986]
+file: tasks/B9992-deployment-drop-params.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

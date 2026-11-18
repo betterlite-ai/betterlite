@@ -1,0 +1,118 @@
+id: B9993
+title: Anthropic text completions through the chat bridge
+description: >-
+  Serve /v1/completions for an anthropic/ deployment. LiteLLM's text_completion turns the prompt into user messages
+  (main.py L7625-L7649), calls completion() with text_completion set (L7663-L7669), wraps a stream in
+  TextCompletionStreamWrapper (L7673-L7679) and converts a reply with convert_chat_to_text_completion (L7687-L7690).
+  betterlite's completions route already does the same for OpenAI chat deployments: CompletionCalls::chat in
+  crates/betterlite-server/src/routes/completions.rs builds the chat request with chat_request, and bridge.rs turns
+  the reply into the text shape with converted and text_completion_response, and the stream with chat_stream_answer.
+  After B9990 that bridge passes None for the Anthropic runtime, so an anthropic/ deployment there answers
+  UnavailableAdapter, and converted reads only ChatCompletion::OpenAi.
+
+
+  The runtime. The completion routes get only Arc<ServerState>, and ServerState is the shared slot registry, so the
+  runtime is built where the routes are. CompletionState gains anthropic: Arc<OnceCell<Arc<AnthropicRuntime>>>,
+  created empty in routes(), and CompletionCalls gets a clone of that Arc where it is built per request. chat() takes
+  the runtime with get_or_try_init, building it on the first bridged chat call with B9986's
+  AnthropicRuntime::new(&state.config, &state.executor.client, Arc::clone(&state.executor.bundled_catalog)), the
+  lazy pattern CompletionExecutor already uses for its catalog. A RuntimeError answers TextCompletionFailure::internal
+  with its message. chat() then passes Some(&runtime) to answer_chat and provider_stream in place of B9990's None.
+
+
+  The reply. In the buffered arm, OperationResult::Chat(completion) goes to converted as today.
+  OperationResult::Anthropic(AnthropicResult::Reply(reply)) goes to a new pub(super) fn anthropic_converted(reply,
+  headers, time) in bridge.rs: serialize the reply with serde_json::to_value, read it back as ChatResponse with
+  serde_json::from_value, and hand it to text_completion_response, the converter the OpenAI branch uses. ChatResponse
+  ignores fields it does not name, so tool calls and thinking fields drop out as LiteLLM's text conversion drops them.
+  A decode failure answers TextCompletionFailure::internal. Any other result answers the MISMATCHED failure.
+
+
+  The stream. chat_stream_answer in bridge.rs builds ChatChunks from upstream.body_stream() and the response headers.
+  Split it: a new pub(super) fn frames_answer(bytes: BoxStream<'static, Result<Vec<u8>, HttpError>>, headers:
+  HeaderMap, model: Option<&str>, include_usage: bool, upstream_time: Duration) -> TextStreamAnswer holds the body, and
+  chat_stream_answer calls it with the upstream's stream and headers. In the streamed arm,
+  OperationResult::Anthropic(AnthropicResult::Stream(frames)) goes to frames_answer with the headers provider_stream
+  returned. B9986's frames are OpenAI chat chunk frames without data: [DONE], and ChatChunks already ends when its
+  byte stream ends, so decode_chat_events turns them into text chunks unchanged.
+
+
+  Tests. Write rstest function anthropic_bridge_cases in the new child module
+  crates/betterlite-server/src/routes/completions/tests/anthropic.rs, declared by mod anthropic; in
+  routes/completions/tests.rs, booting the completion routes against a loopback Anthropic upstream the way the tests
+  beside it do, with named cases buffered_text (a string prompt reaches Anthropic as one user message and the answer
+  is a text_completion object with the reply text), stream_text (text_completion chunks, then data: [DONE]) and
+  upstream_error (an Anthropic 400 keeps its status). Test configs set LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS so the beta
+  matrix never leaves the machine.
+scope:
+  paths:
+  - crates/betterlite-server/src/routes/completions.rs
+  - crates/betterlite-server/src/routes/completions/bridge.rs
+  - crates/betterlite-server/src/routes/completions/tests.rs
+  - crates/betterlite-server/src/routes/completions/tests/anthropic.rs
+  - tools/oracle/cases/completions/anthropic-deployment-nonstream.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460-L7695
+  why: text_completion builds user messages from the prompt, calls completion() for any non-text provider, anthropic
+    included, wraps a stream in TextCompletionStreamWrapper and converts a reply with convert_chat_to_text_completion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7390-L7458
+  why: atext_completion, the async entry the proxy's /v1/completions route reaches through the router.
+dod:
+- text: >-
+    anthropic text reply: POST /v1/completions on an anthropic/ deployment answers a text_completion object with the
+    Anthropic reply's text.
+  proof:
+  - bridge-buffered
+- text: >-
+    anthropic text stream: a stream request answers text_completion chunks and data [DONE].
+  proof:
+  - bridge-stream
+- text: >-
+    anthropic text error: an Anthropic 4xx reaches the client with its status.
+  proof:
+  - bridge-error
+- text: >-
+    nothing regresses: the completions routes and their OpenAI chat bridge keep passing.
+  proof:
+  - regressions
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: bridge-buffered
+    why: The completions route does not answer a text_completion object for an Anthropic reply.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_buffered_text$/)'
+  - id: bridge-stream
+    why: The completions route does not turn the Anthropic frames into text_completion chunks.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_stream_text$/)'
+  - id: bridge-error
+    why: An Anthropic 400 through the completions route loses its status.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_upstream_error$/)'
+  - id: regressions
+    why: The runtime cell, the reply arm or the frames_answer split broke a completions route test.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_buffered_text$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::/) | binary(text_streaming)'
+oracle_cases:
+- tools/oracle/cases/completions/anthropic-deployment-nonstream.yaml
+deviations: []
+out_of_scope:
+- >-
+  The chat routes and the adapter are B9990 and B9986.
+- >-
+  anthropic_text deployments (Surface::Legacy) keep answering UnavailableAdapter, as B9986 leaves them.
+pitfalls:
+- >-
+  The oracle case copies chat-deployment-nonstream.yaml with model anthropic/claude-3-haiku-20240307, an upstream that
+  answers Anthropic Messages JSON, upstream_headers [x-api-key, anthropic-version, content-type] and ignores /id and
+  /created, since LiteLLM generates both.
+- >-
+  File sizes. Every file stays at or under 300 lines. crates/betterlite-server/src/routes/completions.rs is 297 on
+  main, so move the body of CompletionCalls::chat into a pub(super) async fn in bridge.rs (203 lines) and keep a
+  one-call method in completions.rs.
+- >-
+  The runtime is built once per process on the first bridged chat call and lives beside the chat routes' runtime; it
+  is not a second fetch path, and its beta matrix loader caches the same way.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard
