@@ -1,0 +1,47 @@
+kind: probe
+name: tier-definitions-display-labels-not-boundary-keys
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_labels: {SIMPLE: " Cheap ", MEDIUM: Standard, REASONING: Deep}
+          tier_models: {SIMPLE: small}
+        queries: [cheap, "  STANDARD ", deep, SIMPLE, COMPLEX, premium]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_labels: {SIMPLE: Cheap}
+          tier_models: {Cheap: small}
+        queries: [cheap]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_labels: {SIMPLE: " Reasoning "}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_labels: {SIMPLE: Same, MEDIUM: same}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_labels: {SIMPLE: "  ", MEDIUM: ""}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_labels: {ECO: Cheap}
+compare:
+  ignore:
+    - pointer: /message
+      why: each side words the validation failure differently

@@ -1,0 +1,242 @@
+kind: probe
+name: tier-definitions-tier-override-validation
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: [deep-a, deep-b]}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+        queries: [ECO, deep]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: T0, description: asks 0}
+            - {name: T1, description: asks 1}
+            - {name: T2, description: asks 2}
+            - {name: T3, description: asks 3}
+            - {name: T4, description: asks 4}
+            - {name: T5, description: asks 5}
+            - {name: T6, description: asks 6}
+            - {name: T7, description: asks 7}
+          tier_models:
+            T0: m0
+            T1: m1
+            T2: m2
+            T3: m3
+            T4: m4
+            T5: m5
+            T6: m6
+            T7: m7
+        knobs: {classifier_type: llm, fallback_tier: T0}
+        queries: [t7, T0]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions: [{name: ONLY, description: one tier}]
+          tier_models: {ONLY: m}
+        knobs: {classifier_type: llm, fallback_tier: ONLY}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: T0, description: asks 0}
+            - {name: T1, description: asks 1}
+            - {name: T2, description: asks 2}
+            - {name: T3, description: asks 3}
+            - {name: T4, description: asks 4}
+            - {name: T5, description: asks 5}
+            - {name: T6, description: asks 6}
+            - {name: T7, description: asks 7}
+            - {name: T8, description: asks 8}
+          tier_models:
+            T0: m0
+            T1: m1
+            T2: m2
+            T3: m3
+            T4: m4
+            T5: m5
+            T6: m6
+            T7: m7
+            T8: m8
+        knobs: {classifier_type: llm, fallback_tier: T0}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: eco, description: cheap asks again}
+          tier_models: {ECO: a, eco: b}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a, EXTRA: extra}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: []}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs: {classifier_type: llm}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs: {classifier_type: llm, fallback_tier: PREMIUM}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+          tier_labels: {SIMPLE: Cheap}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs:
+          classifier_type: llm
+          fallback_tier: ECO
+          llm_system_prompt: whole prompt
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs:
+          classifier_type: llm
+          fallback_tier: ECO
+          classification_rubric: agentic
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs:
+          classifier_type: llm
+          classifier_fallback: default_model
+          fallback_tier: ECO
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs:
+          classifier_type: llm
+          fallback_tier: ECO
+          order_features: [adaptive]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs:
+          classifier_type: llm
+          fallback_tier: ECO
+          order_features: [session_affinity, escalation_keywords, stall_escalation]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap asks}
+            - {name: DEEP, description: hard asks}
+          tier_models: {ECO: eco-mini, DEEP: deep-a}
+        knobs: {fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        knobs: {fallback_tier: ECO}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        knobs:
+          classifier_type: llm
+          classification_prompt: choose a tier
+          llm_system_prompt: whole prompt
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        knobs:
+          classification_examples: one example
+compare:
+  ignore:
+    - pointer: /message
+      why: each side words the validation failure differently

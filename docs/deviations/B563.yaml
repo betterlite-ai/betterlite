@@ -1,0 +1,18 @@
+task: B563
+deviations:
+  - what: A sync non-2xx body that is not UTF-8 reads "<n> bytes that are not text", where LiteLLM reads httpx's response.text decoded with replacement characters.
+    why: the buffered step is reused from B584 and B689, which carries the error body as text; B689 owns that choice for every Anthropic-shaped call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/handler.py#L193-L206
+  - what: The caller's timeout is the deadline of the whole exchange on the shared client, where LiteLLM builds an httpx client with the timeout and passes it to the post and to make_sync_call.
+    why: betterlite applies the caller's timeout once per request on the shared ProxiedClient (B173), and a provider crate does not build a second outbound client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/handler.py#L184-L192
+  - what: A malformed api_base fails as the typed Endpoint error with status 500 and betterlite's own message, where LiteLLM's httpx exception reaches the generic handler as AnthropicError(500, str(exception)).
+    why: the URL is parsed before the request is built, and the status matches the generic handler's 500 default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/handler.py#L193-L206
+kept_bugs:
+  - what: A sync buffered failure emits no post_call, while the async stream and async nonstream paths log the exception before wrapping it.
+    why: LiteLLM's Azure handler raises from its sync branch without a post_call and a working setup cannot rely on an absent record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/anthropic/handler.py#L193-L206
+  - what: An async stream whose client returns a non-200 response without raising opens a stream; only the sync helper checks the status and raises AnthropicError.
+    why: the reused B689 async helper has no status check, and a shipped HTTP handler raises for non-2xx itself, so a working setup never sees the difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L204-L252

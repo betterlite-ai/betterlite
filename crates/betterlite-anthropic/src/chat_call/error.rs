@@ -1,5 +1,7 @@
 use std::error::Error as StdError;
 
+use betterlite_error::error::ErrorClass;
+use betterlite_error::error::metadata::ErrorMetadata;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use http::HeaderMap;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
@@ -12,6 +14,21 @@ use crate::response::error::ResponseError;
 
 // The selected provider config's own failures; the config decides their type, this leaf only passes them on
 pub type ConfigError = Box<dyn StdError + Send + Sync>;
+// A config refusal that raised a typed LiteLLM error keeps its class, so the call projects the same status and fields
+#[derive(Debug, Error)]
+#[error("{source}")]
+pub struct ClassifiedConfigError {
+    #[source]
+    pub source: Box<dyn StdError + Send + Sync>,
+    pub class: ErrorClass,
+}
+
+// Only a config that raised a typed error names a class; a plain failure has none, like the bare exception LiteLLM re-raises
+fn config_metadata(source: &ConfigError) -> Option<ErrorMetadata> {
+    source
+        .downcast_ref::<ClassifiedConfigError>()
+        .map(|held| held.class.metadata())
+}
 #[derive(Debug, Error)]
 pub enum ChatCallError<ClientFailure, CounterFailure>
 where
@@ -56,12 +73,31 @@ where
     ClientFailure: StdError + Send + Sync + 'static,
     CounterFailure: StdError + Send + Sync + 'static,
 {
+    // The fields a config refusal carries into the response, when the config raised a typed LiteLLM error
+    #[must_use]
+    pub fn metadata(&self) -> Option<ErrorMetadata> {
+        match self {
+            Self::Prepare { source } | Self::Filter { source } => config_metadata(source),
+            Self::Headers(_)
+            | Self::PreCall(_)
+            | Self::Response(_)
+            | Self::Parameter(_)
+            | Self::Open(_)
+            | Self::Anthropic { .. }
+            | Self::Endpoint(_)
+            | Self::HeaderName(_)
+            | Self::HeaderValue(_) => None,
+        }
+    }
     // The status LiteLLM puts on the exception it raises from this call, as far as the error carries one
     #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    pub fn status_code(&self) -> Option<u16> {
         match self {
             Self::Headers(source) => source.status_code(),
-            Self::Prepare { .. } | Self::Filter { .. } | Self::PreCall(_) => None,
+            Self::Prepare { source } | Self::Filter { source } => {
+                config_metadata(source).map(|metadata| metadata.status_code)
+            }
+            Self::PreCall(_) => None,
             Self::Response(source) => match source {
                 ResponseError::Anthropic { status, .. } => Some(*status),
                 ResponseError::Decode(_)

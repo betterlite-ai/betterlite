@@ -1,0 +1,5 @@
+kind: helper
+name: pod-lock-key-empty-and-unicode
+call: {pod_lock_key: {cronjob_id: ''}}
+env: {}
+compare: {ignore: []}

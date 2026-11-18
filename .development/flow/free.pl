@@ -4,7 +4,9 @@ for my $f (glob "backlog/*.yaml") { open my $h,"<",$f; local $/; my $t=<$h>; my 
   ($st{$id})=$t=~/^status: (\S+)/m; ($file{$id})=$t=~/^file: (\S+)/m; my ($d)=$t=~/^depends_on: \[(.*?)\]/m; $deps{$id}=[grep {length} split /,\s*/, $d//""]; }
 for my $id (keys %file) { next if $file{$id} eq "null"; open my $h,"<",$file{$id} or next; local $/; my $t=<$h>;
   my ($s)=$t=~/^scope:\n((?:  .*\n)+)/m; my ($p)=$s=~/^  paths:\n((?:  [ -].*\n)+)/m; $scope{$id}=[map {s/^\s+- //; s/^"|"$//g; $_} grep {/^\s+- /} split /\n/, $p//""]; }
-$st{$_}="in-progress" for @extra;
+# a parked task has no flow, so as in the gate (#2281) its scope holds nothing back, and only the architect restarts it
+my @parked=grep { -e "../.git/betterlite/$_/parked" } @extra;
+$st{$_}="in-progress" for grep { ! -e "../.git/betterlite/$_/parked" } @extra;
 if (open my $r, "<", "$ENV{BETTERLITE_LOGS}/feeder.reserve") { while (<$r>) { chomp; $st{$_}="in-progress" if length } }
 sub glob_re { my $g=shift; my $re=""; while (length $g) {
     if ($g=~s{^\*\*/}{}) { $re.="(?:.*/)?" } elsif ($g=~s{^/\*\*$}{}) { $re.="/.*" } elsif ($g=~s{^\*\*}{}) { $re.=".*" }
@@ -26,12 +28,13 @@ my %rev; for my $id (keys %deps){ push @{$rev{$_}}, $id for @{$deps{$id}} }
 my %height; sub height { my $x=shift; return $height{$x} if exists $height{$x}; $height{$x}=0; my $m=0; for my $c (@{$rev{$x}//[]}) { next if $st{$c} eq "done"; my $v=height($c); $m=$v if $v>$m } $height{$x}=$m+(($file{$x}//"null") eq "null" ? 0 : 1) }
 my @run=grep { $st{$_} eq "in-progress" } keys %st;
 my %hold; if (open my $h, "<", "$ENV{BETTERLITE_LOGS}/feeder.hold") { while (<$h>) { chomp; $hold{$_}=1 if length } }
+$hold{$_}=1 for @parked;
 sub owns { my ($id,$path)=@_; prep($id); $path=~$re{$id} }
 sub undeclared { my $id=shift; my @mods=grep { !/[*?\[{]/ } @{$scope{$id}}; push @mods, map { m{^(.*/src/[a-z0-9_/]+)/\*\*$} ? "$1.rs" : () } @{$scope{$id}};
   for my $p (@mods) { next if -e "../$p"; my ($src,$rel)=$p=~m{^(.*/src)/(.+)\.rs$} or next; next if $rel=~m{^(lib|main|build)$|^bin/};
     my ($dir,$name)=$rel=~m{^(?:(.*)/)?([^/]+)$}; my @parents=defined $dir ? ("$src/$dir.rs","$src/$dir/mod.rs","$src/$dir/lib.rs") : ("$src/lib.rs","$src/main.rs");
     next if grep { owns($id,$_) } @parents; my $ok=0;
-    for my $par (@parents) { open my $h,"<","../$par" or next; local $/; my $t=<$h>; $ok=1 if $t=~/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\Q$name\E\s*;/m || $t=~/=>\s*\Q$name\E\s*,/ || $t=~/^\s+(?:[a-z0-9_]+,\s+)*\Q$name\E,/m || $t=~/^\s*include!\("(?:[a-z0-9_]+\/)*\Q$name\E\//m }
+    for my $par (@parents) { open my $h,"<","../$par" or next; local $/; my $t=<$h>; $ok=1 if $t=~/^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+\Q$name\E\s*;/m || $t=~/=>\s*\Q$name\E\s*,/ || $t=~/^\s+(?:[a-z0-9_]+,\s+)*\Q$name\E,/m || $t=~/^\s*include!\("(?:[a-z0-9_]+\/)*\Q$name\E\//m || $t=~/^\s*#\[path\s*=\s*"(?:[a-z0-9_]+\/)*\Q$name\E\//m }
     return "$p needs mod $name in $parents[0]" unless $ok } "" }
 my $top=0; for my $id (keys %st) { next if $st{$id} eq "done"; my $v=height($id); $top=$v if $v>$top } print "top $top\n";
 my @ready=sort { height($b) <=> height($a) || ($unblock{$b}//0) <=> ($unblock{$a}//0) || $a cmp $b } grep { !$hold{$_} && $st{$_} eq "todo" && $file{$_} ne "null" && !grep { $st{$_} ne "done" } @{$deps{$_}} } keys %st;
