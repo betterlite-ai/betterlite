@@ -3,7 +3,9 @@ use std::pin::Pin;
 
 use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
 use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
-use betterlite_streaming::provider_chunk_decode::wrapper::{StreamWrapper, WrapperError};
+use betterlite_streaming::provider_chunk_decode::wrapper::{
+    StreamSetup as WrapperStreamSetup, StreamWrapper, WrapperError,
+};
 use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk};
 use futures_util::{Stream, StreamExt as _, stream};
 
@@ -12,7 +14,7 @@ use super::sdk::{ByteStream, SdkError};
 use crate::stream::SseParser;
 
 // clippy::pub_use is denied and no expect may be added, so an alias keeps the moved type nameable here
-pub type StreamSetup = betterlite_streaming::provider_chunk_decode::wrapper::StreamSetup;
+pub type StreamSetup = WrapperStreamSetup;
 
 // The OpenAI SDK stops after the [DONE] event, so later payloads are never shaped
 pub type CompletionStream =

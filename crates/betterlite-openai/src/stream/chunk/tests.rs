@@ -69,24 +69,19 @@ fn stream_parses_reasoning_delta_fields() {
         .cache_control
         .as_ref()
         .expect("the thinking block keeps its cache control");
-    assert_eq!(
-        control.get("type"),
-        Some(&JsonValue::Text("ephemeral".to_owned()))
-    );
+    let ephemeral = JsonValue::Text("ephemeral".to_owned());
+    assert_eq!(control.get("type"), Some(&ephemeral));
     assert_eq!(control.get("ttl"), Some(&JsonValue::Text("5m".to_owned())));
     let redacted = blocks.get(1).expect("the redacted block");
     assert_eq!(redacted.kind, ThinkingKind::RedactedThinking);
     assert_eq!(redacted.data.as_deref(), Some("cipher"));
     assert!(redacted.thinking.is_none());
     assert!(redacted.signature.is_none());
-    assert_eq!(
-        redacted
-            .cache_control
-            .as_ref()
-            .expect("the redacted block keeps its cache control")
-            .get("custom"),
-        Some(&JsonValue::Bool(true))
-    );
+    let redacted_control = redacted
+        .cache_control
+        .as_ref()
+        .expect("the redacted block keeps its cache control");
+    assert_eq!(redacted_control.get("custom"), Some(&JsonValue::Bool(true)));
     assert_eq!(
         serde_json::to_string(&chunk).unwrap(),
         r#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"group","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig","cache_control":{"type":"ephemeral","ttl":"5m"}},{"type":"redacted_thinking","data":"cipher","cache_control":{"custom":true}}]}}]}"#
