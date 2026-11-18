@@ -8,22 +8,19 @@ fn cutoff(hour: u32, minute: u32) -> DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 1, 1, hour, minute, 0).unwrap()
 }
 
-fn aware(text: &str) -> Option<Timestamp> {
-    DateTime::parse_from_rfc3339(text)
-        .ok()
-        .map(Timestamp::Aware)
+fn aware(text: &str) -> Timestamp {
+    Timestamp::Aware(DateTime::parse_from_rfc3339(text).unwrap())
 }
 
-fn naive(hour: u32, minute: u32) -> Option<Timestamp> {
-    NaiveDate::from_ymd_opt(2026, 1, 1)
-        .and_then(|date| date.and_hms_opt(hour, minute, 0))
-        .map(Timestamp::Naive)
+fn naive(hour: u32, minute: u32) -> Timestamp {
+    let date = NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+    Timestamp::Naive(date.and_hms_opt(hour, minute, 0).unwrap())
 }
 
 #[test]
 fn utc_aware_timestamp_after_the_cutoff_advances() {
     assert_eq!(
-        count_advanced([aware("2026-01-01T12:00:00+02:00")], cutoff(9, 0)),
+        count_advanced([Some(aware("2026-01-01T12:00:00+02:00"))], cutoff(9, 0)),
         1
     );
 }
@@ -31,25 +28,25 @@ fn utc_aware_timestamp_after_the_cutoff_advances() {
 #[test]
 fn utc_aware_timestamp_is_compared_at_its_own_instant() {
     assert_eq!(
-        count_advanced([aware("2026-01-01T12:00:00+02:00")], cutoff(10, 30)),
+        count_advanced([Some(aware("2026-01-01T12:00:00+02:00"))], cutoff(10, 30)),
         0
     );
 }
 
 #[test]
 fn utc_naive_timestamp_is_treated_as_utc() {
-    assert_eq!(count_advanced([naive(10, 0)], cutoff(9, 0)), 1);
+    assert_eq!(count_advanced([Some(naive(10, 0))], cutoff(9, 0)), 1);
 }
 
 #[test]
 fn utc_naive_timestamp_behind_the_cutoff_does_not_advance() {
-    assert_eq!(count_advanced([naive(9, 0)], cutoff(10, 0)), 0);
+    assert_eq!(count_advanced([Some(naive(9, 0))], cutoff(10, 0)), 0);
 }
 
 #[test]
 fn utc_timestamp_equal_to_the_cutoff_does_not_advance() {
     assert_eq!(
-        count_advanced([aware("2026-01-01T10:00:00Z")], cutoff(10, 0)),
+        count_advanced([Some(aware("2026-01-01T10:00:00Z"))], cutoff(10, 0)),
         0
     );
 }
@@ -64,10 +61,10 @@ fn utc_counts_only_the_rows_past_the_cutoff() {
     assert_eq!(
         count_advanced(
             [
-                naive(11, 0),
+                Some(naive(11, 0)),
                 None,
-                aware("2026-01-01T05:00:00-05:00"),
-                aware("2026-01-01T10:00:01Z"),
+                Some(aware("2026-01-01T05:00:00-05:00")),
+                Some(aware("2026-01-01T10:00:01Z")),
             ],
             cutoff(10, 0),
         ),
