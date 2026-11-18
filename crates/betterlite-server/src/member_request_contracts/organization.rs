@@ -152,17 +152,13 @@ impl OrganizationTableWithMembers {
         let text = serde_json::to_string(value)?;
         let table: OrganizationTable = serde_json::from_str(&text)?;
         let fields: OrganizationMemberLists = serde_json::from_str(&text)?;
-        Ok(Self::new(table, fields))
-    }
-
-    const fn new(table: OrganizationTable, fields: OrganizationMemberLists) -> Self {
-        Self {
+        Ok(Self {
             table,
             members: fields.members,
             teams: fields.teams,
             created_at: fields.created_at,
             updated_at: fields.updated_at,
-        }
+        })
     }
 }
 

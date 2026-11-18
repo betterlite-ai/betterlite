@@ -90,17 +90,13 @@ impl TeamMemberAddRequest {
         let object = json_object(value)?;
         let member = member_field(object, record_from_json::<Member>)?;
         let fields: TeamMemberAddFields = serde_json::from_str(&serde_json::to_string(value)?)?;
-        Ok(Self::new(member, fields))
-    }
-
-    const fn new(member: OneOrMany<Member>, fields: TeamMemberAddFields) -> Self {
-        Self {
+        Ok(Self {
             member,
             team_id: fields.team_id,
             max_budget_in_team: fields.max_budget_in_team,
             budget_duration: fields.budget_duration,
             allowed_models: fields.allowed_models,
-        }
+        })
     }
 }
 
@@ -125,15 +121,11 @@ impl OrganizationMemberAddRequest {
         let member = member_field(object, OrgMember::from_value)?;
         let fields: OrganizationMemberAddFields =
             serde_json::from_str(&serde_json::to_string(value)?)?;
-        Ok(Self::new(member, fields))
-    }
-
-    const fn new(member: OneOrMany<OrgMember>, fields: OrganizationMemberAddFields) -> Self {
-        Self {
+        Ok(Self {
             member,
             organization_id: fields.organization_id,
             max_budget_in_organization: fields.max_budget_in_organization,
-        }
+        })
     }
 }
 
