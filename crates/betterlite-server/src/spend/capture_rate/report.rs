@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::error::Error as StdError;
 
 use betterlite_models::capture_rate::OPENAI_BILLED_PROVIDERS;
@@ -32,11 +31,11 @@ where
     E: StdError + Send + Sync + 'static,
 {
     let provider = check.provider;
-    let admin_key = job
+    let Some(admin_key) = job
         .credentials
         .admin_key()
-        .map_err(CaptureRateJobError::Credentials)?;
-    let Some(admin_key) = admin_key else {
+        .map_err(CaptureRateJobError::Credentials)?
+    else {
         return Ok(missing_credential(provider));
     };
     let billed = match fetch_openai_daily_costs(
@@ -51,17 +50,6 @@ where
         Ok(billed) => billed,
         Err(error) => return Ok(request_failed(provider, &error)),
     };
-    report_for(job, check, &billed).await
-}
-
-async fn report_for<E>(
-    job: &CaptureRateJob<'_, E>,
-    check: &ProviderCheck<'_>,
-    billed: &BTreeMap<String, Decimal>,
-) -> Result<CheckResult, CaptureRateJobError<E>>
-where
-    E: StdError + Send + Sync + 'static,
-{
     let captured = job
         .spend
         .captured_by_day(&CapturedSpendRequest {
@@ -75,7 +63,7 @@ where
         start_date: check.start_date,
         end_date: check.end_date,
         captured_by_day: &captured,
-        billed_by_day: billed,
+        billed_by_day: &billed,
         threshold: check.threshold,
     })?;
     Ok(CheckResult::Report(report))

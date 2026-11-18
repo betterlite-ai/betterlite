@@ -71,7 +71,7 @@ where
     E: StdError + Send + Sync + 'static,
 {
     let results = check_every_provider(job, settings, today).await?;
-    for message in alert_messages(&results) {
+    for message in results.iter().filter_map(alert_message) {
         job.alert
             .alert(&message)
             .await
@@ -92,7 +92,7 @@ where
     C: LockCache,
 {
     let results = check_every_provider(job, settings, today).await?;
-    let messages = alert_messages(&results);
+    let messages: Vec<String> = results.iter().filter_map(alert_message).collect();
     if messages.is_empty() {
         return Ok(results);
     }
@@ -117,8 +117,8 @@ async fn check_every_provider<E>(
 where
     E: StdError + Send + Sync + 'static,
 {
-    let today = today.unwrap_or_else(|| Utc::now().date_naive());
-    let end_date = today
+    let check_date = today.unwrap_or_else(|| Utc::now().date_naive());
+    let end_date = check_date
         .checked_sub_days(Days::new(1))
         .ok_or(CaptureRateJobError::DateRange)?;
     let days_before = settings
@@ -150,8 +150,4 @@ where
         );
     }
     Ok(results)
-}
-
-fn alert_messages(results: &[CheckResult]) -> Vec<String> {
-    results.iter().filter_map(alert_message).collect()
 }

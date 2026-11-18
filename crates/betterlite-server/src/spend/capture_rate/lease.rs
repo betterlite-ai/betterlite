@@ -7,19 +7,19 @@ pub(super) async fn claims_alert_window<C>(pod_lock_manager: Option<&PodLockMana
 where
     C: LockCache,
 {
-    let Some(pod_lock_manager) = pod_lock_manager else {
+    let Some(manager) = pod_lock_manager else {
         return true;
     };
-    if pod_lock_manager.cache.is_none() {
+    if manager.cache.is_none() {
         return true;
     }
-    let acquired = pod_lock_manager
+    let acquired = manager
         .acquire_lock(CHECK_JOB_ID, Some(CHECK_LOCK_TTL_SECONDS), true)
         .await;
     if acquired == Some(true) {
         return true;
     }
-    !lock_is_held(pod_lock_manager).await
+    !lock_is_held(manager).await
 }
 
 // An unreadable lock must not silence the alert, so a read failure counts as not held.
