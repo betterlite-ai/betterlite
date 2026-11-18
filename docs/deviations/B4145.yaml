@@ -1,0 +1,39 @@
+task: B4145
+deviations:
+  - what: parse_reload_schedule accepts param_value as a JSON string or an already-decoded object, and reads an absent, wrong-typed or unparseable value as no schedule rather than failing the read.
+    why: LiteLLM's _parse_interval_hours accepts both shapes because a raw row read hands a Json column back as a string under one driver and a decoded object under another, and it maps a pydantic ValidationError to None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
+  - what: A stored last_run_at is a naive timestamp and is read as UTC without checking that it was stored as UTC.
+    why: LiteLLM's _as_utc attaches timezone.utc to every naive datetime; PostgreSQL's timestamp column carries no zone, and both writers of this column, the reload job and the manual reload, pass utc_now().
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L105-L108
+  - what: clear_reload_interval sets the interval to null inside the JSON param_value instead of nulling the param_value column, so the row and its reload_revision survive.
+    why: LiteLLM keeps the row because reload_revision identifies a request rather than ordering one; deleting the row restarts the counter and a reissued revision matches what pods already applied, so their next manual reload is skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L193-L203
+  - what: record_reload_run updates last_run_at without an upsert, so a row deleted mid-poll is not recreated and the statement affecting zero rows is not an error.
+    why: LiteLLM writes it with update_many and never checks the affected count; a schedule deleted while a reload ran stays deleted, which is the admin's intent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L206-L213
+  - what: A stored interval_hours that is negative, fractional or past u32::MAX reads as no schedule, where LiteLLM keeps the Python int it finds.
+    why: ReloadSchedule.interval_hours is Option<u32> per the task, and the endpoint that writes the row rejects hours below 1; LiteLLM with a negative interval would fire on every poll, which no working setup can want, so the value reads as unscheduled instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
+  - what: A stored reload_revision outside 0..=u32::MAX reads as 0, where LiteLLM keeps the int the BIGINT column holds.
+    why: reload_revision is a u32 per the task; the column reaches past u32 only after four billion manual reloads or a hand edit, and a pod that reads 0 applies the same one reload a mismatched revision would trigger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L111-L116
+  - what: record_manual_reload returns a Revision error when the incremented counter leaves u32, after the increment is already stored, where LiteLLM returns the arbitrary-precision int.
+    why: The counter is a u32, so the caller cannot adopt the stored value; the error names the value instead of silently truncating it. The row is incremented either way, so the next revision is accepted again once the column is reset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L216-L231
+  - what: next_run_at returns None when last_run plus the interval leaves chrono's calendar instead of raising, so the status reports no next run.
+    why: LiteLLM's timedelta addition raises OverflowError for a datetime outside Python's range; no stored timestamp is within 262,000 years of that edge, and a status read should not fail over a value it cannot display.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L119-L123
+  - what: The interval reload log line carries seconds since the pod loaded its data and the interval hours as structured fields, where LiteLLM formats the elapsed hours into the message with two decimals.
+    why: betterlite logs structured fields; the description prefix and the event text stay the same, and both numbers are on the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L164-L169
+  - what: utc_now is not ported; the callers pass ran_at, current_time and pod_data_loaded_at in as DateTime<Utc> values, and the endpoint code that needs the current time calls Utc::now() itself.
+    why: The port would be a one-line wrapper, which the no-one-line-functions rule forbids, and every function here already takes the instant it compares as a parameter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L89-L90
+  - what: The five database functions read and write the fixed RELOAD_CONFIG_PARAM_NAME row and take no param_name argument, where LiteLLM takes one.
+    why: The task pins param_name as not user-supplied and every LiteLLM caller passes MODEL_COST_MAP_RELOAD_PARAM_NAME, so the constant is the only row this module can reach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L173-L177
+  - what: A stored param_value string over 1 MiB or nested deeper than 64 levels reads as no schedule, because the string is decoded with the config crate's bounded decoder.
+    why: The bound is B725's ConfigRepository::get_param limit for the same column, so one stored value cannot be readable by one code path and not the other; an interval config is a few bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
+kept_bugs: []
