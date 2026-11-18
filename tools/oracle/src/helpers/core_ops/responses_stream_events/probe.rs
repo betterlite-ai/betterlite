@@ -1,18 +1,16 @@
 use std::convert::Infallible;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_core::api::response_synthetic_events::stamping::{
     CostTarget, ResponsesCostCalculator,
 };
-use betterlite_core::api::responses_stream_hooks::ResponsesStreamHooks;
 use betterlite_core::api::responses_stream_hooks::ports::{
     FailureDelivery, PortFailure, ResponsesStreamFailureTarget, ResponsesStreamSuccessTarget,
 };
 use betterlite_logging::logging_success::ports::SuccessClock;
 use betterlite_logging::logging_success::types::SuccessRequest;
 use betterlite_models::decisions::Json;
-use betterlite_redact::secret::Redactor;
 use chrono::{DateTime, FixedOffset};
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -52,23 +50,6 @@ impl Probe {
 impl SuccessClock for Probe {
     fn now(&self) -> DateTime<FixedOffset> {
         self.clock
-    }
-}
-
-pub(crate) fn hooks<'context>(
-    probe: &Arc<Probe>,
-    redactor: &'context Redactor,
-) -> ResponsesStreamHooks<'context> {
-    ResponsesStreamHooks {
-        cache: None,
-        cache_handler: None,
-        success: Some(Arc::<Probe>::clone(probe)),
-        failure: Some(Arc::<Probe>::clone(probe)),
-        metadata: None,
-        success_hook: None,
-        chunk_hooks: Vec::new(),
-        clock: Arc::<Probe>::clone(probe),
-        redactor,
     }
 }
 

@@ -19,7 +19,7 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use super::probe::{Probe, hooks};
+use super::probe::Probe;
 use super::support::{TransformFailure, logging_object, state};
 use super::{EstimateMode, Input, TransformMode};
 
@@ -29,7 +29,9 @@ pub(super) async fn run(input: &Input) -> HelperResult {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_value_error()?;
     let mut rig = Rig::new(input, &probe, &redactor)?;
     rig.drive(&input.payloads).await?;
-    rig.finish().await;
+    await_pending_logging(&mut rig.callback).await;
+    rig.base.pending_tasks.close();
+    rig.base.pending_tasks.wait().await;
     rig.projection()
 }
 
@@ -54,7 +56,17 @@ impl<'context> Rig<'context> {
         redactor: &'context Redactor,
     ) -> Result<Self, Box<HelperError>> {
         Ok(Self {
-            hooks: hooks(probe, redactor),
+            hooks: ResponsesStreamHooks {
+                cache: None,
+                cache_handler: None,
+                success: Some(Arc::<Probe>::clone(probe)),
+                failure: Some(Arc::<Probe>::clone(probe)),
+                metadata: None,
+                success_hook: None,
+                chunk_hooks: Vec::new(),
+                clock: Arc::<Probe>::clone(probe),
+                redactor,
+            },
             logging: logging_object(redactor).or_value_error()?,
             probe: Arc::clone(probe),
             transform: matches!(input.transform, TransformMode::Configured),
@@ -99,12 +111,6 @@ impl<'context> Rig<'context> {
         processor
             .process(payload, &mut self.base, &mut self.callback, &self.logging)
             .await
-    }
-
-    async fn finish(&mut self) {
-        await_pending_logging(&mut self.callback).await;
-        self.base.pending_tasks.close();
-        self.base.pending_tasks.wait().await;
     }
 
     fn projection(&self) -> HelperResult {

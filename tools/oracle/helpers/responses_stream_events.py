@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, Protocol, TypedDict, cast
+from typing import Literal, Protocol, TypedDict, cast
 
 import httpx
 import litellm
@@ -17,25 +17,12 @@ from typing_extensions import override
 litellm.suppress_debug_info = True
 
 
-class ModelInfo(TypedDict):
-    id: str
-
-
-class Metadata(TypedDict):
-    model_info: NotRequired[ModelInfo]
-    encrypted_content_affinity_enabled: NotRequired[bool]  # ast-grep-ignore: no-long-names
-
-
-class RequestData(TypedDict):
-    input: NotRequired[str]
-
-
 class Input(TypedDict):
     payloads: list[str]
     model: str
     provider: str | None
-    request_data: RequestData
-    metadata: Metadata
+    request_data: dict[str, JsonValue]
+    metadata: dict[str, JsonValue]
     transform: Literal["configured", "absent"]
     estimate: Literal["fixed", "absent"]
     cost: Literal["positive", "missing"]
@@ -82,11 +69,7 @@ class InlineExecutor(ExecutorPort):
 
 
 class StubLogging:
-    def __init__(
-        self,
-        records: list[JsonValue],
-        cost: Literal["positive", "missing"],
-    ) -> None:
+    def __init__(self, records: list[JsonValue], cost: Literal["positive", "missing"]) -> None:
         self.records = records
         self.cost = cost
         self.model_call_details: dict[str, JsonValue] = {}

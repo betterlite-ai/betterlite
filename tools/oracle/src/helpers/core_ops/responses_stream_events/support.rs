@@ -137,11 +137,10 @@ fn model_id(metadata: &IndexMap<String, Json>) -> Option<String> {
     let Some(Json::Object(info)) = metadata.get("model_info") else {
         return None;
     };
-    match info.get("id") {
-        Some(Json::Text(id)) => Some(id.clone()),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
-    }
+    let Some(Json::Text(id)) = info.get("id") else {
+        return None;
+    };
+    Some(id.clone())
 }
 
 pub(crate) fn logging_object(
