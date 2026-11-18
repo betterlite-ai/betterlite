@@ -7,7 +7,8 @@ from typing import Final, Literal, Protocol, TypedDict
 
 import litellm
 from litellm._service_logger import ServiceLogging
-from litellm.proxy import proxy_server, utils as proxy_utils
+from litellm.proxy import proxy_server
+from litellm.proxy import utils as proxy_utils
 from litellm.proxy._types import LiteLLM_VerificationTokenView
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.db.routing_prisma_wrapper import RoutingPrismaWrapper
@@ -114,13 +115,9 @@ class StaleEngine(Protocol):
 
 class RecorderHooks(Protocol):
     def debug(self, message: str, *args: JsonValue) -> None: ...
-
     def info(self, message: str, *args: JsonValue) -> None: ...
-
     def warning(self, message: str, *args: JsonValue) -> None: ...
-
     def error(self, message: str, *args: JsonValue) -> None: ...
-
     async def failure_handler(self, **_kwargs: JsonValue) -> None: ...
 
 
@@ -190,7 +187,9 @@ class FakeDeprecated:
 
 
 class FakeWrapper(PrismaWrapper):
-    def __init__(self, rows: list[RowStep], deprecated: list[DeprecatedStep], recorder: Recorder) -> None:
+    def __init__(
+        self, rows: list[RowStep], deprecated: list[DeprecatedStep], recorder: Recorder
+    ) -> None:
         self._engine_generation = 0
         self.rows = rows
         self.recorder = recorder
@@ -222,16 +221,11 @@ class ReconnectRecorder:
         stale_live = False
         if stale_read_engine is not None:
             stale_live = stale_read_engine.is_still_live(self.reader)
-        self.effects.append(
-            {
-                "reason": reason,
-                "force_recreate": force_recreate,
-                "timeout_seconds": None,
-                "lock_timeout_seconds": None,
-                "stale_present": stale_read_engine is not None,
-                "stale_live": stale_live,
-            }
-        )
+        self.effects.append({
+            "reason": reason, "force_recreate": force_recreate,
+            "timeout_seconds": None, "lock_timeout_seconds": None,
+            "stale_present": stale_read_engine is not None, "stale_live": stale_live,
+        })
         step = self.steps.pop(0) if self.steps else None
         return True if step is None else step
 
@@ -244,8 +238,10 @@ class FakeClient(PrismaClient):
 class Session:
     def __init__(self, input_value: Input) -> None:
         self.recorder = Recorder()
-        self.reader = FakeWrapper(list(input_value["rows"]), list(input_value["deprecated"]), self.recorder)
-        self.writer = FakeWrapper(list(input_value["rows"]), list(input_value["deprecated"]), self.recorder)
+        rows = input_value["rows"]
+        deprecated = input_value["deprecated"]
+        self.reader = FakeWrapper(list(rows), list(deprecated), self.recorder)
+        self.writer = FakeWrapper(list(rows), list(deprecated), self.recorder)
         self.reconnects = ReconnectRecorder(list(input_value["reconnects"]), self.reader)
         self.client = FakeClient(RoutingPrismaWrapper(self.writer, self.reader))
 
@@ -276,7 +272,10 @@ class Session:
         }
 
 
-async def call(lookup: KeyLookup, input_value: Input) -> tuple[str, ViewFields | None, dict[str, JsonValue] | None]:
+Reply = tuple[str, ViewFields | None, dict[str, JsonValue] | None]
+
+
+async def call(lookup: KeyLookup, input_value: Input) -> Reply:
     try:
         found = await lookup.get_data(
             token=input_value["token"],
