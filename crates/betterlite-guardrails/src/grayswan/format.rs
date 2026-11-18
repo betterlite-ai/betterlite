@@ -1,9 +1,12 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+
 use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
 };
+use crate::grayswan::grayswan_monitoring::helpers::{MessageRow, as_plain_dict};
 use crate::grayswan::wire::{
     GraySwanResponse, GraySwanRuleNumber, GraySwanViolatedRule, GraySwanViolatedRuleFields,
 };
@@ -12,25 +15,31 @@ pub(super) fn build_messages(
     texts: &[String],
     tool_calls: &[GuardrailExtraValue],
     input_type: GuardrailInputType,
-    context: Vec<GuardrailMessage>,
-) -> Vec<GuardrailMessage> {
+    context: Vec<GuardrailValue>,
+) -> Vec<GuardrailValue> {
     let role = if input_type == GuardrailInputType::Response {
         "assistant"
     } else {
         "user"
     };
     let mut messages = context;
+    let mut drafts = Vec::new();
     match texts {
         [single] if !tool_calls.is_empty() => {
-            messages.push(text_message_with_tool_calls(single.clone(), tool_calls));
+            drafts.push(text_message_with_tool_calls(single.clone(), tool_calls));
         }
         body => {
-            messages.extend(body.iter().map(|text| text_message(role, text.clone())));
+            drafts.extend(body.iter().map(|text| text_message(role, text.clone())));
             if !tool_calls.is_empty() {
-                messages.push(tool_calls_message(tool_calls));
+                drafts.push(tool_calls_message(tool_calls));
             }
         }
     }
+    messages.extend(
+        drafts
+            .into_iter()
+            .map(|message| as_plain_dict(MessageRow::Typed(&message))),
+    );
     messages
 }
 fn text_message(role: &str, content: String) -> GuardrailMessage {
