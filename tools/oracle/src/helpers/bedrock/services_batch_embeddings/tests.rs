@@ -2,9 +2,10 @@
 
 use std::collections::BTreeSet;
 use std::fs;
+use std::iter::once;
 use std::path::Path;
 
-use betterlite_oracle_helper_api::helper::Helper;
+use betterlite_oracle_helper_api::helper::Helper as _;
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
@@ -44,7 +45,7 @@ fn helper_seeds_select_bedrock_services_batch_embeddings() {
         .collect();
     let inputs: Vec<&serde_json::Value> = cases
         .iter()
-        .flat_map(|case| std::iter::once(&case.call).chain(&case.calls))
+        .flat_map(|case| once(&case.call).chain(&case.calls))
         .map(|call| &call.input)
         .collect();
     let rejected: Vec<String> = inputs
