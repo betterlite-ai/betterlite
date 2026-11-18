@@ -17,5 +17,5 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L186-L194
   - what: The flush and re-queue warnings append the error's display text to LiteLLM's message; LiteLLM logs the same message and passes exc_info for the traceback.
     why: A returned Rust error has no traceback to attach, and the cause chain's display text is what a log reader needs; every message keeps LiteLLM's prefix so existing log matching still finds it.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L252-L262
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L265-L280
 kept_bugs: []
