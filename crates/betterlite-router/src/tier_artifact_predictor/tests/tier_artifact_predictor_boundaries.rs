@@ -172,8 +172,40 @@ async fn tier_artifact_predictor_boundaries(#[case] boundary: Boundary) {
         } => threshold_selection(threshold, expected),
         Boundary::CompletesWithoutAwaiting => completes_without_awaiting().await,
         Boundary::CancelledForecastLeavesNoState => cancelled_forecast_leaves_no_state(),
-        Boundary::DomainPosteriorOverflow => domain_posterior_overflow(),
-        Boundary::CohortPosteriorOverflow => cohort_posterior_overflow(),
+        // near f64::MAX a huge prior overflows the posterior sums into inf/inf, which is NaN
+        Boundary::DomainPosteriorOverflow => {
+            let mut artifact = draft([1e308; 4], [1e308; 4], 0.75);
+            artifact.domain_prior_mass = 1.7e308;
+            artifact.domain_statistics = vec![DomainStatistic {
+                tier: 1,
+                successes: 1e308,
+                observations: 1e308,
+                request_type: "general".to_owned(),
+            }];
+            let statistic = non_finite_posterior(artifact);
+            assert_eq!(statistic, "the domain statistic for general at tier SIMPLE");
+        }
+        Boundary::CohortPosteriorOverflow => {
+            let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
+            artifact.cohort_prior_mass = 1.7e308;
+            artifact.domain_statistics = vec![DomainStatistic {
+                tier: 1,
+                successes: 1.0,
+                observations: 2.0,
+                request_type: "general".to_owned(),
+            }];
+            artifact.cohort_statistics = vec![CohortStatistic {
+                tier: 1,
+                successes: 1e308,
+                observations: 1e308,
+                cohort: "general|short|code=0|math=0|mc=0|intl=0".to_owned(),
+            }];
+            let statistic = non_finite_posterior(artifact);
+            assert_eq!(
+                statistic,
+                "the cohort statistic general|short|code=0|math=0|mc=0|intl=0 at tier SIMPLE"
+            );
+        }
     }
 }
 
@@ -537,47 +569,9 @@ fn cancelled_forecast_leaves_no_state() {
     assert_eq!(prediction.required_tier, TierNumber::Four);
 }
 
-// successes and observations near f64::MAX with a huge prior mass overflow the posterior sums,
-// and inf/inf makes the forecast NaN, so validation refuses the artifact before it is published
-fn domain_posterior_overflow() {
-    let mut artifact = draft([1e308; 4], [1e308; 4], 0.75);
-    artifact.domain_prior_mass = 1.7e308;
-    artifact.domain_statistics = vec![DomainStatistic {
-        tier: 1,
-        successes: 1e308,
-        observations: 1e308,
-        request_type: "general".to_owned(),
-    }];
+fn non_finite_posterior(artifact: Artifact) -> String {
     match validation::validate(&artifact) {
-        Err(PredictorError::NonFinitePosterior { statistic }) => {
-            assert_eq!(statistic, "the domain statistic for general at tier SIMPLE");
-        }
-        other => panic!("unexpected outcome: {other:?}"),
-    }
-}
-
-fn cohort_posterior_overflow() {
-    let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
-    artifact.cohort_prior_mass = 1.7e308;
-    artifact.domain_statistics = vec![DomainStatistic {
-        tier: 1,
-        successes: 1.0,
-        observations: 2.0,
-        request_type: "general".to_owned(),
-    }];
-    artifact.cohort_statistics = vec![CohortStatistic {
-        tier: 1,
-        successes: 1e308,
-        observations: 1e308,
-        cohort: "general|short|code=0|math=0|mc=0|intl=0".to_owned(),
-    }];
-    match validation::validate(&artifact) {
-        Err(PredictorError::NonFinitePosterior { statistic }) => {
-            assert_eq!(
-                statistic,
-                "the cohort statistic general|short|code=0|math=0|mc=0|intl=0 at tier SIMPLE"
-            );
-        }
+        Err(PredictorError::NonFinitePosterior { statistic }) => statistic,
         other => panic!("unexpected outcome: {other:?}"),
     }
 }
