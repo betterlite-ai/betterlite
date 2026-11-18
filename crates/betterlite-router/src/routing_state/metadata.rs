@@ -94,8 +94,7 @@ pub fn deployment_channel(channels: &CallbackChannels) -> Option<(&'static str, 
     None
 }
 
-// track_deployment_metrics.get_counted_usage_tokens: the first bucket carrying the key decides,
-// even when its value is not an integer
+// get_counted_usage_tokens: the first bucket with the key decides, mistyped value or not
 #[must_use]
 pub fn get_counted_usage_tokens(channels: &CallbackChannels) -> Option<i64> {
     for (_name, bucket) in channels.named_buckets() {

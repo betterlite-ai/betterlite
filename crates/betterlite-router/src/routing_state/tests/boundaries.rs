@@ -115,8 +115,7 @@ async fn sync_merges_at_the_equality_boundary() {
         .increment_window_value(RPM_KEY, 2, TTL)
         .await
         .unwrap();
-    // before is 2, the push stores 7, and the local value reaches 7 during the push: after equals redis,
-    // so the merge writes redis plus the local move, which is the same as staying put at 7 only if delta is 0
+    // before 2, push stores 7 and local reaches 7 during it, so after equals redis and the merge writes 12
     assert!(counters.sync_with_redis().await);
     let stored = local.get(&route_key(RPM_KEY)).unwrap();
     match stored {
