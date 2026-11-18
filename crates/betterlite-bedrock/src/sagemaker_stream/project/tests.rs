@@ -2,6 +2,7 @@
 
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
+use rstest::rstest;
 
 use crate::sagemaker_stream::SagemakerChunk;
 use crate::sagemaker_stream::error::SagemakerStreamError;
@@ -81,6 +82,33 @@ fn a_messages_chunk_keeps_its_choices() {
     assert_eq!(chunk.choices[0].finish_reason, None);
 }
 
+// every field the chunk declares reaches the client, not only the ones earlier cases sampled
+#[test]
+fn a_messages_chunk_keeps_its_usage_and_choice_details() {
+    let chunk = chat(
+        r#"{"id": "full", "created": 4, "system_fingerprint": "fp_1", "service_tier": "default", "usage": {"prompt_tokens": 3, "completion_tokens": 1, "total_tokens": 4}, "choices": [{"index": 0, "delta": {"refusal": "no", "function_call": {"name": "g", "arguments": "{\"a\": 1}"}}, "logprobs": {"content": [{"token": "hi", "logprob": -0.5, "bytes": [104, 105], "top_logprobs": [{"token": "hi", "logprob": -0.25, "bytes": null}]}]}, "finish_reason": "stop"}]}"#,
+    );
+    let choice = &chunk.choices[0];
+    let usage = chunk.usage.as_ref().unwrap();
+    assert_eq!(usage.prompt_tokens, 3);
+    assert_eq!(usage.completion_tokens, 1);
+    assert_eq!(usage.total_tokens, 4);
+    assert_eq!(chunk.system_fingerprint.as_deref(), Some("fp_1"));
+    assert_eq!(chunk.service_tier.as_deref(), Some("default"));
+    assert_eq!(choice.delta.refusal.as_deref(), Some("no"));
+    let function = choice.delta.function_call.as_ref().unwrap();
+    assert_eq!(function.name.as_deref(), Some("g"));
+    assert_eq!(function.arguments, r#"{"a": 1}"#);
+    let logprobs = choice.logprobs.as_ref().unwrap();
+    let entries = logprobs.content.as_ref().unwrap();
+    assert_eq!(entries[0].token, "hi");
+    assert_eq!(entries[0].logprob.to_string(), "-0.5");
+    assert_eq!(entries[0].bytes, Some(vec![104, 105]));
+    assert_eq!(entries[0].top_logprobs[0].token, "hi");
+    assert_eq!(entries[0].top_logprobs[0].bytes, None);
+    assert!(logprobs.refusal.is_none());
+}
+
 #[test]
 fn a_chunk_without_choices_is_refused() {
     let error = project_error(r#"{"id": "1", "created": 2}"#, true);
@@ -104,6 +132,16 @@ fn an_unknown_chunk_field_is_ignored() {
 #[test]
 fn a_non_object_messages_chunk_is_refused() {
     let error = project_error("[1]", true);
+
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
+}
+
+// serde fills a struct from a positional array, so the object check must come before either chunk shape
+#[rstest]
+#[case::token(false, "[null, 0]")]
+#[case::messages(true, r#"["1", 2, null, [], null, null, null]"#)]
+fn a_positional_array_is_refused(#[case] messages: bool, #[case] text: &str) {
+    let error = project_error(text, messages);
 
     assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
@@ -187,6 +225,82 @@ fn two_tool_calls_without_indexes_are_numbered_in_order() {
 
     assert_eq!(calls[0].index, 0);
     assert_eq!(calls[1].index, 1);
+}
+
+// Function.__init__ dumps a dict argument with Python's separators, so the call carries a JSON string
+#[test]
+fn a_dict_tool_call_arguments_is_dumped_like_python() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "arguments": {"a": 1, "b": "x"}}}]}}]}"#,
+    );
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(
+        calls[0].function.as_ref().unwrap().arguments,
+        r#"{"a": 1, "b": "x"}"#
+    );
+}
+
+// Function.__init__ reads a null argument as the empty string, not as the text "null"
+#[test]
+fn a_null_tool_call_arguments_is_empty() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "arguments": null}}]}}]}"#,
+    );
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].function.as_ref().unwrap().arguments, "");
+}
+
+#[test]
+fn a_text_tool_call_arguments_is_used_as_given() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "arguments": "{\"a\": 1}"}}]}}]}"#,
+    );
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].function.as_ref().unwrap().arguments, r#"{"a": 1}"#);
+}
+
+// Function.__init__ dumps a dict parameters when the call omits arguments, and ignores a non-dict one
+#[test]
+fn a_parameters_dict_stands_in_for_missing_arguments() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "parameters": {"a": 1}}}]}}]}"#,
+    );
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].function.as_ref().unwrap().arguments, r#"{"a": 1}"#);
+}
+
+#[test]
+fn a_non_dict_parameters_reads_as_empty_arguments() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"name": "f", "parameters": [1]}}]}}]}"#,
+    );
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].function.as_ref().unwrap().arguments, "");
+}
+
+#[test]
+fn arguments_win_over_parameters() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"arguments": "{}", "parameters": {"a": 1}}}]}}]}"#,
+    );
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].function.as_ref().unwrap().arguments, "{}");
+}
+
+#[test]
+fn a_number_tool_call_arguments_is_refused() {
+    let error = project_error(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {"arguments": 5}}]}}]}"#,
+        true,
+    );
+
+    assert!(matches!(error, SagemakerStreamError::Json(_)));
 }
 
 #[test]

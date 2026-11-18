@@ -557,6 +557,35 @@ fn a_non_object_chunk_ends_a_propagating_stream() {
     ));
 }
 
+// an array whose elements fill every field is still not a chunk object, under either policy
+#[rstest]
+#[case::propagating_token(ErrorPolicy::Propagate, false, "[null, 0]")]
+#[case::skipped_token(ErrorPolicy::Skip, false, "[null, 0]")]
+#[case::propagating_messages(
+    ErrorPolicy::Propagate,
+    true,
+    r#"["1", 2, null, [], null, null, null]"#
+)]
+#[case::skipped_messages(ErrorPolicy::Skip, true, r#"["1", 2, null, [], null, null, null]"#)]
+fn a_positional_array_is_refused_in_both_policies(
+    #[case] policy: ErrorPolicy,
+    #[case] messages: bool,
+    #[case] payload: &str,
+) {
+    let items = sync_items(vec![event(payload.as_bytes())], messages, policy);
+
+    match policy {
+        ErrorPolicy::Propagate => {
+            assert_eq!(items.len(), 1);
+            assert!(matches!(
+                items[0].as_ref().unwrap_err(),
+                SagemakerStreamError::Json(_)
+            ));
+        }
+        ErrorPolicy::Skip => assert!(items.is_empty(), "{items:?}"),
+    }
+}
+
 #[rstest]
 #[case::generic(false)]
 #[case::messages(true)]

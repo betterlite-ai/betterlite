@@ -1,9 +1,11 @@
+use betterlite_logging::python_json::dumps_object;
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
+use betterlite_models::decisions::Json as ArgumentsJson;
 use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::stream::chunk::{Choice, Chunk, Delta, Function, Logprobs, ToolCall};
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
+use indexmap::IndexMap;
 use serde::Deserialize;
-use serde::de::IgnoredAny;
 
 use crate::sagemaker_stream::SagemakerChunk;
 use crate::sagemaker_stream::error::SagemakerStreamError;
@@ -48,7 +50,22 @@ struct ToolCallEvent {
     id: Option<String>,
     #[serde(rename = "type")]
     kind: Option<String>,
-    function: Option<Function>,
+    function: Option<FunctionEvent>,
+}
+
+// Function declares dict | str | None for arguments and normalizes each: a dict dumps, a null is empty
+#[derive(Debug, Deserialize)]
+struct FunctionEvent {
+    name: Option<String>,
+    arguments: Option<ArgumentsEvent>,
+    parameters: Option<ArgumentsJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum ArgumentsEvent {
+    Text(String),
+    Object(IndexMap<String, ArgumentsJson>),
 }
 
 // _chunk_parser: a missing null token is empty, index counts from zero, and the end token finishes the stream
@@ -69,8 +86,11 @@ pub fn project(
     is_messages_api: bool,
     text: &str,
 ) -> Result<Projection, SagemakerStreamError> {
-    if serde_json::from_str::<IgnoredAny>(text).is_err() {
-        return Ok(Projection::Pending);
+    // a struct reads an array positionally, so the object map gates both shapes; partial text waits
+    match serde_json::from_str::<IndexMap<String, ArgumentsJson>>(text) {
+        Ok(_chunk) => {}
+        Err(source) if source.is_data() => return Err(SagemakerStreamError::Json(source)),
+        Err(_partial) => return Ok(Projection::Pending),
     }
     if is_messages_api {
         return match serde_json::from_str::<ChatEvent>(text) {
@@ -115,27 +135,22 @@ impl ChatEvent {
 
 impl ChoiceEvent {
     fn into_choice(self) -> Choice {
+        let delta = self.delta.unwrap_or_default();
         Choice {
             index: self.index,
-            delta: self.delta.unwrap_or_default().into_delta(),
+            delta: Delta {
+                role: delta.role,
+                content: delta.content,
+                refusal: delta.refusal,
+                tool_calls: delta.tool_calls.map(number_calls),
+                function_call: delta.function_call,
+            },
             // StreamingChoices maps a truthy stop reason and stores None for an empty one
             finish_reason: self
                 .finish_reason
                 .filter(|raw| !raw.is_empty())
                 .map(|raw| map_finish_reason(&raw).reason.as_str().to_owned()),
             logprobs: self.logprobs,
-        }
-    }
-}
-
-impl DeltaEvent {
-    fn into_delta(self) -> Delta {
-        Delta {
-            role: self.role,
-            content: self.content,
-            refusal: self.refusal,
-            tool_calls: self.tool_calls.map(number_calls),
-            function_call: self.function_call,
         }
     }
 }
@@ -153,7 +168,18 @@ fn number_calls(calls: Vec<ToolCallEvent>) -> Vec<ToolCall> {
             index,
             id: call.id,
             kind: Some(call.kind.unwrap_or_else(|| String::from("function"))),
-            function: call.function,
+            function: call.function.map(|function| Function {
+                name: function.name,
+                arguments: match function.arguments {
+                    Some(ArgumentsEvent::Text(text)) => text,
+                    Some(ArgumentsEvent::Object(object)) => dumps_object(&object),
+                    // a missing arguments falls back to a dict parameters, and any other value is empty
+                    None => match function.parameters {
+                        Some(ArgumentsJson::Object(object)) => dumps_object(&object),
+                        _ => String::new(),
+                    },
+                },
+            }),
         });
     }
     numbered
