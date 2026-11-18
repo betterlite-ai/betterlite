@@ -1,0 +1,70 @@
+kind: helper
+name: model-catalog-lookup-id-order-and-team-exclusion
+call:
+  model_catalog_lookup:
+    function: get_model_ids
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+      - model_name: gpt-4o
+        litellm_params:
+          model: azure/gpt-4o
+        model_info:
+          id: b
+      - model_name: shared
+        litellm_params:
+          model: openai/shared
+        model_info:
+          id: u
+          team_id: t2
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: null
+      exclude_team_models: false
+calls:
+  - model_catalog_lookup:
+      function: get_model_ids
+      model_list:
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+        - model_name: internal
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t
+            team_id: t1
+        - model_name: gpt-4o
+          litellm_params:
+            model: azure/gpt-4o
+          model_info:
+            id: b
+        - model_name: shared
+          litellm_params:
+            model: openai/shared
+          model_info:
+            id: u
+            team_id: t2
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        model_name: null
+        exclude_team_models: true
+env: {}
+compare: {ignore: []}
