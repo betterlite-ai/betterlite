@@ -1,0 +1,27 @@
+kind: probe
+name: quality-router-name-last-tiebreak
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [bbb, aaa]
+            - model_name: bbb
+              litellm_params: {model: openai/bbb}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [k]}
+                input_cost_per_token: 0.1
+            - model_name: aaa
+              litellm_params: {model: openai/aaa}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [k]}
+                input_cost_per_token: 0.1
+        messages:
+          - role: user
+            content: k
