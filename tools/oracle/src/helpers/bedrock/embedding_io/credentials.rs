@@ -120,7 +120,7 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     );
     object.insert(
         "aws_session_token".to_owned(),
-        from_value(json!(
+        serde_json::from_value(json!(
             settings
                 .session_token
                 .as_ref()
