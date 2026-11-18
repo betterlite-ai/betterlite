@@ -3,6 +3,7 @@ use std::mem::take;
 
 use arc_swap::ArcSwap;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::deployment_identity::construct::DeploymentInput;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -27,8 +28,8 @@ pub struct DeploymentCatalog {
     pub provider_unresolved: Vec<DeploymentInput>,
     pub pattern_router: PatternCatalog,
     pub team_pattern_routers: BTreeMap<String, TeamPatterns>,
-    // the last deployment pushed under an id wins, and removing that id drops the entry even when a twin remains
-    pub id_index: BTreeMap<String, usize>,
+    // the last deployment pushed under an id wins, a replacement keeps the id's first position, and removing that id drops the entry even when a twin remains
+    pub id_index: IndexMap<String, usize>,
     pub name_index: BTreeMap<String, Vec<usize>>,
     pub team_index: BTreeMap<(String, String), Vec<usize>>,
 }
@@ -36,6 +37,17 @@ pub struct DeploymentCatalog {
 fn info_text<'spec>(spec: &'spec DeploymentSpec, key: &str) -> Option<&'spec str> {
     match spec.model_info.get(key) {
         Some(Json::Text(value)) if !value.is_empty() => Some(value),
+        _ => None,
+    }
+}
+
+// The team wildcard index_patterns registers and push records for: any text team id, empty included, and a starred public name.
+fn team_wildcard(spec: &DeploymentSpec) -> Option<(&str, &str)> {
+    match (
+        spec.model_info.get("team_id"),
+        info_text(spec, "team_public_model_name").filter(|name| name.contains('*')),
+    ) {
+        (Some(Json::Text(team)), Some(public_name)) => Some((team.as_str(), public_name)),
         _ => None,
     }
 }
@@ -75,10 +87,7 @@ impl DeploymentCatalog {
                 self.provider_default_ids.push(id.to_owned());
             }
         }
-        if let (Some(Json::Text(team)), Some(public_name)) = (
-            spec.model_info.get("team_id"),
-            info_text(spec, "team_public_model_name").filter(|name| name.contains('*')),
-        ) {
+        if let Some((team, public_name)) = team_wildcard(spec) {
             let patterns = self
                 .team_pattern_routers
                 .entry(team.to_owned())
@@ -92,6 +101,10 @@ impl DeploymentCatalog {
     // _add_model_to_list_and_index_map
     pub fn push(&mut self, spec: DeploymentSpec) {
         let index = self.models.len();
+        if spec.model_name.contains('*') {
+            self.pattern_router
+                .record_deployment(&spec.model_name, &spec);
+        }
         if let Some(id) = spec.id() {
             self.id_index.insert(id.to_owned(), index);
         }
@@ -100,6 +113,11 @@ impl DeploymentCatalog {
                 .entry(spec.model_name.clone())
                 .or_default()
                 .push(index);
+        }
+        if let Some((owner, pattern_name)) = team_wildcard(&spec)
+            && let Some(patterns) = self.team_pattern_routers.get_mut(owner)
+        {
+            patterns.router.record_deployment(pattern_name, &spec);
         }
         if let (Some(team), Some(public_name)) = (
             info_text(&spec, "team_id"),
@@ -120,7 +138,7 @@ impl DeploymentCatalog {
         for position in self.id_index.values_mut() {
             *position = position.saturating_sub(usize::from((*position).cmp(&index).is_gt()));
         }
-        self.id_index.remove(model_id);
+        self.id_index.shift_remove(model_id);
         for (name, indices) in take(&mut self.name_index) {
             let kept = shifted(&indices, index);
             if kept.is_empty() {
