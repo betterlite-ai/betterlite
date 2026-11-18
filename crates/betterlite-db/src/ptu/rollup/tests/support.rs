@@ -9,9 +9,7 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 
 // The store's own test support, reused rather than copied: fixtures, log capture, a recording sleeper and stored-model rows.
-mod stored {
-    include!("../../store/tests/support.rs");
-}
+mod stored;
 
 pub(crate) use stored::{
     Recorder, capture_logs, charge, close, database, insert_stored_model, names, write_for,
