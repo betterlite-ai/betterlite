@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::future::Future;
 use std::time::Duration;
 
 use betterlite_http::proxy::ProxiedClient;
@@ -236,17 +235,14 @@ impl<'source> CompatibleChatExecution<'source> {
     }
 
     #[must_use]
-    pub fn execute<'execution>(
+    pub async fn execute<'execution>(
         &'execution self,
         client: &'execution ProxiedClient,
         state: &'execution mut LoggingState,
         env: &'execution PrePostEnv<'_>,
-    ) -> impl Future<Output = Result<CompatibleChatOutcome, CompatibleChatError>> + Send + 'execution
-    {
-        async move {
-            let plan = self.plan(state, env)?;
-            let answer = send_chat(client, &plan).await?;
-            finish_chat(&plan, answer, state, env)
-        }
+    ) -> Result<CompatibleChatOutcome, CompatibleChatError> {
+        let plan = self.plan(state, env)?;
+        let answer = send_chat(client, &plan).await?;
+        finish_chat(&plan, answer, state, env)
     }
 }

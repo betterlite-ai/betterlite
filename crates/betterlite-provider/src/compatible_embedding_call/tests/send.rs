@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::Future;
 use std::net::TcpListener as StdListener;
 use std::thread;
 
@@ -16,36 +17,13 @@ use tokio::time::timeout;
 use super::super::{SharedEmbedding, shared_embedding};
 use super::{EXCHANGE_TIMEOUT, client, logging_fixture, serve, settings};
 
-// the shared handler completes on a thread that is not the one that built it
-#[test]
-fn shared_embedding_completes_on_a_second_thread() {
-    let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
-    std_listener.set_nonblocking(true).unwrap();
-    let addr = std_listener.local_addr().unwrap();
-    let base = format!("http://{addr}/v1");
-    let input = Json::List(vec![Json::Text(String::from("a"))]);
-    let options = IndexMap::new();
-    let globals = Globals::default();
-    let settings = settings(&[]);
-    let key = SecretString::from(String::from("sk-explicit"));
-    let embedding = SharedEmbedding {
-        model: "m",
-        input: &input,
-        api_base: Some(&base),
-        api_key: Some(&key),
-        optional_params: &options,
-        headers: None,
-        custom_endpoint: false,
-        timeout: EXCHANGE_TIMEOUT,
-        mode: Mode::Async,
-        globals: &globals,
-        settings: &settings,
-    };
-    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (mut state, env) = logging_fixture(&redactor);
-    let client = client();
-    let future = shared_embedding(&embedding, &client, &mut state, &env);
-    let (request, answer) = thread::scope(|scope| {
+// serves one request against the call's future on a thread of its own and gives back both results
+fn exchange<Output, Call>(std_listener: StdListener, future: Call) -> (String, Output)
+where
+    Output: Send,
+    Call: Future<Output = Output> + Send,
+{
+    thread::scope(|scope| {
         scope
             .spawn(move || {
                 let runtime = Builder::new_current_thread().enable_all().build().unwrap();
@@ -60,7 +38,39 @@ fn shared_embedding_completes_on_a_second_thread() {
             })
             .join()
             .unwrap()
-    });
+    })
+}
+
+// the shared handler completes on a thread that is not the one that built it
+#[test]
+fn shared_embedding_completes_on_a_second_thread() {
+    let std_listener = StdListener::bind("127.0.0.1:0").unwrap();
+    std_listener.set_nonblocking(true).unwrap();
+    let base = format!("http://{}/v1", std_listener.local_addr().unwrap());
+    let (settings, key) = (
+        settings(&[]),
+        SecretString::from(String::from("sk-explicit")),
+    );
+    let embedding = SharedEmbedding {
+        model: "m",
+        input: &Json::List(vec![Json::Text(String::from("a"))]),
+        api_base: Some(&base),
+        api_key: Some(&key),
+        optional_params: &IndexMap::new(),
+        headers: None,
+        custom_endpoint: false,
+        timeout: EXCHANGE_TIMEOUT,
+        mode: Mode::Async,
+        globals: &Globals::default(),
+        settings: &settings,
+    };
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging_fixture(&redactor);
+    let client = client();
+    let (request, answer) = exchange(
+        std_listener,
+        shared_embedding(&embedding, &client, &mut state, &env),
+    );
     let response = answer.unwrap();
     assert_eq!(response.model, "upstream");
     assert_eq!(response.data.len(), 1);

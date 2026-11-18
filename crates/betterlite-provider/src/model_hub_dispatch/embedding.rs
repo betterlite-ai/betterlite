@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::str::from_utf8;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -142,36 +141,33 @@ fn received(
     Ok(embedding)
 }
 
-pub fn embed<'call>(
+pub async fn embed<'call>(
     call: &'call EmbeddingCall<'_>,
     deps: &'call DispatchDeps<'_>,
     log: &'call mut CallLogging<'_, '_>,
-) -> impl Future<Output = Result<EmbeddingResponse, HubDispatchError>> + Send + 'call {
-    async move {
-        let prepared = prepare_call(call, deps).await?;
-        let sent = PreCall {
-            input: prepared.input.clone(),
-            model: None,
-            additional_args: additional_args(
-                Some(prepared.request.url.clone()),
-                Some(header_values(&prepared.request.headers)),
-                Some(RawBody::Object(prepared.data.clone())),
-                IndexMap::new(),
-            ),
-        };
-        pre_call(log.state, &sent, log.env)
-            .map_err(|source| HubDispatchError::PreCall { source })?;
-        let request = WireRequest {
-            method: Method::POST,
-            url: &prepared.request.url,
-            query: &[],
-            headers: &prepared.request.headers,
-            body: Some(prepared.request.body.as_bytes()),
-            deadline: deps.timeout,
-        };
-        let response = deps.post.post(&request).await?;
-        received(call, deps.encoder, log, prepared, &response)
-    }
+) -> Result<EmbeddingResponse, HubDispatchError> {
+    let prepared = prepare_call(call, deps).await?;
+    let sent = PreCall {
+        input: prepared.input.clone(),
+        model: None,
+        additional_args: additional_args(
+            Some(prepared.request.url.clone()),
+            Some(header_values(&prepared.request.headers)),
+            Some(RawBody::Object(prepared.data.clone())),
+            IndexMap::new(),
+        ),
+    };
+    pre_call(log.state, &sent, log.env).map_err(|source| HubDispatchError::PreCall { source })?;
+    let request = WireRequest {
+        method: Method::POST,
+        url: &prepared.request.url,
+        query: &[],
+        headers: &prepared.request.headers,
+        body: Some(prepared.request.body.as_bytes()),
+        deadline: deps.timeout,
+    };
+    let response = deps.post.post(&request).await?;
+    received(call, deps.encoder, log, prepared, &response)
 }
 
 pub struct NoTag;
