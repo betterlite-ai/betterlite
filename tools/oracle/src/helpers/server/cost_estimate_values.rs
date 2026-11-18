@@ -1,3 +1,4 @@
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_models::model_registration::JsonObject;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -9,7 +10,7 @@ pub(crate) struct Op;
 #[serde(deny_unknown_fields)]
 struct Input {
     model_list: Vec<JsonObject>,
-    request: serde_json::Value,
+    request: JsonValue,
 }
 
 impl Helper for Op {

@@ -128,6 +128,7 @@ impl DeploymentSet {
     }
 
     // _resolve_model_for_cost_lookup: the first listed deployment answers, or the requested name when nothing matches.
+    #[must_use]
     pub fn resolve(
         &self,
         service: &CostService<ProviderFormulas>,
@@ -153,6 +154,7 @@ impl DeploymentSet {
     }
 }
 
+#[must_use]
 pub fn unresolvable(requested: &str) -> ResolvedCostModel {
     ResolvedCostModel {
         model: requested.to_owned(),

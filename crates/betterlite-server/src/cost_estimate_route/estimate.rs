@@ -33,7 +33,7 @@ use crate::cost_service::{Call, CostService};
 use crate::key_fields::values::Amount;
 use crate::proxy_request_contracts::cost_estimate::{CostEstimateRequest, CostEstimateResponse};
 
-pub async fn estimate(
+pub(crate) async fn estimate(
     service: &CostService<ProviderFormulas>,
     deployments: Option<&DeploymentSet>,
     request: &CostEstimateRequest,

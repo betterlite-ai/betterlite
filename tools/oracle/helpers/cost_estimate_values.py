@@ -1,14 +1,13 @@
 import asyncio
 from typing import Final, TypedDict
 
-import litellm
 from litellm.proxy import proxy_server
 from litellm.proxy._types import CostEstimateRequest, UserAPIKeyAuth
 from litellm.proxy.management_endpoints import cost_tracking_settings
 from litellm.router import Router
 from pydantic import JsonValue, TypeAdapter
 
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
+JSON: Final = TypeAdapter(JsonValue)
 
 
 class Input(TypedDict):
