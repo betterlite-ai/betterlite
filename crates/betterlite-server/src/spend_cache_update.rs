@@ -25,9 +25,7 @@ use crate::proxy_helpers::projected::ProjectionError;
 use self::alerts::SpendBudgetAlerts;
 use self::cache::{ArmedSpendRead, SpendCache};
 use self::key::update_key_spend;
-use self::objects::{
-    update_end_user_spend, update_spends_for_tags, update_team_spend, update_user_spend,
-};
+use self::objects::update_objects;
 
 const UPDATE_CACHE_READ_SLOT: &str = "update_cache_read";
 
@@ -183,18 +181,7 @@ pub async fn update_spend_cache(
         update_key_spend(token, response_cost, deps).await?;
     }
     let mut updates = Vec::new();
-    if let Some(user_id) = input.user_id.as_deref() {
-        update_user_spend(user_id, input.response_cost, &cached, &mut updates);
-    }
-    if let Some(end_user_id) = input.end_user_id.as_deref() {
-        update_end_user_spend(end_user_id, input.response_cost, &cached, &mut updates);
-    }
-    if let Some(team_id) = input.team_id.as_deref() {
-        update_team_spend(team_id, input.response_cost, &cached, &mut updates);
-    }
-    if let Some(tags) = input.tags.as_deref() {
-        update_spends_for_tags(tags, input.response_cost, &cached, &mut updates);
-    }
+    update_objects(input, &cached, &mut updates);
     spawn_writes(updates, deps);
     Ok(())
 }

@@ -21,7 +21,6 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
-use betterlite_redis::redis_connection_settings::model::scalars::Scalar;
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_redis::request_batch::batches::POST_CALL_FLUSH_DEADLINE;
@@ -297,8 +296,15 @@ pub(crate) async fn unreachable_cache() -> AuthCache<DualCache<LocalMemoryOps>> 
 }
 
 fn unreachable_options(port: u16) -> RedisCacheOptions {
+    let overrides: RedisOverrides = serde_json::from_value(json!({
+        "host": "127.0.0.1",
+        "port": port,
+        "socket_timeout": 0.05,
+        "socket_connect_timeout": 0.05,
+    }))
+    .expect("the unreachable overrides parse");
     RedisCacheOptions {
-        overrides: unreachable_overrides(port),
+        overrides,
         family: RedisCacheFamily::Standalone,
         namespace: None,
         default_ttl: 60,
@@ -308,41 +314,6 @@ fn unreachable_options(port: u16) -> RedisCacheOptions {
         store: Arc::new(RedisClientStore::new()),
         hooks: Arc::new(SilentHooks),
         gate: Arc::new(AllowGate),
-    }
-}
-
-fn unreachable_overrides(port: u16) -> RedisOverrides {
-    RedisOverrides {
-        host: Some("127.0.0.1".to_owned()),
-        port: Some(Scalar::Value(i64::from(port))),
-        db: None,
-        username: None,
-        password: None,
-        url: None,
-        ssl: None,
-        socket_timeout: Some(Scalar::Value(0.05_f64)),
-        socket_connect_timeout: Some(Scalar::Value(0.05_f64)),
-        socket_keepalive: None,
-        max_connections: None,
-        health_check_interval: None,
-        credential_provider: false,
-        startup_nodes: None,
-        sentinel_nodes: None,
-        sentinel_password: None,
-        service_name: None,
-        ssl_password: None,
-        gcp_service_account: None,
-        gcp_ssl_ca_certs: None,
-        azure_redis_ad_token: None,
-        azure_client_id: None,
-        azure_tenant_id: None,
-        azure_client_secret: None,
-        aws_iam_auth: None,
-        aws_iam_user_name: None,
-        aws_iam_cache_name: None,
-        aws_iam_region: None,
-        aws_iam_serverless: None,
-        passthrough: BTreeMap::new(),
     }
 }
 

@@ -10,49 +10,84 @@ use betterlite_db::managed_resource_rows::tag::TagTable;
 use betterlite_db::team_rows::archived::LiteLLMTeamTableCachedObj;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Number;
 use tracing::warn;
 
-use super::{SpendCacheUpdateError, added_spend};
+use super::{SpendCacheUpdateError, UpdateInput, added_spend};
 
-pub(super) fn update_user_spend(
-    user_id: &str,
-    response_cost: Option<Decimal>,
-    cached: &BTreeMap<String, Json>,
-    queue: &mut Vec<(String, Json)>,
-) {
-    let Some(cost) = response_cost else {
-        return;
-    };
-    if let Err(error) = user_updates(user_id, cost, cached, queue) {
-        warn_group(
-            "user",
-            &format!("user_id={user_id}, response_cost={cost}"),
-            &error,
-        );
+// the row types whose cached spend a request's cost raises
+trait SpendRow {
+    fn spend_mut(&mut self) -> &mut Decimal;
+}
+
+impl SpendRow for LiteLLMUserTable {
+    fn spend_mut(&mut self) -> &mut Decimal {
+        &mut self.spend
     }
 }
 
-// a missing or undecodable user row returns from this group, so the global proxy spend is not bumped either
-fn user_updates(
-    user_id: &str,
+impl SpendRow for LiteLLMEndUserTable {
+    fn spend_mut(&mut self) -> &mut Decimal {
+        &mut self.spend
+    }
+}
+
+impl SpendRow for LiteLLMTeamTableCachedObj {
+    fn spend_mut(&mut self) -> &mut Decimal {
+        self.team.fields.spend.get_or_insert(Decimal::ZERO)
+    }
+}
+
+impl SpendRow for TagTable {
+    fn spend_mut(&mut self) -> &mut Decimal {
+        &mut self.spend
+    }
+}
+
+pub(super) fn update_objects(
+    input: &UpdateInput,
+    cached: &BTreeMap<String, Json>,
+    queue: &mut Vec<(String, Json)>,
+) {
+    let Some(cost) = input.response_cost else {
+        return;
+    };
+    if let Some(user_id) = input.user_id.as_deref() {
+        let context = format!("user_id={user_id}, response_cost={cost}");
+        // a missing or undecodable user row returns from this group, so the global proxy spend is not bumped either
+        let outcome = match add_cost_to_cached::<LiteLLMUserTable>(user_id, cost, cached, queue) {
+            Ok(true) => bump_global_spend(cost, cached, queue),
+            Ok(false) => Ok(()),
+            Err(error) => Err(error),
+        };
+        report_group("user", &context, outcome);
+    }
+    if let Some(end_user_id) = input.end_user_id.as_deref() {
+        let key = CacheKey::EndUserId(end_user_id).render();
+        let context = format!("end_user_id={end_user_id}, response_cost={cost}");
+        let outcome = add_cost_to_cached::<LiteLLMEndUserTable>(&key, cost, cached, queue);
+        report_group("end user", &context, outcome);
+    }
+    if let Some(team_id) = input.team_id.as_deref() {
+        let key = format!("team_id:{team_id}");
+        let context = format!("team_id={team_id}, response_cost={cost}");
+        let outcome = add_cost_to_cached::<LiteLLMTeamTableCachedObj>(&key, cost, cached, queue);
+        report_group("team", &context, outcome);
+    }
+    if let Some(tags) = input.tags.as_deref() {
+        let context = format!("tags={tags:?}, response_cost={cost}");
+        let outcome = tag_updates(tags, cost, cached, queue);
+        report_group("tag", &context, outcome);
+    }
+}
+
+fn bump_global_spend(
     cost: Decimal,
     cached: &BTreeMap<String, Json>,
     queue: &mut Vec<(String, Json)>,
 ) -> Result<(), SpendCacheUpdateError> {
-    let Some(cached_user) = cached.get(user_id) else {
-        return Ok(());
-    };
-    let Some(mut user) =
-        payload::decode::<LiteLLMUserTable>(cached_user).map_err(SpendCacheUpdateError::Decode)?
-    else {
-        return Ok(());
-    };
-    user.spend = added_spend(user.spend, cost)?;
-    queue.push((
-        user_id.to_owned(),
-        payload::encode(&user).map_err(SpendCacheUpdateError::Encode)?,
-    ));
     let Some(global_spend) = cached.get(GLOBAL_PROXY_SPEND_CACHE_KEY) else {
         return Ok(());
     };
@@ -69,101 +104,31 @@ fn user_updates(
     Ok(())
 }
 
-pub(super) fn update_end_user_spend(
-    end_user_id: &str,
-    response_cost: Option<Decimal>,
-    cached: &BTreeMap<String, Json>,
-    queue: &mut Vec<(String, Json)>,
-) {
-    let Some(cost) = response_cost else {
-        return;
-    };
-    if let Err(error) = end_user_updates(end_user_id, cost, cached, queue) {
-        warn_group(
-            "end user",
-            &format!("end_user_id={end_user_id}, response_cost={cost}"),
-            &error,
-        );
-    }
-}
-
-fn end_user_updates(
-    end_user_id: &str,
+// false when the row is not cached or does not decode, so the user branch can skip the global spend too
+fn add_cost_to_cached<Row>(
+    key: &str,
     cost: Decimal,
     cached: &BTreeMap<String, Json>,
     queue: &mut Vec<(String, Json)>,
-) -> Result<(), SpendCacheUpdateError> {
-    let key = CacheKey::EndUserId(end_user_id).render();
-    let Some(cached_end_user) = cached.get(&key) else {
-        return Ok(());
+) -> Result<bool, SpendCacheUpdateError>
+where
+    Row: SpendRow + Serialize + DeserializeOwned,
+{
+    let Some(cached_row) = cached.get(key) else {
+        return Ok(false);
     };
-    let Some(mut end_user) = payload::decode::<LiteLLMEndUserTable>(cached_end_user)
-        .map_err(SpendCacheUpdateError::Decode)?
+    let Some(mut row) =
+        payload::decode::<Row>(cached_row).map_err(SpendCacheUpdateError::Decode)?
     else {
-        return Ok(());
+        return Ok(false);
     };
-    end_user.spend = added_spend(end_user.spend, cost)?;
-    let encoded = payload::encode(&end_user).map_err(SpendCacheUpdateError::Encode)?;
-    queue.push((key, encoded));
-    Ok(())
-}
-
-pub(super) fn update_team_spend(
-    team_id: &str,
-    response_cost: Option<Decimal>,
-    cached: &BTreeMap<String, Json>,
-    queue: &mut Vec<(String, Json)>,
-) {
-    let Some(cost) = response_cost else {
-        return;
-    };
-    if let Err(error) = team_updates(team_id, cost, cached, queue) {
-        warn_group(
-            "team",
-            &format!("team_id={team_id}, response_cost={cost}"),
-            &error,
-        );
-    }
-}
-
-fn team_updates(
-    team_id: &str,
-    cost: Decimal,
-    cached: &BTreeMap<String, Json>,
-    queue: &mut Vec<(String, Json)>,
-) -> Result<(), SpendCacheUpdateError> {
-    let key = format!("team_id:{team_id}");
-    let Some(cached_team) = cached.get(&key) else {
-        return Ok(());
-    };
-    let Some(mut team) = payload::decode::<LiteLLMTeamTableCachedObj>(cached_team)
-        .map_err(SpendCacheUpdateError::Decode)?
-    else {
-        return Ok(());
-    };
-    let existing = team.team.fields.spend.unwrap_or_default();
-    team.team.fields.spend = Some(added_spend(existing, cost)?);
-    let encoded = payload::encode(&team).map_err(SpendCacheUpdateError::Encode)?;
-    queue.push((key, encoded));
-    Ok(())
-}
-
-pub(super) fn update_spends_for_tags(
-    tags: &[Json],
-    response_cost: Option<Decimal>,
-    cached: &BTreeMap<String, Json>,
-    queue: &mut Vec<(String, Json)>,
-) {
-    let Some(cost) = response_cost else {
-        return;
-    };
-    if let Err(error) = tag_updates(tags, cost, cached, queue) {
-        warn_group(
-            "tag",
-            &format!("tags={tags:?}, response_cost={cost}"),
-            &error,
-        );
-    }
+    let spend = row.spend_mut();
+    *spend = added_spend(*spend, cost)?;
+    queue.push((
+        key.to_owned(),
+        payload::encode(&row).map_err(SpendCacheUpdateError::Encode)?,
+    ));
+    Ok(true)
 }
 
 fn tag_updates(
@@ -180,23 +145,19 @@ fn tag_updates(
             continue;
         }
         let key = CacheKey::Tag(name.as_str()).render();
-        let Some(cached_tag) = cached.get(&key) else {
-            continue;
-        };
-        let Some(mut tag_row) =
-            payload::decode::<TagTable>(cached_tag).map_err(SpendCacheUpdateError::Decode)?
-        else {
-            continue;
-        };
-        tag_row.spend = added_spend(tag_row.spend, cost)?;
-        let encoded = payload::encode(&tag_row).map_err(SpendCacheUpdateError::Encode)?;
-        queue.push((key, encoded));
+        let _queued = add_cost_to_cached::<TagTable>(&key, cost, cached, queue)?;
     }
     Ok(())
 }
 
-fn warn_group(kind: &str, context: &str, error: &SpendCacheUpdateError) {
-    warn!(
-        "Spend tracking - failed to update {kind} spend in cache. Budget enforcement may use stale spend values. {context} - {error}"
-    );
+fn report_group<Outcome>(
+    kind: &str,
+    context: &str,
+    outcome: Result<Outcome, SpendCacheUpdateError>,
+) {
+    if let Err(error) = outcome {
+        warn!(
+            "Spend tracking - failed to update {kind} spend in cache. Budget enforcement may use stale spend values. {context} - {error}"
+        );
+    }
 }

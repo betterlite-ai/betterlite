@@ -42,28 +42,20 @@ fn entry<'write>(write: &'write WriteCall, key: &str) -> &'write Json {
     &found.1
 }
 
-fn all_groups_state() -> FakeState {
-    FakeState::new()
-        .with_cached(BTreeMap::from([
-            ("user-1".to_owned(), user_fixture()),
-            (GLOBAL_PROXY_SPEND_CACHE_KEY.to_owned(), json_from("10")),
-            ("end_user_id:end-1".to_owned(), end_user_fixture()),
-            ("team_id:team-1".to_owned(), team_fixture()),
-            ("tag:qa".to_owned(), tag_fixture()),
-        ]))
-        .with_management_ttl(33.0)
+fn group_fixtures() -> BTreeMap<String, Json> {
+    BTreeMap::from([
+        ("user-1".to_owned(), user_fixture()),
+        (GLOBAL_PROXY_SPEND_CACHE_KEY.to_owned(), json_from("10")),
+        ("end_user_id:end-1".to_owned(), end_user_fixture()),
+        ("team_id:team-1".to_owned(), team_fixture()),
+        ("tag:qa".to_owned(), tag_fixture()),
+    ])
 }
 
-fn all_groups_input() -> UpdateInput {
-    UpdateInput {
-        token: None,
-        user_id: Some("user-1".to_owned()),
-        end_user_id: Some("end-1".to_owned()),
-        team_id: Some("team-1".to_owned()),
-        response_cost: Some(Decimal::from(5)),
-        span: None,
-        tags: Some(vec![Json::Text("qa".to_owned())]),
-    }
+fn all_groups_state() -> FakeState {
+    FakeState::new()
+        .with_cached(group_fixtures())
+        .with_management_ttl(33.0)
 }
 
 fn user_cost_input() -> UpdateInput {
@@ -76,6 +68,14 @@ fn user_cost_input() -> UpdateInput {
         span: None,
         tags: None,
     }
+}
+
+fn all_groups_input() -> UpdateInput {
+    let mut input = user_cost_input();
+    input.end_user_id = Some("end-1".to_owned());
+    input.team_id = Some("team-1".to_owned());
+    input.tags = Some(vec![Json::Text("qa".to_owned())]);
+    input
 }
 
 fn run_deps(cache: &Arc<FakeCache>, tasks: &TaskTracker) -> (Arc<RecordingAlerts>, UpdateDeps) {
