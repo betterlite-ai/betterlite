@@ -1,0 +1,14 @@
+{
+  "routes": [
+    {
+      "name": "code",
+      "description": "programming help",
+      "utterances": ["write a function", "debug my test"],
+      "score_threshold": 0.4
+    },
+    {
+      "name": "chat",
+      "utterances": ["say hello"]
+    }
+  ]
+}
