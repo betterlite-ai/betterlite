@@ -1,0 +1,86 @@
+kind: helper
+name: model-catalog-lookup-public-name-duplicates
+call:
+  model_catalog_lookup:
+    function: get_model_names
+    model_list:
+      - model_name: internal-1
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t1a
+          team_id: t1
+          team_public_model_name: team-gpt
+      - model_name: internal-2
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t1b
+          team_id: t1
+          team_public_model_name: team-gpt
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: internal-3
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t2a
+          team_id: t2
+          team_public_model_name: team-gpt
+      - model_name: ""
+        litellm_params:
+          model: openai/empty
+        model_info:
+          id: z
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      team_id: t1
+calls:
+  - model_catalog_lookup:
+      function: get_model_names
+      model_list:
+        - model_name: internal-1
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t1a
+            team_id: t1
+            team_public_model_name: team-gpt
+        - model_name: internal-2
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t1b
+            team_id: t1
+            team_public_model_name: team-gpt
+        - model_name: gpt-4o
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+        - model_name: internal-3
+          litellm_params:
+            model: openai/team
+          model_info:
+            id: t2a
+            team_id: t2
+            team_public_model_name: team-gpt
+        - model_name: ""
+          litellm_params:
+            model: openai/empty
+          model_info:
+            id: z
+      model_group_alias: {}
+      routing_groups: []
+      inferred_provider: null
+      stale_index: false
+      arguments:
+        team_id: null
+env: {}
+compare: {ignore: []}

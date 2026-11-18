@@ -1,0 +1,27 @@
+kind: helper
+name: model-catalog-lookup-team-index-empty-fallback
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: internal
+        litellm_params:
+          model: openai/team
+        model_info:
+          id: t
+          team_id: t1
+          team_public_model_name: team-gpt
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: gpt-4o
+      team_id: t1
+env: {}
+compare: {ignore: []}

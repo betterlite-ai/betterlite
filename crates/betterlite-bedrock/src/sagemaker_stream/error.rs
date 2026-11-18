@@ -15,6 +15,8 @@ pub enum SagemakerStreamError {
     Utf8(#[source] Utf8Error),
     #[error("the SageMaker stream chunk does not have the declared shape")]
     Json(#[source] serde_json::Error),
+    #[error("the SageMaker stream JSON buffer passed {limit} bytes without a complete value")]
+    BufferLimit { limit: usize },
     #[error("the SageMaker response body could not be read")]
     Body(#[source] HttpError),
 }
