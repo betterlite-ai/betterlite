@@ -30,8 +30,9 @@ struct RawDeployment {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawParams {
-    #[serde(default)]
-    complexity_router_config: Option<RawRouterConfig>,
+    // an absent key carries no config, while a declared empty one carries the defaults
+    #[serde(default, with = "serde_with::rust::double_option")]
+    complexity_router_config: Option<Option<RawRouterConfig>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -95,12 +96,12 @@ impl Section for Raw {
     {
         let mut deployments = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let configured = deployment.litellm_params.complexity_router_config;
-            deployments.push(
-                configured
-                    .map(|raw| raw.resolve(index, lookup))
-                    .transpose()?,
-            );
+            let resolved = deployment
+                .litellm_params
+                .complexity_router_config
+                .map(|declared| declared.unwrap_or_default().resolve(index, lookup))
+                .transpose()?;
+            deployments.push(resolved);
         }
         Ok(Settings { deployments })
     }
