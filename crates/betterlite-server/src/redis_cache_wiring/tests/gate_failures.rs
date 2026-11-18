@@ -14,7 +14,7 @@ use super::support::{
     Broken, FakeClock, bare_busy_loading_error, bare_cluster_down_error, bare_command_error,
     bare_connection_error, bare_timeout_error, busy_loading_error, chained_timeout_error,
     cluster_down_error, command_error, connect_timeout_error, connection_error, decode_error,
-    gate_with, settings, status, timeout_error,
+    described_connection_error, gate_with, settings, status, timeout_error,
 };
 
 #[test]
@@ -186,6 +186,19 @@ fn an_error_without_a_redis_cause_changes_nothing() {
         status(&gate).failure_count,
         0,
         "an unknown error leaves no marker, so the call still succeeds"
+    );
+}
+
+#[test]
+fn a_redis_error_without_a_source_records_nothing() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(3), &clock);
+    let error = described_connection_error();
+    gate.record_failure(&error);
+    assert_eq!(
+        status(&gate).failure_count,
+        0,
+        "the source walk skips the redis error, so a description-only error has no class"
     );
 }
 

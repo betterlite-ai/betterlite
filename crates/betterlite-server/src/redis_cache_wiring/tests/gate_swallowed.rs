@@ -39,6 +39,28 @@ fn a_swallowed_failure_marks_only_its_own_call() {
 }
 
 #[test]
+fn an_outer_call_still_records_its_success_when_an_inner_call_swallowed() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(2), &clock);
+    let error = timeout_error();
+    let outer = gate
+        .enter("batch_cache_write")
+        .expect("the breaker is closed");
+    let inner = gate
+        .enter("async_set_cache_pipeline")
+        .expect("the breaker is closed");
+    gate.swallowed(&inner, &error);
+    gate.exit(inner);
+    assert_eq!(status(&gate).failure_count, 1);
+    gate.exit(outer);
+    assert_eq!(
+        status(&gate).failure_count,
+        0,
+        "the outer call records its success even though the inner call swallowed a failure"
+    );
+}
+
+#[test]
 fn a_swallowed_command_error_leaves_no_marker() {
     let clock = Arc::new(FakeClock::new());
     let gate = gate_with(settings(2), &clock);

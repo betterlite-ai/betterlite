@@ -23,7 +23,7 @@ use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides
 use betterlite_redis::redis_live_client::LiveClientError;
 use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings, Status};
 use chrono::{DateTime, FixedOffset};
-use redis::RedisError;
+use redis::{ErrorKind, RedisError};
 use tokio::time::error::Elapsed;
 
 use crate::redis_cache_wiring::gate::{GateClock, PolicyGate};
@@ -132,6 +132,11 @@ pub(crate) fn bare_connection_error() -> RedisError {
         io::ErrorKind::ConnectionRefused,
         "Connection refused",
     ))
+}
+
+// redis builds this one from a description alone, so it has no cause for the source walk to reach
+pub(crate) fn described_connection_error() -> RedisCacheError {
+    wrapped(RedisError::from((ErrorKind::Io, "connection dropped")))
 }
 
 pub(crate) fn bare_command_error() -> RedisError {
