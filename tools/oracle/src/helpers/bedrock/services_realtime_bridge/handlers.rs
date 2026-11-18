@@ -70,7 +70,7 @@ enum PumpResult<'result> {
 }
 
 // The pump's outcome with nothing observed yet, for the direction that fills only its own side
-const fn pump_outcome(pump: PumpResult<'_>) -> BridgeView {
+fn pump_outcome(pump: &PumpResult<'_>) -> BridgeView {
     let (outcome, error) = match pump {
         PumpResult::Client(run) => match run {
             Ok(ForwardEnd::Ended) => ("ended", None),
@@ -91,13 +91,7 @@ const fn pump_outcome(pump: PumpResult<'_>) -> BridgeView {
     BridgeView {
         outcome,
         error,
-        sent_to_bedrock: Vec::new(),
-        sent_to_client: Vec::new(),
-        closed_input: false,
-        closed_client: None,
-        scope: None,
-        state: None,
-        logged: Vec::new(),
+        ..BridgeView::default()
     }
 }
 
@@ -183,7 +177,7 @@ impl Harness<'_> {
         scope: &EventScope,
         result: &ClientRun,
     ) -> Result<BridgeView, Box<HelperError>> {
-        let mut view = pump_outcome(PumpResult::Client(result));
+        let mut view = pump_outcome(&PumpResult::Client(result));
         view.sent_to_bedrock = self.wire.sent();
         view.sent_to_client = parse_sent(self.client.sent())?;
         view.closed_input = self.wire.closed.load(Ordering::SeqCst);
@@ -197,7 +191,7 @@ impl Harness<'_> {
         log: CollectedLog,
         result: &ProviderRun,
     ) -> Result<BridgeView, Box<HelperError>> {
-        let mut view = pump_outcome(PumpResult::Provider(result));
+        let mut view = pump_outcome(&PumpResult::Provider(result));
         view.sent_to_client = parse_sent(self.client.sent())?;
         // The provider pump closes the client at most once, and only on a normal provider end
         view.closed_client = self

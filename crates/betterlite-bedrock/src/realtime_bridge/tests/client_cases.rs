@@ -7,9 +7,8 @@ use crate::realtime_input::error::InputError;
 
 const SESSION_UPDATE: &str = r#"{"type": "session.update", "session": {}}"#;
 // A session that is not an object: LiteLLM's session_config.get raises AttributeError, and the typed
-// decoder rejects it too. An empty array is not used, since every SessionConfig field has a default and
-// serde reads a sequence positionally into the all-default config.
-const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":"invalid"}"#;
+// decoder would read an empty array positionally into the all-default config, so the pump rejects it.
+const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":[]}"#;
 const AUDIO_APPEND: &str = r#"{"type":"input_audio_buffer.append","audio":"AAAA"}"#;
 const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;
 const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
@@ -17,7 +16,7 @@ const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
 pub(super) async fn client_event_forwarding() {
     forwards_every_client_frame().await;
     ack_failure_stops_forwarding().await;
-    transform_failure_keeps_the_replay_marker().await;
+    malformed_session_keeps_the_replay_marker().await;
 }
 
 async fn forwards_every_client_frame() {
@@ -134,8 +133,8 @@ async fn ack_failure_stops_forwarding() {
     assert!(fixture.stream.closed());
 }
 
-// The transform rejects a session.update whose session is not an object, before any frame is sent
-async fn transform_failure_keeps_the_replay_marker() {
+// A session.update whose session is not an object is rejected before any frame is sent
+async fn malformed_session_keeps_the_replay_marker() {
     let client = ScriptedClient::new(vec![Some(AUDIO_APPEND.to_owned()), None]);
     let mut fixture = ClientFixture::new(Some(MALFORMED_SESSION_UPDATE.to_owned()), client);
     let outcome = fixture.run().await;

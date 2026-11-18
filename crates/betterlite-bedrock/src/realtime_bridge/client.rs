@@ -4,6 +4,7 @@ use std::sync::{Mutex, PoisonError};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
+use serde::de::Error as _;
 use tokio_util::sync::CancellationToken;
 
 use super::end::ForwardEnd;
@@ -14,8 +15,7 @@ use crate::realtime_events::client::{ClientMessages, RealtimeClientWebSocket};
 use crate::realtime_events::decode::{decode_realtime_client_preface, json_str};
 use crate::realtime_events::scope::EventScope;
 use crate::realtime_events::stream::BedrockBidirectionalStream;
-use crate::realtime_input::RealtimeInput;
-use crate::realtime_input::frames::InputFrame;
+use crate::realtime_input::{RealtimeInput, error::InputError, frames::InputFrame};
 
 pub struct ClientForward<'state, C, S>
 where
@@ -65,6 +65,12 @@ where
             // The replay marker holds the message the transform never got to send
             if is_session_update {
                 self.scope.pending_session_update = Json::Text(message.clone());
+                // LiteLLM raises on a non-object session; the typed decoder would read a list as the defaults
+                if !matches!(parsed.get("session"), None | Some(Json::Object(_))) {
+                    return Err(ClientForwardError::Input(InputError::Malformed {
+                        source: serde_json::Error::custom("the session field must be an object"),
+                    }));
+                }
             }
             for frame in self.transformed(&message)? {
                 self.send_frame(&frame).await?;

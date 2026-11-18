@@ -91,7 +91,7 @@ struct Runs {
     runs: Vec<BridgeView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 struct BridgeView {
     outcome: &'static str,
     error: Option<&'static str>,

@@ -50,7 +50,7 @@ call:
       bedrock_close_error: false
     - kind: client
       trace_id: trace-bridge-1
-      initial: '{"type":"session.update","session":"invalid"}'
+      initial: '{"type":"session.update","session":[]}'
       frames:
       - null
       chunks: []
