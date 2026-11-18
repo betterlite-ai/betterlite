@@ -1,7 +1,8 @@
 import asyncio
 import os
+import sys
 from collections.abc import AsyncIterator, Awaitable, Iterator
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, redirect_stdout
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Protocol, TypedDict, Unpack, runtime_checkable
@@ -228,6 +229,8 @@ async def observe(fixture: Fixture, client: HTTPHandler | AsyncHTTPHandler) -> d
             content = reply["choices"][0]["message"]["content"]
     except BedrockError as error:
         status = error.status_code
+    except httpx.HTTPStatusError as error:
+        status = error.response.status_code
     except APIError as error:
         status = Failure.model_validate(error, from_attributes=True).status_code
     headers: dict[str, Json] = {
@@ -257,4 +260,6 @@ def run(input_value: Input) -> Json:
         "LITELLM_RUST": "false",
         "LITELLM_LOCAL_MODEL_COST_MAP": "true",
     }
-    return asyncio.run(Fixture(input_value).execute(environment))
+    # LiteLLM exception mapping prints diagnostics; stdout carries the helper JSON answer.
+    with redirect_stdout(sys.stderr):
+        return asyncio.run(Fixture(input_value).execute(environment))

@@ -51,7 +51,7 @@ impl Metadata {
         }
     }
 
-    pub(crate) fn catalogs(&self) -> CatalogSources<'_> {
+    pub(crate) const fn catalogs(&self) -> CatalogSources<'_> {
         CatalogSources {
             patterns: &self.patterns,
             runtime: &self.raw,
