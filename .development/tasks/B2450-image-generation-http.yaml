@@ -15,7 +15,10 @@ description: >-
   with encoding=None and attach hidden response headers after transformation. Validation, URL construction,
   request transformation and response transformation failures are outside the send-error conversion try block.
 
-  Add B2401 sdk_http operation image_generation_http. Its finite test configuration injects a trusted mock URL,
+  SdkHttpCall::ImageGenerationHttp is a placeholder on main: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/image_generation_http.rs (Call implements call_kind::CallKind) and fill
+  ImageGenerationHttpRequest in tools/oracle/sdk_http/image_generation_http.py; the shared sdk_http files
+  already list it. Its finite test configuration injects a trusted mock URL,
   validated headers and identity request/response transforms, exposing this handler's work without copying a
   provider adapter. Both implementations issue real HTTP. No new bytes decoder is needed: B173 owns HTTP,
   B900 multipart capture and B2401 the SDK case parser. The two methods total 203 nonblank/non-comment lines;
@@ -27,9 +30,8 @@ scope:
   paths:
   - crates/betterlite-provider/src/api/image_generation_http.rs
   - crates/betterlite-provider/src/api/image_generation_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/image_generation_http.rs
+  - tools/oracle/src/sdk_http/image_generation_http/**
   - tools/oracle/sdk_http/image_generation_http.py
   - tools/oracle/cases/sdk-http/image-generation-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-http-*
@@ -73,7 +75,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::image_generation_http::tests::/)'
   - id: sdk-python
     why: The HTTP adapter must invoke the handler and pass strict Python checks.
-    run: test -f tools/oracle/sdk_http/image_generation_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_generation_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: Generation transport must be a recognized SDK variant.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

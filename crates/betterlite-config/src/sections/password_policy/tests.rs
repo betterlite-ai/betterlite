@@ -120,6 +120,7 @@ fn invalid_value_fallback(
         | ConfigError::MissingEnvironment { .. }
         | ConfigError::InvalidFloat { .. }
         | ConfigError::InvalidInteger { .. }
+        | ConfigError::CustomDimensions(_)
         | ConfigError::LoadThread { .. } => None,
     };
     assert_eq!(actual_scalar, expected_scalar, "{error}");

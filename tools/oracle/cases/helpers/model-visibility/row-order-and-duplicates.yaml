@@ -1,0 +1,60 @@
+kind: helper
+name: model-visibility-row-order-and-duplicates
+call:
+  model_visibility:
+    function: discoverable_rows
+    model_list:
+      - model_name: first
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a1
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: b
+          discoverable: false
+      - model_name: first
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a2
+      - model_name: last
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: c
+    model_group_alias: {}
+    arguments:
+      user_role: internal_user
+calls:
+  - model_visibility:
+      function: discoverable_rows
+      model_list:
+        - model_name: first
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a1
+        - model_name: hidden
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: b
+            discoverable: false
+        - model_name: first
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a2
+        - model_name: last
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: c
+      model_group_alias: {}
+      arguments:
+        user_role: proxy_admin
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+task: B375
+deviations:
+  - what: The class_reply byte parser rejects inputs over 1048576 bytes before allocation.
+    why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite limit. Existing structural field limits remain unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L218-L464
+  - what: The object scan a reply is charged is capped at 16 times the 1048576-byte reply limit, after which the reply reports no verdict object, where LiteLLM's `raw_decode` walks every candidate with no bound.
+    why: The scan starts at every `{` in the reply and each failed start costs the bytes its decoder consumed, so a reply dense in failed starts could rescan the same tail without a cap; no working classifier reply comes near the cap, and the alternative is an unbounded walk.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/capability_classifier.py#L205-L222
+  - what: "A verdict object with a duplicated key is refused, where Python's json decoder keeps the last value and pydantic then accepts the verdict."
+    why: "The typed decoder refuses duplicate struct fields; a duplicated classifier reply is malformed output, and refusing it fails closed to the schema rejection the classifier consumer's pinned fallback handles."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/complexity_router.py#L2492-L2496
+kept_bugs: []

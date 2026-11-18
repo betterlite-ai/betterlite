@@ -16,7 +16,7 @@ use betterlite_config::sections::vertex_credential_sources::vertex_settings::Adc
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
-use betterlite_tokenizer::engine::limits::BlockingCounter as _;
+use betterlite_tokenizer::count::runtime::runtime_counter;
 use betterlite_vertex::aws_federation::AwsCredentialsResolver as _;
 use betterlite_vertex::credential_sources::error::CredentialSourceError;
 use betterlite_vertex::credential_sources::sdk::{
@@ -32,9 +32,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use tokio_util::task::TaskTracker;
 
-use super::counter::{InlineCounter, RuntimeTextCounter};
+use super::counter::RuntimeTextCounter;
 use super::executor::{UnavailableAws, VertexCredentialExecutor};
-use super::{VertexEmbeddingSetupError, token_counter, vertex_embedding_calls};
+use super::{VertexEmbeddingSetupError, vertex_embedding_calls};
 use crate::server::chat_setup::chat_executor;
 
 const EPOCH_SECONDS: u64 = 1_000;
@@ -193,23 +193,12 @@ async fn load_reports_an_unreadable_credential() {
     assert!(executor.handles.lock().unwrap().is_empty());
 }
 
-#[tokio::test]
-async fn the_inline_counter_runs_each_job_where_it_is_called() {
-    let counted = InlineCounter.count(Box::new(|| Ok(7))).await.unwrap();
-    assert_eq!(counted, 7);
-    let converted = InlineCounter
-        .convert(Box::new(|| Ok(vec![3, 4])))
-        .await
-        .unwrap();
-    assert_eq!(converted, vec![3, 4]);
-}
-
 #[tokio::test(flavor = "multi_thread")]
 async fn the_text_counter_counts_with_the_bundled_vocabulary() {
     let config = load_config(VERTEX);
     let catalog = BundledCatalog::default().get();
     let counter = RuntimeTextCounter {
-        counter: token_counter(&config, &Arc::new(client()), &catalog).unwrap(),
+        counter: runtime_counter(&config, &Arc::new(client()), &catalog).unwrap(),
     };
     assert_eq!(
         counter

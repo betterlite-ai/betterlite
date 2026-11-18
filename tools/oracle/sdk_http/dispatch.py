@@ -23,6 +23,10 @@ from messages_native_stream import (
     MessagesNativeStreamCall,
     run_messages_native_stream,
 )
+from messages_stream_factory import (
+    MessagesStreamFactoryCall,
+    run_messages_stream_factory,
+)
 from messages_stream_logging import (
     MessagesStreamLoggingCall,
     run_messages_stream_logging,
@@ -33,6 +37,7 @@ from messages_sync_stream import (
 )
 from openai_chat import ChatCall, run_chat
 from query_embedding_call import QueryEmbeddingCall, run_query
+from registered import RegisteredRequest
 from responses_agentic_continuation import ContinuationCall, run_continuation
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
 
@@ -93,6 +98,15 @@ class MessagesHeaderStreamRequest(BaseModel):
 
     def serialize(self, api_base: str) -> str:
         return run_messages_header_stream(self.messages_header_stream, api_base)
+
+
+class MessagesStreamFactoryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    messages_stream_factory: MessagesStreamFactoryCall
+
+    def serialize(self, api_base: str) -> str:
+        return run_messages_stream_factory(self.messages_stream_factory, api_base)
 
 
 class MessagesStreamLoggingRequest(BaseModel):
@@ -167,6 +181,7 @@ class Request(BaseModel):
         | VectorQueryEmbeddingCall
         | AnthropicBetaConfigCall
         | MessagesHeaderStreamRequest
+        | MessagesStreamFactoryRequest
         | MessagesStreamLoggingRequest
         | MessagesNativeStreamRequest
         | MessagesSyncStreamRequest
@@ -174,6 +189,7 @@ class Request(BaseModel):
         | ChatResponseStreamRequest
         | ContinuationRequest
         | FileAzureStorageRequest
+        | RegisteredRequest
     )
     api_base: str
 

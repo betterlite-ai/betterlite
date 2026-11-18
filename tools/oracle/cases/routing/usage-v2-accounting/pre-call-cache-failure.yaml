@@ -1,0 +1,30 @@
+kind: probe
+name: usage-v2-accounting-pre-call-cache-failure
+compare:
+  ignore: []
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_v2_accounting:
+        ttl_seconds: 60
+        steps:
+          - {kind: down, now_millis: 0}
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 3}
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 3}
+          - {kind: sync, now_millis: 0}
+          - {kind: up, now_millis: 0}
+          - {kind: sync, now_millis: 0}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o:rpm:00-00"}
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 3}
+          - {kind: sync, now_millis: 0}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o:rpm:00-00"}
+          - kind: pre_call
+            now_millis: 0
+            deployment: {model_id: dep-a, model: openai/gpt-4o, rpm: 3}

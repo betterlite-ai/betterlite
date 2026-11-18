@@ -698,3 +698,10 @@ path = "fuzz_targets/text_stream.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_output_limits"
+path = "fuzz_targets/openai_output_limits.rs"
+test = false
+doc = false
+bench = false

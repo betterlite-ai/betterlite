@@ -1,0 +1,524 @@
+#![cfg(test)]
+
+use std::collections::BTreeMap;
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
+
+use async_trait::async_trait;
+use axum::Router;
+use axum::body::Body;
+use axum::body::to_bytes;
+use axum::http::Request;
+use axum::http::StatusCode;
+use betterlite_auth::auth_identity::records::CredentialRef;
+use betterlite_auth::auth_identity::records::NetworkContext;
+use betterlite_auth::auth_identity::records::Principal;
+use betterlite_auth::auth_identity::records::SourceKey;
+use betterlite_auth::auth_identity::roles::AuthMethod;
+use betterlite_auth::auth_identity::roles::PrincipalType;
+use betterlite_auth::auth_identity::roles::Role;
+use betterlite_db::auxiliary_repository::repository::TableError;
+use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::errors::backend;
+use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::resource_repository::config::ConfigError;
+use betterlite_db::stored_cipher::DbCipher;
+use betterlite_roi::settings::ROISettings;
+use betterlite_secrets::error::SecretError;
+use betterlite_secrets::secret_codec::Algorithm;
+use betterlite_secrets::secret_codec::CipherSettings;
+use betterlite_secrets::secret_codec::OsNonces;
+use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
+use secrecy::SecretString;
+use serde::Deserialize;
+use serde::de::DeserializeOwned;
+use tokio::io::AsyncReadExt as _;
+use tokio::io::AsyncWriteExt as _;
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
+use tokio::task::JoinSet;
+use tower::ServiceExt as _;
+
+use crate::auth::auth_identity::AuthContext;
+use crate::roi_settings::deployments::RouterCatalog;
+use crate::roi_settings::deployments::RouterEstimatorDeployment;
+use crate::roi_settings::deployments::RouterEstimatorModelInfo;
+use crate::roi_settings::deployments::RouterEstimatorParams;
+use crate::roi_settings::repository::DatabaseSettingsRepository;
+use crate::roi_settings::repository::SettingsRepository;
+use crate::roi_settings::route::router;
+use crate::roi_settings::state::RoiSettingsState;
+use crate::roi_settings::store::SETTINGS_KEY;
+use crate::roi_settings::store::SettingsCipher;
+use crate::roi_settings::store::StoredSettings;
+
+pub(crate) const SALT: &str = "a sufficiently long roi settings test salt";
+
+pub(crate) fn cipher_settings() -> CipherSettings {
+    CipherSettings {
+        signing_key: Some(SecretString::from(SALT.to_owned())),
+        algorithm: Algorithm::XSalsa20Poly1305,
+    }
+}
+
+pub(crate) fn cipher() -> DbCipher {
+    DbCipher {
+        settings: cipher_settings(),
+        nonces: OsNonces,
+        diagnostics: TracingDiagnostics,
+    }
+}
+
+pub(crate) fn sealed(value: &str) -> String {
+    cipher()
+        .seal(&SecretString::from(value.to_owned()))
+        .expect("seal a test secret")
+}
+
+pub(crate) fn deployment(
+    model: Option<&str>,
+    base_model: Option<&str>,
+) -> RouterEstimatorDeployment {
+    RouterEstimatorDeployment {
+        litellm_params: RouterEstimatorParams {
+            model: model.map(str::to_owned),
+            base_model: None,
+            custom_llm_provider: Some("openai".to_owned()),
+        },
+        model_info: base_model.map(|base| RouterEstimatorModelInfo {
+            base_model: Some(base.to_owned()),
+        }),
+    }
+}
+
+pub(crate) struct FakeCatalog {
+    pub(crate) names: Vec<String>,
+    pub(crate) deployments: Vec<RouterEstimatorDeployment>,
+    pub(crate) requests: Mutex<Vec<String>>,
+}
+
+pub(crate) fn fake_catalog() -> FakeCatalog {
+    FakeCatalog {
+        names: Vec::new(),
+        deployments: Vec::new(),
+        requests: Mutex::new(Vec::new()),
+    }
+}
+
+pub(crate) fn roi_settings() -> ROISettings {
+    ROISettings::default()
+}
+
+pub(crate) fn stored_settings() -> StoredSettings {
+    StoredSettings::default()
+}
+
+impl RouterCatalog for FakeCatalog {
+    fn model_names(&self) -> Vec<String> {
+        self.names.clone()
+    }
+
+    fn deployments(&self, model_group: &str) -> Vec<RouterEstimatorDeployment> {
+        self.requests
+            .lock()
+            .expect("catalog lock")
+            .push(model_group.to_owned());
+        self.deployments.clone()
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct MemoryRepository {
+    params: Mutex<BTreeMap<String, JsonData>>,
+}
+
+impl MemoryRepository {
+    pub(crate) fn seed(&self, name: &str, raw: &str) {
+        let value: JsonData = serde_json::from_str(raw).expect("seed json");
+        self.params
+            .lock()
+            .expect("repository lock")
+            .insert(name.to_owned(), value);
+    }
+
+    pub(crate) fn seed_settings(&self, stored: &StoredSettings) {
+        let raw = serde_json::to_string(stored).expect("stored settings json");
+        self.seed(SETTINGS_KEY, &raw);
+    }
+
+    pub(crate) fn stored(&self) -> Option<StoredSettings> {
+        let value = self
+            .params
+            .lock()
+            .expect("repository lock")
+            .get(SETTINGS_KEY)
+            .cloned()?;
+        let raw = serde_json::to_string(&value).expect("stored json");
+        Some(serde_json::from_str(&raw).expect("stored settings"))
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.params.lock().expect("repository lock").is_empty()
+    }
+}
+
+#[async_trait]
+impl SettingsRepository for MemoryRepository {
+    async fn param(&self, name: &str) -> Result<Option<JsonData>, ConfigError> {
+        Ok(self
+            .params
+            .lock()
+            .expect("repository lock")
+            .get(name)
+            .cloned())
+    }
+
+    async fn set_param(&self, name: &str, value: JsonData) -> Result<(), ConfigError> {
+        self.params
+            .lock()
+            .expect("repository lock")
+            .insert(name.to_owned(), value);
+        Ok(())
+    }
+}
+
+const SHIFTED_URL: &str = "https://github.example.com";
+
+pub(crate) struct ShiftingRepository {
+    memory: MemoryRepository,
+    reads: AtomicUsize,
+}
+
+impl ShiftingRepository {
+    pub(crate) fn counting(memory: MemoryRepository) -> Self {
+        Self {
+            memory,
+            reads: AtomicUsize::new(0),
+        }
+    }
+
+    pub(crate) fn reads(&self) -> usize {
+        self.reads.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn saved(&self) -> Option<StoredSettings> {
+        self.memory.stored()
+    }
+
+    fn shift_url(&self) {
+        let mut stored = self.memory.stored().expect("the seeded settings");
+        stored.github_api_url = SHIFTED_URL.to_owned();
+        self.memory.seed_settings(&stored);
+    }
+}
+
+// A second read returns a github_api_url a concurrent PUT could have moved to
+#[async_trait]
+impl SettingsRepository for ShiftingRepository {
+    async fn param(&self, name: &str) -> Result<Option<JsonData>, ConfigError> {
+        if self.reads.fetch_add(1, Ordering::SeqCst) > 0 {
+            self.shift_url();
+        }
+        self.memory.param(name).await
+    }
+
+    async fn set_param(&self, name: &str, value: JsonData) -> Result<(), ConfigError> {
+        self.memory.set_param(name, value).await
+    }
+}
+
+pub(crate) struct MissingRowRepository;
+
+#[async_trait]
+impl SettingsRepository for MissingRowRepository {
+    async fn param(&self, _name: &str) -> Result<Option<JsonData>, ConfigError> {
+        Err(ConfigError::Table(TableError::MissingRow))
+    }
+
+    async fn set_param(&self, _name: &str, _value: JsonData) -> Result<(), ConfigError> {
+        Err(ConfigError::Table(TableError::MissingRow))
+    }
+}
+
+pub(crate) struct OutageRepository {
+    pub(crate) code: String,
+    pub(crate) message: String,
+}
+
+#[async_trait]
+impl SettingsRepository for OutageRepository {
+    async fn param(&self, _name: &str) -> Result<Option<JsonData>, ConfigError> {
+        Err(ConfigError::Database(
+            server_error(&self.code, &self.message).await,
+        ))
+    }
+
+    async fn set_param(&self, _name: &str, _value: JsonData) -> Result<(), ConfigError> {
+        Err(ConfigError::Database(
+            server_error(&self.code, &self.message).await,
+        ))
+    }
+}
+
+pub(crate) struct FailingCipher;
+
+impl SettingsCipher for FailingCipher {
+    fn seal(&self, _value: &SecretString) -> Result<String, SecretError> {
+        Err(SecretError::MissingKey)
+    }
+
+    fn open(&self, _value: &str) -> SecretString {
+        SecretString::default()
+    }
+}
+
+pub(crate) fn catalog(names: Vec<String>) -> Arc<dyn RouterCatalog> {
+    let mut catalog = fake_catalog();
+    catalog.names = names;
+    Arc::new(catalog)
+}
+
+pub(crate) fn erased(memory: &Arc<MemoryRepository>) -> Arc<dyn SettingsRepository> {
+    Arc::<MemoryRepository>::clone(memory)
+}
+
+pub(crate) fn disconnected_repository() -> DatabaseSettingsRepository {
+    DatabaseSettingsRepository {
+        store: Arc::new(PostgresStore { pool: None }),
+        availability: Availability::default(),
+    }
+}
+
+pub(crate) fn outage_repository(code: &str, message: &str) -> Arc<dyn SettingsRepository> {
+    Arc::new(OutageRepository {
+        code: code.to_owned(),
+        message: message.to_owned(),
+    })
+}
+
+// A listener that answers the startup with an ErrorResponse yields the real driver error LiteLLM sees
+async fn server_error(code: &str, message: &str) -> DbError {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("fake postgres listener");
+    let address = listener.local_addr().expect("fake postgres address");
+    let payload = error_response(code, message);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let (socket, _) = listener.accept().await.expect("fake postgres accept");
+        reply_with_error(socket, payload).await;
+    });
+    let dsn = format!("host=127.0.0.1 port={} user=roi", address.port());
+    let Err(driver) = tokio_postgres::connect(&dsn, tokio_postgres::NoTls).await else {
+        panic!("the fake postgres server never completes a startup");
+    };
+    if let Some(result) = tasks.join_next().await {
+        result.expect("the fake postgres task");
+    }
+    let database = driver.as_db_error().expect("the fake postgres error");
+    assert_eq!(database.code().code(), code);
+    backend::<Infallible>(driver)
+}
+
+async fn reply_with_error(mut socket: TcpStream, payload: Vec<u8>) {
+    let mut length = [0_u8; 4];
+    socket
+        .read_exact(&mut length)
+        .await
+        .expect("startup message length");
+    let size = u32::from_be_bytes(length);
+    let body_size = usize::try_from(size.saturating_sub(4)).expect("startup message size");
+    let mut startup = vec![0_u8; body_size];
+    socket
+        .read_exact(&mut startup)
+        .await
+        .expect("startup message body");
+    socket.write_all(&payload).await.expect("error response");
+}
+
+fn error_response(code: &str, message: &str) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (kind, value) in [
+        (b'S', "FATAL"),
+        (b'V', "FATAL"),
+        (b'C', code),
+        (b'M', message),
+    ] {
+        body.push(kind);
+        body.extend_from_slice(value.as_bytes());
+        body.push(0);
+    }
+    body.push(0);
+    let mut payload = vec![b'E'];
+    let size = u32::try_from(body.len().saturating_add(4)).expect("error response length");
+    payload.extend_from_slice(&size.to_be_bytes());
+    payload.extend_from_slice(&body);
+    payload
+}
+
+pub(crate) fn settings_app(
+    repository: Option<Arc<dyn SettingsRepository>>,
+    catalog: Option<Arc<dyn RouterCatalog>>,
+) -> Router {
+    settings_app_with_cipher(repository, catalog, Arc::new(cipher()))
+}
+
+pub(crate) fn settings_app_with_cipher(
+    repository: Option<Arc<dyn SettingsRepository>>,
+    catalog: Option<Arc<dyn RouterCatalog>>,
+    cipher: Arc<dyn SettingsCipher>,
+) -> Router {
+    router(RoiSettingsState {
+        repository,
+        catalog,
+        cipher,
+    })
+}
+
+pub(crate) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
+    AuthContext {
+        principal: Principal {
+            principal_type: PrincipalType::Human,
+            subject: subject.to_owned(),
+            issuer: None,
+            audience: Vec::new(),
+            user: None,
+            organization: None,
+            teams: Vec::new(),
+            project: None,
+            end_user: None,
+            roles,
+            scopes: Vec::new(),
+            auth_method: AuthMethod::ApiKey,
+            credential_ref: CredentialRef::default(),
+            network: NetworkContext::default(),
+            source_key: SourceKey::default(),
+        },
+    }
+}
+
+pub(crate) fn admin_caller() -> AuthContext {
+    caller("user", vec![Role::PlatformAdmin])
+}
+
+pub(crate) fn get_request(caller: Option<&AuthContext>) -> Request<Body> {
+    let request = Request::builder()
+        .uri("/roi-calculator/settings")
+        .body(Body::empty())
+        .expect("get request");
+    with_caller(request, caller)
+}
+
+pub(crate) fn put_request(caller: Option<&AuthContext>, body: &str) -> Request<Body> {
+    let request = Request::builder()
+        .method("PUT")
+        .uri("/roi-calculator/settings")
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))
+        .expect("put request");
+    with_caller(request, caller)
+}
+
+fn with_caller(mut request: Request<Body>, caller: Option<&AuthContext>) -> Request<Body> {
+    if let Some(context) = caller {
+        request.extensions_mut().insert(context.clone());
+    }
+    request
+}
+
+pub(crate) async fn call(app: Router, request: Request<Body>) -> Reply {
+    let response = app.oneshot(request).await.expect("router response");
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("response body");
+    Reply {
+        status,
+        body: bytes.to_vec(),
+    }
+}
+
+pub(crate) struct Reply {
+    pub(crate) status: StatusCode,
+    pub(crate) body: Vec<u8>,
+}
+
+impl Reply {
+    pub(crate) fn json<T>(&self) -> T
+    where
+        T: DeserializeOwned,
+    {
+        serde_json::from_slice(&self.body).expect("json body")
+    }
+
+    pub(crate) fn detail(&self) -> String {
+        self.json::<DetailText>().detail
+    }
+
+    pub(crate) fn issues(&self) -> Vec<TestIssue> {
+        self.json::<DetailIssues>().detail
+    }
+
+    pub(crate) fn error(&self) -> TestErrorFields {
+        self.json::<TestErrorBody>().error
+    }
+
+    pub(crate) fn text(&self) -> String {
+        String::from_utf8(self.body.clone()).expect("utf-8 body")
+    }
+}
+
+#[derive(Deserialize)]
+struct DetailText {
+    detail: String,
+}
+
+#[derive(Deserialize)]
+struct DetailIssues {
+    detail: Vec<TestIssue>,
+}
+
+#[derive(Deserialize)]
+struct TestErrorBody {
+    error: TestErrorFields,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TestErrorFields {
+    pub(crate) message: String,
+    #[serde(rename = "type")]
+    pub(crate) kind: String,
+    pub(crate) param: Option<String>,
+    pub(crate) code: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TestIssue {
+    #[serde(rename = "type")]
+    pub(crate) kind: String,
+    pub(crate) loc: Vec<TestLoc>,
+    pub(crate) msg: String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum TestLoc {
+    Field(String),
+    Index(usize),
+}
+
+pub(crate) fn loc_names(issue: &TestIssue) -> Vec<String> {
+    let mut names = Vec::new();
+    for part in &issue.loc {
+        match part {
+            TestLoc::Field(field) => names.push(field.clone()),
+            TestLoc::Index(index) => names.push(index.to_string()),
+        }
+    }
+    names
+}

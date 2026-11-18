@@ -31,9 +31,9 @@ description: >-
   holding a plain deployment, a db deployment, a team deployment, a wildcard openai/* and an
   auto_router/complexity_router deployment that the table must not count. model_info_view then
   sends GET /v1/model/info?litellm_model_id=<id> (B851) and reads data[0] including
-  litellm_model_name and model_info, and GET /credentials/by_model/<id> (B1601) reading
-  credential_name, credential_values and credential_info. B851's v1-info and B1601's
-  model-id-precedence cases use other ids; add the detail sequence for one db model.
+  litellm_model_name and model_info, and GET /credentials/by_model/<id> (B1601's handler, mounted
+  by B9987) reading credential_name, credential_values and credential_info. B851's v1-info and
+  B9987's model-id-precedence cases use other ids; add the detail sequence for one db model.
 
   Writes from the table and detail. The pause switch sends PATCH /model/<id>/update with
   exactly {blocked:true} or {blocked:false}. The edit form sends PATCH /model/<id>/update with
@@ -56,8 +56,9 @@ description: >-
   {credential_name, credential_values, credential_info:{custom_llm_provider}}, updates with
   PATCH /credentials/<name> and the same shape, and deletes with DELETE /credentials/<name>.
   The detail's reuse action POSTs {credential_name, model_id, credential_info:
-  {custom_llm_provider}} with no credential_values. B1601 owns all of these (create, list,
-  by_model, delete, patch decorators); its create-and-duplicate and patch-rename cases are
+  {custom_llm_provider}} with no credential_values. B1601 builds the handlers for all of these
+  (create, list, by_model, delete, patch decorators) and B9987 mounts them in routes/credentials.rs
+  over the shared database; B9987's create-and-duplicate and patch-rename-and-empty-info cases are
   close but use other bodies. Add one create, rename, model-id reuse and delete transcript
   and check that credential_values never come back unmasked in the list.
 
@@ -176,7 +177,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B9090 retains every unchanged function in the covered page, panel, table, detail and credential files; B9091 builds them and B146 drives them in the browser.
-  - B850, B851, B835, B838, B1601, B4445, B4446, B8586, B2341, B825 and B8595 own the handlers; B8540, B8676 and B8675 own their mounts. No route is registered here.
+  - B850, B851, B835, B838, B1601, B4445, B4446, B8586, B2341, B825 and B8595 own the handlers; B8540, B8676 and B8675 own their mounts and B9987 mounts B1601's credential routes. No route is registered here.
   - B9735 owns the shared /model_group/info, /tag/list, guardrail and /models selector cases; B9731 owns /team/list and TeamInfoView; PassThroughPanel's requests belong to B150's pass-through child.
   - Auto-router listing, creation and editing, the add-model form and its provider fields are B9691's; router, alias and retry settings are B9692's.
 pitfalls:

@@ -9,8 +9,11 @@ description: >-
   silently discarding requested clear edits.
 
   HelperCall::MessagesContextInspection covers only the pure block/metadata/router-fallback/prediction functions.
-  B2401 SdkHttpCall::MessagesContextPreparation exercises the async prepare/run functions, with real summary
-  HTTP when enabled and zero-request assertions on skipped/failed gates. Inject typed dispatcher errors for the
+  SdkHttpCall::MessagesContextPreparation exercises the async prepare/run functions, with real summary
+  HTTP when enabled and zero-request assertions on skipped/failed gates. Main already holds its
+  placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/messages_context_preparation.rs
+  (Call implements call_kind::CallKind) and fill ContextPreparationRequest, under that name, in
+  tools/oracle/sdk_http/messages_context_preparation.py; the shared sdk_http files stay untouched. Inject typed dispatcher errors for the
   wrapper's recovery cases, never substitute a response for a provider call. Model/user metadata uses B732's
   principal; router fallback is an injected optional proxy handle. No decoder or new setting is introduced.
   Count 204 nonblank/non-comment lines in L51-L312. Allow 210 implementation, 150 tests, 150 fixtures,
@@ -25,9 +28,8 @@ scope:
   - tools/oracle/helpers/messages_context_inspection/**
   - tools/oracle/cases/helpers/messages-context-inspection/**
   - tools/oracle/fuzz/corpus/helper_case/messages_context_inspection-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/messages_context_preparation.rs
+  - tools/oracle/src/sdk_http/messages_context_preparation/**
   - tools/oracle/sdk_http/messages_context_preparation.py
   - tools/oracle/cases/sdk-http/messages-context-preparation/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-context-preparation-*
@@ -87,7 +89,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_prepare::/)'
   - id: python-adapters
     why: inspection or preparation lacks a pinned independently checked implementation
-    run: test -f tools/oracle/helpers/messages_context_inspection.py && test -f tools/oracle/sdk_http/messages_context_preparation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/messages_context_inspection.py && ! grep -q not_built tools/oracle/sdk_http/messages_context_preparation.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpus
     why: one context-preparation operation tag is unwired
     run: grep -qE '^[[:space:]]+messages_context_inspection:' tools/oracle/fuzz/corpus/helper_case/messages_context_inspection-* && grep -qE '^[[:space:]]+messages_context_preparation:' tools/oracle/fuzz/corpus/sdk_http_case/messages-context-preparation-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus) | test(/^sdk_http::tests::replays_corpus$/)'

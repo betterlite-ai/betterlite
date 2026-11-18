@@ -1,0 +1,20 @@
+kind: helper
+name: embedding-family-selection
+call:
+  bedrock_other_embedding_call:
+    function: embedding_family_selection
+    model: meta.llama3-70b-instruct-v1:0
+    input:
+      - hello
+    now: 1700000000
+    optional_params:
+      aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+      aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+      aws_region_name: us-east-1
+      dimensions: 64
+    environment:
+      AWS_CONFIG_FILE: /dev/null
+      AWS_SHARED_CREDENTIALS_FILE: /dev/null
+    replies: []
+env: {}
+compare: {ignore: []}

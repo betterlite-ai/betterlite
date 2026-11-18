@@ -1,14 +1,14 @@
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
-use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::io::{Error as IoError, ErrorKind, Result as IoResult, Write as _};
+use std::net::TcpListener;
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
+use betterlite_http_fixture::request::read_request;
+use betterlite_http_fixture::server::READ_TIMEOUT;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -17,12 +17,7 @@ use rustls::{ServerConfig, StreamOwned};
 
 use crate::interactions::base::Params;
 
-const TIMEOUT: Duration = Duration::from_secs(5);
-
-pub(crate) struct Serving {
-    pub(crate) address: SocketAddr,
-    pub(crate) request: thread::JoinHandle<String>,
-}
+pub(crate) use betterlite_http_fixture::reply::reply;
 
 pub(crate) fn params(text: &str) -> Params {
     serde_json::from_str(text).expect("the params are JSON")
@@ -37,44 +32,6 @@ pub(crate) fn policy(verification: Verification, ca_file: Option<&str>) -> TlsPo
         ecdh_curve: None,
         user_agent: "betterlite-test/0".to_owned(),
     }
-}
-
-pub(crate) fn reply(status: &str, headers: &[(&str, &str)], body: &str) -> Vec<u8> {
-    let mut extra = String::new();
-    for (name, value) in headers {
-        write!(extra, "{name}: {value}\r\n").unwrap();
-    }
-    format!(
-        "HTTP/1.1 {status}\r\ncontent-length: {}\r\nconnection: close\r\n{extra}\r\n{body}",
-        body.len()
-    )
-    .into_bytes()
-}
-
-pub(crate) fn listener() -> TcpListener {
-    TcpListener::bind("127.0.0.1:0").unwrap()
-}
-
-pub(crate) fn serve_once(answer: Vec<u8>, pause: Option<Duration>) -> Serving {
-    serve_on(listener(), answer, pause)
-}
-
-// a caller binds first when it needs the address before the fixture answers, such as a proxy
-pub(crate) fn serve_on(listener: TcpListener, answer: Vec<u8>, pause: Option<Duration>) -> Serving {
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let mut stream = accept(&listener);
-            stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-            let received = read_head(&mut stream).unwrap();
-            if let Some(delay) = pause {
-                thread::park_timeout(delay);
-            }
-            drop(stream.write_all(&answer));
-            received
-        })
-        .unwrap();
-    Serving { address, request }
 }
 
 // the policy the config crate resolves from an environment, built here instead of read from this process
@@ -117,9 +74,9 @@ pub(crate) struct Authority {
 
 impl Authority {
     fn answer(&self, listener: &TcpListener) -> IoResult<String> {
-        let mut stream = accept(listener);
-        stream.set_read_timeout(Some(TIMEOUT))?;
-        stream.set_write_timeout(Some(TIMEOUT))?;
+        let (mut stream, _peer) = listener.accept()?;
+        stream.set_read_timeout(Some(READ_TIMEOUT))?;
+        stream.set_write_timeout(Some(READ_TIMEOUT))?;
         let mut acceptor = Acceptor::default();
         let accepted = loop {
             if acceptor.read_tls(&mut stream)? == 0 {
@@ -142,44 +99,10 @@ impl Authority {
             .into_connection(Arc::new(config))
             .map_err(|(error, _alert)| IoError::other(error))?;
         let mut secured = StreamOwned::new(connection, stream);
-        let request = read_head(&mut secured)?;
+        let request = read_request(&mut secured).map_err(IoError::other)?;
         secured
             .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}")?;
         secured.flush()?;
-        Ok(request)
+        Ok(request.head)
     }
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    loop {
-        match listener.accept() {
-            Ok((stream, _peer)) => {
-                stream.set_nonblocking(false).unwrap();
-                return stream;
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                assert!(
-                    started.elapsed() < TIMEOUT,
-                    "the client never connected to the fixture"
-                );
-                thread::park_timeout(Duration::from_millis(10));
-            }
-            Err(error) => panic!("the fixture listener failed: {error}"),
-        }
-    }
-}
-
-fn read_head<R>(stream: &mut R) -> IoResult<String>
-where
-    R: Read,
-{
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte)?;
-        received.extend_from_slice(&byte);
-    }
-    String::from_utf8(received).map_err(IoError::other)
 }

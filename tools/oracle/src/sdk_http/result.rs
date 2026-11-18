@@ -1,29 +1,14 @@
 use betterlite_core::api::messages_sse_events::stream::MessagesStreamHiddenParams;
+use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingResponse;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::rust::double_option;
 
-use super::messages_stream_logging::outcome::{Flag, StreamLoggingRun};
-use super::messages_stream_logging::relay::call::StepOutcome;
+use super::messages_stream_logging::outcome::Flag;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum SdkResult {
-    Success { value: ChatCompletion },
-    Embedding { value: EmbeddingOutcomes },
-    Vectors { value: QueryVectors },
-    BetaConfig { value: BetaConfigRun },
-    MessagesHeaderStream { value: HeaderStreamRun },
-    MessagesStreamLogging { value: StreamLoggingRun },
-    MessagesNativeStream { value: Vec<StepOutcome> },
-    MessagesSyncStream { value: SyncRun },
-    MessagesChatStream { value: ChatStreamRun },
-    ChatResponseStream { value: ChatResponseStreamRuns },
-    ResponsesAgenticContinuation { value: AgenticContinuationRun },
-    FileAzureStorage { value: FileStorageRun },
-    Failure(Failure),
-}
+pub mod kinds;
 
 // the mock origin an upload would echo is stripped, so both sides report the same blob-origin path
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +162,19 @@ pub struct HeaderStreamRun {
     pub provider_bytes: Vec<u8>,
     pub has_buffered_provider_output: bool,
     pub closed: bool,
+}
+
+// The frames the factory relayed, and B2436's chunk-processor arguments the live response reached.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct StreamFactoryRun {
+    pub frames: Vec<String>,
+    pub closed: Flag,
+    pub request_body: IndexMap<String, Json>,
+    pub logging_object_passed: Flag,
+    pub endpoint_anthropic: Flag,
+    pub url_route: String,
+    pub response_status: u16,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
