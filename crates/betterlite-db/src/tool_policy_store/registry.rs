@@ -52,18 +52,18 @@ impl ToolPolicyRegistry {
 
     #[must_use]
     pub fn input_policy(&self, tool_name: &str) -> ToolInputPolicy {
-        match self.input_policies.get(tool_name) {
-            Some(policy) => *policy,
-            None => ToolInputPolicy::Untrusted,
-        }
+        self.input_policies
+            .get(tool_name)
+            .copied()
+            .unwrap_or_default()
     }
 
     #[must_use]
     pub fn output_policy(&self, tool_name: &str) -> ToolOutputPolicy {
-        match self.output_policies.get(tool_name) {
-            Some(policy) => *policy,
-            None => ToolOutputPolicy::Untrusted,
-        }
+        self.output_policies
+            .get(tool_name)
+            .copied()
+            .unwrap_or_default()
     }
 }
 

@@ -1,6 +1,6 @@
 use deadpool_postgres::Client;
 
-use super::deadline::{StatementBounds, StatementFailure, bounded_statement};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_uncancelled};
 
 const FIND_SQL: &str = "SELECT COALESCE(\"blocked_tools\", ARRAY[]::text[]) AS blocked_tools FROM \"LiteLLM_ObjectPermissionTable\" WHERE \"object_permission_id\" = $1";
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_ObjectPermissionTable\" SET \"blocked_tools\" = $2 WHERE \"object_permission_id\" = $1";
@@ -33,31 +33,21 @@ pub async fn change_blocked_tools(
     tool_name: &str,
     change: BlockedChange,
 ) -> bool {
+    let operation = change.operation();
     if object_permission_id.is_empty() || tool_name.is_empty() {
         return false;
     }
     let Some(connected) = client else {
-        tracing::error!(
-            "tool_registry_writer {} error: no database connection",
-            change.operation()
-        );
+        tracing::error!("tool_registry_writer {operation} error: no database connection");
         return false;
     };
-    let operation = change.operation();
     let mut current =
         match read_blocked_list(&connected, bounds, object_permission_id, operation).await {
             Ok(BlockedList::Listed(current)) => current,
             Ok(BlockedList::Missing | BlockedList::Unreadable) => return false,
             Err(failure) => {
                 tracing::error!("tool_registry_writer {operation} error: {failure}");
-                if let StatementFailure::Expired {
-                    cancelled: false, ..
-                } = failure
-                {
-                    // taking the client out of the pool and dropping it aborts the connection task
-                    let detached = deadpool_postgres::Object::take(connected);
-                    drop(detached);
-                }
+                discard_uncancelled(connected, &failure);
                 return false;
             }
         };
@@ -70,6 +60,16 @@ pub async fn change_blocked_tools(
             current.retain(|blocked| blocked.as_str() != tool_name);
         }
     }
+    write_blocked_list(connected, bounds, object_permission_id, &current, operation).await
+}
+
+async fn write_blocked_list(
+    connected: Client,
+    bounds: StatementBounds<'_>,
+    object_permission_id: &str,
+    current: &[String],
+    operation: &str,
+) -> bool {
     match bounded_statement(
         &connected,
         bounds,
@@ -80,14 +80,7 @@ pub async fn change_blocked_tools(
         Ok(_) => true,
         Err(failure) => {
             tracing::error!("tool_registry_writer {operation} error: {failure}");
-            if let StatementFailure::Expired {
-                cancelled: false, ..
-            } = failure
-            {
-                // taking the client out of the pool and dropping it aborts the connection task
-                let detached = deadpool_postgres::Object::take(connected);
-                drop(detached);
-            }
+            discard_uncancelled(connected, &failure);
             false
         }
     }
@@ -105,14 +98,14 @@ async fn read_blocked_list(
         client.query_opt(FIND_SQL, &[&object_permission_id]),
     )
     .await?;
-    match found {
-        Some(row) => match row.try_get("blocked_tools") {
-            Ok(current) => Ok(BlockedList::Listed(current)),
-            Err(error) => {
-                tracing::error!("tool_registry_writer {operation} error: {error}");
-                Ok(BlockedList::Unreadable)
-            }
-        },
-        None => Ok(BlockedList::Missing),
+    let Some(row) = found else {
+        return Ok(BlockedList::Missing);
+    };
+    match row.try_get("blocked_tools") {
+        Ok(current) => Ok(BlockedList::Listed(current)),
+        Err(error) => {
+            tracing::error!("tool_registry_writer {operation} error: {error}");
+            Ok(BlockedList::Unreadable)
+        }
     }
 }

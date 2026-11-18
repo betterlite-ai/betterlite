@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
 use tokio_postgres::types::ToSql;
 
-use super::deadline::{StatementBounds, StatementFailure, bounded_statement};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_uncancelled};
 use super::records::{ToolDiscoveryItem, ToolIdGenerator};
 
 const UPSERT_SQL: &str = r#"INSERT INTO "LiteLLM_ToolTable" AS tool
@@ -33,14 +33,7 @@ pub async fn batch_upsert_tools(
         Ok(()) => tracing::debug!("tool_registry_writer: upserted {count} tool(s)"),
         Err(failure) => {
             tracing::error!("tool_registry_writer batch_upsert_tools error: {failure}");
-            if let StatementFailure::Expired {
-                cancelled: false, ..
-            } = failure
-            {
-                // taking the client out of the pool and dropping it aborts the connection task
-                let detached = deadpool_postgres::Object::take(connected);
-                drop(detached);
-            }
+            discard_uncancelled(connected, &failure);
         }
     }
 }

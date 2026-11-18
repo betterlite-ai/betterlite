@@ -13,10 +13,10 @@ use crate::postgres_store::session::PostgresStore;
 use crate::tool_records::decode::decode_tool_record;
 use crate::tool_records::records::LiteLLMToolTableRow;
 
-use super::deadline::{StatementBounds, StatementFailure, bounded_statement};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement, discard_uncancelled};
 use super::errors::ToolPolicyStoreError;
 use super::records::BlockedToolRow;
-use super::registry::{ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
+use super::registry::{ToolPolicyMaps, ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
 
 const TOOLS_SQL: &str =
     "SELECT row_to_json(entry)::text AS row_text FROM \"LiteLLM_ToolTable\" AS entry";
@@ -116,16 +116,8 @@ where
     .await?;
     let maps = tool_policy_maps(&decode_tools(&texts)?);
     let tool_count = maps.input_policies.len();
-    {
-        let mut registry = store
-            .registry
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        registry.input_policies = maps.input_policies;
-        registry.output_policies = maps.output_policies;
-    }
-    let blocked_tools =
-        load_blocked_tools(store.database, reconnect.as_deref_mut(), store.bounds).await?;
+    install_tool_maps(store.registry, maps);
+    let blocked_tools = load_blocked_tools(store.database, reconnect, store.bounds).await?;
     let permission_count = blocked_tools.len();
     let mut registry = store
         .registry
@@ -133,10 +125,17 @@ where
         .unwrap_or_else(PoisonError::into_inner);
     registry.blocked_tools_by_permission = blocked_tools;
     registry.initialized = true;
+    drop(registry);
     tracing::info!(
         "ToolPolicyRegistry: synced {tool_count} tool policies and {permission_count} object permissions from DB"
     );
     Ok(())
+}
+
+fn install_tool_maps(registry: &Mutex<ToolPolicyRegistry>, maps: ToolPolicyMaps) {
+    let mut state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+    state.input_policies = maps.input_policies;
+    state.output_policies = maps.output_policies;
 }
 
 fn decode_tools(texts: &[String]) -> Result<Vec<LiteLLMToolTableRow>, ToolPolicyStoreError> {
@@ -183,18 +182,18 @@ where
     Read: Fn() -> ReadFuture + Send + Sync,
     ReadFuture: Future<Output = Result<Vec<Rows>, ReadFault>> + Send,
 {
-    let last_fault: Mutex<Option<ReadFault>> = Mutex::new(None);
+    let fault: Mutex<Option<ReadFault>> = Mutex::new(None);
     let rows = {
-        let last_fault = &last_fault;
-        let read = &read;
+        let last_fault = &fault;
+        let reader = &read;
         call_with_db_reconnect_retry(
             reconnect,
             move || async move {
-                match read().await {
+                match reader().await {
                     Ok(rows) => Ok(rows),
-                    Err(fault) => {
-                        let classified = fault.classify(bounds.deadline);
-                        *last_fault.lock().unwrap_or_else(PoisonError::into_inner) = Some(fault);
+                    Err(failure) => {
+                        let classified = failure.classify(bounds.deadline);
+                        *last_fault.lock().unwrap_or_else(PoisonError::into_inner) = Some(failure);
                         Err(classified)
                     }
                 }
@@ -208,7 +207,7 @@ where
         )
         .await
     };
-    rows.map_err(|classified| read_failure(last_fault, classified, bounds.deadline))
+    rows.map_err(|classified| read_failure(fault, classified, bounds.deadline))
 }
 
 fn read_failure(
@@ -244,15 +243,10 @@ where
     match bounded_statement(&client, bounds, client.query(sql, &[])).await {
         Ok(rows) => rows.iter().map(map).collect(),
         Err(StatementFailure::Driver(source)) => Err(ReadFault::Native(backend(source))),
-        Err(StatementFailure::Expired {
-            cancelled: false, ..
-        }) => {
-            // taking the client out of the pool and dropping it aborts the connection task
-            let detached = deadpool_postgres::Object::take(client);
-            drop(detached);
+        Err(failure @ StatementFailure::Expired { .. }) => {
+            discard_uncancelled(client, &failure);
             Err(ReadFault::Expired(lookup))
         }
-        Err(StatementFailure::Expired { .. }) => Err(ReadFault::Expired(lookup)),
     }
 }
 

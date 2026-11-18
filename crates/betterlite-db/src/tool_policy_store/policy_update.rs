@@ -6,7 +6,9 @@ use tokio_postgres::types::ToSql;
 use crate::tool_records::queries::get_tool;
 use crate::tool_records::records::{LiteLLMToolTableRow, ToolInputPolicy, ToolOutputPolicy};
 
-use super::deadline::{StatementBounds, StatementFailure, bounded_statement, cancel_statement};
+use super::deadline::{
+    StatementBounds, StatementFailure, bounded_statement, cancel_statement, discard_uncancelled,
+};
 use super::records::{ToolIdGenerator, ToolPolicyUpdate};
 
 const UPSERT_SQL: &str = r#"INSERT INTO "LiteLLM_ToolTable" AS tool
@@ -33,14 +35,7 @@ pub async fn update_tool_policy(
         Ok(()) => (),
         Err(failure) => {
             tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
-            if let StatementFailure::Expired {
-                cancelled: false, ..
-            } = failure
-            {
-                // taking the client out of the pool and dropping it aborts the connection task
-                let detached = deadpool_postgres::Object::take(connected);
-                drop(detached);
-            }
+            discard_uncancelled(connected, &failure);
             return None;
         }
     }
@@ -48,14 +43,7 @@ pub async fn update_tool_policy(
         Ok(row) => row,
         Err(failure) => {
             tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
-            if let StatementFailure::Expired {
-                cancelled: false, ..
-            } = failure
-            {
-                // taking the client out of the pool and dropping it aborts the connection task
-                let detached = deadpool_postgres::Object::take(connected);
-                drop(detached);
-            }
+            discard_uncancelled(connected, &failure);
             None
         }
     }

@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
+use deadpool_postgres::Client;
 use tokio::time::timeout;
 use tokio_postgres::tls::{MakeTlsConnect, TlsConnect};
 use tokio_postgres::{CancelToken, Socket};
@@ -39,10 +40,31 @@ where
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum StatementFailure {
-    #[error("{0}")]
+    #[error("{}", driver_detail(.0))]
     Driver(#[source] tokio_postgres::Error),
     #[error("the statement did not finish within {deadline:?}")]
     Expired { deadline: Duration, cancelled: bool },
+}
+
+// The driver's own text says only "db error"; the server's message names the trigger or constraint
+// that refused the statement. The detail and hint can carry row values, so they stay out of the log.
+fn driver_detail(source: &tokio_postgres::Error) -> String {
+    source.as_db_error().map_or_else(
+        || source.to_string(),
+        |server| format!("{}: {}", server.severity(), server.message()),
+    )
+}
+
+// A statement whose deadline passed keeps running on the server, so its client leaves the pool
+// unless the cancel request was delivered.
+pub(super) fn discard_uncancelled(client: Client, failure: &StatementFailure) {
+    if let StatementFailure::Expired {
+        cancelled: false, ..
+    } = failure
+    {
+        let detached = deadpool_postgres::Object::take(client);
+        drop(detached);
+    }
 }
 
 // Dropping a query future leaves the server executing the statement, so the deadline sends a cancel.
