@@ -355,6 +355,44 @@ async fn lookup_returns_the_fresh_exact_entry() {
 }
 
 #[tokio::test]
+async fn lookup_prefers_a_fresh_exact_entry_over_fresh_lookback_evidence() {
+    let fake = FakeCache::new(false);
+    let exact = observation(FINGERPRINT, 100, 2_500.0);
+    let fresh = observation(OLDER_FINGERPRINT, 900, 2_500.0);
+    fake.seed(
+        SCOPE,
+        FINGERPRINT,
+        json(&serde_json::to_string(&exact).unwrap()),
+    );
+    fake.seed(
+        SCOPE,
+        OLDER_FINGERPRINT,
+        json(&serde_json::to_string(&fresh).unwrap()),
+    );
+    let found = lookup(&fake, SCOPE, &evidence(0).prefix, Some(NOW)).await;
+    assert_eq!(found, Some(exact));
+}
+
+#[tokio::test]
+async fn lookup_treats_a_lookback_entry_expiring_now_as_stale() {
+    let fake = FakeCache::new(false);
+    let exact = observation(FINGERPRINT, 100, 1_500.0);
+    let expiring = observation(OLDER_FINGERPRINT, 900, NOW);
+    fake.seed(
+        SCOPE,
+        FINGERPRINT,
+        json(&serde_json::to_string(&exact).unwrap()),
+    );
+    fake.seed(
+        SCOPE,
+        OLDER_FINGERPRINT,
+        json(&serde_json::to_string(&expiring).unwrap()),
+    );
+    let found = lookup(&fake, SCOPE, &evidence(0).prefix, Some(NOW)).await;
+    assert_eq!(found, Some(exact));
+}
+
+#[tokio::test]
 async fn lookup_falls_back_to_a_fresh_lookback_entry() {
     let fake = FakeCache::new(false);
     let entry = observation(OLDER_FINGERPRINT, 100, 2_500.0);
