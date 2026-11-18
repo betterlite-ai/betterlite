@@ -1,15 +1,13 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use betterlite_db::spend_queues::daily::{
-    DailySpendUpdate, aggregate_daily_spend_update_transactions,
-};
-use betterlite_db::spend_queues::entity::{
-    SpendUpdateQueueItem, aggregate_db_spend_update_transactions,
-};
+use betterlite_db::spend_queues::daily::{DailySpendUpdate, aggregate_daily_rows};
+use betterlite_db::spend_queues::entity::{SpendUpdateQueueItem, aggregate_db_transactions};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
+use serde::de::Error as _;
+use serde_json::Value;
 
 pub(crate) struct Op;
 
@@ -19,11 +17,41 @@ pub(crate) struct Input {
     steps: BTreeMap<String, Step>,
 }
 
+// an internally tagged enum buffers its payload where the daily row's RawValue cannot be read, so dispatch here
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(try_from = "Value")]
 enum Step {
-    EntityTransactions { updates: Vec<SpendUpdateQueueItem> },
-    Daily { updates: Vec<DailySpendUpdate> },
+    EntityTransactions(EntityStep),
+    Daily(DailyStep),
+}
+
+#[derive(Debug, Deserialize)]
+struct EntityStep {
+    updates: Vec<SpendUpdateQueueItem>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DailyStep {
+    updates: Vec<DailySpendUpdate>,
+}
+
+impl TryFrom<Value> for Step {
+    type Error = serde_json::Error;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        let Some(kind) = value.get("kind").and_then(Value::as_str) else {
+            return Err(serde_json::Error::custom(
+                "a spend queue step names no kind",
+            ));
+        };
+        match kind {
+            "entity_transactions" => serde_json::from_value(value).map(Self::EntityTransactions),
+            "daily" => serde_json::from_value(value).map(Self::Daily),
+            other => Err(serde_json::Error::custom(format!(
+                "unknown spend queue step kind: {other}"
+            ))),
+        }
+    }
 }
 
 impl Helper for Op {
@@ -40,14 +68,12 @@ impl Helper for Op {
 
 fn run_step(step: &Step) -> Result<serde_json::Value, Box<HelperError>> {
     match step {
-        Step::EntityTransactions { updates } => {
-            match aggregate_db_spend_update_transactions(updates) {
-                Ok(transactions) => serde_json::to_value(transactions).map_err(failure),
-                // A cost sum betterlite cannot represent is reported as invalid, where the source would carry an infinity.
-                Err(_) => Ok(serde_json::json!({ "invalid": true })),
-            }
-        }
-        Step::Daily { updates } => match aggregate_daily_spend_update_transactions(updates) {
+        Step::EntityTransactions(step) => match aggregate_db_transactions(&step.updates) {
+            Ok(transactions) => serde_json::to_value(transactions).map_err(failure),
+            // A cost sum betterlite cannot represent is reported as invalid, where the source would carry an infinity.
+            Err(_) => Ok(serde_json::json!({ "invalid": true })),
+        },
+        Step::Daily(step) => match aggregate_daily_rows(&step.updates) {
             Ok(aggregated) => serde_json::to_value(aggregated).map_err(failure),
             // The source raises where a payload cannot be added, and Python reports that step as invalid.
             Err(_) => Ok(serde_json::json!({ "invalid": true })),
