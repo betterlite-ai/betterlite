@@ -1,0 +1,116 @@
+use betterlite_config::sections::openai_credentials::Settings as OpenAiCredentialsSettings;
+use betterlite_models::decisions::Json;
+use betterlite_openai::credentials::LiteLlmGlobals;
+use betterlite_openai::vector_stores::reply::{ReplyKind, VectorReply, transform_response};
+use betterlite_openai::vector_stores::{
+    Headers, complete_url as openai_complete_url,
+    validate_environment as openai_validate_environment,
+};
+use secrecy::SecretString;
+use serde::Serialize;
+
+use super::error::{BaseLlmException, HeaderMap, UrlFailure, header_map};
+
+// The litellm_params fields the four handlers read
+#[derive(Debug, Clone, Default)]
+pub struct WriteParams {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub ssl_verify: Option<bool>,
+}
+
+// The BaseVectorStoreConfig members these handlers call; B1066 adapts a provider config to this
+pub trait WriteConfig: Send + Sync {
+    fn validate_environment(&self, headers: Headers, params: &WriteParams) -> Headers;
+
+    fn complete_url(&self, params: &WriteParams) -> Result<String, UrlFailure>;
+
+    fn transform_create_response(
+        &self,
+        response: &http::Response<Vec<u8>>,
+    ) -> Result<Json, BaseLlmException>;
+
+    fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException;
+}
+
+// OpenAIVectorStoreConfig's members over B527, whose validate_environment rewrites Authorization and Content-Type in the map it is given
+pub struct OpenAiWriteConfig<'settings> {
+    settings: &'settings OpenAiCredentialsSettings,
+    globals: LiteLlmGlobals,
+    env_api_key: Option<SecretString>,
+    litellm_api_base: Option<String>,
+}
+
+impl<'settings> OpenAiWriteConfig<'settings> {
+    pub fn new(
+        settings: &'settings OpenAiCredentialsSettings,
+        globals: LiteLlmGlobals,
+        env_api_key: Option<SecretString>,
+        litellm_api_base: Option<String>,
+    ) -> Self {
+        Self {
+            settings,
+            globals,
+            env_api_key,
+            litellm_api_base,
+        }
+    }
+}
+
+impl WriteConfig for OpenAiWriteConfig<'_> {
+    fn validate_environment(&self, headers: Headers, params: &WriteParams) -> Headers {
+        openai_validate_environment(
+            headers,
+            params.api_key.clone(),
+            LiteLlmGlobals {
+                api_base: self.globals.api_base.clone(),
+                api_key: self.globals.api_key.clone(),
+                openai_key: self.globals.openai_key.clone(),
+                organization: self.globals.organization.clone(),
+            },
+            self.env_api_key.clone(),
+        )
+    }
+
+    fn complete_url(&self, params: &WriteParams) -> Result<String, UrlFailure> {
+        openai_complete_url(
+            params.api_base.as_deref(),
+            self.litellm_api_base.as_deref(),
+            self.settings,
+            None,
+        )
+        .map_err(|source| UrlFailure {
+            source: Box::new(source),
+        })
+    }
+
+    fn transform_create_response(
+        &self,
+        response: &http::Response<Vec<u8>>,
+    ) -> Result<Json, BaseLlmException> {
+        let status = response.status().as_u16();
+        let headers = header_map(response.headers());
+        match transform_response(ReplyKind::Create, response) {
+            Ok(VectorReply::Record(record)) => as_json(&*record)
+                .map_err(|source| self.error_class(&source.to_string(), status, headers)),
+            Ok(VectorReply::Json(value)) => as_json(&value)
+                .map_err(|source| self.error_class(&source.to_string(), status, headers)),
+            Err(source) => Err(self.error_class(&source.to_string(), status, headers)),
+        }
+    }
+
+    // BaseVectorStoreConfig.get_error_class raises this exception, so asking it and building one are the same answer here
+    fn error_class(&self, message: &str, status_code: u16, headers: HeaderMap) -> BaseLlmException {
+        BaseLlmException {
+            status_code,
+            message: message.to_owned(),
+            headers,
+            status_code_is_synthesized: false,
+        }
+    }
+}
+
+fn as_json<T: Serialize>(value: &T) -> Result<Json, serde_json::Error> {
+    let encoded = serde_json::to_value(value)?;
+    serde_json::from_value(encoded)
+}
