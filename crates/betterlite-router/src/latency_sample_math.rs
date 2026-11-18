@@ -20,7 +20,7 @@ pub fn average(samples: &[f64]) -> f64 {
 // _percentile_latency: the value at LiteLLM's one-based ceil(len * percentile) rank of the sorted window
 #[must_use]
 pub fn percentile(samples: &[f64], percentile: f64) -> Option<f64> {
-    // a percentile that is non-finite leaves the rank unrepresentable, and the decimal conversion answers None
+    // an empty window has no rank; a non-finite percentile leaves the rank unrepresentable and converts to None
     if samples.is_empty() {
         return None;
     }
