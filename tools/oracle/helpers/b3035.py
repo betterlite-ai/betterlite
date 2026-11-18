@@ -75,6 +75,8 @@ class RecordingCache:
     async def async_get_cache(
         self, key: str, *, litellm_parent_otel_span: JsonValue, local_only: bool
     ) -> JsonValue | None:
+        if litellm_parent_otel_span is not None:
+            raise RuntimeError("the gauge cache reads carry no parent span")
         self.reads.append({"key": key, "local_only": local_only})
         return self.values.get(key)
 
@@ -87,12 +89,16 @@ class RecordingCache:
         litellm_parent_otel_span: JsonValue,
         local_only: bool,
     ) -> None:
+        if litellm_parent_otel_span is not None:
+            raise RuntimeError("the gauge cache writes carry no parent span")
         self.writes.append({"key": key, "value": value, "ttl": ttl, "local_only": local_only})
         self.values[key] = value
 
     async def async_batch_get_cache(
         self, *, keys: Sequence[str], parent_otel_span: JsonValue = None, local_only: bool = False
     ) -> list[JsonValue | None] | None:
+        if parent_otel_span is not None:
+            raise RuntimeError("the gauge batch read carries no parent span")
         self.batch_reads.append({"keys": list(keys), "local_only": local_only})
         return [self.values.get(key) for key in keys]
 
