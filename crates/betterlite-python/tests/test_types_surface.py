@@ -5,6 +5,7 @@ from types import ModuleType
 from typing import Final
 
 import pytest
+from pydantic import JsonValue
 
 MODULES: Final[list[tuple[str, str]]] = [
     ("llms.openai", "llms.openai"),
@@ -27,7 +28,7 @@ NOT_PORTED: Final = frozenset({"HttpxBinaryResponseContent"})
 
 
 def public_names(module: ModuleType) -> set[str]:
-    members: list[tuple[str, object]] = inspect.getmembers(module)
+    members: list[tuple[str, JsonValue]] = inspect.getmembers(module)
     names: set[str] = set()
     for name, member in members:
         if name.startswith("_"):
