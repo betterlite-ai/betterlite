@@ -9,13 +9,13 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
-use super::callback::{GuardrailViolation, RealtimeGuardrail};
-use super::error::RealtimeGuardrailsError;
-use super::harness::{
+use self::harness::{
     Fixture, Outcome, PROMPT_PREFIX, Predicate, SendLog, Sockets, Split, TestFailure,
     blocked_message, blocking_guardrail, capture, check_data, closes, frames, guardrail_input,
     json, lock, one_block, selection,
 };
+use super::callback::{GuardrailViolation, RealtimeGuardrail};
+use super::error::RealtimeGuardrailsError;
 use super::message::DEFAULT_BLOCK_MESSAGE;
 use super::runner::{RealtimeGuardrails, RunRealtimeGuardrails};
 
@@ -292,11 +292,12 @@ async fn realtime_guardrail_message_precedence_unexpected_error() {
 #[rstest]
 #[case::on_violation(Some(OnViolation::EndSession), None)]
 #[case::zero_threshold(None, Some(0))]
+#[case::negative_threshold(None, Some(-1))]
 #[case::no_threshold(None, None)]
 #[tokio::test]
 async fn realtime_guardrail_end_session(
     #[case] on_violation: Option<OnViolation>,
-    #[case] threshold: Option<usize>,
+    #[case] threshold: Option<i64>,
 ) {
     let (logs, _guard) = capture();
     let fixture = Fixture::new();
@@ -308,7 +309,8 @@ async fn realtime_guardrail_end_session(
             .await
             .expect("the block completes")
     );
-    let closes_backend = on_violation == Some(OnViolation::EndSession) || threshold == Some(0);
+    let closes_backend =
+        on_violation == Some(OnViolation::EndSession) || threshold.is_some_and(|limit| limit <= 1);
     let expected_closes = if closes_backend { 1 } else { 0 };
     let expected_timeline = if closes_backend {
         vec!["backend", "client", "backend", "backend", "backend-close"]
@@ -396,10 +398,19 @@ async fn realtime_guardrail_send_failure_leaves_the_count_unchanged() {
     let mut fixture = Fixture::new();
     fixture.backend = SendLog::failing(vec![1]);
     let guardrail = blocking_guardrail();
-    let error = one_block(&fixture, &guardrail, "hello")
+    let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
+    let mut state = fixture.state();
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
+        state: &mut state,
+        provider: None,
+        guardrails: &guardrails,
+    };
+    let error = runner
+        .run_realtime_guardrails("hello", None, None, None)
         .await
         .expect_err("the spoken-message send fails");
     assert!(matches!(error, RealtimeGuardrailsError::Send(_)));
+    assert_eq!(runner.state.setup.violation_count, 0);
     assert_eq!(fixture.timeline.entries(), vec!["backend", "client"]);
     assert_eq!(fixture.backend.sent().len(), 1);
     assert_eq!(fixture.client.sent().len(), 1);
@@ -411,10 +422,19 @@ async fn realtime_guardrail_client_failure_is_returned_before_the_count() {
     let mut fixture = Fixture::new();
     fixture.client = SendLog::failing(vec![0]);
     let guardrail = blocking_guardrail();
-    let error = one_block(&fixture, &guardrail, "hello")
+    let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
+    let mut state = fixture.state();
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
+        state: &mut state,
+        provider: None,
+        guardrails: &guardrails,
+    };
+    let error = runner
+        .run_realtime_guardrails("hello", None, None, None)
         .await
         .expect_err("the client notice fails");
     assert!(matches!(error, RealtimeGuardrailsError::Client(_)));
+    assert_eq!(runner.state.setup.violation_count, 0);
     assert_eq!(fixture.timeline.entries(), vec!["backend"]);
     assert_eq!(fixture.backend.sent().len(), 1);
     assert_eq!(closes(&fixture), (0, 0));

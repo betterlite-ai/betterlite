@@ -46,8 +46,8 @@ pub struct RealtimeGuardrailPolicy {
     // realtime_violation_message; an empty one falls through to the raised message
     pub violation_message: Option<String>,
     pub on_violation: Option<OnViolation>,
-    // end_session_after_n_fails; 0 closes the session on the first violation
-    pub end_session_after_n_fails: Option<usize>,
+    // end_session_after_n_fails; LiteLLM's int | None, so 0 or a negative value closes on the first violation
+    pub end_session_after_n_fails: Option<i64>,
 }
 
 pub type GuardrailApplication<'call, CallbackError> =
