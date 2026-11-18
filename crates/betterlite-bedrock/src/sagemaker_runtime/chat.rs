@@ -11,7 +11,6 @@ use betterlite_openai::sagemaker_chat::request::{self as chat_request, Transform
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_prompts::arguments::json::{Json, Object as Body};
 use bytes::BytesMut;
-use http::HeaderMap;
 use indexmap::IndexMap;
 
 use crate::sagemaker_stream::events::EventState;
@@ -131,12 +130,19 @@ pub async fn chat<T: SagemakerTransport, C: SagemakerCredentials>(
         .send(runtime.outbound(&prepare_chat(runtime, call).await?)?)
         .await
         .map_err(timeout_error)?;
-    read_chat_response(
-        response.status,
-        &response.body,
-        &response.headers,
-        &call.reply,
-    )
+    // a redirect without a Location reaches here as a wire error
+    if !(200..300).contains(&response.status) {
+        return Err(SagemakerError {
+            status_code: response.status,
+            message: body_text(&response.body),
+            headers: Some(reply_headers(&response.headers)),
+        });
+    }
+    decode_compatible_chat_reply(&response.body, &call.reply).map_err(|error| SagemakerError {
+        status_code: response.status,
+        message: error.to_string(),
+        headers: Some(reply_headers(&response.headers)),
+    })
 }
 
 pub async fn chat_stream<T: SagemakerTransport, C: SagemakerCredentials>(
@@ -163,27 +169,6 @@ pub async fn chat_stream<T: SagemakerTransport, C: SagemakerCredentials>(
         chunks,
         pending: VecDeque::new(),
         done: false,
-    })
-}
-
-fn read_chat_response(
-    status: u16,
-    body: &[u8],
-    headers: &HeaderMap,
-    options: &ReplyOptions<'_>,
-) -> Result<CompatibleReply, SagemakerError> {
-    // only a 2xx reply is the answer; a redirect without a Location reaches here as a wire error
-    if !(200..300).contains(&status) {
-        return Err(SagemakerError {
-            status_code: status,
-            message: body_text(body),
-            headers: Some(reply_headers(headers)),
-        });
-    }
-    decode_compatible_chat_reply(body, options).map_err(|error| SagemakerError {
-        status_code: status,
-        message: error.to_string(),
-        headers: Some(reply_headers(headers)),
     })
 }
 
