@@ -1,0 +1,18 @@
+kind: helper
+name: model-deprecation-dedupe-first-metadata
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: alpha
+        litellm_params: {model: openai/first}
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: first}
+      - model_name: beta
+        litellm_params: {model: openai/other}
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: other}
+      - model_name: alpha
+        litellm_params: {model: openai/second}
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: second}
+env: {}
+compare: {ignore: []}

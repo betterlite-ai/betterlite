@@ -1,0 +1,12 @@
+task: B843
+deviations:
+  - what: >-
+      A model_cost entry whose litellm_provider is empty reports litellm_provider null in the
+      snapshot. LiteLLM keeps an explicit "" and reports null only when the key is absent.
+    why: >-
+      The typed catalog stores an absent provider and an explicit empty one as the field's empty
+      default, so the projection cannot tell them apart and treats the default as absent. An
+      absent provider is the common shape and then matches LiteLLM's null; the alert renders both
+      as unknown. catalog_lookup_drops_undated_and_default_providers proves both inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/model_deprecation.py#L54-L58
+kept_bugs: []

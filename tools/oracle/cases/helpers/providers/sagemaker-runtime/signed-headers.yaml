@@ -1,0 +1,47 @@
+kind: helper
+name: sagemaker-runtime-signed-call-headers
+call:
+  b5840:
+    function: signed_request
+    model: endpoint-a
+    region: us-east-1
+    headers:
+      X-Amzn-SageMaker-Inference-Component: blue
+      X-Forwarded-For: 203.0.113.7
+    optional_params: {temperature: 0.7}
+    messages: [{role: user, content: hi}]
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    bearer: null
+    now: 1767225600
+calls:
+  - b5840:
+      function: signed_request
+      model: endpoint-b
+      region: eu-west-1
+      headers: {Content-Type: application/json}
+      optional_params: {}
+      messages: [{role: user, content: bye}]
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        session_token: null
+      bearer: null
+      now: 1767225601
+  - b5840:
+      function: signed_request
+      model: endpoint-c
+      region: us-west-2
+      headers: {X-Forwarded-For: 203.0.113.9}
+      optional_params: {}
+      messages: [{role: user, content: hi}]
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        session_token: null
+      bearer: test-bearer-token
+      now: 1767225602
+env: {}
+compare: {ignore: []}

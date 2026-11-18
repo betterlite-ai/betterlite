@@ -1,0 +1,13 @@
+id: B9991
+milestone: R2 bug fixes
+title: The realtime relay futures are Send
+status: todo
+depends_on: [B9984]
+file: tasks/B9991-realtime-relay-send.yaml
+covers: []
+parent: B124
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
