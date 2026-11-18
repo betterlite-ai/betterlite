@@ -126,15 +126,13 @@ impl BedrockBidirectionalStream for FakeStream {
     ) -> Result<(Json, Box<dyn BedrockOutputStream<Error = io::Error>>), StreamError<io::Error>>
     {
         self.awaited.fetch_add(1, Ordering::SeqCst);
-        self.error.as_ref().map_or_else(
-            || Ok((Json::Null, Box::new(FakeOutput))),
-            |message| {
-                Err(StreamError {
-                    message: message.clone(),
-                    source: None,
-                })
-            },
-        )
+        if let Some(message) = &self.error {
+            return Err(StreamError {
+                message: message.clone(),
+                source: None,
+            });
+        }
+        Ok((Json::Null, Box::new(FakeOutput)))
     }
 }
 
