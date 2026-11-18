@@ -20,13 +20,13 @@ class Input(TypedDict):
 
 # litellm builds the chosen client eagerly, so the recorders keep the oracle off a Redis socket.
 class _PlainRecorder(proxy_server.RedisCache):
-    def __init__(self, *args: JsonValue, **kwargs: JsonValue) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
         _PICKED.append("standalone")
 
 
 class _ClusterRecorder(proxy_server.RedisClusterCache):
-    def __init__(self, *args: JsonValue, **kwargs: JsonValue) -> None:
+    def __init__(self, *args: object, **kwargs: object) -> None:
         del args, kwargs
         _PICKED.append("cluster")
 
