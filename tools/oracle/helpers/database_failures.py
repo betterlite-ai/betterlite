@@ -8,5 +8,14 @@ class Input(TypedDict):
     values: list[JsonValue]
 
 
+def metadata_kwargs(value: JsonValue) -> dict[str, JsonValue]:
+    return {
+        "table_name": value,
+    }
+
+
 def run(input_value: Input) -> list[dict[str, str] | None]:
-    return [_safe_db_event_metadata({"table_name": value}) for value in input_value["values"]]
+    return [
+        _safe_db_event_metadata(metadata_kwargs(value))
+        for value in input_value["values"]
+    ]
