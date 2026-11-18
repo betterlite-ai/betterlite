@@ -59,3 +59,29 @@ fn next_run_at_keeps_the_last_run_for_a_zero_interval() {
 fn next_run_at_reports_no_run_when_the_sum_leaves_the_calendar() {
     assert_eq!(next_run_at(&schedule(Some(u32::MAX), Some(at(4, 5)))), None);
 }
+
+#[test]
+fn next_run_at_reports_no_run_past_python_datetime_max() {
+    assert_eq!(
+        next_run_at(&schedule(Some(100_000_000), Some(at(4, 5)))),
+        None
+    );
+}
+
+#[test]
+fn next_run_at_keeps_the_last_python_datetime() {
+    let last_run = NaiveDate::from_ymd_opt(9999, 12, 31)
+        .unwrap()
+        .and_hms_micro_opt(17, 59, 59, 999_999)
+        .unwrap()
+        .and_utc();
+    let expected = NaiveDate::from_ymd_opt(9999, 12, 31)
+        .unwrap()
+        .and_hms_micro_opt(23, 59, 59, 999_999)
+        .unwrap()
+        .and_utc();
+    assert_eq!(
+        next_run_at(&schedule(Some(6), Some(last_run))),
+        Some(expected)
+    );
+}
