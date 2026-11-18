@@ -41,12 +41,7 @@ where
 {
     let deployment = dispatch.bounded_deployment(&request.model_id, &request.call_id, context)?;
     // moderation guardrails arrive with their later task, so no rule sees this request yet
-    let model = request
-        .request
-        .model
-        .as_deref()
-        .unwrap_or(&request.model_id);
-    dispatch.evaluate_rules(None, model)?;
+    dispatch.evaluate_rules(None, &request.model_id)?;
     let call = ModerationCallInput {
         deployment,
         request: &request.request,
