@@ -32,11 +32,9 @@ description: >-
   values; loads_spend_queue_settings must exercise actual loader defaults and overrides.
   Queue capacity and default TTL must be positive, while a nonpositive flush count retains
   the source's empty drain. Reject arithmetic overflow with the offending setting name.
-  Add an owned OracleRedis fixture to tools/oracle: launch the installed redis-server on
-  an isolated temporary directory/port, wait for PING, expose a URI only to fixture config,
-  and kill/wait/remove resources on drop or explicit shutdown. Never connect these tests
-  to a user's Redis. Native tests use both a recording cache and real Redis for NX/expiry,
-  JSON comparison, stale-owner release, reacquisition and cancellation. The pure pod_lock_key
+  Native tests use a recording cache for NX/expiry, JSON comparison, stale-owner release,
+  reacquisition and cancellation. The gate image has no redis-server, so this task adds no
+  real-Redis fixture and leaves the oracle's B1139 Redis fixture as it is on main. The pure pod_lock_key
   helper compares source key formatting; all lease outcomes are asserted by native tests.
   The two files contain 238 nonblank lines; fit queue/lease logic in 250, config/fixtures in
   130, behavior tests in 240 and adapters/fuzz in 180 changed lines.
@@ -67,8 +65,6 @@ scope:
     - crates/betterlite-config/fuzz/corpus/spend_queue_setting/**
     - tools/oracle/Cargo.toml
     - tools/oracle/src/lib.rs
-    - tools/oracle/src/redis_fixture.rs
-    - tools/oracle/src/redis_fixture/**
     - tools/oracle/src/helpers/db/pod_lock_key.rs
     - tools/oracle/src/helpers/db/pod_lock_key/**
     - tools/oracle/helpers/pod_lock_key.py
@@ -89,7 +85,7 @@ dod:
   - text: Spend queue admission and draining retain FIFO, cap, warning and cancellation behavior without losing ownership of admitted records.
     proof: [spend-memory-tests, spend-queue-config-tests]
   - text: Lease acquisition, expiry and release agree with the source's owner encoding, reentrancy and fallback, including event emission conditions.
-    proof: [pod-lease-tests, redis-fixture-tests, oracle, pod-key-python, pod-key-corpus, pod-lock-service-events]
+    proof: [pod-lease-tests, oracle, pod-key-python, pod-key-corpus, pod-lock-service-events]
   - text: Queue settings and owner bytes use named production decoders with malformed-input replay and loader coverage.
     proof: [spend-queue-config-tests, queue-setting-corpus, pod-owner-corpus]
 checks:
@@ -104,9 +100,6 @@ checks:
     - id: pod-lease-tests
       why: Redis lease tests miss ownership, encoding, stale-owner or failure fallback behavior.
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^queues::pod_lock::/) - test(replays_the_pod_owner_corpus)'
-    - id: redis-fixture-tests
-      why: The disposable Redis process is not reachable or survives fixture teardown.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^redis_fixture::/)'
     - id: spend-queue-config-tests
       why: Spend queue and default lock settings are not resolved by the real config loader.
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(loads_spend_queue_settings) | (test(/^spend_queue::/) - test(replays_the_spend_queue_setting_corpus))'
