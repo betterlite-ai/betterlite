@@ -1,0 +1,21 @@
+task: B3640
+deviations:
+  - what: The Gemini non-streaming handler takes the buffered response bytes and the response headers, where LiteLLM takes one httpx response object.
+    why: Rust has no httpx response; the handler only reads the JSON body, and B1326 needs the headers for its error projection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L33-L45
+  - what: A decode, cost or push failure comes back as Err from the module's own error enum, where LiteLLM lets the Python exception rise.
+    why: Rust has no exceptions. The error climbs to the caller, which logs it and drops the dispatch, so a failed reply is never turned into a zero-cost log row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L94-L119
+  - what: On the rawPredict path a line whose stripped text decodes to a non-object JSON value is skipped, where LiteLLM hands it to the Anthropic chunk parser and the AttributeError drops the whole dispatch.
+    why: The task states the skip, and a JSON number, string or array is outside the stream event shape a working setup sends. LiteLLM only skips text that does not parse at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L98-L109
+  - what: The Gemini video object carries no response_cost hidden param, because betterlite's VideoObject declares only LiteLLM's pydantic fields and no private hidden-params map.
+    why: LiteLLM sets _hidden_params["response_cost"] to stop a later recalculation; model_dump excludes it, so no logged field changes. The cost is already returned in kwargs and written to the call details, and nothing in this path recalculates it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L80-L88
+  - what: The logged usage object omits the null-valued keys LiteLLM's ModelResponse.model_dump() writes, such as cache_read_input_tokens and the unused prompt and completion detail counts.
+    why: The Rust usage type carries an absence as no entry, and the logged counts are the ones a callback reads. The oracle compares the three token counts, which match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096-L2100
+kept_bugs:
+  - what: A non-SSE Gemini stream that arrives as one JSON array builds no logged response, because the array value is skipped as a non-object and every element behind it is consumed with it.
+    why: LiteLLM's accumulated mode pops one complete JSON value at a time and only a dict becomes a chunk, so the whole array is skipped and the handler logs nothing. betterlite's B1315 decoder follows it, so a setup sees the same missing log row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L3330-L3335
