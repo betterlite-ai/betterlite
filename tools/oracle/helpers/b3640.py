@@ -261,7 +261,7 @@ def dispatched(call: Input, recorder: Recorder) -> dict[str, JsonValue]:
         "result": result_value(result, video=recorder.video),
         "kwargs": kwargs_value(kwargs),
         "logging": logging_value(logging_obj),
-        "cost": [JSON.validate_json(call.model_dump_json()) for call in recorder.calls],
+        "cost": [JSON.validate_json(record.model_dump_json()) for record in recorder.calls],
     }
 
 
