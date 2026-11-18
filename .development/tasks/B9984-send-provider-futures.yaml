@@ -1,0 +1,146 @@
+id: B9984
+title: The logging env and the provider call futures are Send
+description: >-
+  The gateway's Adapter::execute must return a Send future (crates/betterlite-provider/src/provider.rs L68-L73), and
+  the composed provider calls cannot give it one. PrePostEnv in crates/betterlite-logging/src/logging_pre_post/env.rs
+  holds its sinks as trait objects with no Sync bound, so every async call that keeps a PrePostEnv across an await is
+  not Send. The code works around that in three ways today. Twelve signatures return LocalBoxFuture: chat_call,
+  prepare and send in crates/betterlite-anthropic/src/chat_call/, dispatch, the embedding, predibase and replicate
+  entries, the compatible chat execution and shared_embedding in crates/betterlite-provider, and three in
+  model_hub_dispatch's tests (pooled.rs and support.rs). crates/betterlite-openai/src/chat_content/media.rs carries an expect for
+  clippy::future_not_send. Three tasks this one waits for add more: B2206 two future_not_send expects in
+  crates/betterlite-bedrock/src/invoke_stream.rs, B027 the HandlerFuture alias in
+  crates/betterlite-provider/src/anthropic_dispatch/completion.rs, and B563 the Foundry completion in
+  crates/betterlite-foundry/src/anthropic/handler.rs. Convert those too. B027 had to leave the Anthropic gateway
+  path out for this reason. Max chose to make the env Send and Sync (decision 2026-11-18).
+
+
+  Make the env Send and Sync. In env.rs, LogSink gets Send + Sync as supertraits, and LoggerFn becomes a reference to
+  dyn Fn(&Json) -> Result<(), PrePostError> + Sync. In hooks.rs, ApiCallLogger, InputEventSink and SentrySink get
+  Send + Sync as supertraits, so InputCallback and PrePostEnv are Send and Sync too. Of the 74 implementations of the
+  four traits in crates and tools, only the oracle's Recorder in tools/oracle/src/helpers/logging/pre_post.rs holds a
+  RefCell; give it a std::sync::Mutex. If the compiler names another trait object these futures hold across an await,
+  such as EnvironmentLookup in crates/betterlite-config/src/loader.rs (55 implementations), give that trait Send +
+  Sync the same way. No unsafe, and no wrapper type that asserts Send.
+
+
+  Then remove every workaround. Each LocalBoxFuture becomes futures_util::future::BoxFuture or impl Future + Send.
+  The future_not_send expects go, and an expect that no longer fires fails the build, so none can stay. Delete or
+  reword the comments that give the env's missing Sync as the reason for a shape: model_hub_dispatch.rs L173,
+  model_hub_dispatch/embedding.rs L145, model_hub_dispatch/predibase.rs L162, model_hub_dispatch/replicate.rs L38,
+  model_hub_dispatch/tests/support.rs L398 and compatible_chat_call/tests.rs L706 in betterlite-provider, and
+  crates/betterlite-core/src/api/bfl/edit_call.rs L142 and generation_call.rs L123. The BFL calls keep LiteLLM's
+  order, with the pre-call record before the POST; only their comment changes. No behavior changes anywhere.
+
+
+  Keep it from coming back. Add futures_util::future::LocalBoxFuture and futures_util::stream::LocalBoxStream to
+  disallowed-types in clippy.toml, each with the reason "provider and logging futures must be Send for the gateway;
+  give the trait objects they hold Send + Sync (decision 2026-11-18)". Check that clippy fires on a use of each.
+
+
+  Tests. Add a send test module next to each module that had a local future: chat_call::tests::send in
+  betterlite-anthropic, and model_hub_dispatch::tests::send, compatible_chat_call::tests::send and
+  compatible_embedding_call::tests::send and anthropic_dispatch::tests::send in betterlite-provider, and
+  anthropic::tests::send in betterlite-foundry. Each test builds one public entry point's call with
+  the module's existing fixtures, moves the future into std::thread::scope, blocks on it on that second thread, and
+  asserts the result the module's existing tests expect for that fixture. A future that is not Send does not compile
+  there. One test per entry point: chat_call, model_hub_dispatch::dispatch, its embedding, predibase and replicate
+  entries, the compatible chat execution, shared_embedding, the Anthropic dispatch entry and the Foundry completion.
+scope:
+  paths:
+  - crates/betterlite-logging/src/logging_pre_post/env.rs
+  - crates/betterlite-logging/src/logging_pre_post/hooks.rs
+  - crates/betterlite-anthropic/src/chat_call.rs
+  - crates/betterlite-anthropic/src/chat_call/**
+  - crates/betterlite-provider/src/model_hub_dispatch.rs
+  - crates/betterlite-provider/src/model_hub_dispatch/**
+  - crates/betterlite-provider/src/compatible_chat_call.rs
+  - crates/betterlite-provider/src/compatible_chat_call/**
+  - crates/betterlite-provider/src/compatible_embedding_call.rs
+  - crates/betterlite-provider/src/compatible_embedding_call/**
+  - crates/betterlite-provider/src/anthropic_dispatch.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/**
+  - crates/betterlite-foundry/src/anthropic/**
+  - crates/betterlite-openai/src/chat_content/media.rs
+  - crates/betterlite-bedrock/src/invoke_stream.rs
+  - crates/betterlite-core/src/api/bfl/edit_call.rs
+  - crates/betterlite-core/src/api/bfl/generation_call.rs
+  - crates/betterlite-config/src/loader.rs
+  - tools/oracle/src/helpers/logging/pre_post.rs
+  - clippy.toml
+  lint_tables: false
+references:
+- url: https://github.com/betterlite-ai/betterlite/blob/05152daf0c/crates/betterlite-provider/src/provider.rs#L54-L80
+  why: Adapter::execute returns impl Future + Send, so a provider call the gateway runs must be Send.
+- url: https://github.com/betterlite-ai/betterlite/blob/05152daf0c/crates/betterlite-logging/src/logging_pre_post/env.rs#L25-L52
+  why: LogSink, LoggerFn and PrePostEnv as they are, with no Sync bound on the trait objects.
+- url: https://github.com/betterlite-ai/betterlite/blob/05152daf0c/crates/betterlite-logging/src/logging_pre_post/hooks.rs#L24-L46
+  why: ApiCallLogger, InputEventSink, SentrySink and InputCallback, which PrePostEnv holds.
+- url: https://github.com/betterlite-ai/betterlite/blob/05152daf0c/crates/betterlite-provider/src/model_hub_dispatch.rs#L173-L179
+  why: One of the eleven LocalBoxFuture workarounds, with the comment that names the env as the reason.
+dod:
+- text: >-
+    LogSink, ApiCallLogger, InputEventSink and SentrySink require Send + Sync, LoggerFn is Sync, and no
+    LocalBoxFuture, LocalBoxStream or future_not_send expect is left in crates or tools.
+  proof: [no-local-futures]
+- text: >-
+    clippy.toml bans LocalBoxFuture and LocalBoxStream with a reason that names the decision.
+  proof: [no-local-futures]
+- text: >-
+    Each former local entry point runs on a second thread in a send test and gives the result its existing tests
+    expect: chat_call in betterlite-anthropic, and dispatch, embedding, predibase, replicate, the compatible chat
+    execution and shared_embedding in betterlite-provider.
+  proof: [send-anthropic, send-provider]
+- text: >-
+    The existing tests of the touched modules and the logging helper corpus still pass, so no behavior changed.
+  proof: [existing-tests, oracle-logging]
+checks:
+  optional: []
+  commands:
+  - id: no-local-futures
+    why: A local future, a future_not_send expect, a comment blaming the env or the clippy ban is missing or left over.
+    run: >-
+      ! git grep -n -E 'LocalBoxFuture|LocalBoxStream|future_not_send' -- crates tools
+      && ! git grep -n -i -E 'logging env (is|holds sinks that are) not Sync|logger sinks are not Sync' -- crates
+      && grep -q -F 'futures_util::future::LocalBoxFuture' clippy.toml
+      && grep -q -F 'futures_util::stream::LocalBoxStream' clippy.toml
+      && grep -q -E 'pub trait LogSink: Send \+ Sync' crates/betterlite-logging/src/logging_pre_post/env.rs
+  - id: send-anthropic
+    why: The Anthropic chat call future still cannot move to another thread, or gives a different result there.
+    run: >-
+      cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^chat_call::tests::send::/)'
+  - id: send-provider
+    why: A provider call future still cannot move to another thread, or gives a different result there.
+    run: >-
+      cargo nextest run --locked -p betterlite-provider --no-tests=fail
+      -E 'test(/^(model_hub_dispatch|compatible_chat_call|compatible_embedding_call|anthropic_dispatch)::tests::send::/)'
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^anthropic::tests::send::/)'
+  - id: existing-tests
+    why: Making the env Send changed what a call or the logging hooks do.
+    run: >-
+      cargo nextest run --locked -p betterlite-anthropic --no-tests=fail -E 'test(/^chat_call::/)'
+      && cargo nextest run --locked -p betterlite-provider --no-tests=fail
+      -E 'test(/^(model_hub_dispatch|compatible_chat_call|compatible_embedding_call|anthropic_dispatch)::/)'
+      && cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/^anthropic::/)'
+      && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^logging_pre_post::/)'
+  - id: oracle-logging
+    why: The Recorder change altered what the pre and post call helper records against LiteLLM.
+    run: >-
+      cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The Anthropic gateway path, impl Adapter for Anthropic and its POST /v1/chat/completions dispatch case; B9986 wires it once this task and B027 land.
+- Other trait objects that are not Sync but never reach these futures, such as the foundry credential sources, the Purview span sink and the server's MCP token serializer; their code already keeps its futures Send.
+- The many unit-struct Silent, Discard and Quiet sinks in tools/oracle and the tests; unit structs are Send and Sync already.
+pitfalls:
+- 'Put Send + Sync on the trait definitions, not + Sync at each use. A supertrait makes every implementor prove it once, and any later Send future can hold a PrePostEnv.'
+- 'Do not split the calls or move their PrePostEnv work out of the async code to dodge the bound. B027 tried that and dropped it.'
+- 'B027, B563 and B2206 land before this task, so their local futures and expects are on main when it starts. Convert them like the others; B563 shares chat_call with Foundry, so keep both callers working.'
+- 'Run each send test as a plain #[test] that builds a runtime on the second thread. A block_on on the thread of a #[tokio::test] panics, since that thread is already inside a runtime.'
+- 'Write the clippy.toml paths as futures_util::future::LocalBoxFuture and futures_util::stream::LocalBoxStream. If a use of the re-export does not trip the lint, add the futures_core path it resolves to as well.'
+review_level: standard
+budget:
+  max_changed_lines: 900
+  max_new_expects: 0
