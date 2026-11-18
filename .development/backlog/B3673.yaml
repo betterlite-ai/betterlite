@@ -1,7 +1,7 @@
 id: B3673
 milestone: M6 guardrails
 title: Native guardrail stream observation and Responses block events
-status: todo
+status: done
 depends_on: [B3661, B3663, B3669, B928, B2435]
 file: tasks/B3673-guardrail-block-events-and-stream-observation.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/anthropic/chat/guardrail_translation/handler.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2413

@@ -1,0 +1,15 @@
+task: B8604
+deviations:
+  - what: proxy_logging_obj, llm_router and general_settings reach the generator through constructor ports instead of module globals.
+    why: betterlite wires dependencies through explicit values and ports; the emitted frames have the same behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L9879
+  - what: Stream cleanup is handed to a synchronous port that the server runs on its task tracker instead of being awaited inside this generator.
+    why: Rust cannot await in Drop and detached tasks are forbidden; cleanup still receives the completion and disconnect flags exactly once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10070-L10079
+  - what: The failure log line corrects the spelling of the word occurred in LiteLLM's exception prefix.
+    why: the repository's spelling check rejects the misspelling; the log text is not part of the response and the message after the dash is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10032
+  - what: a UTF-8 character split across two provider byte chunks reaches the client whole, where LiteLLM decodes each chunk with errors="replace" and sends U+FFFD for each half
+    why: rules.yaml owned-behavior-is-built, the replacement characters are lost data no working setup relies on
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9957-L9958
+kept_bugs: []
