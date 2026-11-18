@@ -426,7 +426,11 @@ async fn a_failed_reconnect_keeps_its_typed_cause() {
             let inner = cause.cause.expect("the reconnect cause chain");
             assert_eq!(inner.message, "the socket closed");
         }
-        other => panic!("expected a typed read error with its reconnect cause, got {other:?}"),
+        other @ (ToolPolicyStoreError::ClassifiedRead { .. }
+        | ToolPolicyStoreError::Deadline { .. }
+        | ToolPolicyStoreError::Record { .. }) => {
+            panic!("expected a typed read error with its reconnect cause, got {other:?}")
+        }
     }
     assert!(
         !registry
@@ -449,7 +453,8 @@ async fn permission_reads_reconnect_with_the_permissions_reason() {
         },
     )
     .await;
-    assert!(result.is_err());
+    let error = result.expect_err("a failed permissions read");
+    assert!(matches!(error, ToolPolicyStoreError::Read { .. }));
     assert_eq!(
         reconnect.reasons(),
         ["sync_tool_policy_from_db_perms_lookup_failure".to_owned()]

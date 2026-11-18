@@ -608,22 +608,21 @@ async fn refresh_loads_tool_maps_and_permissions() {
     let (logs, guard) = captured_logs();
     sync(&db, &registry).await.expect("a loaded registry");
     drop(guard);
-    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(state.initialized);
-    assert_eq!(
-        state.input_policies.get("search"),
-        Some(&ToolInputPolicy::Trusted)
-    );
-    assert_eq!(
-        state.output_policies.get("search"),
-        Some(&ToolOutputPolicy::Trusted)
-    );
-    assert!(
-        logs.text().contains(
+    {
+        let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(state.initialized);
+        assert_eq!(
+            state.input_policies.get("search"),
+            Some(&ToolInputPolicy::Trusted)
+        );
+        assert_eq!(
+            state.output_policies.get("search"),
+            Some(&ToolOutputPolicy::Trusted)
+        );
+        assert!(logs.text().contains(
             "ToolPolicyRegistry: synced 1 tool policies and 1 object permissions from DB"
-        )
-    );
-    drop(state);
+        ));
+    }
     db.close().await;
 }
 
@@ -643,12 +642,13 @@ async fn refresh_replaces_the_blocked_list() {
     )
     .await;
     sync(&db, &registry).await.expect("a reloaded registry");
-    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
-    let released = state.effective_policies(&["search".to_owned()], Some("perm-1"), None);
-    assert_eq!(released.get("search"), Some(&ToolInputPolicy::Untrusted));
-    let blocked = state.effective_policies(&["other".to_owned()], Some("perm-1"), None);
-    assert_eq!(blocked.get("other"), Some(&ToolInputPolicy::Blocked));
-    drop(state);
+    {
+        let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+        let released = state.effective_policies(&["search".to_owned()], Some("perm-1"), None);
+        assert_eq!(released.get("search"), Some(&ToolInputPolicy::Untrusted));
+        let blocked = state.effective_policies(&["other".to_owned()], Some("perm-1"), None);
+        assert_eq!(blocked.get("other"), Some(&ToolInputPolicy::Blocked));
+    }
     db.close().await;
 }
 
@@ -665,14 +665,15 @@ async fn a_failed_permission_read_keeps_the_new_tool_maps_without_initializing()
     let result = sync(&db, &registry).await;
     drop(guard);
     assert!(result.is_err());
-    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(!state.initialized);
-    assert_eq!(
-        state.input_policies.get("search"),
-        Some(&ToolInputPolicy::Trusted)
-    );
-    assert!(state.blocked_tools_by_permission.is_empty());
-    drop(state);
+    {
+        let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(!state.initialized);
+        assert_eq!(
+            state.input_policies.get("search"),
+            Some(&ToolInputPolicy::Trusted)
+        );
+        assert!(state.blocked_tools_by_permission.is_empty());
+    }
     assert!(
         logs.text()
             .contains("ToolPolicyRegistry sync_tool_policy_from_db error")
@@ -696,17 +697,18 @@ async fn a_failed_permission_read_keeps_the_previous_blocked_tools() {
     )
     .await;
     assert!(sync(&db, &registry).await.is_err());
-    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
-    assert!(state.initialized);
-    assert_eq!(
-        state.input_policies.get("added"),
-        Some(&ToolInputPolicy::Trusted)
-    );
-    assert_eq!(
-        state.blocked_tools_by_permission.get("perm-1"),
-        Some(&vec!["other".to_owned()])
-    );
-    drop(state);
+    {
+        let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(state.initialized);
+        assert_eq!(
+            state.input_policies.get("added"),
+            Some(&ToolInputPolicy::Trusted)
+        );
+        assert_eq!(
+            state.blocked_tools_by_permission.get("perm-1"),
+            Some(&vec!["other".to_owned()])
+        );
+    }
     db.close().await;
 }
 
@@ -736,7 +738,11 @@ async fn refresh_does_not_reconnect_for_a_missing_table() {
                 matches!(source, NativeDbError::SqlState { code, .. } if code == SqlState::UNDEFINED_TABLE)
             );
         }
-        other => panic!("expected a typed read error, got {other:?}"),
+        other @ (ToolPolicyStoreError::ClassifiedRead { .. }
+        | ToolPolicyStoreError::Deadline { .. }
+        | ToolPolicyStoreError::Record { .. }) => {
+            panic!("expected a typed read error, got {other:?}")
+        }
     }
     db.close().await;
 }
