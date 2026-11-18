@@ -1,4 +1,3 @@
-from collections.abc import Callable
 from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.proxy._types import UpdateUserRequest
@@ -9,7 +8,6 @@ from litellm.proxy.management_endpoints.internal_user_endpoints import (
 from litellm.types.proxy.management_endpoints.internal_user_endpoints import (
     BulkDeleteUserRequest,
     BulkDeleteUsersResponse,
-    BulkNewUserItem,
     BulkNewUserMeta,
     BulkNewUserRequest,
     BulkNewUserResponse,
@@ -21,9 +19,8 @@ from litellm.types.proxy.management_endpoints.internal_user_endpoints import (
     UserSearchWhere,
     UserUpdateResult,
 )
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 from starlette.requests import Request
-from starlette.types import Scope
 
 _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _NAMES: Final = TypeAdapter(list[JsonValue])
@@ -53,17 +50,19 @@ UPDATE_KEYS: Final[tuple[str, ...]] = (
 )
 
 _BULK_UPDATE: Final[TypeAdapter[BulkUpdateUserRequest]] = TypeAdapter(BulkUpdateUserRequest)
-_BULK_DELETE: Final[TypeAdapter[BulkDeleteUserRequest]] = TypeAdapter(BulkDeleteUserRequest)
 _BULK_NEW: Final[TypeAdapter[BulkNewUserRequest]] = TypeAdapter(BulkNewUserRequest)
-_UPDATE_RESULT: Final[TypeAdapter[UserUpdateResult]] = TypeAdapter(UserUpdateResult)
-_UPDATE_RESPONSE: Final[TypeAdapter[BulkUpdateUserResponse]] = TypeAdapter(BulkUpdateUserResponse)
-_DELETE_RESULT: Final[TypeAdapter[UserDeleteResult]] = TypeAdapter(UserDeleteResult)
-_DELETE_RESPONSE: Final[TypeAdapter[BulkDeleteUsersResponse]] = TypeAdapter(BulkDeleteUsersResponse)
-_CREATE_RESULT: Final[TypeAdapter[UserCreateResult]] = TypeAdapter(UserCreateResult)
-_NEW_META: Final[TypeAdapter[BulkNewUserMeta]] = TypeAdapter(BulkNewUserMeta)
-_NEW_RESPONSE: Final[TypeAdapter[BulkNewUserResponse]] = TypeAdapter(BulkNewUserResponse)
-_LIST_RESPONSE: Final[TypeAdapter[UserListResponse]] = TypeAdapter(UserListResponse)
 _SEARCH_WHERE: Final[TypeAdapter[UserSearchWhere]] = TypeAdapter(UserSearchWhere)
+_RECORD_MODELS: Final[dict[Function, type[BaseModel]]] = {
+    "bulk_delete": BulkDeleteUserRequest,
+    "user_update_result": UserUpdateResult,
+    "bulk_update_response": BulkUpdateUserResponse,
+    "user_delete_result": UserDeleteResult,
+    "bulk_delete_response": BulkDeleteUsersResponse,
+    "user_create_result": UserCreateResult,
+    "bulk_new_meta": BulkNewUserMeta,
+    "bulk_new_response": BulkNewUserResponse,
+    "user_list_response": UserListResponse,
+}
 
 
 class Call(TypedDict):
@@ -126,104 +125,46 @@ def supplied_names(model_fields_set: set[str], keys: tuple[str, ...]) -> JsonVal
 
 def update_user_view(request: UpdateUserRequest) -> JsonValue:
     view = _BULK_UPDATE_USER_VIEW.validate_json(request.model_dump_json())
-    answer: dict[str, JsonValue] = {
+    return {
         "user_id": view["user_id"],
         "user_email": view["user_email"],
         "supplied": supplied_names(request.model_fields_set, UPDATE_KEYS),
     }
-    return answer
 
 
-def new_user_item_view(item: BulkNewUserItem) -> JsonValue:
-    view = _BULK_NEW_USER_ITEM_VIEW.validate_json(item.model_dump_json())
-    return _JSON.validate_json(_BULK_NEW_USER_ITEM_VIEW.dump_json(view))
-
-
-def bulk_update_answer(call: Call) -> JsonValue:
-    request = _BULK_UPDATE.validate_python(call["body"])
-    users: JsonValue = None
-    if request.users is not None:
-        users = [update_user_view(user) for user in request.users]
-    updates: JsonValue = None
-    if request.user_updates is not None:
-        updates = supplied_names(request.user_updates.model_fields_set, UPDATE_KEYS)
-    return {"users": users, "all_users": request.all_users, "user_updates": updates}
-
-
-def bulk_delete_answer(call: Call) -> JsonValue:
-    request = _BULK_DELETE.validate_python(call["body"])
-    return _JSON.validate_json(request.model_dump_json())
-
-
-def bulk_new_answer(call: Call) -> JsonValue:
-    request = _BULK_NEW.validate_python(call["body"])
-    return {"users": [new_user_item_view(item) for item in request.users]}
-
-
-def update_result_answer(call: Call) -> JsonValue:
-    result = _UPDATE_RESULT.validate_python(call["body"])
-    return _JSON.validate_json(result.model_dump_json())
-
-
-def update_response_answer(call: Call) -> JsonValue:
-    response = _UPDATE_RESPONSE.validate_python(call["body"])
-    return _JSON.validate_json(response.model_dump_json())
-
-
-def delete_result_answer(call: Call) -> JsonValue:
-    result = _DELETE_RESULT.validate_python(call["body"])
-    return _JSON.validate_json(result.model_dump_json())
-
-
-def delete_response_answer(call: Call) -> JsonValue:
-    response = _DELETE_RESPONSE.validate_python(call["body"])
-    return _JSON.validate_json(response.model_dump_json())
-
-
-def create_result_answer(call: Call) -> JsonValue:
-    result = _CREATE_RESULT.validate_python(call["body"])
-    return _JSON.validate_json(result.model_dump_json())
-
-
-def new_meta_answer(call: Call) -> JsonValue:
-    meta = _NEW_META.validate_python(call["body"])
-    return _JSON.validate_json(meta.model_dump_json())
-
-
-def new_response_answer(call: Call) -> JsonValue:
-    response = _NEW_RESPONSE.validate_python(call["body"])
-    return _JSON.validate_json(response.model_dump_json())
-
-
-def list_response_answer(call: Call) -> JsonValue:
-    response = _LIST_RESPONSE.validate_python(call["body"])
-    return _JSON.validate_json(response.model_dump_json())
-
-
-def search_where_answer(call: Call) -> JsonValue:
-    where_clause = _SEARCH_WHERE.validate_python(call["body"])
-    return _JSON.validate_json(_SEARCH_WHERE.dump_json(where_clause))
-
-
-ANSWERS: Final[dict[Function, Callable[[Call], JsonValue]]] = {
-    "bulk_update": bulk_update_answer,
-    "bulk_delete": bulk_delete_answer,
-    "bulk_new": bulk_new_answer,
-    "user_update_result": update_result_answer,
-    "bulk_update_response": update_response_answer,
-    "user_delete_result": delete_result_answer,
-    "bulk_delete_response": delete_response_answer,
-    "user_create_result": create_result_answer,
-    "bulk_new_meta": new_meta_answer,
-    "bulk_new_response": new_response_answer,
-    "user_list_response": list_response_answer,
-    "user_search_where": search_where_answer,
-}
+def answer(call: Call) -> JsonValue:
+    function = call["function"]
+    body = call["body"]
+    if function == "bulk_update":
+        request = _BULK_UPDATE.validate_python(body)
+        users: JsonValue = None
+        if request.users is not None:
+            users = [update_user_view(user) for user in request.users]
+        updates: JsonValue = None
+        if request.user_updates is not None:
+            updates = supplied_names(request.user_updates.model_fields_set, UPDATE_KEYS)
+        return {"users": users, "all_users": request.all_users, "user_updates": updates}
+    if function == "bulk_new":
+        request = _BULK_NEW.validate_python(body)
+        return {
+            "users": [
+                _JSON.validate_json(
+                    _BULK_NEW_USER_ITEM_VIEW.dump_json(
+                        _BULK_NEW_USER_ITEM_VIEW.validate_json(item.model_dump_json())
+                    )
+                )
+                for item in request.users
+            ]
+        }
+    if function == "user_search_where":
+        where_clause = _SEARCH_WHERE.validate_python(body)
+        return _JSON.validate_json(_SEARCH_WHERE.dump_json(where_clause))
+    return _JSON.validate_json(_RECORD_MODELS[function].model_validate(body).model_dump_json())
 
 
 def build_request(query: str) -> Request:
     headers: list[tuple[bytes, bytes]] = []
-    scope: Scope = {
+    scope: dict[str, str | bytes | list[tuple[bytes, bytes]]] = {
         "type": "http",
         "scheme": "http",
         "path": "/user/info",
@@ -243,7 +184,7 @@ def query_outcome(step: QueryStep) -> QueryOutcome:
 
 def call_outcome(call: Call) -> JsonValue:
     try:
-        return {"ok": True, "value": ANSWERS[call["function"]](call)}
+        return {"ok": True, "value": answer(call)}
     except (ValueError, TypeError, KeyError):
         return {"ok": False}
 
