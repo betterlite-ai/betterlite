@@ -175,11 +175,15 @@ impl Session<'_> {
 }
 
 fn failure_view(error: &StreamFailure, details: &IndexMap<String, Json>) -> Value {
-    let mut pre = None;
-    if let ErrorClass::MidStreamFallback(fallback) = &error.exception {
-        pre = Some(fallback.is_pre_first_chunk);
-    }
-    json!({"status": error.exception.metadata().status_code, "pre": pre,
+    json!({"status": error.exception.metadata().status_code,
+        "pre": fallback_pre(&error.exception),
         "original": error.original_exception.is_some(),
         "billed": details.contains_key("combined_usage_object")})
+}
+
+fn fallback_pre(class: &ErrorClass) -> Option<bool> {
+    let ErrorClass::MidStreamFallback(fallback) = class else {
+        return None;
+    };
+    Some(fallback.is_pre_first_chunk)
 }
