@@ -28,9 +28,10 @@ deviations:
 - what: >-
     A provider answer that the typed records cannot read, such as a missing result field or category, a result
     field or category of the wrong type, a category key repeated under both spellings, or an applied input type the
-    SDK's literal does not allow (audio, or image on a text-only category), answers 500 internal_server_error. LiteLLM constructs its moderation model
-    leniently, so the same answer becomes a 200 whose categories, scores and input types carry the nulls and raw
-    values the provider sent; only a result key that LiteLLM's own record cannot take at all, such as a list where
+    SDK's literal does not allow (audio, or image on a text-only category), answers 500 internal_server_error.
+    LiteLLM constructs its moderation model leniently, so the same answer becomes a 200 whose categories, scores and
+    input types carry the nulls and raw values the provider sent; only a result key that LiteLLM's own record cannot
+    take at all, such as a list where
     the categories dict belongs or a flagged string it cannot read as a bool, answers 500 with the literal strings
     "None" as type and param.
   why: >-
