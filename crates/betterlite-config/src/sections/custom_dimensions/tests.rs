@@ -4,12 +4,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
-use rstest::{files, rstest};
+use rstest::rstest;
 
 use crate::loader::ConfigLoader;
+use crate::sections::custom_dimensions::pattern::{PatternProblem, pattern_work};
 use crate::sections::custom_dimensions::{
-    Config, DimensionProblem, PatternProblem, ScoringMode, Settings, pattern_work,
-    validate_dimension,
+    Config, DimensionProblem, ScoringMode, Settings, validate_dimension,
 };
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {

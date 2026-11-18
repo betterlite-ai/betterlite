@@ -8,7 +8,7 @@ from litellm.router_strategy.complexity_router.config import (
     ComplexityTier,
     custom_pattern_work,
 )
-from pydantic import TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError
 from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
@@ -60,7 +60,7 @@ def _entry(pattern: str) -> Entry:
 class CustomDimensions(Operation):
     function: Literal["pattern_work", "validate", "classify"]
     config: ConfigInput | None = None
-    patterns: list[str] = []
+    patterns: list[str] = Field(default_factory=list)
     prompt: str = ""
     system_prompt: str | None = None
 

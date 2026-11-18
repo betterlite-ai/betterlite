@@ -53,7 +53,14 @@ fn merge(branches: &[Vec<PyNode>]) -> Option<PyNode> {
                     push_unique(&mut items, item.clone());
                 }
             }
-            _ => return None,
+            PyNode::NotLiteral(_)
+            | PyNode::Any
+            | PyNode::Assertion(_)
+            | PyNode::Class { negated: true, .. }
+            | PyNode::Unsupported
+            | PyNode::Subpattern(_)
+            | PyNode::Branch(_)
+            | PyNode::Repeat { .. } => return None,
         }
     }
     Some(PyNode::Class {

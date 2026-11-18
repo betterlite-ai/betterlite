@@ -1,5 +1,4 @@
 use std::fmt::Write as _;
-use std::iter::Peekable;
 use std::str::Chars;
 
 use super::PatternProblem;
@@ -8,11 +7,9 @@ mod groups;
 
 pub(super) fn pattern(input: &str) -> Result<String, PatternProblem> {
     let mut walker = Walker {
-        input: input.chars().peekable(),
+        input: input.chars(),
         output: String::with_capacity(input.len()),
-        class: false,
-        leading: false,
-        caret: false,
+        class: ClassState::Outside,
         at_start: true,
         verbose: vec![false],
     };
@@ -20,7 +17,7 @@ pub(super) fn pattern(input: &str) -> Result<String, PatternProblem> {
         let Some(character) = walker.input.next() else {
             return Ok(walker.output);
         };
-        if walker.class {
+        if walker.class != ClassState::Outside {
             walker.in_class(character)?;
         } else {
             walker.outside(character)?;
@@ -28,14 +25,20 @@ pub(super) fn pattern(input: &str) -> Result<String, PatternProblem> {
     }
 }
 
-struct Walker<'a> {
-    input: Peekable<Chars<'a>>,
+struct Walker<'input> {
+    input: Chars<'input>,
     output: String,
-    class: bool,
-    leading: bool,
-    caret: bool,
+    class: ClassState,
     at_start: bool,
     verbose: Vec<bool>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClassState {
+    Outside,
+    Leading,
+    Negated,
+    Body,
 }
 
 impl Walker<'_> {
@@ -44,13 +47,11 @@ impl Walker<'_> {
             '\\' => self.escape(false),
             '[' => {
                 self.output.push('[');
-                self.class = true;
-                self.leading = true;
-                self.caret = false;
+                self.class = ClassState::Leading;
                 self.at_start = false;
                 Ok(())
             }
-            '(' => self.group(),
+            '(' => groups::group(self),
             ')' => {
                 self.output.push(')');
                 if self.verbose.len() != 1 {
@@ -64,27 +65,28 @@ impl Walker<'_> {
                 Ok(())
             }
             '#' if matches!(self.verbose.last(), Some(true)) => {
-                for character in self.input.by_ref() {
-                    if character == '\n' {
-                        break;
-                    }
-                }
+                let _newline = self.input.by_ref().find(|next| *next == '\n');
                 Ok(())
             }
             _ => {
-                let verbose = matches!(self.verbose.last(), Some(true));
-                let space = matches!(character, ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r');
-                if verbose && character.is_whitespace() && !space {
-                    self.output.extend(character.escape_unicode());
-                } else if !(verbose && space) {
-                    self.output.push(character);
-                }
-                if !(verbose && space) {
-                    self.at_start = false;
-                }
+                self.literal(character);
                 Ok(())
             }
         }
+    }
+
+    fn literal(&mut self, character: char) {
+        let verbose = matches!(self.verbose.last(), Some(true));
+        let space = matches!(character, ' ' | '\t' | '\n' | '\u{0B}' | '\u{0C}' | '\r');
+        if verbose && space {
+            return;
+        }
+        if verbose && character.is_whitespace() {
+            self.output.extend(character.escape_unicode());
+        } else {
+            self.output.push(character);
+        }
+        self.at_start = false;
     }
 
     fn escape(&mut self, class: bool) -> Result<(), PatternProblem> {
@@ -98,24 +100,14 @@ impl Walker<'_> {
             'Z' => self.output.push_str("\\z"),
             'b' if class => self.output.push_str("\\x08"),
             // Python reads up to three octal digits; the matcher engine reads a codepoint escape
-            '0'..='7' => {
-                let mut value = u32::from(character) - u32::from('0');
-                for _ in 0..2 {
-                    let Some(digit) = self.input.peek().and_then(|next| next.to_digit(8)) else {
-                        break;
-                    };
-                    value = value.saturating_mul(8).saturating_add(digit);
-                    let _ = self.input.next();
-                }
-                let _ignored = write!(self.output, "\\x{{{value:x}}}");
-            }
+            '0'..='7' => self.octal(character),
             'z' | 'p' | 'P' => return Err(PatternProblem::Syntax),
-            'x' | 'u' | 'U' if self.input.peek() == Some(&'{') => {
+            'x' | 'u' | 'U' if self.input.clone().next() == Some('{') => {
                 return Err(PatternProblem::Syntax);
             }
             '<' => self.output.push_str("\\x3c"),
             '>' => self.output.push_str("\\x3e"),
-            character if !character.is_ascii() => self.output.extend(character.escape_unicode()),
+            _ if !character.is_ascii() => self.output.extend(character.escape_unicode()),
             _ => {
                 self.output.push('\\');
                 self.output.push(character);
@@ -124,43 +116,51 @@ impl Walker<'_> {
         Ok(())
     }
 
+    fn octal(&mut self, character: char) {
+        let mut value = u32::from(character).saturating_sub(u32::from('0'));
+        let digits = self
+            .input
+            .clone()
+            .take(2)
+            .map_while(|next| next.to_digit(8));
+        for digit in digits {
+            value = value.saturating_mul(8).saturating_add(digit);
+            let _digit = self.input.next();
+        }
+        let _written = write!(self.output, "\\x{{{value:x}}}");
+    }
+
     fn in_class(&mut self, character: char) -> Result<(), PatternProblem> {
         if character == '\\' {
-            self.leading = false;
+            self.class = ClassState::Body;
             return self.escape(true);
         }
-        if self.leading {
-            match character {
-                ']' => {
-                    self.leading = false;
-                    self.output.push_str("\\]");
-                    return Ok(());
-                }
-                '^' if !self.caret => {
-                    self.caret = true;
-                    self.output.push('^');
-                    return Ok(());
-                }
-                '-' => {
-                    self.leading = false;
-                    self.output.push_str("\\-");
-                    return Ok(());
-                }
-                _ => {}
+        let leading = matches!(self.class, ClassState::Leading | ClassState::Negated);
+        match character {
+            '^' if self.class == ClassState::Leading => {
+                self.class = ClassState::Negated;
+                self.output.push('^');
             }
-        } else if character == ']' {
-            self.class = false;
-            self.output.push(']');
-            return Ok(());
+            ']' | '-' if leading => {
+                self.class = ClassState::Body;
+                self.output.push('\\');
+                self.output.push(character);
+            }
+            ']' => {
+                self.class = ClassState::Outside;
+                self.output.push(']');
+            }
+            _ => {
+                self.class = ClassState::Body;
+                self.class_character(character);
+            }
         }
-        self.leading = false;
-        self.class_character(character);
         Ok(())
     }
 
     fn class_character(&mut self, character: char) {
         let doubled = matches!(
-            (character, self.input.peek().copied()),
+            (character, self.input.clone().next()),
             ('&', Some('&')) | ('~', Some('~'))
         );
         if doubled || matches!(character, '[' | '#') || character.is_whitespace() {
@@ -186,9 +186,7 @@ impl Walker<'_> {
             self.output.push_str("\\{");
             return;
         }
-        for _ in 0..=content.chars().count() {
-            let _ = self.input.next();
-        }
+        let _closing_brace = self.input.nth(content.chars().count());
         self.output.push('{');
         if content.starts_with(',') {
             self.output.push('0');

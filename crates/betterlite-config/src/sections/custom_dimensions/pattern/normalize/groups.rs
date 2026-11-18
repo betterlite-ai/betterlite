@@ -3,119 +3,106 @@ use std::fmt::Write as _;
 use super::super::PatternProblem;
 use super::Walker;
 
-impl Walker<'_> {
-    pub(super) fn group(&mut self) -> Result<(), PatternProblem> {
-        let mut probe = self.input.clone();
-        match (probe.next(), probe.next()) {
-            (Some('?'), Some('#')) => self.comment_group(),
-            (Some('?'), Some('<')) => Err(PatternProblem::Syntax),
-            (Some('?'), Some('P')) => self.named_group(),
-            (Some('?'), Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
-                self.flags_group()
-            }
-            _ => {
-                self.output.push('(');
-                let verbose = matches!(self.verbose.last(), Some(true));
-                self.verbose.push(verbose);
-                self.at_start = false;
-                Ok(())
-            }
+pub(super) fn group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
+    let mut probe = walker.input.clone();
+    match (probe.next(), probe.next()) {
+        (Some('?'), Some('#')) => comment_group(walker),
+        (Some('?'), Some('<')) => Err(PatternProblem::Syntax),
+        (Some('?'), Some('P')) => named_group(walker),
+        (Some('?'), Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
+            flags_group(walker)
+        }
+        _ => {
+            walker.output.push('(');
+            let verbose = matches!(walker.verbose.last(), Some(true));
+            walker.verbose.push(verbose);
+            walker.at_start = false;
+            Ok(())
         }
     }
+}
 
-    fn named_group(&mut self) -> Result<(), PatternProblem> {
-        let mut probe = self.input.clone();
-        probe.next();
-        probe.next();
-        if probe.next() != Some('<') {
+fn named_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
+    let mut probe = walker.input.clone();
+    if probe.nth(2) != Some('<') {
+        return Err(PatternProblem::Syntax);
+    }
+    let mut name = String::new();
+    loop {
+        match probe.next() {
+            Some('>') => break,
+            Some(character) => name.push(character),
+            None => return Err(PatternProblem::Syntax),
+        }
+    }
+    if !identifier(&name) {
+        return Err(PatternProblem::Syntax);
+    }
+    let _written = write!(walker.output, "(?P<{name}>");
+    let _closing_angle = walker.input.nth(name.chars().count().saturating_add(3));
+    let verbose = matches!(walker.verbose.last(), Some(true));
+    walker.verbose.push(verbose);
+    walker.at_start = false;
+    Ok(())
+}
+
+fn flags_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
+    let mut probe = walker.input.clone().skip(1);
+    let mut spec = String::new();
+    let terminator = loop {
+        match probe.next() {
+            Some(character @ (':' | ')')) => break character,
+            Some(letter @ ('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
+                spec.push(letter);
+            }
+            _ => return Err(PatternProblem::Syntax),
+        }
+    };
+    apply_flags(walker, &spec, terminator)
+}
+
+fn apply_flags(
+    walker: &mut Walker<'_>,
+    spec: &str,
+    terminator: char,
+) -> Result<(), PatternProblem> {
+    let (added, removed) = kept_flags(spec)?;
+    let _terminator = walker.input.nth(spec.chars().count().saturating_add(1));
+    let verbose = added.contains('x')
+        || (!removed.contains('x') && matches!(walker.verbose.last(), Some(true)));
+    if terminator == ')' {
+        if !walker.at_start || spec.contains('-') {
             return Err(PatternProblem::Syntax);
         }
-        let mut name = String::new();
-        loop {
-            match probe.next() {
-                Some('>') => break,
-                Some(character) => name.push(character),
-                None => return Err(PatternProblem::Syntax),
-            }
+        if !added.is_empty() {
+            let _ignored = write!(walker.output, "(?{added})");
         }
-        if !identifier(&name) {
-            return Err(PatternProblem::Syntax);
+        if let Some(base) = walker.verbose.first_mut() {
+            *base = verbose;
         }
-        self.output.push_str("(?P<");
-        self.output.push_str(&name);
-        self.output.push('>');
-        for _ in 0..name.chars().count().saturating_add(4) {
-            let _ = self.input.next();
-        }
-        let verbose = matches!(self.verbose.last(), Some(true));
-        self.verbose.push(verbose);
-        self.at_start = false;
-        Ok(())
+        return Ok(());
     }
+    let scoped = if removed.is_empty() {
+        added
+    } else {
+        format!("{added}-{removed}")
+    };
+    let _ignored = write!(walker.output, "(?{scoped}:");
+    walker.verbose.push(verbose);
+    walker.at_start = false;
+    Ok(())
+}
 
-    fn flags_group(&mut self) -> Result<(), PatternProblem> {
-        let mut probe = self.input.clone();
-        probe.next();
-        let mut spec = String::new();
-        let terminator = loop {
-            match probe.next() {
-                Some(character @ (':' | ')')) => break character,
-                Some(letter @ ('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
-                    spec.push(letter);
-                }
-                _ => return Err(PatternProblem::Syntax),
+fn comment_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
+    let _prefix = walker.input.nth(1);
+    loop {
+        match walker.input.next() {
+            Some('\\') => {
+                walker.input.next().ok_or(PatternProblem::Syntax)?;
             }
-        };
-        let (added, removed) = kept_flags(&spec)?;
-        for _ in 0..spec.chars().count().saturating_add(2) {
-            let _ = self.input.next();
-        }
-        let inherited = matches!(self.verbose.last(), Some(true));
-        let verbose = if added.contains('x') {
-            true
-        } else if removed.contains('x') {
-            false
-        } else {
-            inherited
-        };
-        if terminator == ')' {
-            // a global flag group can only turn flags on, and only at the start of the expression
-            if !self.at_start || spec.contains('-') {
-                return Err(PatternProblem::Syntax);
-            }
-            if !added.is_empty() {
-                let _ignored = write!(self.output, "(?{added})");
-            }
-            if let Some(base) = self.verbose.first_mut() {
-                *base = verbose;
-            }
-            return Ok(());
-        }
-        let scoped = if removed.is_empty() {
-            added
-        } else {
-            format!("{added}-{removed}")
-        };
-        let _ignored = write!(self.output, "(?{scoped}:");
-        self.verbose.push(verbose);
-        self.at_start = false;
-        Ok(())
-    }
-
-    fn comment_group(&mut self) -> Result<(), PatternProblem> {
-        self.input.next();
-        self.input.next();
-        loop {
-            match self.input.next() {
-                Some('\\') => {
-                    if self.input.next().is_none() {
-                        return Err(PatternProblem::Syntax);
-                    }
-                }
-                Some(')') => return Ok(()),
-                Some(_) => {}
-                None => return Err(PatternProblem::Syntax),
-            }
+            Some(')') => return Ok(()),
+            Some(_) => {}
+            None => return Err(PatternProblem::Syntax),
         }
     }
 }
@@ -131,7 +118,6 @@ fn identifier(name: &str) -> bool {
     characters.all(|character| character == '_' || unicode_ident::is_xid_continue(character))
 }
 
-// the flags the matcher engine carries, deduped
 fn kept_flags(spec: &str) -> Result<(String, String), PatternProblem> {
     let (added, removed) = spec.split_once('-').unwrap_or((spec, ""));
     if removed.contains('-') || (spec.contains('-') && removed.is_empty()) {
