@@ -110,19 +110,10 @@ impl JitterSource for FullJitter {
 }
 
 #[derive(Default)]
-pub(crate) struct CountingPause {
-    delays: Mutex<Vec<Duration>>,
-}
+pub(crate) struct NoopPause;
 
-impl CountingPause {
-    pub(crate) fn pauses(&self) -> usize {
-        lock(&self.delays).len()
-    }
-}
-
-impl RetryPause for CountingPause {
-    fn pause(&self, delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        lock(&self.delays).push(delay);
+impl RetryPause for NoopPause {
+    fn pause(&self, _delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
         Box::pin(async {})
     }
 }

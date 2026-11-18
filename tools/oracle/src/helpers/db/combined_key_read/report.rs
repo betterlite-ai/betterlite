@@ -21,8 +21,8 @@ use tokio::runtime::Builder;
 use tokio_util::task::TaskTracker;
 
 use super::fakes::{
-    CountingDiagnostics, CountingHook, CountingPause, DeprecatedStep, FullJitter,
-    RecordedReconnect, RecordingSink, RowStep, ScriptedDatabase, ScriptedReconnect, StepClock,
+    CountingDiagnostics, CountingHook, DeprecatedStep, FullJitter, NoopPause, RecordedReconnect,
+    RecordingSink, RowStep, ScriptedDatabase, ScriptedReconnect, StepClock,
 };
 use super::{DeprecatedFields, Fault, Input, QueryType, ReconnectStep, Step};
 
@@ -46,7 +46,7 @@ struct ServiceState {
     sink: Arc<RecordingSink>,
     clock: StepClock,
     jitter: FullJitter,
-    pause: CountingPause,
+    pause: NoopPause,
     diagnostics: CountingDiagnostics,
     hook: CountingHook,
     tasks: TaskTracker,
@@ -66,7 +66,7 @@ impl ServiceState {
             sink: Arc::new(RecordingSink::default()),
             clock: StepClock::new(Duration::from_millis(input.step_millis), wall),
             jitter: FullJitter,
-            pause: CountingPause::default(),
+            pause: NoopPause,
             diagnostics: CountingDiagnostics::default(),
             hook: CountingHook::default(),
             tasks: TaskTracker::new(),
@@ -293,7 +293,7 @@ impl ReconnectReport {
             lock_timeout_seconds: recorded.lock_timeout.map(|timeout| timeout.as_secs_f64()),
             stale: StaleReport {
                 stale_present: recorded.stale.is_some(),
-                stale_live: recorded.stale.unwrap_or(false),
+                stale_live: recorded.stale.unwrap_or_default(),
             },
         }
     }
