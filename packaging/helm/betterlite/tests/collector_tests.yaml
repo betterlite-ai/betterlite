@@ -1,0 +1,71 @@
+suite: test gateway collector sidecar
+templates: [gateway/configmap.yaml, gateway/deployment.yaml]
+values: [./values/required.yaml]
+tests:
+  - it: adds no sidecar, env or volume when the collector is off
+    template: gateway/deployment.yaml
+    asserts:
+      - lengthEqual: { path: 'spec.template.spec.containers', count: 1 }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_COLLECTOR_ENABLED, value: "true" }, any: true }
+      - notContains: { path: 'spec.template.spec.volumes', content: { name: collector-socket }, any: true }
+
+  - it: runs the collector as a sidecar sharing env, config, the pod pool and a unix socket emptyDir
+    template: gateway/deployment.yaml
+    set:
+      gateway.collector.enabled: true
+      gateway.collector.bufferSize: 250
+      gateway.collector.onUnavailable: drop
+      gateway.image.tag: v1.2.3
+      gateway.numWorkers: 4
+      database.connectionPool.enabled: true
+      database.connectionPool.maxDbConnections: 8
+      database.connectionPool.maxClientConn: 250
+      gateway.envSecrets: [litellm-license]
+      gateway.volumes: [{ name: redis-ca, secret: { secretName: redis-ca } }]
+      gateway.volumeMounts: [{ name: redis-ca, mountPath: /etc/betterlite/redis-ca, readOnly: true }]
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_COLLECTOR_ENABLED, value: "true" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_COLLECTOR_ADDRESS, value: unix:///var/run/litellm/collector.sock }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_COLLECTOR_BUFFER_SIZE, value: "250" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_COLLECTOR_ON_UNAVAILABLE, value: drop }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_COLLECTOR_DRAIN_TIMEOUT_SECONDS, value: "10" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].volumeMounts', content: { name: collector-socket, mountPath: /var/run/litellm }, any: true }
+      - equal: { path: 'spec.template.spec.containers[1].name', value: collector }
+      - equal: { path: 'spec.template.spec.containers[1].image', value: 'ghcr.io/betterlite-ai/betterlite-gateway:v1.2.3' }
+      - equal: { path: 'spec.template.spec.containers[1].command', value: [betterlite, collector] }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_JOB_ROLE, value: collector }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: CONFIG_FILE_PATH, value: /etc/betterlite/config.yaml }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_ENABLED, value: "true" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "8" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "250" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: DATABASE_HOST, value: postgres.example.com }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_COLLECTOR_ADDRESS, value: unix:///var/run/litellm/collector.sock }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: NUM_WORKERS }, any: true }
+      - equal: { path: 'spec.template.spec.containers[1].envFrom', value: [{ secretRef: { name: litellm-license } }] }
+      - contains: { path: 'spec.template.spec.containers[1].volumeMounts', content: { name: gateway-config, mountPath: /etc/betterlite/config.yaml, subPath: config.yaml }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].volumeMounts', content: { name: collector-socket, mountPath: /var/run/litellm }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].volumeMounts', content: { name: redis-ca, mountPath: /etc/betterlite/redis-ca, readOnly: true }, any: true }
+      - equal: { path: 'spec.template.spec.containers[1].resources.limits.cpu', value: "1" }
+      - contains: { path: 'spec.template.spec.volumes', content: { name: collector-socket, emptyDir: { sizeLimit: 1Mi } }, any: true }
+
+  - it: uses loopback tcp without a socket volume when the address is not a unix socket
+    template: gateway/deployment.yaml
+    set:
+      gateway.collector.enabled: true
+      gateway.collector.address: 'tcp://127.0.0.1:4010'
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_COLLECTOR_ADDRESS, value: 'tcp://127.0.0.1:4010' }, any: true }
+      - notContains: { path: 'spec.template.spec.volumes', content: { name: collector-socket }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[1].volumeMounts', content: { name: collector-socket }, any: true }
+
+  - it: runs the command from gateway.collector.command and shares the gateway log level and extra env
+    template: gateway/deployment.yaml
+    set:
+      gateway.collector.enabled: true
+      gateway.collector.command: [/opt/collector, --drain, "5"]
+      gateway.logLevel: DEBUG
+      gateway.extraEnv: [{ name: EXTRA_SETTING, value: "1" }]
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[1].command', value: [/opt/collector, --drain, "5"] }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_LOG, value: DEBUG }, any: true }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: EXTRA_SETTING, value: "1" }, any: true }

@@ -1,0 +1,112 @@
+suite: test migrations Job ServiceAccount resolution, workload and scheduling
+templates: [migrations-job.yaml]
+values: [./values/required.yaml]
+tests:
+  - it: renders a Job that runs betterlite-db-admin migrate with the migration env
+    asserts:
+      - isKind: { of: Job }
+      - equal: { path: metadata.name, value: RELEASE-NAME-betterlite-migrations }
+      - equal: { path: 'spec.backoffLimit', value: 4 }
+      - equal: { path: 'spec.ttlSecondsAfterFinished', value: 120 }
+      - equal: { path: 'spec.template.spec.restartPolicy', value: Never }
+      - equal: { path: 'spec.template.spec.containers[0].name', value: db-migrations }
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite-backend:0.1.0' }
+      - equal: { path: 'spec.template.spec.containers[0].command', value: [betterlite-db-admin, migrate] }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DISABLE_SCHEMA_UPDATE, value: "true" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_MASTER_KEY, valueFrom: { secretKeyRef: { name: litellm-master-key-secret, key: master-key } } }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST, value: postgres.example.com }, any: true }
+
+  - it: borrows the namespace default account when no ServiceAccount is configured
+    asserts:
+      - equal: { path: 'spec.template.spec.serviceAccountName', value: default }
+      - equal: { path: 'spec.template.spec.automountServiceAccountToken', value: false }
+
+  - it: falls back to the namespace default account when the chart creates the backend ServiceAccount
+    set:
+      serviceAccounts.backend.create: true
+    asserts:
+      - equal: { path: 'spec.template.spec.serviceAccountName', value: default }
+      - notEqual: { path: 'spec.template.spec.serviceAccountName', value: RELEASE-NAME-betterlite-backend }
+
+  - it: prefers an explicit migration ServiceAccount over the created backend one
+    set:
+      serviceAccounts.backend.create: true
+      migrationJob.serviceAccountName: migrations-sa
+    asserts:
+      - equal: { path: 'spec.template.spec.serviceAccountName', value: migrations-sa }
+
+  - it: keeps sharing an existing backend ServiceAccount the chart does not create
+    set:
+      serviceAccounts.backend.name: existing-backend-sa
+    asserts:
+      - equal: { path: 'spec.template.spec.serviceAccountName', value: existing-backend-sa }
+
+  - it: renders no hardening fields by default but the chart labels plus the migrations component
+    asserts:
+      - isNull: { path: 'spec.template.spec.securityContext' }
+      - isNull: { path: 'spec.template.spec.containers[0].securityContext' }
+      - isNull: { path: 'spec.template.spec.volumes' }
+      - isNull: { path: 'spec.template.spec.containers[0].volumeMounts' }
+      - equal: { path: 'spec.template.metadata.labels', value: { app.kubernetes.io/component: migrations, app.kubernetes.io/instance: RELEASE-NAME, app.kubernetes.io/managed-by: Helm, app.kubernetes.io/name: betterlite, helm.sh/chart: betterlite-0.1.0 } }
+
+  - it: renders pod-level and container-level securityContext in their own scopes
+    set:
+      migrationJob.podSecurityContext: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } }
+      migrationJob.securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+    asserts:
+      - equal: { path: 'spec.template.spec.securityContext', value: { runAsNonRoot: true, runAsUser: 65532, seccompProfile: { type: RuntimeDefault } } }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext', value: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } } }
+
+  - it: renders volumes on the pod and volumeMounts on the migration container
+    set:
+      migrationJob.volumes: [{ name: tmp, emptyDir: { sizeLimit: 64Mi } }]
+      migrationJob.volumeMounts: [{ name: tmp, mountPath: /tmp }]
+    asserts:
+      - equal: { path: 'spec.template.spec.volumes', value: [{ name: tmp, emptyDir: { sizeLimit: 64Mi } }] }
+      - equal: { path: 'spec.template.spec.containers[0].volumeMounts', value: [{ name: tmp, mountPath: /tmp }] }
+
+  - it: merges podLabels over the chart labels and lets them override the component label
+    set:
+      migrationJob.podLabels: { egress-policy: restricted, app.kubernetes.io/component: batch-migrations }
+    asserts:
+      - equal: { path: 'spec.template.metadata.labels["egress-policy"]', value: restricted }
+      - equal: { path: 'spec.template.metadata.labels["app.kubernetes.io/component"]', value: batch-migrations }
+      - equal: { path: 'spec.template.metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+
+  - it: honours an operator-supplied deadline
+    set:
+      migrationJob.activeDeadlineSeconds: 600
+    asserts:
+      - equal: { path: 'spec.activeDeadlineSeconds', value: 600 }
+
+  - it: omits the deadline entirely when it is nulled out
+    set:
+      migrationJob.activeDeadlineSeconds: null
+    asserts:
+      - notExists: { path: 'spec.activeDeadlineSeconds' }
+
+  - it: renders scheduling from the migrationJob block and never the gateway's
+    set:
+      gateway.nodeSelector: { intent: gateway-nodes }
+      gateway.tolerations: [{ key: intent, operator: Equal, value: gateway-nodes, effect: NoSchedule }]
+      migrationJob.nodeSelector: { intent: no-csi-nodes }
+      migrationJob.tolerations: [{ key: intent, operator: Equal, value: no-csi-nodes, effect: NoSchedule }]
+      migrationJob.affinity: { nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: { nodeSelectorTerms: [{ matchExpressions: [{ key: intent, operator: In, values: [no-csi-nodes] }] }] } } }
+    asserts:
+      - equal: { path: 'spec.template.spec.nodeSelector', value: { intent: no-csi-nodes } }
+      - equal: { path: 'spec.template.spec.tolerations', value: [{ key: intent, operator: Equal, value: no-csi-nodes, effect: NoSchedule }] }
+      - equal: { path: 'spec.template.spec.affinity', value: { nodeAffinity: { requiredDuringSchedulingIgnoredDuringExecution: { nodeSelectorTerms: [{ matchExpressions: [{ key: intent, operator: In, values: [no-csi-nodes] }] }] } } } }
+
+  - it: passes imagePullSecrets and extraEnv through
+    set:
+      imagePullSecrets: [{ name: registry-creds }]
+      migrationJob.extraEnv: [{ name: MIGRATION_TIMEOUT, value: "600" }]
+    asserts:
+      - equal: { path: 'spec.template.spec.imagePullSecrets', value: [{ name: registry-creds }] }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: MIGRATION_TIMEOUT, value: "600" }, any: true }
+
+  - it: renders nothing when the migration Job is disabled
+    set:
+      migrationJob.enabled: false
+    asserts:
+      - hasDocuments: { count: 0 }
