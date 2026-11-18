@@ -1,0 +1,110 @@
+task: B3977
+deviations:
+  - what: >-
+      _copy_block_payload_base has no function of its own; prepare_block_failure_payload clones the copied
+      standard_logging_object at the one place it needs it.
+    why: >-
+      The LiteLLM helper's whole body is safe_deep_copy(base), and the no-one-line-functions rule rejects a
+      function whose body is a single expression. Json is a tree of owned values, so clone is the same deep
+      copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L995-L997
+  - what: >-
+      async_log_failure_event has no function of its own; a standard LLM failure enters the sampled path as
+      enqueue_log_event(..., EventKind::Failure).
+    why: >-
+      LiteLLM's method is one await of _enqueue_log_event("failure"), and the no-one-line-functions rule
+      rejects a one-expression wrapper. The failure kind and the shared sampled path are proved by
+      a_sampled_out_failure_event_reports_the_failure_kind and a_blocked_request_still_logs_its_failure_event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L833-L839
+  - what: >-
+      The sampled path takes an EventKind (Success or Failure) in place of LiteLLM's event_type string; its
+      Display renders "success" and "failure", which is what the debug skip and error events carry.
+    why: >-
+      Two callers are the closed set of event types, so the type says it, and the rendered text is the same as
+      LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L769-L781
+  - what: >-
+      The sampling draw comes from a RandomSource argument and the rate from the caller, where LiteLLM calls
+      random.random() and reads self.sampling_rate inside _prepare_log_payload.
+    why: >-
+      A test scripts the draw to sit exactly on the rate, which proves the rule that only a draw above the
+      rate drops the event; the comparison and its direction are LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L769-L781
+  - what: >-
+      _build_and_enqueue_block_event takes logging_obj, the exception and caller_metadata, without LiteLLM's
+      call_id parameter.
+    why: >-
+      async_post_call_failure_hook passes call_id=None and the function overwrites it from
+      call_details["litellm_call_id"] before any use, so the parameter can never carry a value; the payload
+      still reads the correlation id from call_details.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L887-L922
+  - what: >-
+      async_post_call_failure_hook takes Option<&ModifyResponseException>; a caller whose failure is not a
+      block passes None, where LiteLLM receives any exception and checks isinstance at runtime.
+    why: >-
+      The typed argument is the isinstance check, and the guardrail-name comparison stays the first test after
+      it, so a block another Rubrik instance raised still leaves the stash alone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L841-L885
+  - what: >-
+      caller_metadata arrives as an IndexMap<String, Json> argument, the output B1106's mapper fills in the
+      server; there is no _caller_metadata function here. The no-stash warning reads user_id from
+      caller_metadata["user_api_key_user_id"], where LiteLLM reads user_api_key_dict.user_id.
+    why: >-
+      The module never sees a UserAPIKeyAuth, since betterlite-core depends on betterlite-logging and the
+      mapper is called by the code that holds the key. The metadata key carries the same user id into the
+      block payload.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L999-L1016
+  - what: >-
+      enqueue_log_event catches the typed EventPayloadError from the payload build, where LiteLLM wraps both
+      _prepare_log_payload and _append_and_maybe_flush in one try/except Exception.
+    why: >-
+      Rust has no exceptions. The queue in rubrik_delivery::queue returns no error and logs its own transport
+      and status failures, so the append has nothing left to catch; a payload error logs at error level with
+      the event kind and the event is skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L808-L820
+  - what: >-
+      The exception set LiteLLM catches around the block payload build, AttributeError, ImportError, KeyError
+      and TypeError, is the EventPayloadError enum, and the second try/except around the append has no
+      counterpart for the same reason as the enqueue path.
+    why: >-
+      Each variant names what failed (a missing or wrong-typed field, a call-details read, an unparseable
+      start_time), and the block event is skipped with an error line carrying the call id, exactly where
+      LiteLLM logs and returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L887-L922
+  - what: >-
+      Both deep copies are Json::clone: prepare_log_payload copies the standard_logging_object and
+      prepare_block_failure_payload copies the base.
+    why: >-
+      safe_deep_copy falls back to returning the original when copy.deepcopy raises, which no JSON value can
+      do; Json is a tree of owned values, so clone is a full deep copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L769-L781
+  - what: >-
+      call_details["start_time"] is RFC 3339 text in betterlite, read with DateTime::parse_from_rfc3339 and
+      turned into a Unix float through Decimal seconds plus nanoseconds; LiteLLM calls datetime.timestamp()
+      on a datetime object.
+    why: >-
+      model_call_details are JSON, so the instant travels as the text the repository already writes there.
+      Absent or null leaves the three time fields null. Text that is not RFC 3339, and a value of another
+      type, is an error that skips the block event, which is what LiteLLM's AttributeError on a non-datetime
+      does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1018-L1045
+  - what: >-
+      A prompt block whose call details carry no messages keeps the system prompt: betterlite logs
+      messages=[{"role": "system", ...}], where LiteLLM's fallback stores messages as () and
+      _prepend_system_prompt skips a tuple, so its log carries messages=[] and the system prompt is lost.
+    why: >-
+      The block log is the security record of the violation, so dropping the system prompt from it is lost
+      data no working setup can rely on. betterlite stores the fallback's empty default as an empty list, and
+      the prepend then treats it as a list. Proved by
+      a_system_prompt_without_fallback_messages_keeps_the_system_prompt.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1018-L1045
+  - what: >-
+      LiteLLM's verbose_logger lines become tracing events: the message is our own text and the numbers and
+      ids ride as structured fields (event, sampling_rate, litellm_call_id, model, user_id,
+      raising_guardrail).
+    why: >-
+      betterlite logs structured fields. The levels and the conditions match LiteLLM: debug for a sampled-out
+      event, debug for a blocked success event, warn for a missing stash, error for a payload that cannot be
+      built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L822-L831
+kept_bugs: []
