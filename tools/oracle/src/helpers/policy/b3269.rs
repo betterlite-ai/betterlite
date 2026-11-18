@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_core::api::response_id_codecs::response::get_model_id_from_response_id;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_policy::context::PolicyMatchContext;
 use serde_json::{Value, json};
 
 pub(crate) struct Op;
@@ -14,7 +15,7 @@ impl Helper for Op {
         let function = input
             .get("function")
             .and_then(Value::as_str)
-            .ok_or_else(|| invalid_input("function must be a string"))?;
+            .ok_or_else(|| invalid_input(String::from("function must be a string")))?;
         match function {
             "model_group_lookup" => model_group_lookup(input),
             "submit_model_hidden_by" => submit_model_hidden_by(input),
@@ -38,7 +39,12 @@ fn model_group_lookup(input: &Value) -> HelperResult {
             json!({"model_group": null, "reason": "response id names no deployment", "hidden_by": null}),
         );
     };
-    let deployments = string_map(input.get("deployments"))?;
+    let deployment_values = input
+        .get("deployments")
+        .cloned()
+        .ok_or_else(|| invalid_input(String::from("deployments must be an object")))?;
+    let deployments: BTreeMap<String, String> = serde_json::from_value(deployment_values)
+        .map_err(|error| invalid_input(error.to_string()))?;
     let Some(model_group) = deployments.get(&model_id) else {
         return Ok(
             json!({"model_group": null, "reason": "deployment no longer in the router", "hidden_by": null}),
@@ -52,7 +58,7 @@ fn submit_model_hidden_by(input: &Value) -> HelperResult {
     let model_group = input
         .get("model_group")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid_input("model_group must be a string"))?;
+        .ok_or_else(|| invalid_input(String::from("model_group must be a string")))?;
     Ok(json!({"hidden_by": hidden_by(model_group, input.get("aliases"))?}))
 }
 
@@ -60,7 +66,11 @@ fn hidden_by(model_group: &str, value: Option<&Value>) -> Result<Option<String>,
     if model_group.contains('*') {
         return Ok(Some("a wildcard deployment".to_owned()));
     }
-    let aliases = alias_map(value)?;
+    let aliases: Vec<(String, String)> = match value {
+        Some(value) => serde_json::from_value(value.clone())
+            .map_err(|error| invalid_input(error.to_string()))?,
+        None => Vec::new(),
+    };
     let matches: Vec<&str> = aliases
         .iter()
         .filter(|(_, target)| target.as_str() == model_group)
@@ -79,7 +89,7 @@ fn retrieval_context(input: &Value) -> HelperResult {
     let model_group = input
         .get("model_group")
         .and_then(Value::as_str)
-        .ok_or_else(|| invalid_input("model_group must be a string"))?;
+        .ok_or_else(|| invalid_input(String::from("model_group must be a string")))?;
     let aliases = input.get("auth").and_then(Value::as_object);
     let team_alias = aliases
         .and_then(|value| value.get("team_alias"))
@@ -87,22 +97,28 @@ fn retrieval_context(input: &Value) -> HelperResult {
     let key_alias = aliases
         .and_then(|value| value.get("key_alias"))
         .and_then(Value::as_str);
-    let tags = input
+    let tags: Vec<String> = input
         .get("tags")
         .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default();
-    Ok(
-        json!({"team_alias": team_alias, "key_alias": key_alias, "model": model_group,
-        "tags": if tags.is_empty() { None } else { Some(tags) }}),
-    )
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    let context = PolicyMatchContext {
+        team_alias: team_alias.map(str::to_owned),
+        key_alias: key_alias.map(str::to_owned),
+        model: Some(model_group.to_owned()),
+        tags: (!tags.is_empty()).then_some(tags),
+    };
+    serde_json::to_value(context).map_err(|error| invalid_input(error.to_string()))
 }
 
 fn pipeline_filtering(input: &Value) -> HelperResult {
     let pipelines = input
         .get("pipelines")
         .and_then(Value::as_array)
-        .ok_or_else(|| invalid_input("pipelines must be a list"))?;
+        .ok_or_else(|| invalid_input(String::from("pipelines must be a list")))?;
     let attached = input
         .get("already_attached")
         .and_then(Value::as_array)
@@ -114,7 +130,7 @@ fn pipeline_filtering(input: &Value) -> HelperResult {
         let name = item
             .get("policy_name")
             .and_then(Value::as_str)
-            .ok_or_else(|| invalid_input("pipeline policy_name must be a string"))?;
+            .ok_or_else(|| invalid_input(String::from("pipeline policy_name must be a string")))?;
         if item.get("mode").and_then(Value::as_str) != Some("post_call")
             || attached.iter().any(|value| value.as_str() == Some(name))
         {
@@ -130,49 +146,13 @@ fn pipeline_filtering(input: &Value) -> HelperResult {
     Ok(json!({"pipelines": selected, "managed_guardrails": managed.keys().collect::<Vec<_>>() }))
 }
 
-fn string_map(value: Option<&Value>) -> Result<BTreeMap<String, String>, Box<HelperError>> {
-    let Some(entries) = value.and_then(Value::as_object) else {
-        return Err(invalid_input("deployments must be an object"));
-    };
-    entries
-        .iter()
-        .map(|(key, value)| {
-            value
-                .as_str()
-                .map(|value| (key.clone(), value.to_owned()))
-                .ok_or_else(|| invalid_input("deployment model group must be a string"))
-        })
-        .collect()
-}
-
-fn alias_map(value: Option<&Value>) -> Result<Vec<(String, String)>, Box<HelperError>> {
-    let Some(entries) = value.and_then(Value::as_array) else {
-        return Ok(Vec::new());
-    };
-    entries
-        .iter()
-        .map(|pair| {
-            let Some(pair) = pair.as_array() else {
-                return Err(invalid_input("alias must be a pair"));
-            };
-            let (Some(alias), Some(target)) = (
-                pair.first().and_then(Value::as_str),
-                pair.get(1).and_then(Value::as_str),
-            ) else {
-                return Err(invalid_input("alias pair must contain strings"));
-            };
-            Ok((alias.to_owned(), target.to_owned()))
-        })
-        .collect()
-}
-
-fn invalid_input(message: impl Into<String>) -> Box<HelperError> {
+fn invalid_input(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: message.into(),
+        message,
     })
 }

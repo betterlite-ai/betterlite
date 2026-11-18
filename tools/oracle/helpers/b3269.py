@@ -1,8 +1,8 @@
 from typing import NotRequired, TypedDict
 
 import litellm
-from litellm.responses.utils import ResponsesAPIRequestUtils
 from litellm.router_utils.common_utils import resolve_model_group_alias
+from litellm.responses.utils import ResponsesAPIRequestUtils
 
 class Auth(TypedDict):
     team_alias: str | None
@@ -88,16 +88,17 @@ def retrieval_context(input_value: Input) -> Output:
         "team_alias": auth.get("team_alias"),
         "key_alias": auth.get("key_alias"),
         "model": input_value["model_group"],
-        "tags": tags or None,
+        "tags": None if len(tags) == 0 else tags,
     }
 
 
 def pipeline_filtering(input_value: Input) -> Output:
     attached = input_value["already_attached"]
-    selected: list[Pipeline] = []
-    for pipeline in input_value["pipelines"]:
-        if pipeline["mode"] == "post_call" and pipeline["policy_name"] not in attached:
-            selected.append(pipeline)
+    selected = [
+        pipeline
+        for pipeline in input_value["pipelines"]
+        if pipeline["mode"] == "post_call" and pipeline["policy_name"] not in attached
+    ]
     managed = sorted(
         {
             guardrail

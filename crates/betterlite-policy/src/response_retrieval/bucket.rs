@@ -33,14 +33,23 @@ pub(super) fn response_id(data: &RetrievalData) -> Option<&str> {
 // the id as Python's str() prints it, for the log lines that carry it
 #[must_use]
 pub(super) fn response_id_text(data: &RetrievalData) -> String {
-    match data.get(RESPONSE_ID) {
-        Some(JsonValue::String(id)) => id.clone(),
-        Some(JsonValue::Bool(true)) => "True".to_owned(),
-        Some(JsonValue::Bool(false)) => "False".to_owned(),
-        Some(JsonValue::Number(number)) => number.to_string(),
-        Some(value @ (JsonValue::Array(_) | JsonValue::Object(_))) => format!("{value:?}"),
-        None | Some(JsonValue::Null) => "None".to_owned(),
+    let Some(value) = data.get(RESPONSE_ID) else {
+        return "None".to_owned();
+    };
+    if let JsonValue::String(id) = value {
+        return id.clone();
     }
+    if let JsonValue::Bool(value) = value {
+        return if *value {
+            "True".to_owned()
+        } else {
+            "False".to_owned()
+        };
+    }
+    if let JsonValue::Number(number) = value {
+        return number.to_string();
+    }
+    format!("{value:?}")
 }
 
 #[must_use]

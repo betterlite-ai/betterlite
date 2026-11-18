@@ -14,9 +14,8 @@ use super::bucket;
 use super::{
     GUARDRAIL_PIPELINES, PIPELINE_MANAGED_GUARDRAILS, PolicyPipelines, PolicyRouterView,
     ResponseRetrievalError, RetrievalAuth, RetrievalData, RetrievalDependencies, RetrievalRequest,
-    UngovernedReason, UngovernedRetrieval, attach_post_call_pipelines_to_retrieval,
-    model_group_for_response_id, post_call_pipelines_for_context, retrieval_context,
-    submit_model_hidden_by,
+    UngovernedReason, UngovernedRetrieval, attach_retrieval_pipelines, model_group_for_response_id,
+    post_call_pipelines, retrieval_context, submit_model_hidden_by,
 };
 use crate::attachment::AttachmentRegistry;
 use crate::context::PolicyMatchContext;
@@ -212,7 +211,7 @@ fn run_attach(
     data: &mut RetrievalData,
     deps: &RetrievalDependencies<'_>,
 ) -> Result<(), ResponseRetrievalError> {
-    attach_post_call_pipelines_to_retrieval(data, &request(), deps)
+    attach_retrieval_pipelines(data, &request(), deps)
 }
 
 struct MessageVisitor(String);
@@ -249,7 +248,10 @@ impl Capture {
     }
 }
 
-fn captured<T>(run: impl FnOnce() -> T) -> (T, Vec<(Level, String)>) {
+fn captured<T, F>(run: F) -> (T, Vec<(Level, String)>)
+where
+    F: FnOnce() -> T,
+{
     let capture = Capture::default();
     let subscriber = tracing_subscriber::registry().with(capture.clone());
     let result = with_default(subscriber, run);
@@ -443,7 +445,7 @@ fn post_call_pipelines_are_filtered_and_sources_cover_every_match() {
     ]);
     let attachments = attachments(vec![attached("post"), attached("pre"), attached("guards")]);
     let context = retrieval_context(&RetrievalAuth::default(), "gpt-4o", Vec::new());
-    let found = post_call_pipelines_for_context(&context, &registry, &attachments);
+    let found = post_call_pipelines(&context, &registry, &attachments);
     assert_eq!(
         found.pipelines,
         vec![(
@@ -470,7 +472,7 @@ fn post_call_pipelines_without_matches_are_empty() {
     )]);
     let attachments = attachments(Vec::new());
     let context = retrieval_context(&RetrievalAuth::default(), "gpt-4o", Vec::new());
-    let found = post_call_pipelines_for_context(&context, &registry, &attachments);
+    let found = post_call_pipelines(&context, &registry, &attachments);
     assert!(found.pipelines.is_empty());
     assert!(found.sources.is_empty());
 }

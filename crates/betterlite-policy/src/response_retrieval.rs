@@ -160,7 +160,7 @@ fn string_value(value: &JsonValue) -> Option<String> {
 }
 
 #[must_use]
-pub fn post_call_pipelines_for_context(
+pub fn post_call_pipelines(
     context: &PolicyMatchContext,
     registry: &PolicyRegistry,
     attachments: &AttachmentRegistry,
@@ -186,7 +186,7 @@ pub fn post_call_pipelines_for_context(
     PostCallPipelines { pipelines, sources }
 }
 
-pub fn attach_post_call_pipelines_to_retrieval(
+pub fn attach_retrieval_pipelines(
     data: &mut RetrievalData,
     request: &RetrievalRequest<'_>,
     deps: &RetrievalDependencies<'_>,
@@ -198,7 +198,7 @@ pub fn attach_post_call_pipelines_to_retrieval(
         return Ok(());
     };
     let context = retrieval_context(&request.auth, &model_group, request.tags.clone());
-    let found = post_call_pipelines_for_context(&context, deps.registry, deps.attachments);
+    let found = post_call_pipelines(&context, deps.registry, deps.attachments);
     let Some((already_attached, added)) = bucket::new_pipelines(data, &found.pipelines)? else {
         return Ok(());
     };
