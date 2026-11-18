@@ -22,11 +22,11 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Build { rows } => support::rows_answer(rows, support::build_row),
-            Input::Terminal { rows } => support::rows_answer(rows, support::terminal_row),
-            Input::Stamp { rows } => support::rows_answer(rows, support::stamp_row),
-            Input::Copy { rows } => support::rows_answer(rows, support::copy_row),
-            Input::Dump { rows } => support::rows_answer(rows, support::dump_row),
+            Input::Build { rows } => support::rows_answer(rows, support::build_answer),
+            Input::Terminal { rows } => support::rows_answer(rows, support::terminal_answer),
+            Input::Stamp { rows } => support::rows_answer(rows, support::stamp_answer),
+            Input::Copy { rows } => support::rows_answer(rows, support::copy_answer),
+            Input::Dump { rows } => support::rows_answer(rows, support::dump_answer),
         }
     }
 }

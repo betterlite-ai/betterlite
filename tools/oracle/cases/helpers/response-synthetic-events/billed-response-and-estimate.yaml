@@ -46,6 +46,33 @@ call:
           output: []
           usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
         estimate: {kind: empty}
+      - kind: dict
+        response:
+          id: resp_d4
+          created_at: 8
+          output:
+            - type: reasoning
+              id: rs_1
+              summary: []
+              status: null
+              content: null
+              encrypted_content: null
+              namespace: null
+        estimate: null
+      - kind: dict
+        response:
+          id: resp_d5
+          created_at: 9
+          output:
+            - type: message
+              id: msg_1
+              status: null
+              content: null
+            - type: reasoning
+              id: rs_2
+              summary: []
+              status: completed
+        estimate: {kind: empty}
       - kind: other
         response: 7
         estimate: {kind: value, input_tokens: 1, output_tokens: 1}

@@ -1,5 +1,4 @@
 use std::cell::Cell;
-use std::collections::BTreeMap;
 use std::str::FromStr;
 
 use betterlite_core::api::response_synthetic_events::billing::UsageEstimate;
@@ -10,7 +9,7 @@ use betterlite_openai::api::responses_objects::ResponseApiUsage;
 use betterlite_oracle_helper_api::error::HelperError;
 use rust_decimal::Decimal;
 
-use super::support::{CostSpec, EstimateSpec, value_error};
+use super::support::{CostSpec, value_error};
 
 pub(super) struct CostProbe {
     answer: Option<Decimal>,
@@ -43,7 +42,7 @@ impl ResponsesCostCalculator for CostProbe {
     type Error = std::io::Error;
 
     fn response_cost(&self, _target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
-        self.calls.set(self.calls.get() + 1);
+        self.calls.set(self.calls.get().saturating_add(1));
         if self.raises {
             return Err(std::io::Error::other("cost lookup failed"));
         }
@@ -52,37 +51,13 @@ impl ResponsesCostCalculator for CostProbe {
 }
 
 pub(super) struct FixedEstimate {
-    answer: Option<ResponseApiUsage>,
+    pub(super) answer: Option<ResponseApiUsage>,
     pub(super) calls: Cell<usize>,
-}
-
-impl FixedEstimate {
-    pub(super) fn new(spec: Option<&EstimateSpec>) -> Option<Self> {
-        let answer = match spec? {
-            EstimateSpec::Value {
-                input_tokens,
-                output_tokens,
-            } => Some(ResponseApiUsage {
-                input_tokens: *input_tokens,
-                input_tokens_details: None,
-                output_tokens: *output_tokens,
-                output_tokens_details: None,
-                total_tokens: input_tokens.saturating_add(*output_tokens),
-                cost: None,
-                extra: BTreeMap::new(),
-            }),
-            EstimateSpec::Empty => None,
-        };
-        Some(Self {
-            answer,
-            calls: Cell::new(0),
-        })
-    }
 }
 
 impl UsageEstimate for FixedEstimate {
     fn estimate(&self) -> Option<ResponseApiUsage> {
-        self.calls.set(self.calls.get() + 1);
+        self.calls.set(self.calls.get().saturating_add(1));
         self.answer.clone()
     }
 }

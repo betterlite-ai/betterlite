@@ -3,4 +3,7 @@ deviations:
   - what: A bool usage cost is not read as a number, so stamping leaves the usage object untouched; Python validates True as 1.0 and keeps it as the existing cost.
     why: betterlite's usage wire takes a number, a total_cost mapping or null, which is the declared cost type; docs/compatibility.md does not copy Python's bool-as-number coercion.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1355-L1366
+  - what: A response whose text, refusal, arguments or annotations would expand into more than 1000000 delta events or 256 MiB of event payloads raises an error instead of building the list.
+    why: LiteLLM builds every delta, so a 64 KiB text with chunk_size 1 clones a 64 KiB item id per delta and exhausts memory; betterlite bounds the amplification instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1406-L1466
 kept_bugs: []
