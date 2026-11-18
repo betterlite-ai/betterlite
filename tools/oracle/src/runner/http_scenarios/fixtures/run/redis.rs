@@ -1,7 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use super::polling::RedisPolling;
 use crate::http_scenarios::error::ScenarioError;
 use crate::redis_fixture::resp::{
     Command, CommandHandler, NIL_REPLY, RespServer, connection_answer, encode_bulk, live_entry,
@@ -12,8 +11,8 @@ pub(super) use crate::redis_fixture::resp::{Entries, StoredEntry, locked};
 // The polling profile answers plain and EX SET, records every other command as unsupported, and never expires an entry.
 pub(super) struct RedisServer {
     pub(super) addr: SocketAddr,
-    entries: Entries,
-    inner: RespServer,
+    pub(super) entries: Entries,
+    pub(super) inner: RespServer,
 }
 
 impl RedisServer {
@@ -29,26 +28,6 @@ impl RedisServer {
             entries,
             inner,
         })
-    }
-
-    pub(super) fn url(&self) -> String {
-        let scheme = "redis://";
-        let addr = self.addr;
-        format!("{scheme}{addr}/0")
-    }
-
-    pub(super) fn unsupported(&self) -> Option<String> {
-        match locked(&self.inner.unsupported).as_ref() {
-            Some(command) => Some(command.clone()),
-            None => None,
-        }
-    }
-
-    pub(super) fn polling(&self) -> RedisPolling {
-        RedisPolling {
-            addr: self.addr,
-            entries: Arc::clone(&self.entries),
-        }
     }
 }
 

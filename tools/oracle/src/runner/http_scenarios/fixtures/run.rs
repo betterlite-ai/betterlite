@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use secrecy::SecretString;
 
-use self::redis::RedisServer;
+use self::redis::{RedisServer, locked};
 use super::adapters::PostgresRepository;
 use super::adapters::SystemClock;
 use super::gateway::GatewayPeerFactory;
@@ -78,8 +78,14 @@ pub(crate) fn run_fixture_case(
         group_dir: environment.group_dir.clone(),
     };
     let (mut first_repository, mut second_repository) = repositories(&mut environment)?;
-    let mut first_polling = environment.redis.polling();
-    let mut second_polling = environment.redis.polling();
+    let mut first_polling = polling::RedisPolling {
+        addr: environment.redis.addr,
+        entries: Arc::clone(&environment.redis.entries),
+    };
+    let mut second_polling = polling::RedisPolling {
+        addr: environment.redis.addr,
+        entries: Arc::clone(&environment.redis.entries),
+    };
     let outcome = run(ScenarioDependencies {
         scenario,
         clock: &SystemClock,
@@ -100,7 +106,8 @@ pub(crate) fn run_fixture_case(
 }
 
 fn ensure_supported(redis: &RedisServer) -> Result<(), ScenarioError> {
-    redis.unsupported().map_or_else(
+    let unsupported = locked(&redis.inner.unsupported).as_ref().cloned();
+    unsupported.map_or_else(
         || Ok(()),
         |command| Err(ScenarioError::UnknownCommand { command }),
     )
@@ -109,7 +116,7 @@ fn ensure_supported(redis: &RedisServer) -> Result<(), ScenarioError> {
 fn repositories(
     environment: &mut ScenarioEnvironment,
 ) -> Result<(PostgresRepository, PostgresRepository), OracleError> {
-    let redis_url = environment.redis.url();
+    let redis_url = format!("redis://{}/0", environment.redis.addr);
     let first = PostgresRepository {
         configured_url: environment.configured_url.clone(),
         fixture: None,
