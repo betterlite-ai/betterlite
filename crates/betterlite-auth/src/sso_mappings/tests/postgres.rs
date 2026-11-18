@@ -38,7 +38,7 @@ async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["sso-mappings-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), vec![SCHEMA.to_owned()])
         .resolve()
         .await
         .expect("the database fixture");
@@ -55,12 +55,6 @@ async fn database() -> (PostgresFixture, Pool) {
         .max_size(2)
         .build()
         .expect("the database pool");
-    let client = pool.get().await.expect("the database connection");
-    client
-        .batch_execute(SCHEMA)
-        .await
-        .expect("the settings table");
-    drop(client);
     (fixture, pool)
 }
 
