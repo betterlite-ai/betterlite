@@ -15,4 +15,10 @@ deviations:
   - what: Anthropic stream items use the closed SseChunk enum, and strings are ignored.
     why: LiteLLM reads bytes and dictionaries; other values produce no events, so the enum makes those supported input shapes explicit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L438-L494
+  - what: The Anthropic block builder takes one BlockedException holding the message, model, message id and a typed B3663 OriginalResponse, rather than the task's six positional arguments with a raw serde_json::Value original response.
+    why: The task's four-expect budget cannot cover the five modules that name raw JSON; keeping block_continuation free of serde_json::Value is what lets open item state live in open_item.rs as specified. B3663's blocked_response_usage already takes OriginalResponse, and block_events::guardrail_json::blocked_original_response converts the exception's raw value once for the caller.
+    link: ""
+  - what: Anthropic build_stream_error_items returns Result<Vec<Vec<u8>>, AnthropicBlockError> rather than Vec<Vec<u8>>.
+    why: B3669's anthropic_sse_error_frames serializes the frame and returns a Result, and the module's error enum carries that failure instead of discarding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L352-L363
 kept_bugs: []
