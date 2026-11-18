@@ -2,8 +2,11 @@ use betterlite_models::decisions::Json;
 
 use super::support::{self, ClientFixture, ScriptedClient, event_key, json};
 use crate::realtime_bridge::end::ForwardEnd;
+use crate::realtime_bridge::error::ClientForwardError;
+use crate::realtime_input::error::InputError;
 
 const SESSION_UPDATE: &str = r#"{"type": "session.update", "session": {}}"#;
+const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":[]}"#;
 const AUDIO_APPEND: &str = r#"{"type":"input_audio_buffer.append","audio":"AAAA"}"#;
 const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;
 const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
@@ -11,6 +14,7 @@ const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
 pub(super) async fn client_event_forwarding() {
     forwards_every_client_frame().await;
     ack_failure_stops_forwarding().await;
+    transform_failure_keeps_the_replay_marker().await;
 }
 
 async fn forwards_every_client_frame() {
@@ -125,6 +129,27 @@ async fn ack_failure_stops_forwarding() {
     assert_eq!(fixture.scope.session_committed, Json::Bool(true));
     assert!(fixture.client.closes().is_empty());
     assert!(fixture.stream.closed());
+}
+
+// The transform rejects a session.update whose session is not an object, before any frame is sent
+async fn transform_failure_keeps_the_replay_marker() {
+    let client = ScriptedClient::new(vec![Some(AUDIO_APPEND.to_owned()), None]);
+    let mut fixture = ClientFixture::new(Some(MALFORMED_SESSION_UPDATE.to_owned()), client);
+    let outcome = fixture.run().await;
+
+    assert!(matches!(
+        outcome,
+        Err(ClientForwardError::Input(InputError::Malformed { .. }))
+    ));
+    assert!(fixture.stream.sent().is_empty());
+    assert!(fixture.stream.closed());
+    assert_eq!(
+        fixture.scope.pending_session_update,
+        Json::Text(MALFORMED_SESSION_UPDATE.to_owned())
+    );
+    assert_eq!(fixture.scope.session_committed, Json::Null);
+    assert!(fixture.client.sent_events().is_empty());
+    assert!(fixture.client.closes().is_empty());
 }
 
 fn payload_text<'a>(frame: &'a Json, event: &str, field: &str) -> Option<&'a str> {
