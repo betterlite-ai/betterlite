@@ -218,6 +218,7 @@ fn configure(
             | ConfigError::InvalidInteger { .. }
             | ConfigError::InvalidScalar { .. }
             | ConfigError::Environment { .. }
+            | ConfigError::CustomDimensions(_)
             | ConfigError::LoadThread { .. } => "ConfigError",
         };
         failure(class, None, error.to_string())

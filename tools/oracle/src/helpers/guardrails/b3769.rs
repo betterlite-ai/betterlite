@@ -1,6 +1,4 @@
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::SystemTime;
+use std::{collections::BTreeMap, sync::Arc, time::SystemTime};
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::enkryptai_detection::Configured;
@@ -112,6 +110,7 @@ fn config_failure(error: &ConfigError) -> Box<HelperError> {
         | ConfigError::InvalidInteger { .. }
         | ConfigError::InvalidScalar { .. }
         | ConfigError::Environment { .. }
+        | ConfigError::CustomDimensions(_)
         | ConfigError::LoadThread { .. } => "ConfigError",
     };
     helper_error(class, error.to_string())
