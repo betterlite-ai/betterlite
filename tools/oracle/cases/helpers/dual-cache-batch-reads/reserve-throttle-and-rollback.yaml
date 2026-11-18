@@ -1,0 +1,26 @@
+kind: helper
+name: dual-cache-batch-reads-reserve-throttle-and-rollback
+call:
+  b4294:
+    reserve_throttle_and_rollback:
+      clock: 1000.0
+      default_in_memory_ttl: null
+      memory:
+        - key: a
+          value: memory-a
+      keys: [a, b]
+      read_keys: [c]
+      ttl_keys: []
+      due_keys: [d]
+      write_keys: []
+      duplicate_keys: []
+      merge_keys: []
+      replies: []
+      own_replies: []
+      caches: []
+      breaker_caches: []
+      prepare_caches: []
+      apply_caches: []
+env: {}
+compare:
+  ignore: []

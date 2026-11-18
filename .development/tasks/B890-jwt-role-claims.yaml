@@ -41,9 +41,11 @@ description: >-
   (L735-L746; 11 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.admin_jwt_scope='litellm_proxy_admin';
+  Pinned settings read by this component: litellm_jwtauth.admin_jwt_scope='litellm_proxy_admin';
   litellm_jwtauth.user_roles_jwt_field=None; litellm_jwtauth.user_allowed_roles=None; litellm_jwtauth.roles_jwt_field=None;
-  litellm_jwtauth.role_mappings=None; litellm_jwtauth.jwt_litellm_role_map=None.
+  litellm_jwtauth.role_mappings=None; litellm_jwtauth.jwt_litellm_role_map=None. All of them are LiteLLM_JWTAuth fields, and B869's jwt_settings section
+  (config.sections.jwt_settings) parses and validates that whole object; read the typed values from there. This
+  task adds no config section and parses none of these keys again.
 
 
   Add the jwt_role_claims operation under B856 Management::jwt. Python calls only the owned MIT helper
@@ -59,14 +61,13 @@ description: >-
   B757 owns outer error translation (a plain scope/role exception becomes 401 auth_error, string
   None param, code 401); do not add a second premium deviation here.
 
-  Load the six settings through B869 and test the real B002 boundary with
-  jwt_role_claims::tests::six_role_settings_defaults, six_role_settings_consumed and
-  invalid_role_setting_shapes_fail. Config schema errors stop loading; they do not pick a fallback.
-  Preserve B869's requirement that user_roles_jwt_field and user_allowed_roles appear together.
+  B869's section tests own the loading, defaults and invalid values of these six settings, the rule that
+  user_roles_jwt_field and user_allowed_roles appear together included, so this task writes no config tests
+  and no config_yaml seed.
 
 
   Sizing: the eight ranges contain 126 lines before docstring exclusion; allow 160 production,
-  240 behavior tests, 65 helper adapters, 25 wiring and 50 config lines, 540 within a 600-line gate.
+  240 behavior tests, 65 helper adapters and 25 wiring lines, 490 within a 600-line gate.
   Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
@@ -84,10 +85,6 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/jwt-role-claims/**
     - tools/oracle/fuzz/corpus/helper_case/jwt-role-claims-*
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*
-    - crates/betterlite-config/src/sections/jwt_role_claims.rs
-    - crates/betterlite-config/src/sections/jwt_role_claims/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L304-L333
@@ -130,11 +127,6 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
 checks:
   optional:
     - mutants
@@ -153,15 +145,6 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-role-claims-*")"
         && grep -rlq "jwt_role_claims" tools/oracle/fuzz/corpus/helper_case/jwt-role-claims-* && cargo
         nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-auth --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_role_claims::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*")"
-        && grep -rlq "admin_jwt_scope" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-role-claims-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/jwt-role-claims/role-map.yaml
   - tools/oracle/cases/helpers/jwt-role-claims/scope-string-list.yaml
