@@ -10,6 +10,14 @@ deviations:
       a version, and the value is kept so a native worker can honor it later.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L316-L324
   - what: >-
+      A jitter given with a request limit stays in UvicornSettings, whatever server runs it. LiteLLM hands
+      the jitter to uvicorn only when the installed uvicorn's Config accepts limit_max_requests_jitter
+      (0.41 and later), and otherwise prints a version warning and drops it.
+    why: >-
+      betterlite's native server has no uvicorn package to introspect, and the oracle's uvicorn 0.54.0
+      applies the value, so the setting carries it and the worker applies it, as the task's DoD says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L346-L353
+  - what: >-
       Native settings never write `LITELLM_DEV_ENV_HOT_RELOAD`, or any other variable, into the process
       environment. The hot reload flag crosses to the worker as ReloadSettings::env_hot_reload.
     why: >-
