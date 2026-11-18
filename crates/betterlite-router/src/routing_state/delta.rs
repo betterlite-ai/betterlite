@@ -1,4 +1,6 @@
-use std::collections::{BTreeMap, BTreeSet};
+pub(crate) mod store;
+
+use std::collections::BTreeSet;
 use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -6,15 +8,14 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use tokio::sync::Notify;
 
 use crate::router_observations::counter::CounterError;
-use crate::routing_state_store::RoutingStateStore;
 use crate::routing_value_store::{
-    RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreRead,
+    RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError,
 };
 
+use self::store::{local_amount, merge, send};
 use super::error::RoutingStateError;
 use super::{FLUSH_DEADLINE, MAX_OVERFLOW_DELTAS, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS};
 
@@ -30,40 +31,6 @@ pub struct Delta {
 pub trait DeltaStore: Send + Sync {
     async fn increment_pipeline(&self, deltas: &[Delta])
     -> Result<Vec<Decimal>, RoutingStateError>;
-}
-
-#[async_trait]
-impl DeltaStore for RoutingStateStore {
-    async fn increment_pipeline(
-        &self,
-        deltas: &[Delta],
-    ) -> Result<Vec<Decimal>, RoutingStateError> {
-        let mut entries = Vec::with_capacity(deltas.len());
-        for delta in deltas {
-            let Some(value) = delta.value.to_f64() else {
-                return Err(RoutingStateError::NonFinite);
-            };
-            entries.push((delta.key.clone(), value, Some(delta.ttl.as_secs_f64())));
-        }
-        let observed = self.increment_float_pipeline(&entries).await?;
-        if let Some(warning) = observed.warning {
-            tracing::warn!(
-                ?warning,
-                "the routing store reported a warning while pushing deltas"
-            );
-        }
-        let Some(values) = observed.value else {
-            return Ok(Vec::new());
-        };
-        let mut decimals = Vec::with_capacity(values.len());
-        for value in values {
-            let Some(decimal) = Decimal::from_f64(value) else {
-                return Err(RoutingStateError::NonFinite);
-            };
-            decimals.push(decimal);
-        }
-        Ok(decimals)
-    }
 }
 
 // the queue a full caller flushed into, and the buffer a callback's delta waits in when it could not flush
@@ -325,79 +292,5 @@ async fn drain_to_store<S: DeltaStore>(state: &SyncState<S>) {
             continue;
         }
         return;
-    }
-}
-
-async fn send<S: DeltaStore>(
-    state: &SyncState<S>,
-    batch: &[Delta],
-) -> Option<BTreeMap<String, Decimal>> {
-    let store = state.store.as_ref()?;
-    let compressed = compress(batch);
-    match store.increment_pipeline(&compressed).await {
-        Ok(values) => Some(values_by_key(&compressed, &values)),
-        Err(error) => {
-            tracing::warn!(%error, "the delta batch was discarded after a store failure");
-            None
-        }
-    }
-}
-
-// the merge reads the local value and writes it back under the lock its increments take, so neither loses the other
-fn merge<S: DeltaStore>(
-    state: &SyncState<S>,
-    keys: &[RouteKey],
-    before: &[Decimal],
-    values: &BTreeMap<String, Decimal>,
-) {
-    let _batches = state.batches.lock().unwrap_or_else(PoisonError::into_inner);
-    for (key, before) in keys.iter().zip(before) {
-        let after = local_amount(&state.local, key);
-        let redis_value = values.get(key.as_ref()).copied().unwrap_or_default();
-        if after > redis_value {
-            continue;
-        }
-        let merged = redis_value.saturating_add(after.saturating_sub(*before));
-        if let Err(error) = state.local.set(key, &RouteValue::Spend(merged), None) {
-            tracing::warn!(%error, "the routing sync could not write the merged value back");
-        }
-    }
-}
-
-// the compressed op keeps the first operation's ttl, and later values for the same key add into it
-fn compress(batch: &[Delta]) -> Vec<Delta> {
-    let mut compressed: Vec<Delta> = Vec::with_capacity(batch.len());
-    let mut positions: BTreeMap<&str, usize> = BTreeMap::new();
-    for delta in batch {
-        if let Some(position) = positions.get(delta.key.as_ref()) {
-            if let Some(entry) = compressed.get_mut(*position) {
-                entry.value = entry.value.saturating_add(delta.value);
-            }
-            continue;
-        }
-        positions.insert(delta.key.as_ref(), compressed.len());
-        compressed.push(delta.clone());
-    }
-    compressed
-}
-
-// zip stops at the shorter side, as LiteLLM's zip over the replies does; a missing reply counts as zero
-fn values_by_key(compressed: &[Delta], values: &[Decimal]) -> BTreeMap<String, Decimal> {
-    compressed
-        .iter()
-        .zip(values)
-        .map(|(delta, value)| (delta.key.as_ref().to_owned(), *value))
-        .collect()
-}
-
-pub(super) fn local_amount(local: &RoutingValueStore, key: &RouteKey) -> Decimal {
-    match local.get(key) {
-        Ok(StoreRead::Value(RouteValue::Spend(value))) => value,
-        Ok(StoreRead::Value(RouteValue::Counter(value))) => Decimal::from(value),
-        Ok(StoreRead::Value(_) | StoreRead::Missing) => Decimal::ZERO,
-        Err(error) => {
-            tracing::warn!(%error, "a routing counter could not be read back");
-            Decimal::ZERO
-        }
     }
 }

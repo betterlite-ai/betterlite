@@ -8,7 +8,8 @@ use rust_decimal::Decimal;
 use crate::router_observations::counter::{CounterSink, Increment};
 use crate::routing_state::MAX_PENDING_DELTAS;
 use crate::routing_state::counter::RouterCounters;
-use crate::routing_state::delta::{Delta, DeltaStore, SyncState, local_amount};
+use crate::routing_state::delta::store::local_amount;
+use crate::routing_state::delta::{Delta, DeltaStore, SyncState};
 use crate::routing_state::error::RoutingStateError;
 use crate::routing_state::metadata::{
     CallbackChannels, deployment_channel, get_counted_usage_tokens,
