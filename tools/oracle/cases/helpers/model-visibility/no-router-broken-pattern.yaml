@@ -1,0 +1,20 @@
+kind: helper
+name: model-visibility-no-router-broken-pattern
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: broken-*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: b1
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      model_names: [broken-x]
+      user_role: internal_user
+      with_router: false
+      broken_pattern: true
+env: {}
+compare: {ignore: []}

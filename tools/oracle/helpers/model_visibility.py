@@ -10,6 +10,7 @@ from litellm.proxy.common_utils.discoverable_model_filter import (
 )
 from litellm.proxy.common_utils.healthy_model_filter import get_hidden_unhealthy_model_names
 from litellm.router import Router
+from litellm.router_utils.pattern_match_deployments import PatternMatchRouter
 from litellm.types.router import RouterModelGroupAliasItem
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
@@ -47,6 +48,14 @@ class Input(TypedDict):
     arguments: Arguments
 
 
+class InjectedModelInfo(TypedDict):
+    discoverable: bool
+
+
+class InjectedRow(TypedDict):
+    model_info: InjectedModelInfo
+
+
 class DebugNotes(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.DEBUG)
@@ -75,6 +84,15 @@ class ReadyHealthRouter(Router):
         return self.unhealthy
 
 
+# The raw invalid regex an internal record can hold; LiteLLM compiles it during a listing.
+class BrokenPatternRouter(PatternMatchRouter):
+    def __init__(self) -> None:
+        rows: dict[str, list[InjectedRow]] = {
+            BROKEN_KEY: [InjectedRow(model_info=InjectedModelInfo(discoverable=False))]
+        }
+        self.patterns = rows
+
+
 def rows_of(call: Input) -> list[dict[str, JsonValue]]:
     rows = call.get("model_list")
     return [] if rows is None else rows
@@ -93,18 +111,14 @@ def caller(role: str | None) -> UserAPIKeyAuth:
 
 
 def router_of(call: Input) -> Router | None:
-    disabled = call["arguments"].get("with_router")
+    arguments = call["arguments"]
+    disabled = arguments.get("with_router")
     if disabled is False:
         return None
-    return Router(model_list=rows_of(call), model_group_alias=aliases_of(call))
-
-
-# The raw invalid regex an internal record can hold; LiteLLM compiles it during a listing.
-def broken_pattern_router(call: Input) -> Router:
     router = Router(model_list=rows_of(call), model_group_alias=aliases_of(call))
-    pattern_router = router.pattern_router
-    row: dict[str, JsonValue] = {"model_info": {"discoverable": False}}
-    pattern_router.patterns[BROKEN_KEY] = [row]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L60-L61
+    if arguments.get("broken_pattern") is not True:
+        return router
+    router.pattern_router = BrokenPatternRouter()
     return router
 
 
@@ -142,11 +156,7 @@ def undiscoverable(call: Input) -> JsonValue:
     arguments = call["arguments"]
     asked = arguments.get("model_names")
     model_names: list[str] = [] if asked is None else asked
-    if arguments.get("broken_pattern") is True:
-        router = broken_pattern_router(call)
-    else:
-        router = router_of(call)
-    hidden = asked_hidden(call, model_names, router)
+    hidden = asked_hidden(call, model_names, router_of(call))
     names: list[JsonValue] = []
     names.extend(sorted(hidden))
     return {"hidden": names}

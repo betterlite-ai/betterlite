@@ -31,7 +31,15 @@ pub(crate) struct Row {
     pub(crate) model_info: Json,
 }
 
-// The call's own arguments, both flags resolved to the value the source's signature gives an absent one.
+// How the call relates to a router: absent, built from the snapshot, or built over a broken pattern table.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RouterCall {
+    Missing,
+    Ready,
+    BrokenPattern,
+}
+
+// The call's own arguments, the router flags resolved to the value the source's signature gives an absent one.
 #[derive(Debug, Deserialize)]
 #[serde(from = "RawArguments")]
 pub(crate) struct Arguments {
@@ -40,9 +48,8 @@ pub(crate) struct Arguments {
     pub(crate) team_id: Option<String>,
     pub(crate) healthy_only: Option<bool>,
     pub(crate) model_list_healthy_only: bool,
-    pub(crate) with_router: bool,
+    pub(crate) router: RouterCall,
     pub(crate) health: Health,
-    pub(crate) broken_pattern: bool,
 }
 
 // The arguments as a case writes them, where absent and null both mean the source's default.
@@ -67,15 +74,21 @@ impl Default for Arguments {
 
 impl From<RawArguments> for Arguments {
     fn from(raw: RawArguments) -> Self {
+        let router = if matches!(raw.with_router, Some(false)) {
+            RouterCall::Missing
+        } else if raw.broken_pattern {
+            RouterCall::BrokenPattern
+        } else {
+            RouterCall::Ready
+        };
         Self {
             model_names: raw.model_names,
             user_role: raw.user_role,
             team_id: raw.team_id,
             healthy_only: raw.healthy_only,
             model_list_healthy_only: raw.model_list_healthy_only.unwrap_or(false),
-            with_router: raw.with_router.unwrap_or(true),
+            router,
             health: raw.health,
-            broken_pattern: raw.broken_pattern,
         }
     }
 }

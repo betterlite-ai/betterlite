@@ -15,7 +15,7 @@ use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use betterlite_router::wildcard_catalog::Candidate;
 
 use super::error::Failure;
-use super::input::Input;
+use super::input::{Input, RouterCall};
 
 // The hidden wildcard a broken_pattern case registers without the deployment that would back it.
 const BROKEN_PATTERN: &str = "broken-*";
@@ -41,7 +41,7 @@ impl Snapshot {
             catalog.push(spec);
             catalog.model_names.insert(row.model_name.clone());
         }
-        if input.arguments.broken_pattern {
+        if matches!(input.arguments.router, RouterCall::BrokenPattern) {
             let candidate = Candidate {
                 model_id: Some(BROKEN_PATTERN.to_owned()),
                 model: "openai/gpt-4o".to_owned(),
@@ -119,9 +119,8 @@ fn provider() -> Provider {
             policies: ProviderPolicies::default(),
             globals: GlobalCredentials::default(),
         };
-        match inferred_provider(model, &context) {
-            Some(identity) => Some(identity.slug().to_owned()),
-            None => Some("None".to_owned()),
-        }
+        let slug = inferred_provider(model, &context)
+            .map_or_else(|| "None".to_owned(), |identity| identity.slug().to_owned());
+        Some(slug)
     })
 }

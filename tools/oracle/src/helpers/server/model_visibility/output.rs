@@ -13,7 +13,7 @@ use tokio::runtime::Builder;
 
 use super::error::Failure;
 use super::fakes::{HealthReport, captured, user};
-use super::input::{Function, Input};
+use super::input::{Function, Input, RouterCall};
 use super::snapshot::{Snapshot, spec};
 
 pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
@@ -32,7 +32,11 @@ fn undiscoverable(input: &Input) -> Result<Value, Failure> {
         routing_groups: &snapshot.groups,
         inferred_provider: &*snapshot.provider,
     };
-    let router = input.arguments.with_router.then_some(&lookup);
+    let router = matches!(
+        input.arguments.router,
+        RouterCall::Ready | RouterCall::BrokenPattern
+    )
+    .then_some(&lookup);
     let hidden = undiscoverable_model_names(
         &input.arguments.model_names,
         router,
@@ -64,7 +68,11 @@ fn healthy(input: &Input) -> Result<Value, Failure> {
     let settings = Settings {
         model_list_healthy_only: arguments.model_list_healthy_only,
     };
-    let router = arguments.with_router.then_some(&report);
+    let router = matches!(
+        arguments.router,
+        RouterCall::Ready | RouterCall::BrokenPattern
+    )
+    .then_some(&report);
     let (result, debug) = captured(&|| {
         runtime.block_on(hidden_unhealthy_model_names(
             arguments.healthy_only,
