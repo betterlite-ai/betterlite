@@ -35,12 +35,6 @@ pub trait PassthroughCompletionCost: Send + Sync {
 pub enum PassthroughCostError {
     #[error("the response cost of model {model} could not be resolved")]
     Unavailable { model: String },
-    #[error("the response cost of model {model} could not be resolved: {source}")]
-    Resolve {
-        model: String,
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
 }
 
 // B3638's factory prices through its own trait, so the Vertex leaf adapts the shared service onto it.
