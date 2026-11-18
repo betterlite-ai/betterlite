@@ -2,7 +2,7 @@ import asyncio
 import json
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, Required, TypedDict, cast, override
+from typing import Literal, NotRequired, Required, TypedDict, override
 
 import litellm
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
@@ -84,6 +84,38 @@ class Probe(OpenTelemetry):
     ) -> OpenTelemetryConfig | None:
         return self.dynamic_config
 
+    def log_success_event(
+        self, kwargs: dict[str, object], response: object, start_time: datetime, end_time: datetime
+    ) -> None:
+        getattr(super(), "log_success_event")(kwargs, response, start_time, end_time)
+
+    def log_failure_event(
+        self, kwargs: dict[str, object], response: object, start_time: datetime, end_time: datetime
+    ) -> None:
+        getattr(super(), "log_failure_event")(kwargs, response, start_time, end_time)
+
+    async def async_log_success_event(
+        self, kwargs: dict[str, object], response: object, start_time: datetime, end_time: datetime
+    ) -> None:
+        await getattr(super(), "async_log_success_event")(
+            kwargs, response, start_time, end_time
+        )
+
+    async def async_log_failure_event(
+        self, kwargs: dict[str, object], response: object, start_time: datetime, end_time: datetime
+    ) -> None:
+        await getattr(super(), "async_log_failure_event")(
+            kwargs, response, start_time, end_time
+        )
+
+    def emit_guardrail_spans_from_request_data(
+        self, request_data: dict[str, JsonValue]
+    ) -> None:
+        # The pinned class exposes this hook only under its private name.
+        getattr(self, "_emit_guardrail_spans_from_request_data")(
+            request_data=request_data, parent_span=None
+        )
+
 
 def probe_logger(scenario: Scenario, provider: TracerProvider) -> Probe:
     categories: set[OTELSemconvCategory] = set()
@@ -123,30 +155,30 @@ def end_parent(scenario: Scenario, parent: Span | None) -> None:
     parent.end(end_time=end_ns)
 
 
-def with_carrier(kwargs: dict[str, JsonValue], parent: Span) -> None:
-    params = DICT.validate_python(kwargs["litellm_params"])
-    metadata = DICT.validate_python(params["metadata"])
-    metadata[PARENT_SPAN_KEY] = cast(JsonValue, parent)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2992
+def with_carrier(kwargs: dict[str, object], parent: Span) -> None:
+    params: dict[str, object] = DICT.validate_python(kwargs["litellm_params"])
+    metadata: dict[str, object] = DICT.validate_python(params["metadata"])
+    metadata[PARENT_SPAN_KEY] = parent
     params["metadata"] = metadata
     kwargs["litellm_params"] = params
 
 
-def emit(logger: Probe, scenario: Scenario, kwargs: dict[str, JsonValue]) -> None:
+def emit(logger: Probe, scenario: Scenario, kwargs: dict[str, object]) -> None:
     start = datetime.fromtimestamp(scenario["start_time"], tz=UTC)
     end = datetime.fromtimestamp(scenario["end_time"], tz=UTC)
     repeat = scenario.get("repeat") is True
     if scenario["event"] == "success":
-        logger.log_success_event(kwargs, None, start, end)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L756
+        logger.log_success_event(kwargs, None, start, end)
         if repeat:
-            asyncio.run(logger.async_log_success_event(kwargs, None, start, end))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L762
+            asyncio.run(logger.async_log_success_event(kwargs, None, start, end))
         return
-    logger.log_failure_event(kwargs, None, start, end)  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L759
+    logger.log_failure_event(kwargs, None, start, end)
     if repeat:
-        asyncio.run(logger.async_log_failure_event(kwargs, None, start, end))  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L765
+        asyncio.run(logger.async_log_failure_event(kwargs, None, start, end))
 
 
 def lifecycle_call(scenario: Scenario, logger: Probe, parent: Span | None) -> None:
-    kwargs = scenario["kwargs"]
+    kwargs: dict[str, object] = dict(scenario["kwargs"])
     spec = scenario.get("parent")
     carrier = "" if spec is None else spec["carrier"]
     if carrier == "metadata" and parent is not None:
@@ -165,11 +197,10 @@ def guardrails_call(scenario: Scenario, logger: Probe) -> None:
     request_data[bucket] = metadata
     params = DICT.validate_python(scenario["kwargs"]["litellm_params"])
     params["metadata"] = metadata
-    scenario["kwargs"]["litellm_params"] = params
-    emit(logger, scenario, scenario["kwargs"])
-    logger._emit_guardrail_spans_from_request_data(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L991
-        request_data=request_data, parent_span=None
-    )
+    kwargs: dict[str, object] = dict(scenario["kwargs"])
+    kwargs["litellm_params"] = params
+    emit(logger, scenario, kwargs)
+    logger.emit_guardrail_spans_from_request_data(request_data)
 
 
 def json_text(text: str) -> str:
