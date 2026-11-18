@@ -1,0 +1,10 @@
+kind: helper
+name: spend-attribution-records-corpus-seed
+call:
+  spend_attribution:
+    function: ocr_usage
+    usage_info: null
+    attribute_present: true
+    attribute_usage_info: {pages_processed: 1}
+env: {}
+compare: {ignore: []}

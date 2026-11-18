@@ -58,8 +58,10 @@ description: >-
 
 
   Pinned settings read by this component (resolve once in betterlite-config, pass typed values): general_settings.enable_oauth2_auth=False;
-  general_settings.enable_jwt_auth=False; general_settings.enable_oauth2_proxy_auth=False;
-  litellm_jwtauth.virtual_key_mapping_cache_ttl=300.
+  general_settings.enable_jwt_auth=False; general_settings.enable_oauth2_proxy_auth=False.
+  It also reads litellm_jwtauth.virtual_key_mapping_cache_ttl=300. That is a LiteLLM_JWTAuth field, and B869's
+  jwt_settings section (config.sections.jwt_settings) parses and validates that whole object; read the typed value
+  from there. The auth_backend_dispatch section does not parse it again.
 
 
   Drive backend dispatch through B732's installed stage and an actual inference route. Native JWT/OAuth
@@ -67,8 +69,8 @@ description: >-
   Provision its auth rows through B860 using POSTGRES_TEST_URL, or testcontainers when absent.
 
 
-  Write betterlite-config::auth_backend_dispatch::tests::flags_default_false, literal_true_enables,
-  string_true_does_not_enable and mapping_ttl_default_and_override.
+  Write betterlite-config::auth_backend_dispatch::tests::flags_default_false, literal_true_enables
+  and string_true_does_not_enable.
   Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
