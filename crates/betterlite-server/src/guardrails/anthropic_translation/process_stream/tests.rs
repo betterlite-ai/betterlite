@@ -160,6 +160,8 @@ async fn ended_passes_the_assembled_text_and_response() {
     assert_eq!(calls[0].input_type, GuardrailInputType::Response);
     assert_eq!(calls[0].inputs.texts, Some(vec!["Hello".to_owned()]));
     assert_eq!(calls[0].inputs.tool_calls, None);
+    assert_eq!(calls[0].inputs.model, None);
+    assert_eq!(calls[0].inputs.images, None);
     let data = stored.unwrap();
     assert_eq!(
         data["response"]["choices"][0]["message"]["content"],
@@ -228,6 +230,23 @@ async fn ended_keeps_a_modify_response_that_has_an_original_response() {
         response.original_response,
         Some(GuardrailValue::Text("kept".to_owned()))
     );
+}
+
+#[tokio::test]
+async fn ended_returns_another_failure_as_it_is() {
+    let guardrail = FakeGuardrail::failing(GuardrailFailure::Http {
+        status: 400,
+        detail: "blocked".to_owned(),
+    });
+    let stream = vec![bytes(&[START, TEXT_1, STOP_TEXT])];
+    let (result, _, _) = process(stream, &guardrail, None, None, false).await;
+    let ProcessStreamError::Guardrail(GuardrailFailure::Http { status, detail }) =
+        result.unwrap_err()
+    else {
+        panic!("expected the http failure");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(detail, "blocked");
 }
 
 #[tokio::test]
