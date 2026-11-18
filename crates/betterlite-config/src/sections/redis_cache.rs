@@ -61,7 +61,14 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let settings = self.litellm_settings;
-        let cache_switch = matches!(settings.cache, Some(ScalarBool::Boolean(true)));
+        let cache_switch = match settings.cache {
+            Some(ScalarBool::Boolean(value)) => value,
+            Some(ScalarBool::Text(text)) => {
+                let _text_length = text.len();
+                false
+            }
+            None => false,
+        };
         let (ttl_number, ttl_path) = if cache_switch {
             match settings.cache_params.default_redis_ttl {
                 Some(number) => (Some(number), CACHE_PARAMS_TTL_PATH),

@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_router::redis_failure_policy::State;
 use betterlite_router::redis_failure_policy::classify::{
     Failure, FailureClass, MAX_CAUSE_DEPTH, is_health_failure,
 };
@@ -56,18 +57,21 @@ impl BreakerGate for PolicyGate {
         let now = (self.clock)();
         let mut policy = self.policy.lock().unwrap_or_else(PoisonError::into_inner);
         let admission = policy.admit(now, name).map_err(|_| BreakerOpen { name })?;
+        let is_probe = policy.status().state == State::HalfOpen;
         let generation = policy.status().generation;
         drop(policy);
-        let slot = ProbeSlot {
-            policy: Arc::clone(&self.policy),
-            admission,
-        };
-        let replaced = self
-            .probe
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .replace(slot);
-        drop(replaced);
+        if is_probe {
+            let slot = ProbeSlot {
+                policy: Arc::clone(&self.policy),
+                admission,
+            };
+            let replaced = self
+                .probe
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .replace(slot);
+            drop(replaced);
+        }
         let call = self.next_call.fetch_add(1, Ordering::Relaxed);
         Ok(BreakerAdmission::from(
             generation
@@ -163,8 +167,7 @@ impl PolicyGate {
     fn health_failure(
         error: &(dyn StdError + Send + Sync),
     ) -> Option<(FailureClass, Vec<FailureClass>)> {
-        let linked = error.source()?;
-        let (class, causes) = classify(linked)?;
+        let (class, causes) = classify(error)?;
         is_health_failure(class).then_some((class, causes))
     }
 
