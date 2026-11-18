@@ -1,10 +1,52 @@
 use betterlite_core::api::realtime_contracts::events::AllDeltaType;
+use betterlite_models::decisions::Json;
 
 use super::support;
+use crate::realtime_events::decode::json_dict;
 
 pub(super) fn native_session_and_state() {
     session_start_marker();
     state_preserved();
+    content_start_with_ids();
+}
+
+// A response id already in the state keeps response.created out and the item id in the events
+fn content_start_with_ids() {
+    let ids = support::CountingIds::new();
+    let mut session = support::new_session();
+    let input = support::input_with_ids("item_kept", "resp_kept", "conv_kept");
+    let response = support::transform(
+        &mut session,
+        &ids,
+        r#"{"event":{"contentStart":{"role":"ASSISTANT","type":"AUDIO"}}}"#,
+        &input,
+    )
+    .expect("an assistant content start on an open response");
+    let events = support::events(&response);
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        support::event_type(&events[0]),
+        Some("response.output_item.added")
+    );
+    assert_eq!(
+        support::event_type(&events[1]),
+        Some("response.content_part.added")
+    );
+    let item = json_dict(&events[0])
+        .and_then(|fields| fields.get("item"))
+        .and_then(json_dict)
+        .expect("the added item");
+    assert_eq!(item.get("id"), Some(&Json::Text("item_kept".to_owned())));
+    assert_eq!(
+        response.current_output_item_id.as_deref(),
+        Some("item_kept")
+    );
+    assert_eq!(response.current_response_id.as_deref(), Some("resp_kept"));
+    assert_eq!(
+        response.current_conversation_id.as_deref(),
+        Some("conv_kept")
+    );
+    assert_eq!(response.current_delta_type, Some(AllDeltaType::Audio));
 }
 
 fn session_start_marker() {
