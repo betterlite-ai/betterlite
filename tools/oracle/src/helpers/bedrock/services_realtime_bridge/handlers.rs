@@ -70,7 +70,7 @@ enum PumpResult<'result> {
 }
 
 // The pump's outcome with nothing observed yet, for the direction that fills only its own side
-fn pump_outcome(pump: &PumpResult<'_>) -> BridgeView {
+const fn pump_outcome(pump: &PumpResult<'_>) -> BridgeView {
     let (outcome, error) = match pump {
         PumpResult::Client(run) => match run {
             Ok(ForwardEnd::Ended) => ("ended", None),
