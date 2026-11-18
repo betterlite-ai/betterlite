@@ -64,10 +64,6 @@ impl RemoteMediaFetcher for RefuseDownloads {
 }
 
 #[expect(
-    clippy::future_not_send,
-    reason = "the request borrows its environment and downloader as plain trait objects, and a plain transform stays synchronous"
-)]
-#[expect(
     clippy::multiple_inherent_impl,
     reason = "the media seam lives beside its recording pass and tests; chat_content.rs keeps the type's first impl"
 )]
