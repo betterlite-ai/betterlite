@@ -1,11 +1,18 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_config::sections::model_rate_limits as section;
+use betterlite_config::sections::routing_state_store::connection::Connection;
 use betterlite_router::io_token_reservations::clock::IoClock;
 use betterlite_router::model_rate_limits::cache::RateLimitCache;
+use betterlite_router::redis_failure_policy::Settings as BreakerSettings;
+use betterlite_router::routing_state_store::test_support::FakeRedis;
+use betterlite_router::routing_state_store::{
+    RedisSettings, RoutingStateStore, Settings as StateSettings,
+};
 use betterlite_router::routing_value_store::{RoutingValueStore, StoreSettings};
 
 use super::{ModelRateLimitStores, RoutingRateLimitCache, build};
@@ -38,6 +45,29 @@ fn cache(local: Arc<RoutingValueStore>) -> RoutingRateLimitCache {
 
 fn clock() -> IoClock {
     Arc::new(|| UNIX_EPOCH + Duration::from_secs(1_700_000_000))
+}
+
+fn remote_settings(port: u16) -> StateSettings {
+    StateSettings {
+        redis: RedisSettings {
+            url: None,
+            host: Some(String::from("127.0.0.1")),
+            port: Some(i64::from(port)),
+            password: None,
+            namespace: None,
+            connection: Connection::default(),
+            socket_timeout: 2.0_f64,
+            pool_timeout_seconds: 5,
+            environment: BTreeMap::new(),
+        },
+        breaker: BreakerSettings {
+            enabled: true,
+            failure_threshold: 3,
+            recovery_timeout: Duration::from_secs(60),
+            timeout_min_duration: Duration::from_secs(5),
+            timeout_log_interval: Duration::from_secs(1),
+        },
+    }
 }
 
 #[test]
@@ -73,10 +103,37 @@ fn an_absent_remote_keeps_the_local_count() {
         Some(1)
     );
     assert_eq!(
+        runtime.block_on(cache.increment("router:rpm", 1, 60)),
+        Some(2)
+    );
+    assert_eq!(
         runtime.block_on(cache.remote("router:rpm")),
         super::RemoteRead::Value(None)
     );
-    assert_eq!(cache.local("router:rpm"), Some(1));
+    assert_eq!(cache.local("router:rpm"), Some(2));
+}
+
+#[test]
+fn a_configured_remote_answers_reads() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+    let server = runtime
+        .block_on(FakeRedis::try_start())
+        .expect("the fake redis starts");
+    let store =
+        RoutingStateStore::new(&remote_settings(server.port()), Arc::new(|| Duration::ZERO))
+            .expect("the state store opens");
+    let cache = RoutingRateLimitCache {
+        local: local(),
+        remote: Some(Arc::new(store)),
+    };
+    assert!(cache.has_remote());
+    assert_eq!(
+        runtime.block_on(cache.remote("router:tpm")),
+        super::RemoteRead::Value(None)
+    );
 }
 
 #[test]

@@ -97,14 +97,14 @@ impl RateLimitCache for RoutingRateLimitCache {
         let Ok(key) = RouteKey::parse(key) else {
             return local;
         };
-        match store
+        let counter = store
             .increment(
                 &key,
                 &RouteIncrement::Counter(by),
                 Some(Duration::from_secs(ttl_seconds).as_secs_f64()),
             )
-            .await
-        {
+            .await;
+        match counter.map(|observed| observed.value) {
             Ok(RouteValue::Counter(value)) => Some(value),
             Ok(_) | Err(_) => local,
         }
