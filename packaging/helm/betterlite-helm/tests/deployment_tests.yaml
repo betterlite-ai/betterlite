@@ -1,0 +1,410 @@
+suite: deployment
+templates:
+  - deployment.yaml
+  - configmap-betterlite.yaml
+  - extra-resources.yaml
+tests:
+  - it: renders the deployment of the chart's release
+    template: deployment.yaml
+    asserts:
+      - isKind: { of: Deployment }
+      - equal: { path: apiVersion, value: apps/v1 }
+      - equal: { path: metadata.name, value: RELEASE-NAME-betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }
+
+  - it: carries deployment annotations and extra labels
+    template: deployment.yaml
+    set: { deploymentAnnotations: { example.com/owner: gateway }, deploymentLabels: { team: platform } }
+    asserts:
+      - equal: { path: 'metadata.annotations["example.com/owner"]', value: gateway }
+      - equal: { path: metadata.labels.team, value: platform }
+      - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
+
+  - it: has no deployment annotations by default
+    template: deployment.yaml
+    asserts:
+      - notExists: { path: metadata.annotations }
+
+  - it: writes the replica count when no autoscaler owns it
+    template: deployment.yaml
+    asserts:
+      - equal: { path: spec.replicas, value: 1 }
+
+  - it: follows replicaCount, including an explicit zero
+    template: deployment.yaml
+    set: { replicaCount: 0 }
+    asserts:
+      - equal: { path: spec.replicas, value: 0 }
+
+  - it: leaves replicas out when the HPA owns the count
+    template: deployment.yaml
+    set: { autoscaling.enabled: true }
+    asserts:
+      - notExists: { path: spec.replicas }
+
+  - it: leaves replicas out when KEDA owns the count
+    template: deployment.yaml
+    set: { keda.enabled: true }
+    asserts:
+      - notExists: { path: spec.replicas }
+
+  - it: renders the rollout strategy from values
+    template: deployment.yaml
+    set: { strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } } }
+    asserts:
+      - equal: { path: spec.strategy.type, value: RollingUpdate }
+      - equal: { path: spec.strategy.rollingUpdate.maxUnavailable, value: 0 }
+      - equal: { path: spec.strategy.rollingUpdate.maxSurge, value: 1 }
+
+  - it: leaves the strategy to Kubernetes by default
+    template: deployment.yaml
+    asserts:
+      - notExists: { path: spec.strategy }
+
+  - it: writes minReadySeconds when it is non-zero
+    template: deployment.yaml
+    set: { deploymentMinReadySeconds: 5 }
+    asserts:
+      - equal: { path: spec.minReadySeconds, value: 5 }
+
+  - it: omits minReadySeconds when it is zero
+    template: deployment.yaml
+    set: { deploymentMinReadySeconds: 0 }
+    asserts:
+      - notExists: { path: spec.minReadySeconds }
+
+  - it: selects the pods by the chart's selector labels
+    template: deployment.yaml
+    set: { deploymentLabels: { team: platform } }
+    asserts:
+      - equal: { path: spec.selector.matchLabels, value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME } }
+
+  - it: merges podLabels into the pod labels
+    template: deployment.yaml
+    set: { podLabels: { team: platform } }
+    asserts:
+      - equal: { path: spec.template.metadata.labels.team, value: platform }
+      - equal: { path: 'spec.template.metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }
+
+  - it: uses the chart appVersion until image.tag is set
+    template: deployment.yaml
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite:v1.85.1' }
+
+  - it: follows image.tag and pullPolicy
+    template: deployment.yaml
+    set: { image: { tag: test, pullPolicy: IfNotPresent } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite:test' }
+      - equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: IfNotPresent }
+
+  - it: passes imagePullSecrets through to the pod
+    template: deployment.yaml
+    set: { imagePullSecrets: [{ name: registry-creds }] }
+    asserts:
+      - equal: { path: spec.template.spec.imagePullSecrets, value: [{ name: registry-creds }] }
+
+  - it: omits imagePullSecrets by default
+    template: deployment.yaml
+    asserts:
+      - notExists: { path: spec.template.spec.imagePullSecrets }
+
+  - it: uses the default service account unless one is configured
+    template: deployment.yaml
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: default }
+
+  - it: follows serviceAccount.name
+    template: deployment.yaml
+    set: { serviceAccount: { name: gateway } }
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: gateway }
+
+  - it: uses the chart's service account when it creates one
+    template: deployment.yaml
+    set: { serviceAccount: { create: true, name: "" } }
+    asserts:
+      - equal: { path: spec.template.spec.serviceAccountName, value: RELEASE-NAME-betterlite }
+
+  - it: renders the pod and container security contexts
+    template: deployment.yaml
+    set: { podSecurityContext: { fsGroup: 10000, runAsNonRoot: true }, securityContext: { allowPrivilegeEscalation: false } }
+    asserts:
+      - equal: { path: spec.template.spec.securityContext, value: { fsGroup: 10000, runAsNonRoot: true } }
+      - equal: { path: 'spec.template.spec.containers[0].securityContext', value: { allowPrivilegeEscalation: false } }
+
+  - it: renders container resources from values
+    template: deployment.yaml
+    set: { resources: { requests: { cpu: 250m, memory: 1Gi }, limits: { cpu: 500m, memory: 2Gi } } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].resources.requests.cpu', value: 250m }
+      - equal: { path: 'spec.template.spec.containers[0].resources.limits.memory', value: 2Gi }
+
+  - it: renders the http port from service.port
+    template: deployment.yaml
+    asserts:
+      - lengthEqual: { path: 'spec.template.spec.containers[0].ports', count: 1 }
+      - equal: { path: 'spec.template.spec.containers[0].ports[0]', value: { name: http, containerPort: 4000, protocol: TCP } }
+
+  - it: follows a custom service port on the container
+    template: deployment.yaml
+    set: { service: { port: 8080 } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].ports[0].containerPort', value: 8080 }
+
+  - it: renders all three probes on the http port
+    template: deployment.yaml
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].livenessProbe'
+          value: { httpGet: { path: /health/liveliness, port: "http" }, initialDelaySeconds: 0, periodSeconds: 15, timeoutSeconds: 5, successThreshold: 1, failureThreshold: 5 }
+      - equal:
+          path: 'spec.template.spec.containers[0].readinessProbe'
+          value: { httpGet: { path: /health/readiness, port: "http" }, initialDelaySeconds: 0, periodSeconds: 10, timeoutSeconds: 5, successThreshold: 1, failureThreshold: 3 }
+      - equal:
+          path: 'spec.template.spec.containers[0].startupProbe'
+          value: { httpGet: { path: /health/readiness, port: "http" }, initialDelaySeconds: 0, periodSeconds: 10, timeoutSeconds: 5, successThreshold: 1, failureThreshold: 30 }
+
+  - it: follows every probe field from values
+    template: deployment.yaml
+    set:
+      livenessProbe: { path: /custom/livez, initialDelaySeconds: 5, periodSeconds: 15, timeoutSeconds: 6, successThreshold: 1, failureThreshold: 5 }
+      readinessProbe: { path: /custom/readyz, initialDelaySeconds: 10, periodSeconds: 20, timeoutSeconds: 6, successThreshold: 1, failureThreshold: 6 }
+      startupProbe: { path: /custom/startupz, initialDelaySeconds: 15, periodSeconds: 25, timeoutSeconds: 7, successThreshold: 2, failureThreshold: 40 }
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].livenessProbe'
+          value: { httpGet: { path: /custom/livez, port: "http" }, initialDelaySeconds: 5, periodSeconds: 15, timeoutSeconds: 6, successThreshold: 1, failureThreshold: 5 }
+      - equal:
+          path: 'spec.template.spec.containers[0].readinessProbe'
+          value: { httpGet: { path: /custom/readyz, port: "http" }, initialDelaySeconds: 10, periodSeconds: 20, timeoutSeconds: 6, successThreshold: 1, failureThreshold: 6 }
+      - equal:
+          path: 'spec.template.spec.containers[0].startupProbe'
+          value: { httpGet: { path: /custom/startupz, port: "http" }, initialDelaySeconds: 15, periodSeconds: 25, timeoutSeconds: 7, successThreshold: 2, failureThreshold: 40 }
+
+  - it: mounts the proxy configuration ConfigMap at /etc/betterlite/config.yaml
+    template: deployment.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: betterlite-config, configMap: { name: RELEASE-NAME-betterlite-config, items: [{ key: config.yaml, path: config.yaml }] } }
+      - contains:
+          path: 'spec.template.spec.containers[0].volumeMounts'
+          content: { name: betterlite-config, mountPath: /etc/betterlite/config.yaml, subPath: config.yaml }
+
+  - it: mounts an existing ConfigMap under its own key when the chart creates none
+    template: deployment.yaml
+    set: { proxyConfigMap: { create: false, name: my-config, key: custom.yaml } }
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content: { name: betterlite-config, configMap: { name: my-config, items: [{ key: custom.yaml, path: config.yaml }] } }
+
+  - it: annotates the pod with the checksum of the created ConfigMap
+    template: deployment.yaml
+    asserts:
+      - matchRegex: { path: 'spec.template.metadata.annotations["checksum/config"]', pattern: '^[0-9a-f]{64}$' }
+
+  - it: renders podAnnotations through tpl
+    template: deployment.yaml
+    set:
+      image: { tag: test }
+      proxyConfigMap: { create: false }
+      podAnnotations:
+        checksum/config: '{{ .Values.image.tag }}'
+        example.com/owner: '{{ .Values.image.repository }}'
+        example.com/literal: plain-string-value
+    asserts:
+      - equal: { path: 'spec.template.metadata.annotations["checksum/config"]', value: test }
+      - equal: { path: 'spec.template.metadata.annotations["example.com/owner"]', value: ghcr.io/betterlite-ai/betterlite }
+      - equal: { path: 'spec.template.metadata.annotations["example.com/literal"]', value: plain-string-value }
+
+  - it: leaves pod annotations out when there is neither a checksum nor a user annotation
+    template: deployment.yaml
+    set: { proxyConfigMap: { create: false } }
+    asserts:
+      - notExists: { path: spec.template.metadata.annotations }
+
+  - it: adds a writable /tmp only under a read-only root filesystem
+    template: deployment.yaml
+    set: { securityContext: { readOnlyRootFilesystem: true } }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].volumeMounts', content: { name: tmp, mountPath: /tmp } }
+      - contains: { path: spec.template.spec.volumes, content: { name: tmp, emptyDir: { sizeLimit: 500Mi } } }
+
+  - it: mounts no /tmp volume by default
+    template: deployment.yaml
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].volumeMounts', content: { name: tmp }, any: true }
+      - notContains: { path: spec.template.spec.volumes, content: { name: tmp }, any: true }
+
+  - it: appends the operator's volumes and mounts
+    template: deployment.yaml
+    set:
+      volumeMounts: [{ name: tls, mountPath: /etc/tls, readOnly: true }]
+      volumes: [{ name: tls, secret: { secretName: gateway-tls } }]
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].volumeMounts', content: { name: tls, mountPath: /etc/tls, readOnly: true } }
+      - contains: { path: spec.template.spec.volumes, content: { name: tls, secret: { secretName: gateway-tls } } }
+
+  - it: waits the configured grace period before stopping the pod
+    template: deployment.yaml
+    asserts:
+      - equal: { path: spec.template.spec.terminationGracePeriodSeconds, value: 90 }
+
+  - it: follows terminationGracePeriodSeconds
+    template: deployment.yaml
+    set: { terminationGracePeriodSeconds: 30 }
+    asserts:
+      - equal: { path: spec.template.spec.terminationGracePeriodSeconds, value: 30 }
+
+  - it: falls back to 90 seconds when the grace period is zero
+    template: deployment.yaml
+    set: { terminationGracePeriodSeconds: 0 }
+    asserts:
+      - equal: { path: spec.template.spec.terminationGracePeriodSeconds, value: 90 }
+
+  - it: renders extraInitContainers through tpl
+    template: deployment.yaml
+    set:
+      image: { tag: test }
+      extraInitContainers:
+        - name: init-tpl
+          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+          command: ["echo", "hello"]
+    asserts:
+      - contains:
+          path: spec.template.spec.initContainers
+          content: { name: init-tpl, image: 'ghcr.io/betterlite-ai/betterlite:test', command: [echo, hello] }
+
+  - it: renders extraContainers through tpl
+    template: deployment.yaml
+    set:
+      image: { tag: test }
+      extraContainers:
+        - name: sidecar-tpl
+          image: '{{ .Values.image.repository }}:{{ .Values.image.tag }}'
+    asserts:
+      - contains:
+          path: spec.template.spec.containers
+          content: { name: sidecar-tpl, image: 'ghcr.io/betterlite-ai/betterlite:test' }
+
+  - it: carries the lifecycle hooks from values
+    template: deployment.yaml
+    set: { lifecycle: { preStop: { exec: { command: ["/bin/sh", "-c", "sleep 5"] } } } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[0].lifecycle.preStop.exec.command', value: [/bin/sh, -c, sleep 5] }
+
+  - it: renders the scheduling fields from values
+    template: deployment.yaml
+    set:
+      nodeSelector: { disktype: ssd }
+      tolerations: [{ key: workload, operator: Equal, value: gateway, effect: NoSchedule }]
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - { key: zone, operator: In, values: [antarctica-east1] }
+      topologySpreadConstraints:
+        - { maxSkew: 1, topologyKey: topology.kubernetes.io/zone, whenUnsatisfiable: ScheduleAnyway }
+    asserts:
+      - equal: { path: spec.template.spec.nodeSelector, value: { disktype: ssd } }
+      - equal: { path: 'spec.template.spec.tolerations[0].key', value: workload }
+      - equal: { path: 'spec.template.spec.affinity.nodeAffinity.requiredDuringSchedulingIgnoredDuringExecution.nodeSelectorTerms[0].matchExpressions[0].values[0]', value: antarctica-east1 }
+      - equal: { path: 'spec.template.spec.topologySpreadConstraints[0].topologyKey', value: topology.kubernetes.io/zone }
+
+  - it: leaves the scheduling fields out by default
+    template: deployment.yaml
+    asserts:
+      - notExists: { path: spec.template.spec.nodeSelector }
+      - notExists: { path: spec.template.spec.affinity }
+      - notExists: { path: spec.template.spec.tolerations }
+      - notExists: { path: spec.template.spec.topologySpreadConstraints }
+
+  - it: renders the shared proxy environment and the master key reference
+    template: deployment.yaml
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: HOST, value: "0.0.0.0" } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: PORT, value: "4000" } }
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: PROXY_MASTER_KEY, valueFrom: { secretKeyRef: { name: RELEASE-NAME-betterlite-masterkey, key: masterkey } } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: INFO } }
+
+  - it: follows listen, the master key secret and the log level
+    template: deployment.yaml
+    set: { listen: 127.0.0.1, masterkeySecretName: gateway-masterkey, masterkeySecretKey: token, logLevel: DEBUG }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: HOST, value: 127.0.0.1 } }
+      - contains:
+          path: 'spec.template.spec.containers[0].env'
+          content: { name: PROXY_MASTER_KEY, valueFrom: { secretKeyRef: { name: gateway-masterkey, key: token } } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: DEBUG } }
+
+  - it: skips the injected log level when envVars defines it
+    template: deployment.yaml
+    set: { envVars: { LITELLM_LOG: WARNING } }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: WARNING } }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: INFO }, any: true }
+
+  - it: passes envVars and extraEnvVars through
+    template: deployment.yaml
+    set:
+      envVars: { EXAMPLE: one, OTHER: two }
+      extraEnvVars: [{ name: EXTRA, valueFrom: { fieldRef: { fieldPath: metadata.name } } }]
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: EXAMPLE, value: one } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: OTHER, value: two } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: EXTRA, valueFrom: { fieldRef: { fieldPath: metadata.name } } } }
+
+  - it: writes DISABLE_SCHEMA_UPDATE=true after the operator's variables
+    template: deployment.yaml
+    set: { envVars: { DISABLE_SCHEMA_UPDATE: "false" } }
+    asserts:
+      - lengthEqual: { path: 'spec.template.spec.containers[0].env', count: 10 }
+      - equal: { path: 'spec.template.spec.containers[0].env[8]', value: { name: DISABLE_SCHEMA_UPDATE, value: "false" } }
+      - equal: { path: 'spec.template.spec.containers[0].env[9]', value: { name: DISABLE_SCHEMA_UPDATE, value: "true" } }
+
+  - it: leaves the schema setting alone when no migrations Job runs
+    template: deployment.yaml
+    set: { migrationJob: { enabled: false } }
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DISABLE_SCHEMA_UPDATE }, any: true }
+
+  - it: imports environmentSecrets and environmentConfigMaps
+    template: deployment.yaml
+    set: { environmentSecrets: [gateway-secrets], environmentConfigMaps: [gateway-config] }
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].envFrom'
+          value: [{ secretRef: { name: gateway-secrets } }, { configMapRef: { name: gateway-config } }]
+
+  - it: has no envFrom without imported Secrets or ConfigMaps
+    template: deployment.yaml
+    asserts:
+      - notExists: { path: 'spec.template.spec.containers[0].envFrom' }
+
+  - it: renders no extra resources by default
+    template: extra-resources.yaml
+    asserts:
+      - hasDocuments: { count: 0 }
+
+  - it: renders every extra resource as its own document
+    template: extra-resources.yaml
+    set:
+      extraResources:
+        - { apiVersion: v1, kind: ConfigMap, metadata: { name: first }, data: { key: value } }
+        - { apiVersion: v1, kind: Secret, metadata: { name: second }, type: Opaque }
+    asserts:
+      - hasDocuments: { count: 2 }
+      - isKind: { of: ConfigMap }
+        documentIndex: 0
+      - equal: { path: metadata.name, value: first }
+        documentIndex: 0
+      - isKind: { of: Secret }
+        documentIndex: 1
+      - equal: { path: metadata.name, value: second }
+        documentIndex: 1
