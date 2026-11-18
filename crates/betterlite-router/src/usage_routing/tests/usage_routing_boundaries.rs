@@ -112,6 +112,33 @@ fn usage_routing_boundaries_name_a_fractional_token_limit() {
     assert_eq!(error.unbuilt_entry(), None);
 }
 
+// a null at one level falls through to the next, the way dict.get() hands back None and LiteLLM reads on
+#[test]
+fn usage_routing_boundaries_read_past_a_null_limit_level() {
+    let deployments = [deployment(
+        "dep-a",
+        &[("tpm", Json::Null)],
+        &[],
+        &[("tpm", number(10))],
+    )];
+    assert_eq!(
+        select_counts(&WindowCounts::default(), &deployments, 11).unwrap(),
+        None
+    );
+}
+
+// a requests window without a token window still applies its limit, as it does when only the tpm key expired
+#[test]
+fn usage_routing_boundaries_apply_the_request_limit_without_a_token_window() {
+    let deployments = [deployment("dep-a", &[], &[], &[("rpm", number(3))])];
+    let requests = counts(&[("dep-a", 2)]);
+    let windows = WindowCounts {
+        tpm: None,
+        rpm: Some(&requests),
+    };
+    assert_eq!(select_counts(&windows, &deployments, 0).unwrap(), None);
+}
+
 // a count and an estimate that add past i64's maximum still exceed the limit instead of wrapping below it
 #[test]
 fn usage_routing_boundaries_add_past_the_signed_maximum() {
