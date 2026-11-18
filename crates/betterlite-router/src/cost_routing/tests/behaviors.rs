@@ -31,6 +31,7 @@ enum Behavior {
     NullCatalogPriceTakesFive,
     CatalogEntryFromUnpricedSibling,
     CatalogEntryKeepsItsOwnFields,
+    CatalogPricesAnUnpricedDeployment,
     NullOverrideKeepsTheCatalog,
     EqualCatalogSourcesKeepTheFirst,
     ScreensByCapacity,
@@ -58,6 +59,7 @@ enum Behavior {
 #[case::null_catalog_price_takes_five(Behavior::NullCatalogPriceTakesFive)]
 #[case::catalog_entry_from_unpriced_sibling(Behavior::CatalogEntryFromUnpricedSibling)]
 #[case::catalog_entry_keeps_its_own_fields(Behavior::CatalogEntryKeepsItsOwnFields)]
+#[case::catalog_prices_an_unpriced_deployment(Behavior::CatalogPricesAnUnpricedDeployment)]
 #[case::null_override_keeps_the_catalog(Behavior::NullOverrideKeepsTheCatalog)]
 #[case::equal_catalog_sources_keep_the_first(Behavior::EqualCatalogSourcesKeepTheFirst)]
 #[case::screens_by_capacity(Behavior::ScreensByCapacity)]
@@ -85,6 +87,7 @@ async fn cost_routing_behaviors(#[case] behavior: Behavior) {
         Behavior::NullCatalogPriceTakesFive => null_catalog_price_takes_five(),
         Behavior::CatalogEntryFromUnpricedSibling => catalog_entry_from_unpriced_sibling(),
         Behavior::CatalogEntryKeepsItsOwnFields => catalog_entry_keeps_its_own_fields(),
+        Behavior::CatalogPricesAnUnpricedDeployment => catalog_prices_an_unpriced_deployment(),
         Behavior::NullOverrideKeepsTheCatalog => null_override_keeps_the_catalog(),
         Behavior::EqualCatalogSourcesKeepTheFirst => equal_catalog_sources_keep_the_first(),
         Behavior::ScreensByCapacity => screens_by_capacity(),
@@ -365,6 +368,24 @@ fn catalog_entry_keeps_its_own_fields() {
     ];
     let costs = DeploymentCosts::from_deployments(&pool);
     // d1 reads its own input and the entry's output at 0.55; hiding that output would put y ahead of both
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// a deployment that names no custom price is priced from its own catalog entry, which only the entry read supplies
+fn catalog_prices_an_unpriced_deployment() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec(
+            "a",
+            "openai/catalog",
+            &[],
+            &[(INPUT_COST, number("0.1")), (OUTPUT_COST, number("0.1"))],
+            &[],
+        ),
+        priced("b", MODEL, "0.25", "0.25"),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // a reads its catalog entry at 0.2 and beats b at 0.5; without the entry both sides default and b wins
     assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
 }
 
