@@ -8,12 +8,14 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import (
     PassThroughEndpointLoggingTypedDict as LoggingOutcome,
 )
-from litellm.proxy.pass_through_endpoints.llm_provider_handlers.gemini_passthrough_logging_handler import (
+from litellm.proxy.pass_through_endpoints.llm_provider_handlers.gemini_passthrough_logging_handler import (  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L34-L35
     GeminiPassthroughLoggingHandler as GeminiHandler,
 )
-from litellm.proxy.pass_through_endpoints.llm_provider_handlers.vertex_passthrough_logging_handler import (
+from litellm.proxy.pass_through_endpoints.llm_provider_handlers.vertex_passthrough_logging_handler import (  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L333-L338
     VertexPassthroughLoggingHandler as VertexHandler,
 )
+from litellm.proxy.pass_through_endpoints.success_handler import PassThroughEndpointLogging
+from litellm.types.passthrough_endpoints.pass_through_endpoints import EndpointType
 from litellm.types.utils import ModelResponse
 from litellm.types.videos.main import VideoObject
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
@@ -21,12 +23,9 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 Operation: TypeAlias = Literal["gemini_handler", "gemini_chunks", "vertex_chunks"]
 
 
-class RequiredInput(TypedDict):
+class Input(TypedDict, total=False):
     operation: Operation
     url_route: str
-
-
-class Input(RequiredInput, total=False):
     body: JsonValue
     request_body: dict[str, JsonValue] | None
     lines: list[str]
@@ -88,9 +87,7 @@ class RecordedCall(BaseModel):
 
 INPUT: TypeAdapter[Input] = TypeAdapter(Input)
 BODY: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-REQUEST_BODY: TypeAdapter[dict[str, JsonValue] | None] = TypeAdapter(
-    dict[str, JsonValue] | None
-)
+REQUEST_BODY: TypeAdapter[dict[str, JsonValue] | None] = TypeAdapter(dict[str, JsonValue] | None)
 
 START: datetime = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -104,42 +101,42 @@ class Recorder:
         self,
         completion_response: ModelResponse | VideoObject,
         model: str,
-        custom_llm_provider: str | None = None,
+        custom_llm_provider: str,
         call_type: str | None = None,
         vertex_location: str | None = None,
     ) -> float:
-        if custom_llm_provider is None:
-            return self.price
-        if isinstance(completion_response, VideoObject):
-            self.calls.append(
-                RecordedCall(
-                    model=model,
-                    custom_llm_provider=custom_llm_provider,
-                    response_model=completion_response.model,
-                    usage=None,
-                    kind="video",
-                    call_type=call_type,
-                    vertex_location=vertex_location,
+        match completion_response:
+            case VideoObject():
+                self.calls.append(
+                    RecordedCall(
+                        model=model,
+                        custom_llm_provider=custom_llm_provider,
+                        response_model=completion_response.model,
+                        usage=None,
+                        kind="video",
+                        call_type=call_type,
+                        vertex_location=vertex_location,
+                    )
                 )
-            )
-            return self.price
-        usage = completion_response.usage
-        counts = (
-            (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
-            if usage is not None
-            else None
-        )
-        self.calls.append(
-            RecordedCall(
-                model=model,
-                custom_llm_provider=custom_llm_provider,
-                response_model=completion_response.model,
-                usage=counts,
-                kind="completion",
-                call_type=call_type,
-                vertex_location=vertex_location,
-            )
-        )
+            case ModelResponse():
+                chat = ChatDump.model_validate_json(completion_response.model_dump_json())
+                usage = chat.usage
+                counts = (
+                    (usage.prompt_tokens, usage.completion_tokens, usage.total_tokens)
+                    if usage is not None
+                    else None
+                )
+                self.calls.append(
+                    RecordedCall(
+                        model=model,
+                        custom_llm_provider=custom_llm_provider,
+                        response_model=completion_response.model,
+                        usage=counts,
+                        kind="completion",
+                        call_type=call_type,
+                        vertex_location=vertex_location,
+                    )
+                )
         return self.price
 
 
@@ -160,39 +157,41 @@ def make_logging() -> Logging:
 def result_value(response: ModelResponse | VideoObject | None) -> JsonValue:
     if response is None:
         return None
-    if isinstance(response, VideoObject):
-        video = VideoDump.model_validate_json(response.model_dump_json())
-        return {
-            "kind": "video",
-            "id": video.id,
-            "model": video.model,
-            "status": video.status,
-            "choices": [],
-            "usage": None,
-        }
-    chat = ChatDump.model_validate_json(response.model_dump_json())
-    usage: JsonValue = None
-    if chat.usage is not None:
-        usage = {
-            "prompt_tokens": chat.usage.prompt_tokens,
-            "completion_tokens": chat.usage.completion_tokens,
-            "total_tokens": chat.usage.total_tokens,
-        }
-    choices: list[JsonValue] = [
-        {
-            "finish_reason": row.finish_reason,
-            "content": row.message.content if row.message is not None else None,
-        }
-        for row in chat.choices
-    ]
-    return {
-        "kind": "chat",
-        "id": chat.id,
-        "model": chat.model,
-        "status": None,
-        "choices": choices,
-        "usage": usage,
-    }
+    match response:
+        case VideoObject():
+            video = VideoDump.model_validate_json(response.model_dump_json())
+            return {
+                "kind": "video",
+                "id": video.id,
+                "model": video.model,
+                "status": video.status,
+                "choices": [],
+                "usage": None,
+            }
+        case ModelResponse():
+            chat = ChatDump.model_validate_json(response.model_dump_json())
+            usage: JsonValue = None
+            if chat.usage is not None:
+                usage = {
+                    "prompt_tokens": chat.usage.prompt_tokens,
+                    "completion_tokens": chat.usage.completion_tokens,
+                    "total_tokens": chat.usage.total_tokens,
+                }
+            choices: list[JsonValue] = [
+                {
+                    "finish_reason": row.finish_reason,
+                    "content": row.message.content if row.message is not None else None,
+                }
+                for row in chat.choices
+            ]
+            return {
+                "kind": "chat",
+                "id": chat.id,
+                "model": chat.model,
+                "status": None,
+                "choices": choices,
+                "usage": usage,
+            }
 
 
 def kwargs_value(outcome: LoggingOutcome) -> dict[str, JsonValue]:
@@ -238,8 +237,8 @@ def cost_value(recorder: Recorder) -> list[JsonValue]:
 
 def answer_value(call: Input, recorder: Recorder) -> JsonValue:
     logging_obj = make_logging()
-    operation = call["operation"]
-    if operation == "gemini_handler":
+    empty_body: dict[str, JsonValue] = {}
+    if call["operation"] == "gemini_handler":
         body = BODY.validate_python(call.get("body"))
         request_body = REQUEST_BODY.validate_python(call.get("request_body"))
         response = httpx.Response(200, content=json.dumps(body).encode())
@@ -254,29 +253,27 @@ def answer_value(call: Input, recorder: Recorder) -> JsonValue:
             cache_hit=False,
             request_body=request_body if request_body is not None else {},
         )
-    elif operation == "gemini_chunks":
-        lines: list[str] = call.get("lines", [])
+    elif call["operation"] == "gemini_chunks":
         outcome = GeminiHandler._handle_logging_gemini_collected_chunks(  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L132
             litellm_logging_obj=logging_obj,
-            passthrough_success_handler_obj=None,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/gemini_passthrough_logging_handler.py#L134
+            passthrough_success_handler_obj=PassThroughEndpointLogging(),
             url_route=call["url_route"],
-            request_body={},
-            endpoint_type="gemini",
+            request_body=empty_body,
+            endpoint_type=EndpointType.GEMINI,
             start_time=START,
-            all_chunks=lines,
+            all_chunks=call["lines"],
             model=call.get("model"),
             end_time=START,
         )
     else:
-        lines = call.get("lines", [])
         outcome = VertexHandler._handle_logging_vertex_collected_chunks(  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L562
             litellm_logging_obj=logging_obj,
-            passthrough_success_handler_obj=None,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L564
+            passthrough_success_handler_obj=PassThroughEndpointLogging(),
             url_route=call["url_route"],
-            request_body={},
-            endpoint_type="vertex_ai",
+            request_body=empty_body,
+            endpoint_type=EndpointType.VERTEX_AI,
             start_time=START,
-            all_chunks=lines,
+            all_chunks=call["lines"],
             model=call.get("model"),
             end_time=START,
         )
