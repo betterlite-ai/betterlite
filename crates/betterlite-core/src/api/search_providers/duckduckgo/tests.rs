@@ -273,10 +273,10 @@ fn null_options_are_left_out() {
 #[case("no_redirect", text("1"))]
 #[case("no_html", text("1"))]
 #[case("skip_disambig", text("1"))]
-#[case("pretty", JsonValue::from(9_223_372_036_854_775_808_u64))]
-#[case("no_redirect", JsonValue::from(9_223_372_036_854_775_808_u64))]
-#[case("no_html", JsonValue::from(9_223_372_036_854_775_808_u64))]
-#[case("skip_disambig", JsonValue::from(9_223_372_036_854_775_808_u64))]
+#[case("pretty", JsonValue::from(0x8000_0000_0000_0000_u64))]
+#[case("no_redirect", JsonValue::from(0x8000_0000_0000_0000_u64))]
+#[case("no_html", JsonValue::from(0x8000_0000_0000_0000_u64))]
+#[case("skip_disambig", JsonValue::from(0x8000_0000_0000_0000_u64))]
 fn an_unsupported_option_value_names_the_field(#[case] field: &str, #[case] value: JsonValue) {
     let error = build_request(&single("q"), &options(&[(field, value)])).unwrap_err();
 
