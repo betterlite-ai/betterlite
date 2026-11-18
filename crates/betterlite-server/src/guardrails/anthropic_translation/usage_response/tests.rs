@@ -1,4 +1,9 @@
 #![cfg(test)]
+#![expect(
+    clippy::default_numeric_fallback,
+    clippy::disallowed_types,
+    reason = "the tests compare provider JSON with serde_json values and plain number literals"
+)]
 
 use std::collections::BTreeMap;
 

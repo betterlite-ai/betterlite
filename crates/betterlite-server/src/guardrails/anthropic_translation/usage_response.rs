@@ -1,12 +1,3 @@
-#![cfg_attr(
-    test,
-    expect(
-        clippy::default_numeric_fallback,
-        clippy::disallowed_types,
-        reason = "the tests compare provider JSON with serde_json values and plain number literals"
-    )
-)]
-
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -73,19 +64,10 @@ pub(super) fn unix_seconds() -> i64 {
 }
 
 fn model_of(request_data: Option<&BTreeMap<String, GuardrailValue>>) -> &str {
-    match request_data.and_then(|data| data.get("model")) {
-        Some(GuardrailValue::Text(text)) => text,
-        Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        )
-        | None => "",
-    }
+    let Some(GuardrailValue::Text(text)) = request_data.and_then(|data| data.get("model")) else {
+        return "";
+    };
+    text
 }
 
 // LiteLLM's _build_streaming_usage_response: the usage-only response a blocked stream reports instead.
