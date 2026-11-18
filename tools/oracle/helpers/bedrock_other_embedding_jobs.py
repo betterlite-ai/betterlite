@@ -62,6 +62,14 @@ class ResponseView(BaseModel):
     text: str
 
 
+def call_record(values: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    additional = POST_ARGS.validate_python(values["additional_args"])
+    return {
+        "input": values["input"],
+        "complete_input_dict": JSON.validate_python(additional["complete_input_dict"]),
+    }
+
+
 class Recorder(Logging):
     def __init__(self) -> None:
         self.pre: list[dict[str, JsonValue]] = []
@@ -71,27 +79,22 @@ class Recorder(Logging):
     def pre_call(self, *_args: JsonValue, **values: JsonValue) -> None:
         additional = PRE_ARGS.validate_python(values["additional_args"])
         header_names: list[str] = list(additional["headers"])
-        self.pre.append(
+        record = call_record(values)
+        record.update(
             {
-                "input": values["input"],
                 "api_base": additional["api_base"],
                 "header_names": JSON.validate_python(header_names),
                 "request_str": additional["request_str"],
-                "complete_input_dict": JSON.validate_python(additional["complete_input_dict"]),
             }
         )
+        self.pre.append(record)
 
     @override
     def post_call(self, *_args: JsonValue, **values: JsonValue) -> None:
         response = ResponseView.model_validate(values["original_response"])
-        additional = POST_ARGS.validate_python(values["additional_args"])
-        self.post.append(
-            {
-                "input": values["input"],
-                "original_response": response.text,
-                "complete_input_dict": JSON.validate_python(additional["complete_input_dict"]),
-            }
-        )
+        record = call_record(values)
+        record["original_response"] = response.text
+        self.post.append(record)
 
 
 class Provider:
