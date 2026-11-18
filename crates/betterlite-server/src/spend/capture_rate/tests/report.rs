@@ -211,25 +211,21 @@ async fn the_billing_request_carries_the_window_and_project_scope() {
         .unwrap();
     let requests = http.take_requests();
     assert_eq!(requests.len(), 1);
+    let query = &requests[0].query;
     assert!(
-        requests[0]
-            .query
+        query
             .iter()
             .any(|(name, value)| name == "project_ids[]" && value == "proj_a")
     );
     assert!(
-        requests[0]
-            .query
+        query
             .iter()
             .any(|(name, value)| name == "start_time"
                 && *value == midnight("2026-11-15").to_string())
     );
-    assert!(
-        requests[0]
-            .query
-            .iter()
-            .any(|(name, value)| name == "end_time" && *value == midnight("2026-11-18").to_string())
-    );
+    assert!(query
+        .iter()
+        .any(|(name, value)| name == "end_time" && *value == midnight("2026-11-18").to_string()));
 }
 
 #[tokio::test]

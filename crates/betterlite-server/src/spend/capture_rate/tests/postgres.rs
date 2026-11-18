@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use chrono::NaiveDate;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
@@ -21,13 +22,22 @@ CREATE TABLE "LiteLLM_DailyUserSpend" (
 );
 "#;
 
+const PROVIDER_ROWS_SQL: &str = r#"
+INSERT INTO "LiteLLM_DailyUserSpend" (date, custom_llm_provider, spend) VALUES
+    ('2026-11-14', 'openai', 9.0),
+    ('2026-11-15', 'openai', 1.5),
+    ('2026-11-15', 'text-completion-openai', 2.25),
+    ('2026-11-15', 'azure', 100.0),
+    ('2026-11-17', 'openai', 0.25);
+"#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
     url: Option<String>,
 }
 
-fn dec(text: &str) -> rust_decimal::Decimal {
+fn dec(text: &str) -> Decimal {
     text.parse().unwrap()
 }
 
@@ -43,14 +53,31 @@ fn captured_spend(pool: &Pool) -> PostgresCapturedSpend {
     }
 }
 
+async fn captured_days(
+    source: &PostgresCapturedSpend,
+    providers: &[&str],
+    start: &str,
+    end: &str,
+) -> BTreeMap<String, Decimal> {
+    source
+        .captured_by_day(&CapturedSpendRequest {
+            providers,
+            start_date: date(start),
+            end_date: date(end),
+        })
+        .await
+        .unwrap()
+}
+
 async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["capture-rate-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), vec![SCHEMA_SQL])
-        .resolve()
-        .await
-        .unwrap();
+    let fixture =
+        PostgresFixture::provision_with_statements(url.as_ref(), vec![SCHEMA_SQL.to_owned()])
+            .resolve()
+            .await
+            .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
     (fixture, pool)
@@ -64,28 +91,10 @@ async fn execute(pool: &Pool, sql: &str) {
 #[tokio::test]
 async fn sums_provider_rows_over_inclusive_dates() {
     let (fixture, pool) = database().await;
-    execute(
-        &pool,
-        r#"
-        INSERT INTO "LiteLLM_DailyUserSpend" (date, custom_llm_provider, spend) VALUES
-            ('2026-11-14', 'openai', 9.0),
-            ('2026-11-15', 'openai', 1.5),
-            ('2026-11-15', 'text-completion-openai', 2.25),
-            ('2026-11-15', 'azure', 100.0),
-            ('2026-11-17', 'openai', 0.25);
-        "#,
-    )
-    .await;
+    execute(&pool, PROVIDER_ROWS_SQL).await;
     let source = captured_spend(&pool);
     let providers = ["openai", "text-completion-openai"];
-    let days = source
-        .captured_by_day(&CapturedSpendRequest {
-            providers: &providers,
-            start_date: date("2026-11-15"),
-            end_date: date("2026-11-17"),
-        })
-        .await
-        .unwrap();
+    let days = captured_days(&source, &providers, "2026-11-15", "2026-11-17").await;
     assert_eq!(
         days,
         BTreeMap::from([
@@ -93,26 +102,13 @@ async fn sums_provider_rows_over_inclusive_dates() {
             ("2026-11-17".to_owned(), dec("0.25")),
         ])
     );
-    let one_day = source
-        .captured_by_day(&CapturedSpendRequest {
-            providers: &providers,
-            start_date: date("2026-11-15"),
-            end_date: date("2026-11-15"),
-        })
-        .await
-        .unwrap();
+    let one_day = captured_days(&source, &providers, "2026-11-15", "2026-11-15").await;
     assert_eq!(
         one_day,
         BTreeMap::from([("2026-11-15".to_owned(), dec("3.75"))])
     );
-    let duplicated = source
-        .captured_by_day(&CapturedSpendRequest {
-            providers: &["openai", "openai"],
-            start_date: date("2026-11-15"),
-            end_date: date("2026-11-15"),
-        })
-        .await
-        .unwrap();
+    let duplicated =
+        captured_days(&source, &["openai", "openai"], "2026-11-15", "2026-11-15").await;
     assert_eq!(
         duplicated,
         BTreeMap::from([("2026-11-15".to_owned(), dec("1.5"))])
