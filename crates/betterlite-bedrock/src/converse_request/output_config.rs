@@ -1,13 +1,14 @@
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::anthropic_capability_catalog::DropParams;
-use betterlite_anthropic::anthropic_capability_catalog::capability::supports_model_capability;
 use betterlite_anthropic::capabilities::effort_param::model_supports_effort_param;
 use betterlite_anthropic::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
 use betterlite_context::bedrock_model::get_bedrock_base_model;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json as DecisionsJson;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
-use betterlite_models::model_capability_predicates::CapabilityEnvironment;
+use betterlite_models::model_capability_predicates::{
+    CapabilityEnvironment, CapabilityPredicates as _, CapabilityRequest, NamedCapability,
+};
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
@@ -28,7 +29,7 @@ const DESCRIPTION_FIELD: &str = "description";
 const EFFORT_FIELD: &str = "effort";
 const JSON_SCHEMA: &str = "json_schema";
 const NAME_FIELD: &str = "name";
-const NATIVE_STRUCTURED_OUTPUT: &str = "supports_native_structured_output";
+const NATIVE_STRUCTURED_OUTPUT: NamedCapability = NamedCapability::NativeStructuredOutput;
 const SCHEMA_FIELD: &str = "schema";
 const TYPE_FIELD: &str = "type";
 
@@ -114,14 +115,15 @@ where
     );
     let supported = is_schema
         && base_model.starts_with(ANTHROPIC_PREFIX)
-        && supports_model_capability(
-            request.model,
-            NATIVE_STRUCTURED_OUTPUT,
-            CUSTOM_LLM_PROVIDER,
-            environment,
-            request.catalogs,
-        )
-        .await;
+        && environment
+            .supports_factory(
+                &CapabilityRequest {
+                    model: request.model,
+                    custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
+                },
+                NATIVE_STRUCTURED_OUTPUT.key(),
+            )
+            .await;
     if !supported {
         tracing::warn!(
             "Bedrock Converse: dropping `output_config.format` for model={} — model does not advertise `supports_native_structured_output` in model_prices_and_context_window.json. The schema will not be enforced; pass `response_format` to use the synthetic tool-call fallback.",
