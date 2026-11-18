@@ -15,8 +15,10 @@ description: >-
   outside the send catch. The Python delete log accidentally passes the built-in input function;
   native logging records an empty input, as declared below, without changing the HTTP exchange.
 
-  Implement SdkHttpCall::ResponsesWriteTransport under B2401 with actual OpenAI handlers on both
-  sides. Cases exercise DELETE and POST, not scripted return values. Use typed client-selection
+  Implement SdkHttpCall::ResponsesWriteTransport with actual OpenAI handlers on both sides. Main holds its
+  placeholder, so replace the Call and Outcome aliases in tools/oracle/src/sdk_http/responses_write_transport.rs
+  (Call implements call_kind::CallKind) and fill ResponsesWriteTransportRequest in
+  tools/oracle/sdk_http/responses_write_transport.py; the shared sdk_http files stay as they are. Cases exercise DELETE and POST, not scripted return values. Use typed client-selection
   tests for non-wire effects. This layer adds no decoder; B509 already parses resource bodies.
   Its four functions contain 286 nonblank/non-comment lines. Plan 230 implementation, 140 tests,
   85 fixtures, 90 adapters and 30 wiring lines, 575 total within 620.
@@ -25,9 +27,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_write_http.rs
   - crates/betterlite-core/src/api/responses_write_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_write_transport.rs
+  - tools/oracle/src/sdk_http/responses_write_transport/**
   - tools/oracle/sdk_http/responses_write_transport.py
   - tools/oracle/cases/sdk-http/responses-write-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-write-transport-*
@@ -91,7 +92,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_write_http::tests::write_client_and_logging_contract($|::)/)'
   - id: python-adapter
     why: delete/cancel parity bypasses the provider HTTP exchange
-    run: test -f tools/oracle/sdk_http/responses_write_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_write_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the write transport variant has no committed decoder input
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-write-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

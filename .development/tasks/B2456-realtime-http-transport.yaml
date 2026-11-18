@@ -16,8 +16,11 @@ description: >-
   Logging uses api_key="" and the complete request/session and URL with B249's header redaction.
 
   decode_realtime_sdp(bytes,limits) validates UTF-8 before send and is fuzzed/replayed in this crate;
-  B1087 supplies the body cap. There is no SDP grammar parser. Add sdk_http.realtime_http_transport
-  through B2401, capturing actual JSON and multipart requests. Count196 nonblank/non-comment lines;
+  B1087 supplies the body cap. There is no SDP grammar parser. SdkHttpCall::RealtimeHttpTransport
+  captures actual JSON and multipart requests. It is on main as a placeholder: build its Call
+  (implementing call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/realtime_http_transport.rs and
+  RealtimeHttpTransportRequest in tools/oracle/sdk_http/realtime_http_transport.py, leaving the shared
+  sdk_http files and dispatch.py alone. Count196 nonblank/non-comment lines;
   budget 155 transport,120 tests,115 fixtures,90 adapters,55 fuzz/replay and 25 wiring =560 lines.
 scope:
   paths:
@@ -26,9 +29,8 @@ scope:
   - crates/betterlite-provider/fuzz/Cargo.toml
   - crates/betterlite-provider/fuzz/fuzz_targets/realtime_sdp.rs
   - crates/betterlite-provider/fuzz/corpus/realtime_sdp/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/realtime_http_transport.rs
+  - tools/oracle/src/sdk_http/realtime_http_transport/**
   - tools/oracle/sdk_http/realtime_http_transport.py
   - tools/oracle/cases/sdk-http/realtime-http-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-transport-*
@@ -77,7 +79,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/realtime_sdp)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::realtime_http_transport::tests::replays_corpus$/)'
   - id: sdk-python
     why: Realtime HTTP methods require actual mock-provider requests in their parity adapter.
-    run: test -f tools/oracle/sdk_http/realtime_http_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/realtime_http_transport.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The realtime_http_transport call variant must decode from a newly added seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
