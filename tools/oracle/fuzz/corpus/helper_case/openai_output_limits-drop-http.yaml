@@ -1,0 +1,11 @@
+kind: helper
+name: openai-output-limits-drop-http
+call:
+  openai_output_limits:
+    drop:
+      channel: http
+      body: |
+        {"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"]}]}"}}
+      data: {"model": "gpt-3.5-turbo", "temperature": 2, "messages": []}
+env: {}
+compare: {ignore: []}

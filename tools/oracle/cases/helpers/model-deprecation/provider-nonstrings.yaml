@@ -1,0 +1,21 @@
+kind: helper
+name: model-deprecation-provider-nonstrings
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: number-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: 5}
+      - model_name: bool-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: false}
+      - model_name: list-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: [a]}
+      - model_name: object-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: {x: y}}
+      - model_name: null-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: null}
+      - model_name: empty-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: ""}
+env: {}
+compare: {ignore: []}
