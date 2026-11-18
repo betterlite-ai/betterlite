@@ -301,6 +301,14 @@ pub(crate) fn service(
     ModelRateLimits::new(cache, io, clock())
 }
 
+// A check over an empty cache whose io hook records to the returned handle
+pub(super) fn hooked_check() -> (ModelRateLimits, Arc<FakeIo>) {
+    let io = Arc::new(FakeIo::new());
+    let recorder = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io;
+    (service(Arc::new(FakeCache::new()), Some(hook)), recorder)
+}
+
 // A router whose config registered the check, as the route pipeline reads the services.
 pub(crate) struct WithRateLimits {
     pub(crate) check: ModelRateLimits,

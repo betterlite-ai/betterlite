@@ -147,7 +147,8 @@ async fn scenario(payload: &Payload) -> Result<Output, String> {
     let deployment = deployment_spec(payload);
     let keys = cache_keys(&deployment, &minute_label(now));
     let cache = Arc::new(FakeCache::new(payload, &keys));
-    let shared: Arc<dyn RateLimitCache> = cache.clone();
+    let concrete = Arc::clone(&cache);
+    let shared: Arc<dyn RateLimitCache> = concrete;
     let check = ModelRateLimits::new(shared, None, Arc::new(move || now));
     let mut steps = Vec::with_capacity(payload.steps.len());
     for step in &payload.steps {

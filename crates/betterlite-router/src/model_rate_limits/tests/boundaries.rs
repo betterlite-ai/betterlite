@@ -58,9 +58,7 @@ const CASES: [(&str, fn()); 17] = [
     ("breaker_open_keeps_local_below_limit", || {
         super::runtime().block_on(breaker_open_keeps_local_below_limit());
     }),
-    ("sync_facade_ignores_remote", || {
-        super::runtime().block_on(sync_facade_ignores_remote());
-    }),
+    ("sync_facade_ignores_remote", sync_facade_ignores_remote),
     ("coexist_warning_needs_both_limit_kinds", || {
         coexist_warning_needs_both_limit_kinds();
     }),
@@ -214,7 +212,7 @@ async fn breaker_open_keeps_local_below_limit() {
     assert_eq!(read_count(&cache), 1);
 }
 
-async fn sync_facade_ignores_remote() {
+fn sync_facade_ignores_remote() {
     let cache = Arc::new(FakeCache::new().seed_remote(&tpm_key(model()), 10));
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 5);

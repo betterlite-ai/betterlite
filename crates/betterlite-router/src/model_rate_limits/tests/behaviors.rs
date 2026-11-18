@@ -7,8 +7,8 @@ use crate::model_rate_limits::service::{IoTokenReservationHook, SuccessUsage};
 
 use super::support::{
     FakeCache, FakeIo, HookCalls, IoLimitsSeen, RemoteMode, check_async, coexist_warning_lines,
-    exceeded, read_count, request, rpm_key, run_case_table, service, spec, tiers, tpm_cache,
-    tpm_key, with_info, with_param,
+    exceeded, hooked_check, read_count, request, rpm_key, run_case_table, service, spec, tiers,
+    tpm_cache, tpm_key, with_info, with_param,
 };
 
 pub(super) fn run(name: &str) {
@@ -64,15 +64,15 @@ const CASES: [(&str, fn()); 21] = [
     ("coexist_warning_without_id_logs_every_time", || {
         super::runtime().block_on(coexist_warning_without_id_logs_every_time());
     }),
-    ("sync_facade_counts_local_only", || {
-        super::runtime().block_on(sync_facade_counts_local_only());
-    }),
-    ("sync_success_event_counts_local_only", || {
-        super::runtime().block_on(sync_success_event_counts_local_only());
-    }),
-    ("sync_failure_event_refunds", || {
-        super::runtime().block_on(sync_failure_event_refunds());
-    }),
+    (
+        "sync_facade_counts_local_only",
+        sync_facade_counts_local_only,
+    ),
+    (
+        "sync_success_event_counts_local_only",
+        sync_success_event_counts_local_only,
+    ),
+    ("sync_failure_event_refunds", sync_failure_event_refunds),
     ("rpm_rejection_carries_error_fields", || {
         super::runtime().block_on(rpm_rejection_carries_error_fields());
     }),
@@ -234,11 +234,9 @@ async fn success_event_skips_absent_fields() {
 }
 
 async fn failure_event_refunds() {
-    let io = Arc::new(FakeIo::new());
-    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
-    let check = service(Arc::new(FakeCache::new()), Some(hook));
+    let (check, recorder) = hooked_check();
     check.async_log_failure_event(&mut request()).await;
-    assert_eq!(io.calls.lock().unwrap().refunds, 1);
+    assert_eq!(recorder.calls.lock().unwrap().refunds, 1);
 }
 
 async fn io_reservation_before_the_checks() {
@@ -248,7 +246,8 @@ async fn io_reservation_before_the_checks() {
             .seed_local(&rpm_key("openai/gpt-4o"), 1)
             .seed_remote(&rpm_key("openai/gpt-4o"), 1),
     );
-    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
+    let recorder = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io;
     let check = service(Arc::clone(&cache), Some(hook));
     let deployment = with_param(
         with_info(
@@ -266,13 +265,13 @@ async fn io_reservation_before_the_checks() {
         .unwrap_err();
     assert_eq!(exceeded(error).channel, RateLimitChannel::Rpm);
     assert_eq!(
-        io.calls.lock().unwrap().reserved,
+        recorder.calls.lock().unwrap().reserved,
         vec![IoLimitsSeen {
             itpm: Some(10),
             otpm: None
         }]
     );
-    assert_eq!(io.calls.lock().unwrap().refunds, 1);
+    assert_eq!(recorder.calls.lock().unwrap().refunds, 1);
     assert_eq!(
         body.get("reserved"),
         Some(&betterlite_models::decisions::Json::Bool(true))
@@ -282,7 +281,8 @@ async fn io_reservation_before_the_checks() {
 async fn rejection_without_io_limits_refunds_nothing() {
     let io = Arc::new(FakeIo::new());
     let cache = Arc::new(FakeCache::new().seed_local(&rpm_key("openai/gpt-4o"), 1));
-    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
+    let recorder = Arc::clone(&io);
+    let hook: Arc<dyn IoTokenReservationHook> = io;
     let check = service(Arc::clone(&cache), Some(hook));
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "rpm", 1);
     let error = check
@@ -290,7 +290,7 @@ async fn rejection_without_io_limits_refunds_nothing() {
         .await
         .unwrap_err();
     assert_eq!(exceeded(error).channel, RateLimitChannel::Rpm);
-    assert_eq!(io.calls.lock().unwrap().refunds, 0);
+    assert_eq!(recorder.calls.lock().unwrap().refunds, 0);
 }
 
 async fn coexist_warning_logs_once() {
@@ -301,7 +301,7 @@ async fn coexist_warning_without_id_logs_every_time() {
     assert_eq!(coexist_warning_lines(false).await, 2);
 }
 
-async fn sync_facade_counts_local_only() {
+fn sync_facade_counts_local_only() {
     let cache = Arc::new(FakeCache::new());
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "rpm", 1);
@@ -312,7 +312,7 @@ async fn sync_facade_counts_local_only() {
     assert_eq!(cache.remote_value(&rpm_key("openai/gpt-4o")), None);
 }
 
-async fn sync_success_event_counts_local_only() {
+fn sync_success_event_counts_local_only() {
     let cache = Arc::new(FakeCache::new());
     let usage = SuccessUsage {
         model_id: Some("a"),
@@ -323,13 +323,11 @@ async fn sync_success_event_counts_local_only() {
     assert_eq!(tiers(&cache), [Some(7), None]);
 }
 
-async fn sync_failure_event_refunds() {
-    let io = Arc::new(FakeIo::new());
-    let hook: Arc<dyn IoTokenReservationHook> = io.clone();
-    let check = service(Arc::new(FakeCache::new()), Some(hook));
+fn sync_failure_event_refunds() {
+    let (check, recorder) = hooked_check();
     check.log_failure_event(&mut request());
     assert_eq!(
-        *io.calls.lock().unwrap(),
+        *recorder.calls.lock().unwrap(),
         HookCalls {
             reserved: vec![],
             refunds: 1
