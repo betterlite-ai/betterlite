@@ -12,9 +12,12 @@ description: >-
   files_settings starts unset; set_files_config(None) leaves existing state unchanged. A list
   resolves string values starting os.environ/ through B002 once. loadbalancing uses
   litellm_settings.enable_loadbalancing_on_batch_endpoints, default null, only literal true.
-  Pure helper file_upload_policy tests projections/validation only. B2401 SDK HTTP operation
-  file_upload_routing calls production routing with injected catalog/principal/callbacks and
-  captures uploads/probes; it never imports the FastAPI handler. B1032 tests the HTTP route.
+  Pure helper file_upload_policy tests projections/validation only. SdkHttpCall::FileUploadRouting
+  calls production routing with injected catalog/principal/callbacks and captures uploads/probes; it
+  never imports the FastAPI handler. Its placeholder is on main, so this task replaces the Call and
+  Outcome aliases in tools/oracle/src/sdk_http/file_upload_routing.rs (Call implements
+  call_kind::CallKind) and fills FileUploadRoutingRequest in tools/oracle/sdk_http/file_upload_routing.py,
+  with the shared sdk_http files and dispatch.py left as they are. B1032 tests the HTTP route.
   First-record JSON decoding is decode_file_first_record(bytes, limits), reusing B1022's
   Python-compatible JSON encoding rules; add its own core fuzz target for record selection.
   Native tests use api::file_upload_routing::tests. The 360 owned nonblank/non-comment lines
@@ -35,9 +38,8 @@ scope:
   - tools/oracle/helpers/file_upload_policy/**
   - tools/oracle/cases/helpers/file-upload-policy/**
   - tools/oracle/fuzz/corpus/helper_case/file_upload_policy-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_upload_routing.rs
+  - tools/oracle/src/sdk_http/file_upload_routing/**
   - tools/oracle/sdk_http/file_upload_routing.py
   - tools/oracle/cases/sdk-http/file-upload-routing/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-upload-routing-*
@@ -139,7 +141,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/file_first_record)" && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_upload_routing::tests::replays_first_record_corpus$/)'
   - id: python-adapters
     why: either pure policy or SDK routing comparison is missing
-    run: test -f tools/oracle/helpers/file_upload_policy.py && test -f tools/oracle/sdk_http/file_upload_routing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/file_upload_policy.py && ! grep -q not_built tools/oracle/sdk_http/file_upload_routing.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: case-seeds
     why: typed policy and SDK inputs lack added seeds
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_upload_policy-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-upload-routing-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

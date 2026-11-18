@@ -16,7 +16,8 @@ description: >-
   placeholder_user_id, merged_into_user_id and the original ordered team_ids, with default
   200 JSON semantics. The merge has no encompassing transaction: an add or delete failure
   keeps preceding team writes, and role recomputation can fail after deletion. Preserve
-  B124's exception conversion and B052's normal API-key authorization for both endpoints.
+  B2400's exception conversion (handle_exception_on_proxy in betterlite-server
+  api::proxy_endpoint_support) and B052's normal API-key authorization for both endpoints.
   Use actual PostgreSQL relationships to test list exclusions, rejection precedence,
   successful migration of every roster, missing teams and failures at each write boundary.
   Eligible HTTP cases verify the management JSON content type, response fields, auth and
