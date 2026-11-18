@@ -167,7 +167,7 @@ class CostRouting(Operation):
 
     @override
     def run(self) -> Output:
-        # pydantic emits ReadOnly-qualifier warnings while LiteLLM builds its response models; neither side compares them
+        # pydantic warns about ReadOnly qualifiers while LiteLLM builds its response models; nothing compares them
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             return asyncio.run(run_scenario(self))
