@@ -12,7 +12,7 @@ const LITELLM_CLI: &str = "0c6889ac62a3282f4ea5b5f9ad6cae563198696ab8bd9c490fae5
 #[case::cli_alias("litellm-cli", LITELLM_CLI)]
 #[case::empty("", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")]
 #[case::utf8_bytes(
-    "ключ",
+    "\u{43a}\u{43b}\u{44e}\u{447}",
     "1de36a32af798da0c1ac9297603a320ed8fe567cf21c9177112a4ce914ebb8be"
 )]
 fn hashes_the_utf8_bytes_to_lowercase_hex(#[case] token: &str, #[case] digest: &str) {
