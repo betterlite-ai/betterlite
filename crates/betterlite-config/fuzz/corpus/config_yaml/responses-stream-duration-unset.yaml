@@ -1,0 +1,2 @@
+# LITELLM_MAX_STREAMING_DURATION_SECONDS is read from the process environment
+model_list: []

@@ -1,0 +1,109 @@
+kind: helper
+name: sso-claims-team-mapping-duplicates
+call:
+  sso_claims:
+    attributes: {}
+    emails: []
+    groups: []
+    role_mappings: null
+    merge: []
+    decode_tokens: []
+    process: []
+    convert:
+      response:
+        preferred_username: user-1
+        sub: subject-1
+        email: Upper@Example.com
+        first_name: First
+        last_name: Last
+        provider: generic
+        role: internal_user
+        groups:
+        - admins
+        team_ids:
+        - t1
+        - t2
+        jwt_teams:
+        - ordinary
+        db_teams:
+        - t1
+        - t2
+        - t3
+      jwt_settings:
+        team_ids_jwt_field: jwt_teams
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      role_mappings:
+        provider: generic
+        group_claim: groups
+        default_role: internal_user_viewer
+        roles:
+          proxy_admin:
+          - admins
+          internal_user:
+          - viewers
+      team_mappings:
+        team_ids_jwt_field: db_teams
+env: {}
+compare:
+  ignore: []
+calls:
+- sso_claims:
+    attributes: {}
+    emails: []
+    groups: []
+    role_mappings: null
+    merge: []
+    decode_tokens: []
+    process: []
+    convert:
+      response:
+        team_ids:
+        - t1
+        jwt_teams:
+        - ordinary
+      jwt_settings:
+        team_ids_jwt_field: jwt_teams
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      role_mappings: null
+      team_mappings:
+        team_ids_jwt_field: db_teams
+- sso_claims:
+    attributes: {}
+    emails: []
+    groups: []
+    role_mappings: null
+    merge: []
+    decode_tokens: []
+    process: []
+    convert:
+      response:
+        jwt_teams:
+        - ordinary
+      jwt_settings:
+        team_ids_jwt_field: jwt_teams
+      sso_settings: null
+      role_mappings: null
+      team_mappings:
+        team_ids_jwt_field: null
+- sso_claims:
+    attributes: {}
+    emails: []
+    groups: []
+    role_mappings: null
+    merge: []
+    decode_tokens: []
+    process: []
+    convert:
+      response:
+        team_ids:
+        - t1
+        jwt_teams:
+        - t9
+      jwt_settings:
+        team_ids_jwt_field: jwt_teams
+      sso_settings:
+        team_ids_jwt_field: team_ids
+      role_mappings: null
+      team_mappings: null

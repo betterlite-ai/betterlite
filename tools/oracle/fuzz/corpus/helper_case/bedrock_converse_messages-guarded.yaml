@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_converse_messages-guarded
+call:
+  bedrock_converse_messages:
+    function: guarded
+    messages:
+      - {role: user, content: last}
+    optional_params: {guardrailConfig: null}
+env: {}
+compare: {ignore: []}

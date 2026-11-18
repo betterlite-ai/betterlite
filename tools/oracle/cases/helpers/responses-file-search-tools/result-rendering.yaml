@@ -1,0 +1,44 @@
+kind: helper
+name: responses-file-search-result-rendering
+call:
+  responses_file_search_tools:
+    function: result_rendering
+    results:
+      - file_id: file_1
+        filename: report.txt
+        score: 0.87654
+        content:
+          - {type: text, text: hello}
+          - {text: world}
+      - file_id: file_2
+        filename: ""
+        score: 0
+        content:
+          - {text: ""}
+          - {text: kept}
+          - {}
+calls:
+  - responses_file_search_tools:
+      function: result_rendering
+      results: []
+  - responses_file_search_tools:
+      function: result_rendering
+      results:
+        - {filename: only.txt, content: []}
+        - {file_id: file_x}
+        - {score: null, file_id: null, filename: null, content: null, attributes: {page: 1}}
+  - responses_file_search_tools:
+      function: result_rendering
+      results:
+        - file_id: file_1
+          filename: report.txt
+          score: 1
+          content: [{text: repeated}]
+          attributes: {page: 2, tagged: true}
+        - file_id: file_1
+          filename: report.txt
+          score: 1
+          content: [{text: repeated}]
+          attributes: {}
+env: {}
+compare: {ignore: []}

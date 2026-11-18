@@ -1,0 +1,15 @@
+task: B2413
+deviations:
+  - what: LITELLM_MAX_STREAMING_DURATION_SECONDS is parsed with Rust's f64 grammar, which rejects the digit separators Python's float() accepts ("2_5" is 25.0 in Python and an invalid setting here), and an invalid value is reported as a startup error instead of raising at import.
+    why: LiteLLM reads the variable in a module-level constants assignment, so a malformed value breaks every import of the package; betterlite's loader is fallible and the caller decides what a bad setting means, which keeps the rest of the process from failing at import, and Python's float() grammar is a runtime detail docs/compatibility.md does not copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L105-L108
+  - what: A stream error code written with non-ASCII decimal digits is not read as an HTTP status; Python's str.isdecimal() accepts them and int() converts them, so "٤٢٩" becomes 429, while betterlite accepts ASCII digits only and falls through to the symbol table, which gives 500 for that code.
+    why: The wire value is meant to carry an HTTP status number in ASCII; Python's Unicode-digit acceptance is a runtime detail, and accepting it would make the status depend on the Unicode tables a value happens to use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L240-L243
+  - what: A stream payload using the non-JSON literals NaN, Infinity or -Infinity fails to decode; Python's json.loads accepts them and returns the float.
+    why: The decoded value is compared and serialized as standard JSON (docs/compatibility.md), and a non-finite float has no standard JSON spelling, so the payload is treated as malformed instead of producing a value that cannot round-trip.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L153-L155
+kept_bugs:
+  - what: The api base a responses stream records for a gemini model always uses the non-streaming generateContent endpoint, even when the caller passed stream=true in litellm_params, because get_api_base reads stream with getattr off the plain dict it was handed, which has no such attribute.
+    why: A working LiteLLM setup never sees a streaming api base here, so callers depending on the record get generateContent; betterlite passes stream=false for the same reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L337-L340

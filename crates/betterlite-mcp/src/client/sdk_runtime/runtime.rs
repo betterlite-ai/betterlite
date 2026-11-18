@@ -21,7 +21,7 @@ use crate::client::sessions::factory::{HttpClientConfig, SseRequest};
 use crate::client::sessions::runtime::{
     HttpClientHandle, McpRuntime, SessionOptions, stdio_transport,
 };
-use crate::client::sessions::stdio::StdioTransport;
+use crate::client::sessions::stdio::{StdioShutdown, StdioTransport};
 use crate::client::sessions::stream::MessageHandler;
 use crate::client::sessions::transport::{StdioServerParameters, TransportContext};
 
@@ -141,16 +141,23 @@ pub struct SdkRuntime {
     base: HttpBase,
     capture: Arc<dyn ErrorCapture>,
     tracker: TaskTracker,
+    shutdown: StdioShutdown,
 }
 
 impl SdkRuntime {
     // The runtime reads no environment and holds no global; every dependency arrives through this constructor
     #[must_use]
-    pub fn new(base: HttpBase, capture: Arc<dyn ErrorCapture>, tracker: TaskTracker) -> Self {
+    pub fn new(
+        base: HttpBase,
+        capture: Arc<dyn ErrorCapture>,
+        tracker: TaskTracker,
+        shutdown: StdioShutdown,
+    ) -> Self {
         Self {
             base,
             capture,
             tracker,
+            shutdown,
         }
     }
 
@@ -202,7 +209,7 @@ impl McpRuntime for SdkRuntime {
     fn stdio_client(&self, parameters: StdioServerParameters) -> SdkTransportContext {
         SdkTransportContext {
             transport: Arc::new(Mutex::new(Some(SdkTransport::Stdio(StdioContext(
-                stdio_transport(parameters),
+                stdio_transport(parameters, self.shutdown),
             ))))),
             handler: MessageHandler::default(),
         }

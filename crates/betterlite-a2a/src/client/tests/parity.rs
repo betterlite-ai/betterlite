@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use betterlite_core::a2a::exception_mapping::{A2AException, map_a2a_exception};
 use betterlite_core::agents::provider::a2a::JsonRpcId;
@@ -11,7 +11,7 @@ use http::Method;
 use http::header::HeaderMap;
 use rstest::rstest;
 use tokio::net::TcpListener;
-use tokio::time::timeout;
+use tokio::time::{Instant, timeout};
 use url::Url;
 
 use super::{
@@ -578,7 +578,7 @@ async fn reqwest_read_timeout_classifies_as_timeout() {
     assert!(matches!(&chunks[0], Err(ClientError::Timeout { .. })));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn connect_phase_follows_timeout() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("https://{}", listener.local_addr().unwrap());

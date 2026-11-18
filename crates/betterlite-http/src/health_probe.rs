@@ -5,7 +5,7 @@ use std::time::Duration;
 use reqwest::blocking::Client;
 use reqwest::redirect::Policy;
 
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
+pub const HEALTH_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_HEALTH_BODY: u64 = 0x10_0000;
 
 #[derive(Debug, thiserror::Error)]
@@ -29,9 +29,9 @@ pub struct ReqwestHealth {
 }
 
 impl ReqwestHealth {
-    pub fn new() -> Result<Self, TransportError> {
+    pub fn new(timeout: Duration) -> Result<Self, TransportError> {
         let client = Client::builder()
-            .timeout(HEALTH_TIMEOUT)
+            .timeout(timeout)
             .redirect(Policy::none())
             .build()?;
         Ok(Self { client })
