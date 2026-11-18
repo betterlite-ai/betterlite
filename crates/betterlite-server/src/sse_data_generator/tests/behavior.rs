@@ -605,3 +605,16 @@ fn no_event_without_errors() {
         ]
     );
 }
+
+#[test]
+fn uses_supplied_router_check() {
+    let mut generator = plain_generator();
+    generator.is_model_router = |model| model == "router";
+    let out = frames(
+        &generator,
+        source(vec![Ok(chat_chunk("x"))], JsonObject::new()),
+        request(&[("model", JsonValue::from("router"))]),
+        false,
+    );
+    assert_eq!(out[0], chunk_frame(&expected_chunk("x", None)));
+}
