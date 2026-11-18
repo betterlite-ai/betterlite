@@ -194,4 +194,27 @@ mod tests {
         .expect("the raw variable keeps its empty value");
         assert_eq!(key.expose_secret(), "");
     }
+
+    #[test]
+    fn a_configured_key_beats_the_raw_variable() {
+        let explicit = SecretString::from("sk-explicit");
+        let key = resolve_key(
+            Some(&explicit),
+            &Globals::default(),
+            &environment(&[(API_KEY_VARIABLE, "sk-env")]),
+        )
+        .expect("the explicit key");
+        assert_eq!(key.expose_secret(), "sk-explicit");
+        let globals = Globals {
+            anthropic_key: Some(SecretString::from("sk-global")),
+            ..Globals::default()
+        };
+        let key = resolve_key(
+            None,
+            &globals,
+            &environment(&[(API_KEY_VARIABLE, "sk-env")]),
+        )
+        .expect("the global key");
+        assert_eq!(key.expose_secret(), "sk-global");
+    }
 }
