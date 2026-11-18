@@ -1,0 +1,14 @@
+kind: helper
+name: sso-mappings-environment-defaults
+call:
+  sso_mapping_input:
+    environment:
+      GENERIC_CLIENT_SECRET: ""
+      GENERIC_AUTHORIZATION_ENDPOINT: https://idp.example.com/authorize
+      GENERIC_TOKEN_ENDPOINT: https://idp.example.com/token
+      GENERIC_USERINFO_ENDPOINT: https://idp.example.com/userinfo
+      GENERIC_INCLUDE_CLIENT_ID: "TRUE"
+    calls:
+      - function: env_vars
+env: {}
+compare: {ignore: []}
