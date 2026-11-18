@@ -4,7 +4,12 @@ from typing import Final, Literal, NotRequired, Protocol, TypedDict
 import litellm
 from litellm.router import Router
 from litellm.router_utils import pattern_match_deployments
-from litellm.types.router import Deployment, RouterModelGroupAliasItem, RoutingGroup
+from litellm.types.router import (
+    Deployment,
+    DeploymentTypedDict,
+    RouterModelGroupAliasItem,
+    RoutingGroup,
+)
 from pydantic import JsonValue, TypeAdapter
 
 LOOKUP_FUNCTIONS: Final = frozenset(
@@ -113,10 +118,11 @@ def optional_row(value: Deployment | None) -> dict[str, JsonValue] | None:
     return row_view(VIEW.validate_json(value.model_dump_json()))
 
 
-def listing_rows(rows: list[DeploymentView] | None) -> list[JsonValue]:
-    if rows is None:
+def listing_rows(rows: list[DeploymentTypedDict] | None) -> list[JsonValue]:
+    listed = LISTING.validate_python(rows)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L638
+    if listed is None:
         return []
-    return [row_view(view) for view in rows]
+    return [row_view(view) for view in listed]
 
 
 def lookup_answer(router: Router, call: Input) -> JsonValue:
@@ -160,11 +166,9 @@ def listing_answer(router: Router, call: Input) -> JsonValue:
             names.extend(router.get_model_names(arguments.get("team_id")))
             return names
         case "get_model_list":
-            listed = LISTING.validate_python(router.get_model_list(arguments.get("model_name"), arguments.get("team_id")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
-            return listing_rows(listed)
+            return listing_rows(router.get_model_list(arguments.get("model_name"), arguments.get("team_id")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
         case "get_model_list_from_model_alias":
-            aliased = LISTING.validate_python(router.get_model_list_from_model_alias(arguments.get("model_name")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11851-L11857
-            return listing_rows(aliased)
+            return listing_rows(router.get_model_list_from_model_alias(arguments.get("model_name")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11851-L11857
         case "should_include_deployment":
             index = arguments.get("deployment_index")
             if index is None:
