@@ -379,6 +379,7 @@ fn entry_params_stay_typed_json_values() {
     let set = checked(config, &TierChecks::default());
     let entry: &TierModelEntry = &set.pools.get("MEDIUM").unwrap().models()[0];
     assert_eq!(entry.params.len(), 2);
+    assert!(!entry.params.is_empty());
     assert_eq!(
         entry
             .params
