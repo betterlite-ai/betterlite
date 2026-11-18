@@ -6,10 +6,13 @@ mod support;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
 use betterlite_redis::batch::RedisBatch;
+use betterlite_redis::cache_primitives::decode::CachedValue;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
+use serde_json::Number;
 use tokio_util::task::TaskTracker;
 use tracing::instrument::WithSubscriber;
 use tracing::subscriber::with_default;
@@ -273,6 +276,36 @@ async fn sync_read_backfills_with_redis_values() {
         Some(Ttl::Expiry(1030.0))
     );
     assert_eq!(cache.async_get_ttl("b").await.ok().flatten(), None);
+}
+
+#[test]
+fn cache_from_json_keeps_whole_and_fractional_numbers() {
+    assert_eq!(
+        super::value::cache_from_json(&Json::Number(Number::from(42_i64))),
+        Some(CacheValue::Integer(42))
+    );
+    assert_eq!(
+        super::value::cache_from_json(&Json::Number(
+            Number::from_f64(1.5).expect("a finite number")
+        )),
+        Some(CacheValue::Float(1.5))
+    );
+}
+
+#[test]
+fn redis_values_restore_the_decoder_number_object() {
+    let stored = Some(CachedValue::Object(BTreeMap::from([(
+        "$serde_json::private::Number".to_owned(),
+        CachedValue::Text("1.5".to_owned()),
+    )])));
+    let values = BTreeMap::from([("fraction".to_owned(), stored)]);
+    let converted = super::value::redis_values(&values);
+    assert_eq!(
+        converted.get("fraction"),
+        Some(&Some(Json::Number(
+            Number::from_f64(1.5).expect("a finite number")
+        )))
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
