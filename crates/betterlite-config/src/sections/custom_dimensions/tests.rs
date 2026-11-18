@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::error::Error;
+use std::error::Error as _;
 use std::fs;
 use std::path::PathBuf;
 
