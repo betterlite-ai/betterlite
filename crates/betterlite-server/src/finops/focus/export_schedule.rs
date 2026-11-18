@@ -241,8 +241,8 @@ where
         }
         Err(error) => Err(FocusError::Schedule(error)),
     };
-    if let Some(lease) = lease {
-        lease.release().await;
+    if let Some(held) = lease {
+        held.release().await;
     }
     result
 }
@@ -273,12 +273,12 @@ fn truncated_window(
     now: DateTime<Utc>,
     span: Option<TimeDelta>,
 ) -> Result<(DateTime<Utc>, DateTime<Utc>), ScheduleError> {
-    let span = span.ok_or(ScheduleError::TimeWindowOutOfRange)?;
+    let duration = span.ok_or(ScheduleError::TimeWindowOutOfRange)?;
     let end_time = now
-        .duration_trunc(span)
+        .duration_trunc(duration)
         .map_err(|_error| ScheduleError::TimeWindowOutOfRange)?;
     let start_time = end_time
-        .checked_sub_signed(span)
+        .checked_sub_signed(duration)
         .ok_or(ScheduleError::TimeWindowOutOfRange)?;
     Ok((start_time, end_time))
 }

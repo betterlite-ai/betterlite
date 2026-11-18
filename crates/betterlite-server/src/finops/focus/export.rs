@@ -101,13 +101,13 @@ pub struct FocusLoggerDeps<F: FocusEngineFactory> {
 }
 
 pub struct FocusLogger<F: FocusEngineFactory> {
-    pub provider: String,
-    pub export_format: String,
-    pub frequency: String,
-    pub cron_offset_minute: i64,
-    pub interval_seconds: i64,
-    pub prefix: String,
-    pub destination_config: DestinationOverrides,
+    pub(crate) provider: String,
+    pub(crate) export_format: String,
+    pub(crate) frequency: String,
+    pub(crate) cron_offset_minute: i64,
+    pub(crate) interval_seconds: i64,
+    pub(crate) prefix: String,
+    pub(crate) destination_config: DestinationOverrides,
     pub(super) pod_lock: Option<Arc<dyn FocusPodLock>>,
     pub(super) clock: Arc<dyn UtcClock>,
     pub(super) tasks: TaskTracker,
@@ -174,6 +174,7 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
         };
         let engine = Arc::new(self.factory.create(settings).map_err(FocusError::Export)?);
         *cached = Some(Arc::clone(&engine));
+        drop(cached);
         Ok(engine)
     }
 
