@@ -1,0 +1,18 @@
+kind: helper
+name: prometheus-failure-status-code-enum-first
+call:
+  b3880:
+    function: extract_status_code
+    enum_status_code: "503"
+    exception:
+      kind: scripted
+      message: "backend unavailable"
+      status_code: "500"
+      code: "500"
+    kwargs_exception:
+      kind: scripted
+      message: "gateway timeout"
+      status_code: "504"
+      code: "504"
+env: {}
+compare: {ignore: []}
