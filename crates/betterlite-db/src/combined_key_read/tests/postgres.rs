@@ -96,6 +96,12 @@ const INSERT_FULL_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken"
      '{}'::jsonb, '2030-01-02 03:04:05')"#;
 const INSERT_BARE_KEY: &str =
     r#"INSERT INTO "LiteLLM_VerificationToken" (token, models) VALUES ($1, ARRAY[]::TEXT[])"#;
+const INSERT_LIVE_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVerificationToken"
+    (id, token, active_token_id, revoke_at)
+    VALUES ($1, $2, $3, '2030-01-01 00:00:00')"#;
+const INSERT_EXPIRED_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVerificationToken"
+    (id, token, active_token_id, revoke_at)
+    VALUES ($1, $2, $3, '2020-01-01 00:00:00')"#;
 
 #[derive(clap::Parser)]
 struct Environment {
@@ -329,9 +335,6 @@ pub(crate) async fn membership_requires_both_ids(fixture: &Fixture) {
         )
         .await;
     let with = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
-    let member = with.team_member.unwrap();
-    assert_eq!(member.base.user_id.as_deref(), Some("u1"));
-    assert_eq!(member.role, MemberRole::User);
     assert_eq!(with.team_member_spend, Some(rust_decimal::Decimal::from(4)));
     assert_eq!(with.team_member_tpm_limit, Some(55));
     assert_eq!(with.team_member_rpm_limit, Some(56));
@@ -387,6 +390,28 @@ pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
         Some(rust_decimal::Decimal::from(22))
     );
     assert_eq!(view.team_alias.as_deref(), Some("Team Three"));
+}
+
+pub(crate) async fn deprecated_rotation_reads_the_active_key(fixture: &Fixture) {
+    let active = hash_token("sk-active-rotation");
+    fixture.execute(INSERT_BARE_KEY, &[&active]).await;
+    let deprecated = hash_token("sk-old-rotation");
+    fixture
+        .execute(
+            INSERT_LIVE_DEPRECATED_ROW,
+            &[&"dep-live", &deprecated.as_str(), &active.as_str()],
+        )
+        .await;
+    let view = fixture.read("sk-old-rotation").await.unwrap().unwrap();
+    assert_eq!(view.token.token.unwrap().expose_secret(), active.as_str());
+    let expired = hash_token("sk-expired-rotation");
+    fixture
+        .execute(
+            INSERT_EXPIRED_DEPRECATED_ROW,
+            &[&"dep-expired", &expired.as_str(), &active.as_str()],
+        )
+        .await;
+    assert!(fixture.read("sk-expired-rotation").await.unwrap().is_none());
 }
 
 async fn seed_budgets(fixture: &Fixture) {

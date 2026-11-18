@@ -3,10 +3,12 @@
 use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::ExposeSecret as _;
 
 use crate::budget_permission_rows::JsonData;
+use crate::database_failures::metrics::{ProxySpanResolver, WallClock};
 use crate::database_faults::ErrorType;
 use crate::identity_rows::key::Expiry;
 use crate::key_hash::KeyHash;
@@ -14,17 +16,20 @@ use crate::key_user_writes::hash::hash_token;
 use crate::team_rows::member::MemberRole;
 
 use super::error::{KeyReadError, MISSING_TOKEN_DETAIL, MISSING_TOKEN_STATUS, ReconnectFailure};
-use super::grace::{DEPRECATED_CACHE_CAPACITY, DEPRECATED_CACHE_TTL_SECONDS, DeprecatedKeyCache};
+use super::grace::{
+    DEPRECATED_CACHE_CAPACITY, DEPRECATED_CACHE_TTL_SECONDS, DeprecatedKeyCache, DeprecatedToken,
+};
+use super::ports::{MetricWallClock, NoSpanResolver};
 use super::request::{CombinedKeyRequest, KeyQueryType};
 use super::rows::{CACHED_PLAN_WARNING, RECONNECT_REASON};
-use super::view::{CombinedKeyView, epoch_decimal};
+use super::view::{CombinedKeyView, ViewError, epoch_decimal};
 
 mod harness;
 mod postgres;
 
 use harness::{
-    Harness, ObservedDiagnostic, RecordedRowCall, cached_plan_fault, decimal, events, fault,
-    fixed_now, grace_hit, lock, number, object, text, view_fields, view_row,
+    Harness, ObservedDiagnostic, RecordedRowCall, StepClock, cached_plan_fault, decimal, events,
+    fault, fixed_now, grace_hit, lock, number, object, text, view_fields, view_row,
 };
 
 #[tokio::test]
@@ -414,6 +419,11 @@ fn last_matching_member_not_email() {
                     ("user_email", text("last@example.com")),
                     ("role", text("user")),
                 ]),
+                object(vec![
+                    ("user_id", text("u2")),
+                    ("user_email", text("other@example.com")),
+                    ("role", text("admin")),
+                ]),
             ]),
         ),
     ]);
@@ -468,6 +478,7 @@ async fn native_database_diagnostics_hide_token_and_hash() {
         "LiteLLM Prisma Client Exception: Error with `get_data`. Args passed in: [redacted] "
     ));
     assert!(hooks[0].message.ends_with("the database is down"));
+    assert_eq!(hooks[0].traceback, hooks[0].message);
 }
 
 fn position(timeline: &[String], label: &str) -> usize {
@@ -730,4 +741,77 @@ fn formats_expiry_like_isoformat() {
         view.token.expires,
         Some(Expiry::Text(String::from("2024-01-02T03:04:05+02:00")))
     );
+}
+
+#[test]
+fn epoch_decimal_whole_and_fractional_seconds() {
+    assert_eq!(epoch_decimal(fixed_now()), Decimal::from(1_700_000_000_i64));
+    let fractional = DateTime::from_timestamp(1_700_000_000, 250_000_000).unwrap();
+    assert_eq!(epoch_decimal(fractional), Decimal::new(1_700_000_000_25, 2));
+}
+
+#[test]
+fn null_budget_alias_never_clears_the_key_mapping() {
+    let fields = view_fields(vec![
+        ("model_max_budget", object(Vec::new())),
+        ("litellm_budget_table_model_max_budget", JsonData::Null),
+    ]);
+    let view = CombinedKeyView::construct(fields, epoch_decimal(fixed_now())).unwrap();
+    assert!(view.token.model_max_budget.0.is_empty());
+}
+
+#[test]
+fn fractional_end_user_id_is_a_typed_error() {
+    let fields = view_fields(vec![(
+        "end_user_id",
+        JsonData::Number(serde_json::Number::from_f64(1.5).unwrap()),
+    )]);
+    assert!(matches!(
+        CombinedKeyView::construct(fields, epoch_decimal(fixed_now())),
+        Err(ViewError::Json(_))
+    ));
+}
+
+#[test]
+fn deprecated_token_columns_require_id_and_revoke_at() {
+    let revoke_at = fixed_now().naive_utc();
+    let token =
+        DeprecatedToken::from_columns(Some(String::from("active-id")), Some(revoke_at)).unwrap();
+    assert_eq!(token.active_token_id, "active-id");
+    assert_eq!(token.revoke_at, fixed_now());
+    assert_eq!(
+        DeprecatedToken::from_columns(None, Some(revoke_at))
+            .unwrap_err()
+            .to_string(),
+        "the deprecated token row has no active_token_id"
+    );
+    assert_eq!(
+        DeprecatedToken::from_columns(Some(String::from("active-id")), None)
+            .unwrap_err()
+            .to_string(),
+        "the deprecated token row has no revoke_at"
+    );
+}
+
+#[test]
+fn metric_clock_reads_the_key_read_clock() {
+    let clock = StepClock::new(Duration::ZERO, fixed_now());
+    assert_eq!(MetricWallClock(&clock).now(), fixed_now());
+    clock.advance_wall(Duration::from_secs(5));
+    assert_eq!(
+        MetricWallClock(&clock).now(),
+        fixed_now() + TimeDelta::seconds(5)
+    );
+}
+
+#[test]
+fn no_span_resolver_never_invents_a_parent_span() {
+    assert!(NoSpanResolver.parent_span(&IndexMap::new()).is_none());
+}
+
+#[tokio::test]
+async fn deprecated_rotation_reads_the_active_key() {
+    let fixture = postgres::Fixture::start().await;
+    postgres::deprecated_rotation_reads_the_active_key(&fixture).await;
+    fixture.close().await;
 }
