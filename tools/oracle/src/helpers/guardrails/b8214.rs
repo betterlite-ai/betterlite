@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::sync::Arc;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -27,7 +28,7 @@ pub(crate) struct Op;
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     settings: Settings,
-    calls: Vec<Call>,
+    calls: Vec<HookCall>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -43,7 +44,7 @@ struct Settings {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Call {
+struct HookCall {
     request: BTreeMap<String, GuardrailValue>,
     call_type: String,
     matches: bool,
@@ -123,7 +124,7 @@ async fn one_call(
     matches: &Mutex<bool>,
     scored: &Mutex<Vec<String>>,
     tool_cache: &DualLocalCache,
-    call: &Call,
+    call: &HookCall,
 ) -> Result<Value, Box<HelperError>> {
     *matches.lock().await = call.matches;
     scored.lock().await.clear();
@@ -153,79 +154,58 @@ enum OutcomeKind {
 }
 
 #[derive(Serialize)]
-struct CallReport<'a> {
-    scored: &'a [String],
+struct CallReport<'report> {
+    scored: &'report [String],
     kind: OutcomeKind,
     status: Option<u16>,
-    detail: Option<&'a IndexMap<String, GuardrailValue>>,
-    message: Option<&'a str>,
-    model: Option<&'a str>,
-    guardrail_name: Option<&'a str>,
-    request_data: Option<&'a BTreeMap<String, GuardrailValue>>,
-    detection_info: Option<&'a BTreeMap<String, GuardrailValue>>,
-    returned: Option<&'a GuardrailValue>,
+    detail: Option<&'report IndexMap<String, GuardrailValue>>,
+    message: Option<&'report str>,
+    model: Option<&'report str>,
+    guardrail_name: Option<&'report str>,
+    request_data: Option<&'report BTreeMap<String, GuardrailValue>>,
+    detection_info: Option<&'report BTreeMap<String, GuardrailValue>>,
+    returned: Option<&'report GuardrailValue>,
 }
 
 fn call_report(
     outcome: &Result<Option<GuardrailValue>, GuardrailFailure>,
     scored: &[String],
 ) -> Result<Value, Box<HelperError>> {
-    let report = match outcome {
-        Ok(returned) => CallReport {
-            scored,
-            kind: OutcomeKind::Passed,
-            status: None,
-            detail: None,
-            message: None,
-            model: None,
-            guardrail_name: None,
-            request_data: None,
-            detection_info: None,
-            returned: returned.as_ref(),
-        },
-        Err(GuardrailFailure::HttpObject { status, detail }) => CallReport {
-            scored,
-            kind: OutcomeKind::Blocked,
-            status: Some(*status),
-            detail: Some(detail),
-            message: None,
-            model: None,
-            guardrail_name: None,
-            request_data: None,
-            detection_info: None,
-            returned: None,
-        },
-        Err(GuardrailFailure::ModifyResponse(failure)) => CallReport {
-            scored,
-            kind: OutcomeKind::Passthrough,
-            status: None,
-            detail: None,
-            message: Some(failure.message.as_str()),
-            model: Some(failure.model.as_str()),
-            guardrail_name: failure.guardrail_name.as_deref(),
-            request_data: Some(&failure.request_data),
-            detection_info: Some(&failure.detection_info),
-            returned: None,
-        },
+    let mut report = CallReport {
+        scored,
+        kind: OutcomeKind::Passed,
+        status: None,
+        detail: None,
+        message: None,
+        model: None,
+        guardrail_name: None,
+        request_data: None,
+        detection_info: None,
+        returned: None,
+    };
+    match outcome {
+        Ok(returned) => report.returned = returned.as_ref(),
+        Err(GuardrailFailure::HttpObject { status, detail }) => {
+            report.kind = OutcomeKind::Blocked;
+            report.status = Some(*status);
+            report.detail = Some(detail);
+        }
+        Err(GuardrailFailure::ModifyResponse(failure)) => {
+            report.kind = OutcomeKind::Passthrough;
+            report.message = Some(failure.message.as_str());
+            report.model = Some(failure.model.as_str());
+            report.guardrail_name = failure.guardrail_name.as_deref();
+            report.request_data = Some(&failure.request_data);
+            report.detection_info = Some(&failure.detection_info);
+        }
         Err(
             GuardrailFailure::Http { .. }
             | GuardrailFailure::GuardrailRaised { .. }
             | GuardrailFailure::BlockedPii { .. }
             | GuardrailFailure::SensitiveDataRoute(_)
             | GuardrailFailure::Other(_),
-        ) => CallReport {
-            scored,
-            kind: OutcomeKind::Error,
-            status: None,
-            detail: None,
-            message: None,
-            model: None,
-            guardrail_name: None,
-            request_data: None,
-            detection_info: None,
-            returned: None,
-        },
-    };
+        ) => report.kind = OutcomeKind::Error,
+    }
     Ok(serde_json::to_value(&report)?)
 }
 
@@ -244,7 +224,7 @@ fn cache() -> Result<DualLocalCache, Box<HelperError>> {
     ))
 }
 
-fn failure(class: &str, error: &dyn std::error::Error) -> Box<HelperError> {
+fn failure(class: &str, error: &dyn Error) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
