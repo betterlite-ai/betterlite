@@ -8,6 +8,8 @@ from pydantic import JsonValue, TypeAdapter
 
 from .configs import COHERE, CONFIG_NAMES, HF, LOG, LOG_START, MODEL
 from .types import (
+    COHERE_REPLY,
+    HF_REPLY,
     CohereMap,
     CohereReply,
     CohereRequest,
@@ -16,8 +18,8 @@ from .types import (
     HfRequest,
     ModelConfig,
     Object,
+    usage_value,
 )
-from .views import COHERE_REPLY, HF_REPLY, usage_value
 
 MODEL_CONFIG: Final = TypeAdapter(ModelConfig)
 SUPPORTED: Final = TypeAdapter(list[JsonValue])
@@ -27,6 +29,7 @@ HF_REPLY_INPUT: Final = TypeAdapter(HfReply)
 COHERE_MAP_INPUT: Final = TypeAdapter(CohereMap)
 COHERE_REQUEST_INPUT: Final = TypeAdapter(CohereRequest)
 COHERE_REPLY_INPUT: Final = TypeAdapter(CohereReply)
+OBJECT: Final = TypeAdapter(Object)
 
 
 def model_config(input_value: dict[str, JsonValue]) -> JsonValue:
@@ -39,18 +42,17 @@ def model_config(input_value: dict[str, JsonValue]) -> JsonValue:
 def headers(input_value: dict[str, JsonValue]) -> JsonValue:
     case = HEADERS.validate_python(input_value)
     config: BaseEmbeddingConfig = HF if case["kind"] == "hugging_face" else COHERE
-    return {
-        "kind": case["kind"],
-        "headers": config.validate_environment(case["headers"], MODEL, [], {}, {}),
-        "given": case["headers"],
-    }
+    empty: Object = {}
+    validated: Object = OBJECT.validate_python(config.validate_environment(case["headers"], MODEL, [], empty, empty))  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L146-L159
+    given: Object = OBJECT.validate_python(case["headers"])
+    return {"kind": case["kind"], "headers": validated, "given": given}
 
 
 def hf_request(input_value: dict[str, JsonValue]) -> JsonValue:
     case = HF_REQUEST.validate_python(input_value)
     return {
-        "request": HF.transform_embedding_request(
-            MODEL, case["input"], case["optional_params"], {}
+        "request": HF.transform_embedding_request(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L70-L81
+            MODEL, case["input"], case["optional_params"], {}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L70-L81
         )
     }
 
@@ -58,8 +60,9 @@ def hf_request(input_value: dict[str, JsonValue]) -> JsonValue:
 def hf_reply(input_value: dict[str, JsonValue]) -> JsonValue:
     case = HF_REPLY_INPUT.validate_python(input_value)
     raw = httpx.Response(case["status"], content=case["body"].encode())
-    response = HF.transform_embedding_response(
-        case["model"], raw, EmbeddingResponse(), LOG, None, case["request"], {}, {}
+    empty: Object = {}
+    response = HF.transform_embedding_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L83-L100
+        case["model"], raw, EmbeddingResponse(), LOG, None, case["request"], empty, empty
     )
     reply = HF_REPLY.validate_json(response.model_dump_json())
     rows: list[JsonValue] = [
@@ -77,7 +80,7 @@ def hf_reply(input_value: dict[str, JsonValue]) -> JsonValue:
 def cohere_map(input_value: dict[str, JsonValue]) -> JsonValue:
     case = COHERE_MAP_INPUT.validate_python(input_value)
     return {
-        "mapped": COHERE.map_openai_params(
+        "mapped": COHERE.map_openai_params(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L44-L57
             case["non_default"], case["optional_params"], MODEL, drop_params=False
         )
     }
@@ -86,8 +89,8 @@ def cohere_map(input_value: dict[str, JsonValue]) -> JsonValue:
 def cohere_request(input_value: dict[str, JsonValue]) -> JsonValue:
     case = COHERE_REQUEST_INPUT.validate_python(input_value)
     return {
-        "request": COHERE.transform_embedding_request(
-            case["model"], case["input"], case["optional_params"], {}
+        "request": COHERE.transform_embedding_request(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L62-L87
+            case["model"], case["input"], case["optional_params"], {}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L62-L87
         )
     }
 
@@ -104,8 +107,9 @@ def cohere_reply(input_value: dict[str, JsonValue]) -> JsonValue:
         litellm_call_id="call-1",
         function_id="fn-1",
     )
-    response = COHERE.transform_embedding_response(
-        case["model"], raw, EmbeddingResponse(), logging_obj, None, case["request_data"], {}, {}
+    empty: Object = {}
+    response = COHERE.transform_embedding_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L89-L120
+        case["model"], raw, EmbeddingResponse(), logging_obj, None, case["request_data"], empty, empty
     )
     reply = COHERE_REPLY.validate_json(response.model_dump_json())
     rows: list[JsonValue] = []

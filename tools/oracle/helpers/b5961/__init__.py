@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Final
 
+import litellm
 from pydantic import JsonValue, TypeAdapter
 
 from .embedding import (
@@ -14,6 +15,8 @@ from .embedding import (
 )
 from .stream import decode_stream
 from .types import Function
+
+litellm.suppress_debug_info = True
 
 FUNCTION: Final = TypeAdapter(Function)
 RUNNERS: Final[dict[Function, Callable[[dict[str, JsonValue]], JsonValue]]] = {

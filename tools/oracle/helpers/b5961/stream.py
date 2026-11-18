@@ -8,10 +8,10 @@ from pydantic import JsonValue, TypeAdapter
 
 from .types import DecodeStream
 
-Chunk: TypeAlias = GenericStreamingChunk | StreamingChatCompletionChunk
+Chunk: TypeAlias = GenericStreamingChunk | StreamingChatCompletionChunk  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L434
 
 DECODE_STREAM: Final = TypeAdapter(DecodeStream)
-CHUNKS: Final = TypeAdapter(Chunk)
+CHUNKS: Final = TypeAdapter(Chunk)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2057
 JSON: Final = TypeAdapter(JsonValue)
 
 
@@ -78,10 +78,10 @@ def token_value(value: JsonValue) -> JsonValue:
     }
 
 
-def chunk_value(item: Chunk | None, *, is_messages_api: bool) -> JsonValue:
+def chunk_value(item: Chunk | None, *, is_messages_api: bool) -> JsonValue:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L434
     if item is None:
         return {"kind": "none"}
-    value = JSON.validate_json(CHUNKS.dump_json(item))
+    value = JSON.validate_json(CHUNKS.dump_json(item))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2057
     if is_messages_api:
         return chat_value(value)
     return token_value(value)
@@ -97,11 +97,11 @@ def collect_sync(
     decoder: AWSEventStreamDecoder, chunks: list[bytes], *, is_messages_api: bool
 ) -> tuple[list[JsonValue], bool]:
     values: list[JsonValue] = []
-    events = decoder.iter_bytes(iter(chunks))
+    events = decoder.iter_bytes(iter(chunks))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L92
     try:
         while True:
-            item = next(events)
-            value = chunk_value(item, is_messages_api=is_messages_api)
+            item = next(events)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L92
+            value = chunk_value(item, is_messages_api=is_messages_api)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L92
             values.append(value)
     except StopIteration:
         return values, False
@@ -114,8 +114,8 @@ async def collect_async(
 ) -> tuple[list[JsonValue], bool]:
     values: list[JsonValue] = []
     try:
-        async for item in decoder.aiter_bytes(chunk_source(chunks)):
-            value = chunk_value(item, is_messages_api=is_messages_api)
+        async for item in decoder.aiter_bytes(chunk_source(chunks)):  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L137
+            value = chunk_value(item, is_messages_api=is_messages_api)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L137
             values.append(value)
     except Exception:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L146-L190
         return values, True

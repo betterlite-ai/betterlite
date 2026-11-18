@@ -1,5 +1,5 @@
 use betterlite_bedrock::sagemaker_embedding::cohere::{self, CohereRequestError};
-use betterlite_bedrock::sagemaker_embedding::hf::{self, HfEmbeddingRecord};
+use betterlite_bedrock::sagemaker_embedding::hf;
 use betterlite_bedrock::sagemaker_embedding::{self, EmbeddingConfig};
 use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
 use betterlite_http::error::HttpError;
@@ -17,17 +17,20 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{
-    CohereMap, CohereReply, CohereRequest, DecodeStream, Headers, HfReply, HfRequest, Input,
-    ModelConfig,
+    CohereReply, CohereRequest, DecodeStream, Headers, HfReply, Input, ModelConfig,
 };
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
         Input::ModelConfig(case) => Ok(model_config(case)),
         Input::Headers(case) => Ok(headers(case)),
-        Input::HfRequest(case) => Ok(hf_request(case)),
+        Input::HfRequest(case) => {
+            Ok(json!({ "request": hf::transform_request(&case.input, &case.optional_params) }))
+        }
         Input::HfReply(case) => hf_reply(case),
-        Input::CohereMap(case) => Ok(cohere_map(case)),
+        Input::CohereMap(case) => Ok(json!({
+            "mapped": cohere::map_openai_params(&case.non_default, case.optional_params.clone())
+        })),
         Input::CohereRequest(case) => cohere_request(case),
         Input::CohereReply(case) => cohere_reply(case),
         Input::DecodeStream(case) => decode_stream(case),
@@ -55,36 +58,12 @@ fn headers(case: &Headers) -> Value {
     })
 }
 
-fn hf_request(case: &HfRequest) -> Value {
-    json!({ "request": hf::transform_request(&case.input, &case.optional_params) })
-}
-
+// the HF response serializes to exactly the shape the helper answers
 fn hf_reply(case: &HfReply) -> HelperResult {
-    let response = hf::transform_response(
-        case.body.as_bytes(),
-        case.status,
-        &case.model,
-        &case.request,
-    )
-    .map_err(Failure::from)?;
-    Ok(json!({
-        "object": response.object,
-        "data": response.data.iter().map(hf_row).collect::<Vec<_>>(),
-        "model": response.model,
-        "usage": {
-            "prompt_tokens": response.usage.prompt_tokens,
-            "completion_tokens": response.usage.completion_tokens,
-            "total_tokens": response.usage.total_tokens,
-        },
-    }))
-}
-
-fn hf_row(row: &HfEmbeddingRecord) -> Value {
-    json!({ "object": row.object, "index": row.index, "embedding": row.embedding })
-}
-
-fn cohere_map(case: &CohereMap) -> Value {
-    json!({ "mapped": cohere::map_openai_params(&case.non_default, case.optional_params.clone()) })
+    let body = case.body.as_bytes();
+    let reply = hf::transform_response(body, case.status, &case.model, &case.request);
+    let response = reply.map_err(Failure::from)?;
+    Ok(json!(response))
 }
 
 fn cohere_request(case: &CohereRequest) -> HelperResult {
