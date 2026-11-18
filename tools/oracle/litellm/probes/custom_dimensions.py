@@ -13,7 +13,6 @@ from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-_CONFIG: Final = TypeAdapter(ComplexityRouterConfig)
 _TIER: Final = TypeAdapter(ComplexityTier)
 
 
@@ -69,11 +68,10 @@ class CustomDimensions(Operation):
     def run(self) -> Output:
         if self.function == "pattern_work":
             return Output(results=[_entry(pattern) for pattern in self.patterns])
-        # the case spells betterlite's key names for the shared complexity keys; LiteLLM reads the same names for these
         raw: ConfigInput = {} if self.config is None else self.config
         if self.function == "validate":
             try:
-                configured = _CONFIG.validate_python(raw)
+                configured = ComplexityRouterConfig.model_validate(raw)
             except ValidationError:
                 return Output(accepted=False)
             work = sum(dimension.pattern_work() for dimension in configured.custom_dimensions)

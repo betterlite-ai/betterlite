@@ -6,24 +6,21 @@ use super::Walker;
 impl Walker<'_> {
     pub(super) fn group(&mut self) -> Result<(), PatternProblem> {
         let mut probe = self.input.clone();
-        let Some('?') = probe.next() else {
-            return self.open_group();
-        };
-        match probe.next() {
-            Some('#') => self.comment_group(),
-            Some('<') => Err(PatternProblem::Syntax),
-            Some('P') => self.named_group(),
-            Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-') => self.flags_group(),
-            _ => self.open_group(),
+        match (probe.next(), probe.next()) {
+            (Some('?'), Some('#')) => self.comment_group(),
+            (Some('?'), Some('<')) => Err(PatternProblem::Syntax),
+            (Some('?'), Some('P')) => self.named_group(),
+            (Some('?'), Some('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
+                self.flags_group()
+            }
+            _ => {
+                self.output.push('(');
+                let verbose = matches!(self.verbose.last(), Some(true));
+                self.verbose.push(verbose);
+                self.at_start = false;
+                Ok(())
+            }
         }
-    }
-
-    fn open_group(&mut self) -> Result<(), PatternProblem> {
-        self.output.push('(');
-        let verbose = matches!(self.verbose.last(), Some(true));
-        self.verbose.push(verbose);
-        self.at_start = false;
-        Ok(())
     }
 
     fn named_group(&mut self) -> Result<(), PatternProblem> {
@@ -31,7 +28,7 @@ impl Walker<'_> {
         probe.next();
         probe.next();
         if probe.next() != Some('<') {
-            return self.open_group();
+            return Err(PatternProblem::Syntax);
         }
         let mut name = String::new();
         loop {
@@ -66,7 +63,7 @@ impl Walker<'_> {
                 Some(letter @ ('a' | 'i' | 'L' | 'm' | 's' | 'u' | 'U' | 'R' | 'x' | '-')) => {
                     spec.push(letter);
                 }
-                _ => return self.open_group(),
+                _ => return Err(PatternProblem::Syntax),
             }
         };
         let (added, removed) = kept_flags(&spec)?;
