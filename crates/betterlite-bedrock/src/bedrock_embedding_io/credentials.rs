@@ -26,14 +26,14 @@ const REGION_WORKER_QUEUE_CAPACITY: usize = 16;
 
 type RegionJob = Box<dyn FnOnce() + Send + 'static>;
 
-/// Owns the bounded worker that performs synchronous managed-secret reads outside Tokio.
+// Keep the bounded reader service owned independently of request futures.
 pub struct ManagedRegionWorker {
     sender: Option<mpsc::Sender<RegionJob>>,
     worker_thread: Option<JoinHandle<()>>,
 }
 
 impl ManagedRegionWorker {
-    /// Starts the owned thread that drains managed-region secret lookups.
+    // Avoid entering Tokio on the thread that runs synchronous secret reads.
     #[must_use]
     pub fn new() -> Result<Self, EmbeddingIoError> {
         let (sender, mut receiver) = mpsc::channel(REGION_WORKER_QUEUE_CAPACITY);
