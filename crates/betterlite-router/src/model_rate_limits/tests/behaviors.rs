@@ -12,7 +12,7 @@ pub(super) fn run(name: &str) {
     run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 17] = [
+const CASES: [(&str, fn()); 18] = [
     ("limits_disabled_allows", || {
         super::runtime().block_on(limits_disabled_allows());
     }),
@@ -64,6 +64,10 @@ const CASES: [(&str, fn()); 17] = [
     ("rpm_rejection_carries_error_fields", || {
         super::runtime().block_on(rpm_rejection_carries_error_fields());
     }),
+    (
+        "sync_facade_tpm_rejects_at_limit",
+        sync_facade_tpm_rejects_at_limit,
+    ),
 ];
 
 async fn limits_disabled_allows() {
@@ -335,8 +339,22 @@ async fn sync_failure_event_refunds() {
     );
 }
 
+fn sync_facade_tpm_rejects_at_limit() {
+    let cache = Arc::new(FakeCache::new().seed_local(&tpm_key("openai/gpt-4o"), 5));
+    let check = service(Arc::clone(&cache), None);
+    let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
+    let error = check.pre_call_check(&deployment).unwrap_err();
+    let exceeded = exceeded(error);
+    assert_eq!(exceeded.channel, RateLimitChannel::Tpm);
+    assert_eq!(exceeded.current, 5);
+}
+
 async fn rpm_rejection_carries_error_fields() {
-    let cache = Arc::new(FakeCache::new().seed_local(&rpm_key("openai/gpt-4o"), 1));
+    let cache = Arc::new(
+        FakeCache::new()
+            .seed_local(&rpm_key("openai/gpt-4o"), 1)
+            .seed_remote(&rpm_key("openai/gpt-4o"), 1),
+    );
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "rpm", 1);
     let error = check

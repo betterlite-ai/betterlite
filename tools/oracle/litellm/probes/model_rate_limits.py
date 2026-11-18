@@ -109,11 +109,9 @@ class FakeRedisStore:
         key: str,
         value: float,
         parent_otel_span: object = None,
-        ttl: int | float | None = None,
-        refresh_ttl: bool = False,
         **_kwargs: object,
     ) -> int:
-        _ = (parent_otel_span, ttl, refresh_ttl)
+        _ = parent_otel_span
         self._fail()
         current = self.values.get(key, 0) + int(value)
         self.values[key] = current

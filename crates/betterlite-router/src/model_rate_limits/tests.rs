@@ -29,6 +29,7 @@ fn runtime() -> Runtime {
 #[case::sync_success_event_counts_local_only("sync_success_event_counts_local_only")]
 #[case::sync_failure_event_refunds("sync_failure_event_refunds")]
 #[case::rpm_rejection_carries_error_fields("rpm_rejection_carries_error_fields")]
+#[case::sync_facade_tpm_rejects_at_limit("sync_facade_tpm_rejects_at_limit")]
 fn model_rate_limits_behaviors(#[case] name: &str) {
     behaviors::run(name);
 }

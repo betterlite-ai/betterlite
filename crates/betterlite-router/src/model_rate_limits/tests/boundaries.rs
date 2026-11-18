@@ -95,7 +95,11 @@ async fn tpm_over_limit_by_one_rejects() {
 }
 
 async fn rpm_at_limit_allows() {
-    let cache = Arc::new(FakeCache::new().seed_local(&rpm_key(model()), 1));
+    let cache = Arc::new(
+        FakeCache::new()
+            .seed_local(&rpm_key(model()), 1)
+            .seed_remote(&rpm_key(model()), 1),
+    );
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "rpm", 2);
     check
@@ -103,10 +107,15 @@ async fn rpm_at_limit_allows() {
         .await
         .unwrap();
     assert_eq!(cache.local_value(&rpm_key(model())), Some(2));
+    assert_eq!(cache.remote_value(&rpm_key(model())), Some(2));
 }
 
 async fn rpm_over_limit_by_one_rejects() {
-    let cache = Arc::new(FakeCache::new().seed_local(&rpm_key(model()), 2));
+    let cache = Arc::new(
+        FakeCache::new()
+            .seed_local(&rpm_key(model()), 2)
+            .seed_remote(&rpm_key(model()), 2),
+    );
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "rpm", 2);
     let error = check
