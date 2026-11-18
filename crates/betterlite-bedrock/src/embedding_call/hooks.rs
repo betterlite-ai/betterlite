@@ -36,14 +36,8 @@ pub(super) struct Recorder {
 }
 
 impl EmbeddingHooks for Recorder {
-    fn pre_call(&mut self, call: CoherePreCall<'_>) {
-        self.events.push(Event::Pre {
-            input: Input::Texts(call.input.to_vec()),
-            body: call.body.clone(),
-            headers: call.headers.cloned(),
-            api_base: call.api_base.map(str::to_owned),
-        });
-    }
+    // the cohere branch logs its pre call before the send, so only the post call waits for the reply
+    fn pre_call(&mut self, _call: CoherePreCall<'_>) {}
 
     fn post_call(&mut self, call: CoherePostCall<'_>) {
         self.events.push(Event::Post {
@@ -77,7 +71,10 @@ where
     Ok(())
 }
 
-fn log_event(event: Event, log: &mut LogContext<'_, '_>) -> Result<(), EmbeddingCallError> {
+pub(super) fn log_event(
+    event: Event,
+    log: &mut LogContext<'_, '_>,
+) -> Result<(), EmbeddingCallError> {
     match event {
         Event::Pre {
             input,

@@ -8,6 +8,7 @@ mod tests;
 
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
@@ -47,7 +48,11 @@ pub struct EmbeddingCall<'text> {
     pub aembedding: bool,
     pub drop_params: bool,
     pub environment: EmbeddingEnvironment<'text>,
-    pub now: SystemTime,
+}
+
+// LiteLLM reads the clock inside every get_request_headers call, so each signature names the time it was made
+pub trait Clock: Send + Sync {
+    fn now(&self) -> SystemTime;
 }
 
 pub struct LogContext<'borrow, 'env> {
@@ -71,6 +76,7 @@ pub struct Dependencies<'source, Source, Factory, Transport> {
     pub transport: &'source Transport,
     pub encoding: &'source (dyn TextEncoding + Send + Sync),
     pub signing: &'source AwsSigningExecutor,
+    pub clock: Arc<dyn Clock>,
 }
 
 #[derive(Debug)]

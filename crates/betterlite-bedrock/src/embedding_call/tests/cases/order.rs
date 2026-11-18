@@ -1,10 +1,13 @@
-use super::super::fixture::{ClientCall, Reply, fixture_probe, run};
+use std::time::Duration;
+
+use super::super::fixture::{ClientCall, Reply, fixture_probe, now, run};
 use super::super::support::{batch, titan_body, vector};
 use crate::bedrock_embedding_io::transport::{ClientKind, Timeout};
 
 pub(super) fn ordered_multi_input_result() {
     sync_orders_replies();
     async_keeps_its_timeout();
+    each_signature_reads_the_clock();
     empty_batch_still_transforms();
     supplied_client_needs_the_matching_kind();
     a_failure_stops_later_requests();
@@ -85,6 +88,23 @@ fn async_keeps_its_timeout() {
         ]
     );
     assert_eq!(vector(&batch(outcome.response()).data[1].embedding), [2.0]);
+}
+
+fn each_signature_reads_the_clock() {
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.input = vec![String::from("one"), String::from("two")];
+    outcome_probe.clock = vec![now(), now() + Duration::from_secs(60)];
+    outcome_probe.replies = vec![
+        Reply::ok(&titan_body("[1.0]", 1)),
+        Reply::ok(&titan_body("[2.0]", 1)),
+    ];
+    let outcome = run(&outcome_probe);
+    let dates: Vec<&str> = outcome
+        .factory_requests
+        .iter()
+        .map(|request| request.headers["X-Amz-Date"].as_str())
+        .collect();
+    assert_eq!(dates, ["20231114T221320Z", "20231114T221420Z"]);
 }
 
 fn empty_batch_still_transforms() {

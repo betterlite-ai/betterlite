@@ -42,8 +42,8 @@ use crate::credentials::error::CredentialError;
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::plan::remaining_options;
 use crate::embedding_call::{
-    CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse, EmbeddingEnvironment,
-    LogContext, ParamMap,
+    Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse,
+    EmbeddingEnvironment, LogContext, ParamMap,
 };
 use crate::signing::executor::AwsSigningExecutor;
 
@@ -52,6 +52,31 @@ pub(super) fn now() -> SystemTime {
     UNIX_EPOCH
         .checked_add(Duration::from_secs(1_700_000_000))
         .expect("the fixture clock is in range")
+}
+
+// a scripted clock hands out its times in order and then stays at the fallback
+pub(super) struct SteppingClock {
+    times: Mutex<VecDeque<SystemTime>>,
+    fallback: SystemTime,
+}
+
+impl SteppingClock {
+    pub(super) fn new(times: Vec<SystemTime>, fallback: SystemTime) -> Self {
+        Self {
+            times: Mutex::new(times.into()),
+            fallback,
+        }
+    }
+}
+
+impl Clock for SteppingClock {
+    fn now(&self) -> SystemTime {
+        self.times
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop_front()
+            .unwrap_or(self.fallback)
+    }
 }
 
 pub(super) fn secret(value: &str) -> SecretString {
@@ -492,6 +517,8 @@ pub(super) struct Probe {
     pub(super) access_key: String,
     pub(super) secret_key: String,
     pub(super) session_token: Option<String>,
+    pub(super) clock: Vec<SystemTime>,
+    pub(super) raw_request_only: bool,
 }
 
 pub(super) fn fixture_probe() -> Probe {
@@ -520,6 +547,8 @@ pub(super) fn fixture_probe() -> Probe {
         access_key: String::from("AKIAIOSFODNN7EXAMPLE"),
         secret_key: String::from("wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"),
         session_token: Some(String::from("session-token")),
+        clock: Vec::new(),
+        raw_request_only: false,
     }
 }
 
@@ -599,6 +628,7 @@ pub(super) fn run_with_source(probe: &Probe, source: &Source) -> Run {
     let api_key = probe.api_key.as_deref().map(secret);
     let bearer = probe.bearer.as_deref().map(secret);
     let replies = Replies::queue(&probe.replies);
+    let clock = Arc::new(SteppingClock::new(probe.clock.clone(), now()));
     let mut call = EmbeddingCall {
         model: &probe.model,
         input: &probe.input,
@@ -614,7 +644,6 @@ pub(super) fn run_with_source(probe: &Probe, source: &Source) -> Run {
             runtime_endpoint: probe.runtime_endpoint.as_deref(),
             bearer_token: bearer.as_ref(),
         },
-        now: now(),
     };
     let secrets = secret_lookup();
     let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
@@ -626,6 +655,7 @@ pub(super) fn run_with_source(probe: &Probe, source: &Source) -> Run {
     let redactor = redactor();
     let sink = DiscardingSink;
     let mut state = logging_state(&redactor);
+    state.request_logging.raw_request_only = probe.raw_request_only;
     let snapshots = Arc::new(Mutex::new(Vec::new()));
     let capture = {
         let snapshots = Arc::clone(&snapshots);
@@ -652,6 +682,7 @@ pub(super) fn run_with_source(probe: &Probe, source: &Source) -> Run {
             transport: &cohere_client,
             encoding: &encoding,
             signing: &signing,
+            clock: Arc::clone(&clock),
         };
         let supplied = supplied_client
             .as_ref()

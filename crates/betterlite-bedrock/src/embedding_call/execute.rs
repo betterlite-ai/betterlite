@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
@@ -9,15 +10,20 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::EmbeddingCallError;
-use super::hooks::{Event, Input, Recorder, replay};
+use super::hooks::{Event, Input, Recorder, log_event, replay};
 use super::plan::{EmbeddingPlan, remaining_options};
 use super::sign::{AsyncSigningInput, SigningInput, sign_item, sign_owned};
-use super::{CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext};
+use super::{
+    Clock, CredentialSource, Dependencies, EmbeddingCall, EmbeddingCallResponse, LogContext,
+};
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::transport::{
     ClientFactory, ClientKind, EmbeddingCall as IoCall, SuppliedClient, Timeout, post_embedding,
 };
 use crate::signing::executor::AwsSigningExecutor;
+use bridge::CohereSender;
+
+mod bridge;
 
 struct Item<'call, 'text, 'plan> {
     call: &'call EmbeddingCall<'text>,
@@ -28,6 +34,7 @@ struct BatchClients<'client, Factory: ClientFactory> {
     supplied: Option<(ClientKind, &'client Factory::Client)>,
     factory: &'client Factory,
     signing: &'client AwsSigningExecutor,
+    clock: &'client Arc<dyn Clock>,
 }
 
 impl<Factory: ClientFactory + Sync> BatchClients<'_, Factory> {
@@ -57,6 +64,7 @@ where
             supplied: supplied.map(|client| (client.kind, client.transport)),
             factory: dependencies.factory,
             signing: dependencies.signing,
+            clock: &dependencies.clock,
         };
         let item = Item { call, plan };
         return Ok(EmbeddingCallResponse::Batch(
@@ -82,7 +90,16 @@ where
 {
     let mut responses = Vec::with_capacity(batch.len());
     for data in batch {
-        let input = async_input(item, serde_json::to_vec(data)?);
+        let input = AsyncSigningInput {
+            endpoint_url: item.plan.endpoint_url.clone(),
+            body: serde_json::to_vec(data)?,
+            credentials: item.plan.credentials.clone(),
+            region: item.plan.region.clone(),
+            extra_headers: item.call.extra_headers.unwrap_or_default().to_vec(),
+            api_key: item.call.api_key.cloned(),
+            configured_bearer: item.call.environment.bearer_token.cloned(),
+            clock: Arc::clone(clients.clock),
+        };
         let signed = clients.signing.run(move || sign_owned(input)).await??;
         replay(
             [Event::Pre {
@@ -120,31 +137,6 @@ where
     )?)
 }
 
-fn async_input(item: &Item<'_, '_, '_>, body: Vec<u8>) -> AsyncSigningInput {
-    AsyncSigningInput {
-        endpoint_url: item.plan.endpoint_url.clone(),
-        body,
-        credentials: item.plan.credentials.clone(),
-        region: item.plan.region.clone(),
-        extra_headers: item.call.extra_headers.unwrap_or_default().to_vec(),
-        api_key: item.call.api_key.cloned(),
-        configured_bearer: item.call.environment.bearer_token.cloned(),
-        now: item.call.now,
-    }
-}
-
-fn signing_input(item: &Item<'_, '_, '_>) -> SigningInput<'_> {
-    SigningInput {
-        endpoint_url: &item.plan.endpoint_url,
-        credentials: item.plan.credentials.as_ref(),
-        region: &item.plan.region,
-        extra_headers: item.call.extra_headers.unwrap_or_default(),
-        api_key: item.call.api_key,
-        configured_bearer: item.call.environment.bearer_token,
-        now: item.call.now,
-    }
-}
-
 async fn cohere<Source, Factory, Transport>(
     call: &EmbeddingCall<'_>,
     plan: &EmbeddingPlan,
@@ -160,7 +152,18 @@ where
     Transport: LegacyEmbeddingTransport,
 {
     let body = serde_json::to_vec(data)?;
-    let signed = sign_item(&body, signing_input(&Item { call, plan }))?;
+    let signed = sign_item(
+        &body,
+        SigningInput {
+            endpoint_url: &plan.endpoint_url,
+            credentials: plan.credentials.as_ref(),
+            region: &plan.region,
+            extra_headers: call.extra_headers.unwrap_or_default(),
+            api_key: call.api_key,
+            configured_bearer: call.environment.bearer_token,
+            now: dependencies.clock.now(),
+        },
+    )?;
     let headers: Headers = signed.headers.iter().cloned().collect();
     let options = remaining_options(&call.optional_params)?;
     let legacy = cohere_plan(&PlanInput {
@@ -178,28 +181,36 @@ where
         headers: &headers,
         timeout: cohere_timeout(call)?,
     });
-    let mut recorder = Recorder::default();
+    // LiteLLM logs the prepared request before the handler builds a client and sends it
+    log_event(
+        Event::Pre {
+            input: Input::Texts(call.input.to_vec()),
+            body: legacy.data.clone(),
+            headers: call.aembedding.then(|| legacy.headers.clone()),
+            api_base: call.aembedding.then(|| legacy.url.clone()),
+        },
+        log,
+    )?;
+    let sender = CohereSender {
+        supplied,
+        factory: dependencies.factory,
+        fallback: dependencies.transport,
+        asynchronous: call.aembedding,
+        timeout: call.timeout.clone(),
+    };
     let input = ExecuteInput {
         plan: &legacy,
         input: call.input,
         api_key: None,
         encoding: dependencies.encoding,
     };
-    // only a supplied handler of the branch's own kind replaces the default client, as in the handler
-    let outcome = match supplied {
-        Some(client)
-            if (call.aembedding && client.kind == ClientKind::Async)
-                || (!call.aembedding && client.kind == ClientKind::Sync) =>
-        {
-            cohere_execute(client.transport, input, &mut recorder).await
-        }
-        _ => cohere_execute(dependencies.transport, input, &mut recorder).await,
-    };
+    let mut recorder = Recorder::default();
+    let outcome = cohere_execute(&sender, input, &mut recorder).await;
     replay(recorder, log)?;
     Ok(outcome?)
 }
 
-// B1418's plan keeps one deadline: the blocking handler ignores the caller timeout and the async default is 600 seconds too
+// B1418's plan keeps one deadline; the async branch also hands the four limits to the client factory, as LiteLLM does
 fn cohere_timeout(call: &EmbeddingCall<'_>) -> Result<Duration, EmbeddingCallError> {
     if !call.aembedding {
         return Ok(SYNC_CLIENT_TIMEOUT);

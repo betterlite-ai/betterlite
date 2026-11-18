@@ -4,9 +4,9 @@ use betterlite_models::decisions::Json as Decisions;
 use betterlite_openai::cohere_embedding::usage::BilledUnits;
 use betterlite_prompts::arguments::json::Json;
 
-use super::super::fixture::{Reply, fixture_probe, object, run};
+use super::super::fixture::{ClientCall, Reply, fixture_probe, object, run};
 use super::super::support::{argument_fields, decisions_value, legacy, logged_response, phases};
-use crate::bedrock_embedding_io::transport::{ClientKind, Timeout};
+use crate::bedrock_embedding_io::transport::{ClientKind, Timeout, TimeoutRecord};
 use crate::embedding_call::error::EmbeddingCallError;
 
 const COHERE_MODEL: &str = "cohere.embed-english-v3";
@@ -18,6 +18,9 @@ pub(super) fn cohere_batched_input() {
     options_are_filtered_to_declared_fields();
     the_caller_timeout_does_not_reach_the_sync_handler();
     async_logging_carries_the_prepared_request();
+    the_async_timeout_record_reaches_the_client_factory();
+    an_async_timeout_keeps_its_handler_status();
+    a_captured_raw_request_never_reaches_the_provider();
     usage_falls_back_to_the_encoding();
     headers_keep_their_precedence();
     a_bad_status_is_a_typed_failure();
@@ -103,10 +106,14 @@ fn async_logging_carries_the_prepared_request() {
     outcome_probe.replies = vec![Reply::ok(REPLY)];
     let outcome = run(&outcome_probe);
     assert_eq!(
-        outcome.posted().deadline,
-        Some(Duration::from_secs_f64(2.5))
+        outcome.calls,
+        [ClientCall {
+            kind: ClientKind::Async,
+            provider: Some(String::from("cohere")),
+            timeout: Some(Timeout::Seconds(2.5)),
+        }]
     );
-    assert!(outcome.calls.is_empty());
+    assert_eq!(outcome.factory_requests.len(), 1);
     assert_eq!(
         phases(&outcome.snapshots),
         ["pre_api_call", "post_api_call"]
@@ -127,6 +134,71 @@ fn async_logging_carries_the_prepared_request() {
             "{\"embeddings\":[[0.1,0.2],[0.3,0.4]],\"meta\":{\"billed_units\":{\"input_tokens\":7}}}"
         )
     );
+}
+
+fn the_async_timeout_record_reaches_the_client_factory() {
+    let record = TimeoutRecord {
+        connect: 1.0,
+        read: 600.0,
+        write: 30.0,
+        pool: 5.0,
+    };
+    let mut outcome_probe = fixture_probe();
+    outcome_probe.model = String::from(COHERE_MODEL);
+    outcome_probe.aembedding = true;
+    outcome_probe.timeout = Some(Timeout::Record(Box::new(record)));
+    outcome_probe.replies = vec![Reply::ok(REPLY)];
+    let outcome = run(&outcome_probe);
+    assert_eq!(
+        outcome.calls,
+        [ClientCall {
+            kind: ClientKind::Async,
+            provider: Some(String::from("cohere")),
+            timeout: Some(Timeout::Record(Box::new(record))),
+        }]
+    );
+    assert_eq!(outcome.factory_requests.len(), 1);
+}
+
+fn an_async_timeout_keeps_its_handler_status() {
+    let mut timeout_probe = fixture_probe();
+    timeout_probe.model = String::from(COHERE_MODEL);
+    timeout_probe.aembedding = true;
+    timeout_probe.replies = vec![Reply::Timeout];
+    let timeout = run(&timeout_probe);
+    assert_eq!(timeout.error().status(), Some(408));
+    assert_eq!(timeout.factory_requests.len(), 1);
+    let mut failed_probe = fixture_probe();
+    failed_probe.model = String::from(COHERE_MODEL);
+    failed_probe.aembedding = true;
+    failed_probe.replies = vec![Reply::Failed];
+    let failed = run(&failed_probe);
+    assert!(matches!(failed.error(), EmbeddingCallError::Cohere(_)));
+    assert_eq!(failed.error().status(), None);
+}
+
+fn a_captured_raw_request_never_reaches_the_provider() {
+    for aembedding in [false, true] {
+        let mut outcome_probe = fixture_probe();
+        outcome_probe.model = String::from(COHERE_MODEL);
+        outcome_probe.aembedding = aembedding;
+        outcome_probe.raw_request_only = true;
+        outcome_probe.replies = vec![Reply::ok(REPLY)];
+        let outcome = run(&outcome_probe);
+        assert!(
+            matches!(outcome.error(), EmbeddingCallError::Logging(_)),
+            "the capture ends the call before any send"
+        );
+        assert!(outcome.supplied_requests.is_empty());
+        assert!(outcome.factory_requests.is_empty());
+        assert!(outcome.cohere_requests.is_empty());
+        assert_eq!(
+            outcome.pre_call_input(),
+            Some(&Decisions::List(vec![Decisions::Text(String::from(
+                "hello"
+            ))]))
+        );
+    }
 }
 
 fn usage_falls_back_to_the_encoding() {

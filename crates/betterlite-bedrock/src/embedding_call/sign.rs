@@ -1,7 +1,9 @@
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use secrecy::SecretString;
 
+use super::Clock;
 use crate::aws_settings::sources::Credentials;
 use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
@@ -42,7 +44,7 @@ pub struct AsyncSigningInput {
     pub extra_headers: Vec<(String, String)>,
     pub api_key: Option<SecretString>,
     pub configured_bearer: Option<SecretString>,
-    pub now: SystemTime,
+    pub clock: Arc<dyn Clock>,
 }
 
 // LiteLLM's run_aws_signing always moves signing off the event loop, bearer or not
@@ -56,7 +58,7 @@ pub fn sign_owned(input: AsyncSigningInput) -> Result<AwsSignedRequest, SigningE
             extra_headers: &input.extra_headers,
             api_key: input.api_key.as_ref(),
             configured_bearer: input.configured_bearer.as_ref(),
-            now: input.now,
+            now: input.clock.now(),
         },
     )
 }
