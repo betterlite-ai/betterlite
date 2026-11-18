@@ -8,16 +8,6 @@ pub enum KeyQueryType {
     FindAll,
 }
 
-impl KeyQueryType {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::FindUnique => "find_unique",
-            Self::FindAll => "find_all",
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct CombinedKeyRequest<'request> {
     pub token: Option<&'request str>,
