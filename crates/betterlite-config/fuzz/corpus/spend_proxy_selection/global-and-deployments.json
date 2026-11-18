@@ -1,0 +1,1 @@
+{"litellm_settings":{"use_litellm_proxy":true},"model_list":[{"litellm_params":{"use_litellm_proxy":false}},{"litellm_params":{"use_litellm_proxy":"yes"}},{"litellm_params":{}}],"environment":{"USE_LITELLM_PROXY":"true"}}
