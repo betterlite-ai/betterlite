@@ -212,9 +212,9 @@ fn settle(
 ) -> DriverFuture<'_, ()> {
     Box::pin(async move {
         while received.len() < delivered {
-            let next = timeout(SETTLE, receiver.recv())
-                .await
-                .map_err(|_| failure("TimeoutError", String::from("no upstream frame arrived")))?;
+            let next = timeout(SETTLE, receiver.recv()).await.map_err(|_elapsed| {
+                failure("TimeoutError", String::from("no upstream frame arrived"))
+            })?;
             let frame =
                 next.ok_or_else(|| failure("TransportError", String::from("upstream ended")))?;
             received.push(frame);
