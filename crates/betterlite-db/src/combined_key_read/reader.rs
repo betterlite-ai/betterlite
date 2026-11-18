@@ -101,7 +101,7 @@ where
             Some(fields) => Ok(Some(CombinedKeyView::construct(
                 fields,
                 epoch_decimal(self.services.clock.now()),
-            ))),
+            )?)),
             None if request.check_deprecated => {
                 self.deprecated_view(request, &hash, request.use_writer)
                     .await
