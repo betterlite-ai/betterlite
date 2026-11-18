@@ -35,3 +35,13 @@ fn an_empty_stream_is_no_request() {
         Err(FixtureError::NoRequest)
     ));
 }
+
+#[test]
+fn a_head_cut_short_is_an_io_error() {
+    let mut stream: &[u8] = b"POST /v1beta/interactions HTTP/1.1\r\nhost: fixture";
+
+    assert!(matches!(
+        read_request(&mut stream),
+        Err(FixtureError::Io(_))
+    ));
+}
