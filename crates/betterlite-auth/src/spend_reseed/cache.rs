@@ -3,9 +3,6 @@ use std::future::Future;
 
 use rust_decimal::Decimal;
 
-use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
-use crate::spend_counter_batch::scope::SpendCounterScope;
-
 use super::values::ReseedCacheValue;
 
 pub mod dual;
@@ -52,17 +49,4 @@ pub trait ActiveSpendBatch: Send + Sync {
     ) -> impl Future<Output = Result<Option<CounterValue>, SpendCounterBatchError>> + Send;
 
     fn record(&self, counter_key: &str, value: Decimal);
-}
-
-impl ActiveSpendBatch for SpendCounterScope {
-    async fn read(
-        &self,
-        counter_key: &str,
-    ) -> Result<Option<CounterValue>, SpendCounterBatchError> {
-        self.read_batched_spend_counter(counter_key).await
-    }
-
-    fn record(&self, counter_key: &str, value: Decimal) {
-        self.record_spend_counter_value(counter_key, value);
-    }
 }

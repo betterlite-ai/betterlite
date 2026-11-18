@@ -64,6 +64,24 @@ async fn dual_cache_memory_tier_round_trips_values() {
 }
 
 #[tokio::test]
+async fn configured_redis_tier_reports_itself_and_refuses_reads() {
+    let (memory, _) = local_cache();
+    let cache = DualCache::new(
+        memory,
+        Some(super::support::refusing_redis_cache().await),
+        settings(),
+    );
+    assert!(cache.redis_configured());
+    assert!(cache.redis_get("spend:key:t").await.is_err());
+    assert!(
+        cache
+            .redis_set_nx("spend:key:t", decimal("2.5"))
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
 async fn memory_values_map_to_cache_amounts() {
     let (memory, cache) = local_cache();
     let cases = [
