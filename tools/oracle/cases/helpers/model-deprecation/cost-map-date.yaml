@@ -1,0 +1,21 @@
+kind: helper
+name: model-deprecation-cost-map-date
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      azure/base-model: {deprecation_date: "2026-05-20", litellm_provider: azure}
+      openai/raw-model: {deprecation_date: "2026-05-10", litellm_provider: openai}
+      suffix-model: {deprecation_date: "2026-04-01"}
+    deployments:
+      - model_name: base-first
+        litellm_params: {model: openai/raw-model}
+        model_info: {base_model: azure/base-model}
+      - model_name: raw-second
+        litellm_params: {model: openai/raw-model}
+      - model_name: suffix-third
+        litellm_params: {model: other/suffix-model}
+      - model_name: unmapped
+        litellm_params: {model: other/unknown}
+env: {}
+compare: {ignore: []}
