@@ -329,6 +329,21 @@ fn the_async_hit_writes_the_parent_span_back_as_a_traceparent() {
 }
 
 #[test]
+fn a_parent_span_inside_litellm_params_is_written_back() {
+    let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0c9d02b7-01";
+    let mut request: KeyObject = chat_kwargs();
+    request.insert(
+        "litellm_params".to_owned(),
+        object(&[(
+            "metadata",
+            object(&[("litellm_parent_otel_span", text(traceparent))]),
+        )]),
+    );
+    add_parent_otel_span(&mut request);
+    assert_eq!(request.get("parent_otel_span"), Some(&text(traceparent)));
+}
+
+#[test]
 fn an_unreadable_parent_span_is_written_back_as_null() {
     let mut request: KeyObject = chat_kwargs();
     add_parent_otel_span(&mut request);
