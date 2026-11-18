@@ -28,7 +28,7 @@ fn detail_message(violation: &GuardrailViolation) -> Json {
             .unwrap_or_else(|| Json::Text(violation.message.clone())),
         Json::Null => exception_message(&violation.message),
         Json::Text(text) => Json::Text(text.clone()),
-        detail @ Json::Bool(_) | detail @ Json::Number(_) | detail @ Json::List(_) => {
+        detail @ (Json::Bool(_) | Json::Number(_) | Json::List(_)) => {
             Json::Text(serde_json::to_string(detail).unwrap_or_default())
         }
     }
@@ -93,11 +93,10 @@ pub(crate) fn spoken_message(message: &Json) -> Json {
 fn prompt_text(message: &Json) -> String {
     match message {
         Json::Text(text) => text.clone(),
-        other @ Json::Null
-        | other @ Json::Bool(_)
-        | other @ Json::Number(_)
-        | other @ Json::List(_)
-        | other @ Json::Object(_) => serde_json::to_string(other).unwrap_or_default(),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            serde_json::to_string(other).unwrap_or_default()
+        }
     }
 }
 

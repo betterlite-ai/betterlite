@@ -8,6 +8,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
+use tokio::runtime::Builder;
 
 use self::harness::{
     Fixture, Outcome, PROMPT_PREFIX, Predicate, SendLog, Sockets, Split, TestFailure,
@@ -17,7 +18,7 @@ use self::harness::{
 use super::callback::{GuardrailViolation, RealtimeGuardrail};
 use super::error::RealtimeGuardrailsError;
 use super::message::DEFAULT_BLOCK_MESSAGE;
-use super::runner::{RealtimeGuardrails, RunRealtimeGuardrails};
+use super::runner::{RealtimeGuardrails, RunRealtimeGuardrails as _};
 
 const TOOL_RESULT: &str = r#"{"type":"conversation.item.create","item":{"type":"function_call_output","call_id":"call-1","output":"safe"}}"#;
 const CANCEL: &str = r#"{"type":"response.cancel"}"#;
@@ -242,14 +243,17 @@ async fn realtime_guardrail_block_sequence() {
     Json::Number(Number::from(42_u8)),
     "42"
 )]
-#[tokio::test]
-async fn realtime_guardrail_message_precedence(
+fn realtime_guardrail_message_precedence(
     #[case] violation: GuardrailViolation,
     #[case] configured: Option<&str>,
     #[case] expected: Json,
     #[case] prompt: &str,
 ) {
-    let blocked = blocked_message(violation, configured).await;
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+    let blocked = runtime.block_on(blocked_message(violation, configured));
     assert_eq!(blocked.message, expected);
     assert_eq!(blocked.prompt, format!("{PROMPT_PREFIX}{prompt}"));
 }
@@ -294,8 +298,7 @@ async fn realtime_guardrail_message_precedence_unexpected_error() {
 #[case::zero_threshold(None, Some(0))]
 #[case::negative_threshold(None, Some(-1))]
 #[case::no_threshold(None, None)]
-#[tokio::test]
-async fn realtime_guardrail_end_session(
+fn realtime_guardrail_end_session(
     #[case] on_violation: Option<OnViolation>,
     #[case] threshold: Option<i64>,
 ) {
@@ -304,14 +307,18 @@ async fn realtime_guardrail_end_session(
     let mut guardrail = blocking_guardrail();
     guardrail.policy.on_violation = on_violation;
     guardrail.policy.end_session_after_n_fails = threshold;
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
     assert!(
-        one_block(&fixture, &guardrail, "hello")
-            .await
+        runtime
+            .block_on(one_block(&fixture, &guardrail, "hello"))
             .expect("the block completes")
     );
     let closes_backend =
         on_violation == Some(OnViolation::EndSession) || threshold.is_some_and(|limit| limit <= 1);
-    let expected_closes = if closes_backend { 1 } else { 0 };
+    let expected_closes = usize::from(closes_backend);
     let expected_timeline = if closes_backend {
         vec!["backend", "client", "backend", "backend", "backend-close"]
     } else {

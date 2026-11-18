@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
+use futures_util::FutureExt as _;
 use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use tracing::field::{Field, Visit};
@@ -33,7 +34,7 @@ use super::super::callback::{
     RealtimeGuardrail, RealtimeGuardrailPolicy,
 };
 use super::super::error::RealtimeGuardrailsError;
-use super::super::runner::{RealtimeGuardrails, RunRealtimeGuardrails};
+use super::super::runner::{RealtimeGuardrails, RunRealtimeGuardrails as _};
 
 pub(super) const PROMPT_PREFIX: &str =
     "Say exactly the following message to the user, word for word, do not add anything else: ";
@@ -186,6 +187,7 @@ impl SendLog {
                 message: format!("the scripted {target} send {attempt} failed"),
             });
         }
+        drop(data);
         Ok(())
     }
 
@@ -521,7 +523,15 @@ pub(super) struct Selection {
     pub(super) frames: usize,
 }
 
-pub(super) async fn selection(hooks: Option<&[GuardrailEventHooks]>) -> Selection {
+struct SelectionInputs {
+    fixture: Fixture,
+    eligible: ScriptedGuardrail,
+    native: ScriptedGuardrail,
+    logger: ScriptedGuardrail,
+    never: ScriptedGuardrail,
+}
+
+fn selection_inputs() -> SelectionInputs {
     let mut fixture = Fixture::new();
     fixture.request_data = IndexMap::from([(
         String::from("transcript"),
@@ -552,28 +562,51 @@ pub(super) async fn selection(hooks: Option<&[GuardrailEventHooks]>) -> Selectio
         Outcome::Block,
     );
     never.predicate = Predicate::Never;
-    let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> =
-        vec![&eligible, &eligible, &native, &logger, &never];
-    let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
-        state: &mut state,
-        provider: None,
-        guardrails: &guardrails,
-    };
-    let blocked = runner
-        .run_realtime_guardrails("hello", None, None, hooks)
-        .await
-        .expect("a clean run returns");
-    let count = runner.state.setup.violation_count;
-    let skipped = [&native, &logger]
+    SelectionInputs {
+        fixture,
+        eligible,
+        native,
+        logger,
+        never,
+    }
+}
+
+pub(super) fn selection(hooks: Option<&[GuardrailEventHooks]>) -> LocalBoxFuture<'_, Selection> {
+    let inputs = selection_inputs();
+    async move {
+        let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![
+            &inputs.eligible,
+            &inputs.eligible,
+            &inputs.native,
+            &inputs.logger,
+            &inputs.never,
+        ];
+        let mut state = inputs.fixture.state();
+        let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
+            state: &mut state,
+            provider: None,
+            guardrails: &guardrails,
+        };
+        let blocked = runner
+            .run_realtime_guardrails("hello", None, None, hooks)
+            .await
+            .expect("a clean run returns");
+        let count = runner.state.setup.violation_count;
+        selection_summary(&inputs, blocked, count)
+    }
+    .boxed_local()
+}
+
+fn selection_summary(inputs: &SelectionInputs, blocked: bool, count: usize) -> Selection {
+    let skipped: usize = [&inputs.native, &inputs.logger]
         .iter()
         .map(|guardrail| {
             let (checks, applied) = guardrail.records();
-            checks.len() + applied.len()
+            checks.len().saturating_add(applied.len())
         })
         .sum();
-    let false_checks = never.records().0.len();
-    let (checks, applied) = eligible.records();
+    let false_checks = inputs.never.records().0.len();
+    let (checks, applied) = inputs.eligible.records();
     Selection {
         blocked,
         count,
@@ -581,7 +614,12 @@ pub(super) async fn selection(hooks: Option<&[GuardrailEventHooks]>) -> Selectio
         applied,
         skipped,
         false_checks,
-        frames: fixture.backend.sent().len() + fixture.client.sent().len(),
+        frames: inputs
+            .fixture
+            .backend
+            .sent()
+            .len()
+            .saturating_add(inputs.fixture.client.sent().len()),
     }
 }
 
@@ -590,48 +628,54 @@ pub(super) struct BlockedMessage {
     pub(super) prompt: String,
 }
 
-pub(super) async fn blocked_message(
+pub(super) fn blocked_message(
     violation: GuardrailViolation,
     configured: Option<&str>,
-) -> BlockedMessage {
-    let fixture = Fixture::new();
-    let mut guardrail = blocking_guardrail();
-    guardrail.violation = violation;
-    guardrail.policy.violation_message = configured.map(str::to_owned);
-    let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
-    let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
-        state: &mut state,
-        provider: None,
-        guardrails: &guardrails,
-    };
-    assert!(
-        runner
-            .run_realtime_guardrails("hello", None, None, None)
-            .await
-            .expect("the block completes")
-    );
-    let notice = json(&fixture.client.sent()[0]);
-    let spoken = json(&fixture.backend.sent()[1]);
-    BlockedMessage {
-        message: field(&field(&notice, "error"), "message").clone(),
-        prompt: prompt_of(&spoken),
+) -> LocalBoxFuture<'_, BlockedMessage> {
+    async move {
+        let fixture = Fixture::new();
+        let mut guardrail = blocking_guardrail();
+        guardrail.violation = violation;
+        guardrail.policy.violation_message = configured.map(str::to_owned);
+        let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
+        let mut state = fixture.state();
+        let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
+            state: &mut state,
+            provider: None,
+            guardrails: &guardrails,
+        };
+        assert!(
+            runner
+                .run_realtime_guardrails("hello", None, None, None)
+                .await
+                .expect("the block completes")
+        );
+        let notice = json(&fixture.client.sent()[0]);
+        let spoken = json(&fixture.backend.sent()[1]);
+        BlockedMessage {
+            message: field(field(&notice, "error"), "message").clone(),
+            prompt: prompt_of(&spoken),
+        }
     }
+    .boxed_local()
 }
 
-pub(super) async fn one_block(
-    fixture: &Fixture,
-    guardrail: &ScriptedGuardrail,
-    transcript: &str,
-) -> Result<bool, RealtimeGuardrailsError<ConfigFailure, TestFailure>> {
-    let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![guardrail];
-    let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
-        state: &mut state,
-        provider: None,
-        guardrails: &guardrails,
-    };
-    runner
-        .run_realtime_guardrails(transcript, None, None, None)
-        .await
+pub(super) fn one_block<'run>(
+    fixture: &'run Fixture,
+    guardrail: &'run ScriptedGuardrail,
+    transcript: &'run str,
+) -> LocalBoxFuture<'run, Result<bool, RealtimeGuardrailsError<ConfigFailure, TestFailure>>> {
+    async move {
+        let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![guardrail];
+        let mut state = fixture.state();
+        let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
+            state: &mut state,
+            provider: None,
+            guardrails: &guardrails,
+        };
+        runner
+            .run_realtime_guardrails(transcript, None, None, None)
+            .await
+    }
+    .boxed_local()
 }
