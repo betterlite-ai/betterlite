@@ -264,7 +264,7 @@ fn a_file_scalar_pyyaml_reads_as_text_stays_text() {
 #[test]
 fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
     let (_folder, path) = routes_file(
-        "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n",
+        "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n    - 1:30.5\n",
     );
     let sources = sources(&[], Some(&path), vec![], 0.5);
     assert_eq!(
@@ -272,9 +272,19 @@ fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
         vec![route(
             "2020-01-01",
             Some("1:30"),
-            &["2020-01-01", "1:30"],
+            &["2020-01-01", "1:30", "1:30.5"],
             0.5,
         )]
+    );
+}
+
+#[test]
+fn a_pyyaml_underscored_number_stays_text() {
+    let (_folder, path) = routes_file("- route_name: 0_1\n  utterances:\n    - 1_\n    - 1__0\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap(),
+        vec![route("0_1", None, &["1_", "1__0"], 0.5)]
     );
 }
 
@@ -287,4 +297,16 @@ fn a_file_octal_threshold_is_read_by_the_yaml_readers_inference() {
     let routes = build_routes(&sources).unwrap();
     assert_eq!(routes[0].score_threshold.to_bits(), 8.0_f64.to_bits());
     assert_eq!(routes[1].score_threshold.to_bits(), 127.0_f64.to_bits());
+}
+
+#[test]
+fn a_file_uppercase_radix_threshold_is_read_by_the_yaml_readers_inference() {
+    let (_folder, path) = routes_file(
+        "- route_name: uppercase\n  utterances: [\"a\"]\n  similarity_threshold: 0X1f\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].score_threshold.to_bits(),
+        31.0_f64.to_bits()
+    );
 }

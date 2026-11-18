@@ -471,6 +471,41 @@ fn a_non_finite_inline_threshold_is_rejected() {
 }
 
 #[test]
+fn a_file_underscored_threshold_is_refused_as_a_number() {
+    let (_folder, path) =
+        routes_file("- route_name: x\n  utterances: [\"a\"]\n  similarity_threshold: 0_1\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "similarity_threshold");
+            assert_eq!(expected, "a number");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_non_finite_threshold_is_refused_by_the_yaml_reader() {
+    let (_folder, path) =
+        routes_file("- route_name: x\n  utterances: [\"a\"]\n  similarity_threshold: .nan\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert!(matches!(
+        build_routes(&sources),
+        Err(RouteLoadError::CustomRoutes {
+            source: CustomRoutesError::Yaml { .. },
+            ..
+        })
+    ));
+}
+
+#[test]
 fn an_oversized_input_is_rejected() {
     let bytes = vec![b' '; MAX_ROUTES_FILE_BYTES + 1];
     assert!(matches!(
