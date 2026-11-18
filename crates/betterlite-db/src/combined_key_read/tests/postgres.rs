@@ -117,8 +117,9 @@ BEGIN
     RAISE EXCEPTION 'relation disappeared';
 END
 $$"#;
-const GUARD_TEAM_READS: &str = r#"
-ALTER TABLE "LiteLLM_TeamTable" RENAME TO "LiteLLM_TeamTable_base";
+const RENAME_TEAM_TABLE: &str =
+    r#"ALTER TABLE "LiteLLM_TeamTable" RENAME TO "LiteLLM_TeamTable_base""#;
+const CREATE_TEAM_VIEW: &str = r#"
 CREATE VIEW "LiteLLM_TeamTable" AS
     SELECT * FROM "LiteLLM_TeamTable_base" WHERE raise_select_error()
 "#;
@@ -478,7 +479,8 @@ pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
 
 pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture) {
     fixture.execute(RAISE_CACHED_PLAN, &[]).await;
-    fixture.execute(GUARD_TEAM_READS, &[]).await;
+    fixture.execute(RENAME_TEAM_TABLE, &[]).await;
+    fixture.execute(CREATE_TEAM_VIEW, &[]).await;
     fixture.execute(INSERT_GUARDED_TEAM, &[]).await;
     let stored = hash_token("sk-native-plan");
     fixture.execute(INSERT_GUARDED_KEY, &[&stored]).await;
@@ -505,7 +507,8 @@ pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture)
 
 pub(crate) async fn ordinary_driver_error_is_not_a_cached_plan(fixture: &Fixture) {
     fixture.execute(RAISE_CACHED_PLAN, &[]).await;
-    fixture.execute(GUARD_TEAM_READS, &[]).await;
+    fixture.execute(RENAME_TEAM_TABLE, &[]).await;
+    fixture.execute(CREATE_TEAM_VIEW, &[]).await;
     fixture.execute(INSERT_GUARDED_TEAM, &[]).await;
     fixture.execute(RAISE_ORDINARY_ERROR, &[]).await;
     let stored = hash_token("sk-native-plain");
