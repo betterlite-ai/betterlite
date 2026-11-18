@@ -163,11 +163,12 @@ fn catalog_aliases_supply_group_deployments(
         AliasTarget::Name("internal".to_owned()),
     )]);
     let groups = RoutingGroupIndex::default();
+    let inferred = |_: &str| -> Option<String> { None };
     let lookup = CatalogLookup {
         catalog: &catalog,
         model_group_alias: &aliases,
         routing_groups: &groups,
-        inferred_provider: &|_| None,
+        inferred_provider: &inferred,
     };
     let fixture = Fixture::new();
     let context = fixture.context();
