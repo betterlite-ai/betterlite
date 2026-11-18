@@ -90,9 +90,7 @@ pub(super) fn past_limit(
     rejection: &Rejection,
 ) -> Result<(), RpmLimitExceeded> {
     match limit {
-        Some(limit) if updated > Decimal::from(limit) => {
-            Err(rejection.error(deployment, limit, updated))
-        }
+        Some(cap) if updated > Decimal::from(cap) => Err(rejection.error(deployment, cap, updated)),
         Some(_) | None => Ok(()),
     }
 }

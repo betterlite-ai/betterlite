@@ -27,8 +27,8 @@ pub(super) const NEXT_MINUTE_RPM_KEY: &str = "dep-a:gpt-4o:rpm:00-01";
 pub(super) const TPM_KEY: &str = "dep-a:openai/gpt-4o-mini:tpm:00-00";
 
 pub(super) fn at(millis: u64) -> DateTime<Utc> {
-    let millis = i64::try_from(millis).expect("the test time fits an i64");
-    DateTime::from_timestamp_millis(millis).expect("the test time is representable")
+    let timestamp = i64::try_from(millis).expect("the test time fits an i64");
+    DateTime::from_timestamp_millis(timestamp).expect("the test time is representable")
 }
 
 pub(super) fn rpm(limit: Option<i64>) -> DeploymentUsage {
@@ -124,6 +124,7 @@ impl DeltaStore for MemoryStore {
             *total = total.saturating_add(delta.value);
             results.push(*total);
         }
+        drop(values);
         Ok(results)
     }
 }

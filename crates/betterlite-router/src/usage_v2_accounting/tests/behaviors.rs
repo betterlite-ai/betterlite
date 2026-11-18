@@ -44,7 +44,7 @@ async fn rpm_allows_exactly_the_configured_requests() {
         .await
         .expect_err("the third request is past the limit");
     assert_eq!(error.limit, 2);
-    assert_eq!(error.usage, Decimal::from(2));
+    assert_eq!(error.usage, Decimal::from(2_i64));
     assert_eq!(harness.local(RPM_KEY), Some(2));
 }
 
@@ -71,7 +71,7 @@ async fn rpm_zero_limit_counts_the_first_request() {
 async fn rpm_without_a_limit_never_rejects() {
     let harness = Harness::new();
     let facts = deployment("dep-a", DeploymentUsage::default());
-    for _call in 0..3 {
+    for _call in 0_u8..3_u8 {
         assert_eq!(harness.accounting.pre_call(&facts, at(0)).await, Ok(()));
     }
     assert_eq!(harness.local(RPM_KEY), Some(3));
@@ -100,50 +100,29 @@ async fn rpm_limit_prefers_the_deployment_value() {
 
 async fn rpm_limit_falls_back_in_order() {
     let harness = Harness::new();
-    let from_params = deployment(
-        "dep-a",
-        DeploymentUsage {
-            tpm: None,
-            rpm: None,
-            params_tpm: None,
-            params_rpm: Some(1),
-            model_info_tpm: None,
-            model_info_rpm: Some(9),
-            io_token_limits: false,
-        },
-    );
-    assert_eq!(
-        harness.accounting.pre_call(&from_params, at(0)).await,
-        Ok(())
-    );
-    let error = harness
-        .accounting
-        .pre_call(&from_params, at(0))
-        .await
-        .expect_err("litellm_params.rpm is the next level");
-    assert_eq!(error.limit, 1);
-    let from_model_info = deployment(
-        "dep-b",
-        DeploymentUsage {
-            tpm: None,
-            rpm: None,
-            params_tpm: None,
-            params_rpm: None,
-            model_info_tpm: None,
-            model_info_rpm: Some(1),
-            io_token_limits: false,
-        },
-    );
-    assert_eq!(
-        harness.accounting.pre_call(&from_model_info, at(0)).await,
-        Ok(())
-    );
-    let error = harness
-        .accounting
-        .pre_call(&from_model_info, at(0))
-        .await
-        .expect_err("model_info.rpm is the last level");
-    assert_eq!(error.limit, 1);
+    let levels: [(&'static str, Option<i64>, Option<i64>); 2] =
+        [("dep-a", Some(1), Some(9)), ("dep-b", None, Some(1))];
+    for (model_id, params_rpm, model_info_rpm) in levels {
+        let facts = deployment(
+            model_id,
+            DeploymentUsage {
+                tpm: None,
+                rpm: None,
+                params_tpm: None,
+                params_rpm,
+                model_info_tpm: None,
+                model_info_rpm,
+                io_token_limits: false,
+            },
+        );
+        assert_eq!(harness.accounting.pre_call(&facts, at(0)).await, Ok(()));
+        let error = harness
+            .accounting
+            .pre_call(&facts, at(0))
+            .await
+            .expect_err("the next configured rpm level is the one in force");
+        assert_eq!(error.limit, 1);
+    }
 }
 
 async fn rpm_window_follows_the_minute() {
@@ -272,7 +251,7 @@ async fn success_sync_and_async_share_the_counter() {
     assert_eq!(harness.local(TPM_KEY), Some(10));
     assert_eq!(harness.store.value(TPM_KEY), Decimal::ZERO);
     assert!(harness.accounting.counters.sync_with_redis().await);
-    assert_eq!(harness.store.value(TPM_KEY), Decimal::from(10));
+    assert_eq!(harness.store.value(TPM_KEY), Decimal::from(10_i64));
 }
 
 async fn success_storage_error_is_swallowed() {

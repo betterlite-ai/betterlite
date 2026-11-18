@@ -49,6 +49,7 @@ fn usage_v2_accounting_behaviors(#[case] name: &str) {
 #[case::sync_pre_call_counts_the_request_before_rejecting_it(
     "sync_pre_call_counts_the_request_before_rejecting_it"
 )]
+#[case::configured_ttl_expires_every_window_key("configured_ttl_expires_every_window_key")]
 fn usage_v2_accounting_boundaries(#[case] name: &str) {
     runtime().block_on(boundaries::run(name));
 }

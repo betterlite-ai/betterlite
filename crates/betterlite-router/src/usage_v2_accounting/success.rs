@@ -11,24 +11,24 @@ const BATCH_RETRIEVE_CALL_TYPES: [&str; 2] = ["aretrieve_batch", "retrieve_batch
 
 // StandardLoggingPayload.hidden_params: the provider model LiteLLM sent, the second half of the tpm key
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HiddenParams<'a> {
-    pub litellm_model_name: Option<&'a str>,
+pub struct HiddenParams<'payload> {
+    pub litellm_model_name: Option<&'payload str>,
 }
 
 // the StandardLoggingPayload fields both success callbacks read
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct StandardLoggingObject<'a> {
-    pub model_group: Option<&'a str>,
-    pub hidden_params: HiddenParams<'a>,
-    pub model_id: Option<&'a str>,
+pub struct StandardLoggingObject<'payload> {
+    pub model_group: Option<&'payload str>,
+    pub hidden_params: HiddenParams<'payload>,
+    pub model_id: Option<&'payload str>,
     pub total_tokens: i64,
 }
 
 // the logging kwargs a success callback receives: the call type and the payload the proxy logged
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SuccessEvent<'a> {
-    pub call_type: Option<&'a str>,
-    pub standard_logging_object: Option<StandardLoggingObject<'a>>,
+pub struct SuccessEvent<'event> {
+    pub call_type: Option<&'event str>,
+    pub standard_logging_object: Option<StandardLoggingObject<'event>>,
 }
 
 // both callbacks skip the same calls and write the same key; only the cache primitive differs
