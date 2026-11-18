@@ -24,7 +24,7 @@ call:
       - function: logging_object
         litellm_logging_obj: supplied
       - function: logging_object
-        litellm_logging_obj: null
+        litellm_logging_obj: "null"
       - function: logging_object
         litellm_logging_obj: absent
       - function: logging_object

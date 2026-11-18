@@ -8,6 +8,12 @@ call:
       - function: session_cache_key
         user_id: "person"
       - function: session_cache_key
+        user_id: 7
+      - function: session_cache_key
+        user_id: null
+      - function: session_cache_key
+        user_id: ["session_a"]
+      - function: session_cache_key
         user_id: "{\"session_id\":"
       - function: session_cache_key
         user_id: "[]"
