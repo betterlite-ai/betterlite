@@ -1,24 +1,12 @@
-use betterlite_prompts::anthropic_invokes::documents::{
-    FileMessageError, process_openai_file_message,
-};
-use betterlite_prompts::anthropic_results::tool_result::{FileBlocks, to_anthropic_tool_result};
+use betterlite_prompts::anthropic_results::tool_result::to_anthropic_tool_result;
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_prompts::message_content::{Content, ContentPart, Message};
-use futures_util::FutureExt as _;
-use thiserror::Error;
 
 use super::{Fetcher, MessageError};
 
-#[derive(Debug, Error)]
-pub enum FileBlockError {
-    #[error(transparent)]
-    File(#[from] FileMessageError),
-    #[error("a remote file URL inside a tool result could not be fetched")]
-    Fetch(#[source] ImageFetchError),
-    #[error("a remote file URL inside a tool result was not fetched before conversion")]
-    Pending,
-}
+// clippy::pub_use is denied and the task's expect budget is zero, so the re-exports reach only this crate's callers
+pub(crate) use betterlite_prompts::anthropic_invokes::file_blocks::FileBlockError;
+pub(crate) use betterlite_prompts::anthropic_invokes::file_blocks::RemoteFileBlocks;
 
 pub async fn tool_result_from_parts<Source>(
     parts: &[ContentPart],
@@ -72,23 +60,4 @@ where
         prefetched.push(copied);
     }
     Ok(prefetched)
-}
-
-struct RemoteFileBlocks<'call, Source> {
-    fetcher: &'call Source,
-}
-
-impl<Source> FileBlocks for RemoteFileBlocks<'_, Source>
-where
-    Source: Fetcher,
-{
-    type Failure = FileBlockError;
-
-    fn file_block(&self, element: &Object) -> Result<Object, Self::Failure> {
-        match process_openai_file_message(element, self.fetcher).now_or_never() {
-            Some(Ok(block)) => Ok(block),
-            Some(Err(error)) => Err(FileBlockError::File(error)),
-            None => Err(FileBlockError::Pending),
-        }
-    }
 }
