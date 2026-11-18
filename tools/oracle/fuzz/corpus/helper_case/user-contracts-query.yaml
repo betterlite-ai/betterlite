@@ -1,0 +1,12 @@
+kind: helper
+name: user-contracts-query
+call:
+  user_contracts:
+    calls: []
+    queries:
+      - query: "other_user_id=x&user_id=a%2Bb"
+        supplied: "a b"
+      - query: "user_id=%00"
+        supplied: null
+env: {}
+compare: {ignore: []}
