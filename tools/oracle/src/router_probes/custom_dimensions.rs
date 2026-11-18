@@ -85,13 +85,8 @@ pub(crate) fn run(
     let mut fields = Fields::default();
     match payload.function {
         Function::PatternWork => {
-            fields.results = Some(
-                payload
-                    .patterns
-                    .iter()
-                    .map(|pattern| entry(pattern))
-                    .collect(),
-            );
+            let entries = payload.patterns.iter().map(|pattern| entry(pattern));
+            fields.results = Some(entries.collect());
         }
         Function::Validate => {
             let result = resolved(payload.config.as_ref());
@@ -136,8 +131,17 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
 
 fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationError> {
     let scoring = scoring_section::Config {
+        tier_models: None,
+        complexity_thresholds: None,
         dimension_weights: config.and_then(|settings| settings.dimension_weights.clone()),
-        ..scoring_section::Config::default()
+        tier_boundaries: None,
+        reasoning_override_min_score: None,
+        code_keywords: None,
+        reasoning_keywords: None,
+        technical_keywords: None,
+        custom_technical_keywords: None,
+        simple_keywords: None,
+        default_model: None,
     };
     let mut resolved =
         Config::resolve(&scoring).map_err(|source| OperationError::InvalidRequest {
