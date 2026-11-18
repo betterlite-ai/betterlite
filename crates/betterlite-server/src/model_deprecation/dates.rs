@@ -9,7 +9,7 @@ pub fn decode_deprecation_date(text: &str) -> Option<NaiveDate> {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     });
     match trimmed.len() {
-        6 => parse_basic_week(trimmed),
+        7 => parse_basic_week(trimmed),
         8 => parse_basic_calendar(trimmed)
             .or_else(|| parse_extended_week(trimmed))
             .or_else(|| parse_basic_week_day(trimmed)),
@@ -114,7 +114,7 @@ fn parse_extended_week(text: &str) -> Option<NaiveDate> {
 }
 
 fn parse_basic_week(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 6] = text.as_bytes().try_into().ok()?;
+    let bytes: [u8; 7] = text.as_bytes().try_into().ok()?;
     let [y0, y1, y2, y3, b'W', w0, w1] = bytes;
     NaiveDate::from_isoywd_opt(
         calendar_year(&[y0, y1, y2, y3])?,
