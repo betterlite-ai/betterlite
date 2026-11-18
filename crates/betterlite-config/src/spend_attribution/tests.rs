@@ -4,10 +4,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::PathBuf;
 
+use crate::loader::ConfigError;
 use rstest::rstest;
 
 use super::{
-    ENV_USE_LITELLM_PROXY, Settings, decode_spend_proxy_selection, load_spend_proxy_selection,
+    ENV_USE_LITELLM_PROXY, Settings, SpendAttributionError, decode_spend_proxy_selection,
+    load_spend_proxy_selection,
 };
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -76,7 +78,8 @@ fn rejects_a_non_boolean_config_flag(#[case] position: u8) {
     } else {
         "model_list:\n  - litellm_params:\n      use_litellm_proxy: 1\n"
     };
-    assert!(load_spend_proxy_selection(source, &environment(&[])).is_err());
+    let error = load_spend_proxy_selection(source, &environment(&[])).unwrap_err();
+    assert!(matches!(error, ConfigError::Yaml { .. }), "{error}");
 }
 
 #[test]
@@ -100,7 +103,8 @@ fn decodes_a_stored_selection_row() {
 #[case::not_an_object(b"[]".as_slice())]
 #[case::row_has_wrong_params_type(br#"{"model_list":[{"litellm_params":"openai"}]}"#.as_slice())]
 fn rejects_a_malformed_selection_row(#[case] bytes: &[u8]) {
-    assert!(decode_spend_proxy_selection(bytes).is_err());
+    let error = decode_spend_proxy_selection(bytes).unwrap_err();
+    assert!(matches!(error, SpendAttributionError::Json(_)), "{error}");
 }
 
 #[rstest]

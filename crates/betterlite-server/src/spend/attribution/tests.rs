@@ -184,6 +184,6 @@ fn catalog_aliases_supply_group_deployments(
 #[test]
 fn empty_groups_are_never_configured() {
     let names = BTreeSet::from([String::new()]);
-    assert!(!super::configured_model_group("", &names, &names));
-    assert!(!super::configured_model_group("unlisted", &names, &names));
+    assert!(!configured_model_group("", &names, &names));
+    assert!(!configured_model_group("unlisted", &names, &names));
 }

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
-use crate::sections::Section;
+use crate::sections::Section as _;
 use crate::sections::proxy_provider_options::{Raw, Settings as ProxySettings};
 
 pub const ENV_USE_LITELLM_PROXY: &str = "USE_LITELLM_PROXY";
