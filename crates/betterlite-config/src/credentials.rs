@@ -1,10 +1,9 @@
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::resource_rows::ResourceRowsError;
-
-mod tests;
+use betterlite_db::resource_rows::credential;
 
 // the config's credential_list entries are the same model the registry and the database rows use
-pub type CredentialItem = betterlite_db::resource_rows::credential::CredentialItem;
+pub type CredentialItem = credential::CredentialItem;
 
 #[derive(Debug, thiserror::Error)]
 pub enum CredentialListError {
@@ -35,3 +34,5 @@ pub fn parse_credential_list(
         Some(_) => Err(CredentialListError::NotAList),
     }
 }
+
+mod tests;

@@ -5,18 +5,18 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::credential_list::Settings;
 
 const VALID: &str = include_str!("../../fuzz/corpus/config_yaml/credentials-valid.yaml");
 
-fn settings(source: &str) -> Result<Settings, String> {
-    ConfigLoader {
+fn settings(source: &str) -> Result<Settings, ConfigError> {
+    Ok(ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
-    .load(source)
-    .map(|config| config.sections.credential_list)
-    .map_err(|error| error.to_string())
+    .load(source)?
+    .sections
+    .credential_list)
 }
 
 #[test]
@@ -65,7 +65,9 @@ fn an_empty_credential_list_stays_empty() {
 
 #[test]
 fn a_credential_list_that_is_not_a_list_is_refused() {
-    let error = settings("credential_list: not-a-list\n").unwrap_err();
+    let error = settings("credential_list: not-a-list\n")
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("credential_list must be a list"), "{error}");
 }
 
@@ -74,12 +76,15 @@ fn an_entry_without_values_names_its_index() {
     let error = settings(include_str!(
         "../../fuzz/corpus/config_yaml/credentials-invalid.yaml"
     ))
-    .unwrap_err();
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("credential_list[0]"), "{error}");
 }
 
 #[test]
 fn a_non_object_entry_is_refused() {
-    let error = settings("credential_list:\n  - 42\n").unwrap_err();
+    let error = settings("credential_list:\n  - 42\n")
+        .unwrap_err()
+        .to_string();
     assert!(error.contains("credential_list[0]"), "{error}");
 }
