@@ -44,13 +44,6 @@ pub(super) struct Failures {
     pub(super) writes: bool,
 }
 
-impl HarnessMemory {
-    fn new(clock: f64, failures: Failures) -> Result<Self, Box<HelperError>> {
-        let inner = LocalMemoryOps::new(1024, Arc::new(move || clock)).or_value_error()?;
-        Ok(Self { inner, failures })
-    }
-}
-
 impl MemoryCacheOps for HarnessMemory {
     fn default_ttl(&self) -> i64 {
         self.inner.default_ttl()
@@ -141,12 +134,25 @@ pub(super) fn build_cache(
     call: &Fields,
     failures: Failures,
 ) -> Result<DualCache<HarnessMemory>, Box<HelperError>> {
-    let memory = HarnessMemory::new(call.clock, failures)?;
+    let clock = call.clock;
+    let inner = LocalMemoryOps::new(1024, Arc::new(move || clock)).or_value_error()?;
+    let memory = HarnessMemory { inner, failures };
     Ok(DualCache::new(
         Arc::new(memory),
         tier.cloned(),
         settings(call),
     ))
+}
+
+// a cache with the case's memory entries seeded, the way every scenario starts its read
+pub(super) fn seeded(
+    call: &Fields,
+    tier: Option<&Arc<RedisCache>>,
+    failures: Failures,
+) -> Result<DualCache<HarnessMemory>, Box<HelperError>> {
+    let cache = build_cache(tier, call, failures)?;
+    seed(&cache, &call.memory);
+    Ok(cache)
 }
 
 pub(super) fn seed(cache: &DualCache<HarnessMemory>, entries: &[Entry]) {
