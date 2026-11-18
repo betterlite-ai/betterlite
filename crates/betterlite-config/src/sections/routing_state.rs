@@ -11,7 +11,10 @@ mod tests;
 pub const DEFAULT_SYNC_SECONDS: u64 = 1;
 
 #[derive(Debug, Default, Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
