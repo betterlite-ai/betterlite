@@ -1,12 +1,13 @@
 use std::fs::{self, File};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use redis::Client;
 use redis::cmd;
 use tempfile::{Builder, TempDir};
+use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
 use crate::error::RedisFixtureError;
@@ -20,9 +21,11 @@ pub struct RedisFixture {
     // The URL is the whole interface a test gets, so it can never reach a Redis on the machine.
     pub url: String,
     pub(crate) child: Child,
+    log_path: PathBuf,
     _folder: TempDir,
 }
 
+#[derive(Clone)]
 pub(crate) struct StartOptions {
     pub(crate) binary: String,
     pub(crate) startup_limit: Duration,
@@ -40,45 +43,50 @@ impl RedisFixture {
     }
 
     pub(crate) async fn launch(options: &StartOptions) -> Result<Self, RedisFixtureError> {
-        // A unix socket path stops at 107 bytes, so the folder name stays short.
-        let folder = Builder::new()
-            .prefix("redis-")
-            .tempdir()
-            .map_err(|source| RedisFixtureError::Folder { source })?;
-        let socket = folder.path().join("redis.sock");
-        let url = socket_url(&socket)?;
-        let log_path = folder.path().join("redis.log");
-        let log = File::create(&log_path).map_err(|source| RedisFixtureError::Log { source })?;
-        let diagnostics = log
-            .try_clone()
-            .map_err(|source| RedisFixtureError::Log { source })?;
-        let child = server_command(options, &socket)
-            .stdout(Stdio::from(log))
-            .stderr(Stdio::from(diagnostics))
-            .spawn()
-            .map_err(spawn_error)?;
-        let mut fixture = Self {
-            url,
-            child,
-            _folder: folder,
-        };
-        fixture
-            .await_ready(options.startup_limit, &log_path)
-            .await?;
-        Ok(fixture)
+        let owned = options.clone();
+        let mut setup = JoinSet::new();
+        let _starting = setup.spawn_blocking(move || -> Result<Self, RedisFixtureError> {
+            // A unix socket path stops at 107 bytes, so the folder name stays short.
+            let folder = Builder::new()
+                .prefix("redis-")
+                .tempdir()
+                .map_err(|source| RedisFixtureError::Folder { source })?;
+            let socket = folder.path().join("redis.sock");
+            let url = socket_url(&socket)?;
+            let log_path = folder.path().join("redis.log");
+            let log =
+                File::create(&log_path).map_err(|source| RedisFixtureError::Log { source })?;
+            let diagnostics = log
+                .try_clone()
+                .map_err(|source| RedisFixtureError::Log { source })?;
+            let child = server_command(&owned, &socket)
+                .stdout(Stdio::from(log))
+                .stderr(Stdio::from(diagnostics))
+                .spawn()
+                .map_err(spawn_error)?;
+            Ok(Self {
+                url,
+                child,
+                log_path,
+                _folder: folder,
+            })
+        });
+        let fixture = join_blocking(&mut setup).await?;
+        fixture.await_ready(options.startup_limit).await
     }
 
-    async fn await_ready(
-        &mut self,
-        limit: Duration,
-        log_path: &Path,
-    ) -> Result<(), RedisFixtureError> {
+    async fn await_ready(self, limit: Duration) -> Result<Self, RedisFixtureError> {
         if timeout(limit, self.wait_for_ping()).await.is_ok() {
-            return Ok(());
+            return Ok(self);
         }
-        self.stop();
-        let log =
-            fs::read_to_string(log_path).map_err(|source| RedisFixtureError::Log { source })?;
+        let mut cleanup = JoinSet::new();
+        let _cleaning = cleanup.spawn_blocking(move || -> Result<String, RedisFixtureError> {
+            let mut fixture = self;
+            fixture.stop();
+            fs::read_to_string(&fixture.log_path)
+                .map_err(|source| RedisFixtureError::Log { source })
+        });
+        let log = join_blocking(&mut cleanup).await?;
         Err(RedisFixtureError::NotReady { limit, log })
     }
 
@@ -114,6 +122,20 @@ impl RedisFixture {
 impl Drop for RedisFixture {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+// The setup and cleanup file work runs in a JoinSet task, so the runtime thread never waits on it.
+async fn join_blocking<T: 'static>(
+    set: &mut JoinSet<Result<T, RedisFixtureError>>,
+) -> Result<T, RedisFixtureError> {
+    let joined = set
+        .join_next()
+        .await
+        .ok_or(RedisFixtureError::BlockingTaskAborted)?;
+    match joined {
+        Ok(outcome) => outcome,
+        Err(source) => Err(RedisFixtureError::BlockingTaskFailed { source }),
     }
 }
 
