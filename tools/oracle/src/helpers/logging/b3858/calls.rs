@@ -29,7 +29,7 @@ use opentelemetry::trace::{Span as _, TraceContextExt as _};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use serde_json::json;
 
-use super::{ExceptionInput, Input};
+use super::{ExceptionInput, Input, ParentInput};
 
 pub(super) struct CallContext<'call> {
     pub(super) lifecycle: &'call LegacyLifecycle,
@@ -57,7 +57,7 @@ fn exception_facts(input: &ExceptionInput) -> Result<ExceptionFacts, String> {
         "authentication" => json!({
             "class_name": "AuthenticationError",
             "message": format!("litellm.AuthenticationError: {}", input.message),
-            "status_code": 401,
+            "status_code": 401_i64,
             "llm_provider": "openai",
         }),
         _ => json!({
@@ -127,24 +127,23 @@ pub(super) fn management_failure_call(cx: &CallContext<'_>) -> Result<(), String
     Ok(())
 }
 
-pub(super) fn success_call(cx: &CallContext<'_>) -> Result<(), String> {
+pub(super) fn success_call(
+    cx: &CallContext<'_>,
+    argument: Option<&LiveSpan>,
+) -> Result<(), String> {
     let mut details = cx.input.kwargs.clone();
     if let Some(live) = cx.parent {
         insert_carrier(&mut details, live);
     }
-    async_post_call_success_hook(cx.lifecycle, &details, cx.parent)
+    async_post_call_success_hook(cx.lifecycle, &details, argument)
         .map_err(|error| error.to_string())
 }
 
 pub(super) fn failure_call(cx: &CallContext<'_>) -> Result<(), String> {
-    let facts = cx
-        .input
-        .exception
-        .as_ref()
-        .map(exception_facts)
-        .transpose()?;
+    let parsed = cx.input.exception.as_ref().map(exception_facts);
+    let facts = parsed.transpose()?;
     let mut kwargs = cx.input.kwargs.clone();
-    let mut request_data = cx.input.request_data.clone();
+    let request_data = cx.input.request_data.clone();
     if let Some(live) = cx.parent {
         insert_carrier(&mut kwargs, live);
     }
@@ -164,11 +163,11 @@ pub(super) fn failure_call(cx: &CallContext<'_>) -> Result<(), String> {
             .handle(&call, LifecycleEvent::Failure)
             .map_err(|error| error.to_string())?;
     }
-    let team = cx.input.team.as_ref();
+    let membership = cx.input.team.as_ref();
     let key = ProxyCallKey {
         parent_span: cx.parent,
-        team_id: team.and_then(|team| team.id.as_deref()),
-        team_alias: team.and_then(|team| team.alias.as_deref()),
+        team_id: membership.and_then(|team| team.id.as_deref()),
+        team_alias: membership.and_then(|team| team.alias.as_deref()),
     };
     let config = error_config()?;
     let call = PostCallFailure {
@@ -233,15 +232,16 @@ fn insert_parent(metadata: &mut MetadataMap, live: &LiveSpan) {
     );
 }
 
-pub(super) fn end_parent(input: &Input, parent: Option<&LiveSpan>) {
-    let Some(live) = parent else {
+pub(super) fn end_parents(input: &Input, parent: Option<&LiveSpan>, key_parent: Option<&LiveSpan>) {
+    end_span(input.parent.as_ref(), parent, input.end_time);
+    end_span(input.key_parent.as_ref(), key_parent, input.end_time);
+}
+
+fn end_span(spec: Option<&ParentInput>, span: Option<&LiveSpan>, fallback_end: f64) {
+    let (Some(spec), Some(live)) = (spec, span) else {
         return;
     };
-    let end = input
-        .parent
-        .as_ref()
-        .and_then(|spec| spec.end)
-        .unwrap_or(input.end_time);
+    let end = spec.end.unwrap_or(fallback_end);
     live.lock()
         .end_with_timestamp(instant_from_ns(to_ns(SpanTime::Seconds(end), 0)));
 }

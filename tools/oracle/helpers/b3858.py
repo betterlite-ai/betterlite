@@ -67,6 +67,7 @@ class PostCallFailure(Common):
 class PostCallSuccess(Common):
     function: Literal["post_call_success"]
     kwargs: dict[str, JsonValue]
+    key_parent: NotRequired[Parent]
 
 
 class ManagementFields(Common):
@@ -123,6 +124,24 @@ def with_carrier(kwargs: dict[str, JsonValue], parent: Span) -> CarriedKwargs:
     carried_metadata: CarriedMetadata = {**metadata, "litellm_parent_otel_span": parent}
     carried_params: CarriedParams = {**params, "metadata": carried_metadata}
     return {**kwargs, "litellm_params": carried_params}
+
+
+def start_parent(
+    provider: TracerProvider, spec: Parent | None, default_start: float
+) -> Span | None:
+    if spec is None:
+        return None
+    start = spec.get("start")
+    return provider.get_tracer("b3858").start_span(
+        spec["name"], start_time=int((default_start if start is None else start) * 1e9)
+    )
+
+
+def end_parent(span: Span | None, spec: Parent | None, default_end: float) -> None:
+    if span is None or spec is None:
+        return
+    end = spec.get("end")
+    span.end(end_time=int((default_end if end is None else end) * 1e9))
 
 
 def failure_request(
@@ -189,10 +208,13 @@ async def management_call(
 
 
 async def success_call(
-    logger: OpenTelemetry, input_value: PostCallSuccess, parent: Span | None
+    logger: OpenTelemetry,
+    input_value: PostCallSuccess,
+    carrier: Span | None,
+    argument: Span | None,
 ) -> None:
     kwargs = input_value["kwargs"]
-    details = kwargs if parent is None else with_carrier(kwargs, parent)
+    details = kwargs if carrier is None else with_carrier(kwargs, carrier)
     logging_obj = Logging(
         model="gpt-4o", messages=None, stream=False, call_type="completion",
         start_time=datetime.fromtimestamp(input_value["start_time"], tz=UTC),
@@ -201,7 +223,7 @@ async def success_call(
     logging_obj.model_call_details = details
     data: dict[str, Logging] = {"litellm_logging_obj": logging_obj}
     await logger.async_post_call_success_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1030
-        data, UserAPIKeyAuth(parent_otel_span=parent), ModelResponse(id="chatcmpl-b3858")
+        data, UserAPIKeyAuth(parent_otel_span=argument), ModelResponse(id="chatcmpl-b3858")
     )
 
 
@@ -268,11 +290,7 @@ def run(input_value: Scenario) -> JsonValue:
         tracer_provider=provider,
     )
     spec = input_value.get("parent")
-    parent_start = None if spec is None else spec.get("start")
-    start = input_value["start_time"] if parent_start is None else parent_start
-    parent = None if spec is None else provider.get_tracer("b3858").start_span(
-        spec["name"], start_time=int(start * 1e9)
-    )
+    parent = start_parent(provider, spec, input_value["start_time"])
     match input_value["function"]:
         case "service_success":
             asyncio.run(service_call(logger, input_value, parent, mode="success"))
@@ -281,7 +299,10 @@ def run(input_value: Scenario) -> JsonValue:
         case "post_call_failure":
             asyncio.run(failure_call(logger, input_value, parent))
         case "post_call_success":
-            asyncio.run(success_call(logger, input_value, parent))
+            key_spec = input_value.get("key_parent")
+            key_parent = start_parent(provider, key_spec, input_value["start_time"])
+            asyncio.run(success_call(logger, input_value, parent, key_parent))
+            end_parent(key_parent, key_spec, input_value["end_time"])
         case "management_success":
             asyncio.run(management_call(logger, input_value, parent, mode="success"))
         case "management_failure":
@@ -290,8 +311,5 @@ def run(input_value: Scenario) -> JsonValue:
             spec_exception = input_value.get("exception")
             exception = None if spec_exception is None else exception_of(spec_exception)
             logger.record_error_attributes_on_span(parent, exception, input_value["status_code"])
-    if parent is not None:
-        parent_end = None if spec is None else spec.get("end")
-        end = input_value["end_time"] if parent_end is None else parent_end
-        parent.end(end_time=int(end * 1e9))
+    end_parent(parent, spec, input_value["end_time"])
     return DICT.validate_python({"spans": read_spans(exporter)})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1052

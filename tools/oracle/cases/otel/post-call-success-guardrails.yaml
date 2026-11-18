@@ -9,6 +9,10 @@ call:
       name: "proxy"
       start: 1704067200.0
       end: 1704067202.0
+    key_parent:
+      name: "key-parent"
+      start: 1704067200.25
+      end: 1704067202.25
     kwargs:
       model: "gpt-4o"
       messages:

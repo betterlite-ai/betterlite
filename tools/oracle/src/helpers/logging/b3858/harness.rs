@@ -17,7 +17,7 @@ use opentelemetry::trace::Tracer as _;
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 
-use super::Input;
+use super::{Input, ParentInput};
 
 #[derive(Debug)]
 struct NoServer;
@@ -55,7 +55,7 @@ pub(super) fn prepare(
     input: &Input,
     exporter: &InMemorySpanExporter,
     roots: &RootSpans,
-) -> Result<(LegacyOtel, Option<LiveSpan>), String> {
+) -> Result<(LegacyOtel, Option<LiveSpan>, Option<LiveSpan>), String> {
     let client: Arc<dyn HttpClient> = Arc::new(NoServer);
     let otel = init_legacy_otel(
         LegacyOtelInit {
@@ -78,15 +78,24 @@ pub(super) fn prepare(
         },
     )
     .map_err(|error| error.to_string())?;
-    let parent = input.parent.as_ref().map(|spec| {
-        let start = spec.start.unwrap_or(input.start_time);
-        let builder = otel
-            .tracer
-            .span_builder(spec.name.clone())
-            .with_start_time(instant_from_ns(to_ns(SpanTime::Seconds(start), 0)));
-        let live = LiveSpan::from(otel.tracer.build_with_context(builder, &Context::new()));
-        roots.register(&live);
-        live
-    });
-    Ok((otel, parent))
+    let parent = build_span(&otel, input.parent.as_ref(), input.start_time, roots);
+    let key_parent = build_span(&otel, input.key_parent.as_ref(), input.start_time, roots);
+    Ok((otel, parent, key_parent))
+}
+
+fn build_span(
+    otel: &LegacyOtel,
+    spec: Option<&ParentInput>,
+    default_start: f64,
+    roots: &RootSpans,
+) -> Option<LiveSpan> {
+    let spec = spec?;
+    let start = spec.start.unwrap_or(default_start);
+    let builder = otel
+        .tracer
+        .span_builder(spec.name.clone())
+        .with_start_time(instant_from_ns(to_ns(SpanTime::Seconds(start), 0)));
+    let live = LiveSpan::from(otel.tracer.build_with_context(builder, &Context::new()));
+    roots.register(&live);
+    Some(live)
 }

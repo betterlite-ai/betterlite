@@ -18,8 +18,8 @@ mod harness;
 mod observe;
 mod tests;
 use calls::{
-    CallContext, Outcome, end_parent, error_attributes_call, failure_call, management_failure_call,
-    management_success_call, service_call, success_call,
+    CallContext, Outcome, end_parents, error_attributes_call, failure_call,
+    management_failure_call, management_success_call, service_call, success_call,
 };
 use harness::prepare;
 use observe::observed;
@@ -33,6 +33,7 @@ pub(crate) struct Input {
     start_time: f64,
     end_time: f64,
     parent: Option<ParentInput>,
+    key_parent: Option<ParentInput>,
     service: String,
     call_type: String,
     caller: Option<String>,
@@ -78,7 +79,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let exporter = InMemorySpanExporter::default();
         let roots = Arc::new(RootSpans::default());
-        let (otel, parent) = prepare(input, &exporter, &roots).or_value_error()?;
+        let (otel, parent, key_parent) = prepare(input, &exporter, &roots).or_value_error()?;
         let lifecycle = LegacyLifecycle::from_otel(
             otel,
             LegacyLifecycleOptions {
@@ -97,18 +98,19 @@ impl Helper for Op {
             input,
             parent: parent.as_ref(),
         };
+        let argument = key_parent.as_ref().or(parent.as_ref());
         let outcome = match input.function.as_str() {
             "service_success" => service_call(&cx, Outcome::Success),
             "service_failure" => service_call(&cx, Outcome::Failure),
             "post_call_failure" => failure_call(&cx),
-            "post_call_success" => success_call(&cx),
+            "post_call_success" => success_call(&cx, argument),
             "management_success" => management_success_call(&cx),
             "management_failure" => management_failure_call(&cx),
             "error_attributes" => error_attributes_call(&cx),
             other => Err(format!("unknown function {other}")),
         };
         outcome.or_value_error()?;
-        end_parent(input, parent.as_ref());
+        end_parents(input, parent.as_ref(), key_parent.as_ref());
         observed(&exporter).or_value_error()
     }
 }
