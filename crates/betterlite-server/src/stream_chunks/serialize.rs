@@ -137,13 +137,31 @@ fn event_shape(body: &JsonObject) -> Shape {
 fn without_nulls(value: &Json, shape: Shape) -> Json {
     match shape {
         Shape::Value => value.clone(),
-        Shape::Fields(fields) => strip_nulls(value, fields),
+        // a model field's list repeats that model for every item, and a null item stays
+        Shape::Fields(fields) => match value {
+            Json::Object(entries) => Json::Object(
+                entries
+                    .iter()
+                    .filter(|(_name, item)| !matches!(*item, Json::Null))
+                    .map(|(name, item)| {
+                        (name.clone(), without_nulls(item, field_shape(fields, name)))
+                    })
+                    .collect(),
+            ),
+            Json::List(items) => Json::List(
+                items
+                    .iter()
+                    .map(|item| without_nulls(item, Shape::Fields(fields)))
+                    .collect(),
+            ),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => value.clone(),
+        },
         Shape::Tagged(variants) => tagged_object(value, variants),
         Shape::Tools(variants) => tool_shapes::tools_without_nulls(value, variants),
         // a union field serializes its model only while the predicate accepts the value
         Shape::Union(fields, accepts) => {
             if accepts(value) {
-                strip_nulls(value, fields)
+                without_nulls(value, Shape::Fields(fields))
             } else {
                 value.clone()
             }
@@ -176,33 +194,6 @@ fn tagged_object(value: &Json, variants: &[(&str, Shape)]) -> Json {
             || value.clone(),
             |(_name, shape)| without_nulls(value, *shape),
         )
-}
-
-// exclude_none drops a model's null fields; an array keeps null items and walks every other item
-fn strip_nulls(value: &Json, fields: &[(&str, Shape)]) -> Json {
-    match value {
-        Json::Object(entries) => Json::Object(
-            entries
-                .iter()
-                .filter(|(_name, item)| !matches!(*item, Json::Null))
-                .map(|(name, item)| (name.clone(), without_nulls(item, field_shape(fields, name))))
-                .collect(),
-        ),
-        Json::List(items) => Json::List(
-            items
-                .iter()
-                .map(|item| item_without_nulls(item, fields))
-                .collect(),
-        ),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => value.clone(),
-    }
-}
-
-fn item_without_nulls(item: &Json, fields: &[(&str, Shape)]) -> Json {
-    match item {
-        Json::Null => Json::Null,
-        other => without_nulls(other, Shape::Fields(fields)),
-    }
 }
 
 fn field_shape(fields: &[(&str, Shape)], name: &str) -> Shape {
