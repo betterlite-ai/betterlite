@@ -162,7 +162,7 @@ where
     ) -> Result<(), BudgetStateError> {
         let config = BudgetConfig {
             max_budget,
-            budget_duration: period.map(|period| period.seconds),
+            budget_duration: period.map(|window| window.seconds),
         };
         self.increments
             .increment_spend_for_key(&config, &keys.spend, &keys.start_time, response_cost)
