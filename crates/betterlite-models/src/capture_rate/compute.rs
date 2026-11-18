@@ -27,9 +27,31 @@ pub struct CaptureRateRequest<'amounts> {
     pub threshold: Decimal,
 }
 
+struct Totals {
+    days: Vec<CaptureRateDay>,
+    captured: Decimal,
+    billed: Decimal,
+}
+
 pub fn compute_capture_rate(
     request: &CaptureRateRequest<'_>,
 ) -> Result<CaptureRateReport, CaptureRateError> {
+    let totals = daily_totals(request)?;
+    let capture_rate = ratio(totals.captured, totals.billed)?;
+    Ok(CaptureRateReport {
+        provider: request.provider,
+        start_date: request.start_date.format("%Y-%m-%d").to_string(),
+        end_date: request.end_date.format("%Y-%m-%d").to_string(),
+        captured_spend: totals.captured,
+        provider_spend: totals.billed,
+        capture_rate,
+        threshold: request.threshold,
+        below_threshold: capture_rate.is_some_and(|rate| rate < request.threshold),
+        days: totals.days,
+    })
+}
+
+fn daily_totals(request: &CaptureRateRequest<'_>) -> Result<Totals, CaptureRateError> {
     let span = request
         .end_date
         .signed_duration_since(request.start_date)
@@ -67,17 +89,10 @@ pub fn compute_capture_rate(
             capture_rate: ratio(captured, billed)?,
         });
     }
-    let capture_rate = ratio(captured_total, billed_total)?;
-    Ok(CaptureRateReport {
-        provider: request.provider,
-        start_date: request.start_date.format("%Y-%m-%d").to_string(),
-        end_date: request.end_date.format("%Y-%m-%d").to_string(),
-        captured_spend: captured_total,
-        provider_spend: billed_total,
-        capture_rate,
-        threshold: request.threshold,
-        below_threshold: capture_rate.is_some_and(|rate| rate < request.threshold),
+    Ok(Totals {
         days,
+        captured: captured_total,
+        billed: billed_total,
     })
 }
 

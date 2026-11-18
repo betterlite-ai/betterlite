@@ -35,7 +35,7 @@ pub fn alert_message(result: &CheckResult) -> Option<String> {
     }
 }
 
-fn provider_name(provider: SpendCaptureProvider) -> &'static str {
+const fn provider_name(provider: SpendCaptureProvider) -> &'static str {
     match provider {
         SpendCaptureProvider::Openai => "openai",
     }

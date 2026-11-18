@@ -152,25 +152,28 @@ pub async fn fetch_openai_daily_costs(
     project_ids: &[String],
     http_get: &dyn BillingHttpGet,
 ) -> Result<BTreeMap<String, Decimal>, BillingError> {
+    let window = costs_window(start_date, end_date, project_ids)?;
+    let headers = authorization_headers(admin_key)?;
+    let buckets = fetch_every_page(http_get, &window, &headers).await?;
+    aggregate_buckets(&buckets)
+}
+
+fn costs_window(
+    start_date: NaiveDate,
+    end_date: NaiveDate,
+    project_ids: &[String],
+) -> Result<Vec<(String, String)>, BillingError> {
     let end_exclusive = end_date
         .checked_add_days(Days::new(1))
         .ok_or(BillingError::DateRange)?;
     let mut window = vec![
         (
             "start_time".to_owned(),
-            start_date
-                .and_time(NaiveTime::MIN)
-                .and_utc()
-                .timestamp()
-                .to_string(),
+            utc_midnight(start_date).to_string(),
         ),
         (
             "end_time".to_owned(),
-            end_exclusive
-                .and_time(NaiveTime::MIN)
-                .and_utc()
-                .timestamp()
-                .to_string(),
+            utc_midnight(end_exclusive).to_string(),
         ),
         ("bucket_width".to_owned(), "1d".to_owned()),
         ("limit".to_owned(), OPENAI_COSTS_PAGE_LIMIT.to_string()),
@@ -178,16 +181,32 @@ pub async fn fetch_openai_daily_costs(
     for project_id in project_ids {
         window.push(("project_ids[]".to_owned(), project_id.clone()));
     }
+    Ok(window)
+}
+
+fn utc_midnight(day: NaiveDate) -> i64 {
+    day.and_time(NaiveTime::MIN).and_utc().timestamp()
+}
+
+fn authorization_headers(admin_key: &SecretString) -> Result<HeaderMap, BillingError> {
     let mut authorization = HeaderValue::from_str(&format!("Bearer {}", admin_key.expose_secret()))
         .map_err(|source| BillingError::Header { source })?;
     authorization.set_sensitive(true);
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, authorization);
+    Ok(headers)
+}
+
+async fn fetch_every_page(
+    http_get: &dyn BillingHttpGet,
+    window: &[(String, String)],
+    headers: &HeaderMap,
+) -> Result<Vec<OpenAiCostBucket>, BillingError> {
     let mut page: Option<String> = None;
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut buckets: Vec<OpenAiCostBucket> = Vec::new();
     loop {
-        let mut query = window.clone();
+        let mut query = window.to_vec();
         if let Some(cursor) = &page {
             query.push(("page".to_owned(), cursor.clone()));
         }
@@ -215,8 +234,14 @@ pub async fn fetch_openai_daily_costs(
         }
         page = Some(cursor);
     }
+    Ok(buckets)
+}
+
+fn aggregate_buckets(
+    buckets: &[OpenAiCostBucket],
+) -> Result<BTreeMap<String, Decimal>, BillingError> {
     let mut days: BTreeMap<String, Decimal> = BTreeMap::new();
-    for bucket in &buckets {
+    for bucket in buckets {
         let day = bucket_day(bucket.start_time)?;
         let mut bucket_total = Decimal::ZERO;
         for result in &bucket.results {

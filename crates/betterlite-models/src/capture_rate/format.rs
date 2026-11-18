@@ -27,6 +27,7 @@ where
 }
 
 // Python's {value:.1%} and {value:.0%}: percent with an exact half-even rounding of the decimal.
+#[must_use]
 pub fn format_percent(value: Decimal, decimals: u32) -> String {
     let scaled = value.saturating_mul(Decimal::ONE_HUNDRED);
     let rounded = scaled.round_dp_with_strategy(decimals, RoundingStrategy::MidpointNearestEven);
@@ -34,6 +35,7 @@ pub fn format_percent(value: Decimal, decimals: u32) -> String {
 }
 
 // Python's {value:,.2f}: two fractional digits, half-even, with thousands separators.
+#[must_use]
 pub fn format_usd(amount: Decimal) -> String {
     let rounded = amount.round_dp_with_strategy(2, RoundingStrategy::MidpointNearestEven);
     let text = format!("{rounded:.2}");

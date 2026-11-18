@@ -45,7 +45,8 @@ pub enum CheckResult {
 }
 
 impl CheckResult {
-    pub fn provider(&self) -> SpendCaptureProvider {
+    #[must_use]
+    pub const fn provider(&self) -> SpendCaptureProvider {
         match self {
             Self::Report(report) => report.provider,
             Self::CredentialMissing { provider, .. } | Self::RequestFailed { provider, .. } => {
@@ -55,7 +56,7 @@ impl CheckResult {
     }
 
     // The gauge value: the rate, or None when the window produced no rate.
-    pub fn published_rate(&self) -> Option<Decimal> {
+    pub const fn published_rate(&self) -> Option<Decimal> {
         match self {
             Self::Report(report) => report.capture_rate,
             Self::CredentialMissing { .. } | Self::RequestFailed { .. } => None,
