@@ -86,7 +86,6 @@ fn callback_parts(
     })
 }
 
-// the tenant tracers a config builds share the request's factories and scope and the constructor's allowlist
 fn tenant_cache(
     constructor: &CallbackConstructor,
     request: &LoggerBuildRequest<'_>,
@@ -137,7 +136,6 @@ fn built_logger(
     }
 }
 
-// the generic class is B3853's V2Callback over the assembled logger
 fn generic_built(assembly: V2CallbackAssembly) -> BuiltLogger {
     let V2CallbackAssembly {
         provider,
@@ -161,8 +159,7 @@ fn generic_built(assembly: V2CallbackAssembly) -> BuiltLogger {
     }
 }
 
-// B8250's wrapper owns the assembled logger and keeps the request root span source; the content
-// variant adds the runtime's stream assembler around the same inner wrapper
+// B8250's wrapper owns the assembled logger and keeps the request root span source
 fn langfuse_built(
     assembly: V2CallbackAssembly,
     roots: Arc<dyn RootSpanSource>,

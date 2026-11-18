@@ -16,7 +16,6 @@ use super::types::{
 };
 use super::{LoggerRuntime, locked};
 
-// the class, callback name, providers, assembler and settings one build request carries
 struct BuildInputs<'inputs> {
     class: LoggerClass,
     callback_name: Option<&'inputs str>,
@@ -24,7 +23,6 @@ struct BuildInputs<'inputs> {
     assembler: Option<&'inputs Arc<dyn StreamOutputAssembler>>,
     settings: ConstructorSettings,
 }
-
 // litellm.integrations.otel.logger.build_otel_v2_logger: class choice, then the constructor port
 pub fn build_otel_v2_logger(
     runtime: &LoggerRuntime,
