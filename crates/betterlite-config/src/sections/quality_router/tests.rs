@@ -245,6 +245,37 @@ fn a_preferences_block_without_a_quality_tier_is_refused() {
 }
 
 #[test]
+fn null_keys_take_the_declared_defaults() {
+    let source = "\
+model_list:
+  - model_name: router
+    litellm_params:
+      quality_router_config:
+        available_models: null
+        default_model: null
+        complexity_to_quality: null
+  - model_name: fast
+    model_info:
+      input_cost_per_token: null
+      litellm_routing_preferences:
+        quality_tier: 2
+        keywords: null
+        order: null
+";
+    let resolved = settings(source, &[]).unwrap();
+    let config = resolved.deployments[0].config.as_ref().unwrap();
+    assert_eq!(config.available_models, Vec::<String>::new());
+    assert_eq!(config.default_model, None);
+    assert_eq!(config.complexity_to_quality, None);
+    let fast = &resolved.deployments[1];
+    let preferences = fast.preferences.as_ref().unwrap();
+    assert_eq!(preferences.quality_tier, 2);
+    assert_eq!(preferences.keywords, Vec::<String>::new());
+    assert_eq!(preferences.order, None);
+    assert_eq!(fast.input_cost_per_token, None);
+}
+
+#[test]
 fn an_unknown_router_config_key_is_preserved_and_accepted() {
     let source = "model_list:\n  - model_name: router\n    litellm_params:\n      quality_router_config:\n        available_models: [fast]\n        mystery: 1\n";
     let deployment = only(source, &[]).unwrap();

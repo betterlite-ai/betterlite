@@ -39,8 +39,8 @@ struct RawInfo {
 
 #[derive(Debug, Deserialize)]
 struct RawRouterConfig {
-    #[serde(default)]
-    available_models: Vec<String>,
+    // an absent or null list is the declared default, an explicit list is used as given
+    available_models: Option<Vec<String>>,
     default_model: Option<String>,
     complexity_to_quality: Option<BTreeMap<String, RawNumber>>,
     // LiteLLM's config model allows extra fields, so an unknown key is kept and reported, not refused
@@ -51,8 +51,7 @@ struct RawRouterConfig {
 #[derive(Debug, Deserialize)]
 struct RawPreferences {
     quality_tier: RawNumber,
-    #[serde(default)]
-    keywords: Vec<String>,
+    keywords: Option<Vec<String>>,
     order: Option<RawNumber>,
     #[serde(flatten)]
     extras: BTreeMap<String, Json>,

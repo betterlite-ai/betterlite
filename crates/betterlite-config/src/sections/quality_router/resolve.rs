@@ -13,8 +13,9 @@ impl RawRouterConfig {
     where
         L: EnvironmentLookup,
     {
-        let mut available_models = Vec::with_capacity(self.available_models.len());
-        for (position, model) in self.available_models.into_iter().enumerate() {
+        let declared_models = self.available_models.unwrap_or_default();
+        let mut available_models = Vec::with_capacity(declared_models.len());
+        for (position, model) in declared_models.into_iter().enumerate() {
             let path = format!("{prefix}.available_models.{position}");
             available_models.push(resolve_string(model, &path, lookup)?);
         }
@@ -66,8 +67,9 @@ impl RawPreferences {
         reject_quoted_number(&self.quality_tier, &tier_path)?;
         let quality_tier = resolve_number(Some(self.quality_tier), &tier_path, lookup, parse_tier)?
             .ok_or_else(|| invalid_scalar(&tier_path))?;
-        let mut keywords = Vec::with_capacity(self.keywords.len());
-        for (position, keyword) in self.keywords.into_iter().enumerate() {
+        let declared_keywords = self.keywords.unwrap_or_default();
+        let mut keywords = Vec::with_capacity(declared_keywords.len());
+        for (position, keyword) in declared_keywords.into_iter().enumerate() {
             let path = format!("{prefix}.keywords.{position}");
             keywords.push(resolve_string(keyword, &path, lookup)?);
         }
