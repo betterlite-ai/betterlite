@@ -4,7 +4,7 @@
 mod support;
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_redis::batch::RedisBatch;
@@ -150,7 +150,7 @@ fn reserve_rollback_restores_previous_time() {
     cache.reserve_redis_batch_keys(100.0, &reserved, &[None]);
     let (_due, previous) = cache.reserve_redis_batch_keys(200.0, &reserved, &[None]);
     assert_eq!(access_time(&cache, "key"), Some(200.0));
-    cache.rollback_redis_batch_key_reservations(&previous);
+    cache.rollback_redis_batch_keys(&previous);
     assert_eq!(access_time(&cache, "key"), Some(100.0));
 }
 
@@ -159,7 +159,7 @@ fn reserve_rollback_removes_new_time() {
     let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
     let (_due, previous) = cache.reserve_redis_batch_keys(100.0, &keys(&["key"]), &[None]);
     assert_eq!(access_time(&cache, "key"), Some(100.0));
-    cache.rollback_redis_batch_key_reservations(&previous);
+    cache.rollback_redis_batch_keys(&previous);
     assert_eq!(access_time(&cache, "key"), None);
 }
 
@@ -197,8 +197,9 @@ async fn reserve_reads_logs_memory_failure_and_reserves() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
         Arc::new(FailingMemory {
+            values: Mutex::new(BTreeMap::new()),
             fail_reads: true,
-            ..FailingMemory::default()
+            fail_writes: false,
         }),
         Some(connect_cache(server.addr).await),
         settings_for_tests(None),
@@ -300,8 +301,9 @@ async fn sync_read_memory_failure_returns_none() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
         Arc::new(FailingMemory {
+            values: Mutex::new(BTreeMap::new()),
             fail_reads: true,
-            ..FailingMemory::default()
+            fail_writes: false,
         }),
         Some(connect_cache(server.addr).await),
         settings_for_tests(None),
@@ -465,8 +467,9 @@ async fn async_read_memory_failure_returns_none() {
     let server = FakeRedis::start().await;
     let cache = DualCache::new(
         Arc::new(FailingMemory {
+            values: Mutex::new(BTreeMap::new()),
             fail_reads: true,
-            ..FailingMemory::default()
+            fail_writes: false,
         }),
         Some(connect_cache(server.addr).await),
         settings_for_tests(None),
@@ -761,8 +764,9 @@ async fn shared_read_prepare_failure_leaves_slot_none() {
     let redis = connect_cache(server.addr).await;
     let working = Arc::new(FailingMemory::default());
     let failing = Arc::new(FailingMemory {
+        values: Mutex::new(BTreeMap::new()),
         fail_reads: true,
-        ..FailingMemory::default()
+        fail_writes: false,
     });
     let cache_a = DualCache::new(
         working,
@@ -801,8 +805,9 @@ async fn shared_read_apply_failure_sets_none_and_logs() {
     let redis = connect_cache(server.addr).await;
     let working = Arc::new(FailingMemory::default());
     let failing = Arc::new(FailingMemory {
+        values: Mutex::new(BTreeMap::new()),
+        fail_reads: false,
         fail_writes: true,
-        ..FailingMemory::default()
     });
     let cache_a = DualCache::new(
         working,

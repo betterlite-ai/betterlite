@@ -40,7 +40,7 @@ where
     (redis_keys, previous_access_times)
 }
 
-pub(super) fn rollback_redis_batch_key_reservations<Memory>(
+pub(super) fn rollback_redis_batch_keys<Memory>(
     cache: &DualCache<Memory>,
     previous_access_times: &BTreeMap<String, Option<f64>>,
 ) where

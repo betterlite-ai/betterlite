@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 
 use super::apply::apply_batch_get;
 use super::prepare::prepare_batch_get;
-use super::reserve::rollback_redis_batch_key_reservations;
+use super::reserve::rollback_redis_batch_keys;
 use super::value::redis_values;
 use super::{BatchReadOptions, BatchReadsError};
 use crate::backend::memory::MemoryCacheOps;
@@ -47,7 +47,7 @@ where
     let values = match redis.values.batch_get_cache(&key_list) {
         Ok(values) => values,
         Err(error) => {
-            rollback_redis_batch_key_reservations(cache, &pending.previous_access_times);
+            rollback_redis_batch_keys(cache, &pending.previous_access_times);
             let failure = BatchReadsError::RedisValues(error);
             if !failure.circuit_open() {
                 return Err(failure);
@@ -56,6 +56,6 @@ where
             return Ok(pending.result);
         }
     };
-    let converted = redis_values(values);
+    let converted = redis_values(&values);
     apply_batch_get(cache, &pending, Some(&converted))
 }

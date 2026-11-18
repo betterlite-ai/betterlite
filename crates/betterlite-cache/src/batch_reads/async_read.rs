@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 
 use super::apply::apply_batch_get;
 use super::prepare::prepare_batch_get;
-use super::reserve::rollback_redis_batch_key_reservations;
+use super::reserve::rollback_redis_batch_keys;
 use super::value::redis_values;
 use super::{BatchReadOptions, BatchReadsError};
 use crate::backend::memory::MemoryCacheOps;
@@ -16,8 +16,10 @@ pub(super) async fn async_batch_get_cache<Memory>(
 where
     Memory: MemoryCacheOps,
 {
-    let message = "LiteLLM Cache: exception in async_batch_get_cache";
-    logged(async_batch_read(cache, keys, options).await, message)
+    logged(
+        async_batch_read(cache, keys, options).await,
+        "LiteLLM Cache: exception in async_batch_get_cache",
+    )
 }
 
 async fn async_batch_read<Memory>(
@@ -43,7 +45,7 @@ where
     let values = match redis.async_batch_get_cache(&key_list).await {
         Ok(values) => values,
         Err(error) => {
-            rollback_redis_batch_key_reservations(cache, &pending.previous_access_times);
+            rollback_redis_batch_keys(cache, &pending.previous_access_times);
             let failure = BatchReadsError::Redis(error);
             if !failure.circuit_open() {
                 return Err(failure);
@@ -52,5 +54,5 @@ where
             return Ok(pending.result);
         }
     };
-    apply_batch_get(cache, &pending, Some(&redis_values(values)))
+    apply_batch_get(cache, &pending, Some(&redis_values(&values)))
 }

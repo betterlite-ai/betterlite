@@ -84,10 +84,7 @@ pub trait BatchReads {
         result: &[Option<Json>],
     ) -> (Vec<String>, BTreeMap<String, Option<f64>>);
 
-    fn rollback_redis_batch_key_reservations(
-        &self,
-        previous_access_times: &BTreeMap<String, Option<f64>>,
-    );
+    fn rollback_redis_batch_keys(&self, previous_access_times: &BTreeMap<String, Option<f64>>);
 
     fn reserve_redis_batch_reads(
         &self,
@@ -143,11 +140,8 @@ where
         reserve::reserve_redis_batch_keys(self, current_time, keys, result)
     }
 
-    fn rollback_redis_batch_key_reservations(
-        &self,
-        previous_access_times: &BTreeMap<String, Option<f64>>,
-    ) {
-        reserve::rollback_redis_batch_key_reservations(self, previous_access_times);
+    fn rollback_redis_batch_keys(&self, previous_access_times: &BTreeMap<String, Option<f64>>) {
+        reserve::rollback_redis_batch_keys(self, previous_access_times);
     }
 
     fn reserve_redis_batch_reads(

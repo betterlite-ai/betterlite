@@ -5,7 +5,7 @@ use betterlite_redis::batch::RedisBatch;
 
 use super::apply::apply_batch_get;
 use super::prepare::prepare_batch_get;
-use super::value::redis_map_values;
+use super::value::redis_values;
 use super::{BatchReadOptions, BatchReadsError, DeclaredBatchRead};
 use crate::backend::memory::MemoryCacheOps;
 use crate::dual_cache::DualCache;
@@ -48,6 +48,6 @@ where
         return apply_batch_get(cache, &declared.pending, None);
     };
     let fetched = result.await.map_err(BatchReadsError::Batch)?;
-    let values = redis_map_values(&fetched);
+    let values = redis_values(fetched.as_ref());
     apply_batch_get(cache, &declared.pending, Some(&values))
 }

@@ -7,7 +7,7 @@ use betterlite_redis::redis_cache::RedisCache;
 use super::apply::apply_batch_get;
 use super::async_read::async_batch_get_cache;
 use super::prepare::prepare_batch_get;
-use super::reserve::rollback_redis_batch_key_reservations;
+use super::reserve::rollback_redis_batch_keys;
 use super::value::redis_values;
 use super::{BatchReadOptions, BatchReadsError, PendingBatchRead};
 use crate::backend::memory::MemoryCacheOps;
@@ -103,7 +103,7 @@ async fn read_and_apply<Memory>(
             return;
         }
     };
-    let converted = redis_values(values);
+    let converted = redis_values(&values);
     for (index, cache, pending) in prepared {
         let own: BTreeMap<String, Option<Json>> = pending
             .redis_keys
@@ -131,7 +131,7 @@ pub(super) fn shared_read_failure<Memory>(
 {
     let circuit_open = error.circuit_open();
     for (index, cache, pending) in prepared {
-        rollback_redis_batch_key_reservations(cache, &pending.previous_access_times);
+        rollback_redis_batch_keys(cache, &pending.previous_access_times);
         if !circuit_open && !pending.redis_keys.is_empty() {
             slots.insert(*index, None);
         }

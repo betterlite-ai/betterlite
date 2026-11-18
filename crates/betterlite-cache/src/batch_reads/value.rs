@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_models::decisions::Json;
@@ -15,20 +15,13 @@ pub(super) fn redis_value_json(value: &CachedValue) -> Option<Json> {
     }
 }
 
-pub(super) fn redis_values(
-    values: HashMap<String, Option<CachedValue>>,
-) -> BTreeMap<String, Option<Json>> {
+// every Redis answer a batch read gets back runs through here, whichever tier's map carries it
+pub(super) fn redis_values<'value, Values>(values: Values) -> BTreeMap<String, Option<Json>>
+where
+    Values: IntoIterator<Item = (&'value String, &'value Option<CachedValue>)>,
+{
     values
         .into_iter()
-        .map(|(key, value)| (key, value.as_ref().and_then(redis_value_json)))
-        .collect()
-}
-
-pub(super) fn redis_map_values(
-    values: &BTreeMap<String, Option<CachedValue>>,
-) -> BTreeMap<String, Option<Json>> {
-    values
-        .iter()
         .map(|(key, value)| (key.clone(), value.as_ref().and_then(redis_value_json)))
         .collect()
 }
