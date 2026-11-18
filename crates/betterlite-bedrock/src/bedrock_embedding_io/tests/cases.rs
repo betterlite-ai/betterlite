@@ -193,7 +193,7 @@ fn timeout_record_is_passed_whole() {
         pool: 4.0,
     }));
     run_direct(false, &factory, &data, Some(timeout.clone())).expect("the fixture reply decodes");
-    assert_eq!(factory.sync_calls(), vec![Some(timeout)]);
+    assert_eq!(factory.sync_calls(), vec![Some(timeout.clone())]);
     assert_eq!(
         timeout.fields().map(f64::to_bits),
         [

@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_bedrock::bedrock_embedding_io::transport::{
     ClientFactory, ClientKind, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest,
-    Timeout, TransferError,
+    Timeout, TimeoutRecord, TransferError,
 };
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_prompts::arguments::json::Object;
@@ -36,17 +36,18 @@ pub(crate) fn reply_headers(case: &HttpRequest) -> BTreeSet<String> {
 
 pub(crate) fn case_timeout(case: &HttpRequest) -> Option<Timeout> {
     match (case.timeout, case.timeout_record) {
-        (_, Some(record)) => Some(Timeout::Record {
+        (_, Some(record)) => Some(Timeout::Record(Box::new(TimeoutRecord {
             connect: record.connect,
             read: record.read,
             write: record.write,
             pool: record.pool,
-        }),
+        }))),
         (Some(seconds), None) => Some(Timeout::Seconds(seconds)),
         (None, None) => None,
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Recorded {
     pub(crate) url: String,
     pub(crate) headers: Vec<(String, String)>,
@@ -63,7 +64,7 @@ pub(crate) fn request_values(
         for (name, value) in &record.headers {
             let lowered = name.to_ascii_lowercase();
             if names.contains(&lowered) {
-                headers.insert(lowered, json!(value));
+                headers.insert(lowered, serde_json::from_value(json!(value))?);
             }
         }
         values.push(json!({
@@ -153,7 +154,7 @@ impl FactoryCall {
         json!({
             "kind": self.kind,
             "provider": self.provider,
-            "timeout": self.timeout.map(Timeout::fields),
+            "timeout": self.timeout.as_ref().map(Timeout::fields),
         })
     }
 }

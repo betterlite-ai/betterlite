@@ -72,7 +72,7 @@ fn provider_detail(error: &BedrockError, names: &BTreeSet<String>) -> Result<Val
     let provider = &error.error;
     let headers = match error.headers.as_ref() {
         None => Value::Null,
-        Some(ErrorHeaders::Http(pairs)) => serde_json::to_value(filtered_headers(pairs, names))?,
+        Some(ErrorHeaders::Http(pairs)) => serde_json::to_value(filtered_headers(pairs, names)?)?,
         Some(ErrorHeaders::Mapping(entries)) => serde_json::to_value(entries)?,
     };
     Ok(json!({
@@ -89,17 +89,20 @@ fn provider_detail(error: &BedrockError, names: &BTreeSet<String>) -> Result<Val
         },
         "headers": headers,
         "body": provider.body,
-        "response_headers": filtered_headers(&error.response_headers, names),
+        "response_headers": filtered_headers(&error.response_headers, names)?,
     }))
 }
 
-fn filtered_headers(pairs: &[(String, String)], names: &BTreeSet<String>) -> Object {
+fn filtered_headers(
+    pairs: &[(String, String)],
+    names: &BTreeSet<String>,
+) -> Result<Object, Failure> {
     let mut headers = Object::new();
     for (name, value) in pairs {
         let lowered = name.to_ascii_lowercase();
         if names.contains(&lowered) {
-            headers.insert(lowered, json!(value));
+            headers.insert(lowered, serde_json::from_value(json!(value))?);
         }
     }
-    headers
+    Ok(headers)
 }

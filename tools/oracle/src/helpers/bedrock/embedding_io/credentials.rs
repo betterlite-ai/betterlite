@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::{Ready, ready};
+use std::future::ready;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Instant;
 
@@ -9,7 +9,7 @@ use betterlite_bedrock::bedrock_embedding_io::credentials::{
 };
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::{AwsSettings, SessionTagValue};
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
@@ -49,7 +49,7 @@ pub(crate) fn run(case: &Case) -> Result<Value, Failure> {
     };
     Ok(json!({
         "region": loaded.region,
-        "credentials": loaded.credentials.as_ref().map(credentials_object),
+        "credentials": loaded.credentials.as_ref().map(credentials_object).transpose()?,
         "resolved": calls.len(),
         "resolve_auth": auth,
         "resolve_region": calls.first().map(|(_, region)| region.clone()),
@@ -60,7 +60,10 @@ pub(crate) fn run(case: &Case) -> Result<Value, Failure> {
 fn parameters(values: &Object) -> Result<BTreeMap<String, Box<RawValue>>, Failure> {
     let mut parameters = BTreeMap::new();
     for (name, value) in values {
-        parameters.insert(name.clone(), RawValue::from_string(value.to_string())?);
+        parameters.insert(
+            name.clone(),
+            RawValue::from_string(serde_json::to_string(value)?)?,
+        );
     }
     Ok(parameters)
 }
@@ -68,90 +71,90 @@ fn parameters(values: &Object) -> Result<BTreeMap<String, Box<RawValue>>, Failur
 fn remaining(parameters: &BTreeMap<String, Box<RawValue>>) -> Result<Object, Failure> {
     let mut object = Object::new();
     for (name, raw) in parameters {
-        object.insert(name.clone(), serde_json::from_str::<Value>(raw.get())?);
+        object.insert(name.clone(), serde_json::from_str::<Json>(raw.get())?);
     }
     Ok(object)
 }
 
-fn credentials_object(credentials: &Credentials) -> Object {
+fn credentials_object(credentials: &Credentials) -> Result<Object, Failure> {
     let mut object = Object::new();
     object.insert(
         "access_key_id".to_owned(),
-        json!(credentials.access_key_id.expose_secret()),
+        from_value(json!(credentials.access_key_id.expose_secret()))?,
     );
     object.insert(
         "secret_access_key".to_owned(),
-        json!(credentials.secret_access_key.expose_secret()),
+        from_value(json!(credentials.secret_access_key.expose_secret()))?,
     );
     object.insert(
         "session_token".to_owned(),
-        json!(
+        from_value(json!(
             credentials
                 .session_token
                 .as_ref()
                 .map(ExposeSecret::expose_secret)
-        ),
+        ))?,
     );
-    object
+    Ok(object)
 }
 
 fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     let mut object = Object::new();
     object.insert(
         "aws_access_key_id".to_owned(),
-        json!(
+        from_value(json!(
             settings
                 .access_key_id
                 .as_ref()
                 .map(ExposeSecret::expose_secret)
-        ),
+        ))?,
     );
     object.insert(
         "aws_secret_access_key".to_owned(),
-        json!(
+        from_value(json!(
             settings
                 .secret_access_key
                 .as_ref()
                 .map(ExposeSecret::expose_secret)
-        ),
+        ))?,
     );
     object.insert(
         "aws_session_token".to_owned(),
-        json!(
+        from_value(json!(
             settings
                 .session_token
                 .as_ref()
                 .map(ExposeSecret::expose_secret)
-        ),
+        ))?,
     );
     object.insert(
         "aws_session_name".to_owned(),
-        json!(settings.session_name.as_deref()),
+        from_value(json!(settings.session_name.as_deref()))?,
     );
     object.insert(
         "aws_profile_name".to_owned(),
-        json!(settings.profile_name.as_deref()),
+        from_value(json!(settings.profile_name.as_deref()))?,
     );
     object.insert(
         "aws_role_name".to_owned(),
-        json!(settings.role_name.as_deref()),
+        from_value(json!(settings.role_name.as_deref()))?,
     );
     object.insert(
         "aws_web_identity_token".to_owned(),
-        json!(
+        from_value(json!(
             settings
                 .web_identity_token
                 .as_ref()
                 .map(ExposeSecret::expose_secret)
-        ),
+        ))?,
     );
     object.insert(
         "aws_sts_endpoint".to_owned(),
-        json!(settings.sts_endpoint.as_deref()),
+        from_value(json!(settings.sts_endpoint.as_deref()))?,
     );
     object.insert(
         "aws_external_id".to_owned(),
-        json!(settings.external_id.as_deref()),
+        from_value(json!(settings.external_id.as_deref()))?,
     );
     object.insert(
         "aws_session_tags".to_owned(),
@@ -160,11 +163,15 @@ fn auth_object(settings: &AwsSettings) -> Result<Object, Failure> {
     Ok(object)
 }
 
-fn tags_value(tags: Option<&SessionTagValue>) -> Result<Value, Failure> {
+fn tags_value(tags: Option<&SessionTagValue>) -> Result<Json, Failure> {
     match tags {
-        Some(tags) => Ok(serde_json::to_value(tags)?),
-        None => Ok(Value::Null),
+        Some(tags) => from_value(serde_json::to_value(tags)?),
+        None => Ok(Json::Null),
     }
+}
+
+fn from_value(value: Value) -> Result<Json, Failure> {
+    Ok(serde_json::from_value(value)?)
 }
 
 struct Source {
