@@ -35,7 +35,7 @@ async def transport_case(run: Run) -> JsonValue:
         recorder = AsyncRecorder()
         client = async_transport_client(run)
         # the seam's keyword-only params differ from make_call's positional ones
-        base_invoke_transformation.make_call = recorder  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L185-L197
+        base_invoke_transformation.make_call = recorder  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L185-L197
         _ = await WRAPPERS.get_async_custom_stream_wrapper(
             model=run["model"],
             custom_llm_provider="openai",
@@ -53,7 +53,7 @@ async def transport_case(run: Run) -> JsonValue:
     supplied = sync_transport_client(run)
     sync_recorder = SyncRecorder(supplied)
     # the seam's keyword-only params differ from make_sync_call's positional ones
-    base_invoke_transformation.make_sync_call = sync_recorder  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L274-L287
+    base_invoke_transformation.make_sync_call = sync_recorder  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L274-L287
     _ = WRAPPERS.get_sync_custom_stream_wrapper(
         model=run["model"],
         custom_llm_provider="openai",
