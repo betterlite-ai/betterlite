@@ -8,10 +8,10 @@ use super::{is_non_secret_key_value, redact_logged_api_key};
 const SK_ABC: &str = "1460db1b6902f8b1fc2a40d9381a24d0fd22c3bc1b2c6f999c521da73776fbe0";
 const JWT: &str = "hashed-jwt-a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1";
 
-enum Expected<'a> {
+enum Expected<'expected> {
     Absent,
-    Kept(&'a str),
-    Hashed(&'a str),
+    Kept(&'expected str),
+    Hashed(&'expected str),
 }
 
 impl Expected<'_> {

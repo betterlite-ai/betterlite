@@ -96,5 +96,5 @@ fn limits_a_model_name_to_256_characters() {
     assert!(!looks_like_model_name(&"a".repeat(257)));
     assert!(looks_like_model_name(&format!("MCP: {}", "a".repeat(256))));
     assert!(!looks_like_model_name(&format!("MCP: {}", "a".repeat(257))));
-    assert!(looks_like_model_name(&"é".repeat(256)));
+    assert!(looks_like_model_name(&"\u{e9}".repeat(256)));
 }

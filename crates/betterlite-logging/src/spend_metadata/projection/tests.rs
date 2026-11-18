@@ -21,7 +21,7 @@ fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture is JSON")
 }
 
-fn policy(store_bodies: bool) -> SpendSanitizePolicy {
+const fn policy(store_bodies: bool) -> SpendSanitizePolicy {
     SpendSanitizePolicy {
         store_bodies,
         max_string_length: 1_000,
@@ -47,8 +47,11 @@ fn the_absent_mapping_builds_the_constructor_payload() {
     assert_eq!(value["status"], "success");
     assert_eq!(value["cold_storage_object_key"], "cold");
     assert_eq!(value["litellm_call_id"], "call");
-    assert_eq!(value["autorouter_savings"], 0.75);
-    assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
+    assert_eq!(value["autorouter_savings"], serde_json::json!(0.75));
+    assert_eq!(
+        value["autorouter_savings_estimate"]["saved"],
+        serde_json::json!(2)
+    );
     assert_eq!(value["autorouter_baseline_observation"], "baseline");
     assert_eq!(value["router_metadata"]["requested_model"], "requested");
     assert_eq!(
@@ -174,15 +177,15 @@ fn the_arguments_are_projected_into_the_record() {
     let value = serde_json::to_value(project(Some(&metadata), arguments, true)).unwrap();
     assert_eq!(value["applied_guardrails"][0], "guard");
     assert_eq!(value["batch_models"][0], "batch");
-    assert_eq!(value["batch_successful_requests"], 3);
-    assert_eq!(value["batch_failed_requests"], 1);
+    assert_eq!(value["batch_successful_requests"], serde_json::json!(3));
+    assert_eq!(value["batch_failed_requests"], serde_json::json!(1));
     assert_eq!(value["mcp_tool_call_metadata"]["tool"], "mcp");
     assert_eq!(
         value["vector_store_request_metadata"][0]["vector_store_id"],
         "vs"
     );
     assert_eq!(value["guardrail_information"]["guardrail_name"], "guard");
-    assert_eq!(value["usage_object"]["total_tokens"], 4);
+    assert_eq!(value["usage_object"]["total_tokens"], serde_json::json!(4));
     assert_eq!(value["model_map_information"]["model"], "mapped");
 }
 
@@ -191,11 +194,17 @@ fn trusted_arguments_are_projected() {
     let metadata = object("{}");
     let value = serde_json::to_value(project(Some(&metadata), enriched_arguments(), true)).unwrap();
     assert_eq!(value["cold_storage_object_key"], "cold");
-    assert_eq!(value["litellm_overhead_time_ms"], 2.25);
-    assert_eq!(value["cost_breakdown"]["total_cost"], 0.5);
+    assert_eq!(value["litellm_overhead_time_ms"], serde_json::json!(2.25));
+    assert_eq!(
+        value["cost_breakdown"]["total_cost"],
+        serde_json::json!(0.5)
+    );
     assert_eq!(value["litellm_call_id"], "call");
-    assert_eq!(value["autorouter_savings"], 0.75);
-    assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
+    assert_eq!(value["autorouter_savings"], serde_json::json!(0.75));
+    assert_eq!(
+        value["autorouter_savings_estimate"]["saved"],
+        serde_json::json!(2)
+    );
     assert_eq!(value["autorouter_baseline_observation"], "baseline");
     assert_eq!(value["router_metadata"]["requested_model"], "requested");
     assert_eq!(value["azure_spillover"]["region"], "west");
@@ -223,9 +232,12 @@ fn copied_metadata_fields_keep_their_values() {
     .unwrap();
     assert_eq!(value["status"], "failure");
     assert_eq!(value["user_agent"], "ua");
-    assert_eq!(value["attempted_retries"], 2);
-    assert_eq!(value["max_retries"], 3);
-    assert_eq!(value["additional_usage_values"]["cache_hits"], 1);
+    assert_eq!(value["attempted_retries"], serde_json::json!(2));
+    assert_eq!(value["max_retries"], serde_json::json!(3));
+    assert_eq!(
+        value["additional_usage_values"]["cache_hits"],
+        serde_json::json!(1)
+    );
     assert_eq!(value["actor_agent_id"], "actor");
     assert_eq!(value["routing_decision"]["model"], "chosen");
 }
