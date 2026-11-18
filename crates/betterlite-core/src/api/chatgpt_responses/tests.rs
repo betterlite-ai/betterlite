@@ -3,6 +3,7 @@
 mod bounds;
 
 use std::future::{Future, ready};
+use std::slice::from_ref;
 use std::time::Duration;
 
 use betterlite_config::sections::chatgpt_headers::Settings as HeaderSettings;
@@ -28,7 +29,7 @@ use betterlite_openai::response_input::ResponsesInput;
 use betterlite_openai::response_input::error::ResponseInputError;
 use betterlite_prompts::arguments::json::{Json as Body, Object};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
+use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -164,6 +165,7 @@ struct Fixture {
     redactor: Redactor,
     sink: Sink,
     state: LoggingState,
+    clock: DateTime<FixedOffset>,
 }
 
 impl Fixture {
@@ -188,6 +190,8 @@ impl Fixture {
             redactor,
             sink: Sink,
             state,
+            clock: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
+                .expect("the clock parses"),
         }
     }
 
@@ -211,8 +215,7 @@ impl Fixture {
             input_callbacks: &[],
             sentry: None,
             logger_fn: None,
-            now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-                .expect("the clock parses"),
+            now: self.clock.clone(),
         };
         transform_reply(
             &RawResponse {
@@ -319,7 +322,7 @@ fn provider_error(error: ChatGptResponsesError) -> (u16, String) {
 #[test]
 fn provider_and_websocket_capability() {
     assert_eq!(PROVIDER, ProviderId::Chatgpt);
-    assert!(!SUPPORTS_NATIVE_WEBSOCKET);
+    const { assert!(!SUPPORTS_NATIVE_WEBSOCKET) };
 }
 
 #[test]
@@ -382,7 +385,20 @@ async fn environment_merges_caller_headers_over_defaults() {
         merged.get("user-agent").map(String::as_str),
         Some("caller-agent")
     );
+    assert_eq!(merged.get("x-custom").map(String::as_str), Some("1"));
     assert_eq!(merged.get("session_id").map(String::as_str), Some("sess-1"));
+}
+
+#[tokio::test]
+async fn environment_adds_the_default_headers() {
+    let mut config = config(Token::Good);
+    let merged = validate_with(&mut config, &LitellmParamsInput::Absent)
+        .await
+        .expect("the environment validates");
+    assert_eq!(
+        merged.get("Authorization").map(String::as_str),
+        Some("Bearer token-1")
+    );
     assert_eq!(
         merged.get("ChatGPT-Account-Id").map(String::as_str),
         Some("acct-1")
@@ -399,7 +415,6 @@ async fn environment_merges_caller_headers_over_defaults() {
         merged.get("originator").map(String::as_str),
         Some("codex_cli_rs")
     );
-    assert_eq!(merged.get("x-custom").map(String::as_str), Some("1"));
 }
 
 #[tokio::test]
@@ -440,7 +455,7 @@ async fn environment_translates_an_access_token_failure() {
     let message = error.to_string();
     assert!(matches!(
         error,
-        ChatGptResponsesError::Authentication { ref model, .. } if model == "gpt-5"
+        ChatGptResponsesError::Authentication { model, .. } if model == "gpt-5"
     ));
     assert_eq!(status, Some(401));
     assert_eq!(message, "failed to obtain an access token");
@@ -670,7 +685,7 @@ fn a_json_body_that_is_not_json_keeps_the_provider_status() {
 #[test]
 fn a_json_body_without_created_at_keeps_the_provider_status() {
     let body = String::from(r#"{"id":"resp_1","output":[]}"#);
-    let error = expect_error(transformed(400, &headers(JSON_TYPE), &[body.clone()]));
+    let error = expect_error(transformed(400, &headers(JSON_TYPE), from_ref(&body)));
     assert_eq!(error.http_status(), Some(400));
     assert_eq!(provider_error(error), (400, body));
 }
@@ -920,7 +935,7 @@ fn sse_attaches_raw_and_processed_headers() {
 #[test]
 fn sse_records_the_post_call_point() {
     let mut fixture = Fixture::new();
-    let body = vec![done()].join("\n");
+    let body = [done()].join("\n");
     fixture
         .transform(200, &headers(SSE_TYPE), &body, &ApiLimits::default())
         .expect("the stream recovers");

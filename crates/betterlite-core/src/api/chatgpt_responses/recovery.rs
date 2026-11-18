@@ -162,10 +162,9 @@ fn error_message_of(parsed: &IndexMap<String, Json>) -> Option<String> {
             Some(Json::Null) | None => Some(value_text(value)),
             Some(message) => Some(value_text(message)),
         },
-        value @ Json::Bool(_)
-        | value @ Json::Number(_)
-        | value @ Json::Text(_)
-        | value @ Json::List(_) => Some(value_text(value)),
+        value @ (Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            Some(value_text(value))
+        }
     }
 }
 

@@ -20,7 +20,7 @@ fn limits(max_event_bytes: usize, max_items: usize) -> ApiLimits {
 
 #[test]
 fn sse_rejects_an_event_over_the_boundary() {
-    let body = vec![done()];
+    let body = [done()];
     let error = expect_error(Fixture::new().transform(
         200,
         &headers(SSE_TYPE),
@@ -38,7 +38,7 @@ fn sse_rejects_an_event_over_the_boundary() {
 
 #[test]
 fn sse_rejects_more_items_than_the_boundary() {
-    let body = vec![item(0, "zero"), item(1, "one"), done()];
+    let body = [item(0, "zero"), item(1, "one"), done()];
     let error = expect_error(Fixture::new().transform(
         200,
         &headers(SSE_TYPE),
@@ -61,7 +61,7 @@ fn a_body_over_the_total_boundary_is_rejected() {
         max_event_bytes: 1024 * 1024,
         max_items: 64 * 1024,
     };
-    let streamed = vec![text(0, "first"), text(1, "second"), done()].join("\n");
+    let streamed = [text(0, "first"), text(1, "second"), done()].join("\n");
     let streamed_error =
         expect_error(Fixture::new().transform(200, &headers(SSE_TYPE), &streamed, &budget));
     assert_eq!(streamed_error.http_status(), Some(502));
@@ -84,7 +84,7 @@ fn a_body_over_the_total_boundary_is_rejected() {
 
 #[test]
 fn a_body_exactly_at_the_total_boundary_is_accepted() {
-    let streamed = vec![text(0, "first"), done()].join("\n");
+    let streamed = [text(0, "first"), done()].join("\n");
     let budget = ApiLimits {
         max_json_bytes: streamed.len(),
         max_event_bytes: 1024 * 1024,
@@ -98,7 +98,8 @@ fn a_body_exactly_at_the_total_boundary_is_accepted() {
 
 #[test]
 fn recovery_errors_without_a_status_stay_statusless() {
-    let bytes = from_utf8(b"\xff").expect_err("the bytes are not UTF-8");
+    let raw = [0xff_u8];
+    let bytes = from_utf8(&raw).expect_err("the bytes are not UTF-8");
     let utf8_error = ChatGptResponsesError::Recovery {
         source: ResponsesSseRecoveryError::Utf8(bytes),
     };
