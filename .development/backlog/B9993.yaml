@@ -1,0 +1,13 @@
+id: B9993
+milestone: M3 providers
+title: Anthropic text completions through the chat bridge
+status: todo
+depends_on: [B9990]
+file: tasks/B9993-anthropic-text-completion-bridge.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
