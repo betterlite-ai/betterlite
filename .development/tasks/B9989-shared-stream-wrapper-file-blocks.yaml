@@ -85,6 +85,11 @@ description: >-
   unchanged.
 scope:
   paths:
+  - "crates/**/src/**.rs"
+  - "crates/betterlite-provider/src/snowflake/messages/tests.rs"
+  - "crates/betterlite-prompts/src/anthropic_invokes/tests/anthropic_invokes_behavior_tests_behavior.rs"
+  - "crates/betterlite-prompts/src/anthropic_invokes/tests/**"
+  - "crates/betterlite-prompts/src/anthropic_invokes/tests"
   - "crates/betterlite-openai/src/output_limits/build.rs"
   - crates/betterlite-streaming/src/provider_chunk_decode.rs
   - crates/betterlite-streaming/src/provider_chunk_decode/wrapper.rs
