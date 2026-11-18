@@ -50,7 +50,7 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct EventCase {
+pub(crate) struct EventCase {
     model: Option<String>,
     errors: Vec<JsonObject>,
     created: i64,
@@ -58,7 +58,7 @@ struct EventCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RestampCase {
+pub(crate) struct RestampCase {
     kind: ChunkKindCase,
     body: JsonObject,
     requested_model: String,
@@ -70,14 +70,14 @@ struct RestampCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ChunkCase {
+pub(crate) struct ChunkCase {
     kind: ChunkKindCase,
     body: JsonObject,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ChunkKindCase {
+pub(crate) enum ChunkKindCase {
     Stream,
     Full,
     Event,
@@ -97,7 +97,7 @@ impl ChunkKindCase {
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ViewName {
+pub(crate) enum ViewName {
     Serialized,
     UsageArtifact,
     Text,
