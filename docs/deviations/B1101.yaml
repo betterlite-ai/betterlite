@@ -6,4 +6,17 @@ deviations:
       body limit and returns 413 invalid_request_error with param=file and code=request_too_large.
     why: The premium-only rejection is removed, and bounded request inputs require a finite default cap.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L390-L450
+  - what: >-
+      extract_nested_form_metadata skips every upload value and warns, while LiteLLM tests isinstance(value,
+      fastapi.UploadFile) against starlette UploadFile values that request.form() yields. Its skip branch therefore
+      never runs in production, and an upload whose key carries the metadata prefix becomes a metadata value. The
+      oracle helper builds fastapi UploadFile values so the branch LiteLLM intends is the one compared.
+    why: An upload must never become a metadata entry, so betterlite implements the skip LiteLLM wrote.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L577-L580
+  - what: >-
+      check_file_size_under_limit returns a typed 400 invalid_request_error with param=request_body and code="400"
+      when the request carries no model string or its metadata field is not an object. LiteLLM raises KeyError at
+      request_data["model"] and TypeError when indexing a non-dict metadata, which its routes surface as a 500.
+    why: A malformed request body is a client error, and a 500 for one is a bug no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L410-L419
 kept_bugs: []
