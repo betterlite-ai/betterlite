@@ -1,6 +1,7 @@
 pub(crate) mod store;
 
 use std::collections::BTreeSet;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use crate::routing_value_store::{
 
 use self::store::{merge, send, snapshot};
 use super::error::RoutingStateError;
-use super::{FLUSH_DEADLINE, MAX_PENDING_DELTAS, MAX_TRACKED_KEYS};
+use super::{MAX_PENDING_DELTAS, MAX_TRACKED_KEYS};
 
 // one RedisPipelineIncrementOperation: the window delta, its key and the ttl the first write of it carries
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -55,7 +56,7 @@ pub(super) struct SyncState<S: DeltaStore> {
     pub(super) local: Arc<RoutingValueStore>,
     pub(super) store: Option<Arc<S>>,
     pub(super) pending: Mutex<Vec<Delta>>,
-    pub(super) joined: Mutex<Vec<Delta>>,
+    pub(super) flush_scheduled: AtomicBool,
     pub(super) tracked: Mutex<BTreeSet<RouteKey>>,
     pub(super) gate: FlushGate,
 }
@@ -66,7 +67,7 @@ impl<S: DeltaStore> SyncState<S> {
             local,
             store,
             pending: Mutex::new(Vec::new()),
-            joined: Mutex::new(Vec::new()),
+            flush_scheduled: AtomicBool::new(false),
             tracked: Mutex::new(BTreeSet::new()),
             gate: FlushGate::new(),
         }
@@ -121,51 +122,17 @@ impl<S: DeltaStore> SyncState<S> {
             value,
             ttl,
         };
-        if pending.len() < MAX_PENDING_DELTAS {
+        let saturated = pending.len() >= MAX_PENDING_DELTAS;
+        if pending.len() < MAX_PENDING_DELTAS.saturating_mul(2) {
             pending.push(delta);
-            drop(pending);
-            return Ok((updated, false));
-        }
-        drop(pending);
-        let mut joined = self.joined.lock().unwrap_or_else(PoisonError::into_inner);
-        if joined.len() >= MAX_PENDING_DELTAS {
+        } else {
             tracing::warn!(
                 key = key.as_ref(),
-                "the joined routing deltas are full; the observation is dropped"
+                "the routing delta queue is full; the observation is dropped"
             );
-        } else {
-            joined.push(delta);
         }
-        Ok((updated, true))
+        Ok((updated, saturated))
     }
-}
-
-// the deltas that found the queue full and ride the flush that is scheduled or running
-pub(super) fn joined_len<S>(state: &SyncState<S>) -> usize
-where
-    S: DeltaStore,
-{
-    state
-        .joined
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .len()
-}
-
-// a flush past its deadline or a failed store drops what joined it, as LiteLLM drops a failed batch
-pub(super) fn discard_joined<S>(state: &SyncState<S>)
-where
-    S: DeltaStore,
-{
-    let mut joined = state.joined.lock().unwrap_or_else(PoisonError::into_inner);
-    if joined.is_empty() {
-        return;
-    }
-    tracing::warn!(
-        dropped = joined.len(),
-        "the joined routing deltas are dropped"
-    );
-    joined.clear();
 }
 
 // the push and the read-back merge, for a caller that already holds the gate
@@ -182,21 +149,6 @@ where
     };
     merge(state, &keys, &before, &values);
     SyncOutcome::Pushed
-}
-
-// push the batch, then push again while a delta that found the queue full joined the running flush
-pub(super) async fn drain<S>(state: &SyncState<S>) -> SyncOutcome
-where
-    S: DeltaStore,
-{
-    let mut outcome = push_and_merge(state).await;
-    while matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) && joined_len(state) > 0 {
-        outcome = push_and_merge(state).await;
-    }
-    if !matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) {
-        discard_joined(state);
-    }
-    outcome
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

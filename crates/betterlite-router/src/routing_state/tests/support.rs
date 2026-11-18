@@ -212,10 +212,6 @@ impl Harness {
         queue_len(&self.counters.state.pending)
     }
 
-    pub(crate) fn joined_len(&self) -> usize {
-        queue_len(&self.counters.state.joined)
-    }
-
     pub(crate) fn tracked_len(&self) -> usize {
         self.counters.get_tracked_keys().len()
     }

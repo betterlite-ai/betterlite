@@ -31,13 +31,14 @@ const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 
 pub(crate) async fn run(name: &str) {
     match name {
+        "scheduled_gate_timeout" => super::flush::gate_timeout().await,
         "queue_cap_is_1024" => queue_cap_is_1024().await,
-        "joined_cap_is_1024" => joined_cap_is_1024().await,
-        "sync_past_the_deadline_drops_the_joined_deltas" => {
-            sync_past_the_deadline_drops_the_joined_deltas(false).await;
+        "queue_cap_is_2048" => queue_cap_is_2048().await,
+        "sync_past_the_deadline_drops_queued_callbacks" => {
+            sync_past_the_deadline_drops_queued_callbacks(false).await;
         }
-        "periodic_sync_past_the_deadline_drops_the_joined_deltas" => {
-            sync_past_the_deadline_drops_the_joined_deltas(true).await;
+        "periodic_sync_past_the_deadline_drops_queued_callbacks" => {
+            sync_past_the_deadline_drops_queued_callbacks(true).await;
         }
         "callback_saturation_without_a_runtime_keeps_the_delta" => {
             callback_saturation_without_a_runtime_keeps_the_delta().await;
@@ -77,7 +78,6 @@ async fn queue_cap_is_1024() {
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(1025_i64)));
     assert_eq!(harness.store.pushed().len(), 1);
     assert_eq!(harness.pending_len(), 0);
-    assert_eq!(harness.joined_len(), 0);
     // the queue is empty now, so a sync has nothing to push
     assert!(!harness.counters.sync_with_redis().await);
 
@@ -96,7 +96,6 @@ async fn queue_cap_is_1024() {
         .await;
     assert_eq!(down_overflow.unwrap(), Decimal::from(1025_i64));
     assert_eq!(down.pending_len(), 0);
-    assert_eq!(down.joined_len(), 0);
     assert_eq!(down.store.calls(), 1);
     assert_eq!(down.store.amount(RPM_KEY), None);
     down.store.set_down(false);
@@ -109,40 +108,37 @@ async fn queue_cap_is_1024() {
     assert_eq!(down.pending_len(), 0);
 }
 
-// memory stays at twice the queue cap: the delta past a full joined set is dropped and never reaches the store
-async fn joined_cap_is_1024() {
+// the single queue stops at twice the threshold before polling and while the store stalls
+async fn queue_cap_is_2048() {
     let harness = Harness::with_store(settings(false, None));
     harness.store.set_stalled(true);
     let sink: &dyn CounterSink = harness.counters.as_ref();
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
         .unwrap();
     let one = usage_batch(TPM_KEY, 1);
-    // repeated callbacks join the flush the first one scheduled before that flush is even polled
+    // repeated callbacks share one scheduled task before it is polled
     for _step in 0..MAX_PENDING_DELTAS {
         sink.increment_pipeline(&one).unwrap();
     }
     assert_eq!(harness.store.calls(), 0);
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.pending_len(), 2 * MAX_PENDING_DELTAS);
+    assert_eq!(harness.counters.flushes.lock().unwrap().len(), 1);
     assert_overflow_warning(&harness);
-    // the flush takes the queue and the joined deltas to the store, which stalls
+    // the flush detaches the queue and stalls at the store
     yield_now().await;
     assert_eq!(harness.store.calls(), 1);
     assert_eq!(harness.pending_len(), 0);
-    assert_eq!(harness.joined_len(), 0);
-    // the queue fills again behind the stalled flush, then the joined set fills to its cap
+    // the queue fills again behind the stalled flush up to its hard cap
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
         .unwrap();
     for _step in 0..MAX_PENDING_DELTAS {
         sink.increment_pipeline(&one).unwrap();
     }
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.pending_len(), 2 * MAX_PENDING_DELTAS);
     // past the cap an observation is dropped, so the owner's staging stays bounded
     assert_overflow_warning(&harness);
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
-    // the one flush carries the queue and the capped joined set; the dropped delta is not in the store
+    assert_eq!(harness.pending_len(), 2 * MAX_PENDING_DELTAS);
+    // the accepted batches reach storage once; the two overflow observations do not
     harness.store.set_stalled(false);
     harness.store.release();
     harness.drain_flushes().await;
@@ -152,7 +148,6 @@ async fn joined_cap_is_1024() {
         Some(Decimal::from(4_096_u64))
     );
     assert_eq!(harness.pending_len(), 0);
-    assert_eq!(harness.joined_len(), 0);
     assert_eq!(harness.counters.read(TPM_KEY), Some(4_098));
 }
 
@@ -189,15 +184,14 @@ fn assert_overflow_warning(harness: &Harness) {
     assert_eq!(
         message.trim(),
         format!(
-            "WARN the joined routing deltas are full; the observation is dropped key=\"{TPM_KEY}\""
+            "WARN the routing delta queue is full; the observation is dropped key=\"{TPM_KEY}\""
         )
     );
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.pending_len(), 2 * MAX_PENDING_DELTAS);
 }
 
-// a sync that holds the gate past its deadline drops the deltas that joined it
-async fn sync_past_the_deadline_drops_the_joined_deltas(periodic: bool) {
+// a stalled sync and the successor scheduled behind it both expire without replay
+async fn sync_past_the_deadline_drops_queued_callbacks(periodic: bool) {
     let harness = Harness::with_store(settings(periodic, None));
     harness.store.set_stalled(true);
     let sink: &dyn CounterSink = harness.counters.as_ref();
@@ -212,29 +206,20 @@ async fn sync_past_the_deadline_drops_the_joined_deltas(periodic: bool) {
     };
     yield_now().await;
     assert_eq!(harness.store.calls(), 1);
-    // the queue fills behind the stalled sync, and the delta past it joins the sync that holds the gate
+    // the saturated callback schedules a successor while the sync holds the gate
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
         .unwrap();
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), 1);
-    advance(FLUSH_DEADLINE).await;
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS + 1);
     yield_now().await;
-    // the store never answered, so the sync's batch and the delta that joined it are gone
+    advance(FLUSH_DEADLINE).await;
     if let Some(task) = sync {
         assert!(!task.await.unwrap());
     }
-    assert_eq!(harness.joined_len(), 0);
-    assert_eq!(harness.store.calls(), 1);
     harness.counters.cleanup().await;
-    // the queue that filled behind the sync still pushes once the store answers
-    harness.store.set_stalled(false);
-    harness.store.release();
-    assert!(harness.counters.sync_with_redis().await);
-    assert_eq!(
-        harness.store.amount(TPM_KEY),
-        Some(Decimal::from(1_024_u64))
-    );
     assert_eq!(harness.pending_len(), 0);
+    harness.store.set_stalled(false);
+    assert!(!harness.counters.sync_with_redis().await);
+    assert_eq!(harness.store.amount(TPM_KEY), None);
     assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
 }
 
@@ -254,18 +239,16 @@ async fn callback_saturation_without_a_runtime_keeps_the_delta() {
                 .unwrap();
         });
     });
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.joined_len(), 1);
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS + 1);
     assert_eq!(harness.store.calls(), 0);
     assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
-    // the owner's next sync carries the full queue and the delta that joined it
+    // the owner's next sync carries all queued observations
     assert!(harness.counters.sync_with_redis().await);
     assert_eq!(
         harness.store.amount(TPM_KEY),
         Some(Decimal::from(1_025_u64))
     );
     assert_eq!(harness.pending_len(), 0);
-    assert_eq!(harness.joined_len(), 0);
 }
 
 fn tracked_cap_is_1024() {

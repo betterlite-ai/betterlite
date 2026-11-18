@@ -44,11 +44,11 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     ) -> Result<Decimal, RoutingStateError> {
         let route_key = RouteKey::parse(key)?;
         self.state.track(&route_key);
-        let (updated, joined) =
+        let (updated, saturated) =
             self.state
                 .record_delta(&route_key, &RouteIncrement::Spend(value), ttl)?;
-        if joined {
-            let _outcome = sync::sync_state(self.state.as_ref()).await;
+        if saturated {
+            let _outcome = sync::sync_state(self.state.as_ref(), false).await;
         }
         Ok(spend_value(&route_key, &updated))
     }
@@ -66,7 +66,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         Ok(results)
     }
 
-    // B397's sink cannot await the store; a delta that found the queue full joins the flush the sink schedules
+    // B397's sink cannot await the store, so saturation schedules a flush after staging the callback
     pub(super) fn stage_usage(&self, increment: &Increment) -> Result<bool, CounterError> {
         let route_key =
             RouteKey::parse(&increment.key).map_err(|_source| CounterError::Rejected {
@@ -81,7 +81,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             increment.ttl,
         );
         match recorded {
-            Ok((_updated, joined)) => Ok(joined),
+            Ok((_updated, saturated)) => Ok(saturated),
             Err(_source) => Err(CounterError::Rejected {
                 key: increment.key.clone(),
             }),
@@ -170,7 +170,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     // BaseRoutingStrategy._sync_in_memory_spend_with_redis
     pub async fn sync_with_redis(&self) -> bool {
         matches!(
-            sync::sync_state(self.state.as_ref()).await,
+            sync::sync_state(self.state.as_ref(), false).await,
             SyncOutcome::Pushed
         )
     }

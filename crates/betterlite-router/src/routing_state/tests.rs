@@ -2,6 +2,7 @@
 
 mod behaviors;
 mod boundaries;
+mod flush;
 mod support;
 
 use rstest::rstest;
@@ -59,17 +60,17 @@ fn runtime(paused: bool) -> Runtime {
     false
 )]
 #[case::full_queue_callback_flushes_both_entries("full_queue_callback_flushes_both_entries", false)]
-#[case::sync_holding_the_gate_drains_the_joined_deltas(
-    "sync_holding_the_gate_drains_the_joined_deltas",
+#[case::sync_holding_the_gate_drains_queued_callbacks(
+    "sync_holding_the_gate_drains_queued_callbacks",
     false
 )]
-#[case::periodic_sync_drains_the_joined_deltas("periodic_sync_drains_the_joined_deltas", true)]
-#[case::scheduled_flush_past_the_deadline_drops_the_joined_deltas(
-    "scheduled_flush_past_the_deadline_drops_the_joined_deltas",
+#[case::periodic_sync_drains_queued_callbacks("periodic_sync_drains_queued_callbacks", true)]
+#[case::scheduled_flush_past_the_deadline_drops_queued_callbacks(
+    "scheduled_flush_past_the_deadline_drops_queued_callbacks",
     true
 )]
-#[case::failed_scheduled_flush_drops_the_joined_deltas(
-    "failed_scheduled_flush_drops_the_joined_deltas",
+#[case::failed_scheduled_flush_drops_queued_callbacks(
+    "failed_scheduled_flush_drops_queued_callbacks",
     false
 )]
 #[case::cleanup_waits_for_the_scheduled_flush("cleanup_waits_for_the_scheduled_flush", false)]
@@ -82,19 +83,24 @@ fn runtime(paused: bool) -> Runtime {
     "saturated_flush_past_the_deadline_drops_its_delta",
     true
 )]
+#[case::callback_before_snapshot("callback_before_snapshot", false)]
+#[case::callback_after_snapshot("callback_after_snapshot", true)]
+#[case::refill_at_flush_threshold("refill_at_flush_threshold", true)]
+#[case::refill_below_flush_threshold("refill_below_flush_threshold", true)]
+#[case::callback_after_final_check("callback_after_final_check", true)]
 fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(behaviors::run(name));
 }
 
 #[rstest]
 #[case::queue_cap_is_1024("queue_cap_is_1024", false)]
-#[case::joined_cap_is_1024("joined_cap_is_1024", true)]
-#[case::sync_past_the_deadline_drops_the_joined_deltas(
-    "sync_past_the_deadline_drops_the_joined_deltas",
+#[case::queue_cap_is_2048("queue_cap_is_2048", true)]
+#[case::sync_past_the_deadline_drops_queued_callbacks(
+    "sync_past_the_deadline_drops_queued_callbacks",
     true
 )]
-#[case::periodic_sync_past_the_deadline_drops_the_joined_deltas(
-    "periodic_sync_past_the_deadline_drops_the_joined_deltas",
+#[case::periodic_sync_past_the_deadline_drops_queued_callbacks(
+    "periodic_sync_past_the_deadline_drops_queued_callbacks",
     true
 )]
 #[case::callback_saturation_without_a_runtime_keeps_the_delta(
@@ -114,6 +120,7 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 #[case::sync_merges_at_the_equality_boundary("sync_merges_at_the_equality_boundary", false)]
 #[case::sync_interval_resolution_boundaries("sync_interval_resolution_boundaries", false)]
 #[case::local_counter_reads_only_whole_values("local_counter_reads_only_whole_values", false)]
+#[case::scheduled_gate_timeout("scheduled_gate_timeout", true)]
 fn routing_state_boundaries(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(boundaries::run(name));
 }
