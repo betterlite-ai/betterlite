@@ -435,12 +435,8 @@ async fn a_failed_reconnect_keeps_its_typed_cause() {
             panic!("expected a typed read error with its reconnect cause, got {other:?}")
         }
     }
-    assert!(
-        !registry
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .initialized
-    );
+    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+    assert!(!state.initialized);
 }
 
 #[tokio::test]
