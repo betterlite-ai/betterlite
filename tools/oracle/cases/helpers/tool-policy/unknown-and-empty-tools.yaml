@@ -1,0 +1,15 @@
+kind: helper
+name: unknown_and_empty_tools
+call:
+  tool_policy:
+    tools:
+      - {"tool_id":"t1","tool_name":"known","input_policy":"trusted","output_policy":"trusted"}
+    permissions: []
+    queries:
+      - {"tool_names":[],"key_permission_id":"perm-key","team_permission_id":null}
+      - {"tool_names":["unknown"],"key_permission_id":null,"team_permission_id":null}
+      - {"tool_names":["known","unknown"],"key_permission_id":"perm-any","team_permission_id":null}
+      - {"tool_names":["known","known"],"key_permission_id":null,"team_permission_id":null}
+    output_tools: ["known","unknown"]
+env: {}
+compare: {ignore: []}
