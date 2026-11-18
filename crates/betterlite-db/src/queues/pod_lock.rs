@@ -127,14 +127,16 @@ pub struct PodLockManager<C: LockCache> {
 }
 
 impl<C: LockCache> PodLockManager<C> {
+    // The owner arrives from the composition root, which mints it as the source's __init__ does.
     #[must_use]
     pub fn new(
         cache: Option<Arc<C>>,
         default_ttl_seconds: i64,
         events: Arc<dyn PodLockEventSink>,
+        pod_id: Uuid,
     ) -> Self {
         Self {
-            pod_id: Uuid::new_v4().to_string(),
+            pod_id: pod_id.to_string(),
             cache,
             default_ttl_seconds,
             event_duration_seconds: default_ttl_seconds.to_f64().unwrap_or_default(),

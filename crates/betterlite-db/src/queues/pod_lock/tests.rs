@@ -24,6 +24,9 @@ struct FakeCache {
     script_runs: Arc<AtomicUsize>,
     set_ttls: Mutex<Vec<i64>>,
     stored_owners: Mutex<Vec<String>>,
+    lease: Mutex<Option<String>>,
+    takeover: Mutex<Option<String>>,
+    deleted_owners: Mutex<Vec<String>>,
 }
 
 impl Default for FakeCache {
@@ -38,6 +41,9 @@ impl Default for FakeCache {
             script_runs: Arc::new(AtomicUsize::new(0)),
             set_ttls: Mutex::new(Vec::new()),
             stored_owners: Mutex::new(Vec::new()),
+            lease: Mutex::new(None),
+            takeover: Mutex::new(None),
+            deleted_owners: Mutex::new(Vec::new()),
         }
     }
 }
@@ -97,6 +103,18 @@ impl FakeCache {
     fn script_runs(&self) -> usize {
         self.script_runs.load(Ordering::SeqCst)
     }
+
+    // the fallback's GET reads our owner, then another pod's set lands before the fallback's DEL runs
+    fn reacquired_between_get_and_delete(&self, owner: &str) {
+        *self.takeover.lock().unwrap_or_else(PoisonError::into_inner) = Some(owner.to_owned());
+    }
+
+    fn deleted_owners(&self) -> Vec<String> {
+        self.deleted_owners
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl LockCache for FakeCache {
@@ -106,6 +124,15 @@ impl LockCache for FakeCache {
             Ok(owner) => Ok(owner.clone()),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "get_owner" }),
         };
+        if matches!(&outcome, Ok(Some(_)))
+            && let Some(replacement) = self
+                .takeover
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take()
+        {
+            *self.lease.lock().unwrap_or_else(PoisonError::into_inner) = Some(replacement);
+        }
         ready(outcome)
     }
 
@@ -129,6 +156,17 @@ impl LockCache for FakeCache {
     #[rustfmt::skip]
     fn delete(&self, _key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         self.deletes.fetch_add(1, Ordering::SeqCst);
+        if let Some(owner) = self
+            .lease
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            self.deleted_owners
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(owner);
+        }
         let outcome = match &*self.delete.lock().unwrap_or_else(PoisonError::into_inner) {
             Ok(count) => Ok(*count),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "delete" }),
@@ -187,12 +225,13 @@ impl RecordingEvents {
 
 fn build(cache: &Arc<FakeCache>, events: &Arc<RecordingEvents>) -> PodLockManager<FakeCache> {
     let sink: Arc<dyn PodLockEventSink> = Arc::clone(events);
-    PodLockManager::new(Some(Arc::clone(cache)), 60, sink)
+    PodLockManager::new(Some(Arc::clone(cache)), 60, sink, Uuid::new_v4())
 }
 
 #[tokio::test]
 async fn acquiring_without_a_cache_returns_none() {
-    let manager = PodLockManager::<FakeCache>::new(None, 60, Arc::new(NoPodLockEventSink));
+    let manager =
+        PodLockManager::<FakeCache>::new(None, 60, Arc::new(NoPodLockEventSink), Uuid::new_v4());
     assert_eq!(manager.acquire_lock("job", None, true).await, None);
     manager.release_lock("job").await;
 }
@@ -395,11 +434,13 @@ async fn the_get_and_delete_fallback_cannot_be_atomic() {
     let cache = Arc::new(FakeCache::default());
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
-    // GET returned our owner, but another pod reacquired the key before DEL ran; the fallback deletes that fresh lock anyway.
+    // GET returns our owner, another pod's set lands before DEL, and the fallback deletes that fresh lease.
     cache.respond_with_owner(&manager.pod_id);
     cache.delete_count(1);
+    cache.reacquired_between_get_and_delete("another-pod");
     manager.release_lock("job").await;
     assert_eq!(cache.deletes(), 1);
+    assert_eq!(cache.deleted_owners(), vec!["another-pod".to_owned()]);
     assert_eq!(
         events.events(),
         vec![PodLockEvent {
@@ -447,12 +488,18 @@ async fn release_errors_are_logged_and_swallowed() {
     assert!(events.events().is_empty());
 }
 
-#[test]
-fn each_manager_owns_one_uuid_v4_id() {
-    let manager = PodLockManager::<FakeCache>::new(None, 60, Arc::new(NoPodLockEventSink));
+#[tokio::test]
+async fn the_constructed_uuid_owns_every_acquire() {
+    let owner = Uuid::new_v4();
+    let cache = Arc::new(FakeCache::default());
+    let sink: Arc<dyn PodLockEventSink> = Arc::new(NoPodLockEventSink);
+    let manager = PodLockManager::new(Some(Arc::clone(&cache)), 60, sink, owner);
+    assert_eq!(manager.pod_id, owner.to_string());
+    manager.acquire_lock("first", None, true).await;
+    manager.acquire_lock("second", None, true).await;
     assert_eq!(
-        Uuid::parse_str(&manager.pod_id).unwrap().get_version_num(),
-        4
+        cache.stored_owners(),
+        vec![owner.to_string(), owner.to_string()]
     );
 }
 
