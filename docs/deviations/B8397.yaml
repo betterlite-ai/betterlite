@@ -1,0 +1,57 @@
+task: B8397
+deviations:
+  - what: Each dispatcher branch takes typed filters and compiled SQL instead of Prisma where, order and take maps; the columns, filters and ordering are the ones LiteLLM's own branch builds.
+    why: docs/compatibility.md stops parity at LiteLLM's declared types, and a Python dict where condition has no typed Rust equivalent; a caller picks the branch through the typed filter and query constants rather than by spelling column names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5043-L5063
+  - what: The spend find_unique branch is SpendQuery::UNIQUE, which returns the matching rows from a LIMIT 1 query as a list, where LiteLLM's Prisma find_unique returns one row or None.
+    why: One typed read path serves both get_data query types for the spend table; the unique query keeps LiteLLM's LIMIT 1, so the typed result holds at most one row and a caller that needs the row takes it from there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5046-L5055
+  - what: A config insert writes the params one after another and then invalidates each name, where LiteLLM schedules every upsert and gathers them concurrently before it invalidates.
+    why: betterlite runs one statement at a time over its routed handles; the same rows land and every written name is invalidated, so a failed set can only differ in which of the preceding writes survive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5366-L5382
+  - what: A cache eviction during a config insert is logged and never fails the insert, where LiteLLM awaits invalidate_config_param and lets its error out of insert_data.
+    why: The invalidator the task fixes returns nothing, and the stale entry expires at the cache TTL; a Redis outage must not turn a completed database write into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5380-L5382
+  - what: A failure event's traceback is LiteLLM's error line followed by the Rust error source chain, not CPython's traceback.format_exc frames.
+    why: A Rust service has no Python frames to render; the event keeps LiteLLM's error line, exception text and duration for the failure handler to read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5407-L5414
+  - what: A get_data failure line is LiteLLM's heading with the error text and not its "Args passed in" assignment, which would carry the key token or the config row into the failure event.
+    why: LiteLLM logs locals() at the failure line, including a plaintext token passed to the key branch; betterlite keeps the heading and the error, so no secret reaches the sink.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5246-L5254
+  - what: A LiteLLM_Config row whose param_value is JSON text, which is what insert_data writes, is decoded to the value that text encodes before it reaches the cache or the caller; LiteLLM caches and returns the raw string and its callers run json.loads on it.
+    why: betterlite's ConfigRepository::get_param already hands callers the decoded value, so the config cache and its prefetch return the same shape and one stored value means one type; a text value that is not valid JSON, over the 1 MiB limit or 64 levels deep fails the read instead of reaching the caller as a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4287-L4297
+  - what: The unfiltered team list reads its take from the table settings, whose default is 20, instead of reading MAX_TEAM_LIST_LIMIT from the environment inside the query.
+    why: betterlite resolves that value once through its config section rather than reading the environment on a query path; the injected default equals LiteLLM's constant, so the row count is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5113-L5115
+  - what: The unfiltered user list has no expires filter; LiteLLM's user find_all with expires runs a Prisma filter on a column the LiteLLM_UserTable model never declares, so that branch raises at runtime.
+    why: a working setup can only reach the raw SQL branch, which betterlite ports with limit and offset; exposing the filter would turn every call into a database error, and adding an expires column would change a schema LiteLLM never migrated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5015-L5025
+  - what: get_generic_data does not wrap its lookup in LiteLLM's call_with_db_reconnect_retry, so a transport error fails the single try and reaches the failure sink instead of reconnecting once and replaying the read.
+    why: TableOps reads through B714's writer-pinned handles, which hand out a shared client, while B872's reconnect helper needs a mutable DbReconnect client; wiring it belongs to the task that owns the client trait, and the helper and fault classification already exist on main.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4768-L4773
+  - what: Every pool acquisition, query and transaction in table_ops runs under a finite deadline, 10 seconds for a connection and 30 for a statement, and fails with a typed timeout with a transaction-local PostgreSQL statement_timeout and discards its pooled connection on timeout; the Prisma awaits LiteLLM makes have no deadline of their own.
+    why: A drained pool or a lock wait would otherwise hold the request open until the driver or the client gives up; the deadline turns it into the failure the retry policy and the sink already handle. TableSettings carries the two defaults, so a caller can change them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
+  - what: The automatic @updatedAt stamp is written only when an update carries at least one column, so an explicit empty update map leaves updated_at unchanged instead of writing the current time.
+    why: The stamp exists for the data a caller writes; an explicit empty payload has no data behind it, so betterlite keeps the call a no-op. Every caller that reaches these branches through LiteLLM's dispatchers supplies at least one changed column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
+  - what: The team upsert is two statements, an UPDATE filtered on the resolved team_id followed by an INSERT of the create row when no row matched, where Prisma issues one atomic upsert.
+    why: The two statements keep Prisma's where/create/update payloads separate in typed SQL, so a payload team_id different from the lookup team_id reaches only the written row; two callers creating the same team at once can have the later insert fail on the unique key where Prisma's upsert would update.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
+  - what: The team find_all by user_id branch returns the team rows without a budget-table join; LiteLLM asks Prisma to include litellm_budget_table on LiteLLM_TeamTable, a relation that model never declares, so Prisma raises on every call of that branch.
+    why: A working setup can only read the members branch if the include is dropped, and betterlite's typed read keeps the members filter and returns the rows; adding a budget relation would change a schema LiteLLM never migrated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5104-L5110
+  - what: Deleting a team's keys returns the number of removed rows; LiteLLM's delete_data branch for table_name key and team_id_list deletes them and falls out of the function without a return value.
+    why: The typed caller, B811's team delete, is the only consumer, and it wants to know how many keys went with the team; the count comes from the same DELETE ... RETURNING the branch already runs, and no wire response carries it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5709-L5711
+kept_bugs:
+  - what: Every failed table operation is retried three times within ten seconds, including failures no retry can fix, such as a missing row or a value the database rejects on every attempt.
+    why: The backoff decorator catches Exception, and a working setup relies on it for transient database faults; LiteLLM never classifies errors, so neither does betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4854-L4860
+  - what: get_generic_data makes a single try within two seconds, unlike the three tries in ten seconds of the other dispatchers.
+    why: A working setup depends on the generic lookups failing fast while the write paths retry; the policy is pinned to the decorator LiteLLM puts on that one dispatcher.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4729-L4736
+  - what: The user_notification find_unique branch returns the first row for a user_id even though many notifications can share it, because LiteLLM runs Prisma find_unique on a column that is not unique.
+    why: A working setup reads the row Prisma returns, so betterlite answers with the first matching row instead of rejecting the filter as ambiguous.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5116-L5119

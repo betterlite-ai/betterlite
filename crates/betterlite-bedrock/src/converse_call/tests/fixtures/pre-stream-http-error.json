@@ -1,0 +1,11 @@
+{
+  "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+  "params": {},
+  "headers": {},
+  "bearer": "fixture-bearer",
+  "asynchronous": false,
+  "status": 429,
+  "body": "rate limited",
+  "frames": [],
+  "consume": false
+}

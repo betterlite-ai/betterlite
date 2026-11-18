@@ -1,0 +1,72 @@
+kind: helper
+name: response-synthetic-events-refusal-and-unknown-parts
+call:
+  response_synthetic_events:
+    operation: build
+    rows:
+      - response:
+          id: resp_p
+          created_at: 1
+          status: completed
+          output:
+            - type: message
+              id: msg_p
+              role: assistant
+              status: completed
+              content:
+                - {type: refusal, refusal: "no"}
+                - {type: reasoning_text, reasoning: why}
+                - {type: mystery, value: 1}
+        chunk_size: 4
+        cost: null
+      - response:
+          id: resp_w
+          created_at: 2
+          status: completed
+          output:
+            - type: message
+              id: 0
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: [1, 2]}
+                - {type: output_text, text: 0}
+                - {type: output_text, text: false}
+                - {type: output_text, text: null}
+                - {type: refusal, refusal: 7}
+                - 5
+                - null
+                - [1]
+        chunk_size: 9
+        cost: null
+      - response:
+          id: resp_n
+          created_at: 2
+          status: completed
+          output:
+            - type: message
+              id: msg_n
+              role: assistant
+              status: completed
+              content: oops
+        chunk_size: 9
+        cost: null
+      - response:
+          id: resp_i
+          created_at: 3
+          status: completed
+          output:
+            - type: message
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: x, annotations: []}
+            - type: message
+              id: ""
+              role: assistant
+              status: completed
+              content: []
+        chunk_size: 9
+        cost: null
+env: {}
+compare: {ignore: []}

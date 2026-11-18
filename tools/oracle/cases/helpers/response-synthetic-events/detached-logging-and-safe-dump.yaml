@@ -1,0 +1,25 @@
+kind: helper
+name: response-synthetic-events-detached-logging-and-safe-dump
+call:
+  response_synthetic_events:
+    operation: copy
+    rows:
+      - kind: value
+        event: {type: response.created, note: 1}
+      - kind: completed
+        response:
+          id: resp_cc
+          created_at: 1
+          status: completed
+          usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3}
+          output:
+            - type: message
+              id: msg_cc
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: hi, annotations: []}
+      - kind: generic
+        event: {type: response.unknown_event, item_id: item_1, sequence_number: 3}
+env: {}
+compare: {ignore: []}

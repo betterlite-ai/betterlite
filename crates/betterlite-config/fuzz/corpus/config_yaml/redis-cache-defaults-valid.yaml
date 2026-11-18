@@ -1,0 +1,5 @@
+litellm_settings:
+  cache: true
+  cache_params:
+    default_redis_ttl: 90.5
+    redis_flush_size: 50

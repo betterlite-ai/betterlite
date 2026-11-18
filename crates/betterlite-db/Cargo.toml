@@ -35,9 +35,11 @@ deadpool-postgres.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 hex.workspace = true
 indexmap = { version = "2.14.2", features = ["serde"] }
+num-traits = "0.2.19"
 opentelemetry = { version = "0.33.1", default-features = false, features = ["trace"] }
 percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std_rng", "sys_rng"] }
+redis.workspace = true
 regex.workspace = true
 rust_decimal = { workspace = true, features = ["db-tokio-postgres", "serde-with-float"] }
 rustls = { workspace = true, features = ["std", "tls12"] }
@@ -64,6 +66,7 @@ aws-smithy-types = "=1.9.1"
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
+mutants = "0.0.4"
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }
 rstest = "=0.27.0"
 serde_json = { version = "1.0.145", features = ["raw_value"] }

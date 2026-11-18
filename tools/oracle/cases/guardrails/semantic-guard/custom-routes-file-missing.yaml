@@ -1,0 +1,9 @@
+kind: helper
+name: custom-routes-file-missing
+call:
+  b3808:
+    function: build_routes
+    missing_routes_file: true
+    global_threshold: 0.75
+env: {}
+compare: {ignore: []}
