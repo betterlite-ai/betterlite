@@ -41,7 +41,8 @@ async fn start_count(
         deployment_id: deployment.id(),
         call_type: None,
     };
-    match service.pre_call(&facts).await {
+    // the counter write is deep enough that the router's future layout only stays in budget boxed
+    match Box::pin(service.pre_call(&facts)).await {
         Ok(started) => {
             if let Some(warning) = started.warning {
                 tracing::warn!(

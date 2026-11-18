@@ -17,9 +17,8 @@ where
         // a router that keeps no counters holds no call in flight, so the first deployment weighs the least
         return Ok(0);
     };
-    let selection = service
-        .select(context.model_group, context.deployments)
-        .await?;
+    // the shared read is deep enough that the router's future layout only stays in budget boxed
+    let selection = Box::pin(service.select(context.model_group, context.deployments)).await?;
     if let Some(warning) = &selection.warning {
         // _warn_unreadable: the shared tier failed and this worker's own counts answered instead
         tracing::warn!(
