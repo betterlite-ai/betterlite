@@ -1,4 +1,4 @@
-mod scenario;
+pub mod scenario;
 
 use tokio::runtime::Builder;
 

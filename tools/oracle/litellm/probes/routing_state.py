@@ -2,15 +2,15 @@ import asyncio
 import importlib
 import os
 import warnings
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Annotated, Final, Literal, NoReturn, TypeVar, overload
+from typing import Annotated, Final, Literal, TypeVar, overload
 
 from litellm import constants as litellm_constants
-from litellm.caching.caching import DualCache
+from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_cache import RedisCache
 from litellm.router import Router
@@ -32,6 +32,7 @@ from typing_extensions import override
 from probes.protocol import Millis, Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnusedCallResult=false, reportUnreachable=false
 
 CHANNELS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 SYNC_INTERVAL_ENV: Final = "DEFAULT_REDIS_SYNC_INTERVAL"
@@ -155,15 +156,18 @@ async def recorded_sleep(delay: float) -> None: ...
 async def recorded_sleep(delay: float, result: SleepResult) -> SleepResult: ...
 
 
-async def recorded_sleep(delay: float, result: SleepResult | None = None) -> NoReturn:
+async def recorded_sleep(
+    delay: float, result: SleepResult | None = None
+) -> SleepResult | None:
     _ = result
     raise SleepInterruptedError(delay)
 
 
+# RedisCache's constructor needs a host or url and connects; the dataclass skips it and sets only the state the pipeline reads
+@dataclass
 class FakeStore(RedisCache):
-    def __init__(self) -> None:
-        self.values: dict[str, float] = {}
-        self.down: bool = False
+    values: dict[str, float]
+    down: bool
 
     @override
     async def async_increment_pipeline(
@@ -179,6 +183,12 @@ class FakeStore(RedisCache):
             self.values[increment["key"]] = total
             results.append(total)
         return results
+
+
+def make_store() -> FakeStore:
+    store = FakeStore(values={}, down=False)
+    object.__setattr__(store, "default_ttl", 60)
+    return store
 
 
 @dataclass
@@ -330,7 +340,7 @@ async def apply_step(index: int, step: Step, context: Context) -> Observation:
 
 
 @contextmanager
-def interval_environment(text: str | None) -> Iterator[None]:
+def interval_environment(text: str | None) -> Generator[None]:
     saved = os.environ.get(SYNC_INTERVAL_ENV)
     if not text:
         _ = os.environ.pop(SYNC_INTERVAL_ENV, None)
@@ -357,7 +367,7 @@ def reload_interval() -> None:
 
 async def run_scenario(operation: RoutingState) -> ScenarioOutput:
     clock = StepClock()
-    store = FakeStore()
+    store = make_store()
     observations: list[Observation] = []
     with interval_environment(operation.env.get(SYNC_INTERVAL_ENV)):
         cache = DualCache(in_memory_cache=InMemoryCache(clock=clock.wall), redis_cache=store)
