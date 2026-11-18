@@ -594,7 +594,10 @@ fn refresh_at_capacity(cache: &mut DeprecatedKeyCache, now: DateTime<Utc>) {
         &grace_hit("active", now + TimeDelta::hours(1)),
         now,
     );
-    assert_eq!(cache.entries.len(), DEPRECATED_CACHE_CAPACITY.saturating_sub(1));
+    assert_eq!(
+        cache.entries.len(),
+        DEPRECATED_CACHE_CAPACITY.saturating_sub(1)
+    );
     assert_eq!(cache.lookup(&KeyHash::from("cache-key-1"), now), None);
     assert_eq!(cache.lookup(&newest, now), Some(String::from("active")));
 }
