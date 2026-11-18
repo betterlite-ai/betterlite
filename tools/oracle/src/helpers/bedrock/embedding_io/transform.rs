@@ -1,7 +1,6 @@
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use betterlite_bedrock::aws_endpoints::provider::BedrockEmbeddingProvider;
-use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
 use betterlite_bedrock::bedrock_embedding_io::response::transform_response;
 
 use super::failure::Failure;
@@ -16,9 +15,6 @@ pub(crate) fn run(case: &TransformRequest) -> Result<Value, Failure> {
         case.batch_data.as_deref(),
     ) {
         Ok(reply) => Ok(serde_json::to_value(reply)?),
-        Err(error @ EmbeddingIoError::Unmapped { .. }) => Ok(json!({
-            "error": {"kind": "unmapped", "message": error.to_string()},
-        })),
         Err(error) => Err(Failure::Embedding(error)),
     }
 }

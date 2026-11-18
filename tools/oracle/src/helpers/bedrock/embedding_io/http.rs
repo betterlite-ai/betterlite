@@ -4,7 +4,7 @@ use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
 use betterlite_bedrock::bedrock_embedding_io::transport::{
     EmbeddingCall, SuppliedClient, post_embedding,
 };
-use betterlite_bedrock::bedrock_settings::{BedrockError, ErrorHeaders, error_response_text};
+use betterlite_bedrock::bedrock_settings::{BedrockError, ErrorHeaders};
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
 
@@ -79,7 +79,6 @@ fn provider_detail(error: &BedrockError, names: &BTreeSet<String>) -> Result<Val
         "kind": "error",
         "status_code": provider.status_code,
         "status_code_is_synthesized": provider.status_code_is_synthesized,
-        "message": provider.message,
         "request": {"method": provider.request.method, "url": provider.request.url},
         "response": {
             "status_code": provider.response.status_code,
@@ -90,7 +89,6 @@ fn provider_detail(error: &BedrockError, names: &BTreeSet<String>) -> Result<Val
         },
         "headers": headers,
         "body": provider.body,
-        "response_text": error_response_text(&error.response_body),
         "response_headers": filtered_headers(&error.response_headers, names),
     }))
 }

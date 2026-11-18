@@ -1,11 +1,14 @@
 import os
+from typing import TypeAlias, TypedDict, cast
 
 import httpx
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.types.utils import EmbeddingResponse
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 BODY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+HiddenMetadata: TypeAlias = dict[str, JsonValue]
 
 
 def set_environment(environment: dict[str, str]) -> None:
@@ -13,65 +16,61 @@ def set_environment(environment: dict[str, str]) -> None:
     os.environ.update(environment)
 
 
-class RecordView(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class RecordPayload(TypedDict):
     object: str
     embedding: list[JsonValue] | str
     index: int
 
 
-class DetailsView(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    image_count: int | None = None
-    query_count: int | None = None
+class DetailsPayload(TypedDict):
+    image_count: int | None
+    query_count: int | None
 
 
-class UsageView(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+class UsagePayload(TypedDict):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    prompt_tokens_details: DetailsView | None
+    prompt_tokens_details: DetailsPayload | None
 
 
-class HiddenView(BaseModel):
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
-    invocation_arn: JsonValue = Field(default=None, alias="_invocation_arn")
-
-
-class ReplyView(BaseModel):
-    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+class ReplyPayload(TypedDict):
     object: str
-    data: list[RecordView]
+    data: list[RecordPayload]
     model: str | None
-    usage: UsageView
-    hidden: HiddenView = Field(alias="_hidden_params")
+    usage: UsagePayload
+
+
+REPLY: TypeAdapter[ReplyPayload] = TypeAdapter(ReplyPayload)
 
 
 def reply_value(response: EmbeddingResponse) -> dict[str, JsonValue]:
-    view = ReplyView.model_validate(response)
-    details: dict[str, JsonValue] | None = None
-    if view.usage.prompt_tokens_details is not None:
-        details = {
-            "image_count": view.usage.prompt_tokens_details.image_count,
-            "query_count": view.usage.prompt_tokens_details.query_count,
+    payload = REPLY.validate_json(response.model_dump_json())
+    usage_payload = payload["usage"]
+    details = usage_payload["prompt_tokens_details"]
+    details_value: JsonValue = None
+    if details is not None:
+        details_value = {
+            "image_count": details["image_count"],
+            "query_count": details["query_count"],
         }
     usage: dict[str, JsonValue] = {
-        "prompt_tokens": view.usage.prompt_tokens,
-        "completion_tokens": view.usage.completion_tokens,
-        "total_tokens": view.usage.total_tokens,
-        "prompt_tokens_details": details,
+        "prompt_tokens": usage_payload["prompt_tokens"],
+        "completion_tokens": usage_payload["completion_tokens"],
+        "total_tokens": usage_payload["total_tokens"],
+        "prompt_tokens_details": details_value,
     }
     data: list[JsonValue] = [
-        {"object": record.object, "embedding": record.embedding, "index": record.index}
-        for record in view.data
+        {"object": record["object"], "embedding": record["embedding"], "index": record["index"]}
+        for record in payload["data"]
     ]
+    hidden = cast(HiddenMetadata, response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2700
     return {
-        "object": view.object,
+        "object": payload["object"],
         "data": data,
-        "model": view.model,
+        "model": payload["model"],
         "usage": usage,
-        "invocation_arn": view.hidden.invocation_arn,
+        "invocation_arn": hidden.get("_invocation_arn"),
     }
 
 
@@ -86,14 +85,12 @@ class ResponseView(BaseModel):
     status_code: int
     request: RequestView
     headers: httpx.Headers
-    text: str
 
 
 class FailureView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     status_code: int
     status_code_is_synthesized: bool
-    message: str
     request: RequestView
     response: ResponseView
     headers: dict[str, str] | None
@@ -129,11 +126,9 @@ def failure_value(error: BedrockError, names: set[str]) -> dict[str, JsonValue]:
         "kind": "error",
         "status_code": view.status_code,
         "status_code_is_synthesized": view.status_code_is_synthesized,
-        "message": view.message,
         "request": request,
         "response": answer,
         "headers": headers,
         "body": view.body,
-        "response_text": view.response.text,
         "response_headers": response_headers,
     }
