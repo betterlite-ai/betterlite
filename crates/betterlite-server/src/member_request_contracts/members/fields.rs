@@ -3,27 +3,15 @@ use std::fmt::Display;
 use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::member_removal_identity::identity::MemberIdentity;
-use betterlite_db::team_rows::member::Member;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::{Map, Value};
 
-use super::{OneOrMany, OrgMember, ROLES_WITHIN_ORG, TeamMemberUpdateRequest};
+use super::{OneOrMany, ROLES_WITHIN_ORG, TeamMemberUpdateRequest};
 use crate::member_request_contracts::{MemberContractError, field, missing_field};
 
-pub(super) fn member_list(
-    object: &Map<String, Value>,
-) -> Result<OneOrMany<Member>, MemberContractError> {
-    member_field(object, record_from_json::<Member>)
-}
-
-pub(super) fn org_member_list(
-    object: &Map<String, Value>,
-) -> Result<OneOrMany<OrgMember>, MemberContractError> {
-    member_field(object, OrgMember::from_value)
-}
-
-pub(super) fn org_role(object: &Map<String, Value>) -> Result<UserRole, MemberContractError> {
-    let role: UserRole = field(object, "role", Value::Null)?;
+pub(super) fn org_role(object: &IndexMap<String, Json>) -> Result<UserRole, MemberContractError> {
+    let role: UserRole = field(object, "role", Json::Null)?;
     if ROLES_WITHIN_ORG.contains(&role) {
         return Ok(role);
     }
@@ -42,14 +30,14 @@ pub(super) fn checked_role(
     Ok(role)
 }
 
-fn member_field<T>(
-    object: &Map<String, Value>,
-    one: fn(&Value) -> Result<T, MemberContractError>,
+pub(super) fn member_field<T>(
+    object: &IndexMap<String, Json>,
+    one: fn(&Json) -> Result<T, MemberContractError>,
 ) -> Result<OneOrMany<T>, MemberContractError> {
     let Some(raw) = object.get("member") else {
         return Err(missing_field("member"));
     };
-    let Value::Array(items) = raw else {
+    let Json::List(items) = raw else {
         return one(raw).map(OneOrMany::One);
     };
     items
@@ -59,31 +47,31 @@ fn member_field<T>(
         .map(OneOrMany::Many)
 }
 
-pub(super) fn record_from_json<T>(value: &Value) -> Result<T, MemberContractError>
+pub(super) fn record_from_json<T>(value: &Json) -> Result<T, MemberContractError>
 where
     T: TryFrom<JsonData>,
     T::Error: Display,
 {
-    let data: JsonData = serde_json::from_value(value.clone())?;
+    let data: JsonData = serde_json::from_str(&serde_json::to_string(value)?)?;
     T::try_from(data).map_err(|source| MemberContractError::Validation {
         message: source.to_string(),
     })
 }
 
 pub(super) fn member_identity(
-    object: &Map<String, Value>,
+    object: &IndexMap<String, Json>,
 ) -> Result<MemberIdentity, MemberContractError> {
-    let user_id: Option<String> = field(object, "user_id", Value::Null)?;
-    let user_email: Option<String> = field(object, "user_email", Value::Null)?;
+    let user_id: Option<String> = field(object, "user_id", Json::Null)?;
+    let user_email: Option<String> = field(object, "user_email", Json::Null)?;
     MemberIdentity::new(user_id, user_email).map_err(|source| MemberContractError::Validation {
         message: source.to_string(),
     })
 }
 
 pub(super) fn temp_budget_increase(
-    object: &Map<String, Value>,
+    object: &IndexMap<String, Json>,
 ) -> Result<Option<Decimal>, MemberContractError> {
-    let increase: Option<Decimal> = field(object, "temp_budget_increase", Value::Null)?;
+    let increase: Option<Decimal> = field(object, "temp_budget_increase", Json::Null)?;
     match increase {
         Some(amount) if amount < Decimal::ZERO => Err(MemberContractError::Validation {
             message: "Input should be greater than or equal to 0".to_owned(),

@@ -5,9 +5,10 @@ use betterlite_db::budget_permission_rows::{
 };
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 use crate::key_fields::values::LiteLLMObjectPermissionBase;
 
@@ -70,21 +71,22 @@ pub struct OrganizationTableUpdate {
 }
 
 impl OrganizationTableUpdate {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         let fields = set_model_info(object)?;
-        let budget: LiteLLMBudgetTable = serde_json::from_value(Value::Object(fields.clone()))?;
+        let text = serde_json::to_string(&Json::Object(fields.clone()))?;
+        let budget: LiteLLMBudgetTable = serde_json::from_str(&text)?;
         Ok(Self {
             budget,
-            organization_id: field(&fields, "organization_id", Value::Null)?,
-            organization_alias: field(&fields, "organization_alias", Value::Null)?,
-            spend: field(&fields, "spend", Value::Null)?,
-            metadata: field(&fields, "metadata", Value::Null)?,
-            models: field(&fields, "models", Value::Null)?,
-            updated_by: field(&fields, "updated_by", Value::Null)?,
-            object_permission: field(&fields, "object_permission", Value::Null)?,
-            model_tpm_limit: field(&fields, "model_tpm_limit", Value::Null)?,
-            model_rpm_limit: field(&fields, "model_rpm_limit", Value::Null)?,
+            organization_id: field(&fields, "organization_id", Json::Null)?,
+            organization_alias: field(&fields, "organization_alias", Json::Null)?,
+            spend: field(&fields, "spend", Json::Null)?,
+            metadata: field(&fields, "metadata", Json::Null)?,
+            models: field(&fields, "models", Json::Null)?,
+            updated_by: field(&fields, "updated_by", Json::Null)?,
+            object_permission: field(&fields, "object_permission", Json::Null)?,
+            model_tpm_limit: field(&fields, "model_tpm_limit", Json::Null)?,
+            model_rpm_limit: field(&fields, "model_rpm_limit", Json::Null)?,
         })
     }
 }
@@ -109,10 +111,10 @@ pub struct OrganizationUpdateRequestV2 {
 }
 
 impl OrganizationUpdateRequestV2 {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         reject_unknown_v2_fields(object)?;
-        let mut request: Self = serde_json::from_value(value.clone())?;
+        let mut request: Self = serde_json::from_str(&serde_json::to_string(value)?)?;
         request.fields_set = object.keys().cloned().collect();
         Ok(request)
     }
@@ -145,11 +147,11 @@ struct OrganizationMemberLists {
 }
 
 impl OrganizationTableWithMembers {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
-        let object = json_object(value)?;
-        let table = serde_json::from_value(Value::Object(object.clone()))?;
-        let fields: OrganizationMemberLists =
-            serde_json::from_value(Value::Object(object.clone()))?;
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
+        json_object(value)?;
+        let text = serde_json::to_string(value)?;
+        let table: OrganizationTable = serde_json::from_str(&text)?;
+        let fields: OrganizationMemberLists = serde_json::from_str(&text)?;
         Ok(Self::new(table, fields))
     }
 
@@ -164,7 +166,7 @@ impl OrganizationTableWithMembers {
     }
 }
 
-fn reject_unknown_v2_fields(object: &Map<String, Value>) -> Result<(), MemberContractError> {
+fn reject_unknown_v2_fields(object: &IndexMap<String, Json>) -> Result<(), MemberContractError> {
     for name in object.keys() {
         if !V2_FIELDS.contains(&name.as_str()) {
             return Err(MemberContractError::Validation {
@@ -175,22 +177,31 @@ fn reject_unknown_v2_fields(object: &Map<String, Value>) -> Result<(), MemberCon
     Ok(())
 }
 
-fn set_model_info(object: &Map<String, Value>) -> Result<Map<String, Value>, MemberContractError> {
+fn set_model_info(
+    object: &IndexMap<String, Json>,
+) -> Result<IndexMap<String, Json>, MemberContractError> {
     let mut fields = object.clone();
     for name in MANAGEMENT_METADATA_FIELDS {
-        let Some(value) = fields.get(name).filter(|raw| !raw.is_null()).cloned() else {
+        let Some(value) = fields
+            .get(name)
+            .filter(|raw| !matches!(raw, Json::Null))
+            .cloned()
+        else {
             continue;
         };
-        if fields.get("metadata").is_none_or(Value::is_null) {
-            fields.insert("metadata".to_owned(), Value::Object(Map::new()));
+        if fields
+            .get("metadata")
+            .is_none_or(|raw| matches!(raw, Json::Null))
+        {
+            fields.insert("metadata".to_owned(), Json::Object(IndexMap::new()));
         }
-        let Some(Value::Object(metadata)) = fields.get_mut("metadata") else {
+        let Some(Json::Object(metadata)) = fields.get_mut("metadata") else {
             return Err(MemberContractError::Validation {
                 message: "Input should be a valid dictionary".to_owned(),
             });
         };
         metadata.insert(name.to_owned(), value);
-        fields.remove(name);
+        fields.shift_remove(name);
     }
     Ok(fields)
 }

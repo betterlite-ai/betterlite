@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use betterlite_logging::logging_privacy::callbacks::{SpanScope, validate_environment};
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
 
 use super::{MemberContractError, field, json_object, missing_field};
 
@@ -66,36 +67,38 @@ pub struct AddTeamCallback {
 }
 
 impl AddTeamCallback {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         validate_callback_vars(object)?;
-        add_team_callback(object)
+        let callback_name = field(object, "callback_name", Json::Null)?;
+        let callback_type = match object.get("callback_type") {
+            None => Some(CallbackType::SuccessAndFailure),
+            Some(Json::Null) => None,
+            Some(raw) => Some(serde_json::from_str(&serde_json::to_string(raw)?)?),
+        };
+        let Some(raw) = object.get("callback_vars") else {
+            return Err(missing_field("callback_vars"));
+        };
+        let Json::Object(fields) = raw else {
+            return Err(MemberContractError::Validation {
+                message: "Input should be a valid dictionary".to_owned(),
+            });
+        };
+        let mut converted = IndexMap::new();
+        for (name, value) in fields {
+            let Json::Number(number) = value else {
+                converted.insert(name.clone(), value.clone());
+                continue;
+            };
+            converted.insert(name.clone(), Json::Text(number.to_string()));
+        }
+        let text = serde_json::to_string(&Json::Object(converted))?;
+        Ok(Self {
+            callback_name,
+            callback_type,
+            callback_vars: serde_json::from_str(&text)?,
+        })
     }
-}
-
-fn add_team_callback(object: &Map<String, Value>) -> Result<AddTeamCallback, MemberContractError> {
-    Ok(AddTeamCallback {
-        callback_name: field(object, "callback_name", Value::Null)?,
-        callback_type: callback_type(object)?,
-        callback_vars: parsed_callback_vars(object)?,
-    })
-}
-
-fn callback_type(object: &Map<String, Value>) -> Result<Option<CallbackType>, MemberContractError> {
-    match object.get("callback_type") {
-        None => Ok(Some(CallbackType::SuccessAndFailure)),
-        Some(Value::Null) => Ok(None),
-        Some(raw) => Ok(Some(serde_json::from_value(raw.clone())?)),
-    }
-}
-
-fn parsed_callback_vars(
-    object: &Map<String, Value>,
-) -> Result<BTreeMap<String, String>, MemberContractError> {
-    let Some(raw) = object.get("callback_vars") else {
-        return Err(missing_field("callback_vars"));
-    };
-    callback_vars(raw)
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -107,38 +110,38 @@ pub struct TeamCallbackMetadata {
 }
 
 impl TeamCallbackMetadata {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let fields = metadata_fields(value)?;
-        if fields.values().all(Value::is_null) {
+        if fields.values().all(|value| matches!(value, Json::Null)) {
             return Ok(Self::default());
         }
         metadata(&fields)
     }
 }
 
-fn metadata_fields(value: &Value) -> Result<Map<String, Value>, MemberContractError> {
+fn metadata_fields(value: &Json) -> Result<IndexMap<String, Json>, MemberContractError> {
     let mut fields = json_object(value)?.clone();
     for name in NULLABLE_METADATA_KEYS {
-        if matches!(fields.get(name), Some(Value::Null)) {
-            fields.remove(name);
+        if matches!(fields.get(name), Some(Json::Null)) {
+            fields.shift_remove(name);
         }
     }
     Ok(fields)
 }
 
-fn metadata(fields: &Map<String, Value>) -> Result<TeamCallbackMetadata, MemberContractError> {
-    if let Some(Value::Object(vars)) = fields.get("callback_vars") {
+fn metadata(fields: &IndexMap<String, Json>) -> Result<TeamCallbackMetadata, MemberContractError> {
+    if let Some(Json::Object(vars)) = fields.get("callback_vars") {
         for name in vars.keys() {
             if !CALLBACK_VARIABLE_NAMES.contains(&name.as_str()) {
                 return Err(invalid_callback_variable(name));
             }
         }
     }
-    let success_callback: Option<Vec<String>> = field(fields, "success_callback", Value::Null)?;
-    let failure_callback: Option<Vec<String>> = field(fields, "failure_callback", Value::Null)?;
-    let callbacks: Option<Vec<String>> = field(fields, "callbacks", Value::Null)?;
+    let success_callback: Option<Vec<String>> = field(fields, "success_callback", Json::Null)?;
+    let failure_callback: Option<Vec<String>> = field(fields, "failure_callback", Json::Null)?;
+    let callbacks: Option<Vec<String>> = field(fields, "callbacks", Json::Null)?;
     let decoded_vars: Option<BTreeMap<String, String>> =
-        field(fields, "callback_vars", Value::Null)?;
+        field(fields, "callback_vars", Json::Null)?;
     Ok(TeamCallbackMetadata {
         success_callback: success_callback.unwrap_or_default(),
         failure_callback: failure_callback.unwrap_or_default(),
@@ -147,14 +150,14 @@ fn metadata(fields: &Map<String, Value>) -> Result<TeamCallbackMetadata, MemberC
     })
 }
 
-fn validate_callback_vars(object: &Map<String, Value>) -> Result<(), MemberContractError> {
+fn validate_callback_vars(object: &IndexMap<String, Json>) -> Result<(), MemberContractError> {
     let Some(raw) = object.get("callback_vars") else {
         return Ok(());
     };
-    if raw.is_null() {
+    if matches!(raw, Json::Null) {
         return Ok(());
     }
-    let Value::Object(fields) = raw else {
+    let Json::Object(fields) = raw else {
         return Err(MemberContractError::Validation {
             message: "Input should be a valid dictionary".to_owned(),
         });
@@ -173,7 +176,7 @@ fn validate_callback_vars(object: &Map<String, Value>) -> Result<(), MemberContr
             return Err(invalid_environment(&text));
         }
         if name == "langfuse_span_scope"
-            && serde_json::from_value::<SpanScope>(Value::String(text.clone())).is_err()
+            && serde_json::from_str::<SpanScope>(&serde_json::to_string(value)?).is_err()
         {
             return Err(invalid_span_scope(&text));
         }
@@ -181,29 +184,12 @@ fn validate_callback_vars(object: &Map<String, Value>) -> Result<(), MemberContr
     Ok(())
 }
 
-fn callback_text(value: &Value) -> Option<String> {
+fn callback_text(value: &Json) -> Option<String> {
     match value {
-        Value::String(text) => Some(text.clone()),
-        Value::Number(number) => Some(number.to_string()),
-        Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => None,
+        Json::Text(text) => Some(text.clone()),
+        Json::Number(number) => Some(number.to_string()),
+        Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_) => None,
     }
-}
-
-fn callback_vars(raw: &Value) -> Result<BTreeMap<String, String>, MemberContractError> {
-    let Value::Object(fields) = raw else {
-        return Err(MemberContractError::Validation {
-            message: "Input should be a valid dictionary".to_owned(),
-        });
-    };
-    let mut converted = Map::new();
-    for (name, value) in fields {
-        let Value::Number(number) = value else {
-            converted.insert(name.clone(), value.clone());
-            continue;
-        };
-        converted.insert(name.clone(), Value::String(number.to_string()));
-    }
-    Ok(serde_json::from_value(Value::Object(converted))?)
 }
 
 fn invalid_callback_variable(name: &str) -> MemberContractError {

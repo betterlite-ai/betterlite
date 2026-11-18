@@ -1,10 +1,6 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "the records decode LiteLLM's request bodies from the raw JSON object the route received, before any typed field decoding"
-)]
-
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
-use serde_json::{Map, Value};
 
 pub mod callbacks;
 pub mod members;
@@ -21,8 +17,8 @@ pub enum MemberContractError {
     Decode { source: serde_json::Error },
 }
 
-pub(crate) fn json_object(value: &Value) -> Result<&Map<String, Value>, MemberContractError> {
-    let Value::Object(object) = value else {
+pub(crate) fn json_object(value: &Json) -> Result<&IndexMap<String, Json>, MemberContractError> {
+    let Json::Object(object) = value else {
         return Err(MemberContractError::Validation {
             message: "Input should be a valid dictionary or object to extract fields from"
                 .to_owned(),
@@ -44,19 +40,20 @@ pub(crate) fn missing_field(name: &str) -> MemberContractError {
 }
 
 pub(crate) fn field<T>(
-    object: &Map<String, Value>,
+    object: &IndexMap<String, Json>,
     name: &str,
-    fallback: Value,
+    fallback: Json,
 ) -> Result<T, MemberContractError>
 where
     T: DeserializeOwned,
 {
-    let raw = object.get(name).cloned().unwrap_or(fallback);
-    Ok(serde_json::from_value(raw)?)
+    let raw = object.get(name).unwrap_or(&fallback);
+    let text = serde_json::to_string(raw)?;
+    Ok(serde_json::from_str(&text)?)
 }
 
 #[must_use]
-pub fn decode_all(value: &Value) -> usize {
+pub fn decode_all(value: &Json) -> usize {
     let accepted = [
         team::DeleteTeamRequest::from_value(value).is_ok(),
         callbacks::AddTeamCallback::from_value(value).is_ok(),

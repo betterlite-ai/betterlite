@@ -2,9 +2,11 @@
 
 use betterlite_auth::user_roles::UserRole;
 use betterlite_db::team_rows::member::{Member, MemberBase, MemberRole};
+use betterlite_models::decisions::Json;
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 
 use super::{
     MemberAddRequest, OneOrMany, OrgMember, OrgMemberAddRequest, OrganizationMemberAddRequest,
@@ -13,24 +15,30 @@ use super::{
 };
 use crate::member_request_contracts::MemberContractError;
 
-fn parse(text: &str) -> Value {
+fn parse(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
-fn org_member(body: Value) -> Result<OrgMember, MemberContractError> {
-    OrgMember::from_value(&body)
+fn raw<T: Serialize>(body: T) -> Json {
+    serde_json::from_str(&serde_json::to_string(&body).unwrap()).unwrap()
 }
 
-fn member_add(body: Value) -> Result<MemberAddRequest, MemberContractError> {
-    MemberAddRequest::from_value(&body)
+fn org_member<T: Serialize>(body: T) -> Result<OrgMember, MemberContractError> {
+    OrgMember::from_value(&raw(body))
 }
 
-fn member_update(body: Value) -> Result<TeamMemberUpdateRequest, MemberContractError> {
-    TeamMemberUpdateRequest::from_value(&body)
+fn member_add<T: Serialize>(body: T) -> Result<MemberAddRequest, MemberContractError> {
+    MemberAddRequest::from_value(&raw(body))
 }
 
-fn org_member_update(body: Value) -> Result<OrganizationMemberUpdateRequest, MemberContractError> {
-    OrganizationMemberUpdateRequest::from_value(&body)
+fn member_update<T: Serialize>(body: T) -> Result<TeamMemberUpdateRequest, MemberContractError> {
+    TeamMemberUpdateRequest::from_value(&raw(body))
+}
+
+fn org_member_update<T: Serialize>(
+    body: T,
+) -> Result<OrganizationMemberUpdateRequest, MemberContractError> {
+    OrganizationMemberUpdateRequest::from_value(&raw(body))
 }
 
 fn message(error: MemberContractError) -> String {
@@ -212,13 +220,13 @@ fn serializes_a_member_list_as_an_array() {
 
 #[test]
 fn decodes_the_team_member_add_fields() {
-    let request = TeamMemberAddRequest::from_value(&json!({
+    let request = TeamMemberAddRequest::from_value(&raw(json!({
         "member": { "user_id": "user-1", "role": "user" },
         "team_id": "team-1",
         "max_budget_in_team": 12.5,
         "budget_duration": "1d",
         "allowed_models": ["gpt-4"],
-    }))
+    })))
     .unwrap();
     assert_eq!(
         request.member,
@@ -232,10 +240,10 @@ fn decodes_the_team_member_add_fields() {
 
 #[test]
 fn defaults_the_optional_team_member_add_fields() {
-    let request = TeamMemberAddRequest::from_value(&json!({
+    let request = TeamMemberAddRequest::from_value(&raw(json!({
         "member": { "user_id": "user-1", "role": "user" },
         "team_id": "team-1",
-    }))
+    })))
     .unwrap();
     assert_eq!(request.max_budget_in_team, None);
     assert_eq!(request.budget_duration, None);
@@ -244,21 +252,21 @@ fn defaults_the_optional_team_member_add_fields() {
 
 #[test]
 fn rejects_a_team_member_add_without_a_team_id() {
-    let error = TeamMemberAddRequest::from_value(&json!({
+    let error = TeamMemberAddRequest::from_value(&raw(json!({
         "member": { "user_id": "user-1", "role": "user" },
-    }))
+    })))
     .unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
 #[test]
 fn takes_org_members_one_or_many() {
-    let request = OrgMemberAddRequest::from_value(&json!({
+    let request = OrgMemberAddRequest::from_value(&raw(json!({
         "member": [
             { "user_id": "user-1", "role": "org_admin" },
             { "user_email": "a@b.c", "role": "internal_user" },
         ],
-    }))
+    })))
     .unwrap();
     let OneOrMany::Many(members) = request.member else {
         panic!("expected a member list");
@@ -270,20 +278,20 @@ fn takes_org_members_one_or_many() {
 
 #[test]
 fn rejects_a_mixed_org_member_list() {
-    let error = OrgMemberAddRequest::from_value(&json!({
+    let error = OrgMemberAddRequest::from_value(&raw(json!({
         "member": [{ "user_id": "user-1", "role": "org_admin" }, 1],
-    }))
+    })))
     .unwrap_err();
     assert_eq!(message(error), "input needs to be a dictionary");
 }
 
 #[test]
 fn decodes_the_organization_member_add_fields() {
-    let request = OrganizationMemberAddRequest::from_value(&json!({
+    let request = OrganizationMemberAddRequest::from_value(&raw(json!({
         "member": { "user_id": "user-1", "role": "org_admin" },
         "organization_id": "org-1",
         "max_budget_in_organization": 12.5,
-    }))
+    })))
     .unwrap();
     assert_eq!(request.organization_id, "org-1");
     assert_eq!(
@@ -295,9 +303,9 @@ fn decodes_the_organization_member_add_fields() {
 
 #[test]
 fn rejects_an_organization_member_add_without_an_organization() {
-    let error = OrganizationMemberAddRequest::from_value(&json!({
+    let error = OrganizationMemberAddRequest::from_value(&raw(json!({
         "member": { "user_id": "user-1", "role": "org_admin" },
-    }))
+    })))
     .unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
@@ -306,15 +314,15 @@ fn rejects_an_organization_member_add_without_an_organization() {
 #[case("user_id", "user-1")]
 #[case("user_email", "a@b.c")]
 fn decodes_a_team_member_delete_identity(#[case] field: &str, #[case] value: &str) {
-    let mut body = json!({ "team_id": "team-1" });
-    body[field] = json!(value);
+    let body = parse(&format!(r#"{{"team_id": "team-1", "{field}": "{value}"}}"#));
     let request = TeamMemberDeleteRequest::from_value(&body).unwrap();
     assert_eq!(request.team_id, "team-1");
 }
 
 #[test]
 fn rejects_a_team_member_delete_without_an_identity() {
-    let error = TeamMemberDeleteRequest::from_value(&json!({ "team_id": "team-1" })).unwrap_err();
+    let error =
+        TeamMemberDeleteRequest::from_value(&raw(json!({ "team_id": "team-1" }))).unwrap_err();
     assert_eq!(
         message(error),
         "Either user id or user email must be provided"
@@ -323,7 +331,8 @@ fn rejects_a_team_member_delete_without_an_identity() {
 
 #[test]
 fn rejects_a_team_member_delete_without_a_team_id() {
-    let error = TeamMemberDeleteRequest::from_value(&json!({ "user_id": "user-1" })).unwrap_err();
+    let error =
+        TeamMemberDeleteRequest::from_value(&raw(json!({ "user_id": "user-1" }))).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
@@ -331,16 +340,19 @@ fn rejects_a_team_member_delete_without_a_team_id() {
 #[case("user_id", "user-1")]
 #[case("user_email", "a@b.c")]
 fn decodes_an_organization_member_delete_identity(#[case] field: &str, #[case] value: &str) {
-    let mut body = json!({ "organization_id": "org-1" });
-    body[field] = json!(value);
+    let body = parse(&format!(
+        r#"{{"organization_id": "org-1", "{field}": "{value}"}}"#
+    ));
     let request = OrganizationMemberDeleteRequest::from_value(&body).unwrap();
     assert_eq!(request.organization_id, "org-1");
 }
 
 #[test]
 fn rejects_an_organization_member_delete_without_an_identity() {
-    let error = OrganizationMemberDeleteRequest::from_value(&json!({ "organization_id": "org-1" }))
-        .unwrap_err();
+    let error = OrganizationMemberDeleteRequest::from_value(&raw(json!({
+        "organization_id": "org-1",
+    })))
+    .unwrap_err();
     assert_eq!(
         message(error),
         "Either user id or user email must be provided"
@@ -349,8 +361,10 @@ fn rejects_an_organization_member_delete_without_an_identity() {
 
 #[test]
 fn rejects_an_organization_member_delete_without_an_organization() {
-    let error =
-        OrganizationMemberDeleteRequest::from_value(&json!({ "user_id": "user-1" })).unwrap_err();
+    let error = OrganizationMemberDeleteRequest::from_value(&raw(json!({
+        "user_id": "user-1",
+    })))
+    .unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 

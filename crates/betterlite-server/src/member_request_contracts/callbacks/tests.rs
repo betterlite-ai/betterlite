@@ -2,22 +2,28 @@
 
 use std::collections::BTreeMap;
 
+use betterlite_models::decisions::Json;
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde::Serialize;
+use serde_json::json;
 
 use super::{AddTeamCallback, CallbackType, TeamCallbackMetadata};
 use crate::member_request_contracts::MemberContractError;
 
-fn parse(text: &str) -> Value {
+fn parse(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
-fn callback(body: Value) -> Result<AddTeamCallback, MemberContractError> {
-    AddTeamCallback::from_value(&body)
+fn raw<T: Serialize>(body: T) -> Json {
+    serde_json::from_str(&serde_json::to_string(&body).unwrap()).unwrap()
 }
 
-fn metadata(body: Value) -> Result<TeamCallbackMetadata, MemberContractError> {
-    TeamCallbackMetadata::from_value(&body)
+fn callback<T: Serialize>(body: T) -> Result<AddTeamCallback, MemberContractError> {
+    AddTeamCallback::from_value(&raw(body))
+}
+
+fn metadata<T: Serialize>(body: T) -> Result<TeamCallbackMetadata, MemberContractError> {
+    TeamCallbackMetadata::from_value(&raw(body))
 }
 
 fn message(error: MemberContractError) -> String {
@@ -137,6 +143,19 @@ fn rejects_an_unknown_callback_variable() {
     );
     assert!(
         text.ends_with("'wandb_api_key', 'weave_project_id']"),
+        "{text}"
+    );
+}
+
+#[test]
+fn names_the_first_invalid_callback_variable_in_the_order_sent() {
+    let error = callback(parse(
+        r#"{"callback_name":"langfuse","callback_vars":{"zulu_bad":"1","alpha_bad":"2"}}"#,
+    ))
+    .unwrap_err();
+    let text = message(error);
+    assert!(
+        text.starts_with("Invalid callback variable: zulu_bad."),
         "{text}"
     );
 }

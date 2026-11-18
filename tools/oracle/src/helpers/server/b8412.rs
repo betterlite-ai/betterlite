@@ -1,5 +1,6 @@
 mod tests;
 
+use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -44,7 +45,7 @@ pub(crate) enum Record {
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
     pub record: Record,
-    pub value: Value,
+    pub value: Json,
 }
 
 impl Helper for Op {
@@ -55,7 +56,7 @@ impl Helper for Op {
     }
 }
 
-fn outcome(record: &Record, value: &Value) -> Value {
+fn outcome(record: &Record, value: &Json) -> Value {
     match record {
         Record::DeleteTeamRequest => recorded(DeleteTeamRequest::from_value(value)),
         Record::AddTeamCallback => recorded(AddTeamCallback::from_value(value)),

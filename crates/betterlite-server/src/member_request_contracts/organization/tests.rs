@@ -3,9 +3,12 @@
 use std::collections::BTreeSet;
 
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Map, Value, json};
+use serde::Serialize;
+use serde_json::json;
 
 use super::{
     MANAGEMENT_METADATA_FIELDS, OrganizationTableUpdate, OrganizationTableWithMembers,
@@ -13,24 +16,30 @@ use super::{
 };
 use crate::member_request_contracts::MemberContractError;
 
-fn parse(text: &str) -> Value {
+fn parse(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
+}
+
+fn raw<T: Serialize>(body: T) -> Json {
+    serde_json::from_str(&serde_json::to_string(&body).unwrap()).unwrap()
 }
 
 fn data(text: &str) -> JsonData {
     serde_json::from_str(text).unwrap()
 }
 
-fn table_update(body: Value) -> Result<OrganizationTableUpdate, MemberContractError> {
-    OrganizationTableUpdate::from_value(&body)
+fn table_update<T: Serialize>(body: T) -> Result<OrganizationTableUpdate, MemberContractError> {
+    OrganizationTableUpdate::from_value(&raw(body))
 }
 
-fn v2_request(body: Value) -> Result<OrganizationUpdateRequestV2, MemberContractError> {
-    OrganizationUpdateRequestV2::from_value(&body)
+fn v2_request<T: Serialize>(body: T) -> Result<OrganizationUpdateRequestV2, MemberContractError> {
+    OrganizationUpdateRequestV2::from_value(&raw(body))
 }
 
-fn with_members(body: Value) -> Result<OrganizationTableWithMembers, MemberContractError> {
-    OrganizationTableWithMembers::from_value(&body)
+fn with_members<T: Serialize>(
+    body: T,
+) -> Result<OrganizationTableWithMembers, MemberContractError> {
+    OrganizationTableWithMembers::from_value(&raw(body))
 }
 
 fn message(error: MemberContractError) -> String {
@@ -42,18 +51,18 @@ fn message(error: MemberContractError) -> String {
     }
 }
 
-fn organization_body() -> Value {
-    json!({
+fn organization_body() -> Json {
+    raw(json!({
         "budget_id": "budget-1",
         "created_by": "creator",
         "updated_by": "updater",
         "spend": 12.5,
         "created_at": "2026-03-01T00:00:00",
         "updated_at": "2026-03-02T00:00:00",
-    })
+    }))
 }
 
-fn metadata_keys(body: Value) -> Option<BTreeSet<String>> {
+fn metadata_keys<T: Serialize>(body: T) -> Option<BTreeSet<String>> {
     table_update(body)
         .unwrap()
         .metadata
@@ -88,11 +97,11 @@ fn exports_the_management_metadata_fields() {
 
 #[test]
 fn moves_every_management_field_into_metadata() {
-    let fields: Map<String, Value> = MANAGEMENT_METADATA_FIELDS
+    let fields: IndexMap<String, Json> = MANAGEMENT_METADATA_FIELDS
         .into_iter()
-        .map(|name| (name.to_owned(), json!("v")))
+        .map(|name| (name.to_owned(), parse("\"v\"")))
         .collect();
-    let metadata = metadata_keys(Value::Object(fields)).unwrap();
+    let metadata = metadata_keys(Json::Object(fields)).unwrap();
     let expected: BTreeSet<String> = MANAGEMENT_METADATA_FIELDS
         .into_iter()
         .map(str::to_owned)
@@ -106,9 +115,7 @@ fn moves_every_management_field_into_metadata() {
 #[case("throttle_on_budget_exceeded", "true")]
 #[case("enforced_params", "[\"temperature\"]")]
 fn moves_a_management_field_value_unchanged(#[case] name: &str, #[case] value: &str) {
-    let mut body = json!({});
-    body[name] = parse(value);
-    let request = table_update(body).unwrap();
+    let request = table_update(parse(&format!(r#"{{"{name}": {value}}}"#))).unwrap();
     let metadata = request.metadata.unwrap();
     assert_eq!(metadata.len(), 1);
     assert_eq!(metadata[name], data(value));
@@ -404,9 +411,11 @@ fn decodes_the_teams_of_an_organization_table() {
 
 #[test]
 fn rejects_a_team_without_a_team_id() {
-    let mut body = organization_body();
-    body["teams"] = json!([{ "team_alias": "alias" }]);
-    let error = with_members(body).unwrap_err();
+    let Json::Object(mut body) = organization_body() else {
+        panic!("the organization body is an object");
+    };
+    body.insert("teams".to_owned(), parse(r#"[{ "team_alias": "alias" }]"#));
+    let error = with_members(Json::Object(body)).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
@@ -414,9 +423,11 @@ fn rejects_a_team_without_a_team_id() {
 #[case("created_at")]
 #[case("updated_at")]
 fn requires_the_organization_timestamps(#[case] field: &str) {
-    let mut body = organization_body();
-    body.as_object_mut().unwrap().remove(field);
-    let error = with_members(body).unwrap_err();
+    let Json::Object(mut body) = organization_body() else {
+        panic!("the organization body is an object");
+    };
+    body.shift_remove(field);
+    let error = with_members(Json::Object(body)).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 

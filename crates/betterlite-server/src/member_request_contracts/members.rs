@@ -1,13 +1,13 @@
 use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::Timestamp;
 use betterlite_db::team_rows::member::{Member, MemberBase, MemberRole};
+use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use self::fields::{
-    checked_role, member_identity, member_list, org_member_list, org_role, record_from_json,
-    temp_budget_increase, validate_temp_budget,
+    checked_role, member_field, member_identity, org_role, record_from_json, temp_budget_increase,
+    validate_temp_budget,
 };
 use super::{MemberContractError, json_object};
 
@@ -32,7 +32,7 @@ pub struct OrgMember {
 }
 
 impl OrgMember {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let base: MemberBase = record_from_json(value)?;
         let object = json_object(value)?;
         let role = org_role(object)?;
@@ -46,9 +46,9 @@ pub struct MemberAddRequest {
 }
 
 impl MemberAddRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let member = member_list(object)?;
+        let member = member_field(object, record_from_json::<Member>)?;
         Ok(Self { member })
     }
 }
@@ -59,9 +59,9 @@ pub struct OrgMemberAddRequest {
 }
 
 impl OrgMemberAddRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let member = org_member_list(object)?;
+        let member = member_field(object, OrgMember::from_value)?;
         Ok(Self { member })
     }
 }
@@ -86,10 +86,10 @@ struct TeamMemberAddFields {
 }
 
 impl TeamMemberAddRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let member = member_list(object)?;
-        let fields: TeamMemberAddFields = serde_json::from_value(value.clone())?;
+        let member = member_field(object, record_from_json::<Member>)?;
+        let fields: TeamMemberAddFields = serde_json::from_str(&serde_json::to_string(value)?)?;
         Ok(Self::new(member, fields))
     }
 
@@ -120,10 +120,11 @@ struct OrganizationMemberAddFields {
 }
 
 impl OrganizationMemberAddRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let member = org_member_list(object)?;
-        let fields: OrganizationMemberAddFields = serde_json::from_value(value.clone())?;
+        let member = member_field(object, OrgMember::from_value)?;
+        let fields: OrganizationMemberAddFields =
+            serde_json::from_str(&serde_json::to_string(value)?)?;
         Ok(Self::new(member, fields))
     }
 
@@ -144,10 +145,10 @@ pub struct TeamMemberDeleteRequest {
 }
 
 impl TeamMemberDeleteRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         member_identity(object)?;
-        let request: Self = serde_json::from_value(value.clone())?;
+        let request: Self = serde_json::from_str(&serde_json::to_string(value)?)?;
         Ok(request)
     }
 }
@@ -162,10 +163,10 @@ pub struct OrganizationMemberDeleteRequest {
 
 // ast-grep-ignore: no-long-names
 impl OrganizationMemberDeleteRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         member_identity(object)?;
-        let request: Self = serde_json::from_value(value.clone())?;
+        let request: Self = serde_json::from_str(&serde_json::to_string(value)?)?;
         Ok(request)
     }
 }
@@ -199,10 +200,10 @@ struct TeamMemberUpdateFields {
 }
 
 impl TeamMemberUpdateRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         let base = TeamMemberDeleteRequest::from_value(value)?;
-        let fields: TeamMemberUpdateFields = serde_json::from_value(value.clone())?;
+        let fields: TeamMemberUpdateFields = serde_json::from_str(&serde_json::to_string(value)?)?;
         let increase = temp_budget_increase(object)?;
         Self::from_fields(base, fields, increase)
     }
@@ -248,10 +249,11 @@ struct OrganizationMemberUpdateFields {
 
 // ast-grep-ignore: no-long-names
 impl OrganizationMemberUpdateRequest {
-    pub fn from_value(value: &Value) -> Result<Self, MemberContractError> {
+    pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         // ast-grep-ignore: no-long-names
         let base = OrganizationMemberDeleteRequest::from_value(value)?;
-        let fields: OrganizationMemberUpdateFields = serde_json::from_value(value.clone())?;
+        let fields: OrganizationMemberUpdateFields =
+            serde_json::from_str(&serde_json::to_string(value)?)?;
         Self::from_fields(base, fields)
     }
 
