@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::prelude::ToPrimitive as _;
 use tokio::task::JoinSet;
 
 use crate::router_observations::counter::{CounterError, Increment};
@@ -13,14 +13,15 @@ use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
 };
 
-use super::Settings;
-use super::delta::{Delta, DeltaStore, SyncState};
+use super::delta::{self, Delta, DeltaStore, FlushGate, SyncOutcome, SyncState};
 use super::error::RoutingStateError;
+use super::{FLUSH_DEADLINE, Settings, lifecycle, sync};
 
 pub struct RouterCounters<S: DeltaStore + 'static> {
     pub(super) state: Arc<SyncState<S>>,
     pub(super) settings: Settings,
     pub(super) tasks: Mutex<JoinSet<()>>,
+    pub(super) flushes: Mutex<JoinSet<()>>,
 }
 
 impl<S: DeltaStore + 'static> RouterCounters<S> {
@@ -30,6 +31,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             state: Arc::new(SyncState::new(local, store)),
             settings,
             tasks: Mutex::new(JoinSet::new()),
+            flushes: Mutex::new(JoinSet::new()),
         }
     }
 
@@ -44,9 +46,9 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         self.state.track(&route_key);
         let (updated, saturated) =
             self.state
-                .record_delta(&route_key, RouteIncrement::Spend(value), ttl)?;
+                .record_delta(&route_key, &RouteIncrement::Spend(value), ttl)?;
         if let Some(delta) = saturated {
-            self.flush_or_drop(delta).await;
+            sync::flush(self.state.as_ref(), delta, false).await;
         }
         Ok(spend_value(&route_key, &updated))
     }
@@ -75,7 +77,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         }
         let recorded = self.state.record_delta(
             &route_key,
-            RouteIncrement::Counter(increment.value),
+            &RouteIncrement::Counter(increment.value),
             increment.ttl,
         );
         match recorded {
@@ -164,6 +166,62 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         };
         value
     }
+
+    // BaseRoutingStrategy._sync_in_memory_spend_with_redis
+    pub async fn sync_with_redis(&self) -> bool {
+        matches!(
+            delta::sync_state(self.state.as_ref()).await,
+            SyncOutcome::Pushed
+        )
+    }
+
+    // BaseRoutingStrategy.__init__ starts the periodic sync only for a strategy that batches its writes
+    pub fn start(self: &Arc<Self>) {
+        if self.settings.should_batch_redis_writes {
+            self.setup_sync_task();
+        }
+    }
+
+    // BaseRoutingStrategy.setup_sync_task
+    pub fn setup_sync_task(self: &Arc<Self>) {
+        let interval = self.settings.resolved_sync_interval();
+        let owner = Arc::downgrade(self);
+        let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
+        tasks.abort_all();
+        while tasks.try_join_next().is_some() {}
+        let _task = tasks.spawn(lifecycle::run_periodic(owner, interval));
+    }
+
+    // BaseRoutingStrategy.cancel_sync_task
+    pub fn cancel_sync_task(&self) {
+        self.tasks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .abort_all();
+    }
+
+    // BaseRoutingStrategy.cleanup cancels the sync, then waits for the tasks and the scheduled flushes
+    pub async fn cleanup(&self) {
+        self.cancel_sync_task();
+        let mut tasks = mem::take(&mut *self.tasks.lock().unwrap_or_else(PoisonError::into_inner));
+        while tasks.join_next().await.is_some() {}
+        let mut flushes =
+            mem::take(&mut *self.flushes.lock().unwrap_or_else(PoisonError::into_inner));
+        while flushes.join_next().await.is_some() {}
+    }
+
+    // BaseRoutingStrategy.retire stops the loop, then pushes what is queued inside the flush deadline
+    pub async fn retire(&self) {
+        self.cancel_sync_task();
+        let mut flushes =
+            mem::take(&mut *self.flushes.lock().unwrap_or_else(PoisonError::into_inner));
+        while flushes.join_next().await.is_some() {}
+        let Some(_gate) = FlushGate::acquire(&self.state.gate, FLUSH_DEADLINE).await else {
+            tracing::warn!("a routing flush held the store past the retire deadline");
+            return;
+        };
+        let _pushed = delta::push_pending(self.state.as_ref()).await;
+    }
 }
 
 fn spend_value(key: &RouteKey, value: &RouteValue) -> Decimal {
@@ -178,7 +236,10 @@ fn spend_value(key: &RouteKey, value: &RouteValue) -> Decimal {
 }
 
 // track_deployment_metrics reads a local counter value for the success and failure callbacks
-pub(super) fn local_counter<S: DeltaStore>(state: &SyncState<S>, key: &str) -> Option<i64> {
+pub(super) fn local_counter<S>(state: &SyncState<S>, key: &str) -> Option<i64>
+where
+    S: DeltaStore,
+{
     let route_key = RouteKey::parse(key).ok()?;
     match state.local.get(&route_key) {
         Ok(StoreRead::Value(RouteValue::Counter(value))) => Some(value),
@@ -192,12 +253,15 @@ pub(super) fn local_counter<S: DeltaStore>(state: &SyncState<S>, key: &str) -> O
 }
 
 // LiteLLM's async_increment on the in-memory cache: an existing spend and a counter both add
-pub(super) fn increment_local_counter<S: DeltaStore>(
+pub(super) fn increment_local_counter<S>(
     state: &SyncState<S>,
     key: &str,
     value: i64,
     ttl: Duration,
-) -> Result<(), CounterError> {
+) -> Result<(), CounterError>
+where
+    S: DeltaStore,
+{
     let route_key = RouteKey::parse(key).map_err(|_source| CounterError::Rejected {
         key: key.to_owned(),
     })?;

@@ -5,6 +5,7 @@ use crate::routing_value_store::{RouteKey, RouteValue};
 
 use super::counter::{RouterCounters, increment_local_counter, local_counter};
 use super::delta::DeltaStore;
+use super::sync;
 
 impl<S: DeltaStore + 'static> CounterSink for RouterCounters<S> {
     // cache.increment_cache(local_only=True): the success, failure and request counters never reach redis
@@ -12,11 +13,11 @@ impl<S: DeltaStore + 'static> CounterSink for RouterCounters<S> {
         increment_local_counter(self.state.as_ref(), key, value, ttl)
     }
 
-    // cache.async_increment_cache_pipeline: a full queue flushes inline, as LiteLLM's await does
+    // cache.async_increment_cache_pipeline: a full queue schedules its flush on the owner's task set
     fn increment_pipeline(&self, increments: &[Increment]) -> Result<(), CounterError> {
         for increment in increments {
             match self.stage_usage(increment) {
-                Ok(Some(delta)) => self.flush_saturated(delta),
+                Ok(Some(delta)) => sync::schedule_flush(&self.state, &self.flushes, delta),
                 Ok(None) => {}
                 Err(error) => {
                     tracing::warn!(%error, "a usage counter could not be incremented in memory");

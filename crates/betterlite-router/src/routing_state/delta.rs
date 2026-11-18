@@ -8,6 +8,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use rust_decimal::Decimal;
 use tokio::sync::Notify;
+use tokio::time::{Instant, timeout};
 
 use crate::routing_value_store::{
     RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreError,
@@ -46,30 +47,35 @@ impl FlushGate {
     }
 
     // a caller that cannot get the gate inside its deadline gives up instead of waiting forever
-    pub(super) async fn acquire(&self, deadline: Duration) -> Option<FlushGuard<'_>> {
-        let start = tokio::time::Instant::now();
+    pub(super) async fn acquire(gate: &Arc<Self>, deadline: Duration) -> Option<FlushGuard> {
+        let start = Instant::now();
         loop {
-            if !self.busy.swap(true, Ordering::AcqRel) {
-                return Some(FlushGuard { gate: self });
+            if !gate.busy.swap(true, Ordering::AcqRel) {
+                return Some(FlushGuard {
+                    gate: Arc::clone(gate),
+                });
             }
-            let Some(remaining) = deadline.checked_sub(start.elapsed()) else {
-                return None;
-            };
-            if tokio::time::timeout(remaining, self.idle.notified())
-                .await
-                .is_err()
-            {
-                return None;
-            }
+            let remaining = deadline.checked_sub(start.elapsed())?;
+            timeout(remaining, gate.idle.notified()).await.ok()?;
         }
+    }
+
+    // the sink's path takes the gate without waiting, so a full queue never blocks the callback's thread
+    pub(super) fn try_acquire(gate: &Arc<Self>) -> Option<FlushGuard> {
+        if gate.busy.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        Some(FlushGuard {
+            gate: Arc::clone(gate),
+        })
     }
 }
 
-pub(super) struct FlushGuard<'a> {
-    gate: &'a FlushGate,
+pub(super) struct FlushGuard {
+    gate: Arc<FlushGate>,
 }
 
-impl Drop for FlushGuard<'_> {
+impl Drop for FlushGuard {
     fn drop(&mut self) {
         self.gate.busy.store(false, Ordering::Release);
         self.gate.idle.notify_one();
@@ -81,7 +87,7 @@ pub(super) struct SyncState<S: DeltaStore> {
     pub(super) store: Option<Arc<S>>,
     pub(super) pending: Mutex<Vec<Delta>>,
     pub(super) tracked: Mutex<BTreeSet<RouteKey>>,
-    pub(super) gate: FlushGate,
+    pub(super) gate: Arc<FlushGate>,
 }
 
 impl<S: DeltaStore> SyncState<S> {
@@ -91,7 +97,7 @@ impl<S: DeltaStore> SyncState<S> {
             store,
             pending: Mutex::new(Vec::new()),
             tracked: Mutex::new(BTreeSet::new()),
-            gate: FlushGate::new(),
+            gate: Arc::new(FlushGate::new()),
         }
     }
 
@@ -124,30 +130,32 @@ impl<S: DeltaStore> SyncState<S> {
     pub(super) fn record_delta(
         &self,
         key: &RouteKey,
-        increment: RouteIncrement,
+        increment: &RouteIncrement,
         ttl: Duration,
     ) -> Result<(RouteValue, Option<Delta>), StoreError> {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         let updated = self
             .local
-            .increment(key, &increment, Some(ttl.as_secs_f64()))?;
+            .increment(key, increment, Some(ttl.as_secs_f64()))?;
         if self.store.is_none() {
+            drop(pending);
             return Ok((updated, None));
         }
         let value = match increment {
-            RouteIncrement::Spend(value) => value,
-            RouteIncrement::Counter(value) => Decimal::from(value),
+            RouteIncrement::Spend(value) => *value,
+            RouteIncrement::Counter(value) => Decimal::from(*value),
         };
         let delta = Delta {
             key: key.clone(),
             value,
             ttl,
         };
-        if pending.len() < MAX_PENDING_DELTAS {
-            pending.push(delta);
-            return Ok((updated, None));
+        let queued = pending.len() < MAX_PENDING_DELTAS;
+        if queued {
+            pending.push(delta.clone());
         }
-        Ok((updated, Some(delta)))
+        drop(pending);
+        Ok((updated, if queued { None } else { Some(delta) }))
     }
 
     pub(super) fn queue(&self, delta: Delta) -> bool {
@@ -161,13 +169,24 @@ impl<S: DeltaStore> SyncState<S> {
 }
 
 // BaseRoutingStrategy._sync_in_memory_spend_with_redis: push the queued deltas, then merge the store's totals back
-pub(super) async fn sync_state<S: DeltaStore>(state: &SyncState<S>) -> SyncOutcome {
+pub(super) async fn sync_state<S>(state: &SyncState<S>) -> SyncOutcome
+where
+    S: DeltaStore,
+{
     if state.store.is_none() {
         return SyncOutcome::Empty;
     }
-    let Some(_gate) = state.gate.acquire(FLUSH_DEADLINE).await else {
+    let Some(_gate) = FlushGate::acquire(&state.gate, FLUSH_DEADLINE).await else {
         return SyncOutcome::Busy;
     };
+    push_and_merge(state).await
+}
+
+// the push and the read-back merge, for a caller that already holds the gate
+pub(super) async fn push_and_merge<S>(state: &SyncState<S>) -> SyncOutcome
+where
+    S: DeltaStore,
+{
     let keys = state.tracked_keys();
     let Some((before, batch)) = snapshot(state, &keys) else {
         return SyncOutcome::Empty;
@@ -188,7 +207,10 @@ pub(super) enum SyncOutcome {
 }
 
 // retire pushes what is queued without merging: the owner is going away, so there is no local value left to update
-pub(super) async fn push_pending<S: DeltaStore>(state: &SyncState<S>) -> bool {
+pub(super) async fn push_pending<S>(state: &SyncState<S>) -> bool
+where
+    S: DeltaStore,
+{
     let Some((_before, batch)) = snapshot(state, &state.tracked_keys()) else {
         return false;
     };

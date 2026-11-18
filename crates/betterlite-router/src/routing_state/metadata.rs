@@ -20,7 +20,7 @@ pub enum MetadataValue<T> {
 
 impl<T> MetadataValue<T> {
     #[must_use]
-    pub fn value(&self) -> Option<&T> {
+    pub const fn value(&self) -> Option<&T> {
         match self {
             Self::Value(value) => Some(value),
             Self::Other(_ignored) => None,
@@ -80,10 +80,13 @@ impl CallbackChannels {
 // track_deployment_metrics.find_deployment_metadata picks the first channel whose value is a bucket with a model_info key
 #[must_use]
 pub fn deployment_channel(channels: &CallbackChannels) -> Option<(&'static str, &MetadataBucket)> {
-    for (name, bucket) in channels.named_buckets() {
-        if let Some(bucket) = bucket.filter(|bucket| bucket.fields.contains_key(MODEL_INFO_KEY)) {
-            return Some((name, bucket));
-        }
+    for (name, channel) in channels.named_buckets() {
+        let Some(bucket) =
+            channel.filter(|candidate| candidate.fields.contains_key(MODEL_INFO_KEY))
+        else {
+            continue;
+        };
+        return Some((name, bucket));
     }
     None
 }
@@ -91,11 +94,13 @@ pub fn deployment_channel(channels: &CallbackChannels) -> Option<(&'static str, 
 // get_counted_usage_tokens: the first bucket with the key decides, mistyped value or not
 #[must_use]
 pub fn get_counted_usage_tokens(channels: &CallbackChannels) -> Option<i64> {
-    for (_name, bucket) in channels.named_buckets() {
-        if let Some(bucket) = bucket.filter(|bucket| bucket.fields.contains_key(COUNTED_TOKENS_KEY))
-        {
-            return bucket.counted_tokens();
-        }
+    for (_name, channel) in channels.named_buckets() {
+        let Some(bucket) =
+            channel.filter(|candidate| candidate.fields.contains_key(COUNTED_TOKENS_KEY))
+        else {
+            continue;
+        };
+        return bucket.counted_tokens();
     }
     None
 }

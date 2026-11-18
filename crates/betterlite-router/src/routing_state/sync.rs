@@ -1,53 +1,67 @@
-use tokio::runtime::{Handle, RuntimeFlavor};
+use std::sync::{Arc, Mutex, PoisonError};
+
+use tokio::runtime::Handle;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::FLUSH_DEADLINE;
-use super::counter::RouterCounters;
-use super::delta::{self, Delta, DeltaStore, SyncOutcome};
+use super::delta::{self, Delta, DeltaStore, FlushGate, SyncOutcome, SyncState};
 
-impl<S: DeltaStore + 'static> RouterCounters<S> {
-    // BaseRoutingStrategy._sync_in_memory_spend_with_redis
-    pub async fn sync_with_redis(&self) -> bool {
-        matches!(
-            delta::sync_state(self.state.as_ref()).await,
-            SyncOutcome::Pushed
-        )
-    }
-
-    // the queue bound is the owner's batch size: a full queue flushes once in the caller's timeframe
-    pub(super) async fn flush_or_drop(&self, delta: Delta) {
-        let key = delta.key.as_ref().to_owned();
-        let outcome =
-            tokio::time::timeout(FLUSH_DEADLINE, delta::sync_state(self.state.as_ref())).await;
-        let queued = match outcome {
-            Ok(SyncOutcome::Pushed | SyncOutcome::Empty) => self.state.queue(delta),
-            Ok(SyncOutcome::Failed | SyncOutcome::Busy) | Err(_) => false,
-        };
-        if queued {
-            return;
-        }
+// the sink's saturated path: the owner's task set runs the flush, so a stalled store never blocks the callback
+pub(super) fn schedule_flush<S>(
+    state: &Arc<SyncState<S>>,
+    flushes: &Mutex<JoinSet<()>>,
+    delta: Delta,
+) where
+    S: DeltaStore + 'static,
+{
+    if Handle::try_current().is_err() {
         tracing::warn!(
-            key = key.as_str(),
-            "the queue is full; the delta is dropped after the bounded flush"
+            key = delta.key.as_ref(),
+            "the usage delta needs a running runtime to flush; it is dropped"
         );
+        return;
     }
-
-    // B397's sink cannot await, so a saturated queue flushes the same way on the calling worker thread
-    pub(super) fn flush_saturated(&self, delta: Delta) {
-        let Some(handle) = worker_handle() else {
-            tracing::warn!(
-                key = delta.key.as_ref(),
-                "the usage delta needs a multi-threaded runtime to flush; it is dropped"
-            );
-            return;
-        };
-        tokio::task::block_in_place(|| handle.block_on(self.flush_or_drop(delta)));
-    }
+    let Some(gate) = FlushGate::try_acquire(&state.gate) else {
+        tracing::warn!(
+            key = delta.key.as_ref(),
+            "a flush is already running; the delta is dropped"
+        );
+        return;
+    };
+    let owned = Arc::clone(state);
+    let mut tasks = flushes.lock().unwrap_or_else(PoisonError::into_inner);
+    while tasks.try_join_next().is_some() {}
+    let _task = tasks.spawn(async move {
+        let _guard = gate;
+        flush(&owned, delta, true).await;
+    });
 }
 
-// block_in_place only takes a worker's thread on the multi-threaded runtime, and the push needs one to run
-fn worker_handle() -> Option<Handle> {
-    match Handle::try_current() {
-        Ok(handle) if handle.runtime_flavor() == RuntimeFlavor::MultiThread => Some(handle),
-        Ok(_) | Err(_) => None,
+// one bounded flush: a scheduled task holds the gate already, and the async caller waits for it inside sync_state
+pub(super) async fn flush<S>(state: &SyncState<S>, delta: Delta, gate_held: bool)
+where
+    S: DeltaStore,
+{
+    let outcome = if gate_held {
+        timeout(FLUSH_DEADLINE, delta::push_and_merge(state)).await
+    } else {
+        timeout(FLUSH_DEADLINE, delta::sync_state(state)).await
+    };
+    finish_flush(state, delta, outcome.unwrap_or(SyncOutcome::Busy));
+}
+
+// a delta that found the queue full goes back only after a flush that finished, and only if there is room again
+fn finish_flush<S>(state: &SyncState<S>, delta: Delta, outcome: SyncOutcome)
+where
+    S: DeltaStore,
+{
+    let key = delta.key.clone();
+    if matches!(outcome, SyncOutcome::Pushed | SyncOutcome::Empty) && state.queue(delta) {
+        return;
     }
+    tracing::warn!(
+        key = key.as_ref(),
+        "the queue is full; the delta is dropped after the bounded flush"
+    );
 }

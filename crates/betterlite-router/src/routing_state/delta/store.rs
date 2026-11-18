@@ -48,10 +48,13 @@ impl DeltaStore for RoutingStateStore {
     }
 }
 
-pub(super) async fn send<S: DeltaStore>(
+pub(super) async fn send<S>(
     state: &SyncState<S>,
     batch: &[Delta],
-) -> Option<BTreeMap<String, Decimal>> {
+) -> Option<BTreeMap<String, Decimal>>
+where
+    S: DeltaStore,
+{
     let store = state.store.as_ref()?;
     let compressed = compress(batch);
     match store.increment_pipeline(&compressed).await {
@@ -64,16 +67,20 @@ pub(super) async fn send<S: DeltaStore>(
 }
 
 // the snapshot of what the store push covers: read and detach share the lock the increments take
-pub(super) fn snapshot<S: DeltaStore>(
+pub(super) fn snapshot<S>(
     state: &SyncState<S>,
     keys: &[RouteKey],
-) -> Option<(Vec<Decimal>, Vec<Delta>)> {
+) -> Option<(Vec<Decimal>, Vec<Delta>)>
+where
+    S: DeltaStore,
+{
     let mut pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
     let before = keys
         .iter()
         .map(|key| local_amount(&state.local, key))
         .collect();
     let batch = mem::take(&mut *pending);
+    drop(pending);
     if batch.is_empty() {
         return None;
     }
@@ -81,20 +88,22 @@ pub(super) fn snapshot<S: DeltaStore>(
 }
 
 // the merge adds the store's post-push growth to the local value in one update, so an increment racing it is kept
-pub(super) fn merge<S: DeltaStore>(
+pub(super) fn merge<S>(
     state: &SyncState<S>,
     keys: &[RouteKey],
     before: &[Decimal],
     values: &BTreeMap<String, Decimal>,
-) {
+) where
+    S: DeltaStore,
+{
     let _pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
-    for (key, before) in keys.iter().zip(before) {
+    for (key, before_value) in keys.iter().zip(before) {
         let after = local_amount(&state.local, key);
         let redis_value = values.get(key.as_ref()).copied().unwrap_or_default();
         if after > redis_value {
             continue;
         }
-        let adjustment = redis_value.saturating_sub(*before);
+        let adjustment = redis_value.saturating_sub(*before_value);
         if let Err(error) = state
             .local
             .increment(key, &RouteIncrement::Spend(adjustment), None)
