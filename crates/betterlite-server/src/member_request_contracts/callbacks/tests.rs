@@ -4,8 +4,6 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
-use serde::Serialize;
-use serde_json::json;
 
 use super::{AddTeamCallback, CallbackSecrets, CallbackType, TeamCallbackMetadata};
 use crate::member_request_contracts::MemberContractError;
@@ -14,16 +12,12 @@ fn parse(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
-fn raw<T: Serialize>(body: T) -> Json {
-    serde_json::from_str(&serde_json::to_string(&body).unwrap()).unwrap()
+fn callback(body: &str) -> Result<AddTeamCallback, MemberContractError> {
+    AddTeamCallback::from_value(&parse(body))
 }
 
-fn callback<T: Serialize>(body: T) -> Result<AddTeamCallback, MemberContractError> {
-    AddTeamCallback::from_value(&raw(body))
-}
-
-fn metadata<T: Serialize>(body: T) -> Result<TeamCallbackMetadata, MemberContractError> {
-    TeamCallbackMetadata::from_value(&raw(body))
+fn metadata(body: &str) -> Result<TeamCallbackMetadata, MemberContractError> {
+    TeamCallbackMetadata::from_value(&parse(body))
 }
 
 fn message(error: MemberContractError) -> String {
@@ -37,7 +31,7 @@ fn message(error: MemberContractError) -> String {
 
 #[test]
 fn defaults_the_callback_type_to_success_and_failure() {
-    let request = callback(json!({ "callback_name": "langfuse", "callback_vars": {} })).unwrap();
+    let request = callback(r#"{"callback_name": "langfuse", "callback_vars": {}}"#).unwrap();
     assert_eq!(request.callback_type, Some(CallbackType::SuccessAndFailure));
     assert_eq!(request.callback_name, "langfuse");
     assert_eq!(request.callback_vars, CallbackSecrets::default());
@@ -45,11 +39,13 @@ fn defaults_the_callback_type_to_success_and_failure() {
 
 #[test]
 fn keeps_an_explicit_null_callback_type() {
-    let request = callback(json!({
-        "callback_name": "langfuse",
-        "callback_type": null,
-        "callback_vars": {},
-    }))
+    let request = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_type": null,
+            "callback_vars": {}
+        }"#,
+    )
     .unwrap();
     assert_eq!(request.callback_type, None);
 }
@@ -59,51 +55,52 @@ fn keeps_an_explicit_null_callback_type() {
 #[case("failure", CallbackType::Failure)]
 #[case("success_and_failure", CallbackType::SuccessAndFailure)]
 fn decodes_each_callback_type(#[case] text: &str, #[case] expected: CallbackType) {
-    let request = callback(json!({
-        "callback_name": "langfuse",
-        "callback_type": text,
-        "callback_vars": {},
-    }))
-    .unwrap();
+    let body = format!(
+        r#"{{"callback_name": "langfuse", "callback_type": "{text}", "callback_vars": {{}}}}"#
+    );
+    let request = callback(&body).unwrap();
     assert_eq!(request.callback_type, Some(expected));
 }
 
 #[test]
 fn rejects_an_unknown_callback_type() {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_type": "on_error",
-        "callback_vars": {},
-    }))
+    let error = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_type": "on_error",
+            "callback_vars": {}
+        }"#,
+    )
     .unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
 #[test]
 fn rejects_a_body_without_a_callback_name() {
-    let error = callback(json!({ "callback_vars": {} })).unwrap_err();
+    let error = callback(r#"{"callback_vars": {}}"#).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
 #[test]
 fn rejects_a_body_without_callback_vars() {
-    let error = callback(json!({ "callback_name": "langfuse" })).unwrap_err();
+    let error = callback(r#"{"callback_name": "langfuse"}"#).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
 #[test]
 fn rejects_a_null_callback_vars() {
-    let error =
-        callback(json!({ "callback_name": "langfuse", "callback_vars": null })).unwrap_err();
+    let error = callback(r#"{"callback_name": "langfuse", "callback_vars": null}"#).unwrap_err();
     assert_eq!(message(error), "Input should be a valid dictionary");
 }
 
 #[test]
 fn turns_number_callback_vars_into_their_text() {
-    let request = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_prompt_version": 2, "langfuse_host": "https://langfuse" },
-    }))
+    let request = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_vars": { "langfuse_prompt_version": 2, "langfuse_host": "https://langfuse" }
+        }"#,
+    )
     .unwrap();
     let expected = BTreeMap::from([
         ("langfuse_prompt_version".to_owned(), "2".to_owned()),
@@ -114,43 +111,54 @@ fn turns_number_callback_vars_into_their_text() {
 
 #[test]
 fn keeps_callback_credentials_out_of_debug() {
-    let request = callback(json!({
-        "callback_name": "langsmith",
-        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
-    }))
+    let request = callback(
+        r#"{
+            "callback_name": "langsmith",
+            "callback_vars": { "langsmith_api_key": "ls-secret-value" }
+        }"#,
+    )
     .unwrap();
     let debug = format!("{request:?}");
     assert!(!debug.contains("ls-secret-value"), "{debug}");
     assert!(debug.contains("[REDACTED]"), "{debug}");
-    let fields = metadata(json!({
-        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
-    }))
+    let fields = metadata(
+        r#"{
+            "callback_vars": { "langsmith_api_key": "ls-secret-value" }
+        }"#,
+    )
     .unwrap();
-    let debug = format!("{fields:?}");
-    assert!(!debug.contains("ls-secret-value"), "{debug}");
-    assert!(debug.contains("[REDACTED]"), "{debug}");
+    let metadata_debug = format!("{fields:?}");
+    assert!(
+        !metadata_debug.contains("ls-secret-value"),
+        "{metadata_debug}"
+    );
+    assert!(metadata_debug.contains("[REDACTED]"), "{metadata_debug}");
 }
 
 #[test]
 fn serializes_callback_credentials_in_plain_text() {
-    let request = callback(json!({
-        "callback_name": "langsmith",
-        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
-    }))
+    let request = callback(
+        r#"{
+            "callback_name": "langsmith",
+            "callback_vars": { "langsmith_api_key": "ls-secret-value" }
+        }"#,
+    )
     .unwrap();
     let text = serde_json::to_string(&request).unwrap();
     assert!(
         text.contains(r#""langsmith_api_key":"ls-secret-value""#),
         "{text}"
     );
-    let fields = metadata(json!({
-        "callback_vars": { "langsmith_api_key": "ls-secret-value" },
-    }))
+    let fields = metadata(
+        r#"{
+            "callback_vars": { "langsmith_api_key": "ls-secret-value" }
+        }"#,
+    )
     .unwrap();
-    let text = serde_json::to_string(&fields).unwrap();
+    let metadata_text = serde_json::to_string(&fields).unwrap();
     assert!(
-        text.contains(r#""langsmith_api_key":"ls-secret-value""#),
-        "{text}"
+        metadata_text.contains(r#""langsmith_api_key":"ls-secret-value""#),
+        "{metadata_text}"
     );
 }
 
@@ -178,20 +186,21 @@ fn tells_callback_secrets_apart() {
 #[case("[\"az\"]")]
 #[case("{\"az\": 1}")]
 fn rejects_a_callback_var_value_that_is_not_text(#[case] value: &str) {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_host": parse(value) },
-    }))
-    .unwrap_err();
+    let body = format!(
+        r#"{{"callback_name": "langfuse", "callback_vars": {{"langfuse_host": {value}}}}}"#
+    );
+    let error = callback(&body).unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
 #[test]
 fn rejects_an_unknown_callback_variable() {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "bogus_host": "https://langfuse" },
-    }))
+    let error = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_vars": { "bogus_host": "https://langfuse" }
+        }"#,
+    )
     .unwrap_err();
     let text = message(error);
     assert!(
@@ -210,9 +219,9 @@ fn rejects_an_unknown_callback_variable() {
 
 #[test]
 fn names_the_first_invalid_callback_variable_in_the_order_sent() {
-    let error = callback(parse(
+    let error = callback(
         r#"{"callback_name":"langfuse","callback_vars":{"zulu_bad":"1","alpha_bad":"2"}}"#,
-    ))
+    )
     .unwrap_err();
     let text = message(error);
     assert!(
@@ -223,10 +232,12 @@ fn names_the_first_invalid_callback_variable_in_the_order_sent() {
 
 #[test]
 fn rejects_an_environment_reference() {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_host": "os.environ/LANGFUSE_HOST" },
-    }))
+    let error = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_vars": { "langfuse_host": "os.environ/LANGFUSE_HOST" }
+        }"#,
+    )
     .unwrap_err();
     let expected = concat!(
         "Callback param 'langfuse_host' (from key/team callback metadata) contains an ",
@@ -250,13 +261,10 @@ fn rejects_an_environment_reference() {
 #[case("langfuse_span_scope", "full")]
 #[case("langfuse_span_scope", "llm_only")]
 fn keeps_valid_langfuse_values(#[case] name: &str, #[case] value: &str) {
-    let vars = BTreeMap::from([(name.to_owned(), value.to_owned())]);
-    let expected = CallbackSecrets::from(vars.clone());
-    let request = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": vars,
-    }))
-    .unwrap();
+    let expected = CallbackSecrets::from(BTreeMap::from([(name.to_owned(), value.to_owned())]));
+    let body =
+        format!(r#"{{"callback_name": "langfuse", "callback_vars": {{"{name}": "{value}"}}}}"#);
+    let request = callback(&body).unwrap();
     assert_eq!(request.callback_vars, expected, "{name} {value}");
 }
 
@@ -265,11 +273,10 @@ fn keeps_valid_langfuse_values(#[case] name: &str, #[case] value: &str) {
 #[case("langfuse-prod")]
 #[case("prod eu")]
 fn rejects_an_invalid_langfuse_environment(#[case] environment: &str) {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_environment": environment },
-    }))
-    .unwrap_err();
+    let body = format!(
+        r#"{{"callback_name": "langfuse", "callback_vars": {{"langfuse_environment": "{environment}"}}}}"#
+    );
+    let error = callback(&body).unwrap_err();
     let expected = format!(
         "Invalid langfuse_environment '{environment}': must be lowercase \
          alphanumerics/hyphens/underscores and must not start with 'langfuse' \
@@ -280,20 +287,24 @@ fn rejects_an_invalid_langfuse_environment(#[case] environment: &str) {
 
 #[test]
 fn rejects_a_trailing_newline_in_the_environment() {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_environment": "production\n" },
-    }))
+    let error = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_vars": { "langfuse_environment": "production\n" }
+        }"#,
+    )
     .unwrap_err();
     assert!(message(error).starts_with("Invalid langfuse_environment 'production\n'"));
 }
 
 #[test]
 fn rejects_an_invalid_langfuse_span_scope() {
-    let error = callback(json!({
-        "callback_name": "langfuse",
-        "callback_vars": { "langfuse_span_scope": "traces" },
-    }))
+    let error = callback(
+        r#"{
+            "callback_name": "langfuse",
+            "callback_vars": { "langfuse_span_scope": "traces" }
+        }"#,
+    )
     .unwrap_err();
     let expected =
         "Invalid langfuse_span_scope 'traces': must be one of ['full', 'llm_only']".to_owned();
@@ -302,35 +313,39 @@ fn rejects_an_invalid_langfuse_span_scope() {
 
 #[test]
 fn gives_the_metadata_defaults_for_an_empty_object() {
-    let fields = metadata(json!({})).unwrap();
+    let fields = metadata("{}").unwrap();
     assert_eq!(fields, TeamCallbackMetadata::default());
 }
 
 #[test]
 fn gives_the_metadata_defaults_when_every_key_is_null() {
-    let fields = metadata(json!({
-        "success_callback": null,
-        "failure_callback": null,
-        "callbacks": null,
-        "callback_vars": null,
-    }))
+    let fields = metadata(
+        r#"{
+            "success_callback": null,
+            "failure_callback": null,
+            "callbacks": null,
+            "callback_vars": null
+        }"#,
+    )
     .unwrap();
     assert_eq!(fields, TeamCallbackMetadata::default());
 }
 
 #[test]
 fn gives_the_metadata_defaults_when_only_unknown_null_keys_remain() {
-    let fields = metadata(json!({ "callbacks": null, "unknown": null })).unwrap();
+    let fields = metadata(r#"{"callbacks": null, "unknown": null}"#).unwrap();
     assert_eq!(fields, TeamCallbackMetadata::default());
 }
 
 #[test]
 fn drops_null_keys_and_keeps_the_others() {
-    let fields = metadata(json!({
-        "success_callback": null,
-        "failure_callback": ["slack"],
-        "callbacks": ["langfuse"],
-    }))
+    let fields = metadata(
+        r#"{
+            "success_callback": null,
+            "failure_callback": ["slack"],
+            "callbacks": ["langfuse"]
+        }"#,
+    )
     .unwrap();
     assert!(fields.success_callback.is_empty());
     assert_eq!(fields.failure_callback, vec!["slack"]);
@@ -340,11 +355,13 @@ fn drops_null_keys_and_keeps_the_others() {
 
 #[test]
 fn ignores_an_unknown_key_that_is_not_null() {
-    let fields = metadata(json!({
-        "callbacks": ["langfuse"],
-        "callback_vars": {},
-        "unknown": 1,
-    }))
+    let fields = metadata(
+        r#"{
+            "callbacks": ["langfuse"],
+            "callback_vars": {},
+            "unknown": 1
+        }"#,
+    )
     .unwrap();
     assert_eq!(fields.callbacks, vec!["langfuse"]);
     assert_eq!(fields.callback_vars, CallbackSecrets::default());
@@ -352,10 +369,12 @@ fn ignores_an_unknown_key_that_is_not_null() {
 
 #[test]
 fn rejects_an_unknown_metadata_callback_variable() {
-    let error = metadata(json!({
-        "callbacks": ["langfuse"],
-        "callback_vars": { "bogus_host": "https://langfuse" },
-    }))
+    let error = metadata(
+        r#"{
+            "callbacks": ["langfuse"],
+            "callback_vars": { "bogus_host": "https://langfuse" }
+        }"#,
+    )
     .unwrap_err();
     let text = message(error);
     assert!(
@@ -366,9 +385,11 @@ fn rejects_an_unknown_metadata_callback_variable() {
 
 #[test]
 fn accepts_callback_var_values_the_request_would_check() {
-    let fields = metadata(json!({
-        "callback_vars": { "langfuse_host": "os.environ/LANGFUSE_HOST" },
-    }))
+    let fields = metadata(
+        r#"{
+            "callback_vars": { "langfuse_host": "os.environ/LANGFUSE_HOST" }
+        }"#,
+    )
     .unwrap();
     let expected = BTreeMap::from([(
         "langfuse_host".to_owned(),
@@ -379,22 +400,24 @@ fn accepts_callback_var_values_the_request_would_check() {
 
 #[test]
 fn rejects_metadata_callback_vars_that_is_not_an_object() {
-    let error = metadata(json!({
-        "callbacks": ["langfuse"],
-        "callback_vars": ["langfuse_host"],
-    }))
+    let error = metadata(
+        r#"{
+            "callbacks": ["langfuse"],
+            "callback_vars": ["langfuse_host"]
+        }"#,
+    )
     .unwrap_err();
     assert!(matches!(error, MemberContractError::Decode { .. }));
 }
 
 #[test]
 fn rejects_a_callback_body_that_is_not_an_object() {
-    let callback_error = callback(parse("\"langfuse\"")).unwrap_err();
+    let callback_error = callback("\"langfuse\"").unwrap_err();
     assert!(matches!(
         callback_error,
         MemberContractError::Validation { .. }
     ));
-    let metadata_error = metadata(parse("[]")).unwrap_err();
+    let metadata_error = metadata("[]").unwrap_err();
     assert!(matches!(
         metadata_error,
         MemberContractError::Validation { .. }
