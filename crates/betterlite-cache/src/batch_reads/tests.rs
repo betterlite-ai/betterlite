@@ -279,6 +279,26 @@ async fn sync_read_backfills_with_redis_values() {
     assert_eq!(cache.async_get_ttl("b").await.ok().flatten(), None);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sync_read_serves_an_unbackfillable_redis_value() {
+    let server = FakeRedis::start().await;
+    server.script(
+        "MGET",
+        vec![Reply::Array(vec![Reply::Bulk(
+            "18446744073709551617".to_owned(),
+        )])],
+    );
+    let (cache, _redis) = with_redis(&server).await;
+    let past_u64: Number = "18446744073709551617"
+        .parse()
+        .expect("an integer token past u64 range");
+    let read = cache
+        .batch_get_cache(&keys(&["a"]), false)
+        .expect("the redis read");
+    assert_eq!(read, vec![Some(Json::Number(past_u64))]);
+    assert_eq!(cache.get_cache("a", true), None);
+}
+
 #[test]
 fn cache_from_json_skips_integers_past_u64() {
     let past_u64: Number = "18446744073709551617"
