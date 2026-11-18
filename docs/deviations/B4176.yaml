@@ -1,0 +1,60 @@
+task: B4176
+deviations:
+  - what: >-
+      `--timeout_worker_healthcheck` is never honored. The resolved value stays in UvicornSettings and a
+      warning names the flag, where LiteLLM passes it to uvicorn when the installed uvicorn accepts the
+      parameter (0.37 and later) and warns only on older ones.
+    why: >-
+      betterlite serves with axum/tokio and has no uvicorn to introspect or hand the value to, so there is no
+      version to check and nothing to apply. The warning text keeps the literal flag name from LiteLLM without
+      a version, and the value is kept so a native worker can honor it later.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L316-L324
+  - what: >-
+      A jitter given with a request limit stays in UvicornSettings, whatever server runs it. LiteLLM hands
+      the jitter to uvicorn only when the installed uvicorn's Config accepts limit_max_requests_jitter
+      (0.41 and later), and otherwise prints a version warning and drops it.
+    why: >-
+      betterlite's native server has no uvicorn package to introspect, and the oracle's uvicorn 0.54.0
+      applies the value, so the setting carries it and the worker applies it, as the task's DoD says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L346-L353
+  - what: >-
+      Native settings never write `LITELLM_DEV_ENV_HOT_RELOAD`, or any other variable, into the process
+      environment. The hot reload flag crosses to the worker as ReloadSettings::env_hot_reload.
+    why: >-
+      LiteLLM sets the variable in the reloader process because forked workers inherit its environ. Rust has no
+      safe process-wide environment mutation, and a worker that reads it from the environment still gets the
+      same value from the config section, so the setting travels as data instead. The .env override warning
+      text is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L425-L433
+  - what: >-
+      A `LITELLM_LOG` value that is not a Python logging level name is kept in the loaded settings as
+      LogConfig::Invalid(LogLevelError::Unknown) instead of failing the config load, and
+      resolve_uvicorn_settings returns that LogLevelError so startup refuses to run, where LiteLLM fails
+      at import time with the AttributeError from getattr(logging, name.upper()).
+    why: >-
+      betterlite's loader has one ConfigError shared by every section, and that enum holds no variant for a
+      per-section cause, so the section keeps its own typed error with the LevelError source and the builder
+      that turns the section into uvicorn arguments returns it. Both refuse to start; only the fallible step
+      and the error shape differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L642-L649
+  - what: >-
+      The reload watch list canonicalizes the current directory on disk, where LiteLLM's `_get_reload_options`
+      builds it with `os.path.abspath`, which keeps a symlink as it is. A caller that hands over a symlinked
+      current directory watches the directory it points at.
+    why: >-
+      LiteLLM's own current directory comes from `os.getcwd()`, which the kernel already reports resolved, so
+      the canonical form agrees with LiteLLM on a real start while the watch list names a directory that
+      exists. The config parent and the config basename keep the `os.path.abspath` rule, so a symlinked
+      config still watches its configured name, and the StatReload extra paths keep `Path.resolve()`
+      semantics through soft-canonicalize.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L365-L369
+  - what: >-
+      A `--config` path whose file name is not valid UTF-8 (or has no file name at all) fails the reload
+      setup with ReloadError::FileName, where LiteLLM appends the basename string to uvicorn's
+      reload_includes and hands it to uvicorn's glob.
+    why: >-
+      uvicorn's include patterns are strings, and Python carries a non-UTF-8 name in one as surrogates
+      while betterlite's reload_includes holds String patterns that cannot. The caller gets an error that
+      names the path instead of a pattern no watcher here could match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L364-L369
+kept_bugs: []

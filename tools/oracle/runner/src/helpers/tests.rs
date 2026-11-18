@@ -158,6 +158,45 @@ fn answer_cache_key_follows_the_helper_module_the_pin_and_the_env() {
 }
 
 #[test]
+fn answer_cache_key_follows_package_files_and_imported_helpers() {
+    let root = answer_scratch("package");
+    let call = url_path_call();
+    let case_env = BTreeMap::new();
+    let helpers = root.join("tools/oracle/helpers");
+    let package = helpers.join("url_path");
+    fs::create_dir_all(package.join("fixtures")).unwrap();
+    fs::create_dir_all(package.join("__pycache__")).unwrap();
+    fs::write(package.join("__init__.py"), "from .views import run\n").unwrap();
+    fs::write(
+        package.join("views.py"),
+        "import json\nfrom shared_paths import split\n",
+    )
+    .unwrap();
+    fs::write(package.join("fixtures/paths.json"), "[]").unwrap();
+    fs::write(helpers.join("shared_paths.py"), "first").unwrap();
+    let mut keys = vec![key(&root, &call, &case_env).unwrap()];
+    fs::write(
+        package.join("views.py"),
+        "from shared_paths import split\nsplit = None\n",
+    )
+    .unwrap();
+    keys.push(key(&root, &call, &case_env).unwrap());
+    fs::write(package.join("fixtures/paths.json"), "[1]").unwrap();
+    keys.push(key(&root, &call, &case_env).unwrap());
+    fs::write(helpers.join("shared_paths.py"), "second").unwrap();
+    keys.push(key(&root, &call, &case_env).unwrap());
+    fs::write(
+        package.join("__pycache__/views.cpython-313.pyc"),
+        "bytecode",
+    )
+    .unwrap();
+    let with_bytecode = key(&root, &call, &case_env).unwrap();
+    fs::remove_dir_all(&root).unwrap();
+    assert_eq!(keys.iter().collect::<BTreeSet<_>>().len(), 4);
+    assert_eq!(keys.last(), Some(&with_bytecode));
+}
+
+#[test]
 fn python_failures_carry_the_exception_status() {
     let root = Path::new(super::ORACLE_DIR).join("../..");
     super::sync_litellm(&root).unwrap();

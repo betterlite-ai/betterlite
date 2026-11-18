@@ -1,0 +1,52 @@
+kind: helper
+name: async-embedding-single-arn
+call:
+  bedrock_embedding_io:
+    function: async_embedding_single_arn
+    model: cohere.embed-english-v3
+    provider: cohere
+    is_async_invoke: true
+    response_list:
+      - invocationArn: arn:aws:bedrock:us-east-1:123456789012:async-invoke/abc
+calls:
+  - bedrock_embedding_io:
+      function: async_embedding_single_arn
+      model: amazon.nova-2-multimodal-embeddings-v1:0
+      provider: nova
+      is_async_invoke: true
+      response_list:
+        - invocationArn: arn:aws:bedrock:us-east-1:123456789012:async-invoke/nova
+  - bedrock_embedding_io:
+      function: async_embedding_single_arn
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      provider: twelvelabs
+      is_async_invoke: true
+      response_list:
+        - invocationArn: arn:aws:bedrock:us-east-1:123456789012:async-invoke/twelve
+  - bedrock_embedding_io:
+      function: async_embedding_single_arn
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      provider: twelvelabs
+      is_async_invoke: true
+      response_list:
+        - data:
+            - embedding:
+                - 1.5
+  - bedrock_embedding_io:
+      function: async_embedding_single_arn
+      model: cohere.embed-english-v3
+      provider: cohere
+      is_async_invoke: true
+      response_list:
+        - invocationArn: null
+  - bedrock_embedding_io:
+      function: async_embedding_single_arn
+      model: cohere.embed-english-v3
+      provider: cohere
+      is_async_invoke: true
+      response_list:
+        - invocationArn: a
+        - invocationArn: b
+env: {}
+compare:
+  ignore: []

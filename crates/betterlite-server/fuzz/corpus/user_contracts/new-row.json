@@ -1,0 +1,1 @@
+{"users": [{"user_id": "alice", "auto_create_key": true, "teams": [{"team_id": "t", "user_role": "admin"}]}]}

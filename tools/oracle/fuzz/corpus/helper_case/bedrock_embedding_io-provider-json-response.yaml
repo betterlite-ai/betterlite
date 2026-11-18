@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock_embedding_io-provider-json-response-seed
+call:
+  bedrock_embedding_io:
+    function: provider_json_response
+    asynchronous: false
+    supplied: none
+    url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+    headers: {Content-Type: application/json}
+    data: {inputText: hello}
+    timeout: 2.5
+    reply:
+      status: 200
+      headers: {Content-Type: application/json}
+      body: '{"embedding":[0.5],"inputTextTokenCount":1}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,33 @@
+kind: helper
+name: model-catalog-lookup-list-channel-order
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: mix
+        litellm_params:
+          model: openai/mix
+        model_info:
+          id: m1
+      - model_name: mix
+        litellm_params:
+          model: azure/mix
+        model_info:
+          id: m2
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+    model_group_alias:
+      mix: other-group
+    routing_groups:
+      - group_name: other-group
+        models: [gpt-4o]
+        routing_strategy: simple-shuffle
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: mix
+env: {}
+compare: {ignore: []}

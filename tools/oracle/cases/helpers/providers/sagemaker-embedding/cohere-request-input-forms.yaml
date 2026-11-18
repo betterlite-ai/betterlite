@@ -1,0 +1,12 @@
+kind: helper
+name: cohere-request-input-forms
+call:
+  b5961: {"function": "cohere_map", "non_default": {"encoding_format": "base64", "dimensions": 3, "input_type": "search_query"}, "optional_params": {"truncate": "END"}}
+calls:
+  - b5961: {"function": "cohere_request", "model": "endpoint", "input": ["a b", "c"], "optional_params": {}}
+  - b5961: {"function": "cohere_request", "model": "endpoint", "input": "a b", "optional_params": {"input_type": "search_query"}}
+  - b5961: {"function": "cohere_request", "model": "endpoint", "input": [], "optional_params": {}}
+  - b5961: {"function": "cohere_request", "model": "endpoint", "input": [1, 2], "optional_params": {}}
+  - b5961: {"function": "cohere_request", "model": "endpoint", "input": [[1, 2]], "optional_params": {}}
+env: {}
+compare: {ignore: []}
