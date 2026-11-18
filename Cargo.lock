@@ -3388,6 +3388,7 @@ dependencies = [
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-secret-managers",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-vertex",
  "chrono",
