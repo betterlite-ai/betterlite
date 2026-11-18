@@ -24,7 +24,10 @@ pub(super) async fn apply(
             })?;
             pre_call(index, step, deployment, context).await
         }
-        StepKind::Success => success(index, step, context).await,
+        StepKind::Success => {
+            success(step, context).await?;
+            Ok(Observation::Recorded { step: index })
+        }
         StepKind::Sync => {
             let _pushed = context.accounting.counters.sync_with_redis().await;
             Ok(Observation::Recorded { step: index })
@@ -130,11 +133,8 @@ fn facts(deployment: &DeploymentInput) -> Result<DeploymentFacts<'_>, ScenarioEr
     })
 }
 
-async fn success(
-    index: usize,
-    step: &ScenarioStep,
-    context: &Context<'_>,
-) -> Result<Observation, ScenarioError> {
+// lowest_tpm_rpm_v2.log_success_event / async_log_success_event, picked by the step's sync flag
+async fn success(step: &ScenarioStep, context: &Context<'_>) -> Result<(), ScenarioError> {
     let event = SuccessEvent {
         call_type: step.call_type.as_deref(),
         standard_logging_object: step.standard_logging_object.as_ref().map(|payload| {
@@ -149,12 +149,12 @@ async fn success(
         }),
     };
     let now = at(step.now_millis)?;
-    let _key = if step.sync {
-        context.accounting.log_success_now(&event, now)
+    if step.sync {
+        let _key = context.accounting.log_success_now(&event, now);
     } else {
-        context.accounting.log_success(&event, now).await
-    };
-    Ok(Observation::Recorded { step: index })
+        let _key = context.accounting.log_success(&event, now).await;
+    }
+    Ok(())
 }
 
 fn rejected(index: usize, error: &RpmLimitExceeded) -> Observation {
