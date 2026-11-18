@@ -155,7 +155,8 @@ class Session(RealTimeStreaming):
         self.provider_config = self._force_transcription_model = None
         self._violation_count = 0
 
-    def violation_count(self) -> int: return self._violation_count
+    def violation_count(self) -> int:
+        return self._violation_count
 
 
 class ApplyScript:
