@@ -16,6 +16,15 @@ deviations:
       default is exact rather than whatever the nearest double yields.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L411-L413
   - what: >-
+      A LITELLM_ASYNCIO_QUEUE_MAXSIZE above 2305843009213693951 (i64::MAX / 4) prevents
+      startup with a named configuration error, because the derived 80 percent threshold
+      does not fit in an i64.
+    why: >-
+      Python integers are unbounded, so the source accepts any queue capacity; betterlite's
+      settings are i64 and the compatibility rules reject a derived value that cannot be
+      represented instead of wrapping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L411-L413
+  - what: >-
       A closed in-memory spend queue refuses a later add with Closed and keeps the records it
       already admitted drainable, where the source's asyncio.Queue has no close and a put on a
       queue nobody reads blocks forever.
