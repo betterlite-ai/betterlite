@@ -35,7 +35,9 @@ deviations:
       max_results as a JSON list sends one repeated _max_results parameter per element, as doseq
       does, but the reply limit is read only from a number or a numeric string, so a list leaves
       the limit absent. LiteLLM takes the first _max_results value from the request URL, so a list
-      whose first element is an integer caps the results there.
+      whose first element is an integer caps the results there. A numeric string is read with
+      Rust's integer parser, so a spelling only Python's int() accepts, such as a digit separator
+      in "1_0" or non-ASCII digits, leaves the limit absent here and caps the results there.
     why: >-
       The task reads _max_results as an integer when possible and leaves the limit absent
       otherwise, and a JSON list is not an integer.
