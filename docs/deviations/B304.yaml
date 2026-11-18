@@ -25,7 +25,7 @@ deviations:
     why: The queue only feeds the store push, so with no store it is an unbounded leak. Betterlite still tracks the key, which is what the local-only path reads, and leaves the queue empty.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L92-L99
   - what: A Spend value with a fractional part under a deployment outcome key is read as absent, so the successes and failures getters return 0. LiteLLM's getters return whatever the local cache holds for that key, including a float, though both are declared to return int.
-    why: The getters take an i64 in betterlite, and a fractional spend has no whole count to return. LiteLLM's own increments write 1, so no setup that uses the getters relies on a fractional value; reading it as absent matches the getter's declared type instead of inventing a truncated count.
+    why: The getters return an i64 in betterlite, and a fractional spend has no whole count to return. LiteLLM's own increments write 1, so no setup that uses the getters relies on a fractional value; reading it as absent matches the getter's declared type instead of inventing a truncated count.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L78-L94
 kept_bugs:
   - what: A flush whose pipeline raises discards the whole queued batch, so those increments never reach the store. Betterlite logs a warning and discards the batch the same way instead of replaying it.
