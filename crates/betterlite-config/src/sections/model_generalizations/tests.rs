@@ -49,6 +49,7 @@ fn an_unknown_block_key_is_unsupported() {
     let error = settings("fallback_generalizations:\n  extra: 1\n").unwrap_err();
     assert_eq!(
         error,
-        r#"unsupported config keys: ["fallback_generalizations.extra"]"#
+        // serde_ignored marks the Option-wrapped block with ? on its way to the unknown key
+        r#"unsupported config keys: ["fallback_generalizations.?.extra"]"#
     );
 }
