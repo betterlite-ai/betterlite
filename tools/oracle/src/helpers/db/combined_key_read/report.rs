@@ -40,7 +40,6 @@ async fn execute(input: &Input) -> HelperResult {
     let report = Report::build(&state, outcome);
     serde_json::to_value(&report).or_value_error()
 }
-
 struct ServiceState {
     database: ScriptedDatabase,
     reconnect: ScriptedReconnect,
@@ -53,7 +52,6 @@ struct ServiceState {
     tasks: TaskTracker,
     cache: Arc<Mutex<DeprecatedKeyCache>>,
 }
-
 impl ServiceState {
     fn new(input: &Input) -> Result<Self, Box<HelperError>> {
         let wall = DateTime::parse_from_rfc3339(&input.now)
@@ -75,7 +73,6 @@ impl ServiceState {
             cache: Arc::new(Mutex::new(DeprecatedKeyCache::default())),
         })
     }
-
     async fn read(&self, input: &Input) -> Result<Option<CombinedKeyView>, KeyReadError> {
         let query_type = match input.query_type {
             QueryType::FindUnique => KeyQueryType::FindUnique,
@@ -109,7 +106,6 @@ impl ServiceState {
         outcome
     }
 }
-
 fn row_steps(steps: &[Step<BTreeMap<String, JsonData>>]) -> Result<Vec<RowStep>, Box<HelperError>> {
     steps
         .iter()
@@ -120,7 +116,6 @@ fn row_steps(steps: &[Step<BTreeMap<String, JsonData>>]) -> Result<Vec<RowStep>,
         })
         .collect()
 }
-
 fn deprecated_steps(
     steps: &[Step<DeprecatedFields>],
 ) -> Result<Vec<DeprecatedStep>, Box<HelperError>> {
@@ -142,7 +137,6 @@ fn deprecated_steps(
         })
         .collect()
 }
-
 fn reconnect_steps(steps: &[ReconnectStep]) -> Vec<Result<bool, ReconnectFailure>> {
     steps
         .iter()
@@ -152,7 +146,6 @@ fn reconnect_steps(steps: &[ReconnectStep]) -> Vec<Result<bool, ReconnectFailure
         })
         .collect()
 }
-
 fn database_fault(fault: &Fault) -> Result<DbError, Box<HelperError>> {
     let error_type = match fault.error_type.as_str() {
         "raw_query" => ErrorType::RawQuery,
@@ -170,7 +163,6 @@ fn database_fault(fault: &Fault) -> Result<DbError, Box<HelperError>> {
         cause: None,
     })
 }
-
 fn value_error(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("ValueError"),
@@ -181,7 +173,6 @@ fn value_error(message: String) -> Box<HelperError> {
         message,
     })
 }
-
 #[derive(Serialize)]
 struct Report {
     result: &'static str,
