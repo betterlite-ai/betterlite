@@ -10,10 +10,10 @@ pub(super) fn resolve_labels(
 ) -> Result<BTreeMap<ComplexityTier, String>, TierDefinitionsError> {
     let mut labels = BTreeMap::new();
     for (tier, label) in configured {
-        let Some(tier) = ComplexityTier::built_in(tier) else {
+        let Some(known) = ComplexityTier::built_in(tier) else {
             return Err(TierDefinitionsError::UnknownLabelTier { tier: tier.clone() });
         };
-        labels.insert(tier, label.clone());
+        labels.insert(known, label.clone());
     }
     Ok(labels)
 }

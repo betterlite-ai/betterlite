@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::tier_definitions as section;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::tier_definitions::checks::{
     ClassifierFallback, ClassifierKind, OrderFeature, TierChecks,
@@ -74,6 +75,14 @@ fn stored(value: &Json) -> section::TierParam {
         .expect("the parameter deserializes")
 }
 
+// the exact parameter map a resolved entry carries, for a test that pins every value
+pub(crate) fn params(pairs: &[(&str, Json)]) -> IndexMap<String, section::TierParam> {
+    pairs
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), stored(value)))
+        .collect()
+}
+
 pub(crate) fn labels(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
     pairs
         .iter()
@@ -136,12 +145,12 @@ pub(crate) fn llm(fallback: &str) -> TierChecks<'_> {
     }
 }
 
-pub(crate) fn checked(config: section::Config, checks: &TierChecks<'_>) -> TierSet {
-    TierSet::resolve(&config, checks).expect("the test config resolves")
+pub(crate) fn checked(config: &section::Config, checks: &TierChecks<'_>) -> TierSet {
+    TierSet::resolve(config, checks).expect("the test config resolves")
 }
 
-pub(crate) fn error(config: section::Config, checks: &TierChecks<'_>) -> TierDefinitionsError {
-    TierSet::resolve(&config, checks).expect_err("the test config is rejected")
+pub(crate) fn error(config: &section::Config, checks: &TierChecks<'_>) -> TierDefinitionsError {
+    TierSet::resolve(config, checks).expect_err("the test config is rejected")
 }
 
 // the order features a checks value carries, in LiteLLM's rendering order

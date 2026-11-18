@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::tier_definitions as section;
 use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
 
@@ -11,8 +10,8 @@ use crate::tier_definitions::checks::{ClassifierKind, TierChecks};
 use crate::tier_definitions::error::TierDefinitionsError;
 use crate::tier_definitions::model::{TierModelEntry, TierPool, TierSet, label_for};
 use crate::tier_definitions::tests::{
-    base_checks, blank, checked, custom, detailed, error, labels, ladder, llm, pool, pools, single,
-    stored,
+    base_checks, blank, checked, custom, detailed, error, labels, ladder, llm, params, pool, pools,
+    single,
 };
 
 fn names(set: &TierSet) -> Vec<String> {
@@ -28,7 +27,7 @@ fn severity(set: &TierSet) -> Vec<&'static str> {
 
 #[test]
 fn a_config_without_custom_tiers_uses_the_built_in_ladder() {
-    let set = checked(blank(), &TierChecks::default());
+    let set = checked(&blank(), &TierChecks::default());
     assert!(set.definitions.is_none());
     assert_eq!(names(&set), ["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"]);
     assert_eq!(severity(&set), ["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"]);
@@ -47,7 +46,7 @@ fn an_enabled_non_reasoning_tier_leads_the_ladder() {
         classifier_type: ClassifierKind::Llm,
         ..base_checks()
     };
-    let set = checked(config, &checks);
+    let set = checked(&config, &checks);
     assert!(set.non_reasoning);
     assert_eq!(
         severity(&set),
@@ -68,14 +67,14 @@ fn a_custom_set_may_name_the_non_reasoning_tier_with_the_flag_off() {
         tier_models: pools(&[("NON_REASONING", single("mini")), ("DEEP", single("deep"))]),
         ..blank()
     };
-    let set = checked(config, &llm("DEEP"));
+    let set = checked(&config, &llm("DEEP"));
     assert!(!set.non_reasoning);
     assert_eq!(names(&set), ["NON_REASONING", "DEEP"]);
 }
 
 #[test]
 fn a_custom_ladder_keeps_the_definition_order() {
-    let set = checked(custom(), &llm("ECO"));
+    let set = checked(&custom(), &llm("ECO"));
     assert!(set.definitions.is_some());
     assert_eq!(names(&set), ["ECO", "DEEP"]);
     assert_eq!(set.wire_labels(), ["ECO", "DEEP"]);
@@ -102,7 +101,7 @@ fn a_custom_set_resolves_replies_to_its_defined_names(
     #[case] reply: &str,
     #[case] expected: Option<&str>,
 ) {
-    let set = checked(custom(), &llm("ECO"));
+    let set = checked(&custom(), &llm("ECO"));
     let resolved = set.resolve_classified_tier(reply);
     assert_eq!(resolved.as_ref().map(Tier::name), expected);
 }
@@ -115,7 +114,7 @@ fn a_reply_that_only_casefold_would_match_does_not_resolve() {
         tier_models: pools(&[("STRASSE", single("a")), ("DEEP", single("b"))]),
         ..blank()
     };
-    let set = checked(config, &llm("STRASSE"));
+    let set = checked(&config, &llm("STRASSE"));
     assert_eq!(set.resolve_classified_tier("straße"), None);
     assert_eq!(
         set.resolve_classified_tier("STRASSE")
@@ -140,7 +139,7 @@ fn a_built_in_set_resolves_replies_through_labels(
         tier_labels: labels(&[("SIMPLE", "Cheap"), ("MEDIUM", "Standard")]),
         ..blank()
     };
-    let set = checked(config, &TierChecks::default());
+    let set = checked(&config, &TierChecks::default());
     assert_eq!(
         set.resolve_classified_tier(reply),
         expected.map(Tier::BuiltIn)
@@ -155,7 +154,7 @@ fn display_labels_do_not_rename_the_configuration_keys() {
         tier_models: pools(&[("SIMPLE", single("small"))]),
         ..blank()
     };
-    let set = checked(config, &TierChecks::default());
+    let set = checked(&config, &TierChecks::default());
     assert_eq!(names(&set), ["SIMPLE", "MEDIUM", "COMPLEX", "REASONING"]);
     assert!(set.pools.get("SIMPLE").is_some());
     assert!(set.pools.get("Cheap").is_none());
@@ -177,7 +176,7 @@ fn labeled_tiers_render_the_operator_vocabulary_in_severity_order() {
         classifier_type: ClassifierKind::Llm,
         ..base_checks()
     };
-    let set = checked(config, &checks);
+    let set = checked(&config, &checks);
     assert_eq!(
         set.labeled_tiers(),
         [
@@ -205,7 +204,7 @@ fn a_single_object_entry_keeps_its_request_params() {
         )]),
         ..blank()
     };
-    let set = checked(config, &TierChecks::default());
+    let set = checked(&config, &TierChecks::default());
     let reasoning = set.pools.get("REASONING").unwrap();
     assert!(matches!(reasoning, TierPool::Single(_)));
     assert_eq!(reasoning.models().len(), 1);
@@ -231,11 +230,11 @@ fn parameter_values_stay_out_of_debug_output() {
         )]),
         ..blank()
     };
-    let rendered = format!("{config:?}");
-    assert!(!rendered.contains("sk-secret"), "{rendered}");
-    let set = checked(config, &TierChecks::default());
-    let rendered = format!("{set:?}");
-    assert!(!rendered.contains("sk-secret"), "{rendered}");
+    let config_debug = format!("{config:?}");
+    assert!(!config_debug.contains("sk-secret"), "{config_debug}");
+    let set = checked(&config, &TierChecks::default());
+    let set_debug = format!("{set:?}");
+    assert!(!set_debug.contains("sk-secret"), "{set_debug}");
 }
 
 #[test]
@@ -257,7 +256,7 @@ fn a_pool_keeps_every_entry_with_its_own_params() {
         )]),
         ..blank()
     };
-    let set = checked(config, &TierChecks::default());
+    let set = checked(&config, &TierChecks::default());
     let reasoning = set.pools.get("REASONING").unwrap();
     assert!(!matches!(reasoning, TierPool::Single(_)));
     let models = reasoning.models();
@@ -271,24 +270,18 @@ fn a_pool_keeps_every_entry_with_its_own_params() {
     );
     assert_eq!(
         models[0].params,
-        IndexMap::from([(
-            "reasoning_effort".to_owned(),
-            stored(&Json::Text("xhigh".to_owned())),
-        )])
+        params(&[("reasoning_effort", Json::Text("xhigh".to_owned()))])
     );
     assert_eq!(
         models[1].params,
-        IndexMap::from([(
-            "max_tokens".to_owned(),
-            stored(&Json::Number(Number::from(1024_u64))),
-        )])
+        params(&[("max_tokens", Json::Number(Number::from(1024_u64)))])
     );
     assert!(models[2].params.is_empty());
 }
 
 #[test]
 fn an_absent_pool_map_uses_the_pinned_default_models() {
-    let set = checked(blank(), &TierChecks::default());
+    let set = checked(&blank(), &TierChecks::default());
     assert_eq!(set.pools.len(), 4);
     assert_eq!(
         set.pools.get("SIMPLE").unwrap().models()[0].model_name,
@@ -299,7 +292,7 @@ fn an_absent_pool_map_uses_the_pinned_default_models() {
         "claude-sonnet-4-20250514"
     );
     let empty = checked(
-        section::Config {
+        &section::Config {
             tier_models: Some(BTreeMap::new()),
             ..blank()
         },
@@ -326,7 +319,7 @@ fn a_repeated_model_name_in_one_pool_is_rejected(
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::DuplicateModelName { tier: reported } if reported == tier
     ));
 }
@@ -338,7 +331,7 @@ fn definitions_are_stripped_and_a_built_in_name_inherits_its_description() {
         tier_models: pools(&[("simple", single("a")), ("DEEP", single("b"))]),
         ..blank()
     };
-    let set = checked(config, &llm("simple"));
+    let set = checked(&config, &llm("simple"));
     let definitions = set.definitions.as_deref().unwrap();
     assert_eq!(definitions[0].name, "simple");
     assert_eq!(definitions[0].description.as_deref(), None);
@@ -353,14 +346,14 @@ fn a_section_shaped_rubric_requires_an_llm_classifier() {
         classification_prompt: Some("choose a tier"),
         ..base_checks()
     };
-    assert!(TierSet::resolve(&blank(), &llm_checks).is_ok());
+    checked(&blank(), &llm_checks);
     let heuristic = TierChecks {
         classifier_type: ClassifierKind::Heuristic,
         classification_examples: Some("one example"),
         ..base_checks()
     };
     assert!(matches!(
-        error(blank(), &heuristic),
+        error(&blank(), &heuristic),
         TierDefinitionsError::OpeningRequiresClassifier {
             field: "classification_examples",
             ..
@@ -373,7 +366,7 @@ fn a_section_shaped_rubric_requires_an_llm_classifier() {
         ..base_checks()
     };
     assert!(matches!(
-        error(blank(), &whole_prompt),
+        error(&blank(), &whole_prompt),
         TierDefinitionsError::OpeningWithSystemPrompt {
             field: "classification_prompt"
         }
@@ -402,7 +395,7 @@ fn entry_params_stay_typed_json_values() {
         )]),
         ..blank()
     };
-    let set = checked(config, &TierChecks::default());
+    let set = checked(&config, &TierChecks::default());
     let entry: &TierModelEntry = &set.pools.get("MEDIUM").unwrap().models()[0];
     assert_eq!(entry.params.len(), 2);
     assert!(!entry.params.is_empty());

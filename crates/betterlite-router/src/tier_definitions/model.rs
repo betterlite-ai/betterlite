@@ -122,6 +122,6 @@ impl TierSet {
 pub(crate) fn label_for(labels: &BTreeMap<ComplexityTier, String>, tier: ComplexityTier) -> &str {
     match labels.get(&tier) {
         Some(label) if !label.trim().is_empty() => label.trim(),
-        _ => tier.name(),
+        Some(_) | None => tier.name(),
     }
 }

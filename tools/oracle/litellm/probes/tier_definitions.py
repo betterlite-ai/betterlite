@@ -10,7 +10,7 @@ from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 ClassifierType = Literal["heuristic", "llm"]
 OrderFeatureName = Literal["adaptive", "session_affinity", "escalation_keywords", "stall_escalation"]

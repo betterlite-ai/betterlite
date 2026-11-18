@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::zeroize::Zeroize;
+use secrecy::{CloneableSecret, ExposeSecret as _, SecretBox, SerializableSecret};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::{DefaultOnNull, serde_as};
@@ -61,11 +62,26 @@ pub struct TierDefinition {
     pub description: Option<String>,
 }
 
-// A request parameter's text may be a credential, so it is a SecretString from deserialization onward
+// a parameter's text may be a credential, so it stays out of Debug while serde still writes it
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct ParamText(String);
+
+// secrecy writes a secret only through its marker trait, the same shape KeyText uses
+impl Zeroize for ParamText {
+    fn zeroize(&mut self) {
+        self.0.zeroize();
+    }
+}
+
+impl CloneableSecret for ParamText {}
+
+impl SerializableSecret for ParamText {}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(untagged, into = "Json")]
+#[serde(untagged)]
 pub enum TierParam {
-    Text(SecretString),
+    Text(SecretBox<ParamText>),
     Number(Number),
     List(Vec<Self>),
     Object(IndexMap<String, Self>),
@@ -75,7 +91,7 @@ pub enum TierParam {
 impl From<TierParam> for Json {
     fn from(value: TierParam) -> Self {
         match value {
-            TierParam::Text(text) => Self::Text(text.expose_secret().to_owned()),
+            TierParam::Text(text) => Self::Text(text.expose_secret().0.clone()),
             TierParam::Number(number) => Self::Number(number),
             TierParam::List(items) => Self::List(items.into_iter().map(Self::from).collect()),
             TierParam::Object(entries) => Self::Object(
@@ -84,7 +100,7 @@ impl From<TierParam> for Json {
                     .map(|(key, item)| (key, Self::from(item)))
                     .collect(),
             ),
-            TierParam::Value(value) => value,
+            TierParam::Value(stored) => stored,
         }
     }
 }
@@ -94,8 +110,9 @@ impl PartialEq for TierParam {
         match (self, other) {
             (Self::Text(left), Self::Text(right)) => bool::from(
                 left.expose_secret()
+                    .0
                     .as_bytes()
-                    .ct_eq(right.expose_secret().as_bytes()),
+                    .ct_eq(right.expose_secret().0.as_bytes()),
             ),
             (Self::Number(left), Self::Number(right)) => left == right,
             (Self::Value(left), Self::Value(right)) => left == right,
@@ -188,13 +205,7 @@ impl RawRouterConfig {
                 &format!("{prefix}.non_reasoning_tier"),
                 lookup,
             )?,
-            tier_labels: values::resolve_map(
-                self.tier_labels.unwrap_or_default(),
-                &prefix,
-                "tier_labels",
-                lookup,
-                values::reference,
-            )?,
+            tier_labels: values::labels(self.tier_labels.unwrap_or_default(), &prefix, lookup)?,
             tier_models: values::pools(self.tier_models, &prefix, lookup)?,
         })
     }

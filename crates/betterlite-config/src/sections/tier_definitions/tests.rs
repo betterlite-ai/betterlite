@@ -224,7 +224,24 @@ fn references_resolve_once_from_the_environment() {
         non_reasoning_tier: os.environ/FLAG
         tier_labels:
           SIMPLE: os.environ/LABEL
-        tier_models:
+";
+    let variables = [
+        ("TIER_NAME", "ECO"),
+        ("TIER_TEXT", "cheap asks"),
+        ("FLAG", "true"),
+        ("LABEL", "Cheap"),
+    ];
+    let config = only(keys, &variables).unwrap().unwrap();
+    assert!(config.non_reasoning_tier);
+    assert_eq!(config.tier_labels["SIMPLE"], "Cheap");
+    let definitions = config.tier_definitions.unwrap();
+    assert_eq!(definitions[0].name, "ECO");
+    assert_eq!(definitions[0].description.as_deref(), Some("cheap asks"));
+}
+
+#[test]
+fn a_mapping_parameter_resolves_its_references_and_a_scalar_in_a_list_stays_literal() {
+    let keys = "        tier_models:
           ECO:
             model_name: os.environ/MODEL
             litellm_params:
@@ -233,10 +250,6 @@ fn references_resolve_once_from_the_environment() {
               items: [{key: os.environ/IN_LIST_OBJECT}, os.environ/LITERAL]
 ";
     let variables = [
-        ("TIER_NAME", "ECO"),
-        ("TIER_TEXT", "cheap asks"),
-        ("FLAG", "true"),
-        ("LABEL", "Cheap"),
         ("MODEL", "eco-mini"),
         ("TEMPERATURE", "0.2"),
         ("NESTED", "nested-value"),
@@ -244,15 +257,6 @@ fn references_resolve_once_from_the_environment() {
         ("LITERAL", "literal-value"),
     ];
     let config = only(keys, &variables).unwrap().unwrap();
-    assert_eq!(
-        config.tier_definitions.unwrap()[0],
-        TierDefinition {
-            name: "ECO".to_owned(),
-            description: Some("cheap asks".to_owned()),
-        }
-    );
-    assert!(config.non_reasoning_tier);
-    assert_eq!(config.tier_labels["SIMPLE"], "Cheap");
     let expected = entry(
         "eco-mini",
         &[
@@ -388,20 +392,20 @@ fn the_loader_accepts_the_task_keys_as_supported() {
 
 #[test]
 fn a_number_in_a_text_slot_is_a_load_error() {
-    assert!(only("        tier_labels:\n          SIMPLE: 3\n", &[]).is_err());
+    only("        tier_labels:\n          SIMPLE: 3\n", &[]).unwrap_err();
 }
 
 #[test]
 fn a_parameter_entry_without_a_model_name_is_a_load_error() {
     let keys =
         "        tier_models:\n          SIMPLE:\n            litellm_params: {temperature: 0.2}\n";
-    assert!(only(keys, &[]).is_err());
+    only(keys, &[]).unwrap_err();
 }
 
 #[test]
 fn a_parameter_entry_with_non_mapping_params_is_a_load_error() {
     let keys = "        tier_models:\n          SIMPLE:\n            model_name: small\n            litellm_params: []\n";
-    assert!(only(keys, &[]).is_err());
+    only(keys, &[]).unwrap_err();
 }
 
 #[test]
@@ -482,7 +486,7 @@ fn a_fractional_parameter_round_trips_through_json() {
     let rendered = serde_json::to_string(&config).expect("the config serializes");
     assert!(rendered.contains(r#""temperature":0.2"#), "{rendered}");
     assert!(
-        !rendered.contains(r#"$serde_json::private::Number"#),
+        !rendered.contains("$serde_json::private::Number"),
         "{rendered}"
     );
 }
@@ -584,9 +588,9 @@ fn a_parameter_map_exposes_its_entries() {
     )
     .unwrap()
     .unwrap();
-    let pools = absent.tier_models.unwrap();
-    let TierPool::Single(TierEntry::Detailed(entry)) = &pools["SIMPLE"] else {
+    let absent_pools = absent.tier_models.unwrap();
+    let TierPool::Single(TierEntry::Detailed(absent_entry)) = &absent_pools["SIMPLE"] else {
         panic!("a parameterized entry expected");
     };
-    assert!(entry.litellm_params.is_empty());
+    assert!(absent_entry.litellm_params.is_empty());
 }

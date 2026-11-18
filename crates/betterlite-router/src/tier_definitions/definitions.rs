@@ -160,13 +160,13 @@ pub(super) fn validate_definitions(
     labels: &BTreeMap<ComplexityTier, String>,
     checks: &TierChecks<'_>,
 ) -> Result<(), TierDefinitionsError> {
-    let Some(ladder) = ladder else {
+    let Some(defined) = ladder else {
         if checks.fallback_tier.is_some() {
             return Err(TierDefinitionsError::FallbackWithoutTiers);
         }
         return validate_opening(checks);
     };
-    let names: Vec<&str> = ladder
+    let names: Vec<&str> = defined
         .iter()
         .map(|definition| definition.name.as_str())
         .collect();
@@ -241,14 +241,14 @@ fn validate_defined_pools(
 }
 
 fn validate_fallback(fallback: Option<&str>, names: &[&str]) -> Result<(), TierDefinitionsError> {
-    let Some(fallback) = fallback else {
+    let Some(configured) = fallback else {
         return Err(TierDefinitionsError::FallbackRequired);
     };
-    if names.contains(&fallback) {
+    if names.contains(&configured) {
         return Ok(());
     }
     Err(TierDefinitionsError::FallbackUnknown {
-        tier: fallback.to_owned(),
+        tier: configured.to_owned(),
         defined: names.iter().map(|name| (*name).to_owned()).collect(),
     })
 }

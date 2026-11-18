@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret as _, SecretBox};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::tier_definitions::{
-    RawFlag, TierDefinition, TierEntry, TierModelEntry, TierParam, TierPool,
+    ParamText, RawFlag, TierDefinition, TierEntry, TierModelEntry, TierParam, TierPool,
 };
 
 pub(super) fn flag(
@@ -44,11 +44,11 @@ pub(super) fn definitions(
     prefix: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<Vec<TierDefinition>>, ConfigError> {
-    let Some(raw) = raw else {
+    let Some(declared) = raw else {
         return Ok(None);
     };
-    let mut resolved = Vec::with_capacity(raw.len());
-    for (position, definition) in raw.into_iter().enumerate() {
+    let mut resolved = Vec::with_capacity(declared.len());
+    for (position, definition) in declared.into_iter().enumerate() {
         let path = format!("{prefix}.tier_definitions.{position}");
         let name = reference(definition.name, &format!("{path}.name"), lookup)?.unwrap_or_default();
         let description = definition
@@ -61,20 +61,18 @@ pub(super) fn definitions(
     Ok(Some(resolved))
 }
 
-pub(super) fn resolve_map<T>(
-    entries: BTreeMap<String, Option<T>>,
+pub(super) fn labels(
+    entries: BTreeMap<String, Option<String>>,
     prefix: &str,
-    key: &str,
     lookup: &dyn EnvironmentLookup,
-    resolve: fn(T, &str, &dyn EnvironmentLookup) -> Result<Option<T>, ConfigError>,
-) -> Result<BTreeMap<String, T>, ConfigError> {
+) -> Result<BTreeMap<String, String>, ConfigError> {
     let mut resolved = BTreeMap::new();
-    for (tier, value) in entries {
-        let Some(value) = value else {
+    for (tier, label) in entries {
+        let Some(text) = label else {
             continue;
         };
-        let path = format!("{prefix}.{key}.{tier}");
-        if let Some(value) = resolve(value, &path, lookup)? {
+        let path = format!("{prefix}.tier_labels.{tier}");
+        if let Some(value) = reference(text, &path, lookup)? {
             resolved.insert(tier, value);
         }
     }
@@ -86,24 +84,24 @@ pub(super) fn pools(
     prefix: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<BTreeMap<String, TierPool>>, ConfigError> {
-    let Some(raw) = raw else {
+    let Some(declared) = raw else {
         return Ok(None);
     };
     let mut resolved = BTreeMap::new();
-    for (tier, pool) in raw {
-        let Some(pool) = pool else {
+    for (tier, configured) in declared {
+        let Some(pool) = configured else {
             continue;
         };
         let path = format!("{prefix}.tier_models.{tier}");
-        let pool = match pool {
+        let resolved_pool = match pool {
             TierPool::Single(TierEntry::Model(model)) => reference(model, &path, lookup)?
-                .map(|model| TierPool::Single(TierEntry::Model(model))),
+                .map(|name| TierPool::Single(TierEntry::Model(name))),
             TierPool::Single(TierEntry::Detailed(entry)) => Some(TierPool::Single(
                 TierEntry::Detailed(detailed(entry, &path, lookup)?),
             )),
             TierPool::Pool(entries) => Some(TierPool::Pool(pool_entries(entries, &path, lookup)?)),
         };
-        resolved.extend(pool.map(|pool| (tier, pool)));
+        resolved.extend(resolved_pool.map(|pool_value| (tier, pool_value)));
     }
     Ok(Some(resolved))
 }
@@ -115,13 +113,17 @@ fn pool_entries(
 ) -> Result<Vec<TierEntry>, ConfigError> {
     let mut resolved = Vec::with_capacity(entries.len());
     for (position, entry) in entries.into_iter().enumerate() {
-        let path = format!("{path}.{position}");
+        let entry_path = format!("{path}.{position}");
         // the proxy substitutes mapping values only, so a model name inside a list stays literal
-        let TierEntry::Detailed(entry) = entry else {
+        let TierEntry::Detailed(detailed_entry) = entry else {
             resolved.push(entry);
             continue;
         };
-        resolved.push(TierEntry::Detailed(detailed(entry, &path, lookup)?));
+        resolved.push(TierEntry::Detailed(detailed(
+            detailed_entry,
+            &entry_path,
+            lookup,
+        )?));
     }
     Ok(resolved)
 }
@@ -151,13 +153,13 @@ fn required_model_name(
     let Some(name) = text.strip_prefix("os.environ/").map(str::to_owned) else {
         return Ok(text);
     };
-    match lookup.lookup(&name).filter(|value| !value.is_empty()) {
-        Some(value) => Ok(value),
-        None => Err(ConfigError::MissingEnvironment {
+    lookup
+        .lookup(&name)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| ConfigError::MissingEnvironment {
             variable: name,
             path: path.to_owned(),
-        }),
-    }
+        })
 }
 
 fn resolve_params(
@@ -167,8 +169,8 @@ fn resolve_params(
 ) -> Result<IndexMap<String, TierParam>, ConfigError> {
     let mut entries = IndexMap::with_capacity(params.len());
     for (key, value) in params {
-        let path = format!("{path}.{key}");
-        entries.extend(resolve_param(value, &path, lookup)?.map(|item| (key, item)));
+        let param_path = format!("{path}.{key}");
+        entries.extend(resolve_param(value, &param_path, lookup)?.map(|item| (key, item)));
     }
     Ok(entries)
 }
@@ -179,13 +181,18 @@ fn resolve_param(
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<TierParam>, ConfigError> {
     match value {
-        TierParam::Text(text) => Ok(reference(text.expose_secret().to_owned(), path, lookup)?
-            .map(|text| TierParam::Text(SecretString::from(text)))),
+        TierParam::Text(text) => Ok(
+            reference(text.expose_secret().0.clone(), path, lookup)?.map(|resolved_text| {
+                TierParam::Text(SecretBox::new(Box::new(ParamText(resolved_text))))
+            }),
+        ),
         TierParam::Object(inner) => {
             let mut entries = IndexMap::with_capacity(inner.len());
             for (key, item) in inner {
-                let path = format!("{path}.{key}");
-                entries.extend(resolve_param(item, &path, lookup)?.map(|item| (key, item)));
+                let member_path = format!("{path}.{key}");
+                entries.extend(
+                    resolve_param(item, &member_path, lookup)?.map(|resolved| (key, resolved)),
+                );
             }
             Ok(Some(TierParam::Object(entries)))
         }
@@ -201,6 +208,6 @@ fn resolve_param(
             }
             Ok(Some(TierParam::List(entries)))
         }
-        other => Ok(Some(other)),
+        other @ TierParam::Number(_) | other @ TierParam::Value(_) => Ok(Some(other)),
     }
 }

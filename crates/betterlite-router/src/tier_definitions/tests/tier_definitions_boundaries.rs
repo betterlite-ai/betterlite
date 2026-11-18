@@ -46,12 +46,12 @@ fn the_definition_count_bounds_are_two_and_eight(#[case] count: usize, #[case] a
     let config = custom_with(count);
     let checks = llm("TIER_0");
     if accepted {
-        let set = checked(config, &checks);
+        let set = checked(&config, &checks);
         assert_eq!(set.definitions.as_deref().unwrap().len(), count);
         return;
     }
     assert!(matches!(
-        error(config, &checks),
+        error(&config, &checks),
         TierDefinitionsError::TierCount { count: reported } if reported == count
     ));
 }
@@ -76,7 +76,7 @@ fn definition_fields_at_the_character_limit_are_accepted(#[case] padded: bool) {
         &name,
         Some(&spaced(&description, padded)),
     );
-    let set = checked(config, &llm("SECOND"));
+    let set = checked(&config, &llm("SECOND"));
     let definition = &set.definitions.as_deref().unwrap()[0];
     assert_eq!(definition.name, name);
     assert_eq!(
@@ -91,7 +91,7 @@ fn definition_fields_at_the_character_limit_are_accepted(#[case] padded: bool) {
 fn a_definition_name_over_the_character_limit_is_rejected(#[case] name: String) {
     let config = named_definition(&name, name.trim(), Some("asks"));
     assert!(matches!(
-        error(config, &llm("SECOND")),
+        error(&config, &llm("SECOND")),
         TierDefinitionsError::NameTooLong { max: 64, .. }
     ));
 }
@@ -101,7 +101,7 @@ fn a_description_over_the_character_limit_is_rejected() {
     let description = "d".repeat(501);
     let config = named_definition("ECO", "ECO", Some(&description));
     assert!(matches!(
-        error(config, &llm("SECOND")),
+        error(&config, &llm("SECOND")),
         TierDefinitionsError::DescriptionTooLong { max: 500, .. }
     ));
 }
@@ -112,7 +112,7 @@ fn a_description_over_the_character_limit_is_rejected() {
 fn an_empty_definition_name_is_rejected(#[case] name: &str) {
     let config = named_definition(name, "ECO", Some("asks"));
     assert!(matches!(
-        error(config, &llm("SECOND")),
+        error(&config, &llm("SECOND")),
         TierDefinitionsError::EmptyName
     ));
 }
@@ -123,7 +123,7 @@ fn an_empty_definition_name_is_rejected(#[case] name: &str) {
 fn a_custom_tier_needs_a_description(#[case] description: Option<&str>) {
     let config = named_definition("ECO", "ECO", description);
     assert!(matches!(
-        error(config, &llm("SECOND")),
+        error(&config, &llm("SECOND")),
         TierDefinitionsError::MissingDescription { name } if name == "ECO"
     ));
 }
@@ -131,7 +131,7 @@ fn a_custom_tier_needs_a_description(#[case] description: Option<&str>) {
 #[test]
 fn a_built_in_name_inherits_its_description_in_any_case() {
     let config = named_definition("simple", "simple", None);
-    let set = checked(config, &llm("SECOND"));
+    let set = checked(&config, &llm("SECOND"));
     let definitions = set.definitions.as_deref().unwrap();
     assert_eq!(definitions[0].name, "simple");
     assert_eq!(definitions[0].description.as_deref(), None);
@@ -144,7 +144,7 @@ fn a_built_in_name_inherits_its_description_in_any_case() {
 fn a_newline_in_a_definition_is_rejected(#[case] name: &str, #[case] description: Option<&str>) {
     let config = named_definition(name, "A B", description);
     assert!(matches!(
-        error(config, &llm("SECOND")),
+        error(&config, &llm("SECOND")),
         TierDefinitionsError::Newline { .. }
     ));
 }
@@ -165,7 +165,7 @@ fn a_repeated_definition_name_is_rejected_case_insensitively() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &llm("ECO")),
+        error(&config, &llm("ECO")),
         TierDefinitionsError::DuplicateNames { names } if names == ["ECO", "eco"]
     ));
 }
@@ -177,7 +177,7 @@ fn a_custom_set_without_a_fallback_is_rejected() {
         ..base_checks()
     };
     assert!(matches!(
-        error(custom(), &checks),
+        error(&custom(), &checks),
         TierDefinitionsError::FallbackRequired
     ));
 }
@@ -185,7 +185,7 @@ fn a_custom_set_without_a_fallback_is_rejected() {
 #[test]
 fn a_fallback_outside_the_defined_names_is_rejected() {
     assert!(matches!(
-        error(custom(), &llm("PREMIUM")),
+        error(&custom(), &llm("PREMIUM")),
         TierDefinitionsError::FallbackUnknown { tier, defined }
             if tier == "PREMIUM" && defined == ["ECO", "DEEP"]
     ));
@@ -198,7 +198,7 @@ fn a_fallback_without_a_custom_set_is_rejected() {
         ..base_checks()
     };
     assert!(matches!(
-        error(blank(), &checks),
+        error(&blank(), &checks),
         TierDefinitionsError::FallbackWithoutTiers
     ));
 }
@@ -210,7 +210,7 @@ fn every_defined_tier_needs_a_pool() {
         ..custom()
     };
     assert!(matches!(
-        error(config, &llm("ECO")),
+        error(&config, &llm("ECO")),
         TierDefinitionsError::MissingTiers { names } if names == ["DEEP"]
     ));
 }
@@ -226,7 +226,7 @@ fn a_pool_for_an_undefined_tier_is_rejected() {
         ..custom()
     };
     assert!(matches!(
-        error(config, &llm("ECO")),
+        error(&config, &llm("ECO")),
         TierDefinitionsError::UnknownTiers { names } if names == ["EXTRA"]
     ));
 }
@@ -240,7 +240,7 @@ fn an_empty_pool_is_rejected(#[case] configured: section::TierPool, #[case] tier
         ..custom()
     };
     assert!(matches!(
-        error(config, &llm("ECO")),
+        error(&config, &llm("ECO")),
         TierDefinitionsError::EmptyPools { names } if names == [tier]
     ));
 }
@@ -252,7 +252,7 @@ fn empty_pools_are_reported_sorted() {
         ..custom()
     };
     assert!(matches!(
-        error(config, &llm("ECO")),
+        error(&config, &llm("ECO")),
         TierDefinitionsError::EmptyPools { names } if names == ["DEEP", "ECO"]
     ));
 }
@@ -264,7 +264,7 @@ fn a_non_reasoning_pool_without_the_flag_is_rejected() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::NonReasoningWithoutFlag { tier } if tier == "NON_REASONING"
     ));
 }
@@ -284,7 +284,7 @@ fn an_enabled_non_reasoning_tier_needs_a_pool(#[case] configured: Option<section
         ..base_checks()
     };
     assert!(matches!(
-        error(config, &checks),
+        error(&config, &checks),
         TierDefinitionsError::NonReasoningWithoutModel { tier } if tier == "NON_REASONING"
     ));
 }
@@ -297,7 +297,7 @@ fn an_enabled_non_reasoning_tier_needs_a_classifier_that_emits_it() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::NonReasoningClassifier {
             classifier: ClassifierKind::Heuristic
         }
@@ -311,7 +311,7 @@ fn an_enabled_non_reasoning_tier_cannot_join_a_custom_set() {
         ..custom()
     };
     assert!(matches!(
-        error(config, &llm("ECO")),
+        error(&config, &llm("ECO")),
         TierDefinitionsError::NonReasoningWithTiers
     ));
 }
@@ -323,7 +323,7 @@ fn blank_labels_are_rejected_in_severity_order() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::BlankLabels { tiers }
             if tiers == [ComplexityTier::Simple, ComplexityTier::Medium]
     ));
@@ -336,9 +336,9 @@ fn a_label_that_spells_another_tier_is_rejected() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::ShadowedLabels { labels }
-            if labels == [(ComplexityTier::Simple, "Reasoning")]
+            if labels == [(ComplexityTier::Simple, "Reasoning".to_owned())]
     ));
 }
 
@@ -348,7 +348,7 @@ fn a_label_that_spells_its_own_tier_is_accepted() {
         tier_labels: labels(&[("SIMPLE", "simple")]),
         ..blank()
     };
-    let set = checked(config, &TierChecks::default());
+    let set = checked(&config, &TierChecks::default());
     assert_eq!(label_for(&set.labels, ComplexityTier::Simple), "simple");
 }
 
@@ -359,7 +359,7 @@ fn shared_labels_are_rejected_as_one_group() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::DuplicateLabels { groups }
             if groups == [vec![ComplexityTier::Simple, ComplexityTier::Medium]]
     ));
@@ -372,7 +372,7 @@ fn a_label_for_an_unknown_tier_is_rejected() {
         ..blank()
     };
     assert!(matches!(
-        error(config, &TierChecks::default()),
+        error(&config, &TierChecks::default()),
         TierDefinitionsError::UnknownLabelTier { tier } if tier == "ECO"
     ));
 }
@@ -396,12 +396,12 @@ fn only_llm_custom_and_jev_classifiers_emit_custom_tiers(
         ..base_checks()
     };
     if accepted {
-        let set = checked(custom(), &checks);
+        let set = checked(&custom(), &checks);
         assert_eq!(set.tier_names(), ["ECO", "DEEP"]);
         return;
     }
     assert!(matches!(
-        error(custom(), &checks),
+        error(&custom(), &checks),
         TierDefinitionsError::ClassifierCannotEmitTiers { classifier: reported }
             if reported == classifier
     ));
@@ -433,12 +433,12 @@ fn the_llm_and_non_reasoning_classifier_sets_match_litellm(
         ..base_checks()
     };
     if emits_non_reasoning {
-        let set = checked(config, &checks);
+        let set = checked(&config, &checks);
         assert!(set.non_reasoning);
         return;
     }
     assert!(matches!(
-        error(config, &checks),
+        error(&config, &checks),
         TierDefinitionsError::NonReasoningClassifier { classifier: reported }
             if reported == classifier
     ));
@@ -467,7 +467,7 @@ fn all_order_dependent_features_are_reported_in_one_conflict() {
         ..custom()
     };
     assert!(matches!(
-        error(config, &checks),
+        error(&config, &checks),
         TierDefinitionsError::Conflicts { conflicts }
             if conflicts == [
                 DefinitionConflict::OrderFeatures(vec![
@@ -493,7 +493,7 @@ fn a_classifier_conflict_names_the_configured_classifier() {
         ..base_checks()
     };
     assert_eq!(
-        error(custom(), &checks).to_string(),
+        error(&custom(), &checks).to_string(),
         "tier_definitions requires an LLM, Jev or custom classifier, got hybrid"
     );
 }
@@ -513,7 +513,7 @@ fn every_conflict_is_joined_into_one_message() {
         ..custom()
     };
     assert_eq!(
-        error(config, &checks).to_string(),
+        error(&config, &checks).to_string(),
         "adaptive, plugins cannot be combined with tier_definitions: these features rely on the \
          built-in tier severity order; classifier_llm_config.system_prompt cannot be combined with \
          tier_definitions; tier_labels cannot be combined with tier_definitions"
@@ -526,7 +526,7 @@ fn a_default_model_fallback_is_allowed_without_custom_tiers() {
         classifier_fallback: ClassifierFallback::DefaultModel,
         ..base_checks()
     };
-    let set = checked(blank(), &checks);
+    let set = checked(&blank(), &checks);
     assert!(set.definitions.is_none());
 }
 
