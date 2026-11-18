@@ -30,4 +30,4 @@ kept_bugs:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L399-L411
   - what: An error from opening the bidirectional stream escapes without the stream-error status mapping, so a ModelStreamErrorException raised there keeps no mapped status while the same error during receive becomes 424.
     why: LiteLLM maps only the failures collected by the bridge, and a working setup sees the raw SDK error from the open call, so betterlite keeps the unmapped stream error at open time.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L344-L348
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L358
