@@ -1,0 +1,19 @@
+name: cost-estimate-provider-tier-rates-come-from-calculation
+config: |
+  general_settings:
+    master_key: oracle-master
+  model_list:
+    - model_name: qwen-tier
+      litellm_params: {model: dashscope/qwen3-max}
+env: {}
+request:
+  method: POST
+  path: /cost/estimate
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: qwen-tier, input_tokens: 40000, output_tokens: 1000}
+upstream: []
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

@@ -1,0 +1,20 @@
+task: B1651
+deviations:
+  - what: >-
+      Quote amounts and rates are Decimal-backed JSON numbers, so binary-float rounding tails can
+      differ from LiteLLM's estimates.
+    why: >-
+      Estimates must report the same exact-money result as betterlite's actual billing service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L163-L173
+  - what: >-
+      A config model_list entry cannot declare per-token deployment prices: the config loader rejects
+      keys such as input_cost_per_token, output_cost_per_token or cache_read_input_token_cost as
+      unsupported, so such a config does not start. LiteLLM loads it and the quote prices the
+      deployment with those rates.
+    why: >-
+      The config crate's model_list parameter view is owned by the deployment-config tasks and is not
+      in this task's scope. The endpoint itself reads deployment prices whenever the router rows carry
+      them, and the helper oracle cases prove input, output, cache-read and cache-write collection,
+      deployment precedence over model_info, and the backend and input-rate fallbacks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L59-L87
+kept_bugs: []
