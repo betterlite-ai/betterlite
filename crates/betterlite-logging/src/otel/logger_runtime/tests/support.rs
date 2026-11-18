@@ -441,10 +441,6 @@ pub(crate) fn finished(sink: &InMemorySpanExporter) -> usize {
     sink.get_finished_spans().map_or(0, |spans| spans.len())
 }
 
-pub(crate) fn factories() -> Arc<ExporterFactories> {
-    Arc::new(ExporterFactories::new(clients(), BTreeMap::new()))
-}
-
 fn fixture_factories() -> (Arc<ExporterFactories>, Arc<SinkRecorder>, Arc<SinkRecorder>) {
     let export_sinks = Arc::new(SinkRecorder::default());
     let tenant_sinks = Arc::new(SinkRecorder::default());
