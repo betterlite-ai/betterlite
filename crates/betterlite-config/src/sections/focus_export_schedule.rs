@@ -1,4 +1,7 @@
+use std::collections::BTreeMap;
+
 use betterlite_env::EnvError;
+use serde::de::IgnoredAny;
 use tracing::warn;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -20,8 +23,10 @@ pub const DEFAULT_CRON_OFFSET_MINUTE: i64 = 5;
 pub const DEFAULT_INTERVAL_SECONDS: i64 = 60;
 pub const DEFAULT_PREFIX: &str = "focus_exports";
 
-#[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+// env-only section: no YAML key is read here, and the newtype keeps this Section impl off openai_realtime's map type
+#[derive(Default, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
@@ -55,16 +60,14 @@ impl Settings {
         let cron_offset = lookup.lookup(CRON_OFFSET_VARIABLE).unwrap_or_default();
         let cron_offset_minute = betterlite_env::number::<i64>(CRON_OFFSET_VARIABLE, &cron_offset)?
             .unwrap_or(DEFAULT_CRON_OFFSET_MINUTE);
-        let interval_seconds = match lookup.lookup(INTERVAL_SECONDS_VARIABLE) {
-            Some(raw) => match betterlite_env::number::<i64>(INTERVAL_SECONDS_VARIABLE, &raw) {
-                Ok(parsed) => parsed,
-                Err(_) => {
+        let interval_seconds = lookup.lookup(INTERVAL_SECONDS_VARIABLE).and_then(|raw| {
+            betterlite_env::number::<i64>(INTERVAL_SECONDS_VARIABLE, &raw).unwrap_or_else(
+                |_error| {
                     warn!("Invalid FOCUS_INTERVAL_SECONDS value: {raw}, ignoring");
                     None
-                }
-            },
-            None => None,
-        };
+                },
+            )
+        });
         Ok(Self {
             provider: lowercased(lookup, PROVIDER_VARIABLE, DEFAULT_PROVIDER),
             export_format: lowercased(lookup, FORMAT_VARIABLE, DEFAULT_EXPORT_FORMAT),
