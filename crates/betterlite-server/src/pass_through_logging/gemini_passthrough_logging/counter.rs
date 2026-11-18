@@ -42,7 +42,8 @@ impl UsageTokenCounter for CollectedCounter {
         self.encode_len(text)
     }
 
-    // token_counter(messages=None) raises in LiteLLM and the builder logs 0, so a passthrough has no message count.
+    // token_counter(messages=None) raises in LiteLLM and the builder counts 0, so an error or an Ok(0) answer is the same count.
+    #[cfg_attr(test, mutants::skip)]
     async fn count_messages(
         &self,
         _model: &str,
