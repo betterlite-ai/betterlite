@@ -519,7 +519,7 @@ async fn rejects_an_admin_key_that_cannot_be_a_header() {
     .await
     .unwrap_err();
     assert!(matches!(error, BillingError::Header { .. }));
-    assert!(!error.to_string().contains("admin"), "{error}");
+    assert!(!error.to_string().contains("sk-"), "{error}");
     assert!(http.take_requests().is_empty());
 }
 
