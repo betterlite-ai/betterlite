@@ -12,6 +12,9 @@ deviations:
   - what: The insert debug payload is the typed field map with the token replaced by its hash, rendered with Rust's Debug formatting rather than Python's dict repr of the same mapping.
     why: docs/compatibility.md keeps Python repr text out of parity; the columns logged and the token redaction are the same, and no Python object reaches the typed row.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5294-L5299
+  - what: The user insert debug payload shows the password column as a redaction marker, where the source logs the password value with the rest of the data.
+    why: A password in a debug log is a leak no working setup can rely on, and the source's own logging of the raw payload is a bug rather than behavior a caller needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5294-L5299
   - what: The update path keeps its fixed success messages without the interpolated row dump, and its entry debug does not name table_name.
     why: The row dump is a Python object repr, which docs/compatibility.md does not port, and the typed key and user update services take no table_name argument because the branch decision happens above them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5448-L5494

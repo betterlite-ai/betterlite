@@ -28,6 +28,7 @@ use super::{
 };
 
 const ORGANIZATION_FOREIGN_KEY: &str = "LiteLLM_UserTable_organization_id_fkey";
+const REDACTED: &str = "[redacted]";
 
 impl<Client> KeyUserWrites<'_, Client>
 where
@@ -167,7 +168,19 @@ where
         if fields.text(UserColumn::UserId).is_none() {
             return Err(KeyUserWriteError::MissingField { field: "user_id" });
         }
-        tracing::debug!(payload = ?fields, "PrismaClient: insert_data");
+        let payload: BTreeMap<&'static str, String> = fields
+            .0
+            .iter()
+            .map(|(column, value)| {
+                let text = if *column == UserColumn::Password {
+                    String::from(REDACTED)
+                } else {
+                    format!("{value:?}")
+                };
+                (column.name(), text)
+            })
+            .collect();
+        tracing::debug!(payload = ?payload, "PrismaClient: insert_data");
         match self
             .upsert_user_row(fields, &UserUpdateOps::default())
             .await
