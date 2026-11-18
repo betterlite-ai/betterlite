@@ -104,14 +104,18 @@ old=$(grep -o -E 'max_changed_lines: [0-9]+' "${task}")
 old=${old%%$'\n'*}
 old=${old#max_changed_lines: }
 if [[ -n "${need}" ]] && [[ -n "${old}" ]] && [[ "${need}" -gt "${old}" ]]; then
-  grep -q "^docs(tasks): ${id} budget " <<< "${commits}" && exit 1
+  # grep -c exits 1 for a count of 0, and the count is all that matters
+  raises=$(grep -c "^docs(tasks): ${id} budget " <<< "${commits}")
+  [[ "${raises}" -lt 3 ]] || exit 1
+  # a later raise adds at most 30%, so a task that keeps growing still reaches the architect (Max, 11-18)
   most=$((old * 3 / 2))
+  [[ "${raises}" -gt 0 ]] && most=$((old * 13 / 10))
   new=$(((need * 11 / 10 / 100 + 1) * 100))
   [[ "${new}" -gt "${most}" ]] && new=${most}
   [[ "${new}" -ge "${need}" ]] || exit 1
   sed -i -E "s/max_changed_lines: [0-9]+/max_changed_lines: ${new}/" "${task}"
   git add "${task}"
-  git commit -q -m "docs(tasks): ${id} budget ${new}" -m "The branch counts ${need} changed lines against a budget of ${old}, inside the 1.5x a block rule may raise it." -- "${task}" || exit 1
+  git commit -q -m "docs(tasks): ${id} budget ${new}" -m "The branch counts ${need} changed lines against a budget of ${old}, inside what a block rule may raise it to: 1.5x the first time, 1.3x the second and third." -- "${task}" || exit 1
   echo "Your line budget is now ${new} (commit on this branch). Keep your work and finish the task."
   exit 0
 fi
