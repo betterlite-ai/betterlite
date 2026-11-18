@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use deadpool_postgres::Client;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::error::SqlState;
 use tracing::subscriber::set_default;
@@ -18,7 +19,7 @@ use crate::key_user_writes::columns::{UserColumn, UserUpdateOps, UserWrite};
 use crate::key_user_writes::dispatch::{QueryType, TableName, UpdateSelector, UpdateTarget};
 use crate::key_user_writes::hash::hash_token;
 use crate::key_user_writes::retry::CallType;
-use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate, WritePorts};
+use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate};
 use crate::postgres_store::errors::DbError;
 
 pub(super) fn service<'service>(
@@ -516,8 +517,24 @@ async fn empty_token_insert_is_hashed() {
     harness.close().await;
 }
 
+#[rstest]
+#[case::explicit_beats_custom(
+    Some(user_alias_update("explicit")),
+    Some(UserUpdateOps::from(&user_alias_update("custom"))),
+    "explicit"
+)]
+#[case::custom_beats_data(
+    None,
+    Some(UserUpdateOps::from(&user_alias_update("custom"))),
+    "custom"
+)]
+#[case::data_when_absent(None, None, "from-data")]
 #[tokio::test]
-async fn user_update_map_precedence() {
+async fn user_update_map_precedence(
+    #[case] update_fields: Option<UserWrite>,
+    #[case] custom_update_fields: Option<UserUpdateOps>,
+    #[case] expected: &str,
+) {
     let harness = Harness::start().await;
     let client = harness.client().await;
     let ports = Ports::new(Duration::ZERO);
@@ -526,29 +543,14 @@ async fn user_update_map_precedence() {
         .insert_user(&user_write("user-a", "first"))
         .await
         .unwrap();
-    let cases = [
-        (
-            Some(user_alias_update("explicit")),
-            Some(UserUpdateOps::from(&user_alias_update("custom"))),
-            "explicit",
-        ),
-        (
-            None,
-            Some(UserUpdateOps::from(&user_alias_update("custom"))),
-            "custom",
-        ),
-        (None, None, "from-data"),
-    ];
-    for (update_fields, custom_update_fields, expected) in cases {
-        let request = UserUpdate {
-            user_id: None,
-            fields: user_write("user-a", "from-data"),
-            update_fields,
-            custom_update_fields,
-        };
-        writes.update_user(&request).await.unwrap();
-        assert_stored_alias(&client, "user-a", expected).await;
-    }
+    let request = UserUpdate {
+        user_id: None,
+        fields: user_write("user-a", "from-data"),
+        update_fields,
+        custom_update_fields,
+    };
+    writes.update_user(&request).await.unwrap();
+    assert_stored_alias(&client, "user-a", expected).await;
     harness.close().await;
 }
 

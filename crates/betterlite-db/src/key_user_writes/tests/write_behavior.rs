@@ -20,8 +20,9 @@ use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_user_writes::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
 use crate::key_user_writes::hash::hash_token;
-use crate::key_user_writes::retry::{CallType, FAILURE_REPORT_DEADLINE, FailureEvent};
-use crate::key_user_writes::writes::report_failure;
+use crate::key_user_writes::retry::{
+    CallType, FAILURE_REPORT_DEADLINE, FailureEvent, report_failure,
+};
 use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate, WritePorts};
 
 #[tokio::test]

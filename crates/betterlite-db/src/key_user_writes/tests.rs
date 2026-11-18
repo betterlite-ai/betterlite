@@ -17,7 +17,7 @@ use super::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
 use super::dispatch::{QueryType, TableName, UpdateSelector, UpdateTarget};
 use super::hash::{hash_token, hash_token_if_needed};
 use super::json_text::{FAILED_TO_SERIALIZE_JSON, JsonEncoder, SerdeJsonEncoder, jsonify_object};
-use super::retry::{MAX_TIME, MAX_TRIES, SystemWriteClock, retry_wait};
+use super::retry::{MAX_TIME, MAX_TRIES, SystemWriteClock, WriteClock, retry_wait};
 use super::{KeyUserWriteError, sql};
 
 #[test]

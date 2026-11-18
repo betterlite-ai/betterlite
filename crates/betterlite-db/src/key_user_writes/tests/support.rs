@@ -25,12 +25,10 @@ use crate::key_user_writes::retry::{
     CallType, FailureEvent, FailureFuture, FailureSink, WriteClock,
 };
 use crate::key_user_writes::{KeyUserWriteError, WritePorts};
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::migration_ledger::lock::JitterSource;
 use crate::postgres_store::errors::DbError;
 use crate::tool_spend::RetryPause;
-
-pub(crate) const BASELINE: &str =
-    include_str!("../../../../../tools/postgres-fixture/fixtures/baseline.sql");
 
 // extra token columns, the permission table, and a second user foreign key for the FK translation
 pub(crate) const SCHEMA: &str = r#"
@@ -64,7 +62,9 @@ impl Harness {
         let url = Environment::parse_from(["key-user-writes-tests"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
+        let mut statements = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+        statements.push(SCHEMA.to_owned());
+        let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
             .resolve()
             .await
             .unwrap();
@@ -73,10 +73,6 @@ impl Harness {
             .max_size(4)
             .build()
             .unwrap();
-        let client = pool.get().await.unwrap();
-        client.batch_execute(BASELINE).await.unwrap();
-        client.batch_execute(SCHEMA).await.unwrap();
-        drop(client);
         Self { fixture, pool }
     }
 
