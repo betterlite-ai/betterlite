@@ -43,18 +43,17 @@ fn shared_store(config: &Config) -> Option<RoutingStateStore> {
 
 // router_settings.redis_url or redis_host and redis_port: a config naming neither keeps no shared counters
 fn shared_settings(config: &Config) -> Option<SharedSettings> {
-    let redis = match RedisSettings::try_from(&config.sections.routing_state_store) {
-        Ok(redis) => redis,
-        Err(StateStoreError::NotConfigured) => return None,
+    match RedisSettings::try_from(&config.sections.routing_state_store) {
+        Ok(redis) => Some(SharedSettings {
+            redis,
+            breaker: policy_settings(&config.sections.redis_failure_policy),
+        }),
+        Err(StateStoreError::NotConfigured) => None,
         Err(error) => {
             tracing::error!(%error, "the least-busy shared counter settings are unreadable");
-            return None;
+            None
         }
-    };
-    Some(SharedSettings {
-        redis,
-        breaker: policy_settings(&config.sections.redis_failure_policy),
-    })
+    }
 }
 
 // the local tier's ttl counts from wall time, while the breaker measures the time since it opened
