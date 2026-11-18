@@ -380,9 +380,11 @@ fn submit_model_hidden_by_names_matching_aliases_in_order() {
 
 #[test]
 fn retrieval_context_carries_aliases_model_and_tags() {
+    let team_alias = text("team-a");
+    let key_alias = text("key-1");
     let auth = RetrievalAuth {
-        team_alias: Some("team-a"),
-        key_alias: Some("key-1"),
+        team_alias: Some(&team_alias),
+        key_alias: Some(&key_alias),
     };
     let context = retrieval_context(&auth, "gpt-4o", vec!["prod-eu".to_owned()]);
     assert_eq!(
@@ -394,6 +396,19 @@ fn retrieval_context_carries_aliases_model_and_tags() {
             tags: Some(vec!["prod-eu".to_owned()]),
         }
     );
+}
+
+#[test]
+fn retrieval_context_ignores_non_string_auth_aliases() {
+    let team_alias = JsonValue::Bool(true);
+    let key_alias = JsonValue::Number(serde_json::Number::from(1_u8));
+    let auth = RetrievalAuth {
+        team_alias: Some(&team_alias),
+        key_alias: Some(&key_alias),
+    };
+    let context = retrieval_context(&auth, "model", Vec::new());
+    assert_eq!(context.team_alias, None);
+    assert_eq!(context.key_alias, None);
 }
 
 #[test]

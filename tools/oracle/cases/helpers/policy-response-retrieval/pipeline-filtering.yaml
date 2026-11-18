@@ -1,0 +1,18 @@
+kind: helper
+name: policy-response-retrieval-pipeline-filtering
+call:
+  b3269:
+    function: pipeline_filtering
+    response_id: null
+    router: false
+    deployments: {}
+    aliases: []
+    model_group: unused
+    auth: {team_alias: null, key_alias: null}
+    tags: []
+    pipelines:
+      - {policy_name: post, mode: post_call, guardrails: [g1, g2]}
+      - {policy_name: pre, mode: pre_call, guardrails: [g3]}
+    already_attached: []
+env: {}
+compare: {ignore: []}

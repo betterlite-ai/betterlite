@@ -1,0 +1,16 @@
+kind: helper
+name: policy-response-retrieval-model-group-lookup
+call:
+  b3269:
+    function: model_group_lookup
+    response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
+    router: true
+    deployments: {dep-1: model-group}
+    aliases: []
+    model_group: unused
+    auth: {team_alias: null, key_alias: null}
+    tags: []
+    pipelines: []
+    already_attached: []
+env: {}
+compare: {ignore: []}

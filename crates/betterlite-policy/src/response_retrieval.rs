@@ -66,8 +66,8 @@ pub trait PolicyRouterView: Send + Sync {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RetrievalAuth<'a> {
-    pub team_alias: Option<&'a str>,
-    pub key_alias: Option<&'a str>,
+    pub team_alias: Option<&'a JsonValue>,
+    pub key_alias: Option<&'a JsonValue>,
 }
 
 pub struct RetrievalRequest<'a> {
@@ -145,11 +145,18 @@ pub fn retrieval_context(
     tags: Vec<String>,
 ) -> PolicyMatchContext {
     PolicyMatchContext {
-        team_alias: auth.team_alias.map(str::to_owned),
-        key_alias: auth.key_alias.map(str::to_owned),
+        team_alias: auth.team_alias.and_then(string_value),
+        key_alias: auth.key_alias.and_then(string_value),
         model: Some(model_group.to_owned()),
         tags: (!tags.is_empty()).then_some(tags),
     }
+}
+
+fn string_value(value: &JsonValue) -> Option<String> {
+    if let JsonValue::String(value) = value {
+        return Some(value.clone());
+    }
+    None
 }
 
 #[must_use]

@@ -1,0 +1,16 @@
+kind: helper
+name: policy-response-retrieval-context-building
+call:
+  b3269:
+    function: retrieval_context
+    response_id: null
+    router: false
+    deployments: {}
+    aliases: []
+    model_group: model
+    auth: {team_alias: team-a, key_alias: key-a}
+    tags: [prod]
+    pipelines: []
+    already_attached: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: policy-response-retrieval-deduplication
+call:
+  b3269:
+    function: deduplication
+    response_id: null
+    router: false
+    deployments: {}
+    aliases: []
+    model_group: unused
+    auth: {team_alias: null, key_alias: null}
+    tags: []
+    pipelines:
+      - {policy_name: existing, mode: post_call, guardrails: [g0]}
+      - {policy_name: new, mode: post_call, guardrails: [g1]}
+    already_attached: [existing]
+env: {}
+compare: {ignore: []}

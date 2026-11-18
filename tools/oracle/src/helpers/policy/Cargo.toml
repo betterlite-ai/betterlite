@@ -9,6 +9,7 @@ publish.workspace = true
 path = "lib.rs"
 
 [dependencies]
+betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
