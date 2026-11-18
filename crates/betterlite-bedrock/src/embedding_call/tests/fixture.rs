@@ -207,17 +207,14 @@ impl FixtureClient {
 }
 
 impl EmbeddingTransport for FixtureClient {
-    fn post(
-        &self,
-        request: EmbeddingRequest,
-    ) -> impl Future<Output = Result<EmbeddingReply, TransferError>> + Send {
+    async fn post(&self, request: EmbeddingRequest) -> Result<EmbeddingReply, TransferError> {
         self.seen.push(Recorded {
             url: request.url.clone(),
             headers: request.headers.into_iter().collect(),
             body: request.body,
             deadline: None,
         });
-        ready(self.reply(&request.url))
+        self.reply(&request.url)
     }
 }
 

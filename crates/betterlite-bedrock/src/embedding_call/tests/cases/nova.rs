@@ -126,11 +126,7 @@ fn from_the_environment_wins() {
     );
 }
 
-fn nova_probe(
-    params: Vec<(&'static str, &'static str)>,
-    api_base: Option<&str>,
-    runtime_endpoint: &str,
-) -> Probe {
+fn nova_probe(params: Params, api_base: Option<&str>, runtime_endpoint: &str) -> Probe {
     let mut probe = fixture_probe();
     probe.model = String::from(NOVA_MODEL);
     probe.api_base = api_base.map(String::from);
@@ -140,7 +136,9 @@ fn nova_probe(
     probe
 }
 
-fn configured() -> Vec<(&'static str, &'static str)> {
+type Params = Vec<(&'static str, &'static str)>;
+
+fn configured() -> Params {
     let mut params = credentials();
     params.push((
         "aws_bedrock_runtime_endpoint",

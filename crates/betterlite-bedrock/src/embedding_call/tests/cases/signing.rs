@@ -47,6 +47,7 @@ fn every_request_carries_its_own_signature() {
 }
 
 fn assert_first_snapshot(snapshots: &[Decisions], first: &Recorded) {
+    assert!(snapshots.len() > 1, "both calls log a snapshot");
     let sent: Object = serde_json::from_slice(&first.body).expect("the first body is an object");
     assert_eq!(
         fields(&snapshots[0]).get("input"),
