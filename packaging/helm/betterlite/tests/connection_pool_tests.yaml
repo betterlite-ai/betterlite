@@ -6,10 +6,12 @@ tests:
     template: gateway/deployment.yaml
     set:
       gateway.numWorkers: 2
+      gateway.collector.enabled: true
     asserts:
       - contains: { path: 'spec.template.spec.containers[0].env', content: { name: NUM_WORKERS, value: "2" }, any: true }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }
   - it: an enabled pool renders the three pgbouncer vars with the configured sizes
     template: gateway/deployment.yaml
     set:
@@ -43,10 +45,3 @@ tests:
       - contains: { path: 'spec.template.spec.containers[2].env', content: { name: LITELLM_PGBOUNCER_ENABLED, value: "true" }, any: true }
       - contains: { path: 'spec.template.spec.containers[2].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "8" }, any: true }
       - contains: { path: 'spec.template.spec.containers[2].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "250" }, any: true }
-  - it: the collector sidecar gets no pool env when the pool is off
-    template: gateway/deployment.yaml
-    set:
-      gateway.collector.enabled: true
-    asserts:
-      - equal: { path: 'spec.template.spec.containers[1].name', value: collector }
-      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }

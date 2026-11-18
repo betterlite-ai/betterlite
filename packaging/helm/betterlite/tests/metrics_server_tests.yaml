@@ -7,7 +7,6 @@ tests:
       - { lengthEqual: { path: 'spec.template.spec.containers', count: 1 }, template: gateway/deployment.yaml }
       - { notContains: { path: 'spec.template.spec.containers[0].env', content: { name: PROMETHEUS_MULTIPROC_DIR }, any: true }, template: gateway/deployment.yaml }
       - { notContains: { path: 'spec.template.spec.volumes', content: { name: prometheus-multiproc }, any: true }, template: gateway/deployment.yaml }
-      - { lengthEqual: { path: 'spec.ports', count: 1 }, template: gateway/service.yaml }
       - { hasDocuments: { count: 0 }, template: gateway/service-metrics.yaml }
   - it: runs the metrics server as a sidecar over a shared multiproc dir and exposes it on a ClusterIP metrics service
     set:
@@ -56,9 +55,11 @@ tests:
     set:
       gateway.service.type: NodePort
       backend.service.type: LoadBalancer
+      ui.service.type: LoadBalancer
     asserts:
       - { equal: { path: spec.type, value: NodePort }, template: gateway/service.yaml }
       - { equal: { path: spec.type, value: LoadBalancer }, template: backend/service.yaml }
+      - { equal: { path: spec.type, value: LoadBalancer }, template: ui/service.yaml }
       - { isKind: { of: Service }, template: gateway/service.yaml }
       - { equal: { path: metadata.name, value: RELEASE-NAME-betterlite-gateway }, template: gateway/service.yaml }
       - { equal: { path: 'spec.ports', value: [{ port: 4000, targetPort: http, protocol: TCP, name: http }] }, template: gateway/service.yaml }

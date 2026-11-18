@@ -1,22 +1,15 @@
 suite: test pod hardening knobs on the component deployments
-templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, ui/deployment.yaml]
+templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, ui/deployment.yaml, migrations-job.yaml]
 values: [./values/required.yaml]
 tests:
-  - it: gateway renders no hardening fields by default
-    template: gateway/deployment.yaml
+  - it: the components render no hardening fields by default
+    templates: [gateway/deployment.yaml, backend/deployment.yaml, ui/deployment.yaml]
     asserts:
       - isNull: { path: 'spec.template.spec.securityContext' }
       - isNull: { path: 'spec.template.spec.containers[0].securityContext' }
       - isNull: { path: 'spec.template.spec.containers[0].lifecycle' }
       - isNull: { path: 'spec.template.spec.terminationGracePeriodSeconds' }
-      - equal: { path: 'spec.template.metadata.labels', value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME, app.kubernetes.io/component: gateway } }
-  - it: backend and ui render no hardening fields by default
-    templates: [backend/deployment.yaml, ui/deployment.yaml]
-    asserts:
-      - isNull: { path: 'spec.template.spec.securityContext' }
-      - isNull: { path: 'spec.template.spec.containers[0].securityContext' }
-      - isNull: { path: 'spec.template.spec.containers[0].lifecycle' }
-      - isNull: { path: 'spec.template.spec.terminationGracePeriodSeconds' }
+      - { equal: { path: 'spec.template.metadata.labels', value: { app.kubernetes.io/name: betterlite, app.kubernetes.io/instance: RELEASE-NAME, app.kubernetes.io/component: gateway } }, template: gateway/deployment.yaml }
   - it: gateway renders pod-level and container-level securityContext in their own scopes
     template: gateway/deployment.yaml
     set:
@@ -183,13 +176,17 @@ tests:
       - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].topologyKey', value: topology.kubernetes.io/zone }, template: gateway/deployment.yaml }
       - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].topologyKey', value: topology.kubernetes.io/zone }, template: backend/deployment.yaml }
       - { equal: { path: 'spec.template.spec.topologySpreadConstraints[0].topologyKey', value: topology.kubernetes.io/zone }, template: ui/deployment.yaml }
-  - it: every component carries envFrom, extraEnv and its named http port
+  - it: every component carries its envFrom, log level, extraEnv and named http port
     set:
       gateway.envConfigMaps: [gateway-settings]
       gateway.envSecrets: [gateway-secret]
       backend.envConfigMaps: [backend-settings]
       ui.envConfigMaps: [ui-settings]
       ui.extraEnv: [{ name: NEXT_PUBLIC_FLAG, value: "1" }]
+      gateway.logLevel: DEBUG
+      backend.logLevel: WARNING
+      gateway.extraEnv: [{ name: GATEWAY_SETTING, value: "1" }]
+      backend.extraEnv: [{ name: BACKEND_SETTING, value: "2" }]
     asserts:
       - { equal: { path: 'spec.template.spec.containers[0].envFrom', value: [{ configMapRef: { name: gateway-settings } }, { secretRef: { name: gateway-secret } }] }, template: gateway/deployment.yaml }
       - { equal: { path: 'spec.template.spec.containers[0].envFrom', value: [{ configMapRef: { name: backend-settings } }] }, template: backend/deployment.yaml }
@@ -198,3 +195,30 @@ tests:
       - { equal: { path: 'spec.template.spec.containers[0].ports', value: [{ name: http, containerPort: 4000, protocol: TCP }] }, template: gateway/deployment.yaml }
       - { equal: { path: 'spec.template.spec.containers[0].ports', value: [{ name: http, containerPort: 4001, protocol: TCP }] }, template: backend/deployment.yaml }
       - { equal: { path: 'spec.template.spec.containers[0].ports', value: [{ name: http, containerPort: 3000, protocol: TCP }] }, template: ui/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: DEBUG }, any: true }, template: gateway/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: GATEWAY_SETTING, value: "1" }, any: true }, template: gateway/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: WARNING }, any: true }, template: backend/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: BACKEND_SETTING, value: "2" }, any: true }, template: backend/deployment.yaml }
+  - it: every workload renders its image, tag and pull policy from values
+    templates: [gateway/deployment.yaml, backend/deployment.yaml, ui/deployment.yaml, migrations-job.yaml]
+    set:
+      gateway.image: { repository: registry.example.com/gateway, tag: v9.1.0, pullPolicy: Always }
+      backend.image: { repository: registry.example.com/backend, tag: v9.2.0, pullPolicy: Never }
+      ui.image: { repository: registry.example.com/ui, tag: v9.3.0, pullPolicy: Never }
+      migrationJob.image: { repository: registry.example.com/job, tag: v9.4.0, pullPolicy: Always }
+    asserts:
+      - { equal: { path: 'spec.template.spec.containers[0].image', value: 'registry.example.com/gateway:v9.1.0' }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].image', value: 'registry.example.com/backend:v9.2.0' }, template: backend/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Never }, template: backend/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].image', value: 'registry.example.com/ui:v9.3.0' }, template: ui/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Never }, template: ui/deployment.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].image', value: 'registry.example.com/job:v9.4.0' }, template: migrations-job.yaml }
+      - { equal: { path: 'spec.template.spec.containers[0].imagePullPolicy', value: Always }, template: migrations-job.yaml }
+  - it: renders pod annotations without a config checksum when the config is external
+    set: { gateway.config.create: false, gateway.podAnnotations: { example.com/team: gateway-team }, backend.podAnnotations: { example.com/team: backend-team } }
+    asserts:
+      - { equal: { path: 'spec.template.metadata.annotations["example.com/team"]', value: gateway-team }, template: gateway/deployment.yaml }
+      - { notExists: { path: 'spec.template.metadata.annotations["checksum/config"]' }, template: gateway/deployment.yaml }
+      - { equal: { path: 'spec.template.metadata.annotations["example.com/team"]', value: backend-team }, template: backend/deployment.yaml }
+      - { notExists: { path: 'spec.template.metadata.annotations["checksum/config"]' }, template: backend/deployment.yaml }

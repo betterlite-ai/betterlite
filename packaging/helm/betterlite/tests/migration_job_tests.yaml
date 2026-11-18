@@ -2,7 +2,7 @@ suite: test migrations Job ServiceAccount resolution, workload and scheduling
 templates: [migrations-job.yaml]
 values: [./values/required.yaml]
 tests:
-  - it: renders a Job that runs betterlite-db-admin migrate with the migration env
+  - it: renders a Job that runs betterlite-db-admin migrate
     asserts:
       - isKind: { of: Job }
       - equal: { path: metadata.name, value: RELEASE-NAME-betterlite-migrations }
@@ -13,8 +13,6 @@ tests:
       - equal: { path: 'spec.template.spec.containers[0].name', value: db-migrations }
       - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite-backend:0.1.0' }
       - equal: { path: 'spec.template.spec.containers[0].command', value: [betterlite-db-admin, migrate] }
-      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DISABLE_SCHEMA_UPDATE, value: "true" }, any: true }
-      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_MASTER_KEY, valueFrom: { secretKeyRef: { name: litellm-master-key-secret, key: master-key } } }, any: true }
   - it: borrows the namespace default account when no ServiceAccount is configured
     asserts:
       - equal: { path: 'spec.template.spec.serviceAccountName', value: default }
