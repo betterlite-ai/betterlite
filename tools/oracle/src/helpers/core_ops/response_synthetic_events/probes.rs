@@ -1,5 +1,6 @@
 use std::cell::Cell;
-use std::str::FromStr;
+use std::io;
+use std::str::FromStr as _;
 
 use betterlite_core::api::response_synthetic_events::billing::UsageEstimate;
 use betterlite_core::api::response_synthetic_events::stamping::{
@@ -39,12 +40,12 @@ impl CostProbe {
 }
 
 impl ResponsesCostCalculator for CostProbe {
-    type Error = std::io::Error;
+    type Error = io::Error;
 
     fn response_cost(&self, _target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
         self.calls.set(self.calls.get().saturating_add(1));
         if self.raises {
-            return Err(std::io::Error::other("cost lookup failed"));
+            return Err(io::Error::other("cost lookup failed"));
         }
         Ok(self.answer)
     }
