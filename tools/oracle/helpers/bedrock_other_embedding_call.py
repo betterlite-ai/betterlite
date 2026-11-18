@@ -14,16 +14,6 @@ from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-Function = Literal[
-    "embedding_family_selection",
-    "ordered_multi_input_result",
-    "cohere_batched_input",
-    "titan_per_item_input",
-    "nova_async_invoke_start",
-    "signing_auth_isolation",
-    "embedding_transport_error",
-]
-
 
 class Reply(TypedDict):
     status: int
@@ -33,7 +23,7 @@ class Reply(TypedDict):
 
 
 class Case(TypedDict):
-    function: Function
+    function: str
     model: str
     input: list[str]
     now: int
@@ -55,18 +45,11 @@ class Record(TypedDict):
     embedding: list[JsonValue] | str
 
 
-class Details(TypedDict, total=False):
-    text_tokens: int | None
-    image_tokens: int | None
-    image_count: int | None
-    query_count: int | None
-
-
 class Usage(TypedDict):
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-    prompt_tokens_details: Details | None
+    prompt_tokens_details: dict[str, JsonValue] | None
 
 
 class Payload(TypedDict):
@@ -118,14 +101,7 @@ BODY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 
 SKIPPED = frozenset(
-    {
-        "host",
-        "content-length",
-        "user-agent",
-        "accept-encoding",
-        "connection",
-        "transfer-encoding",
-    }
+    {"host", "content-length", "user-agent", "accept-encoding", "connection", "transfer-encoding"}
 )
 
 
@@ -205,28 +181,11 @@ def supplied(case: Case, fixture: Fixture) -> HTTPHandler | None:
     return None
 
 
-def details_value(details: Details) -> dict[str, JsonValue]:
-    counts: dict[str, JsonValue] = {}
-    text_tokens = details.get("text_tokens")
-    if text_tokens is not None:
-        counts["text_tokens"] = text_tokens
-    image_tokens = details.get("image_tokens")
-    if image_tokens is not None:
-        counts["image_tokens"] = image_tokens
-    image_count = details.get("image_count")
-    if image_count is not None:
-        counts["image_count"] = image_count
-    query_count = details.get("query_count")
-    if query_count is not None:
-        counts["query_count"] = query_count
-    return counts
-
-
 def usage_value(usage: Usage) -> JsonValue:
     details = usage["prompt_tokens_details"]
     counts: dict[str, JsonValue] | None = None
     if details is not None:
-        counts = details_value(details)
+        counts = {name: value for name, value in details.items() if value is not None}
     return {
         "prompt_tokens": usage["prompt_tokens"],
         "completion_tokens": usage["completion_tokens"],
@@ -241,8 +200,8 @@ def response_value(response: EmbeddingResponse) -> JsonValue:
     return {
         "object": payload["object"],
         "data": [
-            {"object": record["object"], "index": record["index"], "embedding": record["embedding"]}
-            for record in payload["data"]
+            {"object": r["object"], "index": r["index"], "embedding": r["embedding"]}
+            for r in payload["data"]
         ],
         "model": payload["model"],
         "usage": usage_value(payload["usage"]),
@@ -258,11 +217,13 @@ def probe(case: Case) -> JsonValue:
     values = case.get("optional_params")
     optional_params: dict[str, JsonValue] = {} if values is None else dict(values)
     logger = Logger()
+    ok = False
     kind: str | None = None
     status: int | None = None
     message: str | None = None
+    response: JsonValue = None
     try:
-        response = embedding_module.BedrockEmbedding().embeddings(
+        reply = embedding_module.BedrockEmbedding().embeddings(
             model=case["model"],
             input=list(case["input"]),
             api_base=case.get("api_base"),
@@ -298,25 +259,17 @@ def probe(case: Case) -> JsonValue:
         kind = "provider"
         message = str(error)
     else:
-        return {
-            "ok": True,
-            "status": None,
-            "kind": "ok",
-            "message": None,
-            "requests": fixture.requests,
-            "factory": fixture.factory,
-            "response": response_value(response),
-            "phases": logger.phases,
-            "remaining": optional_params,
-        }
+        ok = True
+        kind = "ok"
+        response = response_value(reply)
     return {
-        "ok": False,
+        "ok": ok,
         "status": status,
         "kind": kind,
         "message": message,
         "requests": fixture.requests,
         "factory": fixture.factory,
-        "response": None,
+        "response": response,
         "phases": logger.phases,
         "remaining": optional_params,
     }

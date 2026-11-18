@@ -1,0 +1,24 @@
+kind: helper
+name: nova-async-invoke-start
+call:
+  bedrock_other_embedding_call:
+    function: nova_async_invoke_start
+    model: async_invoke/amazon.nova-2-multimodal-embeddings-v1:0
+    input:
+      - hello
+    now: 1700000000
+    optional_params:
+      aws_access_key_id: AKIAIOSFODNN7EXAMPLE
+      aws_secret_access_key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+      aws_region_name: us-east-1
+      output_s3_uri: s3://bucket/output/
+    environment:
+      AWS_CONFIG_FILE: /dev/null
+      AWS_SHARED_CREDENTIALS_FILE: /dev/null
+    replies:
+      - status: 200
+        headers:
+          Content-Type: application/json
+        body: '{"invocationArn":"arn:aws:bedrock:us-east-1:123456789012:async-invoke/abc"}'
+env: {}
+compare: {ignore: []}
