@@ -1,9 +1,9 @@
 import json
 from typing import Annotated, Final, Literal, TypeVar
 
+import litellm
+from litellm.litellm_core_utils.core_helpers import get_metadata_variable_name_from_kwargs
 from litellm.litellm_core_utils.internal_call_metadata import effective_turn_off_message_logging
-from litellm.litellm_core_utils.redact_messages import should_redact_message_logging
-from litellm.llms.base_llm.base_utils import type_to_response_format_param
 from litellm.router_strategy.complexity_router.capability_classifier import extract_classifier_json
 from litellm.router_strategy.complexity_router.classification_rubrics import calibration_examples_section
 from litellm.router_strategy.complexity_router.complexity_router import (
@@ -20,7 +20,7 @@ from litellm.router_strategy.complexity_router.config import (
     ComplexityTier,
     TierDefinition,
 )
-from pydantic import Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
@@ -75,6 +75,11 @@ class PaddedReply(Strict):
 
 
 Reply = Annotated[TextReply | PaddedReply, Field(discriminator="kind")]
+
+
+class LabeledTierReply(BaseModel):
+    # LiteLLM's private _LabeledTierClassification, which its LLM path parses with, is this plain tier: str model
+    tier: str
 
 
 class SelectedParse(Strict):
@@ -182,13 +187,23 @@ def reply_content(reply: Reply) -> str:
 
 
 def reply_private(request_kwargs: dict[str, JsonValue] | None) -> bool:
+    # the disable header wins, then the dynamic flag, then the enable headers, then the global switch
     kwargs: dict[str, JsonValue] = {} if request_kwargs is None else request_kwargs
-    try:
-        flag = effective_turn_off_message_logging(kwargs)
-        dynamic: dict[str, bool] = {} if flag is None else {"turn_off_message_logging": flag}
-        return should_redact_message_logging({"litellm_params": kwargs, "standard_callback_dynamic_params": dynamic})
-    except AttributeError:
+    dynamic = effective_turn_off_message_logging(kwargs)
+    chosen = kwargs.get(get_metadata_variable_name_from_kwargs(kwargs))
+    metadata = chosen if isinstance(chosen, dict) else kwargs.get("metadata")
+    headers: JsonValue = metadata.get("headers", {}) if isinstance(metadata, dict) else {}
+    # anything but a dict here raises AttributeError in LiteLLM, whose caller reads that as private
+    if not isinstance(headers, dict):
         return True
+    if bool(headers.get("litellm-disable-message-redaction", False)):
+        return False
+    if dynamic is not None:
+        return dynamic
+    enabled = bool(headers.get("litellm-enable-message-redaction", False)) or bool(
+        headers.get("x-litellm-enable-message-redaction", False)
+    )
+    return enabled or litellm.turn_off_message_logging is True
 
 
 def parse_outcome(
@@ -197,19 +212,21 @@ def parse_outcome(
     request_kwargs: dict[str, JsonValue] | None,
 ) -> SelectedParse | RejectedParse:
     try:
-        verdict = TierClassification.model_validate_json(extract_classifier_json(content))
+        reply = LabeledTierReply.model_validate_json(extract_classifier_json(content))
     except ValidationError:
         return RejectedParse(kind="rejected", reason="schema", withheld=reply_private(request_kwargs))
-    tier = resolved_name(config.resolve_classified_tier(verdict.tier))
+    tier = resolved_name(config.resolve_classified_tier(reply.tier))
     if tier is None:
         return RejectedParse(kind="rejected", reason="unknown_tier", withheld=False)
-    return SelectedParse(kind="selected", label=verdict.tier, tier=tier)
+    return SelectedParse(kind="selected", label=reply.tier, tier=tier)
 
 
 def rendered_format() -> str:
-    body: JsonValue = type_to_response_format_param(TierClassification)
-    if body is None:
-        raise ProbeError("invalid_request", "TierClassification has no response format")
+    # the strict wrapper keeps the model's schema key order and appends additionalProperties at the root
+    schema: dict[str, object] = TierClassification.model_json_schema()
+    schema["additionalProperties"] = False
+    wrapped: dict[str, object] = {"schema": schema, "name": TierClassification.__name__, "strict": True}
+    body: dict[str, object] = {"type": "json_schema", "json_schema": wrapped}
     return json.dumps(body, separators=(",", ":"))
 
 
