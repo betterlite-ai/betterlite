@@ -35,7 +35,7 @@ pub fn env_family(env: &BTreeMap<String, String>) -> Result<RedisCacheFamily, Co
     };
     let parsed: JsonValue =
         serde_json::from_str(text).map_err(|source| CoordRedisError::ClusterNodes { source })?;
-    Ok(if python_truthy(&parsed) {
+    Ok(if selects_cluster(&parsed) {
         RedisCacheFamily::Cluster
     } else {
         RedisCacheFamily::Standalone
@@ -122,8 +122,8 @@ fn usage_cache_request(
     })
 }
 
-// Python truthiness decides whether a parsed REDIS_CLUSTER_NODES selects a cluster client.
-fn python_truthy(value: &JsonValue) -> bool {
+// An empty, zero, false or null JSON value in REDIS_CLUSTER_NODES names no nodes, so it selects the plain client.
+fn selects_cluster(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,

@@ -21,7 +21,6 @@ use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
 use betterlite_redis::redis_client_reuse::store::RedisClientStore;
 use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
-use betterlite_redis::redis_connection_settings::model::scalars::{FloatOrText, IntOrText};
 use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
 use betterlite_redis::redis_live_client::LiveClientFactory;
 use betterlite_router::redis_failure_policy::Settings;
@@ -106,13 +105,10 @@ pub(crate) fn closed_port() -> u16 {
 }
 
 pub(crate) fn overrides(port: u16) -> RedisOverrides {
-    RedisOverrides {
-        host: Some("127.0.0.1".to_owned()),
-        port: Some(IntOrText::Value(i64::from(port))),
-        socket_timeout: Some(FloatOrText::Value(1.0)),
-        socket_connect_timeout: Some(FloatOrText::Value(1.0)),
-        ..RedisOverrides::default()
-    }
+    let text = format!(
+        r#"{{"host": "127.0.0.1", "port": {port}, "socket_timeout": 1.0, "socket_connect_timeout": 1.0}}"#
+    );
+    serde_json::from_value(json(&text)).expect("the overrides are valid")
 }
 
 pub(crate) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {

@@ -153,8 +153,8 @@ fn params_from_block(
     block: &JsonValue,
     context: &ResolveContext<'_>,
 ) -> Result<CoordinationRedisParams, CoordRedisError> {
-    let resolved = resolve_env_refs(block, context)?;
-    Ok(CoordinationRedisParams::from_value(&resolved)?)
+    CoordinationRedisParams::from_value(&resolve_env_refs(block, context)?)
+        .map_err(CoordRedisError::from)
 }
 
 // litellm reads the flag as a bool or a string through str_to_bool, so "false" and "no" leave the buffer off.
