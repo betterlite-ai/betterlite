@@ -9,4 +9,7 @@ deviations:
   - what: The failure log line corrects the spelling of the word occurred in LiteLLM's exception prefix.
     why: the repository's spelling check rejects the misspelling; the log text is not part of the response and the message after the dash is unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10032
+  - what: a UTF-8 character split across two provider byte chunks reaches the client whole, where LiteLLM decodes each chunk with errors="replace" and sends U+FFFD for each half
+    why: rules.yaml owned-behavior-is-built, the replacement characters are lost data no working setup relies on
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9957-L9958
 kept_bugs: []

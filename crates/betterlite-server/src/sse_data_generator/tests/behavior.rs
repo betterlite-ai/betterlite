@@ -517,23 +517,31 @@ fn plain_text_becomes_data_frame(#[case] text: &str, #[case] expected: &str) {
     assert_eq!(out, vec![expected.to_owned(), DONE_FRAME.to_owned()]);
 }
 
-#[test]
-fn bytes_replace_invalid_utf8() {
-    let items = vec![
-        Ok(StreamItem::Bytes(Bytes::from_static(b"a\xffb"))),
-        Ok(StreamItem::Bytes(Bytes::from_static(b"\xe2"))),
-        Ok(StreamItem::Bytes(Bytes::from_static(b"\x82\xac"))),
-    ];
+#[rstest]
+#[case::split(
+    vec![
+        Bytes::from_static(b"a\xffb"),
+        Bytes::from_static(b"\xe2"),
+        Bytes::from_static(b"\x82\xac"),
+    ],
+    &["data: a\u{fffd}b\n\n", "data: \u{20ac}\n\n", DONE_FRAME]
+)]
+#[case::trailing(
+    vec![Bytes::from_static(b"\xe2")],
+    &["data: \u{fffd}\n\n", DONE_FRAME]
+)]
+fn bytes_replace_invalid_utf8(#[case] chunks: Vec<Bytes>, #[case] expected: &[&str]) {
+    let items = chunks
+        .into_iter()
+        .map(|chunk| Ok(StreamItem::Bytes(chunk)))
+        .collect();
     let out = frames(body_of(
         &plain_generator(),
         source(items, JsonObject::new()),
         request(&[]),
         false,
     ));
-    assert_eq!(out[0], "data: a\u{fffd}b\n\n");
-    assert_eq!(out[1], "data: \u{fffd}\n\n");
-    assert_eq!(out[2], "data: \u{fffd}\u{fffd}\n\n");
-    assert_eq!(out[3], DONE_FRAME);
+    assert_eq!(out, expected);
 }
 
 #[test]

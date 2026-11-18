@@ -1,7 +1,7 @@
 use std::io;
 
 use bytes::Bytes;
-use encoding_rs::UTF_8;
+use encoding_rs::CoderResult;
 use futures_util::future::BoxFuture;
 
 use super::failure::unix_timestamp;
@@ -161,6 +161,7 @@ where
             frames
         }
         Output::End => return super::finish::end(drive),
+        Output::Held => return Vec::new(),
     };
     if pending {
         drive.fallback_sent = Flag(true);
@@ -178,10 +179,7 @@ where
 {
     match item {
         StreamItem::Chunk(chunk) => Output::Item(sse_data_frame(&serialize_chunk(&chunk))),
-        StreamItem::Bytes(bytes) => {
-            let text = UTF_8.decode_without_bom_handling(&bytes).0.into_owned();
-            text_output(drive, text, TextSource::Bytes)
-        }
+        StreamItem::Bytes(bytes) => bytes_output(drive, &bytes, false),
         StreamItem::Text(text) => text_output(drive, text, TextSource::Text),
     }
 }
@@ -234,4 +232,37 @@ where
         return Output::Overflow(frames);
     }
     Output::Raw(frames)
+}
+
+pub(super) fn end_source<Key>(drive: &mut Drive<Key>) -> Vec<Result<Bytes, io::Error>>
+where
+    Key: Send + Sync + 'static,
+{
+    let classified = bytes_output(drive, &[], true);
+    let pending = pending(drive);
+    let mut frames = output(drive, classified, pending);
+    if drive.pending_failure.is_none() {
+        frames.extend(super::finish::end(drive));
+    }
+    frames
+}
+
+fn bytes_output<Key>(drive: &mut Drive<Key>, mut bytes: &[u8], last: bool) -> Output
+where
+    Key: Sync,
+{
+    let mut text = String::with_capacity(bytes.len().max(4));
+    loop {
+        let (result, read, _) = drive.decoder.decode_to_string(bytes, &mut text, last);
+        bytes = bytes.get(read..).unwrap_or_default();
+        if result == CoderResult::InputEmpty {
+            break;
+        }
+        text.reserve(bytes.len().max(4));
+    }
+    if text.is_empty() {
+        Output::Held
+    } else {
+        text_output(drive, text, TextSource::Bytes)
+    }
 }

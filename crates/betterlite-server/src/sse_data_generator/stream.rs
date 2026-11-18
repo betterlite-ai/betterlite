@@ -5,6 +5,7 @@ use std::sync::Arc;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_models::model_registration::JsonObject;
 use bytes::Bytes;
+use encoding_rs::{Decoder, UTF_8};
 use futures_util::StreamExt as _;
 use futures_util::stream::BoxStream;
 
@@ -39,6 +40,7 @@ where
     pub(super) finished: Flag,
     pub(super) chunk_text: String,
     pub(super) raw_buffer: String,
+    pub(super) decoder: Decoder,
     pub(super) error_message: Option<String>,
     pub(super) pending_failure: Option<StreamFailure>,
 }
@@ -48,6 +50,7 @@ pub(super) enum Output {
     Raw(Vec<String>),
     Overflow(Vec<String>),
     End,
+    Held,
 }
 
 pub(super) fn generate<Key>(
@@ -107,6 +110,7 @@ where
             finished: Flag(false),
             chunk_text: String::new(),
             raw_buffer: String::new(),
+            decoder: UTF_8.new_decoder_without_bom_handling(),
             error_message: None,
             pending_failure: None,
         }
@@ -122,7 +126,7 @@ where
         }
         let beat = self.session.beats.next().await;
         let frames = match beat {
-            None => super::finish::end(self),
+            None => super::item::end_source(self),
             Some(Beat::Ping) => vec![Ok(Bytes::from_static(b": ping\n\n"))],
             Some(Beat::Item(Err(failure))) => super::finish::handle_failure(self, failure).await,
             Some(Beat::Item(Ok(item))) => super::item::handle_item(self, item).await,
