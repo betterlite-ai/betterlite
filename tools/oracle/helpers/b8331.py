@@ -285,7 +285,6 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
     upstream = scripted.base
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(scripted.handle)))
     litellm.module_level_client = client
-    cache: ClientCache = LLMClientCache()
     litellm.in_memory_llm_clients_cache = LLMClientCache()
     cache: ClientCache = litellm.in_memory_llm_clients_cache
     cache.set_cache(key="httpx_client", value=client)
