@@ -22,6 +22,12 @@ description: 'Add least-busy as one exhaustive strategy variant using B304 state
   B016 registers Strategy::LeastBusy as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/least_busy.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
+  - "crates/betterlite-server/src"
+  - "crates/betterlite-router/src/strategy.rs"
+  - "crates/betterlite-router/src/router_core/tests.rs"
+  - "crates/betterlite-router/src/router_core/tests/boundaries.rs"
+  - "crates/betterlite-router/src/router_core/services.rs"
+  - "crates/betterlite-router/src"
   - crates/betterlite-router/src/least_busy.rs
   - crates/betterlite-router/src/least_busy/**
   - crates/betterlite-router/src/strategy/least_busy.rs
