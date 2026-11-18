@@ -68,15 +68,20 @@ async fn read_from_db_leaves_a_null_param_value_without_a_schedule() {
 #[tokio::test]
 async fn read_from_db_reports_a_revision_past_u32() {
     let database = Database::provision().await;
-    seed_row(&database, Some(serialized_interval(1)), None, 4_294_967_296).await;
+    seed_row(
+        &database,
+        Some(serialized_interval(1)),
+        None,
+        i64::from(u32::MAX) + 1,
+    )
+    .await;
     let error = read_reload_schedule(Some(database.client()))
         .await
         .unwrap_err();
     assert!(matches!(
         error,
-        ReloadScheduleError::Parse(ParseScheduleError::Revision {
-            value: 4_294_967_296
-        })
+        ReloadScheduleError::Parse(ParseScheduleError::Revision { value })
+            if value == i64::from(u32::MAX) + 1
     ));
     database.close().await;
 }

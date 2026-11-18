@@ -67,14 +67,12 @@ fn parse_schedule_rejects_a_revision_past_u32() {
     let row = ReloadConfigRow {
         param_value: JsonData::Null,
         last_run_at: None,
-        reload_revision: Some(4_294_967_296),
+        reload_revision: Some(i64::from(u32::MAX) + 1),
     };
     let error = parse_reload_schedule(&row).unwrap_err();
     assert!(matches!(
         error,
-        ParseScheduleError::Revision {
-            value: 4_294_967_296
-        }
+        ParseScheduleError::Revision { value } if value == i64::from(u32::MAX) + 1
     ));
 }
 

@@ -99,7 +99,7 @@ async fn manual_reload_reports_a_missing_database_and_leaves_the_cache_alone() {
 #[tokio::test]
 async fn manual_reload_reports_a_revision_past_u32() {
     let database = Database::provision().await;
-    seed_row(&database, None, None, 4_294_967_295).await;
+    seed_row(&database, None, None, i64::from(u32::MAX)).await;
     let evictor = RecordingEvictor::default();
     let error = record_manual_reload(
         Some(database.client()),
@@ -111,13 +111,11 @@ async fn manual_reload_reports_a_revision_past_u32() {
     .unwrap_err();
     assert!(matches!(
         error,
-        ReloadScheduleError::Revision {
-            value: 4_294_967_296
-        }
+        ReloadScheduleError::Revision { value } if value == i64::from(u32::MAX) + 1
     ));
     assert_eq!(
         stored_row(&database).await.unwrap().reload_revision,
-        4_294_967_296
+        i64::from(u32::MAX) + 1
     );
     assert_eq!(evictor.names(), vec![RELOAD_CONFIG_PARAM_NAME.to_owned()]);
     database.close().await;
