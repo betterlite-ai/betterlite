@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingVector};
+use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_prompts::arguments::json::Object;
 
 use crate::sagemaker_embedding::hf::{
@@ -181,6 +182,15 @@ fn an_unparsable_reply_carries_the_http_status() {
 
     assert_eq!(error.status_code(), 503);
     assert!(error.to_string().starts_with("Failed to parse response: "));
+}
+
+#[test]
+fn a_reply_error_converts_to_the_sagemaker_error_with_its_status() {
+    let error = transform_response(b"not json", 503, "model", &Object::new()).unwrap_err();
+    let converted = SagemakerError::from(error);
+
+    assert_eq!(converted.status_code, 503);
+    assert!(converted.message.starts_with("Failed to parse response: "));
 }
 
 #[test]
