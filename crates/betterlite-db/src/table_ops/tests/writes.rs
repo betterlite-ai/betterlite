@@ -19,9 +19,8 @@ use crate::table_ops::{OperationCallType, TableOpsError};
 
 const KEY_INSERT: &str = "INSERT INTO \"LiteLLM_VerificationToken\" (\"token\", \"key_alias\", \"user_id\", \"spend\", \"models\") VALUES ($1, $2, $3, $4, ARRAY[]::text[])";
 const TEAM_INSERT: &str = "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"admins\", \"members\", \"models\") VALUES ($1, ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[])";
-const USER_INSERT: &str =
-    "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\") VALUES ($1, $2)";
-const BUDGET_INSERT: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\") VALUES ($1, 'created', 'updated')";
+const USER_INSERT: &str = "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\", \"updated_at\") VALUES ($1, $2, '2000-01-01'::timestamp)";
+const BUDGET_INSERT: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\", \"updated_at\") VALUES ($1, 'created', 'updated', '2000-01-01'::timestamp)";
 const END_USER_INSERT: &str = "INSERT INTO \"LiteLLM_EndUserTable\" (\"user_id\") VALUES ($1)";
 
 fn team_payload(team_id: &str, alias: &str) -> BTreeMap<TeamColumn, TokenValue> {
@@ -306,6 +305,34 @@ async fn update_team_stamps_updated_at_from_the_injected_clock() {
         .await
         .expect("the explicit update runs");
     assert_eq!(kept.data.fields.updated_at, Some(at(1_700_000_000)));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn an_empty_team_update_leaves_updated_at_alone() {
+    let harness = Harness::start().await;
+    let db = harness.pool.get().await.expect("a fixture connection");
+    db.execute(
+        "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"admins\", \"members\", \"models\", \"updated_at\") VALUES ('team-empty', ARRAY[]::text[], ARRAY[]::text[], ARRAY[]::text[], '2000-01-01'::timestamp)",
+        &[],
+    )
+    .await
+    .expect("the team row commits");
+    let client = TableClient::new(harness.pool.clone());
+    let ports = Ports::with_clock(Box::new(ManualClock::new(1_800_000_000)));
+    let ops = ports.operations(&client);
+    let unchanged = ops
+        .update_team(Some("team-empty"), &BTreeMap::new(), Some(&BTreeMap::new()))
+        .await
+        .expect("the empty update runs");
+    assert_eq!(unchanged.team_id, "team-empty");
+    let stamp = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_TeamTable\" WHERE team_id = $1",
+        "team-empty",
+    )
+    .await;
+    assert_eq!(stamp.as_deref(), Some("2000-01-01 00:00:00"));
     harness.close().await;
 }
 
@@ -746,6 +773,20 @@ async fn update_many_users_sets_values_omits_nulls_and_inserts_rows() {
         .expect("the user read runs")
         .expect("the user row");
     assert_eq!(inserted.user_alias.as_deref(), Some("new"));
+    let updated_stamp = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
+        "u-1",
+    )
+    .await;
+    assert_ne!(updated_stamp.as_deref(), Some("2000-01-01 00:00:00"));
+    let inserted_stamp = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
+        "u-2",
+    )
+    .await;
+    assert!(inserted_stamp.is_some(), "the new user row is stamped");
     harness.close().await;
 }
 
@@ -844,6 +885,20 @@ async fn update_many_budgets_sets_values_and_inserts_rows() {
     )
     .await;
     assert_eq!(inserted.as_deref(), Some("updated"));
+    let updated_stamp = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_BudgetTable\" WHERE budget_id = $1",
+        "b-1",
+    )
+    .await;
+    assert_ne!(updated_stamp.as_deref(), Some("2000-01-01 00:00:00"));
+    let inserted_stamp = text_column(
+        &db,
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_BudgetTable\" WHERE budget_id = $1",
+        "b-2",
+    )
+    .await;
+    assert!(inserted_stamp.is_some(), "the new budget row is stamped");
     harness.close().await;
 }
 
