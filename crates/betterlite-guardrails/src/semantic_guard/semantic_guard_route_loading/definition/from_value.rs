@@ -24,10 +24,27 @@ impl RouteDefinition {
                 return Err(DefinitionError::UnknownField { field: key.clone() });
             }
         }
-        let route_name = required_text(fields, "route_name")?;
-        let description = optional_text(fields, "description")?.unwrap_or_default();
-        let utterances = required_utterances(fields)?;
-        let similarity_threshold = optional_number(fields, "similarity_threshold")?;
+        let route_name = text(
+            required(field(fields, "route_name"), "route_name")?,
+            "route_name",
+            "a string",
+        )?;
+        let description = field(fields, "description")
+            .map(|value| text(value, "description", "a string"))
+            .transpose()?
+            .unwrap_or_default();
+        let utterances = match required(field(fields, "utterances"), "utterances")? {
+            GuardrailValue::Array(items) => utterance_texts(items)?,
+            _ => {
+                return Err(DefinitionError::FieldType {
+                    field: "utterances",
+                    expected: "a list of strings",
+                });
+            }
+        };
+        let similarity_threshold = field(fields, "similarity_threshold")
+            .map(|value| number(value, "similarity_threshold"))
+            .transpose()?;
         Ok(Self {
             route_name,
             description,
@@ -37,72 +54,50 @@ impl RouteDefinition {
     }
 }
 
-fn required_text(
-    fields: &BTreeMap<String, GuardrailValue>,
+// a null field reads as absent, so an explicit null description or threshold takes its default
+fn field<'a>(
+    fields: &'a BTreeMap<String, GuardrailValue>,
+    name: &'static str,
+) -> Option<&'a GuardrailValue> {
+    fields
+        .get(name)
+        .filter(|value| !matches!(value, GuardrailValue::Null))
+}
+
+fn required<'a>(
+    value: Option<&'a GuardrailValue>,
     field: &'static str,
+) -> Result<&'a GuardrailValue, DefinitionError> {
+    value.ok_or(DefinitionError::MissingField { field })
+}
+
+fn text(
+    value: &GuardrailValue,
+    field: &'static str,
+    expected: &'static str,
 ) -> Result<String, DefinitionError> {
-    match fields.get(field) {
-        None => Err(DefinitionError::MissingField { field }),
-        Some(GuardrailValue::Text(text)) => Ok(text.clone()),
-        Some(_) => Err(DefinitionError::FieldType {
-            field,
-            expected: "a string",
-        }),
+    match value {
+        GuardrailValue::Text(text) => Ok(text.clone()),
+        _ => Err(DefinitionError::FieldType { field, expected }),
     }
 }
 
-fn optional_text(
-    fields: &BTreeMap<String, GuardrailValue>,
-    field: &'static str,
-) -> Result<Option<String>, DefinitionError> {
-    match fields.get(field) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(DefinitionError::FieldType {
-            field,
-            expected: "a string",
-        }),
-    }
+// a yaml scalar that is not a string reaches the route as an error naming the field, never as its text
+fn utterance_texts(utterances: &[GuardrailValue]) -> Result<Vec<String>, DefinitionError> {
+    utterances
+        .iter()
+        .map(|utterance| text(utterance, "utterances", "a list of strings"))
+        .collect()
 }
 
-fn required_utterances(
-    fields: &BTreeMap<String, GuardrailValue>,
-) -> Result<Vec<String>, DefinitionError> {
-    match fields.get("utterances") {
-        None => Err(DefinitionError::MissingField {
-            field: "utterances",
-        }),
-        Some(GuardrailValue::Array(items)) => items
-            .iter()
-            .map(|item| match item {
-                GuardrailValue::Text(text) => Ok(text.clone()),
-                _ => Err(DefinitionError::FieldType {
-                    field: "utterances",
-                    expected: "a list of strings",
-                }),
-            })
-            .collect(),
-        Some(_) => Err(DefinitionError::FieldType {
-            field: "utterances",
-            expected: "a list of strings",
-        }),
-    }
+fn number(value: &GuardrailValue, field: &'static str) -> Result<f64, DefinitionError> {
+    raw_number(value).ok_or(DefinitionError::FieldType {
+        field,
+        expected: "a number",
+    })
 }
 
-fn optional_number(
-    fields: &BTreeMap<String, GuardrailValue>,
-    field: &'static str,
-) -> Result<Option<f64>, DefinitionError> {
-    match fields.get(field) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(value) => number(value).map(Some).ok_or(DefinitionError::FieldType {
-            field,
-            expected: "a number",
-        }),
-    }
-}
-
-fn number(value: &GuardrailValue) -> Option<f64> {
+fn raw_number(value: &GuardrailValue) -> Option<f64> {
     match value {
         GuardrailValue::Decimal(number) => Some(*number),
         GuardrailValue::SignedInteger(number) => number.to_string().parse::<f64>().ok(),

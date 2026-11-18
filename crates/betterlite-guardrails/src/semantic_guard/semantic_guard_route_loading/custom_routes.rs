@@ -79,6 +79,7 @@ fn read_error(path: &Path, source: io::Error) -> RouteLoadError {
     if source.kind() == io::ErrorKind::NotFound {
         return RouteLoadError::FileNotFound {
             path: path.to_owned(),
+            source,
         };
     }
     RouteLoadError::Read {

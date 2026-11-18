@@ -1,3 +1,6 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -29,10 +32,10 @@ pub enum DefinitionError {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RawDefinition {
-    route_name: Option<String>,
-    description: Option<String>,
-    utterances: Option<Vec<String>>,
-    similarity_threshold: Option<f64>,
+    route_name: Option<GuardrailValue>,
+    description: Option<GuardrailValue>,
+    utterances: Option<GuardrailValue>,
+    similarity_threshold: Option<GuardrailValue>,
     // the three Route fields a loaded route never fills stay readable, as LiteLLM drops them from its route definitions
     #[serde(rename = "function_schemas")]
     _function_schemas: Option<IgnoredAny>,
@@ -44,21 +47,19 @@ pub(super) struct RawDefinition {
 
 impl RawDefinition {
     pub(super) fn into_definition(self) -> Result<RouteDefinition, DefinitionError> {
-        let Some(route_name) = self.route_name else {
-            return Err(DefinitionError::MissingField {
-                field: "route_name",
-            });
-        };
-        let Some(utterances) = self.utterances else {
-            return Err(DefinitionError::MissingField {
-                field: "utterances",
-            });
-        };
-        Ok(RouteDefinition {
-            route_name,
-            description: self.description.unwrap_or_default(),
-            utterances,
-            similarity_threshold: self.similarity_threshold,
-        })
+        let mut fields = BTreeMap::new();
+        let known = [
+            ("route_name", self.route_name),
+            ("description", self.description),
+            ("utterances", self.utterances),
+            ("similarity_threshold", self.similarity_threshold),
+        ];
+        for (name, value) in known {
+            if let Some(value) = value {
+                fields.insert(name.to_owned(), value);
+            }
+        }
+        // the file route and the inline route go through one validator, so a wrong type names the same field
+        RouteDefinition::from_value(&GuardrailValue::Object(fields))
     }
 }

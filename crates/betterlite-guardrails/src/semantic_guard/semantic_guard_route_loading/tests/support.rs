@@ -1,4 +1,6 @@
+use std::collections::BTreeMap;
 use std::fs;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -26,27 +28,33 @@ pub(super) fn object(fields: &[(&str, GuardrailValue)]) -> GuardrailValue {
     )
 }
 
-pub(super) fn route(name: &str, utterances: &[&str], threshold: f64) -> Route {
-    Route {
-        name: name.to_owned(),
-        description: String::new(),
-        utterances: utterances.iter().map(|text| (*text).to_owned()).collect(),
-        score_threshold: threshold,
-    }
-}
-
-pub(super) fn described_route(
+pub(super) fn route(
     name: &str,
-    description: &str,
+    description: Option<&str>,
     utterances: &[&str],
     threshold: f64,
 ) -> Route {
     Route {
         name: name.to_owned(),
-        description: description.to_owned(),
+        description: description.unwrap_or_default().to_owned(),
         utterances: utterances.iter().map(|text| (*text).to_owned()).collect(),
         score_threshold: threshold,
     }
+}
+
+pub(super) fn environment(value: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([(
+        "DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD".to_owned(),
+        value.to_owned(),
+    )])
+}
+
+// the file is read before the future starts, so the test never blocks an async worker
+pub(super) fn block_on<F: Future>(future: F) -> F::Output {
+    tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap()
+        .block_on(future)
 }
 
 // the temp folder stays alive with the path it holds, so the loader can open the file
@@ -80,7 +88,7 @@ pub(super) fn sources(
 }
 
 pub(super) struct BuilderCall {
-    pub(super) names: Vec<String>,
+    pub(super) routes: Vec<Route>,
     pub(super) threshold: f64,
 }
 
@@ -122,7 +130,7 @@ impl SemanticRouterBuilder for FakeBuilder {
     ) -> Result<Vec<String>, BuildFailure> {
         let names: Vec<String> = routes.iter().map(|route| route.name.clone()).collect();
         self.calls.lock().unwrap().push(BuilderCall {
-            names: names.clone(),
+            routes,
             threshold: global_threshold,
         });
         if self.fail {

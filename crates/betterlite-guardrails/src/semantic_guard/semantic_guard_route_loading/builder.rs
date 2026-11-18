@@ -2,10 +2,7 @@ use std::error::Error;
 
 use async_trait::async_trait;
 
-use super::build_routes;
-use super::error::RouteLoadError;
 use super::route::Route;
-use super::sources::RouteSources;
 
 #[async_trait]
 pub trait SemanticRouterBuilder: Send + Sync {
@@ -21,29 +18,26 @@ pub trait SemanticRouterBuilder: Send + Sync {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum RouterBuildError<E>
+#[error("the semantic router could not be built: {source}")]
+pub struct RouterBuildError<E>
 where
     E: Error + Send + Sync + 'static,
 {
-    #[error(transparent)]
-    Load(#[from] RouteLoadError),
-    #[error("the semantic router could not be built: {source}")]
-    Build {
-        #[source]
-        source: E,
-    },
+    #[source]
+    source: E,
 }
 
+// the caller loads the routes first, so no file is read on the executor while the router is built
 pub async fn build_router<B>(
     builder: &B,
-    sources: &RouteSources,
+    routes: Vec<Route>,
+    global_threshold: f64,
 ) -> Result<B::Router, RouterBuildError<B::Error>>
 where
     B: SemanticRouterBuilder,
 {
-    let routes = build_routes(sources)?;
     builder
-        .build(routes, sources.global_threshold)
+        .build(routes, global_threshold)
         .await
-        .map_err(|source| RouterBuildError::Build { source })
+        .map_err(|source| RouterBuildError { source })
 }

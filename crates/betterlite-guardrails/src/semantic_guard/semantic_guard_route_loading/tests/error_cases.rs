@@ -4,10 +4,11 @@ use crate::semantic_guard::semantic_guard_route_loading::build_routes;
 use crate::semantic_guard::semantic_guard_route_loading::custom_routes::{
     self, CustomRoutesError, MAX_ROUTES_FILE_BYTES,
 };
+use crate::semantic_guard::semantic_guard_route_loading::default_similarity_threshold;
 use crate::semantic_guard::semantic_guard_route_loading::definition::DefinitionError;
 use crate::semantic_guard::semantic_guard_route_loading::error::RouteLoadError;
 
-use super::support::{array, object, routes_file, sources, text};
+use super::support::{array, environment, object, routes_file, sources, text};
 
 #[test]
 fn a_missing_file_is_reported_as_not_found() {
@@ -15,7 +16,13 @@ fn a_missing_file_is_reported_as_not_found() {
     let path = folder.path().join("missing.yaml");
     let sources = sources(&[], Some(&path), vec![], 0.5);
     match build_routes(&sources) {
-        Err(RouteLoadError::FileNotFound { path: reported }) => assert_eq!(reported, path),
+        Err(RouteLoadError::FileNotFound {
+            path: reported,
+            source,
+        }) => {
+            assert_eq!(reported, path);
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+        }
         other => panic!("expected a missing file error, got {other:?}"),
     }
 }
@@ -114,13 +121,111 @@ fn a_repeated_key_in_one_route_is_rejected() {
 fn a_file_entry_with_a_non_string_utterance_is_rejected() {
     let (_folder, path) = routes_file("- route_name: x\n  utterances: [\"a\", 1]\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);
-    assert!(matches!(
-        build_routes(&sources),
+    match build_routes(&sources) {
         Err(RouteLoadError::CustomRoutes {
-            source: CustomRoutesError::Yaml { .. },
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
             ..
-        })
-    ));
+        }) => {
+            assert_eq!(field, "utterances");
+            assert_eq!(expected, "a list of strings");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_mapping_entry_with_a_non_string_utterance_is_rejected() {
+    let (_folder, path) = routes_file("route_name: x\nutterances: [\"a\", 1]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "utterances");
+            assert_eq!(expected, "a list of strings");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_entry_with_a_non_text_route_name_is_rejected() {
+    let (_folder, path) = routes_file("- route_name: 1\n  utterances: [\"a\"]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "route_name");
+            assert_eq!(expected, "a string");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_entry_with_a_non_text_description_is_rejected() {
+    let (_folder, path) = routes_file("- route_name: x\n  utterances: [\"a\"]\n  description: 1\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "description");
+            assert_eq!(expected, "a string");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_entry_with_a_non_list_utterances_field_is_rejected() {
+    let (_folder, path) = routes_file("- route_name: x\n  utterances: \"one text\"\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "utterances");
+            assert_eq!(expected, "a list of strings");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_non_numeric_threshold_variable_is_an_error() {
+    match default_similarity_threshold(&environment("high")) {
+        Err(RouteLoadError::ThresholdEnv { source }) => assert_eq!(
+            source.to_string(),
+            "environment variable DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD must be a number"
+        ),
+        other => panic!("expected an invalid threshold error, got {other:?}"),
+    }
 }
 
 #[test]

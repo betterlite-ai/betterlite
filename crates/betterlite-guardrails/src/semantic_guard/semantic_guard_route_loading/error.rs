@@ -24,7 +24,11 @@ pub enum RouteLoadError {
         source: DefinitionError,
     },
     #[error("SemanticGuard: custom routes file not found: {}", path.display())]
-    FileNotFound { path: PathBuf },
+    FileNotFound {
+        path: PathBuf,
+        #[source]
+        source: io::Error,
+    },
     #[error("the custom routes file at {} could not be read: {source}", path.display())]
     Read {
         path: PathBuf,
@@ -45,4 +49,9 @@ pub enum RouteLoadError {
     },
     #[error("route {name} has a similarity threshold that is not finite")]
     NonFiniteThreshold { name: String },
+    #[error(transparent)]
+    ThresholdEnv {
+        #[from]
+        source: betterlite_env::EnvError,
+    },
 }

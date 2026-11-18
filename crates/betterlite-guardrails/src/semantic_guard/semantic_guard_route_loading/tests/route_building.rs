@@ -1,9 +1,12 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::semantic_guard::semantic_guard_route_loading::DEFAULT_SIMILARITY_THRESHOLD;
 use crate::semantic_guard::semantic_guard_route_loading::build_routes;
+use crate::semantic_guard::semantic_guard_route_loading::default_similarity_threshold;
 
-use super::support::{array, described_route, object, route, routes_file, sources, text};
+use super::support::{array, environment, object, route, routes_file, sources, text};
 
 #[test]
 fn a_template_route_keeps_its_own_threshold() {
@@ -36,9 +39,9 @@ fn an_inline_route_carries_its_fields() {
     let sources = sources(&[], None, inline, 0.9);
     assert_eq!(
         build_routes(&sources).unwrap(),
-        vec![described_route(
+        vec![route(
             "finance-credit",
-            "blocks credit card abuse",
+            Some("blocks credit card abuse"),
             &["my card number is", "wire the money"],
             0.6,
         )]
@@ -54,7 +57,7 @@ fn an_inline_route_without_a_threshold_takes_the_global_one() {
     let sources = sources(&[], None, inline, 0.55);
     assert_eq!(
         build_routes(&sources).unwrap(),
-        vec![route("chat", &["hello"], 0.55)]
+        vec![route("chat", None, &["hello"], 0.55)]
     );
 }
 
@@ -146,9 +149,9 @@ fn a_file_route_carries_its_fields() {
     let sources = sources(&[], Some(&path), vec![], 0.9);
     assert_eq!(
         build_routes(&sources).unwrap(),
-        vec![described_route(
+        vec![route(
             "uploads",
-            "blocks upload attempts",
+            Some("blocks upload attempts"),
             &["post this file", "attach it"],
             0.8,
         )]
@@ -162,7 +165,7 @@ fn a_file_route_without_a_threshold_takes_the_global_one() {
     let sources = sources(&[], Some(&path), vec![], 0.35);
     assert_eq!(
         build_routes(&sources).unwrap(),
-        vec![route("uploads", &["post this file"], 0.35)]
+        vec![route("uploads", None, &["post this file"], 0.35)]
     );
 }
 
@@ -185,4 +188,39 @@ fn a_file_integer_threshold_is_read_as_a_number() {
 #[test]
 fn the_default_threshold_is_litellms() {
     assert_eq!(DEFAULT_SIMILARITY_THRESHOLD, 0.75);
+}
+
+#[test]
+fn the_default_threshold_is_read_from_the_environment() {
+    assert_eq!(
+        default_similarity_threshold(&environment("0.91")).unwrap(),
+        0.91
+    );
+}
+
+#[test]
+fn an_unset_threshold_variable_keeps_litellms_default() {
+    let unset: BTreeMap<String, String> = BTreeMap::new();
+    assert_eq!(
+        default_similarity_threshold(&unset).unwrap(),
+        DEFAULT_SIMILARITY_THRESHOLD
+    );
+}
+
+#[test]
+fn an_empty_threshold_variable_keeps_litellms_default() {
+    assert_eq!(
+        default_similarity_threshold(&environment("")).unwrap(),
+        DEFAULT_SIMILARITY_THRESHOLD
+    );
+}
+
+#[test]
+fn a_quoted_scalar_utterance_stays_text() {
+    let (_folder, path) = routes_file("- route_name: quoted\n  utterances: [\"1\", \"true\"]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].utterances,
+        vec!["1".to_owned(), "true".to_owned()]
+    );
 }

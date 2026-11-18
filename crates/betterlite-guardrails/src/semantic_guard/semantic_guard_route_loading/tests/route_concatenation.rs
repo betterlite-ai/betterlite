@@ -77,7 +77,7 @@ fn an_empty_file_list_adds_no_routes() {
     let sources = sources(&[], Some(&path), inline, 0.5);
     assert_eq!(
         build_routes(&sources).unwrap(),
-        vec![route("inline", &["inline text"], 0.5)]
+        vec![route("inline", None, &["inline text"], 0.5)]
     );
 }
 
@@ -87,7 +87,7 @@ fn a_single_mapping_file_adds_one_route() {
     let sources = sources(&[], Some(&path), vec![], 0.5);
     assert_eq!(
         build_routes(&sources).unwrap(),
-        vec![route("single", &["only one"], 0.5)]
+        vec![route("single", None, &["only one"], 0.5)]
     );
 }
 
