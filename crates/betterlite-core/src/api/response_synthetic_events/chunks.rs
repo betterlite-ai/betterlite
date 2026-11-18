@@ -61,6 +61,10 @@ impl io::Write for ByteCount {
         self.0 = self.0.saturating_add(data.len());
         Ok(data.len())
     }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 #[must_use]
