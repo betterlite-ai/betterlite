@@ -60,8 +60,8 @@ pub fn decode_dataforseo_search(bytes: &[u8]) -> Result<SearchResponse, DataForS
     let Some(task) = first_element(&tasks)? else {
         return Ok(response(Vec::new()));
     };
-    let task: DataForSeoTask = parse_object(task.get().as_bytes())?;
-    Ok(response(task_hits(task)?))
+    let parsed_task: DataForSeoTask = parse_object(task.get().as_bytes())?;
+    Ok(response(task_hits(parsed_task)?))
 }
 
 fn task_hits(task: DataForSeoTask) -> Result<Vec<SearchResult>, DataForSeoSearchError> {
@@ -74,21 +74,21 @@ fn task_hits(task: DataForSeoTask) -> Result<Vec<SearchResult>, DataForSeoSearch
     let Some(result) = first_element(&results)? else {
         return Ok(Vec::new());
     };
-    let result: DataForSeoResult = parse_object(result.get().as_bytes())?;
-    result_hits(result)
+    let parsed_result: DataForSeoResult = parse_object(result.get().as_bytes())?;
+    result_hits(parsed_result)
 }
 
 fn result_hits(result: DataForSeoResult) -> Result<Vec<SearchResult>, DataForSeoSearchError> {
     let Some(items) = required(result.items, DataForSeoSearchError::ItemsShape)? else {
         return Ok(Vec::new());
     };
-    let items: Vec<Box<RawValue>> =
+    let parsed_items: Vec<Box<RawValue>> =
         serde_json::from_str(items.get()).map_err(DataForSeoSearchError::ReplyDecode)?;
-    let mut hits = Vec::with_capacity(items.len());
-    for item in &items {
-        let item: DataForSeoItem = parse_object(item.get().as_bytes())?;
-        if organic(&item.kind) {
-            hits.push(project_item(item)?);
+    let mut hits = Vec::with_capacity(parsed_items.len());
+    for item in &parsed_items {
+        let parsed_item: DataForSeoItem = parse_object(item.get().as_bytes())?;
+        if organic(&parsed_item.kind) {
+            hits.push(project_item(parsed_item)?);
         }
     }
     Ok(hits)
