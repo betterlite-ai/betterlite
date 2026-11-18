@@ -128,14 +128,14 @@ fn scan_key_releases_tool_fingerprint_only_after_end() {
 fn replays_the_anthropic_sse_events_corpus() {
     let directory =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/anthropic_sse_events");
-    for entry in std::fs::read_dir(directory).unwrap() {
+    std::fs::read_dir(directory).unwrap().for_each(|entry| {
         let bytes = std::fs::read(entry.unwrap().path()).unwrap();
         let chunk = SseChunk::Bytes(bytes);
         let _events = iter_sse_events(&chunk);
         let _state = content_block_state(std::slice::from_ref(&chunk));
         let _text = streaming_string_so_far(std::slice::from_ref(&chunk));
         let _ended = streaming_has_ended(&[chunk]);
-    }
+    });
 }
 
 #[test]

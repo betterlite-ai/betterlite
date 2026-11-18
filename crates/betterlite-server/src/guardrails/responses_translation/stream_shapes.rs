@@ -21,5 +21,4 @@ pub struct ResponsesStreamChunk {
     pub content_index: Option<i64>,
 }
 
-#[cfg(test)]
 mod tests;

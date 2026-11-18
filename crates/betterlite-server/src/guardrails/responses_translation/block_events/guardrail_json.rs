@@ -1,9 +1,8 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::{
-    Object, StreamItem,
-    blocked_usage::{OriginalResponse, blocked_responses_stream_usage},
+    Object, StreamItem, blocked_usage::OriginalResponse,
 };
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 #[must_use]
 pub fn blocked_original_response(original_response: Option<&Value>) -> OriginalResponse {
@@ -51,38 +50,4 @@ pub(crate) fn to_guardrail(input: &Value) -> GuardrailValue {
                 .collect(),
         ),
     }
-}
-
-fn from_guardrail(input: &GuardrailValue) -> Value {
-    match input {
-        GuardrailValue::Null => Value::Null,
-        GuardrailValue::Boolean(flag) => Value::Bool(*flag),
-        GuardrailValue::SignedInteger(number) => Value::from(*number),
-        GuardrailValue::UnsignedInteger(number) => Value::from(*number),
-        GuardrailValue::Decimal(number) => Value::from(*number),
-        GuardrailValue::Text(text) => Value::String(text.clone()),
-        GuardrailValue::Array(items) => Value::Array(items.iter().map(from_guardrail).collect()),
-        GuardrailValue::Object(fields) => Value::Object(
-            fields
-                .iter()
-                .map(|(name, value)| (name.clone(), from_guardrail(value)))
-                .collect(),
-        ),
-    }
-}
-
-pub(crate) fn usage_value(original_response: Option<&Value>) -> Value {
-    let usage = blocked_responses_stream_usage(&blocked_original_response(original_response));
-    let mut fields = Map::from_iter([
-        ("input_tokens".to_owned(), Value::from(usage.input_tokens)),
-        ("output_tokens".to_owned(), Value::from(usage.output_tokens)),
-        ("total_tokens".to_owned(), Value::from(usage.total_tokens)),
-    ]);
-    fields.extend(
-        usage
-            .details
-            .iter()
-            .map(|(name, value)| (name.clone(), from_guardrail(value))),
-    );
-    Value::Object(fields)
 }

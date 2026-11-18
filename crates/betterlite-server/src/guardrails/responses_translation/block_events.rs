@@ -14,7 +14,7 @@
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::response_synthetic_events::{
-    builder::build_synthetic_response_events,
+    builder,
     stamping::{CostTarget, ResponsesCostCalculator},
 };
 use betterlite_guardrails::guardrail_message_scope::{StreamItem, fingerprint::stream_item_field};
@@ -26,7 +26,8 @@ use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use std::convert::Infallible;
 
-use guardrail_json::{to_guardrail, usage_value};
+use betterlite_guardrails::guardrail_message_scope::blocked_usage::blocked_responses_stream_usage;
+use guardrail_json::{blocked_original_response, to_guardrail};
 
 use super::open_item::open_item_closing_events;
 
@@ -85,24 +86,6 @@ pub fn blocked_output_item(message: &str, stamp: &BlockStamp) -> Value {
     })
 }
 
-fn blocked_response(
-    model: &str,
-    original_response: Option<&Value>,
-    stamp: &BlockStamp,
-    response_id: &str,
-    item: &Value,
-) -> Value {
-    json!({
-        "id": response_id,
-        "object": "response",
-        "created_at": stamp.created_at,
-        "model": model,
-        "output": [item],
-        "status": "completed",
-        "usage": usage_value(original_response),
-    })
-}
-
 #[must_use]
 pub fn build_blocked_response(
     message: &str,
@@ -110,13 +93,17 @@ pub fn build_blocked_response(
     original_response: Option<&Value>,
     stamp: &BlockStamp,
 ) -> Value {
-    blocked_response(
-        model,
-        original_response,
-        stamp,
-        &stamp.response_id,
-        &blocked_output_item(message, stamp),
-    )
+    let original = blocked_original_response(original_response);
+    let usage = blocked_responses_stream_usage(&original);
+    json!({
+        "id": stamp.response_id,
+        "object": "response",
+        "created_at": stamp.created_at,
+        "model": model,
+        "output": [blocked_output_item(message, stamp)],
+        "status": "completed",
+        "usage": usage,
+    })
 }
 
 #[must_use]
@@ -196,12 +183,16 @@ fn block_continuation_events(
     let item = blocked_output_item(message, stamp);
     let mut events = responses_so_far.map_or_else(Vec::new, open_item_closing_events);
     events.extend(block_item_events(message, index, &item, stamp));
-    let response = blocked_response(
+    let continued_stamp = BlockStamp {
+        response_id,
+        message_id: stamp.message_id.clone(),
+        created_at: stamp.created_at,
+    };
+    let response = build_blocked_response(
+        message,
         &streamed_model,
         original_response,
-        stamp,
-        &response_id,
-        &item,
+        &continued_stamp,
     );
     events.push(json!({"type": "response.completed", "response": response}));
     events
@@ -255,7 +246,8 @@ pub fn build_block_sse_chunks(
     let chunk_size = i64::try_from(message.chars().count())
         .unwrap_or(i64::MAX)
         .max(1);
-    build_synthetic_response_events(&mut response, Some(&NoCost), chunk_size)?
+    // ast-grep-ignore: no-long-names
+    builder::build_synthetic_response_events(&mut response, Some(&NoCost), chunk_size)?
         .iter()
         .map(|event| frame(&serde_json::to_value(event)?))
         .collect()
@@ -290,5 +282,4 @@ pub fn build_stream_error_items(
     }]
 }
 
-#[cfg(test)]
 mod tests;

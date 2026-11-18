@@ -145,14 +145,18 @@ pub fn extract_text_from_sse(bytes: &[u8]) -> String {
 
 #[must_use]
 pub fn streaming_string_so_far(items: &[SseChunk]) -> String {
-    items
-        .iter()
-        .map(|item| match item {
-            SseChunk::Bytes(bytes) => extract_text_from_sse(bytes),
-            SseChunk::Event(event) => text_delta(event).unwrap_or_default().to_owned(),
-            SseChunk::Other => String::new(),
-        })
-        .collect()
+    items.iter().fold(String::new(), |mut text, item| {
+        match item {
+            SseChunk::Bytes(bytes) => text.push_str(&extract_text_from_sse(bytes)),
+            SseChunk::Event(event) => {
+                if let Some(delta) = text_delta(event) {
+                    text.push_str(delta);
+                }
+            }
+            SseChunk::Other => {}
+        }
+        text
+    })
 }
 
 #[must_use]
@@ -228,5 +232,4 @@ pub fn streaming_scan_key(items: &[SseChunk]) -> StreamingScanKey {
     }
 }
 
-#[cfg(test)]
 mod tests;

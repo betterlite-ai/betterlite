@@ -46,23 +46,33 @@ class Input(TypedDict):
     message_id: str
 
 
-def response_frames(input_value: Input, *, stream_started: bool) -> JsonValue:
+def frame_value(chunk: bytes) -> JsonValue:
+    lines = chunk.decode("utf-8").splitlines()
+    data = next(line.removeprefix("data:") for line in lines if line.startswith("data:"))
+    payload = JSON.validate_json(data)
+    if lines[0].startswith("event:"):
+        return {"event": lines[0].removeprefix("event:").strip(), "data": payload}
+    return payload
+
+
+def block_frames(input_value: Input) -> JsonValue:
     request: dict[str, JsonValue] = {}
     error = ModifyResponseException(
-        message=input_value["message"],
-        model=input_value["model"],
-        request_data=request,
-        original_response=input_value["original_response"],
+        message=input_value["message"], model=input_value["model"],
+        request_data=request, original_response=input_value["original_response"],
     )
-    chunks = OpenAIResponsesHandler().build_block_sse_chunks(
-        error, stream_started=stream_started, responses_so_far=input_value["events"]
-    )
-    return {
-        "frames": [
-            JSON.validate_json(chunk.decode("utf-8").removeprefix("data: ").strip())
-            for chunk in chunks
-        ]
-    }
+    if input_value["operation"].startswith("responses_"):
+        chunks = OpenAIResponsesHandler().build_block_sse_chunks(
+            error, stream_started=input_value["operation"] != "responses_standalone",
+            responses_so_far=input_value["events"],
+        )
+    else:
+        handler = AnthropicMessagesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L302-L304
+        chunks = handler.build_block_sse_chunks(
+            error, stream_started=input_value["operation"] == "anthropic_continuation",
+            responses_so_far=[chunk.encode("utf-8") for chunk in input_value["chunks"]],
+        )
+    return {"frames": [frame_value(chunk) for chunk in chunks]}
 
 
 def error_items(input_value: Input) -> JsonValue:
@@ -74,29 +84,6 @@ def error_items(input_value: Input) -> JsonValue:
         return {"items": []}
     typed_items = ERROR_EVENTS.validate_python(items)
     return {"items": [JSON.validate_json(item.model_dump_json()) for item in typed_items]}
-
-
-def anthropic_frames(input_value: Input) -> JsonValue:
-    handler = AnthropicMessagesHandler()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L302-L304
-    request: dict[str, JsonValue] = {}
-    error = ModifyResponseException(
-        message=input_value["message"], model=input_value["model"],
-        request_data=request, original_response=input_value["original_response"],
-    )
-    chunks = handler.build_block_sse_chunks(
-        error,
-        stream_started=input_value["operation"] == "anthropic_continuation",
-        responses_so_far=[chunk.encode("utf-8") for chunk in input_value["chunks"]],
-    )
-    return {
-        "frames": [
-            {
-                "event": chunk.decode("utf-8").splitlines()[0][7:],
-                "data": JSON.validate_json(chunk.decode("utf-8").splitlines()[1][6:]),
-            }
-            for chunk in chunks
-        ]
-    }
 
 
 def observation(input_value: Input) -> JsonValue:
@@ -121,16 +108,15 @@ def observation(input_value: Input) -> JsonValue:
 
 def answer(input_value: Input) -> JsonValue:
     match input_value["operation"]:
-        case "responses_standalone":
-            return response_frames(input_value, stream_started=False)
-        case "responses_continuation" | "responses_open_item":
-            return response_frames(input_value, stream_started=True)
         case "responses_stream_error":
             return error_items(input_value)
-        case "anthropic_standalone" | "anthropic_continuation":
-            return anthropic_frames(input_value)
         case "anthropic_observation" | "anthropic_scan_key":
             return observation(input_value)
+        case (
+            "responses_standalone" | "responses_continuation" | "responses_open_item"
+            | "anthropic_standalone" | "anthropic_continuation"
+        ):
+            return block_frames(input_value)
 
 
 def run(input_value: Input) -> JsonValue:

@@ -108,10 +108,11 @@ fn standalone_block_starts_with_created_and_ends_completed() {
 #[test]
 fn standalone_frames_omit_null_fields() {
     let frames = build_block_sse_chunks("x", "m", None, false, None, &stamp()).unwrap();
-    for frame in &frames {
-        let text = std::str::from_utf8(frame).unwrap();
-        assert!(!text.contains("null"), "{text}");
-    }
+    assert!(
+        frames
+            .iter()
+            .all(|frame| !std::str::from_utf8(frame).unwrap().contains("null"))
+    );
 }
 
 #[test]

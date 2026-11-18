@@ -179,5 +179,4 @@ pub fn open_item_closing_events(responses_so_far: &[Value]) -> Vec<Value> {
     message_closing_events(&state)
 }
 
-#[cfg(test)]
 mod tests;
