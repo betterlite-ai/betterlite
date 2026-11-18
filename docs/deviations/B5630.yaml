@@ -1,0 +1,86 @@
+task: B5630
+deviations:
+  - what: >-
+      The order of keys under `litellm_settings` doesn't matter, and every cache gets the
+      same TTL. `cache_params.default_redis_ttl` wins, else
+      `litellm_settings.default_redis_ttl`. LiteLLM walks the keys in YAML order, so a
+      `default_redis_ttl` written after `cache: true` misses the response cache but
+      reaches caches built later.
+    why: Settings resolve once at load, and a TTL that depends on YAML key order is an accident of the loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6304-L6372
+  - what: >-
+      A boolean `default_redis_ttl` fails the load, where Python's `int(True)` gives 1. Text
+      with a fraction is accepted and cut, where `int("60.5")` raises at startup.
+    why: "`resolve_number` is the shared reader for numbers, and it rejects booleans and reads text as a float."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L671-L674
+  - what: >-
+      A negative or text `redis_flush_size` fails the load. LiteLLM starts, then flushes on
+      every write for a negative value and raises `TypeError` at the first buffered write
+      for text.
+    why: B4327 takes a `usize`, and a load error tells the operator sooner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L652-L655
+  - what: >-
+      A service event carries no `parent_otel_span` and no `caller`. LiteLLM sends both.
+    why: B4325's `ServiceEvent` has neither field, and Rust has no frame names to walk.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L213-L240
+  - what: >-
+      The swallow marker belongs to one admission. LiteLLM's ContextVar spans the whole
+      task, so when a guarded call swallows a failure inside another guarded call, the outer
+      call counts no success either. Here `batch_cache_write` still counts a success after
+      its inner pipeline swallowed a failure, and that resets the failure streak.
+    why: The rules forbid ContextVar style state, and `batch_cache_write` is the only nested guard in the file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L434-L446
+  - what: >-
+      Failures reach B393's throttled log with the fixed text "Redis operation failed".
+      LiteLLM passes each method's own message to `log_redis_failure`.
+    why: "`BreakerGate` gets the error and no message. The method's own text still goes out on its plain `tracing` line."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L507-L554
+  - what: >-
+      A service event carries no `event_metadata` key. LiteLLM's `async_get_cache` and
+      `async_set_cache` send `event_metadata={"key": key}`, and a proxy callback that reads
+      it sees no key from betterlite.
+    why: >-
+      B012's `ServiceEventMetadata` has the gauge fields only, and its entry point takes no
+      extra metadata. Adding one is B012's change, not this task's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1136-L1161
+  - what: >-
+      A redis service event is dropped, with a warning line, when the 1024-event queue is
+      full or its worker is gone. LiteLLM never drops one: it runs the hook inline on the
+      caller when no event loop runs, and creates a task when one is running.
+    why: >-
+      Both hook methods must return without blocking a cache call or a Tokio worker, and an
+      unbounded queue grows with traffic. The warning line says the event was lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L139-L155
+  - what: >-
+      A Redis error that carries no cause records no failure, even though LiteLLM counts it
+      as a health failure. This covers the errors redis builds from a description alone,
+      such as `RedisError::from((ErrorKind::Io, "connection dropped"))` and an SSL handshake
+      failure. `RedisCacheError`, `ClientReuseError` and `LiveClientError` are transparent
+      `thiserror` wrappers, so the `source()` of the error a cache call hands over forwards
+      past the `RedisError` itself to whatever redis attached to it, and an error with
+      nothing attached leaves the walk with no class. The same walk drops
+      `LiveClientError::TlsFile` and `LiveClientError::NoSentinelMaster`, which LiteLLM
+      counts as an `OSError` and as `MasterNotFoundError`, a `ConnectionError`.
+    why: >-
+      The gate classifies through `source()` chains, and reaching the hidden wrapper fields
+      would match every betterlite-redis error enum inside the server wiring. Every cache
+      call site hands over one of those wrappers, so the `RedisError` never has a node of
+      its own in the chain.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L341
+  - what: >-
+      A half-open probe whose call ends without a success or a health failure frees the
+      probe slot, and the next call takes a slot that a cancelled probe still holds.
+      LiteLLM leaves the breaker half-open and fast-fails every later Redis call until
+      restart, because `_run_under_circuit_breaker` skips `_exit_circuit_breaker` on any
+      exception and on cancellation. Here the probe's guard releases its slot when a
+      non-health error reaches `record_failure` or `swallowed`, and when the next call
+      arrives for a probe whose future was dropped. That last path can admit the next call
+      while a live probe still runs, where LiteLLM fast-fails every concurrent call in
+      half-open.
+    why: >-
+      The hang is the worse failure. `enter` hands the caller a copyable token rather than
+      a guard it can drop, and `record_failure` takes no admission, so neither a dropped
+      future nor an error tells the gate which call ended. The next call is the only
+      chance to free the slot, and freeing it cannot tell a live probe from a cancelled
+      one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L546-L553
