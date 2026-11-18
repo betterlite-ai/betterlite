@@ -1,13 +1,17 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json as Decisions;
 use betterlite_openai::cohere_embedding::usage::BilledUnits;
+use betterlite_openai::cohere_legacy_embedding::SYNC_CLIENT_TIMEOUT;
 use betterlite_prompts::arguments::json::Json;
 
 use super::super::fixture::{ClientCall, Reply, fixture_probe, object, run};
 use super::super::support::{argument_fields, decisions_value, legacy, logged_response, phases};
 use crate::bedrock_embedding_io::transport::{ClientKind, Timeout, TimeoutRecord};
 use crate::embedding_call::error::EmbeddingCallError;
+use crate::embedding_call::execute::cohere_timeout;
+use crate::embedding_call::{EmbeddingCall, EmbeddingEnvironment, ParamMap};
 
 const COHERE_MODEL: &str = "cohere.embed-english-v3";
 const REPLY: &str =
@@ -19,6 +23,7 @@ pub(super) fn cohere_batched_input() {
     the_caller_timeout_does_not_reach_the_sync_handler();
     async_logging_carries_the_prepared_request();
     the_async_timeout_record_reaches_the_client_factory();
+    the_plan_deadline_follows_the_handler();
     an_async_timeout_keeps_its_handler_status();
     a_captured_raw_request_never_reaches_the_provider();
     usage_falls_back_to_the_encoding();
@@ -160,6 +165,50 @@ fn the_async_timeout_record_reaches_the_client_factory() {
     assert_eq!(outcome.factory_requests.len(), 1);
 }
 
+fn the_plan_deadline_follows_the_handler() {
+    assert_eq!(
+        deadline(false, Some(Timeout::Seconds(2.5))),
+        SYNC_CLIENT_TIMEOUT
+    );
+    assert_eq!(
+        deadline(true, Some(Timeout::Seconds(2.5))),
+        Duration::from_secs_f64(2.5)
+    );
+    let record = TimeoutRecord {
+        connect: 1.0,
+        read: 2.0,
+        write: 30.0,
+        pool: 5.0,
+    };
+    assert_eq!(
+        deadline(true, Some(Timeout::Record(Box::new(record)))),
+        Duration::from_secs_f64(30.0)
+    );
+    assert_eq!(deadline(true, None), SYNC_CLIENT_TIMEOUT);
+}
+
+fn deadline(aembedding: bool, timeout: Option<Timeout>) -> Duration {
+    let input = vec![String::from("hello")];
+    let environment = BTreeMap::new();
+    let call = EmbeddingCall {
+        model: COHERE_MODEL,
+        input: &input,
+        optional_params: ParamMap::new(),
+        api_base: None,
+        extra_headers: None,
+        api_key: None,
+        timeout,
+        aembedding,
+        drop_params: false,
+        environment: EmbeddingEnvironment {
+            variables: &environment,
+            runtime_endpoint: None,
+            bearer_token: None,
+        },
+    };
+    cohere_timeout(&call).expect("the fixture timeout is usable")
+}
+
 fn an_async_timeout_keeps_its_handler_status() {
     let mut timeout_probe = fixture_probe();
     timeout_probe.model = String::from(COHERE_MODEL);
@@ -293,6 +342,14 @@ fn only_a_matching_client_replaces_the_handler() {
     let async_matching = run(&async_matching_probe);
     assert_eq!(async_matching.supplied_requests.len(), 1);
     assert!(async_matching.cohere_requests.is_empty());
+    let mut sync_for_async_probe = fixture_probe();
+    sync_for_async_probe.model = String::from(COHERE_MODEL);
+    sync_for_async_probe.aembedding = true;
+    sync_for_async_probe.supplied = Some(ClientKind::Sync);
+    sync_for_async_probe.replies = vec![Reply::ok(REPLY)];
+    let sync_for_async = run(&sync_for_async_probe);
+    assert!(sync_for_async.supplied_requests.is_empty());
+    assert_eq!(sync_for_async.factory_requests.len(), 1);
 }
 
 fn credentials() -> Vec<(&'static str, &'static str)> {

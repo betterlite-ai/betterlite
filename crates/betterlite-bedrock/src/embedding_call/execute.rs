@@ -211,7 +211,7 @@ where
 }
 
 // B1418's plan keeps one deadline; the async branch also hands the four limits to the client factory, as LiteLLM does
-fn cohere_timeout(call: &EmbeddingCall<'_>) -> Result<Duration, EmbeddingCallError> {
+pub(super) fn cohere_timeout(call: &EmbeddingCall<'_>) -> Result<Duration, EmbeddingCallError> {
     if !call.aembedding {
         return Ok(SYNC_CLIENT_TIMEOUT);
     }
