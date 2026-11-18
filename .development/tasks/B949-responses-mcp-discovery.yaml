@@ -1,13 +1,25 @@
 id: B949
 title: Responses mcp discovery
 description: >-
-  Discover MCP tools using the selected authorized server set and B8197 listing operations with the request-scoped MCP
-  headers. MCPRequestContext.resolve takes those headers from B905's extract_mcp_headers (betterlite-core
-  api::responses_parameters::mcp_headers, returning McpHeaders). That function merges B4654's header parsers, and both
-  are on main.
+  Discover MCP tools for the selected authorized server set with the request-scoped MCP headers. MCPRequestContext.resolve
+  takes those headers from B905's extract_mcp_headers (betterlite-core api::responses_parameters::mcp_headers, returning
+  McpHeaders). That function merges B4654's header parsers, and both are on main.
   B8197's _get_tools_from_mcp_servers turns the headers into upstream credentials through B8196's header preparation,
   so this task resolves no credential. Export captured tool schemas plus call context to Responses orchestration; preserve parent tags
   and never persist request credentials in registry state.
+
+
+  The gateway calls _get_mcp_tools_from_manager makes live in betterlite-server, and betterlite-core can't depend on
+  it, so they reach this module through a port. Declare an async trait McpToolListing in responses_mcp_discovery.rs
+  with one method per call: the tools listing (B8197's _get_tools_from_mcp_servers in mcp::ops_listing, with
+  log_list_tools_to_spendlogs true and list_tools_log_source "responses"), the allowed-server read
+  (get_allowed_mcp_servers and get_mcp_servers_from_ids, then B8195's _get_allowed_mcp_servers_from_mcp_server_names)
+  and the toolset lookup (get_toolset_by_name_cached, granted_toolset_ids, _user_has_admin_view). Its arguments and
+  results are betterlite-core or betterlite-mcp types, never a betterlite-server one, and the service takes the port
+  through its constructor. B140 fills it: its McpLlmTools adapter in crates/betterlite-server/src/app/mcp/llm_tools/ports.rs
+  forwards each method to the owner B140 names. main already works this way, since betterlite-core's
+  passthrough_guardrail::traits::PassthroughPolicy is filled by betterlite-server's PassthroughPolicyBridge
+  (guardrails/unified_passthrough/endpoint.rs). The tests and the oracle adapter pass a scripted McpToolListing.
 
 
   Implement crates/betterlite-core/src/api/responses_mcp_discovery.rs. Use ResponsesMcpDiscoveryInput and ResponsesMcpDiscoveryResult
@@ -51,7 +63,7 @@ description: >-
   30 wiring; 525 total within the 530-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B8197 (MCP listing of tools, prompts and resources), B4654 (MCP request header parsing),
+  Direct inputs come from B8197 (the listing McpToolListing's first method mirrors), B4654 (MCP request header parsing),
   B171 (Direct helper oracle and URL path encoding), B948 (Responses mcp selection), B1087 (Api boundaries), B905
   (Responses parameters, including extract_mcp_headers). These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
@@ -169,6 +181,7 @@ out_of_scope:
   operations. Python package export/event-loop facades remain B158-B161.
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
+- The McpToolListing adapter over the gateway's MCP area is B140's (crates/betterlite-server/src/app/mcp/llm_tools/ports.rs).
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_mcp_discovery in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_mcp_discovery.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_mcp_discovery.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'litellm_proxy_mcp_handler.py:304 emits the diagnostic "Could not resolve ''%s'' as toolset: %s"; retain its level
