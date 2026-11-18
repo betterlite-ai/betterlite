@@ -94,13 +94,13 @@ fn no_budget_ids_queue_nothing() {
     assert!(writes.writes().is_empty());
 }
 
-async fn seed_over_cap_row(client: &Client) {
+async fn seed_over_cap_rows(client: &Client) {
     client
         .batch_execute(
-            "INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, budget_id, spend) VALUES ('org-over', 'budget-a', 30);",
+            "INSERT INTO \"LiteLLM_OrganizationTable\" (organization_id, budget_id, spend) VALUES ('org-over', 'budget-a', 30); INSERT INTO \"LiteLLM_VerificationToken\" (token, budget_id, spend) VALUES ('token-over', 'budget-a', 30);",
         )
         .await
-        .expect("over-cap row seeds");
+        .expect("over-cap rows seed");
 }
 
 async fn assert_rollover_spends(client: &Client, under: Decimal, over: Decimal) {
@@ -125,6 +125,14 @@ async fn assert_rollover_spends(client: &Client, under: Decimal, over: Decimal) 
         over
     );
     assert_eq!(
+        spend_of(client, "LiteLLM_VerificationToken", "token", "token-a").await,
+        under
+    );
+    assert_eq!(
+        spend_of(client, "LiteLLM_VerificationToken", "token", "token-over").await,
+        over
+    );
+    assert_eq!(
         spend_of(client, "LiteLLM_VerificationToken", "token", "token-window").await,
         cap(10)
     );
@@ -134,7 +142,7 @@ async fn assert_rollover_spends(client: &Client, under: Decimal, over: Decimal) 
 async fn over_cap_rows_keep_the_cap_after_the_under_cap_zero() {
     let database = Database::provision().await;
     seed_linked_rows(&database.client).await;
-    seed_over_cap_row(&database.client).await;
+    seed_over_cap_rows(&database.client).await;
     let collected = cascade(
         &["budget-a"],
         BTreeMap::from([("budget-a".to_owned(), cap(20))]),

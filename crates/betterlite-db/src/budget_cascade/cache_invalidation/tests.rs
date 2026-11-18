@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use chrono::{DateTime, Utc};
 use rust_decimal::Decimal;
 
-use super::commit_and_invalidate_budget_cascade;
+use super::commit_and_invalidate_cascade;
 use crate::budget_cascade::tests::{
     Database, RecordingCache, cascade, reject_budget_updates, seed_linked_rows, spend_of,
 };
@@ -32,7 +32,7 @@ async fn counters_drop_after_the_rows_commit() {
     let database = Database::provision().await;
     seed_linked_rows(&database.client).await;
     let cache = RecordingCache::probing(database.store.clone());
-    commit_and_invalidate_budget_cascade(
+    commit_and_invalidate_cascade(
         &database.store,
         &cache,
         &collected_with_cache_entries(),
@@ -52,7 +52,7 @@ async fn a_failed_commit_drops_no_cache_entry() {
     seed_linked_rows(&database.client).await;
     reject_budget_updates(&database.client).await;
     let cache = RecordingCache::silent();
-    let outcome = commit_and_invalidate_budget_cascade(
+    let outcome = commit_and_invalidate_cascade(
         &database.store,
         &cache,
         &collected_with_cache_entries(),
@@ -69,7 +69,7 @@ async fn a_failed_commit_drops_no_cache_entry() {
 async fn cache_failures_do_not_undo_the_commit() {
     let database = Database::provision().await;
     seed_linked_rows(&database.client).await;
-    let outcome = commit_and_invalidate_budget_cascade(
+    let outcome = commit_and_invalidate_cascade(
         &database.store,
         &FailingCache,
         &collected_with_cache_entries(),
@@ -94,7 +94,7 @@ async fn cache_failures_do_not_undo_the_commit() {
 async fn an_empty_cascade_invalidates_nothing() {
     let store = PostgresStore { pool: None };
     let cache = RecordingCache::silent();
-    commit_and_invalidate_budget_cascade(&store, &cache, &BudgetCascade::default(), None)
+    commit_and_invalidate_cascade(&store, &cache, &BudgetCascade::default(), None)
         .await
         .expect("nothing to commit");
     assert!(cache.counters().is_empty());

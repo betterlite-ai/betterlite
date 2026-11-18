@@ -19,6 +19,7 @@ use super::BudgetCascade;
 use super::linked_rows::{
     KeyRow, LinkedRows, ModelAccessGroupRow, OrganizationRow, ProjectRow, TagRow, TeamMembershipRow,
 };
+use super::rollover_order::LinkedResets;
 use crate::budget_permission_rows::{LiteLLMBudgetTable, LiteLLMBudgetTableFull, Timestamp};
 use crate::budget_reset_policy::cache_invalidation::{CacheDeleteFuture, ResetCache};
 use crate::budget_reset_policy::entity_reset::ResetSchedule;
@@ -281,7 +282,7 @@ impl RecordingWrites {
     }
 }
 
-impl super::rollover_order::LinkedResets for RecordingWrites {
+impl LinkedResets for RecordingWrites {
     fn zero(&self, filter: LinkedResetFilter) {
         self.0
             .lock()

@@ -6,7 +6,7 @@ use crate::postgres_store::session::PostgresStore;
 use crate::spend_reset_unit_of_work::batch::CommitError;
 
 // _invalidate_budget_cascade_caches: the non-enduser counters and cache entries are dropped only after the transaction commits, so a failed write leaves the reservation path reading the still-live spend.
-pub async fn commit_and_invalidate_budget_cascade<Cache>(
+pub async fn commit_and_invalidate_cascade<Cache>(
     store: &PostgresStore,
     cache: &Cache,
     cascade: &BudgetCascade,
