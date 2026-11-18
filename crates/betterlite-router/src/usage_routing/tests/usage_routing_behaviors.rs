@@ -261,6 +261,14 @@ fn a_failed_read_selects_from_the_cold_window() {
     );
 }
 
+// log_success_event's f"{model_group}:tpm:{datetime.now().strftime('%H-%M')}" pair, spelled out
+#[test]
+fn window_keys_name_the_group_and_the_utc_minute() {
+    let (tokens_key, requests_key) = window_keys(GROUP, instant(NOW));
+    assert_eq!(tokens_key, "gpt-4o:tpm:22-13");
+    assert_eq!(requests_key, "gpt-4o:rpm:22-13");
+}
+
 // the minute in the key is what keeps a past window from deciding this one
 #[rstest]
 #[case::same_minute(30_000, Some(1))]
