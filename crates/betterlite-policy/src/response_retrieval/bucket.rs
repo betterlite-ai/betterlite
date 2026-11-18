@@ -30,31 +30,10 @@ pub(super) fn response_id(data: &RetrievalData) -> Option<&str> {
     }
 }
 
-// the id as Python's str() prints it, for the log lines that carry it
-#[must_use]
-pub(super) fn response_id_text(data: &RetrievalData) -> String {
-    let Some(value) = data.get(RESPONSE_ID) else {
-        return "None".to_owned();
-    };
-    if let JsonValue::String(id) = value {
-        return id.clone();
-    }
-    if let JsonValue::Bool(value) = value {
-        return if *value {
-            "True".to_owned()
-        } else {
-            "False".to_owned()
-        };
-    }
-    if let JsonValue::Number(number) = value {
-        return number.to_string();
-    }
-    format!("{value:?}")
-}
-
+// LiteLLM picks the bucket by whether the key is there, and a value that is not an object becomes one
 #[must_use]
 pub(super) fn metadata_name(data: &RetrievalData) -> &'static str {
-    if matches!(data.get(LITELLM_METADATA), Some(JsonValue::Object(_))) {
+    if data.contains_key(LITELLM_METADATA) {
         return LITELLM_METADATA;
     }
     METADATA
@@ -216,11 +195,19 @@ fn texts(items: &[JsonValue], field: &'static str) -> Result<Vec<String>, Respon
     Ok(entries)
 }
 
-fn existing_policy_sources(bucket: &BTreeMap<String, JsonValue>) -> BTreeMap<String, JsonValue> {
-    if let Some(JsonValue::Object(sources)) = bucket.get(POLICY_SOURCES) {
-        return sources.clone();
+fn existing_policy_sources(
+    bucket: &BTreeMap<String, JsonValue>,
+) -> Result<BTreeMap<String, JsonValue>, ResponseRetrievalError> {
+    match bucket.get(POLICY_SOURCES) {
+        None | Some(JsonValue::Null) => Ok(BTreeMap::new()),
+        Some(JsonValue::Object(sources)) => Ok(sources.clone()),
+        Some(
+            JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) | JsonValue::Array(_),
+        ) => Err(ResponseRetrievalError::NotTyped {
+            field: POLICY_SOURCES,
+            expected: "an object",
+        }),
     }
-    BTreeMap::new()
 }
 
 fn add_policy_sources(
@@ -232,7 +219,7 @@ fn add_policy_sources(
     }
     let name = metadata_name(data);
     let bucket = bucket_mut(data, name)?;
-    let mut existing = existing_policy_sources(bucket);
+    let mut existing = existing_policy_sources(bucket)?;
     for (policy_name, reason) in sources {
         existing.insert(policy_name.clone(), JsonValue::String(reason.clone()));
     }

@@ -66,8 +66,8 @@ pub trait PolicyRouterView: Send + Sync {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RetrievalAuth<'a> {
-    pub team_alias: Option<&'a JsonValue>,
-    pub key_alias: Option<&'a JsonValue>,
+    pub team_alias: Option<&'a str>,
+    pub key_alias: Option<&'a str>,
 }
 
 pub struct RetrievalRequest<'a> {
@@ -145,18 +145,11 @@ pub fn retrieval_context(
     tags: Vec<String>,
 ) -> PolicyMatchContext {
     PolicyMatchContext {
-        team_alias: auth.team_alias.and_then(string_value),
-        key_alias: auth.key_alias.and_then(string_value),
+        team_alias: auth.team_alias.map(str::to_owned),
+        key_alias: auth.key_alias.map(str::to_owned),
         model: Some(model_group.to_owned()),
         tags: (!tags.is_empty()).then_some(tags),
     }
-}
-
-fn string_value(value: &JsonValue) -> Option<String> {
-    if let JsonValue::String(value) = value {
-        return Some(value.clone());
-    }
-    None
 }
 
 #[must_use]
@@ -214,7 +207,7 @@ fn governed_model_group(data: &RetrievalData, deps: &RetrievalDependencies<'_>) 
         Err(ungoverned) => {
             tracing::warn!(
                 "Policy engine: background response {} is retrieved without its post_call policy pipelines ({})",
-                bucket::response_id_text(data),
+                bucket::response_id(data).unwrap_or("None"),
                 ungoverned.reason.message()
             );
             None
@@ -230,7 +223,7 @@ fn log_attached(data: &RetrievalData, model_group: &str, added: &PolicyPipelines
         .join(", ");
     tracing::debug!(
         "Policy engine: attached post_call pipelines to the retrieval of background response {} (model group {}): {}",
-        bucket::response_id_text(data),
+        bucket::response_id(data).unwrap_or("None"),
         model_group,
         names
     );

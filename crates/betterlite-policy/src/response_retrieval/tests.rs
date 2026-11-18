@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
+use rstest::rstest;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -214,6 +215,15 @@ fn run_attach(
     attach_retrieval_pipelines(data, &request(), deps)
 }
 
+fn run_standard_retrieval(data: &mut RetrievalData) -> Result<(), ResponseRetrievalError> {
+    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
+    let attachments = attachments(vec![attached("p1")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    run_attach(data, &deps)
+}
+
 struct MessageVisitor(String);
 
 impl Visit for MessageVisitor {
@@ -391,11 +401,9 @@ fn submit_model_hidden_by_names_matching_aliases_in_order() {
 
 #[test]
 fn retrieval_context_carries_aliases_model_and_tags() {
-    let team_alias = text("team-a");
-    let key_alias = text("key-1");
     let auth = RetrievalAuth {
-        team_alias: Some(&team_alias),
-        key_alias: Some(&key_alias),
+        team_alias: Some("team-a"),
+        key_alias: Some("key-1"),
     };
     let context = retrieval_context(&auth, "gpt-4o", vec!["prod-eu".to_owned()]);
     assert_eq!(
@@ -407,19 +415,6 @@ fn retrieval_context_carries_aliases_model_and_tags() {
             tags: Some(vec!["prod-eu".to_owned()]),
         }
     );
-}
-
-#[test]
-fn retrieval_context_ignores_non_string_auth_aliases() {
-    let team_alias = JsonValue::Bool(true);
-    let key_alias = JsonValue::Number(serde_json::Number::from(1_u8));
-    let auth = RetrievalAuth {
-        team_alias: Some(&team_alias),
-        key_alias: Some(&key_alias),
-    };
-    let context = retrieval_context(&auth, "model", Vec::new());
-    assert_eq!(context.team_alias, None);
-    assert_eq!(context.key_alias, None);
 }
 
 #[test]
@@ -478,7 +473,7 @@ fn post_call_pipelines_without_matches_are_empty() {
 }
 
 #[test]
-fn attaches_post_call_pipelines_with_provenance() {
+fn attaches_post_call_pipelines_to_the_bucket() {
     let registry = registry(vec![
         ("p1", pipelined(PipelineMode::PostCall, &["g1", "g2"])),
         ("p2", pipelined(PipelineMode::PostCall, &["g2", "g3"])),
@@ -491,8 +486,7 @@ fn attaches_post_call_pipelines_with_provenance() {
         ("model", text("gpt-4o")),
     ]);
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (result, logs) = captured(|| run_attach(&mut data, &deps));
-    assert!(result.is_ok());
+    assert!(run_attach(&mut data, &deps).is_ok());
     assert_eq!(data.get("model"), Some(&text("gpt-4o")));
     let bucket = bucket_of(&data);
     assert_eq!(
@@ -512,6 +506,22 @@ fn attaches_post_call_pipelines_with_provenance() {
         bucket.get(PIPELINE_MANAGED_GUARDRAILS),
         Some(&strings(&["g1", "g2", "g3"]))
     );
+}
+
+#[test]
+fn attaches_post_call_pipelines_with_provenance() {
+    let registry = registry(vec![
+        ("p1", pipelined(PipelineMode::PostCall, &["g1", "g2"])),
+        ("p2", pipelined(PipelineMode::PostCall, &["g2", "g3"])),
+    ]);
+    let attachments = attachments(vec![attached("p1"), attached("p2")]);
+    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    let decoder = decode_with("dep-1");
+    let mut data = data_value(vec![("response_id", text("resp_a"))]);
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    let (result, logs) = captured(|| run_attach(&mut data, &deps));
+    assert!(result.is_ok());
+    let bucket = bucket_of(&data);
     assert_eq!(
         bucket.get(bucket::APPLIED_POLICIES),
         Some(&strings(&["p1", "p2"]))
@@ -540,17 +550,12 @@ fn attaches_post_call_pipelines_with_provenance() {
 
 #[test]
 fn writes_to_the_litellm_metadata_bucket_when_present() {
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         ("metadata", object(vec![("caller", text("kept"))])),
         ("litellm_metadata", object(vec![("caller", text("kept"))])),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    assert!(run_attach(&mut data, &deps).is_ok());
+    assert!(run_standard_retrieval(&mut data).is_ok());
     let preferred = bucket_named(&data, bucket::LITELLM_METADATA);
     assert!(preferred.contains_key(GUARDRAIL_PIPELINES));
     assert_eq!(
@@ -564,21 +569,19 @@ fn writes_to_the_litellm_metadata_bucket_when_present() {
 }
 
 #[test]
-fn null_litellm_metadata_uses_the_public_metadata_bucket() {
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
+fn null_litellm_metadata_is_replaced_by_a_bucket() {
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         ("metadata", object(vec![("caller", text("kept"))])),
         ("litellm_metadata", JsonValue::Null),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
 
-    assert!(run_attach(&mut data, &deps).is_ok());
-    assert!(bucket_of(&data).contains_key(GUARDRAIL_PIPELINES));
-    assert_eq!(data.get("litellm_metadata"), Some(&JsonValue::Null));
+    assert!(run_standard_retrieval(&mut data).is_ok());
+    assert!(bucket_named(&data, bucket::LITELLM_METADATA).contains_key(GUARDRAIL_PIPELINES));
+    assert_eq!(
+        bucket_of(&data),
+        &BTreeMap::from([("caller".to_owned(), text("kept"))])
+    );
 }
 
 #[test]
@@ -610,65 +613,74 @@ fn uninitialized_registry_leaves_the_data_untouched() {
     assert!(logs.is_empty());
 }
 
-#[test]
-fn ungoverned_retrieval_warns_and_leaves_the_data_untouched() {
+#[rstest]
+#[case::no_router(
+    vec![("response_id", text("resp_a"))],
+    false,
+    "dep-1",
+    "no router",
+    "resp_a"
+)]
+#[case::missing_response_id(
+    vec![("model", text("gpt-4o"))],
+    true,
+    "dep-1",
+    "response id names no deployment",
+    "None"
+)]
+#[case::deployment_gone(
+    vec![("response_id", text("resp_a"))],
+    true,
+    "gone-id",
+    "deployment no longer in the router",
+    "resp_a"
+)]
+#[case::response_id_not_a_string(
+    vec![(
+        "response_id",
+        JsonValue::Number(serde_json::Number::from(1_u8))
+    )],
+    true,
+    "dep-1",
+    "response id names no deployment",
+    "None"
+)]
+fn ungoverned_retrieval_warns_and_leaves_the_data_untouched(
+    #[case] entries: Vec<(&str, JsonValue)>,
+    #[case] has_router: bool,
+    #[case] decoded_model_id: &'static str,
+    #[case] reason: &str,
+    #[case] log_id: &str,
+) {
     let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
     let attachments = attachments(vec![attached("p1")]);
     let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
-
-    let mut without_router = data_value(vec![("response_id", text("resp_a"))]);
-    let before = without_router.clone();
-    let deps = dependencies(&registry, &attachments, None, &decoder);
-    let (result, logs) = captured(|| run_attach(&mut without_router, &deps));
-    assert!(result.is_ok());
-    assert_eq!(without_router, before);
-    assert_eq!(
-        logs,
-        vec![(
-            Level::WARN,
-            "Policy engine: background response resp_a is retrieved without its post_call policy \
-             pipelines (no router)"
-                .to_owned()
-        )]
+    let router_view: &dyn PolicyRouterView = &router;
+    let decoder = decode_with(decoded_model_id);
+    let mut data = data_value(entries);
+    let before = data.clone();
+    let deps = dependencies(
+        &registry,
+        &attachments,
+        has_router.then_some(router_view),
+        &decoder,
     );
-
-    let mut without_id = data_value(vec![("model", text("gpt-4o"))]);
-    let before = without_id.clone();
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (result, logs) = captured(|| run_attach(&mut without_id, &deps));
+    let (result, logs) = captured(|| run_attach(&mut data, &deps));
     assert!(result.is_ok());
-    assert_eq!(without_id, before);
+    assert_eq!(data, before);
     assert_eq!(
         logs,
         vec![(
             Level::WARN,
-            "Policy engine: background response None is retrieved without its post_call policy \
-             pipelines (response id names no deployment)"
-                .to_owned()
-        )]
-    );
-
-    let gone = decode_with("gone-id");
-    let mut missing_deployment = data_value(vec![("response_id", text("resp_a"))]);
-    let before = missing_deployment.clone();
-    let deps = dependencies(&registry, &attachments, Some(&router), &gone);
-    let (result, logs) = captured(|| run_attach(&mut missing_deployment, &deps));
-    assert!(result.is_ok());
-    assert_eq!(missing_deployment, before);
-    assert_eq!(
-        logs,
-        vec![(
-            Level::WARN,
-            "Policy engine: background response resp_a is retrieved without its post_call policy \
-             pipelines (deployment no longer in the router)"
-                .to_owned()
+            format!(
+                "Policy engine: background response {log_id} is retrieved without its post_call \
+                 policy pipelines ({reason})"
+            )
         )]
     );
 }
 
-#[test]
-fn already_attached_policies_are_not_attached_again() {
+fn dedup_setup() -> (RetrievalData, PolicyRegistry, AttachmentRegistry, Router) {
     let existing = pipeline(PipelineMode::PostCall, &["existing-guard"]);
     let metadata = object(vec![
         (
@@ -682,7 +694,7 @@ fn already_attached_policies_are_not_attached_again() {
             object(vec![("existing-policy", text("scope:*"))]),
         ),
     ]);
-    let mut data = data_value(vec![
+    let data = data_value(vec![
         ("response_id", text("resp_a")),
         ("metadata", metadata),
     ]);
@@ -698,6 +710,12 @@ fn already_attached_policies_are_not_attached_again() {
     ]);
     let attachments = attachments(vec![attached("existing-policy"), attached("new-policy")]);
     let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
+    (data, registry, attachments, router)
+}
+
+#[test]
+fn already_attached_pipelines_are_kept_and_new_ones_merged() {
+    let (mut data, registry, attachments, router) = dedup_setup();
     let decoder = decode_with("dep-1");
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
     let (result, logs) = captured(|| run_attach(&mut data, &deps));
@@ -706,7 +724,10 @@ fn already_attached_policies_are_not_attached_again() {
     assert_eq!(
         stored_pipelines(bucket),
         vec![
-            ("existing-policy".to_owned(), existing),
+            (
+                "existing-policy".to_owned(),
+                pipeline(PipelineMode::PostCall, &["existing-guard"])
+            ),
             (
                 "new-policy".to_owned(),
                 pipeline(PipelineMode::PostCall, &["new-guard"])
@@ -717,6 +738,24 @@ fn already_attached_policies_are_not_attached_again() {
         bucket.get(PIPELINE_MANAGED_GUARDRAILS),
         Some(&strings(&["existing-guard", "new-guard"]))
     );
+    assert_eq!(
+        logs,
+        vec![(
+            Level::DEBUG,
+            "Policy engine: attached post_call pipelines to the retrieval of background response \
+             resp_a (model group gpt-4o): new-policy"
+                .to_owned()
+        )]
+    );
+}
+
+#[test]
+fn already_attached_policies_stay_in_the_headers_once() {
+    let (mut data, registry, attachments, router) = dedup_setup();
+    let decoder = decode_with("dep-1");
+    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
+    assert!(run_attach(&mut data, &deps).is_ok());
+    let bucket = bucket_of(&data);
     assert_eq!(
         bucket.get(bucket::APPLIED_POLICIES),
         Some(&strings(&["existing-policy", "new-policy"]))
@@ -731,15 +770,6 @@ fn already_attached_policies_are_not_attached_again() {
             ("existing-policy", text("scope:*")),
             ("new-policy", text("scope:*")),
         ]))
-    );
-    assert_eq!(
-        logs,
-        vec![(
-            Level::DEBUG,
-            "Policy engine: attached post_call pipelines to the retrieval of background response \
-             resp_a (model group gpt-4o): new-policy"
-                .to_owned()
-        )]
     );
 }
 
@@ -797,16 +827,11 @@ fn condition_filtered_policies_are_not_attached() {
 
 #[test]
 fn non_object_metadata_is_replaced_by_a_bucket() {
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         ("metadata", text("junk")),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    assert!(run_attach(&mut data, &deps).is_ok());
+    assert!(run_standard_retrieval(&mut data).is_ok());
     let bucket = bucket_of(&data);
     assert!(bucket.contains_key(GUARDRAIL_PIPELINES));
     assert_eq!(
@@ -817,10 +842,6 @@ fn non_object_metadata_is_replaced_by_a_bucket() {
 
 #[test]
 fn a_non_list_guardrail_pipelines_value_is_an_error() {
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         (
@@ -828,8 +849,7 @@ fn a_non_list_guardrail_pipelines_value_is_an_error() {
             object(vec![(GUARDRAIL_PIPELINES, text("junk"))]),
         ),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let result = run_attach(&mut data, &deps);
+    let result = run_standard_retrieval(&mut data);
     assert!(matches!(
         result,
         Err(ResponseRetrievalError::NotTyped { field, .. }) if field == GUARDRAIL_PIPELINES
@@ -838,10 +858,6 @@ fn a_non_list_guardrail_pipelines_value_is_an_error() {
 
 #[test]
 fn a_null_guardrail_pipelines_value_reads_as_empty() {
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         (
@@ -849,8 +865,7 @@ fn a_null_guardrail_pipelines_value_reads_as_empty() {
             object(vec![(GUARDRAIL_PIPELINES, JsonValue::Null)]),
         ),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    assert!(run_attach(&mut data, &deps).is_ok());
+    assert!(run_standard_retrieval(&mut data).is_ok());
     assert_eq!(
         stored_pipelines(bucket_of(&data)),
         vec![("p1".to_owned(), pipeline(PipelineMode::PostCall, &["g1"]))]
@@ -866,25 +881,16 @@ fn a_malformed_stored_pipeline_is_an_error() {
             ("steps", JsonValue::Array(Vec::new())),
         ]),
     ])]);
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         ("metadata", object(vec![(GUARDRAIL_PIPELINES, broken)])),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let result = run_attach(&mut data, &deps);
+    let result = run_standard_retrieval(&mut data);
     assert!(matches!(result, Err(ResponseRetrievalError::Pipelines(_))));
 }
 
 #[test]
 fn a_non_list_applied_policies_header_is_an_error() {
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         (
@@ -895,8 +901,7 @@ fn a_non_list_applied_policies_header_is_an_error() {
             )]),
         ),
     ]);
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let result = run_attach(&mut data, &deps);
+    let result = run_standard_retrieval(&mut data);
     assert!(matches!(
         result,
         Err(ResponseRetrievalError::NotTyped { field, .. }) if field == bucket::APPLIED_POLICIES
@@ -917,12 +922,7 @@ fn existing_headers_and_sources_are_preserved() {
         ("response_id", text("resp_a")),
         ("metadata", metadata),
     ]);
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    assert!(run_attach(&mut data, &deps).is_ok());
+    assert!(run_standard_retrieval(&mut data).is_ok());
     let bucket = bucket_of(&data);
     assert_eq!(
         bucket.get(bucket::APPLIED_POLICIES),
@@ -942,7 +942,7 @@ fn existing_headers_and_sources_are_preserved() {
 }
 
 #[test]
-fn a_non_object_policy_sources_value_is_replaced() {
+fn a_non_object_policy_sources_value_is_an_error() {
     let mut data = data_value(vec![
         ("response_id", text("resp_a")),
         (
@@ -950,16 +950,11 @@ fn a_non_object_policy_sources_value_is_replaced() {
             object(vec![(bucket::POLICY_SOURCES, text("junk"))]),
         ),
     ]);
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    assert!(run_attach(&mut data, &deps).is_ok());
-    assert_eq!(
-        bucket_of(&data).get(bucket::POLICY_SOURCES),
-        Some(&object(vec![("p1", text("scope:*"))]))
-    );
+    let result = run_standard_retrieval(&mut data);
+    assert!(matches!(
+        result,
+        Err(ResponseRetrievalError::NotTyped { field, .. }) if field == bucket::POLICY_SOURCES
+    ));
 }
 
 #[test]
@@ -974,12 +969,7 @@ fn null_applied_headers_are_treated_as_empty() {
             ]),
         ),
     ]);
-    let registry = registry(vec![("p1", pipelined(PipelineMode::PostCall, &["g1"]))]);
-    let attachments = attachments(vec![attached("p1")]);
-    let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
-    let decoder = decode_with("dep-1");
-    let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    assert!(run_attach(&mut data, &deps).is_ok());
+    assert!(run_standard_retrieval(&mut data).is_ok());
     let bucket = bucket_of(&data);
     assert_eq!(
         bucket.get(bucket::APPLIED_POLICIES),
