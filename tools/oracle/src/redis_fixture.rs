@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
+use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
@@ -39,7 +40,7 @@ pub enum RedisFixtureError {
     #[error("the redis fixture process or socket failed")]
     Io(#[source] std::io::Error),
     #[error("cannot build the fixture cache")]
-    Cache(#[source] betterlite_redis::redis_cache::error::RedisCacheError),
+    Cache(#[source] RedisCacheError),
 }
 
 // A throwaway redis-server on a loopback port and a temporary directory of its own; the URI never leaves this module.

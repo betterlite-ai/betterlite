@@ -243,10 +243,13 @@ impl PodLockEventSink for ServiceQueueSink {
     }
 }
 
-#[tokio::test]
-async fn lease_events_reach_the_owned_logging_delivery() {
-    let fixture = OracleRedis::start().unwrap();
-    let cache = fixture.cache(None).await.unwrap();
+struct LeaseDelivery {
+    worker: Arc<LoggingWorker<Delivery>>,
+    recorder: Arc<RecordingServiceSink>,
+    sink: Arc<dyn PodLockEventSink>,
+}
+
+fn lease_delivery() -> LeaseDelivery {
     let recorder = Arc::new(RecordingServiceSink(Mutex::new(Vec::new())));
     let recorded: Arc<dyn ServiceEventSink> = Arc::clone(&recorder);
     let registry = Arc::new(CallbackRegistry::new(16));
@@ -263,12 +266,37 @@ async fn lease_events_reach_the_owned_logging_delivery() {
         sink: recorded,
         registry,
     });
+    LeaseDelivery {
+        worker,
+        recorder,
+        sink,
+    }
+}
+
+fn assert_lease_event(event: &ServiceEvent, call_type: &str, labels: &str, gauge_value: f64) {
+    assert_eq!(event.payload.service, ServiceType::PodLockManager);
+    assert_eq!(event.payload.call_type, call_type);
+    assert_eq!(event.payload.duration.to_bits(), 60.0_f64.to_bits());
+    assert_eq!(
+        event.payload.event_metadata,
+        Some(ServiceEventMetadata {
+            gauge_labels: Some(labels.to_owned()),
+            gauge_value: Some(gauge_value),
+        })
+    );
+}
+
+#[tokio::test]
+async fn lease_events_reach_the_owned_logging_delivery() {
+    let fixture = OracleRedis::start().unwrap();
+    let cache = fixture.cache(None).await.unwrap();
+    let delivery = lease_delivery();
     let manager = PodLockManager::new(
         Some(Arc::new(RedisLockCache {
             cache: Arc::clone(&cache),
         })),
         60,
-        sink,
+        Arc::clone(&delivery.sink),
     );
     assert_eq!(
         manager.acquire_lock("spend:reset", Some(120), true).await,
@@ -279,32 +307,13 @@ async fn lease_events_reach_the_owned_logging_delivery() {
         Some(true)
     );
     manager.release_lock("spend:reset").await;
-    let report = worker.flush().await;
-    assert_eq!(report.completed, 2);
-    let events = recorder.events();
+    assert_eq!(delivery.worker.flush().await.completed, 2);
+    let events = delivery.recorder.events();
     assert_eq!(events.len(), 2);
     let labels = format!("spend:reset:{}", manager.pod_id);
-    assert_eq!(events[0].payload.service, ServiceType::PodLockManager);
-    assert_eq!(events[0].payload.call_type, "_emit_acquired_lock_event");
-    assert_eq!(events[0].payload.duration, 60.0);
-    assert_eq!(
-        events[0].payload.event_metadata,
-        Some(ServiceEventMetadata {
-            gauge_labels: Some(labels.clone()),
-            gauge_value: Some(1.0),
-        })
-    );
-    assert_eq!(events[1].payload.service, ServiceType::PodLockManager);
-    assert_eq!(events[1].payload.call_type, "_emit_released_lock_event");
-    assert_eq!(events[1].payload.duration, 60.0);
-    assert_eq!(
-        events[1].payload.event_metadata,
-        Some(ServiceEventMetadata {
-            gauge_labels: Some(labels),
-            gauge_value: Some(0.0),
-        })
-    );
-    assert_eq!(worker.stop().await.completed, 2);
+    assert_lease_event(&events[0], "_emit_acquired_lock_event", &labels, 1.0);
+    assert_lease_event(&events[1], "_emit_released_lock_event", &labels, 0.0);
+    assert_eq!(delivery.worker.stop().await.completed, 2);
 }
 
 #[tokio::test]
