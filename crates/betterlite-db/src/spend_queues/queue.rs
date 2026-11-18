@@ -51,24 +51,35 @@ impl<T: Send> BoundedUpdateQueue<T> {
 
     // asyncio.Queue.put: a producer waits for room, and a cancelled producer still owns its record.
     pub(super) async fn add(&self, update: T, observer: &dyn EnqueueObserver) {
+        let mut pending = update;
         loop {
             let space = self.space.notified();
             tokio::pin!(space);
             space.as_mut().enable();
-            let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
-            if items.len() >= self.capacity {
-                drop(items);
-                // notify_one keeps a permit, so a flush that has not started waiting yet still sees the pressure.
-                self.pressure.notify_one();
-                space.await;
-                continue;
+            match self.try_push(pending) {
+                Ok(queue_size) => {
+                    observer.item_added(queue_size);
+                    return;
+                }
+                Err(rejected) => pending = rejected,
             }
-            items.push_back(update);
-            let queue_size = items.len();
-            drop(items);
-            observer.item_added(queue_size);
-            return;
+            // notify_one keeps a permit, so a flush that has not started waiting yet still sees the pressure.
+            self.pressure.notify_one();
+            space.await;
         }
+    }
+
+    // Queue.put_nowait while there is room; a full queue hands the record back so its producer keeps it across the wait.
+    fn try_push(&self, update: T) -> Result<usize, T> {
+        let mut items = self.items.lock().unwrap_or_else(PoisonError::into_inner);
+        if items.len() >= self.capacity {
+            drop(items);
+            return Err(update);
+        }
+        items.push_back(update);
+        let queue_size = items.len();
+        drop(items);
+        Ok(queue_size)
     }
 
     // flush_all_updates_from_in_memory_queue: at most MAX_IN_MEMORY_QUEUE_FLUSH_COUNT records, oldest first.
