@@ -202,18 +202,29 @@ pub(crate) fn classify(
         if let Some(class) = class_of(link) {
             classes.push(class);
         }
-        current = link.source();
+        current = next_cause(link);
     }
     let mut remaining = classes.into_iter();
     let class = remaining.next()?;
     Some((class, remaining.collect()))
 }
 
-fn class_of(error: &(dyn StdError + 'static)) -> Option<FailureClass> {
-    // redis keeps a chained io error in an Arc, and the Arc's own Error impl hides it from downcast_ref
-    if let Some(inner) = error.downcast_ref::<Arc<dyn StdError + Send + Sync>>() {
-        return class_of(inner.as_ref());
+// The Arc redis holds an io error in and an io::Error both hide the error they wrap from source(), so the walk visits that error directly.
+fn next_cause<'a>(error: &'a (dyn StdError + 'static)) -> Option<&'a (dyn StdError + 'static)> {
+    // the Arc's Error impl forwards source() to the io error it holds, so the io error is the next link
+    if let Some(wrapped) = error.downcast_ref::<Arc<dyn StdError + Send + Sync>>() {
+        let link: &(dyn StdError + 'static) = wrapped.as_ref();
+        return Some(link);
     }
+    // std's io error exposes the error it wraps only through get_ref; its source() returns that error's own source
+    if let Some(io) = error.downcast_ref::<io::Error>() {
+        let link: &(dyn StdError + 'static) = io.get_ref()?;
+        return Some(link);
+    }
+    error.source()
+}
+
+fn class_of(error: &(dyn StdError + 'static)) -> Option<FailureClass> {
     if let Some(redis) = error.downcast_ref::<RedisError>() {
         let kind = redis.kind();
         if matches!(kind, ErrorKind::Io) {
