@@ -2,15 +2,15 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Literal, Protocol, cast
+from typing import Literal
 
-from aiohttp import ClientSession
 import httpx
-from openai import APITimeoutError
+from aiohttp import ClientSession
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.embed import embedding as embedding_module
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import LlmProviders
+from openai import APITimeoutError
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from .types import HttpRequest
@@ -28,8 +28,17 @@ AsyncCall = Callable[
 ]
 
 
-class TimeoutMessage(Protocol):
+class Timeout(APITimeoutError):
     message: str
+    status_code: int
+
+    def __init__(self, message: str) -> None:
+        super().__init__(request=httpx.Request("POST", "https://api.openai.com/v1"))
+        self.message = message
+        self.status_code = 408
+
+    def __str__(self) -> str:
+        return self.message
 
 
 class Caller(embedding_module.BedrockEmbedding):
@@ -215,8 +224,7 @@ def http_error(case: HttpRequest) -> JsonValue:
         if case["asynchronous"]:
             message, separator, _elapsed = str(error).partition(", time taken=")
             if separator:
-                timeout_error = cast(TimeoutMessage, error)
-                timeout_error.message = f"{message}, time taken=<seconds> seconds"
+                raise Timeout(f"{message}, time taken=<seconds> seconds") from error
         raise
     except BedrockError as error:
         names = {name.lower() for name in case["reply"]["headers"]}
