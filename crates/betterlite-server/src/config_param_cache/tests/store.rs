@@ -19,7 +19,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
 use super::support::json;
-use crate::config_param_cache::{ConfigParamStore, TableConfigParamStore};
+use crate::config_param_cache::store::{ConfigParamStore as _, TableConfigParamStore};
 
 #[derive(clap::Parser)]
 struct Environment {

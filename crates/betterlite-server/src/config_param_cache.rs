@@ -1,4 +1,4 @@
-mod store;
+pub mod store;
 
 mod tests;
 
@@ -15,7 +15,7 @@ use betterlite_db::table_ops::TableOpsError;
 use betterlite_db::table_ops::rows::{ConfigParamRow, RowError};
 use betterlite_models::decisions::Json;
 
-pub use store::{ConfigParamStore, TableConfigParamStore};
+use store::ConfigParamStore;
 
 pub const CONFIG_CACHE_PREFIX: &str = "litellm_config:param:";
 pub const MISS_MARKER: &str = "__litellm_config_param_miss__";
@@ -55,7 +55,7 @@ where
 {
     // B8379 reads the database fault off the error, so an outage stays distinguishable from a bad row
     #[must_use]
-    pub fn database_source(&self) -> Option<&DbError<RowError>> {
+    pub const fn database_source(&self) -> Option<&DbError<RowError>> {
         match self {
             Self::Database { source } => Some(source),
             Self::Table { source } => source.database_source(),
@@ -68,13 +68,18 @@ impl<ClientError> From<TableOpsError<ClientError>> for ConfigParamCacheError<Cli
 where
     ClientError: Error + Send + Sync + 'static,
 {
-    fn from(source: TableOpsError<ClientError>) -> Self {
-        match source {
+    fn from(error: TableOpsError<ClientError>) -> Self {
+        match error {
             TableOpsError::Database { source } => Self::Database { source },
             TableOpsError::NoDbConnected => Self::Database {
                 source: DbError::NoDbConnected,
             },
-            other => Self::Table { source: other },
+            other @ (TableOpsError::MissingAttribute { .. }
+            | TableOpsError::Lookup { .. }
+            | TableOpsError::MissingField { .. }
+            | TableOpsError::WrongType { .. }
+            | TableOpsError::Encode { .. }
+            | TableOpsError::Timeout { .. }) => Self::Table { source: other },
         }
     }
 }
@@ -109,7 +114,7 @@ impl<Memory: MemoryCacheOps> ConfigParamCache<'_, Memory> {
         }
         let row = store.find_param(param_name).await?;
         let value = match &row {
-            Some(row) => pack_row(row)?,
+            Some(found) => pack_row(found)?,
             None => Json::Text(MISS_MARKER.to_owned()),
         };
         self.cache
@@ -165,14 +170,18 @@ impl<Memory: MemoryCacheOps> ConfigParamCache<'_, Memory> {
                 return;
             }
         };
+        self.prefetch_rows(param_names, &rows).await;
+    }
+
+    async fn prefetch_rows(&self, param_names: &[String], rows: &[ConfigParamRow]) {
         let by_name: BTreeMap<&str, &ConfigParamRow> = rows
             .iter()
             .map(|row| (row.param_name.as_str(), row))
             .collect();
         for param_name in param_names {
             let value = match by_name.get(param_name.as_str()) {
-                Some(row) => match pack_row(row) {
-                    Ok(value) => value,
+                Some(row) => match pack_row::<Infallible>(row) {
+                    Ok(packed) => packed,
                     Err(error) => {
                         tracing::debug!(error = %error, "a prefetched config param cannot be cached");
                         continue;
@@ -226,31 +235,27 @@ where
     Ok(())
 }
 
-// the row is cached as its JSON text, the same way the user row and the miss marker are stored
 fn pack_row<ClientError>(row: &ConfigParamRow) -> Result<Json, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
 {
-    match serde_json::to_string(row) {
-        Ok(text) => Ok(Json::Text(text)),
-        Err(source) => Err(ConfigParamCacheError::Decode { source }),
-    }
+    let text =
+        serde_json::to_string(row).map_err(|source| ConfigParamCacheError::Decode { source })?;
+    serde_json::from_str(&text).map_err(|source| ConfigParamCacheError::Decode { source })
 }
 
-// the miss marker is the only text entry that is not a row
 fn unpack_row<ClientError>(
     cached: &Json,
 ) -> Result<Option<ConfigParamRow>, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
 {
-    let Json::Text(text) = cached else {
+    let Json::Object(_) = cached else {
         return Ok(None);
     };
-    if text == MISS_MARKER {
-        return Ok(None);
-    }
-    serde_json::from_str(text)
+    let text =
+        serde_json::to_string(cached).map_err(|source| ConfigParamCacheError::Decode { source })?;
+    serde_json::from_str(&text)
         .map(Some)
         .map_err(|source| ConfigParamCacheError::Decode { source })
 }

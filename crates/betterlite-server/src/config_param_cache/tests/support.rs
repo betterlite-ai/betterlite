@@ -10,7 +10,8 @@ use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::table_ops::TableOpsError;
 use betterlite_db::table_ops::rows::ConfigParamRow;
 
-use crate::config_param_cache::{ConfigParamCache, ConfigParamStore};
+use crate::config_param_cache::ConfigParamCache;
+use crate::config_param_cache::store::ConfigParamStore;
 
 fn lookup<T>(map: &Mutex<BTreeMap<String, T>>, key: &str) -> Option<T>
 where
@@ -111,11 +112,9 @@ pub(super) struct Harness {
 impl Harness {
     pub(super) fn new() -> Self {
         let now = Arc::new(AtomicU32::new(1_000));
-        let clock_of = {
-            let now = Arc::clone(&now);
-            Arc::new(move || f64::from(now.load(Ordering::SeqCst)))
-                as Arc<dyn Fn() -> f64 + Send + Sync>
-        };
+        let clock_state = Arc::clone(&now);
+        let clock_of: Arc<dyn Fn() -> f64 + Send + Sync> =
+            Arc::new(move || f64::from(clock_state.load(Ordering::SeqCst)));
         let memory = Arc::new(LocalMemoryOps::new(1024, clock_of).expect("the memory tier builds"));
         let dual = DualCache::new(
             memory,

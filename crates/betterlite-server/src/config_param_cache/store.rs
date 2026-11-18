@@ -1,4 +1,8 @@
+use betterlite_db::table_ops::generic::GenericReads as _;
+use betterlite_db::table_ops::reads::configs::ConfigReads as _;
+use betterlite_db::table_ops::reads::users::UserReads as _;
 use std::error::Error;
+use std::future::Future;
 
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_db::database_replica::client::DatabaseClient;
@@ -11,23 +15,23 @@ use betterlite_db::table_ops::{ConfigParamInvalidator, InvalidateFuture, TableOp
 use super::{ConfigChangePublisher, ConfigParamCache};
 
 // what LiteLLM reaches through PrismaClient.get_generic_data, the config find_many and get_data(user_id)
-pub trait ConfigParamStore {
+pub trait ConfigParamStore: Sync {
     type ClientError: Error + Send + Sync + 'static;
 
-    async fn find_param(
+    fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigParamRow>, TableOpsError<Self::ClientError>>;
+    ) -> impl Future<Output = Result<Option<ConfigParamRow>, TableOpsError<Self::ClientError>>> + Send;
 
-    async fn find_params(
+    fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigParamRow>, TableOpsError<Self::ClientError>>;
+    ) -> impl Future<Output = Result<Vec<ConfigParamRow>, TableOpsError<Self::ClientError>>> + Send;
 
-    async fn user_row(
+    fn user_row(
         &self,
         user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Self::ClientError>>;
+    ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, TableOpsError<Self::ClientError>>> + Send;
 }
 
 pub struct TableConfigParamStore<'service, 'ops, Client>

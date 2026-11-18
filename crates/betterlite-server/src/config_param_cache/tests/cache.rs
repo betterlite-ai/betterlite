@@ -2,7 +2,7 @@ use std::convert::Infallible;
 use std::sync::Mutex;
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
-use betterlite_cache::dual_cache::DualCache;
+use betterlite_cache::dual_cache::{CacheOptions, DualCache};
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::table_ops::{ConfigParamInvalidator, TableOpsError};
 use betterlite_models::decisions::Json;
@@ -56,6 +56,11 @@ async fn a_miss_reads_the_store_and_caches_the_row() {
         .expect("the cached read succeeds");
     assert_eq!(second, first);
     assert_eq!(store.param_calls(), 1);
+    let cached = harness
+        .dual
+        .async_get_cache("litellm_config:param:settings", false)
+        .await;
+    assert!(matches!(cached, Some(Json::Object(_))));
 }
 
 #[tokio::test]
@@ -305,4 +310,37 @@ fn a_database_fault_stays_distinguishable_through_the_cache_error() {
         });
     assert!(missing.database_source().is_none());
     assert!(matches!(missing, ConfigParamCacheError::Table { .. }));
+}
+
+#[tokio::test]
+async fn object_cache_entries_round_trip_without_a_database_read() {
+    let harness = Harness::new();
+    let store = FakeStore::default();
+    let value: Json =
+        serde_json::from_str(r#"{"param_name":"settings","param_value":{"enabled":true}}"#)
+            .unwrap();
+    harness
+        .dual
+        .async_set_cache(
+            "litellm_config:param:settings",
+            &value,
+            CacheOptions {
+                ttl: Some(60.0),
+                local_only: false,
+                refresh_ttl: false,
+            },
+        )
+        .await;
+    let row = harness
+        .cache(60.0)
+        .get(&store, "settings")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.param_name, "settings");
+    assert_eq!(
+        serde_json::to_string(&row.param_value).unwrap(),
+        r#"{"enabled":true}"#
+    );
+    assert_eq!(store.param_calls(), 0);
 }
