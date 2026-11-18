@@ -1,37 +1,19 @@
-use crate::datadog::apm::{NullTracer, Span, Tracer};
+use indexmap::IndexMap;
+
+use crate::datadog::apm::{NullTracer, Tracer};
 use crate::datadog::payloads::legacy::legacy_v1_logging_to_datadog;
 use crate::datadog::payloads::standard::standard_logging_to_datadog;
 use crate::datadog::payloads::status::DataDogStatus;
 use crate::datadog::payloads::types::DatadogPayload;
+use crate::datadog::proxy_failure::async_post_call_failure_hook;
+use crate::datadog::service_events::{async_service_failure_hook, async_service_success_hook};
+use crate::logging_service_events::types::ServiceType;
 
-use super::support::{default_environment, default_kwargs, json, legacy_event, standard_payload};
-
-struct TestSpan {
-    trace_id: Option<u128>,
-    span_id: Option<u64>,
-}
-
-impl Span for TestSpan {
-    fn trace_id(&self) -> Option<u128> {
-        self.trace_id
-    }
-
-    fn span_id(&self) -> Option<u64> {
-        self.span_id
-    }
-}
-
-struct TestTracer<'span>(Option<&'span dyn Span>, Option<&'span dyn Span>);
-
-impl Tracer for TestTracer<'_> {
-    fn current_span(&self) -> Option<&dyn Span> {
-        self.0
-    }
-
-    fn current_root_span(&self) -> Option<&dyn Span> {
-        self.1
-    }
-}
+use super::support::{
+    Intake, TestSpan, TestTracer, build_logger, default_environment, default_kwargs, exception,
+    exception_logging, json, last_queued, legacy_event, normalizer, service_payload,
+    standard_payload,
+};
 
 fn standard(tracer: &dyn Tracer) -> DatadogPayload {
     standard_logging_to_datadog(
@@ -43,8 +25,8 @@ fn standard(tracer: &dyn Tracer) -> DatadogPayload {
     .unwrap()
 }
 
-#[test]
-fn datadog_trace_context_attachment_behavior() {
+#[tokio::test]
+async fn datadog_trace_context_attachment_behavior() {
     let span = TestSpan {
         trace_id: Some(12),
         span_id: Some(34),
@@ -82,4 +64,36 @@ fn datadog_trace_context_attachment_behavior() {
     let untraced = standard(&NullTracer);
     assert_eq!(untraced.trace_id, None);
     assert_eq!(untraced.span_id, None);
+
+    // the proxy failure hook attaches the active span to the payload it queues
+    let (logger, _) = build_logger(&[], Intake::Accepted);
+    let normalizer = normalizer();
+    let facts = exception(r#"{"class_name": "APIError", "message": "failed"}"#);
+    let context = exception_logging(Some(&facts), &normalizer);
+    async_post_call_failure_hook(&logger, &current, &context, None, IndexMap::new()).await;
+    let failed = last_queued(&logger);
+    assert_eq!(failed.trace_id.as_deref(), Some("12"));
+    assert_eq!(failed.span_id.as_deref(), Some("34"));
+    async_post_call_failure_hook(&logger, &root, &context, None, IndexMap::new()).await;
+    assert_eq!(last_queued(&logger).trace_id.as_deref(), Some("12"));
+
+    // the service hooks queue their payloads without any span context, even from the same tracer
+    async_service_failure_hook(
+        &logger,
+        &service_payload(ServiceType::Redis, true, Some("boom"), 0.1),
+        None,
+    );
+    let service_failed = last_queued(&logger);
+    assert_eq!(service_failed.status, DataDogStatus::Warn);
+    assert_eq!(service_failed.trace_id, None);
+    assert_eq!(service_failed.span_id, None);
+    async_service_success_hook(
+        &logger,
+        &service_payload(ServiceType::ResetBudgetJob, false, None, 0.1),
+        None,
+    );
+    let service_succeeded = last_queued(&logger);
+    assert_eq!(service_succeeded.status, DataDogStatus::Info);
+    assert_eq!(service_succeeded.trace_id, None);
+    assert_eq!(service_succeeded.span_id, None);
 }
