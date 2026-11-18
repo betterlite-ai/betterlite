@@ -38,6 +38,9 @@ pub(crate) async fn run(name: &str) {
         "sync_merges_the_stored_value" => sync_merges_the_stored_value().await,
         "sync_keeps_a_value_redis_is_behind_on" => sync_keeps_a_value_redis_is_behind_on().await,
         "sync_treats_a_missing_reply_as_zero" => sync_treats_a_missing_reply_as_zero().await,
+        "saturated_flush_past_the_deadline_drops_its_delta" => {
+            saturated_flush_past_the_deadline_drops_its_delta().await;
+        }
         "failed_push_discards_its_batch" => failed_push_discards_its_batch().await,
         "periodic_sync_writes_on_the_interval" => periodic_sync_writes_on_the_interval().await,
         "no_periodic_task_without_batching" => no_periodic_task_without_batching().await,
@@ -484,6 +487,40 @@ async fn usage_saturation_flushes_before_dropping() {
     assert_eq!(down.pending_len(), 0);
     assert_eq!(down.store.amount(TPM_KEY), None);
     assert_eq!(down.counters.read(TPM_KEY), Some(1_025));
+}
+
+// a store that never answers: the one second deadline ends the caller's wait and the new delta is dropped
+async fn saturated_flush_past_the_deadline_drops_its_delta() {
+    let clock = TestClock::new();
+    let local = Arc::new(local_store(&clock));
+    let counters = RouterCounters::new(
+        settings(false, None),
+        Arc::clone(&local),
+        Some(Arc::new(HangingStore)),
+    );
+    let one = [Increment {
+        key: TPM_KEY.to_owned(),
+        value: 1,
+        ttl: TTL,
+    }];
+    for _step in 0..MAX_PENDING_DELTAS {
+        counters.increment_usage(&one).await.unwrap();
+    }
+    counters.increment_usage(&one).await.unwrap();
+    assert_eq!(counters.read(TPM_KEY), Some(1_025));
+    assert_eq!(pending_len(&counters), 0);
+}
+
+struct HangingStore;
+
+#[async_trait]
+impl DeltaStore for HangingStore {
+    async fn increment_pipeline(
+        &self,
+        _deltas: &[Delta],
+    ) -> Result<Vec<Decimal>, RoutingStateError> {
+        std::future::pending::<Result<Vec<Decimal>, RoutingStateError>>().await
+    }
 }
 
 // the failure callback's increment runs on another thread while a sync reconciles the same key

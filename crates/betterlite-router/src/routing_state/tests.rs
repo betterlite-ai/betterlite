@@ -60,6 +60,10 @@ fn runtime(paused: bool) -> Runtime {
     false
 )]
 #[case::sync_treats_a_missing_reply_as_zero("sync_treats_a_missing_reply_as_zero", false)]
+#[case::saturated_flush_past_the_deadline_drops_its_delta(
+    "saturated_flush_past_the_deadline_drops_its_delta",
+    true
+)]
 fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(behaviors::run(name));
 }
