@@ -1,0 +1,12 @@
+task: B926
+deviations:
+  - what: Failure callbacks get an empty traceback_exception, where LiteLLM formats the Python stack of the call site.
+    why: Rust has no Python frame to format; the exception, start time and end time cross unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L896
+  - what: The current mid-stream fallback drops original_exception after extracting its status and message.
+    why: Unresolved parity gap. MidStreamFallbackDetails in crates/betterlite-error/src/error/details.rs has no field for the mapped ErrorClass. That shared type is outside B926's scope; preserving the original exception needs an owner change or expanded scope before this task can finish.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L664-L671
+kept_bugs:
+  - what: A cache write that fails in the synchronous path leaves completed_response_logged set and the success callbacks uncalled, because the logged latch is taken before persistence.
+    why: A setup can rely on a terminal event being logged at most once, so a failed cache write must not release the latch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L534-L540
