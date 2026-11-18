@@ -22,6 +22,16 @@ pub struct InFlightCall {
     released: bool,
 }
 
+impl std::fmt::Debug for InFlightCall {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("InFlightCall")
+            .field("key", &self.key)
+            .field("released", &self.released)
+            .finish_non_exhaustive()
+    }
+}
+
 // whether this worker's counter took the write, and the warning a rejected one raised
 enum LocalWrite {
     Written,

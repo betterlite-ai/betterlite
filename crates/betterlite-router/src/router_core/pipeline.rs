@@ -10,6 +10,8 @@ use crate::context::{self, RouteStage};
 use crate::deployment_catalog::lookup::CatalogResolver;
 use crate::deployment_catalog::types::{AliasStep, Candidates, CatalogMatch, LookupRequest};
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::least_busy::guard::InFlightCall;
+use crate::least_busy::identity::AttemptFacts;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::candidates::{CandidateSet, deployment_ids, without_blocked};
 use crate::router_core::error::RoutingError;
@@ -173,7 +175,7 @@ async fn single_route(
     let Some(selected) = filtered.deployments.into_iter().next() else {
         return Err(no_deployment_error(context, &resolved));
     };
-    Ok(attempt(context, resolved, selected, None))
+    Ok(attempt(context, resolved, selected, None).await)
 }
 
 async fn pool_route<R>(
@@ -195,9 +197,17 @@ where
         let Some(deployment) = set.deployments.into_iter().next() else {
             return Err(no_deployment_error(context, &resolved));
         };
-        return Ok(attempt(context, resolved, deployment, None));
+        return Ok(attempt(context, resolved, deployment, None).await);
     }
-    let pick = select_index(context, dispatch, &resolved.resolution, &set, random).await?;
+    let pick = select_index(
+        context,
+        dispatch,
+        &resolved.resolution,
+        &resolved.group,
+        &set,
+        random,
+    )
+    .await?;
     let Some((strategy, index)) = pick else {
         return Err(no_deployment_error(context, &resolved));
     };
@@ -205,7 +215,7 @@ where
     let Some(deployment) = set.deployments.into_iter().nth(index) else {
         return Err(no_deployment_error(context, &resolved));
     };
-    Ok(attempt(context, resolved, deployment, Some(strategy)))
+    Ok(attempt(context, resolved, deployment, Some(strategy)).await)
 }
 
 // The pool after every filter async_get_healthy_deployments applies before it selects.
@@ -253,6 +263,7 @@ async fn select_index<R>(
     context: &RouteContext<'_>,
     dispatch: &mut StrategyDispatch,
     resolution: &Resolution,
+    group: &str,
     set: &CandidateSet,
     random: &mut R,
 ) -> Result<Option<(Strategy, usize)>, RoutingError>
@@ -264,6 +275,7 @@ where
     };
     let strategy_context = StrategyContext {
         deployments: &set.deployments,
+        model_group: group,
         route: context,
         dispatch,
         resolution,
@@ -283,13 +295,14 @@ fn no_deployment_error(context: &RouteContext<'_>, resolved: &ResolvedRoute) -> 
     ))
 }
 
-fn attempt(
+async fn attempt(
     context: &RouteContext<'_>,
     resolved: ResolvedRoute,
     deployment: DeploymentSpec,
     strategy: Option<Strategy>,
 ) -> AttemptResult {
     let client = acquire_client(context, &resolved.group, &deployment);
+    let least_busy = start_count(context, &resolved.group, &deployment).await;
     AttemptResult {
         group: resolved.group,
         deployment,
@@ -298,5 +311,36 @@ fn attempt(
         client,
         override_pre_call: resolved.override_pre_call,
         bindings: resolved.bindings,
+        least_busy,
+    }
+}
+
+// log_pre_api_call: the attempt holds one in-flight count until its guard releases it, and a counter that cannot take the
+// write only warns, since an accounting failure never fails the request
+async fn start_count(
+    context: &RouteContext<'_>,
+    model_group: &str,
+    deployment: &DeploymentSpec,
+) -> Option<InFlightCall> {
+    let service = context.services.least_busy()?;
+    let facts = AttemptFacts {
+        model_group: Some(model_group),
+        deployment_id: deployment.id(),
+        call_type: None,
+    };
+    match service.pre_call(&facts).await {
+        Ok(started) => {
+            if let Some(warning) = started.warning {
+                tracing::warn!(
+                    ?warning,
+                    "least-busy routing could not update the in-flight count"
+                );
+            }
+            started.call
+        }
+        Err(error) => {
+            tracing::warn!(%error, "least-busy routing cannot count this attempt");
+            None
+        }
     }
 }
