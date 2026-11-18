@@ -25,8 +25,12 @@ use crate::queues::pod_lock::{NoPodLockEventSink, PodLockManager};
 
 const LEASE_TTL_SECONDS: i64 = 60;
 const LEASE_KEY: &str = "cronjob_lock:job";
-// The round trips before PTTL may eat into the lease, but a lease of any other size fails this bound.
-const MINIMUM_LEASE_TTL_MILLISECONDS: i64 = 59_000;
+// The cache default differs from every requested lease, so a dropped ttl shows up as the cache default.
+const CACHE_DEFAULT_TTL_SECONDS: i64 = 5;
+// A custom lease the manager must forward to SET EX instead of falling back to its own default.
+const CUSTOM_LEASE_TTL_SECONDS: i64 = 45;
+// The round trips before PTTL may eat into the lease, but far less than the gap to the cache default.
+const LEASE_TTL_SLACK_MILLISECONDS: i64 = 1_000;
 const EXPIRY_POLL_ATTEMPTS: usize = 500;
 const EXPIRY_POLL_INTERVAL: Duration = Duration::from_millis(2);
 
@@ -53,13 +57,13 @@ impl BreakerGate for OpenGate {
 }
 
 async fn cache_for(fixture: &RedisFixture) -> Arc<RedisLockCache> {
-    let url = serde_json::to_string(fixture.url.as_str()).unwrap();
+    let url = serde_json::to_string(fixture.as_ref()).unwrap();
     let overrides: RedisOverrides = serde_json::from_str(&format!(r#"{{"url":{url}}}"#)).unwrap();
     let options = RedisCacheOptions {
         overrides,
         family: RedisCacheFamily::Standalone,
         namespace: None,
-        default_ttl: LEASE_TTL_SECONDS,
+        default_ttl: CACHE_DEFAULT_TTL_SECONDS,
         redis_flush_size: None,
         default_major_version: 7,
         factory: Arc::new(LiveClientFactory::new(None)),
@@ -84,7 +88,7 @@ fn pod_lock(cache: &Arc<RedisLockCache>, owner: Uuid) -> PodLockManager<RedisLoc
 }
 
 async fn raw(fixture: &RedisFixture) -> MultiplexedConnection {
-    Client::open(fixture.url.as_str())
+    Client::open(fixture.as_ref())
         .unwrap()
         .get_multiplexed_async_connection()
         .await
@@ -144,7 +148,12 @@ async fn the_stored_owner_is_the_json_encoded_pod_id_with_the_lease_ttl() {
     let fixture = RedisFixture::start().await.unwrap();
     let cache = cache_for(&fixture).await;
     let manager = pod_lock(&cache, Uuid::new_v4());
-    assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
+    assert_eq!(
+        manager
+            .acquire_lock("job", Some(CUSTOM_LEASE_TTL_SECONDS), true)
+            .await,
+        Some(true)
+    );
     let owner = manager.pod_id.as_ref();
     let mut connection = raw(&fixture).await;
     assert_eq!(
@@ -154,9 +163,10 @@ async fn the_stored_owner_is_the_json_encoded_pod_id_with_the_lease_ttl() {
     let stored = cache.cache.async_get_cache(LEASE_KEY).await.unwrap();
     assert!(matches!(stored, Some(CachedValue::Text(text)) if text == owner));
     let ttl = lease_ttl(&mut connection).await;
+    let requested = CUSTOM_LEASE_TTL_SECONDS.saturating_mul(1000);
     assert!(
-        (MINIMUM_LEASE_TTL_MILLISECONDS..=LEASE_TTL_SECONDS.saturating_mul(1000)).contains(&ttl),
-        "the stored lease ttl {ttl} ms is not the requested {LEASE_TTL_SECONDS} s lease"
+        (requested.saturating_sub(LEASE_TTL_SLACK_MILLISECONDS)..=requested).contains(&ttl),
+        "the stored lease ttl {ttl} ms is not the requested {CUSTOM_LEASE_TTL_SECONDS} s lease"
     );
 }
 
