@@ -1,6 +1,5 @@
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::error::FixtureError;
-use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use deadpool_postgres::{BuildError, Client as QuerySession, Manager, Pool};
 use futures_util::future::join_all;
@@ -17,8 +16,16 @@ use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tokio_postgres::{Config, NoTls};
 
+use crate::migration_ledger::baseline::catalog_statements;
 use crate::postgres_store::errors::DbError;
 use crate::postgres_store::session::PostgresStore;
+use crate::schema_baseline::{MIGRATION_CATALOG as BASELINE_CATALOG, MigrationCatalog};
+use crate::schema_budget_windows::MIGRATION_CATALOG as BUDGET_WINDOWS_CATALOG;
+use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE_CATALOG;
+use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY_CATALOG;
+use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES_CATALOG;
+use crate::schema_policy_resources::MIGRATION_CATALOG as POLICY_RESOURCES_CATALOG;
+use crate::schema_routing_state::MIGRATION_CATALOG as ROUTING_STATE_CATALOG;
 
 #[derive(Parser)]
 struct Environment {
@@ -28,7 +35,6 @@ struct Environment {
 
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 const BODY_TIMEOUT: Duration = Duration::from_secs(30);
-const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
 
 #[derive(Debug, thiserror::Error)]
 enum HarnessError {
@@ -67,16 +73,22 @@ impl TestDatabase {
     }
 }
 
+const EARLIER_CATALOGS: [MigrationCatalog; 7] = [
+    BASELINE_CATALOG,
+    DAILY_USAGE_CATALOG,
+    MANAGED_RESOURCES_CATALOG,
+    IDENTITY_HISTORY_CATALOG,
+    POLICY_RESOURCES_CATALOG,
+    ROUTING_STATE_CATALOG,
+    BUDGET_WINDOWS_CATALOG,
+];
+
 async fn provision() -> Result<TestDatabase, HarnessError> {
     let url = Environment::parse_from(["schema-agent-identity"])
         .url
         .map(SecretString::from);
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        url.as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
+    let statements = catalog_statements(&EARLIER_CATALOGS).unwrap();
+    let mut task = PostgresFixture::provision_with_statements(url.as_ref(), statements);
     let fixture = match timeout(SETUP_TIMEOUT, task.resolve()).await {
         Ok(Ok(fixture)) => fixture,
         Ok(Err(error)) => {
@@ -147,15 +159,6 @@ async fn initialize_sessions<const N: usize>(
                 operation: "session acquisition",
                 source,
             })??;
-        timeout(
-            SETUP_TIMEOUT,
-            session.batch_execute(RESET_PUBLIC_SCHEMA_SQL),
-        )
-        .await
-        .map_err(|source| HarnessError::Timeout {
-            operation: "schema initialization",
-            source,
-        })??;
         sessions.push(session);
     }
     Ok(sessions

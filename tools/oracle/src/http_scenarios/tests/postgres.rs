@@ -37,10 +37,10 @@ fn postgres_setup_writes_every_list_in_the_task_order() {
         .build()
         .expect("the test runtime builds");
     let entered = runtime.enter();
-    let mut task = PostgresFixture::provision_schema(Some(&admin_url));
+    let mut task = PostgresFixture::provision_with_statements(Some(&admin_url), Vec::new());
     let fixture = runtime
         .block_on(task.resolve())
-        .expect("the fixture schema is provisioned");
+        .expect("the fixture database is provisioned");
     drop(entered);
     let journal =
         apply_setup(&fixture.options, &seeded_setup()).expect("the setup rows are inserted");
@@ -50,7 +50,7 @@ fn postgres_setup_writes_every_list_in_the_task_order() {
         .expect("the seeded rows and the key's role are read back");
     assert_eq!(counts, vec![1_i64; 9]);
     assert_eq!(role, "internal_user");
-    fixture.close().expect("the fixture schema is dropped");
+    fixture.close().expect("the fixture database is dropped");
 }
 
 fn postgres_admin_url() -> Option<SecretString> {

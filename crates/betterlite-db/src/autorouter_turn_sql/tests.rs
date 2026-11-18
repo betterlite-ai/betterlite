@@ -4,6 +4,7 @@ use super::sql::{session_upsert_sql, upsert_autorouter_session_sql};
 use super::transaction::{
     AutoRouterTurnTransaction, FIELD_ORDER, TurnFlag, TurnTime, upsert_params,
 };
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, FixedOffset, TimeZone as _, Utc};
 use deadpool_postgres::{Client, Pool};
@@ -73,24 +74,18 @@ pub(crate) async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["turn-tests"])
         .url
         .map(secrecy::SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        url.as_ref(),
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+    )
+    .resolve()
+    .await
+    .unwrap();
     let manager = deadpool_postgres::Manager::new(
         fixture.options.url.expose_secret().parse().unwrap(),
         tokio_postgres::NoTls,
     );
     let pool = Pool::builder(manager).max_size(3).build().unwrap();
-    let client = pool.get().await.unwrap();
-    client.batch_execute(concat!(
-        include_str!("../../migrations/20260805000000_add_autorouter_session_rollup/migration.sql"),
-        include_str!("../../migrations/20260807000000_add_autorouter_session_tier_turns/migration.sql"),
-        include_str!("../../migrations/20260907000000_add_autorouter_classifier_cost/migration.sql"),
-        include_str!("../../migrations/20260910000000_add_autorouter_session_baseline_models/migration.sql"),
-        include_str!("../../migrations/20260915000000_add_autorouter_savings_estimate_coverage/migration.sql"),
-        include_str!("../../migrations/20260919000000_add_autorouter_user_session_rollup/migration.sql"),
-    )).await.unwrap();
     (fixture, pool)
 }
 

@@ -6,8 +6,7 @@ use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::schema_identity_history::SCHEMA_UPDATE;
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use clap::Parser;
 use deadpool_postgres::tokio_postgres::NoTls;
@@ -40,13 +39,11 @@ fn test_url() -> Option<SecretString> {
 }
 
 async fn provision() -> PostgresFixture {
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        test_url().as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
-    task.resolve().await.unwrap()
+    let table = from_utf8(SCHEMA_UPDATE.bytes).unwrap().to_owned();
+    PostgresFixture::provision_with_statements(test_url().as_ref(), vec![table])
+        .resolve()
+        .await
+        .unwrap()
 }
 
 fn postgres_store(fixture: &PostgresFixture) -> PostgresStore {
@@ -54,18 +51,6 @@ fn postgres_store(fixture: &PostgresFixture) -> PostgresStore {
     let manager = Manager::new(config, NoTls);
     let pool = Pool::builder(manager).max_size(2).build().unwrap();
     PostgresStore { pool: Some(pool) }
-}
-
-async fn migrate(store: &PostgresStore) {
-    let client = store.session().await.unwrap();
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .unwrap();
-    client
-        .batch_execute(from_utf8(SCHEMA_UPDATE.bytes).unwrap())
-        .await
-        .unwrap();
 }
 
 fn no_publish() -> PublishChange<TableError> {
@@ -131,7 +116,6 @@ fn service(client: PrismaClient<'_>) -> StoredSkillReads<PrismaSkillRepository<'
 
 async fn seeded_writer(fixture: &PostgresFixture) -> PostgresStore {
     let writer = postgres_store(fixture);
-    migrate(&writer).await;
     insert_row(
         &writer,
         &NewRow {

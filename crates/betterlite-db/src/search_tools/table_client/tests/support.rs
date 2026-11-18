@@ -1,8 +1,7 @@
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use clap::Parser;
 use deadpool_postgres::{GenericClient as _, Manager, Pool};
@@ -28,15 +27,12 @@ fn test_url() -> Option<SecretString> {
         .map(SecretString::from)
 }
 
-// Each test owns a database, so tests never see one another's rows
 async fn provision() -> PostgresFixture {
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        test_url().as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
-    task.resolve().await.unwrap()
+    let table = from_utf8(ADD_SEARCH_TOOL_TABLE.bytes).unwrap().to_owned();
+    PostgresFixture::provision_with_statements(test_url().as_ref(), vec![table])
+        .resolve()
+        .await
+        .unwrap()
 }
 
 pub(crate) struct Case {
@@ -54,16 +50,6 @@ impl Case {
             .build()
             .unwrap();
         let store = PostgresStore { pool: Some(pool) };
-        let client = store.session().await.unwrap();
-        client
-            .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-            .await
-            .unwrap();
-        client
-            .batch_execute(from_utf8(ADD_SEARCH_TOOL_TABLE.bytes).unwrap())
-            .await
-            .unwrap();
-        drop(client);
         Self {
             fixture,
             store,
