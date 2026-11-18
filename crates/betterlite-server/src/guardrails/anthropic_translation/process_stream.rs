@@ -23,7 +23,7 @@ use betterlite_guardrails::guardrail_base::contract::GuardrailContract;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailLogTarget;
 use betterlite_guardrails::guardrail_message_scope::Object;
 
-pub use self::error::ProcessStreamError;
+use self::error::ProcessStreamError;
 use crate::guardrails::anthropic_translation::sse_events::{SseChunk, streaming_has_ended};
 
 struct StreamContext<'ctx> {

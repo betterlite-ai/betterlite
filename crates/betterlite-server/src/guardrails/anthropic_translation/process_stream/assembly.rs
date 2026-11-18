@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use betterlite_anthropic::stream_events::StreamEventConverter;
 use betterlite_anthropic::stream_state::state::{StreamOptions, StreamState, UuidV4};
 use betterlite_core::api::responses_to_chat_stream::records::CHUNK_OBJECT;
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_guardrails::repello_lifecycle::stream::{SilentConsole, SilentLogger};
+use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::passthrough_reconstruction::converter::EventChunkConverter;
@@ -33,46 +34,11 @@ use crate::guardrails::anthropic_translation::usage_response::{
     ZeroReasoningCounter, unix_seconds,
 };
 
-// The scan reads only the assembled text and tool calls, so the builder's logging and cost seams stay silent.
-struct SilentLogger;
-
-struct SilentConsole;
-
-struct SilentCounter;
-
-struct NoCosts;
-
-impl LoggerSink for SilentLogger {
-    #[cfg_attr(test, mutants::skip)]
-    fn debug(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    #[cfg_attr(test, mutants::skip)]
-    fn info(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    #[cfg_attr(test, mutants::skip)]
-    fn error(&self, _payload: &Payload) -> bool {
-        false
-    }
-
-    #[cfg_attr(test, mutants::skip)]
-    fn debug_enabled(&self) -> bool {
-        false
-    }
-}
-
-impl ConsoleSink for SilentConsole {
-    #[cfg_attr(test, mutants::skip)]
-    fn print(&self, _payload: &Payload) -> bool {
-        false
-    }
-}
+// The scan reads only the assembled text and tool calls, so the builder's token and cost seams stay silent.
+struct SilentServices;
 
 #[async_trait]
-impl UsageTokenCounter for SilentCounter {
+impl UsageTokenCounter for SilentServices {
     #[cfg_attr(test, mutants::skip)]
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
         Ok(0)
@@ -93,7 +59,7 @@ impl UsageTokenCounter for SilentCounter {
     }
 }
 
-impl StreamCostCalculator for NoCosts {
+impl StreamCostCalculator for SilentServices {
     #[cfg_attr(test, mutants::skip)]
     fn completion_cost(
         &self,
@@ -118,11 +84,7 @@ fn raw_chunk(chunk: &SseChunk) -> Result<RawSseChunk, ProcessStreamError> {
     match chunk {
         SseChunk::Bytes(bytes) => Ok(RawSseChunk::Bytes(bytes.clone())),
         SseChunk::Event(event) => {
-            let payload =
-                serde_json::to_string(event).map_err(|source| ProcessStreamError::Convert {
-                    target: "event",
-                    source,
-                })?;
+            let payload = serde_json::to_string(event).map_err(ProcessStreamError::Convert)?;
             Ok(RawSseChunk::Text(format!("data: {payload}")))
         }
         SseChunk::Other => Ok(RawSseChunk::Text(String::new())),
@@ -198,8 +160,8 @@ pub(super) async fn assemble_stream_response(
         .collect::<Result<Vec<RawSseChunk>, ProcessStreamError>>()?;
     let now = unix_seconds();
     let hooks = silent_hooks()?;
-    let costs = NoCosts;
-    let counter = SilentCounter;
+    let costs = SilentServices;
+    let counter = SilentServices;
     let mut converter = anthropic_converter(now);
     let request = AssemblyRequest {
         chunks: &raw,

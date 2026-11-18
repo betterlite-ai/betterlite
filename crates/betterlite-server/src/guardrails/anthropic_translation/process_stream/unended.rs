@@ -38,12 +38,7 @@ fn chunk_value(chunk: &SseChunk) -> GuardrailValue {
 fn text_inputs(text: &str) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(vec![text.to_owned()]),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: None,
-        stream_holdback_chars: None,
+        ..GuardrailApiInputs::default()
     }
 }
 
@@ -116,11 +111,7 @@ where
     let answer = match outcome {
         Ok(answer) => answer,
         Err(failure) => {
-            return Err(unended_failure(
-                failure,
-                responses_so_far,
-                request_data.as_deref(),
-            ));
+            return Err(unended_failure(failure, responses_so_far, Some(&*prepared)));
         }
     };
     deliver_text(responses_so_far, &answer, &string_so_far, context)

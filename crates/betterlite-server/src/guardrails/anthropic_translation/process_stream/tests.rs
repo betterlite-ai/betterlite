@@ -12,7 +12,7 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use betterlite_guardrails::guardrail_message_scope::Object;
 use serde_json::{Value, json};
 
-use super::ProcessStreamError;
+use super::error::ProcessStreamError;
 use super::process_output_streaming_response;
 use crate::guardrails::anthropic_translation::sse_events::SseChunk;
 
@@ -413,6 +413,17 @@ async fn unended_writes_nothing_without_delivery() {
     let (result, responses, _) = process(stream, &guardrail, None, None, false).await;
     result.unwrap();
     assert_eq!(text_of(&responses), [START, TEXT_1].concat());
+}
+
+#[tokio::test]
+async fn unended_skips_metadata_without_a_user_key() {
+    let guardrail = FakeGuardrail::echoing();
+    let stream = vec![bytes(&[START])];
+    let (result, _, stored) = process(stream, &guardrail, None, None, false).await;
+    result.unwrap();
+    let data = stored.unwrap();
+    assert!(data.contains_key("responses"));
+    assert!(!data.contains_key("litellm_metadata"));
 }
 
 #[tokio::test]

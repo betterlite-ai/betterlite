@@ -33,12 +33,8 @@ pub enum ProcessStreamError {
         #[source]
         source: Box<ReconstructionError<ConvertFailure>>,
     },
-    #[error("the {target} could not be read as guardrail data")]
-    Convert {
-        target: &'static str,
-        #[source]
-        source: serde_json::Error,
-    },
+    #[error("the guardrail data could not be read as JSON")]
+    Convert(#[from] serde_json::Error),
 }
 
 // Both paths hand a ModifyResponse its fallback only when the guardrail left original_response empty.
