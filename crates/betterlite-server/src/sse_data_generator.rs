@@ -1,5 +1,7 @@
+use std::fmt;
 use std::io;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use axum::http::request::Parts;
@@ -49,6 +51,12 @@ pub struct StreamFailure {
     pub kind: FailureKind,
 }
 
+impl fmt::Display for StreamFailure {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
 pub struct StreamSource {
     pub items: ItemStream,
     pub hidden: JsonObject,
@@ -67,7 +75,7 @@ pub struct CollectedStream {
 }
 
 #[async_trait]
-pub trait StreamHooks<Key>: Send + Sync {
+pub trait StreamHooks<Key: Sync>: Send + Sync {
     fn needs_iterator_wrap(&self) -> bool;
     fn needs_per_chunk_hook(&self) -> bool;
     fn wrap_iterator(&self, items: ItemStream, key: &Key, request_data: &JsonObject) -> ItemStream;
@@ -110,7 +118,7 @@ pub trait StreamCleanup<Key>: Send + Sync {
     fn finalize(&self, outcome: CleanupOutcome<Key>);
 }
 
-pub struct SseDataGenerator<Key> {
+pub struct SseDataGenerator<Key: Sync> {
     hooks: Arc<dyn StreamHooks<Key>>,
     error_state: Arc<dyn ErrorStateSource>,
     cleanup: Arc<dyn StreamCleanup<Key>>,
@@ -120,7 +128,7 @@ pub struct SseDataGenerator<Key> {
     is_model_router: RouterCheck,
 }
 
-impl<Key> SseDataGenerator<Key> {
+impl<Key: Sync> SseDataGenerator<Key> {
     pub fn new(
         hooks: Arc<dyn StreamHooks<Key>>,
         error_state: Arc<dyn ErrorStateSource>,
@@ -142,7 +150,7 @@ impl<Key> SseDataGenerator<Key> {
     }
 }
 
-impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
+impl<Key: Send + Sync + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
     type Response = StreamSource;
     type Stream = BoxStream<'static, Result<Bytes, io::Error>>;
 
@@ -171,7 +179,11 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
             self.global_keepalive.clone(),
         );
         let initial = resolver.resolve(&response.hidden);
-        let use_keepalive = self.router.is_some() || initial > 0.0_f64;
+        let use_keepalive = self.router.is_some()
+            || initial
+                .is_sign_positive()
+                .then_some(initial)
+                .is_some_and(|seconds| seconds != 0.0_f64);
         let beats: BoxStream<'static, Beat<Result<StreamItem, StreamFailure>>> = if use_keepalive {
             Box::pin(with_keepalive(items, resolver, initial))
         } else {
@@ -201,13 +213,7 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
         let mut mismatch = false;
         let mut beats = beats;
         let mut error_message = None;
-        let mut done = false;
-        let body = stream::unfold((), move |_| {
-            let mut result = None;
-            async {
-                if done {
-                    return None;
-                }
+        let body = async_stream::stream! {
                 loop {
                     let Some(beat) = beats.next().await else {
                         guard.complete(true);
@@ -219,18 +225,18 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                             if !ends_with_frame_delimiter(&frame) {
                                 frame.push_str("\n\n");
                             }
-                            result = Some(Ok(Bytes::from(frame)));
-                        } else if let Some(message) = error_message.take() {
-                            result = Some(Ok(Bytes::from(sse_data_frame(&message))));
-                        } else if !skip_done {
-                            result = Some(Ok(Bytes::from(DONE_FRAME)));
-                        } else {
-                            done = true;
+                            yield Ok(Bytes::from(frame));
                         }
-                        return result.map(|item| (item, ()));
+                        if let Some(message) = error_message.take() {
+                            yield Ok(Bytes::from(message));
+                        }
+                        if !skip_done {
+                            yield Ok(Bytes::from(DONE_FRAME));
+                        }
+                        break;
                     };
                     match beat {
-                        Beat::Ping => return Some((Ok(Bytes::from_static(b": ping\n\n")), ())),
+                        Beat::Ping => yield Ok(Bytes::from_static(b": ping\n\n")),
                         Beat::Item(Err(failure)) => {
                             tracing::error!(
                                 "litellm.proxy.proxy_server.async_data_generator(): Exception occured - {failure}"
@@ -244,8 +250,8 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                                 .await;
                             if let Err(hook_failure) = hooked {
                                 guard.complete(true);
-                                done = true;
-                                return Some((Err(io::Error::other(hook_failure.message)), ()));
+                                yield Err(io::Error::other(hook_failure.message));
+                                break;
                             }
                             let frame = if let Some(state) = error_state.as_mut() {
                                 guard.complete(true);
@@ -258,14 +264,14 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                                 })
                             } else if failure.kind == FailureKind::Http {
                                 guard.complete(true);
-                                done = true;
-                                return Some((Err(io::Error::other(failure.message)), ()));
+                                yield Err(io::Error::other(failure.message));
+                                break;
                             } else {
                                 guard.complete(true);
                                 Some(failure_frame(&failure))
                             };
-                            done = true;
-                            return frame.map(|frame| (Ok(Bytes::from(frame)), ()));
+                            if let Some(frame) = frame { yield Ok(Bytes::from(frame)); }
+                            break;
                         }
                         Beat::Item(Ok(mut item)) => {
                             if hooks.needs_per_chunk_hook() {
@@ -280,8 +286,9 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                                 {
                                     Ok(returned) => item = returned,
                                     Err(failure) => {
-                                        done = true;
-                                        return Some((Err(io::Error::other(failure.message)), ()));
+                                        guard.complete(true);
+                                        yield Err(io::Error::other(failure.message));
+                                        break;
                                     }
                                 }
                                 if let StreamItem::Chunk(chunk) = &item {
@@ -325,14 +332,12 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                             {
                                 if pending {
                                     fallback_sent = true;
-                                    return Some((
-                                        Ok(Bytes::from(fallback_event_frame(
+                                    yield Ok(Bytes::from(fallback_event_frame(
                                             fallback.model.as_deref(),
                                             &fallback.errors,
-                                            0,
-                                        ))),
-                                        (),
-                                    ));
+                                            unix_timestamp(),
+                                        )));
+                                    continue;
                                 }
                                 continue;
                             }
@@ -366,26 +371,41 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                                 }
                                 StreamItem::Text(text) if text.starts_with("data: ") => {
                                     error_message = Some(text);
-                                    done = true;
+                                    beats = Box::pin(stream::empty());
                                     None
                                 }
                                 StreamItem::Text(text) => Some(sse_data_frame(&text)),
                             };
+                            let mut raw_frames = Vec::new();
                             if raw {
-                                let (complete, rest) = pop_sse_frame(&raw_buffer);
-                                raw_buffer = rest;
-                                if let Some(frame) = complete {
-                                    return Some((Ok(Bytes::from(frame)), ()));
+                                loop {
+                                    let (complete, rest) = pop_sse_frame(&raw_buffer);
+                                    raw_buffer = rest;
+                                    let Some(frame) = complete else { break };
+                                    raw_frames.push(frame);
                                 }
                                 if raw_buffer.chars().count() > MAX_RAW_SSE_BUFFER_CHARS {
                                     guard.complete(true);
-                                    done = true;
-                                    return Some((
-                                        Err(io::Error::other(
+                                    yield Err(io::Error::other(
                                             "Raw SSE stream exceeded maximum buffered size without a frame delimiter",
-                                        )),
-                                        (),
-                                    ));
+                                        ));
+                                    break;
+                                }
+                                if !raw_frames.is_empty() {
+                                    if pending {
+                                        fallback_sent = true;
+                                        if let Some(last) = raw_frames.last_mut() {
+                                            last.push_str(&fallback_event_frame(
+                                                fallback.model.as_deref(),
+                                                &fallback.errors,
+                                                unix_timestamp(),
+                                            ));
+                                        }
+                                    }
+                                    for frame in raw_frames {
+                                        yield Ok(Bytes::from(frame));
+                                    }
+                                    continue;
                                 }
                             }
                             if let Some(mut frame) = frame {
@@ -397,16 +417,15 @@ impl<Key: Send + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
                                     frame.push_str(&fallback_event_frame(
                                         fallback.model.as_deref(),
                                         &fallback.errors,
-                                        0,
+                                        unix_timestamp(),
                                     ));
                                 }
-                                return Some((Ok(Bytes::from(frame)), ()));
+                                yield Ok(Bytes::from(frame));
                             }
                         }
                     }
                 }
-            }
-        });
+        };
         body.boxed()
     }
 }
@@ -443,6 +462,13 @@ impl<Key> Drop for CleanupGuard<Key> {
 
 fn flag(data: &JsonObject, key: &str) -> bool {
     matches!(data.get(key), Some(Json::Bool(true)))
+}
+
+fn unix_timestamp() -> i64 {
+    let seconds = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_secs());
+    i64::try_from(seconds).unwrap_or(i64::MAX)
 }
 
 fn failure_frame(failure: &StreamFailure) -> String {
