@@ -192,6 +192,11 @@ async fn an_acquired_lock_prunes_and_is_released() {
     assert!(cost_of(&client, DAY, "model-z").is_none());
     assert_eq!(cost_of(&client, DAY, "gone"), Some(Decimal::new(15, 1)));
     assert_eq!(lease.deletes(), 1);
+    assert_eq!(
+        lease.keys(),
+        vec!["cronjob_lock:ptu_flat_cost_rollup_job".to_owned()]
+    );
+    assert_eq!(lease.ttls(), vec![900_i64]);
     assert!(lease.owner.lock().unwrap().is_none());
     stored::close(fixture, pool, client).await;
 }

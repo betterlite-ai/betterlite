@@ -79,6 +79,8 @@ pub(crate) struct FakeLease {
     pub(crate) read_fails: bool,
     pub(crate) acquire_fails: bool,
     pub(crate) deletes: Mutex<usize>,
+    pub(crate) keys: Mutex<Vec<String>>,
+    pub(crate) ttls: Mutex<Vec<i64>>,
 }
 
 impl FakeLease {
@@ -91,6 +93,14 @@ impl FakeLease {
 
     pub(crate) fn deletes(&self) -> usize {
         *self.deletes.lock().unwrap()
+    }
+
+    pub(crate) fn keys(&self) -> Vec<String> {
+        self.keys.lock().unwrap().clone()
+    }
+
+    pub(crate) fn ttls(&self) -> Vec<i64> {
+        self.ttls.lock().unwrap().clone()
     }
 }
 
@@ -106,15 +116,17 @@ impl LockCache for FakeLease {
 
     async fn set_owner_if_absent(
         &self,
-        _key: &str,
+        key: &str,
         owner: &str,
-        _ttl_seconds: i64,
+        ttl_seconds: i64,
     ) -> Result<bool, LockCacheError> {
         if self.acquire_fails {
             return Err(LockCacheError::UnexpectedReply {
                 operation: "set_owner_if_absent",
             });
         }
+        self.keys.lock().unwrap().push(key.to_owned());
+        self.ttls.lock().unwrap().push(ttl_seconds);
         let mut held = self.owner.lock().unwrap();
         if held.is_some() {
             return Ok(false);
