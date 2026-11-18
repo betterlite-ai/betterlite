@@ -1,8 +1,11 @@
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
+use tokio::task::yield_now;
+use tokio::time::advance;
 
 use crate::router_observations::counter::{CounterError, CounterSink, Increment};
 use crate::routing_state::counter::RouterCounters;
@@ -18,6 +21,7 @@ use crate::routing_value_store::{
 
 use super::support::{
     Harness, TestClock, key_limit_error, local_store, oversized_key, route_key, settings,
+    usage_batch,
 };
 
 const TTL: Duration = Duration::from_secs(60);
@@ -27,8 +31,8 @@ const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 pub(crate) async fn run(name: &str) {
     match name {
         "queue_cap_is_1024" => queue_cap_is_1024().await,
-        "callback_saturation_without_a_worker_drops" => {
-            callback_saturation_without_a_worker_drops().await;
+        "callback_saturation_without_a_runtime_drops" => {
+            callback_saturation_without_a_runtime_drops().await;
         }
         "tracked_cap_is_1024" => tracked_cap_is_1024(),
         "window_increment_rejects_an_oversized_key" => {
@@ -77,11 +81,11 @@ async fn queue_cap_is_1024() {
             .await
             .unwrap();
     }
-    let overflow = down
+    let down_overflow = down
         .counters
         .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await;
-    assert_eq!(overflow.unwrap(), Decimal::from(1025_i64));
+    assert_eq!(down_overflow.unwrap(), Decimal::from(1025_i64));
     assert_eq!(down.pending_len(), 0);
     assert_eq!(down.store.calls(), 1);
     assert_eq!(down.store.amount(RPM_KEY), None);
@@ -95,42 +99,27 @@ async fn queue_cap_is_1024() {
     assert_eq!(down.pending_len(), 0);
 }
 
-// a sink call that has no multi-threaded worker to flush on keeps the queue at its cap and drops the delta
-async fn callback_saturation_without_a_worker_drops() {
+// a sink call on a thread outside every runtime cannot hand the flush off, so it keeps the cap and drops the delta
+async fn callback_saturation_without_a_runtime_drops() {
     let harness = Harness::with_store(settings(false, None));
     harness
         .counters
-        .increment_pipeline(&usage_batch(MAX_PENDING_DELTAS))
+        .increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
         .unwrap();
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    harness
-        .counters
-        .increment_pipeline(&usage_batch(1))
-        .unwrap();
-    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
-    assert_eq!(harness.store.calls(), 0);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
-    // a thread outside every runtime cannot drive the push either, so its delta is dropped the same way
     let counters = Arc::clone(&harness.counters);
-    std::thread::scope(|scope| {
-        let _handle = scope.spawn(|| {
-            counters.increment_pipeline(&usage_batch(1)).unwrap();
+    thread::scope(|scope| {
+        let _handle = scope.spawn(move || {
+            counters
+                .increment_pipeline(&usage_batch(TPM_KEY, 1))
+                .unwrap();
         });
     });
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
     assert_eq!(harness.store.calls(), 0);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(1_026));
-}
-
-fn usage_batch(count: usize) -> Vec<Increment> {
-    vec![
-        Increment {
-            key: TPM_KEY.to_owned(),
-            value: 1,
-            ttl: TTL,
-        };
-        count
-    ]
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
+    harness.drain_flushes().await;
+    assert_eq!(harness.store.calls(), 0);
 }
 
 fn tracked_cap_is_1024() {
@@ -203,11 +192,11 @@ impl DeltaStore for DriftingStore {
 async fn window_increment_rejects_an_oversized_key() {
     let harness = Harness::with_store(settings(false, None));
     let key = oversized_key();
-    let error = harness
+    let outcome = harness
         .counters
         .increment_window_value(&key, Decimal::ONE, TTL)
         .await;
-    let error = error.unwrap_err();
+    let error = outcome.unwrap_err();
     assert_eq!(key_limit_error(&error), (key.len(), MAX_KEY_BYTES));
     assert!(error.to_string().contains("1025"));
     harness.counters.track_key(&key);
@@ -264,15 +253,15 @@ fn outcome_counter_expiry_boundaries() {
 async fn cancelled_sync_task_does_not_tick() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
     harness.counters.start();
-    tokio::task::yield_now().await;
+    yield_now().await;
     harness.counters.cancel_sync_task();
     harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await
         .unwrap();
-    tokio::time::advance(Duration::from_secs(10)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_secs(10)).await;
+    yield_now().await;
     assert_eq!(harness.store.calls(), 0);
     harness.counters.cleanup().await;
 }
@@ -322,8 +311,8 @@ fn metadata_first_bucket_decides() {
     let empty_model = channels(
         r#"{"litellm_metadata": {"model_info": {}}, "metadata": {"model_info": {"id": "b"}}}"#,
     );
-    let name = deployment_channel(&empty_model).map(|(name, _bucket)| name);
-    assert_eq!(name, Some("litellm_metadata"));
+    let empty_name = deployment_channel(&empty_model).map(|(name, _bucket)| name);
+    assert_eq!(empty_name, Some("litellm_metadata"));
 }
 
 fn sync_interval_resolution_boundaries() {

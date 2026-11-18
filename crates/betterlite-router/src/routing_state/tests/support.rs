@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -6,8 +7,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_config::sections::routing_state_store::connection::Connection;
 use rust_decimal::Decimal;
+use tokio::sync::Semaphore;
 
 use crate::redis_failure_policy::Settings as BreakerSettings;
+use crate::router_observations::counter::Increment;
 use crate::routing_state::Settings;
 use crate::routing_state::counter::RouterCounters;
 use crate::routing_state::delta::{Delta, DeltaStore};
@@ -69,6 +72,8 @@ pub(crate) struct FakeStore {
     down: AtomicBool,
     stale: AtomicBool,
     short_reply: AtomicBool,
+    stalled: AtomicBool,
+    release: Semaphore,
 }
 
 impl FakeStore {
@@ -80,6 +85,8 @@ impl FakeStore {
             down: AtomicBool::new(false),
             stale: AtomicBool::new(false),
             short_reply: AtomicBool::new(false),
+            stalled: AtomicBool::new(false),
+            release: Semaphore::new(0),
         }
     }
 
@@ -102,6 +109,15 @@ impl FakeStore {
     // a pipeline that applies the push but reports no values back, as a truncated reply does
     pub(crate) fn set_short_reply(&self, short: bool) {
         self.short_reply.store(short, Ordering::SeqCst);
+    }
+
+    // a store that answers no push until the test lets it, so a scheduled flush stays in flight
+    pub(crate) fn set_stalled(&self, stalled: bool) {
+        self.stalled.store(stalled, Ordering::SeqCst);
+    }
+
+    pub(crate) fn release(&self) {
+        self.release.add_permits(1);
     }
 
     pub(crate) fn amount(&self, key: &str) -> Option<Decimal> {
@@ -131,6 +147,9 @@ impl DeltaStore for FakeStore {
         deltas: &[Delta],
     ) -> Result<Vec<Decimal>, RoutingStateError> {
         self.calls.fetch_add(1, Ordering::SeqCst);
+        if self.stalled.load(Ordering::SeqCst) {
+            let _permit = self.release.acquire().await;
+        }
         if self.down.load(Ordering::SeqCst) {
             return Err(RoutingStateError::NonFinite);
         }
@@ -199,12 +218,19 @@ impl Harness {
     }
 
     pub(crate) fn tracked_len(&self) -> usize {
-        self.counters
-            .state
-            .tracked
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
+        self.counters.get_tracked_keys().len()
+    }
+
+    // wait for the flushes the sink scheduled, as shutdown does
+    pub(crate) async fn drain_flushes(&self) {
+        let mut flushes = mem::take(
+            &mut *self
+                .counters
+                .flushes
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+        );
+        while flushes.join_next().await.is_some() {}
     }
 
     pub(crate) fn local_amount(&self, key: &str) -> Option<Decimal> {
@@ -218,6 +244,18 @@ impl Harness {
 
 pub(crate) fn same_f64(left: f64, right: f64) -> bool {
     left.to_bits() == right.to_bits()
+}
+
+// a callback's usage pipeline batch for one key, as B397's success callback builds it
+pub(crate) fn usage_batch(key: &str, count: usize) -> Vec<Increment> {
+    vec![
+        Increment {
+            key: key.to_owned(),
+            value: 1,
+            ttl: Duration::from_secs(60),
+        };
+        count
+    ]
 }
 
 pub(crate) fn breaker(threshold: u32) -> BreakerSettings {

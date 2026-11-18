@@ -164,11 +164,11 @@ pub(super) enum ScenarioError {
     },
 }
 
-struct Context<'a> {
-    counters: &'a RouterCounters<RoutingStateStore>,
-    server: &'a FakeRedis,
-    store: &'a RoutingStateStore,
-    settings: &'a RouterSettings,
+struct Context<'run> {
+    counters: &'run RouterCounters<RoutingStateStore>,
+    server: &'run FakeRedis,
+    store: &'run RoutingStateStore,
+    settings: &'run RouterSettings,
 }
 
 pub(super) async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput, ScenarioError> {
@@ -284,7 +284,7 @@ async fn apply(
 fn resolved_interval(
     index: usize,
     step: &ScenarioStep,
-    default_sync_interval: Option<Duration>,
+    default_sync_interval: Duration,
 ) -> Result<Observation, ScenarioError> {
     let settings = RouterSettings {
         sync_interval: step.sync_interval_millis.map(Duration::from_millis),

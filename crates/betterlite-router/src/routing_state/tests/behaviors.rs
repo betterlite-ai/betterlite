@@ -1,10 +1,14 @@
 use std::collections::BTreeSet;
+use std::future::pending;
 use std::mem;
 use std::sync::{Arc, Mutex, Weak};
+use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
+use tokio::task::yield_now;
+use tokio::time::{advance, timeout};
 
 use crate::router_observations::counter::{CounterSink, Increment};
 use crate::routing_state::MAX_PENDING_DELTAS;
@@ -21,8 +25,8 @@ use crate::routing_value_store::{RouteIncrement, RouteKey, RoutingValueStore};
 
 use super::support::{
     Harness, TestClock, breaker, local_store, redis_settings, route_key, same_f64, settings,
+    usage_batch,
 };
-use super::worker_runtime;
 
 const TTL: Duration = Duration::from_secs(60);
 const RPM_KEY: &str = "global_router:dep-a:gpt-4o:rpm:00-00";
@@ -68,6 +72,9 @@ pub(crate) async fn run(name: &str) {
         "real_store_smoke" => real_store_smoke().await,
         "callback_saturation_flushes_before_dropping" => {
             callback_saturation_flushes_before_dropping().await;
+        }
+        "callback_saturation_honors_the_caller_deadline" => {
+            callback_saturation_honors_the_caller_deadline().await;
         }
         "failure_callback_increment_survives_the_merge" => {
             failure_callback_increment_survives_the_merge().await;
@@ -267,17 +274,17 @@ async fn failed_push_discards_its_batch() {
 async fn periodic_sync_writes_on_the_interval() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(250))));
     harness.counters.start();
-    tokio::task::yield_now().await;
+    yield_now().await;
     harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
         .await
         .unwrap();
-    tokio::time::advance(Duration::from_millis(249)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_millis(249)).await;
+    yield_now().await;
     assert_eq!(harness.store.calls(), 0);
-    tokio::time::advance(Duration::from_millis(1)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_millis(1)).await;
+    yield_now().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2)));
     harness.counters.cleanup().await;
 }
@@ -285,14 +292,14 @@ async fn periodic_sync_writes_on_the_interval() {
 async fn no_periodic_task_without_batching() {
     let harness = Harness::with_store(settings(false, Some(Duration::from_millis(50))));
     harness.counters.start();
-    tokio::task::yield_now().await;
+    yield_now().await;
     harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
-    tokio::time::advance(Duration::from_secs(10)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_secs(10)).await;
+    yield_now().await;
     assert_eq!(harness.store.calls(), 0);
     harness.counters.cleanup().await;
 }
@@ -300,22 +307,22 @@ async fn no_periodic_task_without_batching() {
 async fn cleanup_stops_the_periodic_task() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
     harness.counters.start();
-    tokio::task::yield_now().await;
+    yield_now().await;
     harness.counters.cleanup().await;
     harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
-    tokio::time::advance(Duration::from_secs(10)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_secs(10)).await;
+    yield_now().await;
     assert_eq!(harness.store.calls(), 0);
 }
 
 async fn retire_pushes_and_stops_the_task() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
     harness.counters.start();
-    tokio::task::yield_now().await;
+    yield_now().await;
     harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
@@ -328,8 +335,8 @@ async fn retire_pushes_and_stops_the_task() {
         .increment_window_value(RPM_KEY, Decimal::from(1), TTL)
         .await
         .unwrap();
-    tokio::time::advance(Duration::from_secs(1)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_secs(1)).await;
+    yield_now().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2)));
     harness.counters.cleanup().await;
 }
@@ -346,7 +353,7 @@ async fn usage_pipeline_increments_locally_and_queues() {
     );
     // the sink cannot await the store, so the batch waits for the owner's next sync
     for _turn in 0..4 {
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
     assert_eq!(harness.store.calls(), 0);
     assert_eq!(harness.store.amount(TPM_KEY), None);
@@ -378,71 +385,76 @@ async fn usage_key_merges_the_shared_store_total() {
     assert_eq!(harness.counters.read(TPM_KEY), Some(107));
 }
 
-// the callback sink flushes a full queue on its own worker, so 2049 synchronous increments drop nothing
+// the callback sink schedules a full queue's flush on the owner's task set, so saturation drops nothing
 async fn callback_saturation_flushes_before_dropping() {
-    let harness = Arc::new(Harness::with_store(settings(false, None)));
-    let worker = Arc::clone(&harness);
-    on_worker(move || {
-        let sink: &dyn CounterSink = worker.counters.as_ref();
-        let one = [Increment {
-            key: TPM_KEY.to_owned(),
-            value: 1,
-            ttl: TTL,
-        }];
-        for _step in 0..=MAX_PENDING_DELTAS {
-            sink.increment_pipeline(&one).unwrap();
-        }
-        assert_eq!(worker.pending_len(), 1);
-        assert_eq!(worker.store.calls(), 1);
-        assert_eq!(worker.store.amount(TPM_KEY), Some(Decimal::from(1_024_u64)));
-        assert_eq!(worker.counters.read(TPM_KEY), Some(1_025));
-        for _step in 0..(MAX_PENDING_DELTAS - 1) {
-            sink.increment_pipeline(&one).unwrap();
-        }
-        assert_eq!(worker.pending_len(), MAX_PENDING_DELTAS);
+    let harness = Harness::with_store(settings(false, None));
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    let one = usage_batch(TPM_KEY, 1);
+    for _step in 0..=MAX_PENDING_DELTAS {
         sink.increment_pipeline(&one).unwrap();
-        assert_eq!(worker.store.calls(), 2);
-        assert_eq!(worker.store.amount(TPM_KEY), Some(Decimal::from(2_048_u64)));
-        assert_eq!(worker.pending_len(), 1);
-        assert_eq!(worker.counters.read(TPM_KEY), Some(2_049));
-    });
+    }
+    // the delta that filled the queue waits in the scheduled flush, not in a second buffer
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.store.calls(), 0);
+    harness.drain_flushes().await;
+    assert_eq!(harness.store.calls(), 1);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_024_u64))
+    );
+    assert_eq!(harness.pending_len(), 1);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
     assert!(harness.counters.sync_with_redis().await);
     assert_eq!(
         harness.store.amount(TPM_KEY),
-        Some(Decimal::from(2_049_u64))
+        Some(Decimal::from(1_025_u64))
     );
-    assert_eq!(harness.counters.read(TPM_KEY), Some(2_049));
     assert_eq!(harness.pending_len(), 0);
     // a failing store drops only the delta that found the queue full, and the local count keeps every increment
-    let down = Arc::new(Harness::with_store(settings(false, None)));
+    let down = Harness::with_store(settings(false, None));
     down.store.set_down(true);
-    let worker = Arc::clone(&down);
-    on_worker(move || {
-        let sink: &dyn CounterSink = worker.counters.as_ref();
-        let one = [Increment {
-            key: TPM_KEY.to_owned(),
-            value: 1,
-            ttl: TTL,
-        }];
-        for _step in 0..=MAX_PENDING_DELTAS {
-            sink.increment_pipeline(&one).unwrap();
-        }
-        assert_eq!(worker.pending_len(), 0);
-        assert_eq!(worker.store.calls(), 1);
-        assert_eq!(worker.counters.read(TPM_KEY), Some(1_025));
-    });
+    let down_sink: &dyn CounterSink = down.counters.as_ref();
+    for _step in 0..=MAX_PENDING_DELTAS {
+        down_sink.increment_pipeline(&one).unwrap();
+    }
+    down.drain_flushes().await;
+    assert_eq!(down.pending_len(), 0);
+    assert_eq!(down.store.calls(), 1);
+    assert_eq!(down.counters.read(TPM_KEY), Some(1_025));
     assert_eq!(down.store.amount(TPM_KEY), None);
 }
 
-// the inline flush needs a runtime that can hand its thread off, which is how the gateway's callbacks run
-fn on_worker<F: FnOnce() + Send>(body: F) {
-    std::thread::scope(|scope| {
-        let _handle = scope.spawn(move || {
-            worker_runtime().block_on(async move {
-                body();
-            });
-        });
-    });
+// a callback returns inside its caller's deadline even while a stalled flush holds the store
+async fn callback_saturation_honors_the_caller_deadline() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    // the delta past the cap schedules its flush and returns before the store is even called
+    sink.increment_pipeline(&usage_batch(TPM_KEY, 1)).unwrap();
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    // the queue fills again behind the stalled flush, and its gate refuses the next flush
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    let counters = Arc::clone(&harness.counters);
+    let one = usage_batch(TPM_KEY, 1);
+    let outcome = timeout(Duration::from_millis(50), async move {
+        counters.increment_pipeline(&one).unwrap();
+    })
+    .await;
+    assert!(outcome.is_ok());
+    assert_eq!(harness.store.calls(), 1);
+    harness.store.set_stalled(false);
+    harness.store.release();
+    harness.drain_flushes().await;
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_024_u64))
+    );
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_050));
 }
 
 // a store that never answers: the one second deadline ends the caller's wait and the new delta is dropped
@@ -476,7 +488,7 @@ impl DeltaStore for HangingStore {
         &self,
         _deltas: &[Delta],
     ) -> Result<Vec<Decimal>, RoutingStateError> {
-        std::future::pending::<Result<Vec<Decimal>, RoutingStateError>>().await
+        pending::<Result<Vec<Decimal>, RoutingStateError>>().await
     }
 }
 
@@ -708,23 +720,23 @@ impl DeltaStore for RacingStore {
         drop(value);
         let racing = self.during_push.lock().unwrap().take();
         if let Some(amount) = racing {
-            let state = self.state.lock().unwrap().as_ref().and_then(Weak::upgrade);
-            if let Some(state) = state {
+            let racing_state = self.state.lock().unwrap().as_ref().and_then(Weak::upgrade);
+            if let Some(state) = racing_state {
                 let key = route_key(RPM_KEY);
                 let _recorded = state
-                    .record_delta(&key, RouteIncrement::Spend(amount), TTL)
+                    .record_delta(&key, &RouteIncrement::Spend(amount), TTL)
                     .unwrap();
             }
         }
         if mem::take(&mut *self.failure_during_push.lock().unwrap()) {
-            let counters = self
+            let failing_counters = self
                 .counters
                 .lock()
                 .unwrap()
                 .as_ref()
                 .and_then(Weak::upgrade);
-            if let Some(counters) = counters {
-                std::thread::scope(|scope| {
+            if let Some(counters) = failing_counters {
+                thread::scope(|scope| {
                     scope.spawn(move || counters.increment(RPM_KEY, 1, TTL).unwrap());
                 });
             }
@@ -759,7 +771,10 @@ fn racing_counters() -> (
     (counters, store, local)
 }
 
-fn pending_len<S: DeltaStore + 'static>(counters: &RouterCounters<S>) -> usize {
+fn pending_len<S>(counters: &RouterCounters<S>) -> usize
+where
+    S: DeltaStore + 'static,
+{
     counters.state.pending.lock().unwrap().len()
 }
 

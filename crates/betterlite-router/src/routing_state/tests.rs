@@ -15,15 +15,6 @@ fn runtime(paused: bool) -> Runtime {
         .unwrap()
 }
 
-// the callback sink's inline flush needs the multi-threaded runtime the gateway runs on
-fn worker_runtime() -> Runtime {
-    Builder::new_multi_thread()
-        .worker_threads(2)
-        .enable_all()
-        .build()
-        .unwrap()
-}
-
 #[rstest]
 #[case::window_increment_returns_and_queues("window_increment_returns_and_queues", false)]
 #[case::window_increment_without_a_store("window_increment_without_a_store", false)]
@@ -63,6 +54,10 @@ fn worker_runtime() -> Runtime {
     "callback_saturation_flushes_before_dropping",
     false
 )]
+#[case::callback_saturation_honors_the_caller_deadline(
+    "callback_saturation_honors_the_caller_deadline",
+    false
+)]
 #[case::failure_callback_increment_survives_the_merge(
     "failure_callback_increment_survives_the_merge",
     false
@@ -78,8 +73,8 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 
 #[rstest]
 #[case::queue_cap_is_1024("queue_cap_is_1024", false)]
-#[case::callback_saturation_without_a_worker_drops(
-    "callback_saturation_without_a_worker_drops",
+#[case::callback_saturation_without_a_runtime_drops(
+    "callback_saturation_without_a_runtime_drops",
     false
 )]
 #[case::tracked_cap_is_1024("tracked_cap_is_1024", false)]
