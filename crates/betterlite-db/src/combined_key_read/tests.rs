@@ -5,16 +5,13 @@ use std::time::Duration;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use indexmap::IndexMap;
-use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::budget_permission_rows::JsonData;
 use crate::database_failures::metrics::{ProxySpanResolver, WallClock};
 use crate::database_faults::ErrorType;
-use crate::identity_rows::key::Expiry;
 use crate::key_hash::KeyHash;
 use crate::key_user_writes::hash::hash_token;
-use crate::team_rows::member::MemberRole;
 
 use super::error::{
     DatabaseFailure, KeyReadError, MISSING_TOKEN_DETAIL, MISSING_TOKEN_STATUS, ReconnectFailure,
@@ -25,14 +22,15 @@ use super::grace::{
 use super::ports::{MetricWallClock, NoSpanResolver};
 use super::request::{CombinedKeyRequest, KeyQueryType};
 use super::rows::{CACHED_PLAN_WARNING, RECONNECT_REASON};
-use super::view::{CombinedKeyView, ViewError, epoch_decimal};
+use super::view::ViewError;
 
 mod harness;
 mod postgres;
+mod view;
 
 use harness::{
-    Harness, ObservedDiagnostic, RecordedRowCall, StepClock, cached_plan_fault, decimal, events,
-    fault, fixed_now, grace_hit, lock, number, object, text, view_fields, view_row,
+    Harness, ObservedDiagnostic, RecordedRowCall, StepClock, cached_plan_fault, events, fault,
+    fixed_now, grace_hit, lock, view_fields, view_row,
 };
 
 #[tokio::test]
@@ -353,6 +351,7 @@ async fn failure_hook_carries_the_original_failure() {
     assert_eq!(hooks.len(), 3);
     assert_eq!(hooks[0].failure.class(), "database");
     assert_eq!(hooks[0].failure.status_code(), None);
+    assert_eq!(hooks[0].failure.detail(), None);
     assert_eq!(hooks[0].failure.to_string(), returned.to_string());
     match &hooks[0].failure {
         KeyReadError::Database(DatabaseFailure::Reported(fault)) => {
@@ -520,6 +519,21 @@ async fn negative_grace_not_cached() {
 }
 
 #[tokio::test]
+async fn deprecated_check_off_skips_the_grace_lookup() {
+    let harness = Harness::new(Duration::ZERO);
+    harness.database.push_row(Ok(None));
+    let request = CombinedKeyRequest {
+        token: Some(SecretString::from("sk-off")),
+        query_type: KeyQueryType::FindUnique,
+        check_deprecated: false,
+        use_writer: false,
+        parent_otel_span: None,
+    };
+    assert!(harness.read(&request).await.unwrap().is_none());
+    assert!(harness.database.grace_calls().is_empty());
+}
+
+#[tokio::test]
 async fn grace_error_debug_drop() {
     let harness = Harness::new(Duration::ZERO);
     harness.database.push_row(Ok(None));
@@ -549,50 +563,6 @@ async fn grace_error_debug_drop() {
 async fn grace_one_hop_typed_return() {
     grace_returns_the_active_view().await;
     grace_never_chains().await;
-}
-
-#[test]
-fn last_matching_member_not_email() {
-    let fields = view_fields(vec![
-        ("user_id", text("u1")),
-        (
-            "team_members_with_roles",
-            JsonData::Array(vec![
-                object(vec![
-                    ("user_id", text("u1")),
-                    ("user_email", text("first@example.com")),
-                    ("role", text("admin")),
-                ]),
-                object(vec![
-                    ("user_id", JsonData::Null),
-                    ("user_email", text("email-only@example.com")),
-                    ("role", text("user")),
-                ]),
-                object(vec![
-                    ("user_id", text("u1")),
-                    ("user_email", text("last@example.com")),
-                    ("role", text("user")),
-                ]),
-                object(vec![
-                    ("user_id", text("u2")),
-                    ("user_email", text("other@example.com")),
-                    ("role", text("admin")),
-                ]),
-            ]),
-        ),
-    ]);
-    let view = CombinedKeyView::construct(fields, epoch_decimal(fixed_now())).unwrap();
-    let member = view.team_member.unwrap();
-    assert_eq!(member.base.user_email.as_deref(), Some("last@example.com"));
-    assert_eq!(member.role, MemberRole::User);
-}
-
-#[test]
-fn normalized_team_fields_and_expiry() {
-    normalizes_team_defaults();
-    applies_budget_aliases();
-    stringifies_end_user_and_promotes_org();
-    formats_expiry_like_isoformat();
 }
 
 #[tokio::test]
@@ -848,118 +818,6 @@ async fn grace_never_chains() {
             .seen()
             .contains(&ObservedDiagnostic::DeprecatedUsed)
     );
-}
-
-fn normalizes_team_defaults() {
-    let fields = view_fields(vec![
-        ("user_id", text("u1")),
-        ("team_models", JsonData::Null),
-        ("team_blocked", JsonData::Null),
-        ("team_members_with_roles", JsonData::Array(Vec::new())),
-    ]);
-    let now = fixed_now();
-    let view = CombinedKeyView::construct(fields, epoch_decimal(now)).unwrap();
-    assert!(view.team_models.is_empty());
-    assert!(!view.team_blocked);
-    assert!(view.team_member.is_none());
-    assert_eq!(view.last_refreshed_at, Some(epoch_decimal(now)));
-}
-
-fn applies_budget_aliases() {
-    let fields = view_fields(vec![
-        ("litellm_budget_table_max_budget", decimal("100")),
-        ("litellm_budget_table_soft_budget", decimal("5")),
-        ("litellm_budget_table_tpm_limit", number(21)),
-        ("litellm_budget_table_rpm_limit", number(22)),
-        ("litellm_budget_table_tpd_limit", number(23)),
-        (
-            "litellm_budget_table_model_max_budget",
-            object(vec![("m", number(5))]),
-        ),
-        ("model_max_budget", object(Vec::new())),
-        ("max_budget", decimal("7")),
-    ]);
-    let view = CombinedKeyView::construct(fields, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.token.max_budget, Some(Decimal::from(7)));
-    assert_eq!(view.soft_budget, Some(Decimal::from(5)));
-    assert_eq!(view.token.tpm_limit, Some(21));
-    assert_eq!(view.token.rpm_limit, Some(22));
-    assert_eq!(view.token.tpd_limit, Some(23));
-    assert_eq!(view.token.model_max_budget.0.get("m"), Some(&number(5)));
-    let kept = view_fields(vec![
-        (
-            "litellm_budget_table_model_max_budget",
-            object(vec![("b", number(1))]),
-        ),
-        ("model_max_budget", object(vec![("k", number(2))])),
-    ]);
-    let view = CombinedKeyView::construct(kept, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.token.model_max_budget.0.get("k"), Some(&number(2)));
-    assert!(!view.token.model_max_budget.0.contains_key("b"));
-}
-
-fn stringifies_end_user_and_promotes_org() {
-    let fields = view_fields(vec![
-        ("end_user_id", number(42)),
-        ("organization_id", text("org-key")),
-        ("org_id", text("org-team")),
-    ]);
-    let view = CombinedKeyView::construct(fields, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.end_user_id.as_deref(), Some("42"));
-    assert_eq!(view.token.org_id.as_deref(), Some("org-key"));
-    let flagged = view_fields(vec![("end_user_id", JsonData::Bool(true))]);
-    let view = CombinedKeyView::construct(flagged, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(view.end_user_id.as_deref(), Some("True"));
-}
-
-fn formats_expiry_like_isoformat() {
-    let micros = view_fields(vec![("expires", text("2024-01-02T03:04:05.120000"))]);
-    let view = CombinedKeyView::construct(micros, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(
-        view.token.expires,
-        Some(Expiry::Text(String::from("2024-01-02T03:04:05.120000")))
-    );
-    let zero = view_fields(vec![("expires", text("2024-01-02T03:04:05.000000"))]);
-    let view = CombinedKeyView::construct(zero, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(
-        view.token.expires,
-        Some(Expiry::Text(String::from("2024-01-02T03:04:05")))
-    );
-    let offset = view_fields(vec![("expires", text("2024-01-02T03:04:05+02:00"))]);
-    let view = CombinedKeyView::construct(offset, epoch_decimal(fixed_now())).unwrap();
-    assert_eq!(
-        view.token.expires,
-        Some(Expiry::Text(String::from("2024-01-02T03:04:05+02:00")))
-    );
-}
-
-#[test]
-fn epoch_decimal_whole_and_fractional_seconds() {
-    assert_eq!(epoch_decimal(fixed_now()), Decimal::from(1_700_000_000_i64));
-    let fractional = DateTime::from_timestamp(1_700_000_000, 250_000_000).unwrap();
-    assert_eq!(epoch_decimal(fractional), Decimal::new(1_700_000_000_25, 2));
-}
-
-#[test]
-fn null_budget_alias_never_clears_the_key_mapping() {
-    let fields = view_fields(vec![
-        ("model_max_budget", object(Vec::new())),
-        ("litellm_budget_table_model_max_budget", JsonData::Null),
-    ]);
-    let view = CombinedKeyView::construct(fields, epoch_decimal(fixed_now())).unwrap();
-    assert!(view.token.model_max_budget.0.is_empty());
-}
-
-#[test]
-fn fractional_end_user_id_is_a_typed_error() {
-    let fields = view_fields(vec![(
-        "end_user_id",
-        JsonData::Number(serde_json::Number::from_f64(1.5).unwrap()),
-    )]);
-    assert!(matches!(
-        CombinedKeyView::construct(fields, epoch_decimal(fixed_now())),
-        Err(ViewError::Json(_))
-    ));
 }
 
 #[test]

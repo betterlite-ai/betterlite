@@ -104,25 +104,28 @@ const INSERT_EXPIRED_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVe
     (id, token, active_token_id, revoke_at)
     VALUES ($1, $2, $3, '2020-01-01 00:00:00')"#;
 
-// a statement trigger raises the server error tokio_postgres reports as a Db error, message included
+// Postgres has no SELECT trigger, so the joined team table becomes a view whose predicate raises a chosen server message
 const RAISE_CACHED_PLAN: &str = r#"
-CREATE FUNCTION raise_select_error() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'cached plan must not change result type';
-    RETURN NULL;
 END
 $$"#;
 const RAISE_ORDINARY_ERROR: &str = r#"
-CREATE OR REPLACE FUNCTION raise_select_error() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'relation disappeared';
-    RETURN NULL;
 END
 $$"#;
-const SELECT_GUARD: &str = r#"
-CREATE TRIGGER key_read_guard BEFORE SELECT ON "LiteLLM_VerificationToken"
-    FOR EACH STATEMENT EXECUTE FUNCTION raise_select_error()
+const GUARD_TEAM_READS: &str = r#"
+ALTER TABLE "LiteLLM_TeamTable" RENAME TO "LiteLLM_TeamTable_base";
+CREATE VIEW "LiteLLM_TeamTable" AS
+    SELECT * FROM "LiteLLM_TeamTable_base" WHERE raise_select_error()
 "#;
+const INSERT_GUARDED_TEAM: &str = r#"INSERT INTO "LiteLLM_TeamTable_base" (team_id, team_alias, members_with_roles)
+    VALUES ('team-native', 'Team Native', '[]'::jsonb)"#;
+const INSERT_GUARDED_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken" (token, team_id, models)
+    VALUES ($1, 'team-native', ARRAY[]::TEXT[])"#;
 
 #[derive(clap::Parser)]
 struct Environment {
@@ -347,6 +350,12 @@ pub(crate) async fn every_join_alias_and_null(fixture: &Fixture) {
     fixture
         .execute(
             INSERT_ORGANIZATION,
+            &[&"org-team", &"Team Org", &"budget-org"],
+        )
+        .await;
+    fixture
+        .execute(
+            INSERT_ORGANIZATION,
             &[&"org-key", &"Org Key", &"budget-org"],
         )
         .await;
@@ -469,7 +478,10 @@ pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
 
 pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture) {
     fixture.execute(RAISE_CACHED_PLAN, &[]).await;
-    fixture.execute(SELECT_GUARD, &[]).await;
+    fixture.execute(GUARD_TEAM_READS, &[]).await;
+    fixture.execute(INSERT_GUARDED_TEAM, &[]).await;
+    let stored = hash_token("sk-native-plan");
+    fixture.execute(INSERT_GUARDED_KEY, &[&stored]).await;
     let reconnect = ObservedReconnects::default();
     let (outcome, diagnostics) = read_native(fixture, &reconnect, "sk-native-plan").await;
     let error = outcome.unwrap_err();
@@ -493,8 +505,11 @@ pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture)
 
 pub(crate) async fn ordinary_driver_error_is_not_a_cached_plan(fixture: &Fixture) {
     fixture.execute(RAISE_CACHED_PLAN, &[]).await;
-    fixture.execute(SELECT_GUARD, &[]).await;
+    fixture.execute(GUARD_TEAM_READS, &[]).await;
+    fixture.execute(INSERT_GUARDED_TEAM, &[]).await;
     fixture.execute(RAISE_ORDINARY_ERROR, &[]).await;
+    let stored = hash_token("sk-native-plain");
+    fixture.execute(INSERT_GUARDED_KEY, &[&stored]).await;
     let reconnect = ObservedReconnects::default();
     let (outcome, diagnostics) = read_native(fixture, &reconnect, "sk-native-plain").await;
     assert!(matches!(outcome.unwrap_err(), KeyReadError::Database(_)));
