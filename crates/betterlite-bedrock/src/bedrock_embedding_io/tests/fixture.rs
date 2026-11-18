@@ -18,7 +18,7 @@ use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSet
 use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
 use secrecy::SecretString;
 use serde_json::value::RawValue;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::{Builder, Handle, Runtime};
 
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::transport::{
@@ -220,10 +220,9 @@ impl Source {
         self.calls.lock().unwrap().clone()
     }
 
-    pub(super) fn resolve<'source>(
-        &'source self,
-    ) -> impl FnOnce(&AwsSettings, &str) -> Ready<Result<Credentials, CredentialError>> + 'source
-    {
+    pub(super) fn resolve(
+        &self,
+    ) -> impl FnOnce(&AwsSettings, &str) -> Ready<Result<Credentials, CredentialError>> + '_ {
         move |settings: &AwsSettings, region: &str| {
             self.calls
                 .lock()
@@ -291,7 +290,7 @@ impl ManagedReader {
 
 impl SyncSecretReader for ManagedReader {
     fn sync_read_secret(&self, secret_name: &str) -> Option<SecretString> {
-        let on_runtime = tokio::runtime::Handle::try_current().is_ok();
+        let on_runtime = Handle::try_current().is_ok();
         self.reads
             .lock()
             .unwrap()

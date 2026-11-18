@@ -34,7 +34,6 @@ pub struct ManagedRegionWorker {
 
 impl ManagedRegionWorker {
     // Avoid entering Tokio on the thread that runs synchronous secret reads.
-    #[must_use]
     pub fn new() -> Result<Self, EmbeddingIoError> {
         let (sender, mut receiver) = mpsc::channel::<RegionJob>(REGION_WORKER_QUEUE_CAPACITY);
         let worker_thread = thread::Builder::new()
@@ -58,7 +57,7 @@ impl ManagedRegionWorker {
     ) -> Result<(Option<SecretString>, Option<SecretString>), EmbeddingIoError> {
         let (answer, result) = oneshot::channel();
         let job: RegionJob = Box::new(move || {
-            let _ = answer.send(region_secrets(&environment, &secrets));
+            drop(answer.send(region_secrets(&environment, &secrets)));
         });
         let Some(sender) = self.sender.as_ref() else {
             return Err(EmbeddingIoError::RegionWorkerUnavailable);
@@ -77,7 +76,9 @@ impl Drop for ManagedRegionWorker {
     fn drop(&mut self) {
         drop(self.sender.take());
         if let Some(worker_thread) = self.worker_thread.take() {
-            let _ = worker_thread.join();
+            if let Err(_panic) = worker_thread.join() {
+                // A failed secret reader must not unwind a service destructor.
+            }
         }
     }
 }

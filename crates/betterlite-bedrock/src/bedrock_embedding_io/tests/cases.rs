@@ -225,9 +225,9 @@ fn supplied_client_of_the_other_kind_is_not_used() {
     let reply = run_with_supplied(&factory, &client, ClientKind::Sync, true, &data)
         .expect("a fresh async client replies");
     assert_eq!(reply, object(r#"{"factory":true}"#));
-    let reply = run_with_supplied(&factory, &client, ClientKind::Async, false, &data)
+    let second_reply = run_with_supplied(&factory, &client, ClientKind::Async, false, &data)
         .expect("a fresh sync client replies");
-    assert_eq!(reply, object(r#"{"factory":true}"#));
+    assert_eq!(second_reply, object(r#"{"factory":true}"#));
     assert!(client.requests().is_empty());
     assert_eq!(factory.async_calls(), vec![("bedrock".to_owned(), None)]);
     assert_eq!(factory.sync_calls(), vec![None]);
@@ -251,28 +251,32 @@ fn provider_status_is_a_bedrock_error() {
     ));
     let error = run_direct(false, &factory, &data, None).expect_err("the fixture status fails");
     assert_eq!(error.status(), Some(400));
-    let EmbeddingIoError::Provider { status, error } = error else {
+    let EmbeddingIoError::Provider {
+        status,
+        error: bedrock_error,
+    } = error
+    else {
         panic!("a provider status becomes a bedrock error");
     };
     assert_eq!(status, 400);
-    assert_eq!(error.error.message, "bad request text");
-    assert_eq!(error.error.status_code, 400);
-    assert_eq!(error.error.response.status_code, 400);
-    assert_eq!(error.error.response.request.method, "POST");
-    assert_eq!(error.error.response.request.url, URL);
+    assert_eq!(bedrock_error.error.message, "bad request text");
+    assert_eq!(bedrock_error.error.status_code, 400);
+    assert_eq!(bedrock_error.error.response.status_code, 400);
+    assert_eq!(bedrock_error.error.response.request.method, "POST");
+    assert_eq!(bedrock_error.error.response.request.url, URL);
     assert_eq!(
-        error.response_headers,
+        bedrock_error.response_headers,
         headers(&[("X-Amzn-Requestid", "req-1")])
     );
     assert_eq!(
-        error.headers,
+        bedrock_error.headers,
         Some(ErrorHeaders::Http(headers(&[(
             "X-Amzn-Requestid",
             "req-1"
         )])))
     );
     assert_eq!(
-        error.response_body,
+        bedrock_error.response_body,
         ResponseBody::Read("bad request text".to_owned())
     );
 }
@@ -282,11 +286,15 @@ fn provider_status_on_the_async_path_is_a_bedrock_error() {
     let factory = Factory::new(Reply::status(503, &[], "busy"));
     let error = run_direct(true, &factory, &data, Some(Timeout::Seconds(5.0)))
         .expect_err("the fixture status fails");
-    let EmbeddingIoError::Provider { status, error } = error else {
+    let EmbeddingIoError::Provider {
+        status,
+        error: bedrock_error,
+    } = error
+    else {
         panic!("a provider status becomes a bedrock error");
     };
     assert_eq!(status, 503);
-    assert_eq!(error.error.message, "busy");
+    assert_eq!(bedrock_error.error.message, "busy");
     assert_eq!(
         factory.async_calls(),
         vec![("bedrock".to_owned(), Some(Timeout::Seconds(5.0)))]
@@ -309,16 +317,23 @@ fn status_boundaries_are_the_success_range() {
 }
 
 fn assert_timeout_error(error: EmbeddingIoError) {
-    let EmbeddingIoError::Provider { status, error } = error else {
+    let EmbeddingIoError::Provider {
+        status,
+        error: bedrock_error,
+    } = error
+    else {
         panic!("a timeout becomes a bedrock error");
     };
     assert_eq!(status, 408);
-    assert_eq!(error.error.message, "Timeout error occurred.");
-    assert_eq!(error.error.status_code, 408);
-    assert_eq!(error.error.response.status_code, 408);
-    assert!(error.headers.is_none());
-    assert_eq!(error.response_headers, Vec::new());
-    assert_eq!(error.response_body, ResponseBody::Read(String::new()));
+    assert_eq!(bedrock_error.error.message, "Timeout error occurred.");
+    assert_eq!(bedrock_error.error.status_code, 408);
+    assert_eq!(bedrock_error.error.response.status_code, 408);
+    assert!(bedrock_error.headers.is_none());
+    assert_eq!(bedrock_error.response_headers, Vec::new());
+    assert_eq!(
+        bedrock_error.response_body,
+        ResponseBody::Read(String::new())
+    );
 }
 
 fn timeout_is_a_408_bedrock_error() {
@@ -368,11 +383,15 @@ fn non_utf8_error_body_names_the_byte_count() {
     });
     let error = run_direct(false, &Factory::new(reply), &data, None)
         .expect_err("a non-UTF-8 error body is still a provider error");
-    let EmbeddingIoError::Provider { error, .. } = error else {
+    let EmbeddingIoError::Provider {
+        error: bedrock_error,
+        ..
+    } = error
+    else {
         panic!("a non-UTF-8 error body is a provider error");
     };
-    assert_eq!(error.error.message, "2 bytes that are not UTF-8");
-    assert_eq!(error.error.status_code, 400);
+    assert_eq!(bedrock_error.error.message, "2 bytes that are not UTF-8");
+    assert_eq!(bedrock_error.error.status_code, 400);
 }
 
 fn redirect_error_keeps_the_final_request() {
@@ -381,13 +400,17 @@ fn redirect_error_keeps_the_final_request() {
     let reply = Reply::redirected(404, &[], r#"{"message":"missing"}"#, "GET", final_url);
     let error = run_direct(false, &Factory::new(reply), &data, None)
         .expect_err("the redirect target's status fails");
-    let EmbeddingIoError::Provider { error, .. } = error else {
+    let EmbeddingIoError::Provider {
+        error: bedrock_error,
+        ..
+    } = error
+    else {
         panic!("a redirect target error is a bedrock error");
     };
-    assert_eq!(error.error.response.status_code, 404);
-    assert_eq!(error.error.response.request.method, "GET");
-    assert_eq!(error.error.response.request.url, final_url);
-    assert_eq!(error.error.message, r#"{"message":"missing"}"#);
+    assert_eq!(bedrock_error.error.response.status_code, 404);
+    assert_eq!(bedrock_error.error.response.request.method, "GET");
+    assert_eq!(bedrock_error.error.response.request.url, final_url);
+    assert_eq!(bedrock_error.error.message, r#"{"message":"missing"}"#);
 }
 
 fn http_error() {
@@ -412,9 +435,16 @@ fn transform(
     replies: &[&str],
     batch: Option<&[&str]>,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let replies: Vec<Object> = replies.iter().map(|text| object(text)).collect();
-    let batch = batch.map(|entries| entries.iter().map(|text| object(text)).collect::<Vec<_>>());
-    transform_response(&replies, model, provider, false, batch.as_deref())
+    let parsed_replies: Vec<Object> = replies.iter().map(|text| object(text)).collect();
+    let parsed_batch =
+        batch.map(|entries| entries.iter().map(|text| object(text)).collect::<Vec<_>>());
+    transform_response(
+        &parsed_replies,
+        model,
+        provider,
+        false,
+        parsed_batch.as_deref(),
+    )
 }
 
 fn transform_async(
@@ -550,7 +580,7 @@ fn embedding_usage() {
     titan_model_is_chosen_before_the_provider();
 }
 
-fn assert_placeholder(reply: &EmbeddingReply, model: &str, arn: Json) {
+fn assert_placeholder(reply: &EmbeddingReply, model: &str, arn: &Json) {
     assert_eq!(reply.object, "list");
     assert_eq!(reply.model, model);
     assert_eq!(reply.data.len(), 1);
@@ -561,7 +591,7 @@ fn assert_placeholder(reply: &EmbeddingReply, model: &str, arn: Json) {
     assert_eq!(reply.usage.completion_tokens, 0);
     assert_eq!(reply.usage.total_tokens, 0);
     assert!(reply.usage.prompt_tokens_details.is_none());
-    assert_eq!(reply.invocation_arn, arn);
+    assert_eq!(&reply.invocation_arn, arn);
 }
 
 fn async_placeholder_for_other_providers() {
@@ -574,7 +604,7 @@ fn async_placeholder_for_other_providers() {
     assert_placeholder(
         &reply,
         COHERE_MODEL,
-        json(r#""arn:aws:bedrock:us-west-2:1:async-invoke/abc""#),
+        &json(r#""arn:aws:bedrock:us-west-2:1:async-invoke/abc""#),
     );
 }
 
@@ -585,7 +615,7 @@ fn async_null_arn_is_still_an_arn() {
         r#"{"invocationArn":null}"#,
     )
     .expect("a null ARN still marks the async reply");
-    assert_placeholder(&reply, COHERE_MODEL, Json::Null);
+    assert_placeholder(&reply, COHERE_MODEL, &Json::Null);
 }
 
 fn async_marengo_and_nova_replies() {
@@ -598,22 +628,28 @@ fn async_marengo_and_nova_replies() {
     assert_placeholder(
         &reply,
         MARENGO_MODEL,
-        json(r#""arn:aws:bedrock:us-west-2:1:async-invoke/marengo""#),
+        &json(r#""arn:aws:bedrock:us-west-2:1:async-invoke/marengo""#),
     );
-    let reply = transform_async(
+    let nova_reply = transform_async(
         NOVA_MODEL,
         BedrockEmbeddingProvider::Nova,
         r#"{"invocationArn":"arn:aws:bedrock:us-west-2:1:async-invoke/marengo"}"#,
     )
     .expect("the nova async reply transforms");
     assert_placeholder(
-        &reply,
+        &nova_reply,
         NOVA_MODEL,
-        json(r#""arn:aws:bedrock:us-west-2:1:async-invoke/marengo""#),
+        &json(r#""arn:aws:bedrock:us-west-2:1:async-invoke/marengo""#),
     );
 }
 
 fn arn_needs_a_single_reply_and_the_flag() {
+    multiple_async_arns_take_the_regular_path();
+    async_arn_requires_the_flag();
+    async_arn_must_be_present();
+}
+
+fn multiple_async_arns_take_the_regular_path() {
     let replies = [
         object(r#"{"invocationArn":"arn:one"}"#),
         object(r#"{"invocationArn":"arn:two"}"#),
@@ -628,6 +664,9 @@ fn arn_needs_a_single_reply_and_the_flag() {
     .expect("two ARN replies take the regular path");
     assert!(reply.data.is_empty());
     assert_eq!(reply.invocation_arn, Json::Null);
+}
+
+fn async_arn_requires_the_flag() {
     let single = object(r#"{"invocationArn":"arn:one"}"#);
     let error = transform_response(
         &[single],
@@ -638,8 +677,11 @@ fn arn_needs_a_single_reply_and_the_flag() {
     )
     .expect_err("without the flag the cohere reply is unmapped");
     assert!(matches!(error, EmbeddingIoError::Unmapped { .. }));
+}
+
+fn async_arn_must_be_present() {
     let absent = object(r#"{"embedding":[0.1],"inputTextTokenCount":1}"#);
-    let error = transform_response(
+    let absent_error = transform_response(
         &[absent],
         COHERE_MODEL,
         BedrockEmbeddingProvider::Cohere,
@@ -647,8 +689,8 @@ fn arn_needs_a_single_reply_and_the_flag() {
         None,
     )
     .expect_err("an absent ARN is unmapped for cohere");
-    assert!(matches!(error, EmbeddingIoError::Unmapped { .. }));
-    let error = transform_response(
+    assert!(matches!(absent_error, EmbeddingIoError::Unmapped { .. }));
+    let empty_error = transform_response(
         &[],
         COHERE_MODEL,
         BedrockEmbeddingProvider::Cohere,
@@ -656,7 +698,7 @@ fn arn_needs_a_single_reply_and_the_flag() {
         None,
     )
     .expect_err("an empty reply list never enters the async branch");
-    assert!(matches!(error, EmbeddingIoError::Unmapped { .. }));
+    assert!(matches!(empty_error, EmbeddingIoError::Unmapped { .. }));
 }
 
 fn async_embedding_single_arn() {
@@ -673,7 +715,7 @@ fn load(
     source: &Source,
 ) -> Result<LoadedCredentials, EmbeddingIoError> {
     let secrets = secret_lookup(None);
-    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
+    let region_worker = ManagedRegionWorker::new()?;
     runtime().block_on(load_credentials(
         CredentialRequest {
             optional_params: parameters,
@@ -706,12 +748,20 @@ fn explicit_region_and_popped_auth_keys() {
     let resolved = loaded
         .credentials
         .expect("the resolver supplies credentials");
+    assert_credentials_and_auth_settings(&resolved, &source);
+    assert_eq!(
+        parameters.keys().map(String::as_str).collect::<Vec<_>>(),
+        ["temperature"]
+    );
+}
+
+fn assert_credentials_and_auth_settings(resolved: &Credentials, source: &Source) {
     assert_eq!(resolved.access_key_id.expose_secret(), ACCESS_KEY);
     assert_eq!(
         resolved
             .session_token
             .as_ref()
-            .map(|token| token.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some(SESSION_TOKEN)
     );
     let calls = source.calls();
@@ -723,21 +773,17 @@ fn explicit_region_and_popped_auth_keys() {
         settings
             .access_key_id
             .as_ref()
-            .map(|key| key.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some(ACCESS_KEY)
     );
     assert_eq!(
         settings
             .secret_access_key
             .as_ref()
-            .map(|key| key.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some(SECRET_KEY)
     );
     assert_eq!(settings.session_name.as_deref(), Some("fixture-session"));
-    assert_eq!(
-        parameters.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["temperature"]
-    );
 }
 
 fn environment_region_precedence() {

@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex, mpsc};
-use std::thread::{self, JoinHandle};
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 use super::fixture::{
@@ -10,59 +9,126 @@ use super::fixture::{
     runtime,
 };
 use crate::bedrock_embedding_io::credentials::{
-    CredentialRequest, ManagedRegionWorker, load_credentials,
+    CredentialRequest, LoadedCredentials, ManagedRegionWorker, load_credentials,
 };
+use crate::bedrock_embedding_io::error::EmbeddingIoError;
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
     EmbeddingCall, EmbeddingRequest, SuppliedClient, post_embedding,
 };
+use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_read_dispatch::protocols::SyncSecretReader;
 use secrecy::SecretString;
+use tokio::runtime::{Builder, Handle, Runtime};
+use tokio::sync::Notify;
+use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 const URL: &str =
     "https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke";
 
 struct PendingReader {
     gate: Arc<(Mutex<bool>, Condvar)>,
-    started: Arc<tokio::sync::Notify>,
+    started: Arc<Notify>,
     read_on_runtime: Arc<AtomicBool>,
 }
 
 impl SyncSecretReader for PendingReader {
     fn sync_read_secret(&self, secret_name: &str) -> Option<SecretString> {
-        self.read_on_runtime.store(
-            tokio::runtime::Handle::try_current().is_ok(),
-            Ordering::SeqCst,
-        );
+        self.read_on_runtime
+            .store(Handle::try_current().is_ok(), Ordering::SeqCst);
         self.started.notify_one();
-        let (released, ready) = &*self.gate;
-        let mut released = released.lock().unwrap();
-        while !*released {
-            released = ready.wait(released).unwrap();
+        let (gate_lock, gate_condition) = &*self.gate;
+        let mut gate_state = gate_lock.lock().unwrap();
+        while !*gate_state {
+            gate_state = gate_condition.wait(gate_state).unwrap();
         }
         (secret_name == "AWS_REGION_NAME").then(|| SecretString::from("eu-north-1"))
     }
 }
 
-fn start_gate_release_worker(
-    gate: Arc<(Mutex<bool>, Condvar)>,
-) -> (mpsc::Sender<()>, JoinHandle<()>) {
-    let (release_tx, release_rx) = mpsc::channel();
-    let release_worker = thread::spawn(move || {
-        let _ = release_rx.recv_timeout(Duration::from_secs(2));
-        let (released, ready) = &*gate;
-        *released.lock().unwrap() = true;
-        ready.notify_all();
-    });
-    (release_tx, release_worker)
+struct GateRelease(Arc<(Mutex<bool>, Condvar)>);
+
+impl GateRelease {
+    fn open(&self) {
+        let (gate_lock, gate_condition) = &*self.0;
+        *gate_lock.lock().unwrap() = true;
+        gate_condition.notify_all();
+    }
 }
 
-fn single_worker_runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_multi_thread()
+impl Drop for GateRelease {
+    fn drop(&mut self) {
+        self.open();
+    }
+}
+
+fn single_worker_runtime() -> Runtime {
+    Builder::new_multi_thread()
         .worker_threads(1)
         .enable_all()
         .build()
         .expect("the fixture runtime builds")
+}
+
+fn pending_lookup(
+    gate: &Arc<(Mutex<bool>, Condvar)>,
+    started: &Arc<Notify>,
+    read_on_runtime: &Arc<AtomicBool>,
+) -> SecretLookup {
+    managed_secrets_reader(Arc::new(PendingReader {
+        gate: Arc::clone(gate),
+        started: Arc::clone(started),
+        read_on_runtime: Arc::clone(read_on_runtime),
+    }))
+}
+
+fn lookup_tasks(
+    secrets: Arc<SecretLookup>,
+    region_worker: Arc<ManagedRegionWorker>,
+) -> JoinSet<Result<LoadedCredentials, EmbeddingIoError>> {
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let mut parameters = raw(&[]);
+        let variables = environment(&[]);
+        let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
+        load_credentials(
+            CredentialRequest {
+                optional_params: &mut parameters,
+                environment: &variables,
+                bearer_token: None,
+            },
+            &secrets,
+            &region_worker,
+            source.resolve(),
+        )
+        .await
+    });
+    tasks
+}
+
+fn timeout_while_managed_read_waits(
+    secrets: Arc<SecretLookup>,
+    started: &Notify,
+    region_worker: Arc<ManagedRegionWorker>,
+) -> (
+    tokio::runtime::Runtime,
+    JoinSet<Result<LoadedCredentials, EmbeddingIoError>>,
+) {
+    let runtime = single_worker_runtime();
+    let tasks = runtime.block_on(async {
+        let mut tasks = lookup_tasks(secrets, region_worker);
+        timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("the managed reader starts");
+        assert!(
+            timeout(Duration::from_millis(50), tasks.join_next())
+                .await
+                .is_err()
+        );
+        tasks
+    });
+    (runtime, tasks)
 }
 
 #[test]
@@ -99,60 +165,25 @@ fn bedrock_embedding_io_managed_region_secret_is_read_off_runtime() {
 #[test]
 fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
     let gate = Arc::new((Mutex::new(false), Condvar::new()));
-    let started = Arc::new(tokio::sync::Notify::new());
+    let started = Arc::new(Notify::new());
     let read_on_runtime = Arc::new(AtomicBool::new(true));
-    let secrets = managed_secrets_reader(Arc::new(PendingReader {
-        gate: Arc::clone(&gate),
-        started: Arc::clone(&started),
-        read_on_runtime: Arc::clone(&read_on_runtime),
-    }));
-    let (release_tx, release_worker) = start_gate_release_worker(Arc::clone(&gate));
-    let runtime = single_worker_runtime();
-    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
-    let timed_out = runtime.block_on(async {
-        let mut parameters = raw(&[]);
-        let variables = environment(&[]);
-        let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
-        let lookup = load_credentials(
-            CredentialRequest {
-                optional_params: &mut parameters,
-                environment: &variables,
-                bearer_token: None,
-            },
-            &secrets,
-            &region_worker,
-            source.resolve(),
-        );
-        tokio::pin!(lookup);
-        tokio::select! {
-            () = started.notified() => {}
-            result = &mut lookup => panic!("managed lookup finished before it became pending: {result:?}"),
-        }
-        tokio::time::timeout(Duration::from_millis(50), &mut lookup)
-            .await
-            .is_err()
-    });
-    assert!(
-        timed_out,
-        "timeout handling must run while the secret read waits"
+    let secrets = Arc::new(pending_lookup(&gate, &started, &read_on_runtime));
+    let region_worker = Arc::new(ManagedRegionWorker::new().expect("the region worker starts"));
+    let gate_release = GateRelease(Arc::clone(&gate));
+    let (runtime, mut tasks) = timeout_while_managed_read_waits(
+        Arc::clone(&secrets),
+        &started,
+        Arc::clone(&region_worker),
     );
-    release_tx.send(()).expect("the release worker is alive");
-    let mut parameters = raw(&[]);
-    let variables = environment(&[]);
-    let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
-    let loaded = runtime
-        .block_on(load_credentials(
-            CredentialRequest {
-                optional_params: &mut parameters,
-                environment: &variables,
-                bearer_token: None,
-            },
-            &secrets,
-            &region_worker,
-            source.resolve(),
-        ))
-        .expect("the worker drains cancelled lookups and handles the next one");
-    release_worker.join().expect("the release worker completes");
+    gate_release.open();
+    let loaded = runtime.block_on(async {
+        tasks
+            .join_next()
+            .await
+            .expect("the managed lookup task completes")
+            .expect("the managed lookup task does not panic")
+            .expect("the worker drains cancelled lookups and handles the next one")
+    });
     assert_eq!(loaded.region, "eu-north-1");
     assert!(!read_on_runtime.load(Ordering::SeqCst));
 }
@@ -160,54 +191,42 @@ fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
 #[test]
 fn bedrock_embedding_io_managed_worker_drains_before_drop() {
     let gate = Arc::new((Mutex::new(false), Condvar::new()));
-    let started = Arc::new(tokio::sync::Notify::new());
+    let started = Arc::new(Notify::new());
     let read_on_runtime = Arc::new(AtomicBool::new(true));
-    let secrets = managed_secrets_reader(Arc::new(PendingReader {
-        gate: Arc::clone(&gate),
-        started: Arc::clone(&started),
-        read_on_runtime: Arc::clone(&read_on_runtime),
-    }));
-    let worker = ManagedRegionWorker::new().expect("the region worker starts");
-    let (release_tx, release_worker) = start_gate_release_worker(Arc::clone(&gate));
+    let secrets = Arc::new(pending_lookup(&gate, &started, &read_on_runtime));
+    let worker = Arc::new(ManagedRegionWorker::new().expect("the region worker starts"));
+    let gate_release = GateRelease(Arc::clone(&gate));
     let runtime = single_worker_runtime();
     runtime.block_on(async {
-        let mut parameters = raw(&[]);
-        let variables = environment(&[]);
-        let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
-        let lookup = load_credentials(
-            CredentialRequest {
-                optional_params: &mut parameters,
-                environment: &variables,
-                bearer_token: None,
-            },
-            &secrets,
-            &worker,
-            source.resolve(),
+        let mut lookups = lookup_tasks(Arc::clone(&secrets), Arc::clone(&worker));
+        timeout(Duration::from_secs(1), started.notified())
+            .await
+            .expect("the managed reader starts");
+        lookups.abort_all();
+        assert!(
+            lookups
+                .join_next()
+                .await
+                .expect("the task is collected")
+                .is_err()
         );
-        tokio::pin!(lookup);
-        tokio::select! {
-            () = started.notified() => {}
-            result = &mut lookup => panic!("managed lookup finished before it became pending: {result:?}"),
-        }
     });
-
-    let (dropped_tx, dropped_rx) = mpsc::channel();
-    let drop_thread = thread::spawn(move || {
-        drop(worker);
-        dropped_tx.send(()).expect("the drop observer is alive");
+    let worker =
+        Arc::try_unwrap(worker).unwrap_or_else(|_| panic!("the lookup released its worker"));
+    runtime.block_on(async {
+        let mut owners = JoinSet::new();
+        owners.spawn_blocking(move || drop(worker));
+        assert!(
+            timeout(Duration::from_millis(50), owners.join_next())
+                .await
+                .is_err()
+        );
+        gate_release.open();
+        assert!(matches!(
+            timeout(Duration::from_secs(1), owners.join_next()).await,
+            Ok(Some(Ok(())))
+        ));
     });
-    assert!(matches!(
-        dropped_rx.recv_timeout(Duration::from_millis(50)),
-        Err(mpsc::RecvTimeoutError::Timeout)
-    ));
-    release_tx.send(()).expect("the release worker is alive");
-    dropped_rx
-        .recv_timeout(Duration::from_secs(1))
-        .expect("dropping the service waits for its running job to drain");
-    drop_thread
-        .join()
-        .expect("the service owner joined its worker");
-    release_worker.join().expect("the release worker completes");
     assert!(!read_on_runtime.load(Ordering::SeqCst));
 }
 

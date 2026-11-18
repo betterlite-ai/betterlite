@@ -37,7 +37,7 @@ fn resolved(access: &str, secret_key: &str, token: &str, region: &str) -> (Crede
         resolved
             .session_token
             .as_ref()
-            .map(|value| value.expose_secret()),
+            .map(secrecy::ExposeSecret::expose_secret),
         Some(token)
     );
     (resolved, loaded.region)
@@ -73,6 +73,15 @@ fn bedrock_embedding_io_credential_identity_isolation() {
     );
     let first_headers = signed(&first, &first_region);
     let second_headers = signed(&second, &second_region);
+    assert_identity_headers_are_isolated(&first_headers, &second_headers);
+    assert_first_identity_resolves_again(&first_headers, &first_region);
+    assert_ne!(second_region, first_region);
+}
+
+fn assert_identity_headers_are_isolated(
+    first_headers: &BTreeMap<String, String>,
+    second_headers: &BTreeMap<String, String>,
+) {
     assert_ne!(
         first_headers["Authorization"],
         second_headers["Authorization"]
@@ -89,6 +98,12 @@ fn bedrock_embedding_io_credential_identity_isolation() {
     assert!(!first_headers["Authorization"].contains("us-east-2"));
     assert_eq!(first_headers["X-Amz-Security-Token"], "first-token");
     assert_eq!(second_headers["X-Amz-Security-Token"], "second-token");
+}
+
+fn assert_first_identity_resolves_again(
+    first_headers: &BTreeMap<String, String>,
+    first_region: &str,
+) {
     let (again, again_region) = resolved(
         "AKIAFIRSTIDENTITY",
         "first-secret-key",
@@ -101,5 +116,4 @@ fn bedrock_embedding_io_credential_identity_isolation() {
         first_headers,
         "a later identity resolves no cached material of its own"
     );
-    assert_ne!(second_region, first_region);
 }
