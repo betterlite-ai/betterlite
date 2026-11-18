@@ -5,6 +5,7 @@ use std::time::Duration;
 use deadpool_postgres::Client;
 use secrecy::ExposeSecret as _;
 use tokio::task::yield_now;
+use tokio::time::sleep;
 use tokio_postgres::{CancelToken, NoTls};
 
 use crate::postgres_store::session::PostgresStore;
@@ -43,20 +44,25 @@ async fn locked_tls_front() -> (Db, TlsFront, PostgresStore, Client) {
     (db, front, store, holder)
 }
 
-async fn release_table_lock(db: &Db, holder: Client) {
-    assert_eq!(wait_until_no_lock_waiters(db).await, 0);
+// A backend waiting on the lock never reads its socket, so a discarded statement's waiter leaves only at rollback.
+async fn roll_back(holder: Client) {
     holder
         .batch_execute("ROLLBACK")
         .await
         .expect("the rollback");
-    drop(holder);
+}
+
+// A delivered cancel stops the statement on the server, so its lock waiter is gone before the rollback.
+async fn release_cancelled_statement(db: &Db, holder: Client) {
+    assert_eq!(wait_until_no_lock_waiters(db).await, 0);
+    roll_back(holder).await;
 }
 
 async fn lock_waiters(db: &Db) -> i64 {
     let client = db.client().await;
     client
         .query_one(
-            "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND state = 'active' AND query LIKE '%LiteLLM_ToolTable%'",
+            "SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND state = 'active' AND query LIKE '%LiteLLM_ToolTable%'",
             &[],
         )
         .await
@@ -66,11 +72,11 @@ async fn lock_waiters(db: &Db) -> i64 {
 
 async fn wait_until_no_lock_waiters(db: &Db) -> i64 {
     let mut waiting = lock_waiters(db).await;
-    for _ in 0..100 {
+    for _ in 0_u32..100 {
         if waiting == 0 {
             break;
         }
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        sleep(Duration::from_millis(20)).await;
         waiting = lock_waiters(db).await;
     }
     waiting
@@ -101,7 +107,7 @@ async fn discovery_stops_at_the_deadline() {
         logs.text()
             .contains("the statement did not finish within 100ms")
     );
-    release_table_lock(&db, holder).await;
+    release_cancelled_statement(&db, holder).await;
     let client = db.client().await;
     assert!(get_tool(Some(&client), "search").await.is_none());
     drop(client);
@@ -135,7 +141,7 @@ async fn refresh_cancels_a_read_past_the_deadline() {
             .unwrap_or_else(PoisonError::into_inner)
             .initialized
     );
-    release_table_lock(&db, holder).await;
+    release_cancelled_statement(&db, holder).await;
     db.close().await;
 }
 
@@ -162,7 +168,7 @@ async fn a_tls_required_cancel_stops_the_read_over_tls() {
         "the session and its cancel request both spoke TLS"
     );
     assert!(!logs.text().contains("could not be cancelled"));
-    release_table_lock(&db, holder).await;
+    release_cancelled_statement(&db, holder).await;
     sync_tool_policy_from_db(&policy_store, None::<&mut Reconnect>)
         .await
         .expect("the read after the cancel");
@@ -239,7 +245,7 @@ async fn a_cancel_that_never_answers_discards_the_connection() {
         "only the table-lock holder stays in the pool"
     );
     assert_eq!(pool.status().available, 0);
-    release_table_lock(&db, holder).await;
+    roll_back(holder).await;
     db.close().await;
 }
 
@@ -268,7 +274,7 @@ async fn an_undeliverable_cancel_discards_the_connection() {
         "the timed out connection left the pool"
     );
     assert_eq!(pool.status().available, 0);
-    release_table_lock(&db, holder).await;
+    roll_back(holder).await;
     store.pool.expect("the TLS pool").close();
     yield_now().await;
     drop(front);
