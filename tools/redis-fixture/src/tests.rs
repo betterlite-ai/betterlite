@@ -92,13 +92,13 @@ async fn a_server_that_never_answers_ping_fails_with_its_log() {
     let error = RedisFixture::launch(&options).await.unwrap_err();
     match error {
         RedisFixtureError::NotReady { log, .. } => assert!(log.contains("Redis version")),
-        other @ RedisFixtureError::MissingServer { .. }
-        | other @ RedisFixtureError::Spawn { .. }
-        | other @ RedisFixtureError::Folder { .. }
-        | other @ RedisFixtureError::Log { .. }
-        | other @ RedisFixtureError::NonUtf8Path { .. }
-        | other @ RedisFixtureError::BlockingTaskAborted
-        | other @ RedisFixtureError::BlockingTaskFailed { .. } => {
+        other @ (RedisFixtureError::MissingServer { .. }
+        | RedisFixtureError::Spawn { .. }
+        | RedisFixtureError::Folder { .. }
+        | RedisFixtureError::Log { .. }
+        | RedisFixtureError::NonUtf8Path { .. }
+        | RedisFixtureError::BlockingTaskAborted
+        | RedisFixtureError::BlockingTaskFailed { .. }) => {
             panic!("expected a readiness failure, got {other:?}")
         }
     }
