@@ -3,7 +3,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_models::decisions::Json;
 
-use super::BatchReadsError;
 use super::prepare::memory_values;
 use crate::backend::memory::MemoryCacheOps;
 use crate::dual_cache::DualCache;
