@@ -1,6 +1,6 @@
 import asyncio
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, TypedDict, TypeAlias
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.integrations.opentelemetry import OpenTelemetry, OpenTelemetryConfig
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -59,6 +59,7 @@ class PostCallFailure(Common):
     kwargs: dict[str, JsonValue]
     request_data: dict[str, JsonValue]
     exception: ExceptionSpec
+    traceback: NotRequired[str | None]
     team: NotRequired[Team]
     after_failure_log: NotRequired[bool]
 
@@ -200,7 +201,7 @@ async def success_call(
     logging_obj.model_call_details = details
     data: dict[str, Logging] = {"litellm_logging_obj": logging_obj}
     await logger.async_post_call_success_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1030
-        data, UserAPIKeyAuth(parent_otel_span=parent), ModelResponse.model_construct()
+        data, UserAPIKeyAuth(parent_otel_span=parent), ModelResponse(id="chatcmpl-b3858")
     )
 
 
@@ -221,16 +222,12 @@ async def failure_call(
             parent_otel_span=parent, team_id=team.get("id"), team_alias=team.get("alias")
         )
     await logger.async_post_call_failure_hook(  # type: ignore[misc]  # pyright: ignore[reportAny, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L903
-        request_data, exception_of(input_value["exception"]), key, None
+        request_data, exception_of(input_value["exception"]), key, input_value.get("traceback")
     )
 
 
-def error_attributes_call(
-    logger: OpenTelemetry, input_value: ErrorAttributes, parent: Span | None
-) -> None:
-    spec = input_value.get("exception")
-    exception = None if spec is None else exception_of(spec)
-    logger.record_error_attributes_on_span(parent, exception, input_value["status_code"])
+def line_order(line: SpanLine) -> tuple[int, int, str]:
+    return (int(line["start"]), int(line["end"]), line["name"])
 
 
 def read_spans(exporter: InMemorySpanExporter) -> list[SpanLine]:
@@ -242,12 +239,11 @@ def read_spans(exporter: InMemorySpanExporter) -> list[SpanLine]:
             names[context.span_id] = span.name
     lines: list[SpanLine] = []
     for span in spans:
-        parent = span.parent
-        parent_id = 0 if parent is None else parent.span_id
+        parent_id = 0 if span.parent is None else span.parent.span_id
         lines.append(
             SpanLine(
                 name=span.name,
-                parent=names[parent_id] if parent_id in names else "",
+                parent=names.get(parent_id, ""),
                 kind=span.kind.name,
                 status=span.status.status_code.name,
                 start=str(span.start_time),
@@ -259,7 +255,7 @@ def read_spans(exporter: InMemorySpanExporter) -> list[SpanLine]:
                 ],
             )
         )
-    lines.sort(key=lambda line: (int(line["start"]), int(line["end"]), line["name"]))
+    lines.sort(key=line_order)
     return lines
 
 
@@ -272,10 +268,8 @@ def run(input_value: Scenario) -> JsonValue:
         tracer_provider=provider,
     )
     spec = input_value.get("parent")
-    parent_start = None if spec is None else spec.get("start")
-    start = input_value["start_time"] if parent_start is None else parent_start
     parent = None if spec is None else provider.get_tracer("b3858").start_span(
-        spec["name"], start_time=int(start * 1e9)
+        spec["name"], start_time=int(spec.get("start", input_value["start_time"]) * 1e9)
     )
     match input_value["function"]:
         case "service_success":
@@ -291,8 +285,10 @@ def run(input_value: Scenario) -> JsonValue:
         case "management_failure":
             asyncio.run(management_call(logger, input_value, parent, mode="failure"))
         case "error_attributes":
-            error_attributes_call(logger, input_value, parent)
+            spec_exception = input_value.get("exception")
+            exception = None if spec_exception is None else exception_of(spec_exception)
+            logger.record_error_attributes_on_span(parent, exception, input_value["status_code"])
     if parent is not None:
-        end = input_value["end_time"] if spec is None or spec.get("end") is None else spec["end"]
+        end = input_value["end_time"] if spec is None else spec.get("end", input_value["end_time"])
         parent.end(end_time=int(end * 1e9))
-    return DICT.validate_python({"spans": read_spans(exporter)})
+    return DICT.validate_python({"spans": read_spans(exporter)})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1052

@@ -3,10 +3,13 @@ use opentelemetry::trace::Status;
 use super::fixtures::{error_config, exception, request_data};
 use super::support::{Rig, START, attribute, event_attribute, i64_attribute, now, text_attribute};
 use crate::logging_metadata::exception::ExceptionFacts;
+use crate::otel::legacy_policy::error_recording::ERROR_STACK_TRACE;
 use crate::otel::service::post_call::{
     FAILED_REQUEST_SPAN_NAME, PostCallFailure, ProxyCallKey, async_post_call_failure_hook,
 };
 use crate::otel::vocabulary::constants::attribute_keys::http;
+
+const TRACEBACK: &str = "Traceback (most recent call last):\n  ValueError: boom\n";
 
 fn facts(code: Option<&str>) -> ExceptionFacts {
     let raw = match code {
@@ -19,11 +22,13 @@ fn facts(code: Option<&str>) -> ExceptionFacts {
 }
 
 #[rstest::rstest]
-#[case::without_error_code(None, 500)]
-#[case::with_error_code(Some("402"), 402)]
+#[case::without_error_code(None, 500, None)]
+#[case::with_error_code(Some("402"), 402, None)]
+#[case::with_traceback(Some("402"), 402, Some(TRACEBACK))]
 fn otel_legacy_service_callbacks_behavior_tests_behavior(
     #[case] code: Option<&str>,
     #[case] status: i64,
+    #[case] traceback: Option<&str>,
 ) {
     let rig = Rig::new();
     let lifecycle = rig.lifecycle();
@@ -40,7 +45,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
         request_data: &data,
         exception: Some(&facts),
         key: &key,
-        traceback: None,
+        traceback,
         info: &config,
     };
     async_post_call_failure_hook(&lifecycle, &call).expect("failure hook");
@@ -68,6 +73,10 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     match code {
         Some(text) => assert_eq!(text_attribute(&server, "error.code"), text),
         None => assert!(attribute(&server, "error.code").is_none()),
+    }
+    match traceback {
+        Some(text) => assert!(text_attribute(&server, ERROR_STACK_TRACE).starts_with(text)),
+        None => assert!(attribute(&server, ERROR_STACK_TRACE).is_none()),
     }
     let child = rig.span(FAILED_REQUEST_SPAN_NAME);
     assert_eq!(child.parent_span_id, parent.context.span_id());

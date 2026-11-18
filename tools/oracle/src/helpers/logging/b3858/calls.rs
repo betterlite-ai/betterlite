@@ -175,7 +175,7 @@ pub(super) fn failure_call(cx: &CallContext<'_>) -> Result<(), String> {
         request_data: &request_data,
         exception: facts.as_ref(),
         key: &key,
-        traceback: None,
+        traceback: cx.input.traceback.as_deref(),
         info: &config,
     };
     async_post_call_failure_hook(cx.lifecycle, &call).map_err(|error| error.to_string())

@@ -41,6 +41,7 @@ pub(crate) struct Input {
     kwargs: MetadataMap,
     request_data: MetadataMap,
     exception: Option<ExceptionInput>,
+    traceback: Option<String>,
     team: Option<TeamInput>,
     after_failure_log: bool,
     route: String,

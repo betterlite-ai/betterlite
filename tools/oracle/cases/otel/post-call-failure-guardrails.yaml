@@ -46,6 +46,7 @@ call:
     exception:
       kind: "authentication"
       message: "bad key"
+    traceback: "Traceback (most recent call last):\n  File \"handler.py\", line 7, in <module>\n    raise ValueError\nValueError: boom\n"
     team:
       id: "team-a"
       alias: "team-alias"
