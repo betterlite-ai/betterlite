@@ -13,7 +13,7 @@ use super::fixture::{
 use crate::aws_endpoints::provider::BedrockEmbeddingProvider;
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::{
-    CredentialRequest, LoadedCredentials, load_credentials,
+    CredentialRequest, LoadedCredentials, ManagedRegionWorker, load_credentials,
 };
 use crate::bedrock_embedding_io::error::EmbeddingIoError;
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
@@ -673,6 +673,7 @@ fn load(
     source: &Source,
 ) -> Result<LoadedCredentials, EmbeddingIoError> {
     let secrets = secret_lookup(None);
+    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
     runtime().block_on(load_credentials(
         CredentialRequest {
             optional_params: parameters,
@@ -680,6 +681,7 @@ fn load(
             bearer_token: bearer,
         },
         &secrets,
+        &region_worker,
         source.resolve(),
     ))
 }

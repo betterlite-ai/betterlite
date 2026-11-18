@@ -1,6 +1,5 @@
 use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use thiserror::Error;
-use tokio::task::JoinError;
 
 use super::transport::TransferError;
 use crate::aws_settings::AuthError;
@@ -19,13 +18,10 @@ pub enum EmbeddingIoError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the managed region secret lookup worker failed")]
-    RegionWorker {
-        #[source]
-        source: JoinError,
-    },
-    #[error("the managed region secret lookup worker ended without a result")]
-    RegionWorkerClosed,
+    #[error("the managed region secret lookup worker failed to start: {message}")]
+    RegionWorkerStart { message: String },
+    #[error("the managed region secret lookup worker is unavailable")]
+    RegionWorkerUnavailable,
     #[error(transparent)]
     Secret(#[from] SecretLookupError),
     #[error(transparent)]

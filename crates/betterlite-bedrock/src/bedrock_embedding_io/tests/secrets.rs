@@ -9,7 +9,9 @@ use super::fixture::{
     credentials, environment, headers, managed_secrets, managed_secrets_reader, now, object, raw,
     runtime,
 };
-use crate::bedrock_embedding_io::credentials::{CredentialRequest, load_credentials};
+use crate::bedrock_embedding_io::credentials::{
+    CredentialRequest, ManagedRegionWorker, load_credentials,
+};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
     EmbeddingCall, EmbeddingRequest, SuppliedClient, post_embedding,
@@ -70,6 +72,7 @@ fn bedrock_embedding_io_managed_region_secret_is_read_off_runtime() {
     let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
     let mut parameters = raw(&[]);
     let variables = environment(&[("AWS_REGION_NAME", "us-east-1")]);
+    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
     let loaded = runtime()
         .block_on(load_credentials(
             CredentialRequest {
@@ -78,6 +81,7 @@ fn bedrock_embedding_io_managed_region_secret_is_read_off_runtime() {
                 bearer_token: None,
             },
             &secrets,
+            &region_worker,
             source.resolve(),
         ))
         .expect("the managed region secret loads");
@@ -104,16 +108,19 @@ fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
     }));
     let (release_tx, release_worker) = start_gate_release_worker(Arc::clone(&gate));
     let runtime = single_worker_runtime();
-    let mut parameters = raw(&[]);
-    let variables = environment(&[]);
-    let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
-    let loaded = runtime.block_on(async {
-        let lookup = load_credentials(CredentialRequest {
+    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
+    let timed_out = runtime.block_on(async {
+        let mut parameters = raw(&[]);
+        let variables = environment(&[]);
+        let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
+        let lookup = load_credentials(
+            CredentialRequest {
                 optional_params: &mut parameters,
                 environment: &variables,
                 bearer_token: None,
             },
             &secrets,
+            &region_worker,
             source.resolve(),
         );
         tokio::pin!(lookup);
@@ -121,13 +128,30 @@ fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
             () = started.notified() => {}
             result = &mut lookup => panic!("managed lookup finished before it became pending: {result:?}"),
         }
-        let timed_out = tokio::time::timeout(Duration::from_millis(50), &mut lookup)
+        tokio::time::timeout(Duration::from_millis(50), &mut lookup)
             .await
-            .is_err();
-        assert!(timed_out, "timeout handling must run while the secret read waits");
-        release_tx.send(()).expect("the release worker is alive");
-        lookup.await.expect("the managed region lookup completes")
+            .is_err()
     });
+    assert!(
+        timed_out,
+        "timeout handling must run while the secret read waits"
+    );
+    release_tx.send(()).expect("the release worker is alive");
+    let mut parameters = raw(&[]);
+    let variables = environment(&[]);
+    let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
+    let loaded = runtime
+        .block_on(load_credentials(
+            CredentialRequest {
+                optional_params: &mut parameters,
+                environment: &variables,
+                bearer_token: None,
+            },
+            &secrets,
+            &region_worker,
+            source.resolve(),
+        ))
+        .expect("the worker drains cancelled lookups and handles the next one");
     release_worker.join().expect("the release worker completes");
     assert_eq!(loaded.region, "eu-north-1");
     assert!(!read_on_runtime.load(Ordering::SeqCst));

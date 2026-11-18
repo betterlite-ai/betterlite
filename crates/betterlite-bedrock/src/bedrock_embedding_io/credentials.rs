@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
+use std::thread::{self, JoinHandle};
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -10,7 +11,7 @@ use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient;
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
-use tokio::task::JoinSet;
+use tokio::sync::{mpsc, oneshot};
 
 use super::error::EmbeddingIoError;
 use crate::aws_endpoints::region::DEFAULT_AWS_REGION;
@@ -21,6 +22,67 @@ use crate::signing::target::auth_settings;
 
 const REGION_NAME_VARIABLE: &str = "AWS_REGION_NAME";
 const REGION_VARIABLE: &str = "AWS_REGION";
+const REGION_WORKER_QUEUE_CAPACITY: usize = 16;
+
+type RegionJob = Box<dyn FnOnce() + Send + 'static>;
+
+/// Owns the bounded worker that performs synchronous managed-secret reads outside Tokio.
+pub struct ManagedRegionWorker {
+    sender: Option<mpsc::Sender<RegionJob>>,
+    worker_thread: Option<JoinHandle<()>>,
+}
+
+impl ManagedRegionWorker {
+    /// Starts the owned thread that drains managed-region secret lookups.
+    #[must_use]
+    pub fn new() -> Result<Self, EmbeddingIoError> {
+        let (sender, mut receiver) = mpsc::channel(REGION_WORKER_QUEUE_CAPACITY);
+        let worker_thread = thread::Builder::new()
+            .name("bedrock-region-secret-reader".to_owned())
+            .spawn(move || {
+                while let Some(job) = receiver.blocking_recv() {
+                    job();
+                }
+            })
+            .map_err(|error| EmbeddingIoError::RegionWorkerStart {
+                message: error.to_string(),
+            })?;
+        Ok(Self {
+            sender: Some(sender),
+            worker_thread: Some(worker_thread),
+        })
+    }
+
+    async fn lookup(
+        &self,
+        environment: BTreeMap<String, String>,
+        secrets: SecretLookup,
+    ) -> Result<(Option<SecretString>, Option<SecretString>), EmbeddingIoError> {
+        let (answer, result) = oneshot::channel();
+        let job: RegionJob = Box::new(move || {
+            let _ = answer.send(region_secrets(&environment, &secrets));
+        });
+        let Some(sender) = self.sender.as_ref() else {
+            return Err(EmbeddingIoError::RegionWorkerUnavailable);
+        };
+        sender
+            .send(job)
+            .await
+            .map_err(|_closed| EmbeddingIoError::RegionWorkerUnavailable)?;
+        result
+            .await
+            .map_err(|_closed| EmbeddingIoError::RegionWorkerUnavailable)?
+    }
+}
+
+impl Drop for ManagedRegionWorker {
+    fn drop(&mut self) {
+        drop(self.sender.take());
+        if let Some(worker_thread) = self.worker_thread.take() {
+            let _ = worker_thread.join();
+        }
+    }
+}
 
 pub struct CredentialRequest<'source> {
     pub optional_params: &'source mut BTreeMap<String, Box<RawValue>>,
@@ -38,6 +100,7 @@ pub struct LoadedCredentials {
 pub async fn load_credentials<Resolve, Fut>(
     request: CredentialRequest<'_>,
     secrets: &SecretLookup,
+    region_worker: &ManagedRegionWorker,
     resolve: Resolve,
 ) -> Result<LoadedCredentials, EmbeddingIoError>
 where
@@ -47,7 +110,7 @@ where
     let auth = pop_aws_auth_params(request.optional_params)?;
     let region = match explicit_region(request.optional_params)? {
         Some(region) => region,
-        None => environment_region(request.environment, secrets).await?,
+        None => environment_region(request.environment, secrets, region_worker).await?,
     };
     if request.bearer_token.is_some() {
         return Ok(LoadedCredentials {
@@ -78,18 +141,12 @@ fn explicit_region(
 async fn environment_region(
     environment: &BTreeMap<String, String>,
     secrets: &SecretLookup,
+    region_worker: &ManagedRegionWorker,
 ) -> Result<String, EmbeddingIoError> {
-    // Secret manager reads use synchronous HTTP clients; own their inputs and await outside Tokio.
     let (name, standard) = if secrets.manager.is_some() {
-        let lookup_environment = environment.clone();
-        let lookup_secrets = owned_secret_lookup(secrets);
-        let mut workers = JoinSet::new();
-        workers.spawn_blocking(move || region_secrets(&lookup_environment, &lookup_secrets));
-        workers
-            .join_next()
-            .await
-            .ok_or(EmbeddingIoError::RegionWorkerClosed)?
-            .map_err(|source| EmbeddingIoError::RegionWorker { source })??
+        region_worker
+            .lookup(environment.clone(), owned_secret_lookup(secrets))
+            .await?
     } else {
         region_secrets(environment, secrets)?
     };

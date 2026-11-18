@@ -2,6 +2,7 @@ use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 use betterlite_prompts::arguments::json::Json;
 use serde_json::Number;
 
+use super::convert::encode_json;
 use super::error::EmbeddingIoError;
 use super::response::{EmbeddingReply, EmbeddingUsage, PromptTokenCounts};
 use crate::image_models::params::Field;
@@ -20,18 +21,18 @@ pub(super) fn titan_embedding_reply(response: TitanEmbeddingResponse) -> Embeddi
             image_count: Some(u64::from(counts.image_count)),
             query_count: None,
         });
-    finish_reply(
-        response.object,
-        response.model,
-        response.data,
-        EmbeddingUsage {
+    EmbeddingReply {
+        object: response.object,
+        data: response.data,
+        model: response.model,
+        usage: EmbeddingUsage {
             prompt_tokens: response.usage.prompt_tokens,
             completion_tokens: response.usage.completion_tokens,
             total_tokens: response.usage.total_tokens,
             prompt_tokens_details: details,
         },
-        Json::Null,
-    )
+        invocation_arn: Json::Null,
+    }
 }
 
 pub(super) enum ProviderResponse {
@@ -97,7 +98,12 @@ fn nova_usage(usage: nova::NovaUsage) -> ProviderUsage {
         image_count: Some(u64::from(counts.image_count)),
         query_count: None,
     });
-    provider_usage(usage.prompt_tokens, 0, usage.total_tokens, details)
+    ProviderUsage {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: 0,
+        total_tokens: usage.total_tokens,
+        prompt_tokens_details: details,
+    }
 }
 
 fn marengo_usage(usage: marengo::MarengoUsage) -> ProviderUsage {
@@ -105,25 +111,11 @@ fn marengo_usage(usage: marengo::MarengoUsage) -> ProviderUsage {
         image_count: counts.image_count,
         query_count: counts.query_count,
     });
-    provider_usage(
-        usage.prompt_tokens,
-        usage.completion_tokens,
-        usage.total_tokens,
-        details,
-    )
-}
-
-fn provider_usage(
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    total_tokens: u64,
-    prompt_tokens_details: Option<PromptTokenCounts>,
-) -> ProviderUsage {
     ProviderUsage {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-        prompt_tokens_details,
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+        prompt_tokens_details: details,
     }
 }
 
@@ -157,34 +149,18 @@ where
         Some(field) => encode_json(field)?,
         None => Json::Null,
     };
-    Ok(finish_reply(
-        RESPONSE_OBJECT,
+    Ok(EmbeddingReply {
+        object: RESPONSE_OBJECT,
         model,
-        embedding_records(records)?,
-        EmbeddingUsage {
+        data: embedding_records(records)?,
+        usage: EmbeddingUsage {
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             prompt_tokens_details: usage.prompt_tokens_details,
         },
-        arn,
-    ))
-}
-
-fn finish_reply(
-    object: &'static str,
-    model: String,
-    data: Vec<EmbeddingRecord>,
-    usage: EmbeddingUsage,
-    invocation_arn: Json,
-) -> EmbeddingReply {
-    EmbeddingReply {
-        object,
-        data,
-        model,
-        usage,
-        invocation_arn,
-    }
+        invocation_arn: arn,
+    })
 }
 
 // Nova declares embedding as list | str, and the shared record carries only those two shapes

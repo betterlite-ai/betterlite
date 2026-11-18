@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::bedrock_embedding_io::credentials::{
-    CredentialRequest as LoadRequest, load_credentials,
+    CredentialRequest as LoadRequest, ManagedRegionWorker, load_credentials,
 };
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_config::sections::bedrock_settings::{AwsSettings, SessionTagValue};
@@ -28,6 +28,7 @@ pub(crate) fn run(case: &Case) -> Result<Value, Failure> {
     let bearer = case.bearer_token.as_deref().map(SecretString::from);
     let source = Source::new(&case.credentials);
     let secrets = secrets();
+    let region_worker = ManagedRegionWorker::new()?;
     let loaded = runtime::block_on(load_credentials(
         LoadRequest {
             optional_params: &mut parameters,
@@ -35,6 +36,7 @@ pub(crate) fn run(case: &Case) -> Result<Value, Failure> {
             bearer_token: bearer.as_ref(),
         },
         &secrets,
+        &region_worker,
         |settings: &AwsSettings, region: &str| {
             source.record(settings, region);
             ready(Ok::<Credentials, CredentialError>(

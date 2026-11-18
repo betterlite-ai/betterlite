@@ -4,7 +4,9 @@ use secrecy::ExposeSecret as _;
 
 use super::fixture::{Source, credentials, environment, headers, now, runtime, secret_lookup};
 use crate::aws_settings::sources::Credentials;
-use crate::bedrock_embedding_io::credentials::{CredentialRequest, load_credentials};
+use crate::bedrock_embedding_io::credentials::{
+    CredentialRequest, ManagedRegionWorker, load_credentials,
+};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 
 const URL: &str =
@@ -12,6 +14,7 @@ const URL: &str =
 
 fn resolved(access: &str, secret_key: &str, token: &str, region: &str) -> (Credentials, String) {
     let source = Source::new(credentials(access, secret_key, Some(token)));
+    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
     let mut parameters = BTreeMap::new();
     let loaded = runtime()
         .block_on(load_credentials(
@@ -21,6 +24,7 @@ fn resolved(access: &str, secret_key: &str, token: &str, region: &str) -> (Crede
                 bearer_token: None,
             },
             &secret_lookup(None),
+            &region_worker,
             source.resolve(),
         ))
         .expect("the fixture credentials load");
