@@ -1,0 +1,33 @@
+task: B327
+deviations:
+  - what: The route_index byte parser rejects inputs over 1048576 bytes before allocation, where LiteLLM reads any length.
+    why: The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite limit. Existing structural field limits remain unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L46-L255
+  - what: A text content block whose text is missing or not a string is skipped when the last user message is read, where LiteLLM joins an empty string for a missing text and raises TypeError out of the pre-routing hook for a non-string one.
+    why: The block shape betterlite models allows both; skipping a block that carries no text follows the same rule as skipping an image block, and a request must not fail on a value the caller cannot see meaning in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L161-L181
+  - what: A file route's function_schemas, llm and metadata are ignored, so a dynamic route's LLM is never called and the sync order and dedup key omit the route metadata; LiteLLM keeps them, lets a dynamic route choose through its LLM, and falls back to the default model for a route that has function_schemas but no llm. betterlite also never builds the file's own encoder, which LiteLLM's from_json does and probes once at initialization.
+    why: The auto router selects by embedding similarity, and calling a second model from inside a routing decision is a paid call the bounded index cannot make; a configured file that relies on dynamic routes routes by its utterances instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L91-L99
+  - what: Ties among utterances with equal similarity and among routes with equal totals keep the earlier row's order, where LiteLLM's top-k selection goes through numpy argsort whose order for equal scores is unspecified.
+    why: A selected route must be deterministic, and the request asserts it exactly; the earlier row is the order both sides build the index in.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L243-L249
+  - what: A route score threshold that is not finite is rejected when the config is read, where LiteLLM accepts a NaN or infinite score_threshold and compares the route mean against it, a value Python's comparison semantics make the route never or always match.
+    why: The task requires rejecting nonfinite statistical input, and a rejected config names the malformed route instead of carrying a threshold whose comparison has no useful outcome.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L112-L118
+  - what: An unknown key in the inline route config or in a route file entry is rejected with an error naming the key, where LiteLLM reads the keys it knows and drops every other one, so a misspelled utterance key leaves the route with no utterances.
+    why: A dropped key changes routing without a word, and a route whose utterances or threshold silently vanish routes to the wrong model; the parse error names the field when the config is read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L101-L119
+  - what: A document embedding vector that holds a non-finite value or has zero norm fails the index build and reaches the caller, where LiteLLM scores every query against it as NaN and falls back to the default model.
+    why: A NaN score cannot be ordered deterministically, and an embedding the provider could not compute is a provider fault rather than a routing miss, so betterlite surfaces the build error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/litellm_encoder.py#L16-L24
+  - what: The cosine dot product is a sequential fused multiply-add, which bit-matches the pinned NumPy for the short vectors the oracle fixes but can differ in the last bit on longer ones, where NumPy's np.dot goes through a CPU-specific BLAS kernel.
+    why: The threshold boundary is decided by the norm reductions, which this does match exactly; a portable Rust build cannot reproduce an oracle machine's BLAS kernel, and a mean within one ulp of a threshold is not a stable selection on any build.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L230-L244
+  - what: 'Two routes whose composed sync strings collide, such as route "a" with utterance "b: c" and route "a: b" with utterance "c", both keep a row, where LiteLLM''s sync map keys utterances by that string and keeps the last of the two.'
+    why: Collapsing them would need the whole composed string per row, the allocation that sharing the route name and deduplicating before row expansion just removed, and only a config that reads one route's name and text across the separator can produce the collision.
+    link: ''
+  - what: Each embedding call is bounded at 6000 seconds, the pinned default of litellm.request_timeout, and neither a configured request timeout nor the REQUEST_TIMEOUT environment variable changes it, where LiteLLM's embedding call reads its deadline from that global setting.
+    why: The auto router's build and query calls need a finite deadline; the router's request timeout setting is wired by its own task, so this bound stays at the pinned default until it lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568
+kept_bugs: []

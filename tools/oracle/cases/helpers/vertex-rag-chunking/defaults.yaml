@@ -1,0 +1,10 @@
+kind: helper
+name: defaults
+call:
+  vertex_rag_chunking:
+    cases:
+      - {}
+      - chunking_strategy: null
+      - chunking_strategy: {}
+env: {}
+compare: {ignore: []}
