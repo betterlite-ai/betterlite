@@ -27,6 +27,21 @@ deviations:
       can't hold instead of copying Python's duck typing. The write path that stores the metadata is where the shape
       should hold; the read reports an internal error when it doesn't.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3537-L3546
+  - what: >-
+      A stored pass-through record that fails validation answers 500 with betterlite's internal error body. LiteLLM
+      lets the pydantic ValidationError escape, so FastAPI answers its generic plain-text 500 body instead.
+    why: >-
+      betterlite reports every internal failure through one JSON envelope that carries a type, and the status is
+      500 in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3484
+  - what: >-
+      A team lookup that fails, or team metadata that is not a JSON object, answers 500 with betterlite's internal
+      error body. LiteLLM lets the database error or the AttributeError from calling .get on a non-mapping escape,
+      so FastAPI answers its generic plain-text 500 body instead.
+    why: >-
+      Same envelope and the same status as the other internal failures this read reports; the escaping exception
+      is Python's runtime behavior, not a declared answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L3524-L3547
 kept_bugs:
   - what: >-
       A failed general settings read answers no database endpoints and still returns the config endpoints with 200. The
