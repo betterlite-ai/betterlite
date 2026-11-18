@@ -1,0 +1,24 @@
+task: B1511
+deviations:
+  - what: An instructions value that is not a string fails with a typed 400 that names the field. LiteLLM tests base_instructions not in existing_instructions, raises TypeError for a list or an integer, and the request ends as a 500.
+    why: A caller mistake is a 4xx, and the message names the field instead of reporting an internal type error. Tested by request_rejects_instructions_that_are_not_text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L83-L89
+  - what: An include value that is not a list fails with a typed 400 that names the field. LiteLLM calls list(request.get("include") or []), raises TypeError when the value is not iterable, and the request ends as a 500.
+    why: The same 500 becomes a field-named 400. A string include follows docs/compatibility.md instead, since LiteLLM iterates it into one character per item. Tested by request_rejects_a_non_list_include.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L92-L95
+  - what: A device-code or refresh login failure keeps the failure's own status and message, 408 for an expired device code and 429 for a refused refresh token. LiteLLM translates only GetAccessTokenError into AuthenticationError, so a GetDeviceCodeError leaves validate_environment uncaught and the request ends as a 500.
+    why: A login that failed is not an internal error, and B1509's login error already carries the status of the failure. Tested by environment_keeps_a_login_failure_status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L54-L61
+  - what: The buffered body is split on CR and LF only, so a JSON string that carries a Unicode line separator is recovered. Python's str.splitlines also splits on U+2028, U+2029, U+0085 and the file separators, which cuts such an event in half and drops its text from the recovered output.
+    why: Dropping a recorded output item loses text the provider sent. Tested by sse_handles_carriage_return_line_ends_and_unicode_separators.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L159
+  - what: A completed event whose response fails the typed record is returned with only the fields the event sent. LiteLLM builds it with ResponsesAPIResponse.model_construct, whose defaults render every unset optional field as null.
+    why: The shared reply type carries the parsed fields as sent instead of inventing values for fields the provider left out. Tested by sse_keeps_a_payload_no_record_holds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L214-L217
+kept_bugs:
+  - what: The first response.completed event ends the scan even when its response is not an object, so a later valid completed event is never read and the call fails at the provider status.
+    why: The task pins the first-completed termination and the oracle case chatgpt-responses-first-completed compares it; a ChatGPT stream carries one completed event, so a working setup never reaches a later one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L180-L191
+  - what: "A dict-shaped error is rendered with Python's str(), so the message carries a Python dict literal such as {'code': 'x'} instead of JSON."
+    why: The task requires the most recent failed/error message, and a caller that matches on LiteLLM's message text keeps working. Tested by sse_reads_a_failure_from_the_response_field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L219-L225
