@@ -1,0 +1,22 @@
+kind: probe
+name: duplicate-and-reserved-group
+probes:
+  - clock: {unix_millis: 1700000001200, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        groups:
+          - {group_name: dup, models: [probe-a], routing_strategy: simple-shuffle}
+          - {group_name: dup, models: [probe-b], routing_strategy: least-busy}
+        deployments:
+          - {model_name: probe-a, identifier: a1, model: "openai/probe-a"}
+          - {model_name: probe-b, identifier: b1, model: "openai/probe-b"}
+  - clock: {unix_millis: 1700000001201, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        groups:
+          - {group_name: default, models: [probe-a], routing_strategy: simple-shuffle}
+        deployments:
+          - {model_name: probe-a, identifier: a1, model: "openai/probe-a"}
+compare: {ignore: []}

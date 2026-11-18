@@ -227,6 +227,7 @@ async fn narrowed_pool(
     };
     set = context::run(RouteStage::TagRouting, set, context).await?;
     set = context::run(RouteStage::RoutingPlugins, set, context).await?;
+    set = context::run(RouteStage::RoutingGroups, set, context).await?;
     set = CandidateSet {
         deployments: get_order_filtered_deployments(
             set.deployments,
