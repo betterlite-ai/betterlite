@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -21,7 +21,7 @@ use crate::otel::legacy_lifecycle::lifecycle::{
 };
 use crate::otel::legacy_lifecycle::tracer::{BaseDynamicOtel, DynamicOtel as _, TracerChoice};
 use crate::otel::legacy_policy::capture::LoggingFlags;
-use crate::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
+use crate::otel::legacy_policy::config::OpenTelemetryConfig;
 use crate::otel::legacy_policy::span_time::SpanTime;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -57,28 +57,6 @@ fn shared_clients() -> HttpClients {
     }
 }
 
-fn in_memory_config() -> OpenTelemetryConfig {
-    OpenTelemetryConfig {
-        exporter: Exporter::InMemory,
-        endpoint: None,
-        headers: None,
-        signals: Signals {
-            enable_metrics: false,
-            enable_events: false,
-        },
-        service_name: String::new(),
-        deployment_environment: String::new(),
-        model_id: String::new(),
-        ignore_context_propagation: false,
-        skip_set_global: false,
-        capture_message_content: None,
-        semconv_stability_opt_in: BTreeSet::new(),
-        baggage_team_metadata_keys: Vec::new(),
-        baggage_metadata_keys: Vec::new(),
-        attributes: None,
-    }
-}
-
 struct Rig {
     env: BTreeMap<String, String>,
     globals: GlobalProviders,
@@ -100,7 +78,10 @@ impl Rig {
 
     fn weave(&self) -> LegacyLifecycle {
         weave_lifecycle(
-            self.init(in_memory_config(), Some(CALLBACK_NAME)),
+            self.init(
+                OpenTelemetryConfig::from_env(&self.env),
+                Some(CALLBACK_NAME),
+            ),
             self.options(),
         )
     }
@@ -256,8 +237,10 @@ fn weave_start_primary_span_creates_a_child_where_the_base_reuses_the_parent() {
     );
 
     let base_rig = Rig::new();
-    let base =
-        LegacyLifecycle::from_otel(base_rig.init(in_memory_config(), None), base_rig.options());
+    let base = LegacyLifecycle::from_otel(
+        base_rig.init(OpenTelemetryConfig::from_env(&base_rig.env), None),
+        base_rig.options(),
+    );
     let base_parent = base_rig.parent(&base, "wrapper");
     let base_kwargs = simple_kwargs("call-base-parent");
     let guard = attach(&base_parent.context).attach();
@@ -396,7 +379,7 @@ fn weave_suppresses_a_duplicate_success_for_one_request() {
 #[test]
 fn weave_honors_ignore_context_propagation() {
     let rig = Rig::new();
-    let mut config = in_memory_config();
+    let mut config = OpenTelemetryConfig::from_env(&rig.env);
     config.ignore_context_propagation = true;
     let lifecycle = weave_lifecycle(rig.init(config, Some(CALLBACK_NAME)), rig.options());
     let parent = rig.parent(&lifecycle, "wrapper");
