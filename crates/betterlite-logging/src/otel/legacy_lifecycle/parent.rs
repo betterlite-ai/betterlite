@@ -26,7 +26,8 @@ pub fn proxy_carrier<'kwargs>(
     let direct = params
         .and_then(|fields| fields.get("metadata"))
         .and_then(OtelModelValue::as_object)
-        .and_then(|fields| fields.get(PARENT_SPAN_KEY));
+        .and_then(|fields| fields.get(PARENT_SPAN_KEY))
+        .filter(|value| !matches!(value, OtelModelValue::Null(())));
     if direct.is_some() || !with_litellm_metadata {
         return direct;
     }

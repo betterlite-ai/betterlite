@@ -1,4 +1,5 @@
 use crate::otel::legacy_exporters::error::LegacyExporterError;
+use crate::otel::legacy_exporters::headers::HeadersError;
 use crate::otel::legacy_metrics::error::LegacyMetricsError;
 use crate::otel::model::metadata::wire::MetadataError;
 use crate::private_json::error::PrivateJsonError;
@@ -7,6 +8,8 @@ use crate::private_json::error::PrivateJsonError;
 pub enum LegacyLifecycleError {
     #[error(transparent)]
     Exporter(#[from] LegacyExporterError),
+    #[error(transparent)]
+    Headers(#[from] HeadersError),
     #[error(transparent)]
     Metrics(#[from] LegacyMetricsError),
     #[error(transparent)]

@@ -454,3 +454,37 @@ fn legacy_lifecycle_emits_semantic_logs_on_success() {
             .is_empty()
     );
 }
+
+#[rstest::rstest]
+#[case::success(false)]
+#[case::failure(true)]
+fn legacy_lifecycle_ignores_parent_when_configured(#[case] failure: bool) {
+    let rig = Rig::new();
+    let mut config = in_memory_config();
+    config.ignore_context_propagation = true;
+    let lifecycle = rig.with_options(config, None, None, false);
+    let parent = rig.parent(&lifecycle, "upstream");
+    let mut kwargs = simple_kwargs("ignored-parent");
+    crate::support::carry_in(&mut kwargs, "metadata", &parent);
+    let context = attach(&parent.context);
+    let guard = Context::attach(&context);
+
+    if failure {
+        lifecycle
+            .handle_failure(&call(&kwargs))
+            .expect("failure lifecycle");
+    } else {
+        lifecycle
+            .handle_success(&call(&kwargs))
+            .expect("success lifecycle");
+    }
+    drop(guard);
+
+    let primary = rig.span("litellm_request");
+    assert_eq!(
+        primary.parent_span_id,
+        opentelemetry::trace::SpanId::INVALID
+    );
+    assert_ne!(primary.span_context.trace_id(), parent.context.trace_id());
+    assert!(parent.lock().is_recording());
+}

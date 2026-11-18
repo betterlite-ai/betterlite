@@ -170,3 +170,34 @@ fn proxy_span_team_attributes_read_only_the_provider_bucket() {
         "the litellm_metadata carrier is only the close fallback"
     );
 }
+
+#[test]
+fn proxy_span_null_carrier_uses_the_proxy_bucket() {
+    use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let proxy = rig.parent(&lifecycle, PROXY);
+    let mut kwargs = simple_kwargs("null-carrier");
+    carry_in(&mut kwargs, "litellm_metadata", &proxy);
+    let Some(OtelModelValue::Object(params)) = kwargs.get_mut("litellm_params") else {
+        panic!("litellm_params must be an object");
+    };
+    let Some(OtelModelValue::Object(metadata)) = params.get_mut("metadata") else {
+        panic!("metadata must be an object");
+    };
+    metadata.insert(
+        "litellm_parent_otel_span".to_owned(),
+        OtelModelValue::Null(()),
+    );
+
+    lifecycle.handle_success(&call(&kwargs)).expect("success");
+
+    assert!(!proxy.lock().is_recording());
+    let span = rig.span(PROXY);
+    assert_eq!(span.status, Status::Ok);
+    assert_eq!(
+        attribute(&span, "http.response.status_code"),
+        Some(&opentelemetry::Value::I64(200))
+    );
+}

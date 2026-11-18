@@ -18,7 +18,7 @@ use super::lifecycle::{DEFAULT_CALLBACK_NAME, LegacyLifecycle, LifecycleCall};
 
 // the legacy OpenTelemetry logger as the callback trait sees it: one event payload per lifecycle call
 pub struct LegacyOtelLogger {
-    pub lifecycle: Arc<LegacyLifecycle>,
+    lifecycle: Arc<LegacyLifecycle>,
     callback_name: String,
 }
 
@@ -66,26 +66,13 @@ impl LegacyOtelLogger {
 
     // LiteLLM hands its callbacks the request kwargs; the typed event carries the same fields
     fn event_kwargs(&self, event: &LoggerEvent) -> Result<MetadataMap, LoggerError> {
-        let params = MetadataMap::from([
-            (
-                "metadata".to_owned(),
-                self.encoded(&event.payload.metadata)?,
-            ),
-            (
-                "litellm_metadata".to_owned(),
-                self.encoded(&*event.litellm_metadata)?,
-            ),
-            (
-                "litellm_session_id".to_owned(),
-                OtelModelValue::String(event.payload.session_id.clone()),
-            ),
-        ]);
         Ok(MetadataMap::from([
             (
                 "standard_logging_object".to_owned(),
                 self.encoded(&*event.payload)?,
             ),
-            ("litellm_params".to_owned(), OtelModelValue::Object(params)),
+            ("litellm_params".to_owned(), self.event_params(event)?),
+            ("optional_params".to_owned(), self.optional_params(event)?),
             (
                 "standard_callback_dynamic_params".to_owned(),
                 self.encoded(&*event.dynamic_params)?,
@@ -99,6 +86,39 @@ impl LegacyOtelLogger {
                 OtelModelValue::String(event.payload.call_type.clone()),
             ),
         ]))
+    }
+
+    fn event_params(&self, event: &LoggerEvent) -> Result<OtelModelValue, LoggerError> {
+        Ok(OtelModelValue::Object(MetadataMap::from([
+            (
+                "metadata".to_owned(),
+                self.encoded(&event.payload.metadata)?,
+            ),
+            (
+                "litellm_metadata".to_owned(),
+                self.encoded(&*event.litellm_metadata)?,
+            ),
+            (
+                "litellm_session_id".to_owned(),
+                OtelModelValue::String(event.payload.session_id.clone()),
+            ),
+            (
+                "custom_llm_provider".to_owned(),
+                self.encoded(&event.payload.custom_llm_provider)?,
+            ),
+        ])))
+    }
+
+    fn optional_params(&self, event: &LoggerEvent) -> Result<OtelModelValue, LoggerError> {
+        let mut params = event
+            .payload
+            .model_parameters
+            .iter()
+            .map(|(key, value)| self.encoded(value).map(|encoded| (key.clone(), encoded)))
+            .collect::<Result<MetadataMap, LoggerError>>()?;
+        // The event's stream flag is authoritative even if the parameter snapshot carries a stale value.
+        params.insert("stream".to_owned(), OtelModelValue::Bool(event.stream));
+        Ok(OtelModelValue::Object(params))
     }
 
     fn encoded<T>(&self, value: &T) -> Result<OtelModelValue, LoggerError>

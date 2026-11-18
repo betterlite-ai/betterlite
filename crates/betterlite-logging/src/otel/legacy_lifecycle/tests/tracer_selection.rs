@@ -128,3 +128,27 @@ fn tracer_selection_branch_names_match_the_choice() {
     assert_eq!(TracerChoice::EnvHeaders(headers).branch(), "env_headers");
     assert_eq!(TracerChoice::Global.branch(), "global");
 }
+
+#[test]
+fn tracer_selection_preserves_header_parse_errors() {
+    use betterlite_logging::otel::legacy_exporters::headers::HeadersError;
+    use betterlite_logging::otel::legacy_lifecycle::error::LegacyLifecycleError;
+    use betterlite_logging::otel::legacy_lifecycle::tracer::tracer_choice;
+
+    let mut config = in_memory_config();
+    config.headers = Some("missing-separator".to_owned());
+
+    let result = tracer_choice(
+        &config,
+        Some("langfuse_otel"),
+        &BaseDynamicOtel,
+        &MetadataMap::new(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(LegacyLifecycleError::Headers(
+            HeadersError::MissingSeparator { position: 1 }
+        ))
+    ));
+}

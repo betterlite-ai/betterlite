@@ -80,13 +80,13 @@ pub struct LegacyLifecycle {
     pub tracer_cache: DynamicTracerCache,
     pub capture_policy: CapturePolicy,
     pub live: Arc<RootSpans>,
-    dynamic: Arc<dyn DynamicOtel>,
-    pub(super) metrics: Option<LegacyMetricRecorder>,
-    pub(super) events: Option<SemanticEventEmitter>,
-    failure_counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
-    pub(super) dedupe: RequestDedupe,
-    pub(super) clock: Box<dyn Clock>,
-    pub(super) use_request_span: bool,
+    pub dynamic: Arc<dyn DynamicOtel>,
+    pub metrics: Option<LegacyMetricRecorder>,
+    pub events: Option<SemanticEventEmitter>,
+    pub failure_counters: Vec<Arc<dyn CallbackFailureCounter + Send + Sync>>,
+    pub dedupe: RequestDedupe,
+    pub clock: Box<dyn Clock>,
+    pub use_request_span: bool,
 }
 
 impl LegacyLifecycle {

@@ -262,3 +262,25 @@ fn guardrail_spans_skip_null_payload_attributes(#[case] key: &str) {
     let span = &guardrails(&rig)[0];
     assert_eq!(attribute(span, key), None);
 }
+
+#[test]
+fn guardrail_spans_on_failure_are_children_of_the_error_span() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let mut kwargs = simple_kwargs("failed-guardrail");
+    with_guardrails(&mut kwargs, json!([entry()]));
+
+    lifecycle
+        .handle_failure(&call(&kwargs))
+        .expect("failure lifecycle");
+
+    let primary = rig.span("litellm_request");
+    assert!(matches!(
+        primary.status,
+        opentelemetry::trace::Status::Error { .. }
+    ));
+    let spans = guardrails(&rig);
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].parent_span_id, primary.span_context.span_id());
+    assert_eq!(text_attribute(&spans[0], "guardrail_name"), "pii");
+}

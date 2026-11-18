@@ -9,7 +9,7 @@ use indexmap::IndexMap;
 use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
 
-use crate::support::{END, Rig, START, instant};
+use crate::support::{END, Rig, START, attribute, in_memory_config, instant, text_attribute};
 
 const PAYLOAD: &str = r#"{
     "id": "chatcmpl-1",
@@ -18,6 +18,7 @@ const PAYLOAD: &str = r#"{
     "call_type": "completion",
     "response_cost": 0.5,
     "status": "success",
+    "status_fields": {"llm_api_status": "success", "guardrail_status": "not_run"},
     "total_tokens": 5,
     "prompt_tokens": 2,
     "completion_tokens": 3,
@@ -26,6 +27,7 @@ const PAYLOAD: &str = r#"{
     "completionStartTime": 1704067200.5,
     "response_time": 1.0,
     "model": "gpt-4o",
+    "model_map_information": {},
     "messages": [{"role": "user", "content": "secret request"}],
     "api_base": "https://api.openai.com",
     "metadata": {},
@@ -145,4 +147,64 @@ fn callback_logger_bool_turn_off_redacts_span_content() {
         .expect("success");
     assert!(has_secret(&rig.span("litellm_request")));
     success_redacts(Json::Bool(true));
+}
+
+#[rstest::rstest]
+#[case::streaming(true, "True")]
+#[case::non_streaming(false, "False")]
+fn callback_logger_preserves_request_attributes(#[case] stream: bool, #[case] expected: &str) {
+    let rig = Rig::new();
+    let logger = LegacyOtelLogger::new(Arc::new(rig.in_memory(None)));
+    let mut request = event("request-attributes");
+    request.stream = stream;
+    let payload = Arc::make_mut(&mut request.payload);
+    payload.custom_llm_provider = Some("openai".to_owned());
+    payload.model_parameters = serde_json::from_str(
+        r#"{"max_tokens":128,"temperature":0.5,"top_p":0.75,"user":"user-1","stream":null}"#,
+    )
+    .expect("model parameters");
+
+    logger.log_success_event(&request).expect("success");
+
+    let primary = rig.span("litellm_request");
+    assert_eq!(text_attribute(&primary, "gen_ai.system"), "openai");
+    assert_eq!(text_attribute(&primary, "llm.is_streaming"), expected);
+    assert_eq!(
+        attribute(&primary, "gen_ai.request.max_tokens"),
+        Some(&opentelemetry::Value::I64(128))
+    );
+    assert_eq!(
+        attribute(&primary, "gen_ai.request.temperature"),
+        Some(&opentelemetry::Value::F64(0.5))
+    );
+    assert_eq!(
+        attribute(&primary, "gen_ai.request.top_p"),
+        Some(&opentelemetry::Value::F64(0.75))
+    );
+    assert_eq!(text_attribute(&primary, "llm.user"), "user-1");
+}
+
+#[test]
+fn callback_logger_preserves_semconv_provider() {
+    use betterlite_logging::otel::vocabulary::semconv::OTELSemconvCategory;
+
+    let rig = Rig::new();
+    let mut config = in_memory_config();
+    config
+        .semconv_stability_opt_in
+        .insert(OTELSemconvCategory::GenAiLatestExperimental);
+    let logger = LegacyOtelLogger::new(Arc::new(rig.with_options(config, None, None, false)));
+    let mut request = event("semconv-provider");
+    request.stream = true;
+    Arc::make_mut(&mut request.payload).custom_llm_provider = Some("openai".to_owned());
+
+    logger.log_success_event(&request).expect("success");
+
+    let spans = rig.spans();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(text_attribute(&spans[0], "gen_ai.provider.name"), "openai");
+    assert_eq!(
+        attribute(&spans[0], "gen_ai.request.stream"),
+        Some(&opentelemetry::Value::Bool(true))
+    );
 }
