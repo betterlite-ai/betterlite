@@ -1,4 +1,4 @@
-from typing import Final, override
+from typing import Final
 
 import httpx
 import litellm
@@ -7,6 +7,7 @@ from litellm.llms.base_llm.embedding.transformation import BaseEmbeddingConfig
 from litellm.llms.cohere.embed.v1_transformation import _SupportsEncode  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L20-L23
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 from .configs import COHERE, CONFIG_NAMES, HF, LOG, LOG_START, MODEL
 from .types import (
