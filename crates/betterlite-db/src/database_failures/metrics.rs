@@ -2,6 +2,7 @@ use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
@@ -10,7 +11,7 @@ use opentelemetry::trace::SpanContext;
 use serde::{Deserialize, Serialize};
 use tokio_util::task::TaskTracker;
 
-use crate::database_faults::{self, DbError};
+use crate::database_faults::{self, DbError, ErrorType};
 
 use super::deadline::DbLookupError;
 
@@ -77,11 +78,34 @@ pub trait ProxySpanResolver: Send + Sync {
     fn parent_span(&self, passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext>;
 }
 
+pub trait WallClock: Send + Sync {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SystemWallClock;
+
+impl WallClock for SystemWallClock {
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
+
 pub struct DbMetricCall<'call> {
     pub function_name: &'call str,
     pub parent_otel_span: Option<SpanContext>,
     pub table_name: Option<&'call Json>,
     pub second_positional: Option<&'call Json>,
+}
+
+pub struct DbMetricContext<'context, Sink>
+where
+    Sink: DbServiceEventSink,
+{
+    pub sink: Arc<Sink>,
+    pub resolver: &'context dyn ProxySpanResolver,
+    pub clock: &'context dyn WallClock,
+    pub tasks: &'context TaskTracker,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -98,18 +122,22 @@ where
 pub async fn log_db_metrics<Operation, Output, Sink>(
     operation: Operation,
     call: &DbMetricCall<'_>,
-    sink: Arc<Sink>,
-    resolver: &dyn ProxySpanResolver,
-    tasks: &TaskTracker,
+    context: DbMetricContext<'_, Sink>,
 ) -> Result<Output, DbMetricError<Sink::Failure>>
 where
     Operation: Future<Output = Result<Output, DbLookupError>> + Send,
     Sink: DbServiceEventSink + 'static,
 {
-    let start_time = Utc::now();
+    let DbMetricContext {
+        sink,
+        resolver,
+        clock,
+        tasks,
+    } = context;
+    let start_time = clock.now();
     match operation.await {
         Ok(output) => {
-            let times = event_times(start_time);
+            let times = event_times(clock, start_time);
             if let Some(event) = success_event(call, times, resolver) {
                 drop(tasks.spawn(async move {
                     if let Err(failure) = sink.success(event).await {
@@ -120,7 +148,7 @@ where
             Ok(output)
         }
         Err(error) => {
-            let times = event_times(start_time);
+            let times = event_times(clock, start_time);
             if let Some(failure) = db_service_failure(&error) {
                 let event = failure_event(call, times, failure.clone());
                 sink.failure(event).await.map_err(DbMetricError::Metric)?;
@@ -135,7 +163,10 @@ fn db_service_failure(error: &DbLookupError) -> Option<&DbError> {
         return None;
     };
     let related = database_faults::is_prisma_error(db_error.error_type)
-        || database_faults::is_database_connection_error(db_error.error_type);
+        || matches!(
+            db_error.error_type,
+            ErrorType::Connect | ErrorType::ConnectTimeout | ErrorType::ReadTimeout
+        );
     related.then_some(db_error)
 }
 
@@ -212,18 +243,24 @@ struct EventTimes {
     end: DateTime<Utc>,
 }
 
-fn event_times(start: DateTime<Utc>) -> EventTimes {
+fn event_times(clock: &dyn WallClock, start: DateTime<Utc>) -> EventTimes {
     EventTimes {
         start,
-        end: Utc::now(),
+        end: clock.now(),
     }
 }
 
 fn elapsed_seconds(times: EventTimes) -> f64 {
-    times
+    let micros = times
         .end
         .signed_duration_since(times.start)
-        .to_std()
-        .unwrap_or_default()
-        .as_secs_f64()
+        .num_microseconds()
+        .unwrap_or_default();
+    let magnitude = Duration::from_micros(micros.unsigned_abs()).as_secs_f64();
+    let sign = if micros.is_negative() {
+        -1.0_f64
+    } else {
+        1.0_f64
+    };
+    magnitude.copysign(sign)
 }

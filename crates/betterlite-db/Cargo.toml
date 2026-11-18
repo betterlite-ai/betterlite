@@ -61,6 +61,7 @@ whoami = "2.1.3"
 
 [dev-dependencies]
 aws-smithy-types = "=1.9.1"
+betterlite-logging = { path = "../betterlite-logging" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }

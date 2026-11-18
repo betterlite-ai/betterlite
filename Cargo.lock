@@ -1691,6 +1691,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-env",
  "betterlite-lens",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-policy",

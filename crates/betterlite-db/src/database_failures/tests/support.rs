@@ -1,13 +1,23 @@
 #![cfg(test)]
 
+use std::collections::VecDeque;
 use std::future::Future;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_logging::otel::model::metadata::wire::callback::Params;
+use betterlite_logging::otel::model::metadata::wire::decode;
+use betterlite_logging::otel::model::metadata::wire::payload::Metadata;
+use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_logging::otel::plumbing::context::parent_span::{
+    ParentSpanSources, parent_otel_span_from_kwargs,
+};
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
+use serde::Deserialize;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
@@ -15,8 +25,9 @@ use tracing_subscriber::fmt::{MakeWriter, fmt};
 use crate::database_failures::deadline::{DbLookupError, LookupRequest};
 use crate::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use crate::database_failures::metrics::{
-    DbMetricCall, DbMetricError, DbMetricFuture, DbServiceEvent, DbServiceEventSink,
-    DbServiceFailureEvent, ProxySpanResolver, log_db_metrics,
+    DbMetricCall, DbMetricContext, DbMetricError, DbMetricFuture, DbServiceEvent,
+    DbServiceEventSink, DbServiceFailureEvent, ProxySpanResolver, SystemWallClock, WallClock,
+    log_db_metrics,
 };
 use crate::database_faults::{DbError, ErrorType};
 
@@ -139,6 +150,51 @@ impl ProxySpanResolver for RecordingResolver {
     }
 }
 
+pub(super) struct RecordingWallClock {
+    times: Mutex<VecDeque<DateTime<Utc>>>,
+}
+
+impl RecordingWallClock {
+    pub(super) fn new(times: Vec<DateTime<Utc>>) -> Self {
+        Self {
+            times: Mutex::new(VecDeque::from(times)),
+        }
+    }
+}
+
+impl WallClock for RecordingWallClock {
+    fn now(&self) -> DateTime<Utc> {
+        self.times
+            .lock()
+            .expect("the recording clock is not poisoned")
+            .pop_front()
+            .expect("the test supplies a time for every read")
+    }
+}
+
+pub(super) const PARENT_SPAN_KEY: &str = "litellm_parent_otel_span";
+
+#[derive(Deserialize)]
+struct MetricKwargs {
+    metadata: Option<Metadata>,
+    litellm_params: Option<Params>,
+    litellm_parent_otel_span: Option<OtelModelValue>,
+}
+
+pub(super) struct SharedSpanResolver;
+
+impl ProxySpanResolver for SharedSpanResolver {
+    fn parent_span(&self, passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext> {
+        let text = serde_json::to_string(passed_kwargs).ok()?;
+        let kwargs: MetricKwargs = decode(&text).ok()?;
+        parent_otel_span_from_kwargs(&ParentSpanSources {
+            metadata: kwargs.metadata.as_ref(),
+            params: kwargs.litellm_params.as_ref(),
+            span: kwargs.litellm_parent_otel_span.as_ref(),
+        })
+    }
+}
+
 pub(super) const fn metric_call(function_name: &str) -> DbMetricCall<'_> {
     DbMetricCall {
         function_name,
@@ -201,11 +257,18 @@ pub(super) async fn run_metric<Operation, Output>(
     operation: Operation,
     call: &DbMetricCall<'_>,
     sink: &Arc<RecordingSink>,
-    resolver: &RecordingResolver,
+    resolver: &dyn ProxySpanResolver,
     tasks: &TaskTracker,
 ) -> Result<Output, DbMetricError<SinkFault>>
 where
     Operation: Future<Output = Result<Output, DbLookupError>> + Send,
 {
-    log_db_metrics(operation, call, Arc::clone(sink), resolver, tasks).await
+    let clock = SystemWallClock;
+    let context = DbMetricContext {
+        sink: Arc::clone(sink),
+        resolver,
+        clock: &clock,
+        tasks,
+    };
+    log_db_metrics(operation, call, context).await
 }

@@ -5,19 +5,22 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use rstest::rstest;
 use tokio_util::task::TaskTracker;
 
 use crate::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
 use crate::database_failures::metrics::{
-    DbEventMetadata, DbMetricCall, DbMetricError, DbService, safe_db_event_metadata,
+    DbEventMetadata, DbMetricCall, DbMetricContext, DbMetricError, DbService, SystemWallClock,
+    WallClock, log_db_metrics, safe_db_event_metadata,
 };
 use crate::database_faults::ErrorType;
 
 use super::support::{
-    RecordingResolver, RecordingSink, SinkFault, capture_logs, database_error, drain, failures,
-    metric_call, run_metric, span, successes,
+    PARENT_SPAN_KEY, RecordingResolver, RecordingSink, RecordingWallClock, SharedSpanResolver,
+    SinkFault, capture_logs, database_error, drain, failures, metric_call, run_metric, span,
+    successes,
 };
 
 #[tokio::test]
@@ -319,43 +322,117 @@ async fn proxy_args_second_dictionary() {
     );
 }
 
+fn spanned(value: &str) -> Json {
+    Json::Object(IndexMap::from([(
+        PARENT_SPAN_KEY.to_owned(),
+        Json::Text(format!("00-{value}-b7ad6b7169203331-01")),
+    )]))
+}
+
 #[tokio::test]
 async fn proxy_span_uses_shared_resolver() {
     let tasks = TaskTracker::new();
     let sink = Arc::new(RecordingSink::default());
-    let expected = IndexMap::from([(
-        "parent_otel_span".to_owned(),
-        Json::Text("inner".to_owned()),
-    )]);
-    let kwargs = Json::Object(expected.clone());
-    let resolver = RecordingResolver {
-        span: Some(span(6)),
-        seen: Mutex::new(Vec::new()),
-    };
-    let call = DbMetricCall {
+    let metadata_trace = "4bf92f3577b34da6a3ce929d0e0e4736";
+    let params_trace = "0af7651916cd43dd8448eb211c80319c";
+    let top_level_trace = "11111111111111111111111111111111";
+    let both = Json::Object(IndexMap::from([
+        ("metadata".to_owned(), spanned(metadata_trace)),
+        (
+            "litellm_params".to_owned(),
+            Json::Object(IndexMap::from([(
+                "metadata".to_owned(),
+                spanned(params_trace),
+            )])),
+        ),
+        (PARENT_SPAN_KEY.to_owned(), spanned(top_level_trace)),
+    ]));
+    let params_only = Json::Object(IndexMap::from([
+        (
+            "litellm_params".to_owned(),
+            Json::Object(IndexMap::from([(
+                "metadata".to_owned(),
+                spanned(params_trace),
+            )])),
+        ),
+        (PARENT_SPAN_KEY.to_owned(), spanned(top_level_trace)),
+    ]));
+    let top_level_only = Json::Object(IndexMap::from([(
+        PARENT_SPAN_KEY.to_owned(),
+        spanned(top_level_trace),
+    )]));
+    let from_metadata = DbMetricCall {
         function_name: "PROXY_batch_write",
         parent_otel_span: Some(span(7)),
         table_name: None,
-        second_positional: Some(&kwargs),
+        second_positional: Some(&both),
+    };
+    let from_params = DbMetricCall {
+        function_name: "PROXY_batch_write",
+        parent_otel_span: Some(span(7)),
+        table_name: None,
+        second_positional: Some(&params_only),
+    };
+    let from_top_level = DbMetricCall {
+        function_name: "PROXY_batch_write",
+        parent_otel_span: Some(span(7)),
+        table_name: None,
+        second_positional: Some(&top_level_only),
     };
     run_metric(
         async { Ok::<_, DbLookupError>(1) },
-        &call,
+        &from_metadata,
         &sink,
-        &resolver,
+        &SharedSpanResolver,
+        &tasks,
+    )
+    .await
+    .expect("the successful call returns");
+    run_metric(
+        async { Ok::<_, DbLookupError>(2) },
+        &from_params,
+        &sink,
+        &SharedSpanResolver,
+        &tasks,
+    )
+    .await
+    .expect("the successful call returns");
+    run_metric(
+        async { Ok::<_, DbLookupError>(3) },
+        &from_top_level,
+        &sink,
+        &SharedSpanResolver,
         &tasks,
     )
     .await
     .expect("the successful call returns");
     drain(&tasks).await;
     let recorded = successes(&sink);
-    assert_eq!(recorded[0].parent_otel_span, Some(span(6)));
-    let seen = resolver
-        .seen
-        .lock()
-        .expect("the recording resolver is not poisoned");
-    assert_eq!(seen.len(), 1);
-    assert_eq!(seen[0], expected);
+    assert_eq!(recorded.len(), 3);
+    let resolved: Vec<String> = recorded
+        .iter()
+        .map(|event| {
+            event
+                .parent_otel_span
+                .as_ref()
+                .expect("the shared helper resolves a parent")
+                .trace_id()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(
+        resolved,
+        vec![
+            metadata_trace.to_owned(),
+            params_trace.to_owned(),
+            top_level_trace.to_owned()
+        ]
+    );
+    assert!(
+        recorded
+            .iter()
+            .all(|event| event.parent_otel_span != Some(span(7)))
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -411,30 +488,82 @@ async fn success_hook_failure_logged() {
     assert!(logs.text().contains("the database success metric failed"));
 }
 
+#[test]
+fn system_wall_clock_reads_real_time() {
+    let now = SystemWallClock.now();
+    assert!(now.timestamp() > 1_700_000_000);
+}
+
 #[tokio::test]
-async fn success_duration_matches_event_window() {
+async fn success_duration_uses_wall_clock_window() {
     let tasks = TaskTracker::new();
     let sink = Arc::new(RecordingSink::default());
     let resolver = RecordingResolver::default();
+    let start: DateTime<Utc> =
+        DateTime::from_timestamp(1_700_000_000, 0).expect("the start time is valid");
+    let end: DateTime<Utc> =
+        DateTime::from_timestamp(1_700_000_002, 500_000_000).expect("the end time is valid");
+    let clock = RecordingWallClock::new(vec![start, end]);
     let call = metric_call("query_raw");
-    let operation = async {
-        tokio::time::sleep(Duration::from_millis(5)).await;
-        Ok::<_, DbLookupError>(1)
-    };
-    run_metric(operation, &call, &sink, &resolver, &tasks)
-        .await
-        .expect("the successful call returns");
+    let output = log_db_metrics(
+        async { Ok::<_, DbLookupError>(1) },
+        &call,
+        DbMetricContext {
+            sink: Arc::clone(&sink),
+            resolver: &resolver,
+            clock: &clock,
+            tasks: &tasks,
+        },
+    )
+    .await
+    .expect("the successful call returns");
+    assert_eq!(output, 1);
     drain(&tasks).await;
     let recorded = successes(&sink);
-    let window = recorded[0]
-        .end_time
-        .signed_duration_since(recorded[0].start_time)
-        .to_std()
-        .expect("the event window is positive");
-    assert!(window > Duration::ZERO);
+    assert_eq!(recorded[0].start_time, start);
+    assert_eq!(recorded[0].end_time, end);
+    assert_eq!(recorded[0].duration_seconds.to_bits(), 2.5_f64.to_bits());
+}
+
+#[tokio::test]
+async fn backward_clock_keeps_signed_duration() {
+    let tasks = TaskTracker::new();
+    let sink = Arc::new(RecordingSink::default());
+    let resolver = RecordingResolver::default();
+    let start: DateTime<Utc> =
+        DateTime::from_timestamp(1_700_000_010, 0).expect("the start time is valid");
+    let end: DateTime<Utc> =
+        DateTime::from_timestamp(1_700_000_000, 0).expect("the end time is valid");
+    let clock = RecordingWallClock::new(vec![start, end]);
+    let call = metric_call("query_raw");
+    let error = log_db_metrics(
+        async {
+            Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
+                ErrorType::Data,
+                "unique violation",
+            )))
+        },
+        &call,
+        DbMetricContext {
+            sink: Arc::clone(&sink),
+            resolver: &resolver,
+            clock: &clock,
+            tasks: &tasks,
+        },
+    )
+    .await
+    .expect_err("the failed write is rethrown");
+    assert!(matches!(
+        error,
+        DbMetricError::Lookup(DbLookupError::Database(_))
+    ));
+    let recorded = failures(&sink);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].event.start_time, start);
+    assert_eq!(recorded[0].event.end_time, end);
     assert_eq!(
-        recorded[0].duration_seconds.to_bits(),
-        window.as_secs_f64().to_bits()
+        recorded[0].event.duration_seconds.to_bits(),
+        (-10.0_f64).to_bits()
     );
 }
 
@@ -524,7 +653,6 @@ async fn db_data_error_is_failure_metric() {
 #[case::connect(ErrorType::Connect)]
 #[case::connect_timeout(ErrorType::ConnectTimeout)]
 #[case::read_timeout(ErrorType::ReadTimeout)]
-#[case::deadline(ErrorType::Deadline)]
 #[case::engine_connection(ErrorType::EngineConnection)]
 #[case::prisma(ErrorType::Prisma)]
 #[tokio::test]
@@ -552,6 +680,38 @@ async fn connect_and_timeout_error_metrics(#[case] kind: ErrorType) {
     let recorded = failures(&sink);
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].error.error_type, kind);
+}
+
+#[rstest]
+#[case::read(ErrorType::Read)]
+#[case::deadline(ErrorType::Deadline)]
+#[case::no_db_connection(ErrorType::NoDbConnection)]
+#[tokio::test]
+async fn excluded_error_no_metric(#[case] kind: ErrorType) {
+    let tasks = TaskTracker::new();
+    let sink = Arc::new(RecordingSink::default());
+    let resolver = RecordingResolver::default();
+    let call = metric_call("query_raw");
+    let error = run_metric(
+        async move {
+            Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
+                kind,
+                "not a metric family",
+            )))
+        },
+        &call,
+        &sink,
+        &resolver,
+        &tasks,
+    )
+    .await
+    .expect_err("the excluded error is rethrown");
+    let DbMetricError::Lookup(DbLookupError::Database(db_error)) = &error else {
+        panic!("the excluded error is carried, got {error:?}");
+    };
+    assert_eq!(db_error.error_type, kind);
+    assert!(failures(&sink).is_empty());
+    assert!(successes(&sink).is_empty());
 }
 
 #[tokio::test]
