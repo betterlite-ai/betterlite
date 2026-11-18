@@ -1,13 +1,16 @@
+use std::future::pending;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use deadpool_postgres::Client;
 use secrecy::ExposeSecret as _;
 use tokio::task::yield_now;
-use tokio_postgres::NoTls;
+use tokio_postgres::{CancelToken, NoTls};
 
 use crate::postgres_store::session::PostgresStore;
-use crate::tool_policy_store::deadline::{StatementBounds, TlsCanceller};
+use crate::tool_policy_store::deadline::{
+    CancellationFuture, StatementBounds, StatementCanceller, TlsCanceller,
+};
 use crate::tool_policy_store::discovery::batch_upsert_tools;
 use crate::tool_policy_store::errors::ToolPolicyStoreError;
 use crate::tool_policy_store::refresh::{ToolPolicyStore, sync_tool_policy_from_db};
@@ -18,6 +21,14 @@ use super::support::{Db, TlsFront, captured_logs};
 use super::{FixedIds, Reconnect, instant, item};
 
 const TABLE_LOCK: &str = "BEGIN; LOCK TABLE \"LiteLLM_ToolTable\" IN ACCESS EXCLUSIVE MODE";
+
+struct HangingCanceller;
+
+impl StatementCanceller for HangingCanceller {
+    fn cancel<'token>(&self, _token: &'token CancelToken) -> CancellationFuture<'token> {
+        Box::pin(pending())
+    }
+}
 
 async fn locked_tls_front() -> (Db, TlsFront, PostgresStore, Client) {
     let db = Db::start().await;
@@ -164,6 +175,42 @@ async fn a_tls_required_cancel_stops_the_read_over_tls() {
     yield_now().await;
     drop(front);
     yield_now().await;
+    db.close().await;
+}
+
+#[tokio::test]
+async fn a_cancel_that_never_answers_discards_the_connection() {
+    let db = Db::start().await;
+    let holder = db.client().await;
+    holder
+        .batch_execute(TABLE_LOCK)
+        .await
+        .expect("the table lock");
+    let registry = Mutex::new(ToolPolicyRegistry::default());
+    let store = ToolPolicyStore {
+        database: &db.store,
+        registry: &registry,
+        bounds: StatementBounds {
+            deadline: Duration::from_millis(100),
+            canceller: &HangingCanceller,
+        },
+    };
+    let (logs, guard) = captured_logs();
+    let result = sync_tool_policy_from_db(&store, None::<&mut Reconnect>).await;
+    drop(guard);
+    assert!(matches!(result, Err(ToolPolicyStoreError::Deadline { .. })));
+    assert!(
+        logs.text()
+            .contains("cancelling the timed out statement did not answer in time")
+    );
+    let pool = db.store.pool.as_ref().expect("the pool");
+    assert_eq!(
+        pool.status().size,
+        1,
+        "only the table-lock holder stays in the pool"
+    );
+    assert_eq!(pool.status().available, 0);
+    release_table_lock(&db, holder).await;
     db.close().await;
 }
 
