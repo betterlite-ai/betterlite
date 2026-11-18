@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use betterlite_error::envelope::WireField;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
@@ -12,7 +11,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::HeaderMap;
 use rstest::rstest;
 
-use super::{route_error, wire};
+use super::route_error;
 
 fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor")
@@ -32,7 +31,7 @@ fn json_error() -> serde_json::Error {
     serde_json::from_str::<u8>("x").expect_err("parse error")
 }
 
-// proxy_server.py's moderation handler reads getattr(e, field, "None") and answers str(status_code) as the code
+// proxy_server.py's moderation handler reads the SDK exception's type and param, and answers str(status_code) as the code
 #[rstest]
 #[case::upstream_400(
     provider(
@@ -50,7 +49,7 @@ fn json_error() -> serde_json::Error {
         r#"{"error":{"message":"Incorrect API key provided","type":"invalid_request_error","code":"invalid_api_key"}}"#,
     ),
     401,
-    None,
+    Some("invalid_request_error"),
     None,
     Some("401")
 )]
@@ -60,14 +59,14 @@ fn json_error() -> serde_json::Error {
         r#"{"error":{"message":"Rate limit reached for requests","type":"tokens","code":"rate_limit_exceeded"}}"#,
     ),
     429,
-    Some("throttling_error"),
+    Some("tokens"),
     None,
     Some("429")
 )]
 #[case::upstream_500(
     provider(500, r#"{"error":{"message":"The server had an error"}}"#),
     500,
-    Some("internal_server_error"),
+    None,
     None,
     Some("500")
 )]
@@ -82,22 +81,6 @@ fn json_error() -> serde_json::Error {
     Some("400")
 )]
 #[case::unparseable_body(provider(400, "plain text"), 400, None, None, Some("400"))]
-fn moderations_moderation_tests_behavior(
-    #[case] error: ModerationError,
-    #[case] status: u16,
-    #[case] error_type: Option<&str>,
-    #[case] param: Option<&str>,
-    #[case] code: Option<&str>,
-) {
-    let failure = route_error(&error, &redactor());
-    assert_eq!(failure.status, status);
-    assert_eq!(failure.error_type.as_deref(), error_type);
-    assert_eq!(failure.param.as_deref(), param);
-    assert_eq!(failure.code.as_deref(), code);
-    assert!(!failure.message.is_empty(), "the failure carries a message");
-}
-
-#[rstest]
 #[case::body(
     ModerationError::Request(ModerationRequestError::Body { source: json_error() }),
     400,
@@ -180,7 +163,7 @@ fn moderations_moderation_tests_behavior(
     None,
     None
 )]
-fn moderation_local_failures_map_to_their_status_and_fields(
+fn moderations_moderation_tests_behavior(
     #[case] error: ModerationError,
     #[case] status: u16,
     #[case] error_type: Option<&str>,
@@ -193,31 +176,6 @@ fn moderation_local_failures_map_to_their_status_and_fields(
     assert_eq!(failure.param.as_deref(), param);
     assert_eq!(failure.code.as_deref(), code);
     assert!(!failure.message.is_empty(), "the failure carries a message");
-}
-
-#[rstest]
-#[case::missing(WireField::MISSING, Some("None"))]
-#[case::null(WireField::Null, None)]
-#[case::text(
-    WireField::Text(String::from("invalid_request_error")),
-    Some("invalid_request_error")
-)]
-fn the_wire_fields_follow_getattr(#[case] field: WireField, #[case] expected: Option<&str>) {
-    assert_eq!(wire(field).as_deref(), expected);
-}
-
-#[test]
-fn the_sdk_body_unwraps_the_error_object_or_takes_the_whole_body() {
-    let nested = super::sdk_body(br#"{"error":{"message":"m","type":"t","param":"p","code":"c"}}"#)
-        .expect("error object");
-    assert_eq!(nested.message.as_deref(), Some("m"));
-    assert_eq!(nested.kind.as_deref(), Some("t"));
-    assert_eq!(nested.param.as_deref(), Some("p"));
-    assert_eq!(nested.code.as_deref(), Some("c"));
-    let flat = super::sdk_body(br#"{"type":"t"}"#).expect("flat body");
-    assert_eq!(flat.kind.as_deref(), Some("t"));
-    assert!(super::sdk_body(b"plain text").is_none());
-    assert!(super::sdk_body(b"[1]").is_none());
 }
 
 #[test]
