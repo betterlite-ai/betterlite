@@ -156,7 +156,7 @@ where
                 } else {
                     format!("{value:?}")
                 };
-                (column.name(), text)
+                (column.definition().name, text)
             })
             .collect();
         tracing::debug!(payload = ?payload, "PrismaClient: insert_data");

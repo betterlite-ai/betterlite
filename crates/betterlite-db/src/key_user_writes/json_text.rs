@@ -29,7 +29,7 @@ pub fn jsonify_object(
             continue;
         };
         *value = match encoder.encode(value) {
-            Ok(encoded) => JsonData::String(encoded),
+            Ok(json) => JsonData::String(json),
             Err(_) => JsonData::String(String::from(FAILED_TO_SERIALIZE_JSON)),
         };
     }
