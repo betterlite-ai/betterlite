@@ -1,7 +1,7 @@
 pub mod access;
 pub mod columns;
 mod deletes;
-mod generic;
+pub mod generic;
 mod inserts;
 pub mod reads;
 pub mod rows;
@@ -30,6 +30,8 @@ use rows::RowError;
 
 pub const DEFAULT_TEAM_LIST_LIMIT: i64 = 20;
 pub const FAILURE_REPORT_DEADLINE: Duration = Duration::from_secs(1);
+pub const DEFAULT_ACQUIRE_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(30);
 
 // LiteLLM's backoff.on_exception wraps every dispatcher with 3 tries in 10 seconds, and get_generic_data with 1 try in 2
 const DATA_RETRY: RetryPolicy = RetryPolicy {
@@ -50,12 +52,16 @@ struct RetryPolicy {
 #[derive(Debug, Clone, Copy)]
 pub struct TableSettings {
     pub team_list_limit: i64,
+    pub acquire_timeout: Duration,
+    pub query_timeout: Duration,
 }
 
 impl Default for TableSettings {
     fn default() -> Self {
         Self {
             team_list_limit: DEFAULT_TEAM_LIST_LIMIT,
+            acquire_timeout: DEFAULT_ACQUIRE_TIMEOUT,
+            query_timeout: DEFAULT_QUERY_TIMEOUT,
         }
     }
 }
@@ -157,6 +163,11 @@ where
         #[source]
         source: serde_json::Error,
     },
+    #[error("the {operation} did not finish within {deadline:?}")]
+    Timeout {
+        operation: &'static str,
+        deadline: Duration,
+    },
 }
 
 impl<ClientError> TableOpsError<ClientError>
@@ -172,7 +183,8 @@ where
             | Self::Lookup { .. }
             | Self::MissingField { .. }
             | Self::WrongType { .. }
-            | Self::Encode { .. } => None,
+            | Self::Encode { .. }
+            | Self::Timeout { .. } => None,
         }
     }
 }
