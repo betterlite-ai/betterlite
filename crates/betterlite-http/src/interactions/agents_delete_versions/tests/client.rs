@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::net::SocketAddr;
+use std::time::Duration;
 
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
@@ -107,7 +109,7 @@ async fn client_resolves_the_async_client_through_the_base_module() {
 
 #[tokio::test]
 async fn client_resolves_the_async_client_for_the_provider_its_params_name() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -134,12 +136,12 @@ async fn client_resolves_the_async_client_for_the_provider_its_params_name() {
         .collect();
     assert!(providers.contains(&ProviderId::Openai));
     assert!(!providers.contains(&ProviderId::Gemini));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn client_uses_the_supplied_sync_client_for_delete() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -160,14 +162,14 @@ fn client_uses_the_supplied_sync_client_for_delete() {
     .unwrap();
 
     assert_eq!(output, "delete|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
-    assert!(sent.contains("x-supplied: yes\r\n"), "{sent}");
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("x-supplied: yes\r\n"), "{}", sent.head);
     assert!(clients.sync_clients.is_empty());
 }
 
 #[test]
 fn client_uses_the_supplied_sync_client_for_versions() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -188,14 +190,14 @@ fn client_uses_the_supplied_sync_client_for_versions() {
     .unwrap();
 
     assert_eq!(output, "versions|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
-    assert!(sent.contains("x-supplied: yes\r\n"), "{sent}");
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("x-supplied: yes\r\n"), "{}", sent.head);
     assert!(clients.sync_clients.is_empty());
 }
 
 #[tokio::test]
 async fn client_uses_the_supplied_async_client_for_delete() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -217,14 +219,14 @@ async fn client_uses_the_supplied_async_client_for_delete() {
     .unwrap();
 
     assert_eq!(output, "delete|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
-    assert!(sent.contains("x-supplied: yes\r\n"), "{sent}");
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("x-supplied: yes\r\n"), "{}", sent.head);
     assert!(clients.async_clients.is_empty());
 }
 
 #[tokio::test]
 async fn client_uses_the_supplied_async_client_for_versions() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::default();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -246,7 +248,7 @@ async fn client_uses_the_supplied_async_client_for_versions() {
     .unwrap();
 
     assert_eq!(output, "versions|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
-    assert!(sent.contains("x-supplied: yes\r\n"), "{sent}");
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("x-supplied: yes\r\n"), "{}", sent.head);
     assert!(clients.async_clients.is_empty());
 }

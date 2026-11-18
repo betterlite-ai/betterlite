@@ -10,6 +10,7 @@ testing = []
 
 [dependencies]
 aho-corasick = "1.1.5"
+async-stream = "0.3.6"
 async-trait = "0.1.92"
 aws-config = { version = "=1.12.0", default-features = false, features = ["default-https-client", "rt-tokio"] }
 aws-credential-types = "=1.3.1"
@@ -47,6 +48,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
+betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-semantic = { path = "../betterlite-semantic" }
 betterlite-streaming = { path = "../betterlite-streaming" }

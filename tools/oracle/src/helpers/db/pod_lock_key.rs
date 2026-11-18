@@ -1,11 +1,19 @@
+use betterlite_db::queues::pod_lock::owner::lease_key;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Input {
+    cronjob_id: String,
+}
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("pod_lock_key")
+    fn run(input: &Self::Input) -> HelperResult {
+        Ok(serde_json::Value::String(lease_key(&input.cronjob_id)))
     }
 }

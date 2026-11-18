@@ -2,13 +2,10 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fmt::Debug;
-use std::io::{ErrorKind, Read as _, Write as _};
 use std::mem::take;
-use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
@@ -764,78 +761,6 @@ pub(crate) fn outbound_request(url: &str) -> OutboundRequest {
         body: RequestBody::Empty,
         deadline: Duration::from_secs(5),
     }
-}
-
-pub(crate) const SERVER_TIMEOUT: Duration = Duration::from_secs(5);
-pub(crate) const SERVER_RETRY: Duration = Duration::from_millis(10);
-
-pub(crate) struct Serving {
-    pub(crate) address: SocketAddr,
-    head: JoinHandle<String>,
-}
-
-impl Serving {
-    pub(crate) fn base_url(&self) -> String {
-        format!("http://{}/v1/chat/completions", self.address)
-    }
-
-    pub(crate) fn head(self) -> String {
-        self.head.join().expect("the fixture server finished")
-    }
-}
-
-pub(crate) fn serve(answer: Vec<u8>) -> Serving {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    let head = thread::Builder::new()
-        .spawn(move || {
-            let mut stream = accept(&listener);
-            stream.set_read_timeout(Some(SERVER_TIMEOUT)).unwrap();
-            let head = read_head(&mut stream);
-            stream.write_all(&answer).unwrap();
-            head
-        })
-        .unwrap();
-    Serving { address, head }
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    loop {
-        match listener.accept() {
-            Ok((stream, _peer)) => {
-                stream.set_nonblocking(false).unwrap();
-                return stream;
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                assert!(
-                    started.elapsed() < SERVER_TIMEOUT,
-                    "the client never connected to the fixture"
-                );
-                thread::park_timeout(SERVER_RETRY);
-            }
-            Err(error) => panic!("the fixture listener failed: {error}"),
-        }
-    }
-}
-
-fn read_head(stream: &mut TcpStream) -> String {
-    let mut raw = Vec::new();
-    while !raw.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte).unwrap();
-        raw.extend_from_slice(&byte);
-    }
-    String::from_utf8(raw).unwrap()
-}
-
-pub(crate) fn http_reply(status: u16, body: &str) -> Vec<u8> {
-    format!(
-        "HTTP/1.1 {status} fixture\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    )
-    .into_bytes()
 }
 
 #[derive(Clone, Debug)]
