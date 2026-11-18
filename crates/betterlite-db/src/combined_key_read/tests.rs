@@ -429,50 +429,21 @@ fn deprecated_ttl60_revoke_equality_and_capacity1000() {
     let now = fixed_now();
     let mut cache = DeprecatedKeyCache::default();
     let hash = KeyHash::from("cached-hash");
-    cache.remember(
-        hash.clone(),
-        &grace_hit(
-            "active",
-            now.checked_add_signed(TimeDelta::hours(1)).unwrap(),
-        ),
-        now,
-    );
+    let revoke_at = now.checked_add_signed(TimeDelta::hours(1)).unwrap();
+    cache.remember(hash.clone(), &grace_hit("active", revoke_at), now);
     let cached = cache.lookup(&hash, now).unwrap();
     assert_eq!(cached.expose_secret(), "active");
     let ttl = TimeDelta::seconds(DEPRECATED_CACHE_TTL_SECONDS);
-    let almost = cache
-        .lookup(
-            &hash,
-            now.checked_add_signed(ttl)
-                .unwrap()
-                .checked_sub_signed(TimeDelta::nanoseconds(1))
-                .unwrap(),
-        )
-        .unwrap();
-    assert_eq!(almost.expose_secret(), "active");
-    assert!(
-        cache
-            .lookup(&hash, now.checked_add_signed(ttl).unwrap())
-            .is_none()
-    );
+    let boundary = now.checked_add_signed(ttl).unwrap();
+    let almost = boundary.checked_sub_signed(TimeDelta::nanoseconds(1));
+    let almost_hit = cache.lookup(&hash, almost.unwrap()).unwrap();
+    assert_eq!(almost_hit.expose_secret(), "active");
+    assert!(cache.lookup(&hash, boundary).is_none());
     assert!(cache.entries.is_empty());
     let revoked = KeyHash::from("revoked");
-    cache.remember(
-        revoked.clone(),
-        &grace_hit(
-            "active",
-            now.checked_add_signed(TimeDelta::seconds(30)).unwrap(),
-        ),
-        now,
-    );
-    assert!(
-        cache
-            .lookup(
-                &revoked,
-                now.checked_add_signed(TimeDelta::seconds(30)).unwrap()
-            )
-            .is_none()
-    );
+    let revoke_in_30 = now.checked_add_signed(TimeDelta::seconds(30)).unwrap();
+    cache.remember(revoked.clone(), &grace_hit("active", revoke_in_30), now);
+    assert!(cache.lookup(&revoked, revoke_in_30).is_none());
     let mut full = DeprecatedKeyCache::default();
     fill_cache(&mut full, DEPRECATED_CACHE_CAPACITY, now);
     assert_eq!(full.entries.len(), DEPRECATED_CACHE_CAPACITY);
