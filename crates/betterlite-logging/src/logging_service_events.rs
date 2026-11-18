@@ -1,4 +1,5 @@
 pub mod clock;
+pub mod middleware;
 pub mod pipeline;
 pub mod sink;
 pub mod stream;

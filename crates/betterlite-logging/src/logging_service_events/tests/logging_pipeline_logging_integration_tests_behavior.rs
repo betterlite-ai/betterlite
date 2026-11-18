@@ -1,8 +1,15 @@
+use std::convert::Infallible;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use axum::Router;
+use axum::body::{Body, Bytes, to_bytes};
+use axum::extract::Request;
+use axum::middleware::from_fn_with_state;
+use axum::response::Response;
+use axum::routing::post;
 use chrono::{DateTime, FixedOffset, TimeDelta, Utc};
 use futures_util::stream::{self, StreamExt as _};
 use http::StatusCode;
@@ -10,6 +17,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TryRecvError;
+use tower::ServiceExt as _;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -21,6 +29,7 @@ use betterlite_config::sections::service_callback::{
 use betterlite_db::database_diagnostics::level::LogLevel;
 
 use crate::logging_service_events::clock::SystemClock;
+use crate::logging_service_events::middleware::{ServiceEventState, service_events};
 use crate::logging_service_events::pipeline::{PipelineConfig, PipelineError, ServicePipeline};
 use crate::logging_service_events::sink::{ServiceEventError, ServiceEventSink, TracingSink};
 use crate::logging_service_events::stream::{STREAM_FAILED_ERROR, ServiceEventStream, failure_for};
@@ -771,4 +780,113 @@ fn tracing_sink_logs_the_service_event() {
         logged.contains("the upstream call failed"),
         "no error text: {logged}"
     );
+}
+
+async fn chat_answer() -> &'static str {
+    "{\"id\":\"chat-1\"}"
+}
+
+async fn streamed_answer() -> Response {
+    let chunks = stream::iter([Ok::<_, Infallible>(Bytes::from_static(
+        b"{\"id\":\"chat-2\"}",
+    ))]);
+    Response::new(Body::from_stream(chunks))
+}
+
+fn resolve_test_call_id(header: Option<&str>) -> String {
+    header.unwrap_or("generated-call").to_owned()
+}
+
+// The middleware lives in this crate, and cargo-mutants tests only the mutated package.
+fn event_app(pipeline: &Arc<ServicePipeline>) -> Router {
+    Router::new()
+        .route("/v1/chat/completions", post(chat_answer))
+        .route("/v1/embeddings", post(streamed_answer))
+        .route("/health", post(chat_answer))
+        .layer(from_fn_with_state(
+            ServiceEventState {
+                pipeline: Arc::clone(pipeline),
+                call_id: resolve_test_call_id,
+            },
+            service_events,
+        ))
+}
+
+#[tokio::test]
+async fn middleware_records_one_pre_call_and_one_terminal_event() {
+    let harness = harness();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .body(Body::empty())
+        .unwrap();
+    let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()["x-litellm-call-id"], "generated-call");
+    let length = response.headers()["content-length"]
+        .to_str()
+        .unwrap()
+        .to_owned();
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(length.parse::<usize>().unwrap(), body.len());
+    assert_eq!(body, Bytes::from_static(b"{\"id\":\"chat-1\"}"));
+    harness.pipeline.worker.flush().await;
+    let events = harness.sink.recorded();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].payload.service, ServiceType::ProxyPreCall);
+    assert_eq!(events[0].call_id, "generated-call");
+    assert_eq!(events[1].payload.service, ServiceType::Litellm);
+    assert!(!events[1].payload.is_error);
+}
+
+#[tokio::test]
+async fn middleware_keeps_the_client_call_id() {
+    let harness = harness();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header("x-litellm-call-id", "call-7")
+        .body(Body::empty())
+        .unwrap();
+    let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
+    assert_eq!(response.headers()["x-litellm-call-id"], "call-7");
+    harness.pipeline.worker.flush().await;
+    let events = harness.sink.recorded();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].call_id, "call-7");
+    assert_eq!(events[1].call_id, "call-7");
+}
+
+#[tokio::test]
+async fn middleware_settles_a_streamed_body_when_the_stream_ends() {
+    let harness = harness();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/embeddings")
+        .body(Body::empty())
+        .unwrap();
+    let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(body, Bytes::from_static(b"{\"id\":\"chat-2\"}"));
+    harness.pipeline.worker.flush().await;
+    let events = harness.sink.recorded();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[1].payload.call_type, "aembedding");
+    assert!(!events[1].payload.is_error);
+}
+
+#[tokio::test]
+async fn middleware_leaves_a_foreign_path_untracked() {
+    let harness = harness();
+    let request = Request::builder()
+        .method("POST")
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+    let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!response.headers().contains_key("x-litellm-call-id"));
+    harness.pipeline.worker.flush().await;
+    assert!(harness.sink.recorded().is_empty());
 }

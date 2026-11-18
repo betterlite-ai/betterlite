@@ -4,10 +4,10 @@ use crate::admission_control::in_flight::InFlightRequests;
 use crate::admission_control::{AdmissionControl, AdmissionStack};
 use crate::middleware::request_root_paths::RootPaths;
 use crate::middleware::request_stack;
+use crate::pre_call::rewrites::resolve_call_id;
 use crate::routes::chat::CallContext;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
-use crate::routes::chat::streaming::service_events;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::server::connections::{
@@ -26,6 +26,7 @@ use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
 use betterlite_logging::logging_service_events::clock::SystemClock;
+use betterlite_logging::logging_service_events::middleware::{ServiceEventState, service_events};
 use betterlite_logging::logging_service_events::pipeline::PipelineError;
 use betterlite_logging::logging_service_events::sink::TracingSink;
 use betterlite_logging::logging_service_events::wiring::LoggingWiring;
@@ -104,9 +105,12 @@ pub async fn run_with_listener(
         CallbackRegistry::new(config.sections.callback_settings.max_callbacks),
         Arc::new(ChatStreamAssembler),
     )?;
-    let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?.layer(
-        from_fn_with_state(Arc::clone(&logging.pipeline), service_events),
-    );
+    let events = ServiceEventState {
+        pipeline: Arc::clone(&logging.pipeline),
+        call_id: resolve_call_id,
+    };
+    let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?
+        .layer(from_fn_with_state(events, service_events));
     let background = Background { outbound, tasks };
     let served = Box::pin(serve(app, shutting_down, background, host, listener)).await;
     // every accepted service event is delivered before the process reports the shutdown
