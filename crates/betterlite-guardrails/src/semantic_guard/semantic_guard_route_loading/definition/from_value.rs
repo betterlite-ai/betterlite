@@ -33,15 +33,14 @@ impl RouteDefinition {
             .map(|value| text(value, "description", "a string"))
             .transpose()?
             .unwrap_or_default();
-        let utterances = match required(field(fields, "utterances"), "utterances")? {
-            GuardrailValue::Array(items) => utterance_texts(items)?,
-            _ => {
-                return Err(DefinitionError::FieldType {
-                    field: "utterances",
-                    expected: "a list of strings",
-                });
-            }
+        let GuardrailValue::Array(items) = required(field(fields, "utterances"), "utterances")?
+        else {
+            return Err(DefinitionError::FieldType {
+                field: "utterances",
+                expected: "a list of strings",
+            });
         };
+        let utterances = utterance_texts(items)?;
         let similarity_threshold = field(fields, "similarity_threshold")
             .map(|value| number(value, "similarity_threshold"))
             .transpose()?;
@@ -61,7 +60,7 @@ fn field<'a>(
 ) -> Option<&'a GuardrailValue> {
     fields
         .get(name)
-        .filter(|value| !matches!(value, GuardrailValue::Null))
+        .filter(|value| **value != GuardrailValue::Null)
 }
 
 fn required<'a>(
@@ -76,10 +75,10 @@ fn text(
     field: &'static str,
     expected: &'static str,
 ) -> Result<String, DefinitionError> {
-    match value {
-        GuardrailValue::Text(text) => Ok(text.clone()),
-        _ => Err(DefinitionError::FieldType { field, expected }),
-    }
+    let GuardrailValue::Text(text) = value else {
+        return Err(DefinitionError::FieldType { field, expected });
+    };
+    Ok(text.clone())
 }
 
 // a yaml scalar that is not a string reaches the route as an error naming the field, never as its text
@@ -102,6 +101,10 @@ fn raw_number(value: &GuardrailValue) -> Option<f64> {
         GuardrailValue::Decimal(number) => Some(*number),
         GuardrailValue::SignedInteger(number) => number.to_string().parse::<f64>().ok(),
         GuardrailValue::UnsignedInteger(number) => number.to_string().parse::<f64>().ok(),
-        _ => None,
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => None,
     }
 }
