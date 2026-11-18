@@ -9,7 +9,7 @@ call:
     stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
     events:
       - {type: response.created, response: {id: resp_stream, model: gpt-stream}}
-      - {type: response.output_item.added, output_index: 2, item: {type: function_call, id: call_open, call_id: call_1, name: run, arguments: "{}"}}
+      - {type: response.output_item.added, output_index: 2, item: {type: function_call, id: call_open, call_id: null, name: run, arguments: "{}", extra_meta: {trace: null}}}
       - {type: response.function_call_arguments.delta, item_id: call_open, output_index: 2, delta: "{"}
     chunks: []
     status_code: 400
