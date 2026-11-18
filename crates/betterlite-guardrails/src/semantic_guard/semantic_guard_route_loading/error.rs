@@ -15,7 +15,7 @@ pub enum RouteLoadError {
     Template {
         name: &'static str,
         #[source]
-        source: serde_saphyr::Error,
+        source: Box<serde_saphyr::Error>,
     },
     #[error("the built-in route template '{name}' is invalid: {source}")]
     TemplateDefinition {

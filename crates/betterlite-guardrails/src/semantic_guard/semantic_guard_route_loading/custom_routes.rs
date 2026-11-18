@@ -19,8 +19,8 @@ pub enum CustomRoutesError {
     TooLarge { limit: usize },
     #[error("the custom routes input is not valid yaml: {source}")]
     Yaml {
-        #[from]
-        source: serde_saphyr::Error,
+        #[source]
+        source: Box<serde_saphyr::Error>,
     },
     #[error(
         "the custom routes input must be a list of route definitions or one route definition mapping"
@@ -49,14 +49,23 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
         });
     }
     // the document is probed once for its shape, then parsed again as the routes it holds
-    let shape: Shape = serde_saphyr::from_slice(bytes)?;
+    let shape: Shape =
+        serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
+            source: Box::new(source),
+        })?;
     match shape {
         Shape::List(_) => {
-            let raw: Vec<RawDefinition> = serde_saphyr::from_slice(bytes)?;
+            let raw: Vec<RawDefinition> =
+                serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
+                    source: Box::new(source),
+                })?;
             definitions(raw)
         }
         Shape::Mapping(_) => {
-            let raw: RawDefinition = serde_saphyr::from_slice(bytes)?;
+            let raw: RawDefinition =
+                serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
+                    source: Box::new(source),
+                })?;
             definitions(vec![raw])
         }
         Shape::Other(_) => Err(CustomRoutesError::InvalidFormat),

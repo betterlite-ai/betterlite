@@ -33,7 +33,7 @@ pub fn load(name: &str) -> Result<RouteDefinition, RouteLoadError> {
     let raw: RawDefinition =
         serde_saphyr::from_slice(body.as_bytes()).map_err(|source| RouteLoadError::Template {
             name: known,
-            source,
+            source: Box::new(source),
         })?;
     raw.into_definition()
         .map_err(|source| RouteLoadError::TemplateDefinition {
