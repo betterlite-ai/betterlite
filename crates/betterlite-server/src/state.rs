@@ -1,4 +1,5 @@
 pub mod adaptive_persistence;
+pub mod anthropic_runtime;
 pub mod auth_admission;
 pub mod auth_backend_dispatch;
 pub mod auth_cached_sessions;
@@ -73,6 +74,7 @@ pub struct ServerState {
     pub routing: RoutingState,
     pub shared: Arc<Shared>,
     pub adaptive_persistence: adaptive_persistence::Slot,
+    pub anthropic_runtime: anthropic_runtime::Slot,
     pub auth_admission: auth_admission::Slot,
     pub auth_backend_dispatch: auth_backend_dispatch::Slot,
     pub auth_cached_sessions: auth_cached_sessions::Slot,
@@ -146,6 +148,7 @@ impl ServerState {
             // the loaded config's fallback_generalizations rules, which every route reads through the routing state
             routing: RoutingState::new(config),
             adaptive_persistence: adaptive_persistence::Slot::new(config, &shared),
+            anthropic_runtime: anthropic_runtime::Slot::new(config, &shared),
             auth_admission: auth_admission::Slot::new(config, &shared),
             auth_backend_dispatch: auth_backend_dispatch::Slot::new(config, &shared),
             auth_cached_sessions: auth_cached_sessions::Slot::new(config, &shared),

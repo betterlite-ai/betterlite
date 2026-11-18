@@ -1,0 +1,207 @@
+id: B9994
+title: Spend counter batch drops replies that predate a forget
+description: >-
+  Fix the race B2316 copied from LiteLLM in crates/betterlite-auth/src/spend_counter_batch. Loader::fetch_pending in
+  batch/load.rs marks the pending keys fetched, drops the state lock and awaits RedisCache::async_batch_get_cache.
+  SpendCounterBatch::declare_pending in batch.rs does the same for the request batch: it marks the keys fetched and
+  pushes request_batch.mget(&pending) onto BatchState.inflight, and Loader::collect_inflight awaits it later. While
+  either reply is on its way, SpendCounterBatch::forget can remove the key from keys, fetched and loaded, and bind can
+  add it again. When the old reply lands, Loader::merge runs state.loaded.entry(key).or_insert(value), so the value
+  from before the forget goes back into loaded. The next MGET for the rebound key can't replace it, because or_insert
+  keeps the stale entry. LiteLLM forgets a counter when a write left its value unknown (_invalidate_spend_counter
+  after a failed increment, _repair_stale_spend_counter before async_set_max), so the value that comes back is older
+  than that write, and budget checks read a stale, lower spend. LiteLLM has the same race in _load, _declare_pending
+  and _collect_inflight. No working setup relies on a counter value older than the write that dropped it, so under
+  owned-behavior-is-built this task fixes it and logs a deviation. It reverses the line in B2316's task text that
+  said to keep the source race and add no invalidation generations; a reviewer found the bug and the architect
+  confirmed the fix on 2026-11-18.
+
+
+  The fix is a generation per key. BatchState in batch.rs gains generations: BTreeMap<String, u64>, empty in
+  SpendCounterBatch::new. forget bumps the key's entry with entry(key).or_default() and wrapping_add(1), so the first
+  forget of a key gives 1. It bumps even when the batch is closed, the same way it already clears the three
+  collections then. Nothing ever removes an entry, and bind, record and close don't touch the map. A per-key map is
+  used instead of one batch-wide epoch because one MGET carries many keys. An epoch bumped by forget on one key would
+  also throw away every other key of that reply, and those keys are already marked fetched, so each would fall back
+  to its own direct Redis read for no reason. The per-key map drops only the key that was forgotten.
+
+
+  Each fetch records the generation of every key it asks for. fetch_pending and declare_pending both compute keys
+  minus fetched and mark the result fetched today; move that step once into a private BatchState method in batch.rs,
+  take_pending(&mut self) -> BTreeMap<String, Option<u64>>. It marks bound but unfetched keys fetched and returns
+  each one with self.generations.get(key).copied(); a key never forgotten gets None. Because it runs under
+  the lock that marks the keys fetched, no forget can land between the mark and the snapshot. fetch_pending calls it
+  and builds its requested list from the map's keys, already in sorted order. declare_pending keeps its early
+  returns (no request batch, a closed batch, nothing pending), calls take_pending and passes the keys to
+  request_batch.mget. BatchState.inflight becomes Vec<InflightRead>, a struct in batch.rs with result:
+  BatchResult<MgetValues> and asked: BTreeMap<String, Option<u64>>, so a pipelined reply carries the generations of
+  its own keys until collect_inflight takes it.
+
+
+  Merge drops what changed. Loader::merge takes the asked map next to the fetched values. For each fetched key it
+  skips the value when asked.get(&key) differs from Some(&state.generations.get(&key).copied()). That also skips a key
+  the fetch never asked for. A value that passes still goes in with entry(key).or_insert(value), so a value
+  record wrote during the fetch outranks the older reply, as the merge comment says. Keep that comment and add one
+  line for the generation check. fetch_pending passes merge the map take_pending gave it. accept_settled takes the
+  asked map next to its settled result, and collect_inflight hands it each InflightRead's result and asked map. These
+  are the only two paths a reply takes into loaded; record writes loaded directly and stays as it is. The
+  failure paths (the debug line, nothing merged, SpendCounterBatchError::Cancelled) don't change.
+
+
+  What a caller sees. A read that was waiting on a reply whose key was forgotten in the meantime now returns
+  Ok(None), so the caller reads Redis itself, where LiteLLM returned the stale value. Once the key is bound again,
+  the next read sends a new MGET and returns its value. The other keys of the same reply load as before.
+
+
+  Tests in tests/state.rs. pending_reply_does_not_rebind_forgotten_key asserts the stale 6 is back in loaded, and
+  rebound_forgotten_key_keeps_loaded_merge_precedence asserts the rebound read gives 6 where Redis now holds 9. Delete
+  both and add reply_asked_before_a_forget, an #[rstest] #[tokio::test] whose cases take pipeline (an enum Pipeline,
+  Direct or RequestBatch), during (an enum DuringFetch, Forget, ForgetAndRebind or Record), inflight and next (both
+  Option<CounterValue>). Every case binds spend:key:a and spend:key:b, scripts the MGET reply [Bulk("6"),
+  Bulk("8")] and then [Bulk("9")], holds the first MGET with server.hold_next_mget(), spawns a read of spend:key:a on
+  a JoinSet, waits for the MGET to arrive, runs its DuringFetch step on spend:key:a, releases the MGET and joins the
+  read. It asserts the joined read equals inflight, a second read of spend:key:a equals next, and a read of
+  spend:key:b gives Amount(8) from the held reply. Forget calls forget; ForgetAndRebind calls forget, then bind;
+  Record calls record with decimal("5"). For RequestBatch the cache and the batch are built inside
+  request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, ...), since SpendCounterBatch::new captures the active request
+  batch; collect_clears_inflight_before_await in tests/load.rs holds an MGET the same way. Put the race in one async
+  scenario function that returns the three reads, and let the rstest body call it directly or inside the scope with
+  a match on pipeline, so neither function passes 40 lines.
+
+
+  The cases. forget_during_inflight_fetch_drops_the_old_reply is Direct, Forget, None, None.
+  forget_during_request_batch_fetch_drops_the_old_reply is RequestBatch, Forget, None, None.
+  rebound_key_takes_the_newer_reply is Direct, ForgetAndRebind, None, Some(Amount(9)).
+  recorded_write_outranks_an_older_reply is RequestBatch, Record, Some(Amount(5)), Some(Amount(5)). On base the first
+  three read Amount(6) for inflight, and the rebound case reads Amount(6) for next as well. The record case passes on
+  base; it guards the or_insert precedence on the pipelined path, and recorded_write_wins_old_reply in tests/load.rs
+  keeps covering the direct one. The spend:key:b assertion is what fails an epoch that drops the whole reply.
+
+
+  Tests in tests/load.rs. first_loaded_value_wins_duplicate_reply pins the same race on a pipelined reply that settled
+  before the forget: it asserts 1 where the newer reply holds 2. Rename it rebound_key_skips_a_settled_older_reply,
+  keep its steps and assert Some(CounterValue::Amount(decimal("2"))). cancelled_load_propagates cancels
+  state.inflight.first(); it now cancels that entry's result. new_batch_empty_and_open also asserts that
+  state.generations is empty.
+
+
+  Deviations. Write docs/deviations/B9994.yaml (task: B9994, then deviations, then kept_bugs: []) with the row under
+  deviations below. docs/deviations/B2316.yaml has no row about this race, so leave it alone.
+scope:
+  paths:
+    - crates/betterlite-auth/src/spend_counter_batch/batch.rs
+    - crates/betterlite-auth/src/spend_counter_batch/batch/load.rs
+    - crates/betterlite-auth/src/spend_counter_batch/tests/state.rs
+    - crates/betterlite-auth/src/spend_counter_batch/tests/load.rs
+    - docs/deviations/B9994.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/batch/load.rs#L97-L142
+    why: fetch_pending marks the keys fetched before the await, and merge puts every returned value under loaded with or_insert.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/batch/load.rs#L62-L95
+    why: collect_inflight takes the pipelined results and accept_settled hands each decoded map to merge.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/batch.rs#L39-L45
+    why: BatchState gains generations here, and its inflight list becomes Vec<InflightRead>.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/batch.rs#L122-L143
+    why: forget clears keys, fetched and loaded without touching replies already asked for, and declare_pending copies the pending step fetch_pending has.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/tests/state.rs#L72-L117
+    why: The two tests that assert the stale value and are replaced by reply_asked_before_a_forget.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/tests/load.rs#L309-L362
+    why: first_loaded_value_wins_duplicate_reply flips its assertion, and cancelled_load_propagates reaches into inflight.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/tests/load.rs#L253-L276
+    why: collect_clears_inflight_before_await holds an MGET inside request_redis_batch_scope, the shape of the RequestBatch cases.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/tests/support.rs#L131-L142
+    why: FakeRedis::hold_next_mget holds one MGET until the test releases it.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/crates/betterlite-auth/src/spend_counter_batch/tests/support.rs#L205-L213
+    why: take_mget_reply pops scripted replies in order after the hold is released, so both replies are scripted up front.
+  - url: https://github.com/betterlite-ai/betterlite/blob/2df323e939/.development/tasks/B2316-spend-counter-batches.yaml#L40-L44
+    why: The B2316 text kept the race and ruled out generations; this task reverses it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L88-L93
+    why: forget drops the key from _keys, _fetched and _loaded and leaves pending replies alone.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L95-L106
+    why: _load marks pending keys fetched, awaits _fetch and merges the reply under _loaded, so a reply from before a forget refills it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L108-L126
+    why: _declare_pending and _collect_inflight, the request batch twin with the same merge.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2878-L2912
+    why: _repair_stale_spend_counter forgets a counter before async_set_max, one of the writes a stale reply would undo.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3754-L3765
+    why: _invalidate_spend_counter forgets a counter after a failed increment, the other forget caller.
+dod:
+  - text: >-
+      A reply asked for before forget on a key no longer puts that key into loaded, on the direct MGET path and on the
+      request batch path. The read waiting on it returns None, and the other keys of the same reply still load.
+    proof: [forget-race]
+  - text: >-
+      After a forgotten key is bound again, read returns the newer MGET value, both when the old reply was still in
+      flight and when it had already settled in the pipeline.
+    proof: [forget-race, settled-reply]
+  - text: A value written with record during a fetch still outranks the older reply.
+    proof: [forget-race]
+  - text: >-
+      No test asserts the stale value any more, and the rest of the spend_counter_batch tests pass with the generation
+      map and InflightRead.
+    proof: [race-pins-gone, module-tests]
+  - text: docs/deviations/B9994.yaml lists the fix with the pinned LiteLLM link.
+    proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+    - id: forget-race
+      why: A reply asked for before a forget still fills loaded, drops the other keys of its MGET, or loses a recorded write.
+      run: >-
+        cargo nextest run --locked -p betterlite-auth --no-tests=fail
+        -E 'test(/^spend_counter_batch::tests::state::reply_asked_before_a_forget::case_/)'
+    - id: settled-reply
+      why: A pipelined reply that settled before the forget still beats the newer reply for the rebound key.
+      run: >-
+        cargo nextest run --locked -p betterlite-auth --no-tests=fail
+        -E 'test(/^spend_counter_batch::tests::load::rebound_key_skips_a_settled_older_reply$/)'
+    - id: race-pins-gone
+      why: A test that asserts the stale value from before a forget is still in the module.
+      run: >-
+        ! git grep -n -E 'fn (pending_reply_does_not_rebind_forgotten_key|rebound_forgotten_key_keeps_loaded_merge_precedence|first_loaded_value_wins_duplicate_reply)[(]'
+        -- crates/betterlite-auth/src/spend_counter_batch
+    - id: module-tests
+      why: The generation map or the InflightRead entries broke another spend counter batch test.
+      run: >-
+        grep -q -F 'generations' crates/betterlite-auth/src/spend_counter_batch/batch.rs
+        && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^spend_counter_batch::/)'
+    - id: deviation-row
+      why: The fix has no deviations row, or the row lacks the pinned LiteLLM link.
+      run: >-
+        grep -q -F 'spend_counter_batch.py#L88-L126' docs/deviations/B9994.yaml
+        && grep -q -F 'forget' docs/deviations/B9994.yaml
+oracle_cases: []
+deviations:
+  - what: >-
+      A Redis MGET reply asked for before SpendCounterBatch::forget on a counter key no longer fills that key's value
+      in the batch. A read that was waiting on that reply returns None, so the caller reads Redis itself, and once the
+      key is bound again the next MGET's value is the one read returns. The other keys of the same reply still load,
+      and a value written with record still outranks an older reply.
+    why: >-
+      LiteLLM's forget clears _keys, _fetched and _loaded while _load awaits _fetch or _collect_inflight awaits a
+      pipelined result, and the late reply is merged back under _loaded. The value from before the write that called
+      forget then stays authoritative, a later MGET for the rebound key can't replace it, and budget checks read a
+      stale, lower spend. No working setup relies on a counter value older than the write that dropped it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L88-L126
+out_of_scope:
+  - record and close stay as B2316 built them. record doesn't bump a generation, since or_insert already lets its value win.
+  - A retry of a key whose reply was dropped inside the same load. The waiting read returns None and the caller's own Redis read covers it, as after a failed MGET.
+  - Loader::load, claim_load, LoadShared and LoadFinished (the shared load and its waiters) don't change.
+  - The spend-counter-batch oracle cases compare counter key sets only and never reach forget.
+  - Callers of forget_spend_counter in B070, B124 and the reservation tasks; nothing outside the module calls it at 2df323e939.
+pitfalls:
+  - Take the generation snapshot inside take_pending, under the lock that marks the keys fetched. A snapshot taken after that lock drops lets a forget slip in between, and the stale reply passes the check.
+  - Never remove a generations entry, in forget or anywhere else. A removed entry reads as None again and matches a reply asked for before the first forget.
+  - Bump with wrapping_add(1). The arithmetic lints deny +=, and the check only needs a number that differs from the snapshot. One request can't bump a key 2^64 times.
+  - Read the generation the same way in take_pending and merge, generations.get(key).copied(), so a key never forgotten is None on both sides and its value merges.
+  - A value merge skips must leave loaded alone. Removing the key on a mismatch would also throw away a value record wrote after the forget.
+  - Make both InflightRead fields pub(super), like BatchState's. cancelled_load_propagates in the tests module reaches result, and clippy denies a struct that mixes pub and private fields.
+  - Build the cache and the batch for the RequestBatch cases inside request_redis_batch_scope; built outside, request_batch is None and the case quietly runs the direct path.
+  - Script both MGET replies before the read starts. FakeRedis pops them in order once the hold is released, and an unused second reply is harmless.
+  - Spawn the in-flight read on a JoinSet with Arc::clone(&batch), as the deleted state.rs tests did; awaiting it on the test task blocks on the held MGET.
+  - declare_pending calls request_batch.mget while it holds the state lock today; keep it that way, so the snapshot, the fetched marks and the inflight push stay one step.
+review_level: security
+budget:
+  max_changed_lines: 350
+  max_new_expects: 0
