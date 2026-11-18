@@ -326,6 +326,20 @@ async fn policy_update_creates_an_undiscovered_tool() {
 }
 
 #[tokio::test]
+async fn policy_update_generates_a_uuid_for_a_new_tool() {
+    let db = Db::start().await;
+    let returned = update_policy(&db, &UuidToolIdGenerator, &trusted("fresh"), instant())
+        .await
+        .expect("the stored tool");
+    let tool_id = returned.tool_id.as_str();
+    assert!(
+        uuid::Uuid::parse_str(tool_id).is_ok(),
+        "the generated tool id is a uuid, got {tool_id}"
+    );
+    db.close().await;
+}
+
+#[tokio::test]
 async fn policy_update_defaults_absent_policies_and_the_actor() {
     let db = Db::start().await;
     let update = ToolPolicyUpdate {
