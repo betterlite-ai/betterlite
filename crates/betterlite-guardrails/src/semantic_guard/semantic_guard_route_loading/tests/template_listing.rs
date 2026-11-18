@@ -1,11 +1,11 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use rstest::rstest;
 
 use crate::semantic_guard::semantic_guard_route_loading::templates;
 
-fn template_folder() -> std::path::PathBuf {
+fn template_folder() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("src/semantic_guard/semantic_guard_route_loading/route_templates")
 }
@@ -32,7 +32,7 @@ fn lists_the_builtin_templates_in_name_order() {
 #[test]
 fn names_are_sorted() {
     let names = templates::list();
-    assert!(names.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(names.is_sorted());
 }
 
 #[test]
@@ -42,11 +42,11 @@ fn lists_only_the_yaml_templates_on_disk() {
 
 #[test]
 fn no_listed_name_carries_the_extension() {
-    assert!(
-        templates::list()
-            .iter()
-            .all(|name| !name.ends_with(".yaml"))
-    );
+    assert!(templates::list().iter().all(|name| {
+        !Path::new(name)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("yaml"))
+    }));
 }
 
 #[rstest]

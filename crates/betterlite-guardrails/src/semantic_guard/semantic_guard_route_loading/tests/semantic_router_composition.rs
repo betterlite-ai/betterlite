@@ -33,7 +33,7 @@ fn the_builder_receives_the_routes_and_the_global_threshold_once() {
     let calls = builder.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].routes, routes);
-    assert_eq!(calls[0].threshold, 0.55);
+    assert_eq!(calls[0].threshold.to_bits(), 0.55_f64.to_bits());
 }
 
 #[test]
@@ -69,17 +69,12 @@ fn empty_sources_reach_the_builder_once() {
     let sources = sources(&[], None, vec![], 0.4);
     let routes = build_routes(&sources).unwrap();
     let builder = FakeBuilder::passing();
-    let names = block_on(build_router(
-        &builder,
-        routes.clone(),
-        sources.global_threshold,
-    ))
-    .unwrap();
+    let names = block_on(build_router(&builder, routes, sources.global_threshold)).unwrap();
     assert!(names.is_empty());
     let calls = builder.calls.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert!(calls[0].routes.is_empty());
-    assert_eq!(calls[0].threshold, 0.4);
+    assert_eq!(calls[0].threshold.to_bits(), 0.4_f64.to_bits());
 }
 
 #[test]

@@ -24,7 +24,10 @@ fn concatenates_templates_then_the_file_then_inline_routes() {
         names(&routes),
         vec!["sql_injection", "file_first", "file_second", "inline_first"]
     );
-    assert_eq!(thresholds(&routes), vec![0.78, 0.8, 0.55, 0.7]);
+    assert_eq!(
+        thresholds(&routes),
+        vec![0.78_f64, 0.8_f64, 0.55_f64, 0.7_f64]
+    );
 }
 
 #[test]
@@ -47,7 +50,7 @@ fn duplicate_route_names_all_stay() {
         names(&routes),
         vec!["sql_injection", "sql_injection", "sql_injection"]
     );
-    assert_eq!(thresholds(&routes), vec![0.78, 0.4, 0.3]);
+    assert_eq!(thresholds(&routes), vec![0.78_f64, 0.4_f64, 0.3_f64]);
     assert_eq!(
         routes
             .iter()

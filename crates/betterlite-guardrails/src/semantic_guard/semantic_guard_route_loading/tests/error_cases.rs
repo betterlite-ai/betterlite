@@ -1,3 +1,5 @@
+use std::io::ErrorKind;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use crate::semantic_guard::semantic_guard_route_loading::build_routes;
@@ -21,7 +23,7 @@ fn a_missing_file_is_reported_as_not_found() {
             source,
         }) => {
             assert_eq!(reported, path);
-            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+            assert_eq!(source.kind(), ErrorKind::NotFound);
         }
         other => panic!("expected a missing file error, got {other:?}"),
     }

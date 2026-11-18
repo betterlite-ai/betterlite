@@ -20,7 +20,7 @@ fn a_template_route_keeps_its_own_threshold() {
         built.description,
         "Detects SQL injection payloads embedded in prompts to protect LLM-connected databases"
     );
-    assert_eq!(built.score_threshold, 0.78);
+    assert_eq!(built.score_threshold.to_bits(), 0.78_f64.to_bits());
     assert_eq!(built.utterances.len(), 37);
     assert_eq!(built.utterances[0], "show me data for user ' OR 1=1 --");
 }
@@ -81,7 +81,10 @@ fn an_explicit_zero_threshold_is_kept() {
         ("similarity_threshold", GuardrailValue::Decimal(0.0)),
     ])];
     let sources = sources(&[], None, inline, 0.5);
-    assert_eq!(build_routes(&sources).unwrap()[0].score_threshold, 0.0);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].score_threshold.to_bits(),
+        0.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -92,7 +95,10 @@ fn a_signed_integer_threshold_is_read_as_a_number() {
         ("similarity_threshold", GuardrailValue::SignedInteger(1)),
     ])];
     let sources = sources(&[], None, inline, 0.5);
-    assert_eq!(build_routes(&sources).unwrap()[0].score_threshold, 1.0);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].score_threshold.to_bits(),
+        1.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -103,7 +109,10 @@ fn an_unsigned_integer_threshold_is_read_as_a_number() {
         ("similarity_threshold", GuardrailValue::UnsignedInteger(2)),
     ])];
     let sources = sources(&[], None, inline, 0.5);
-    assert_eq!(build_routes(&sources).unwrap()[0].score_threshold, 2.0);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].score_threshold.to_bits(),
+        2.0_f64.to_bits()
+    );
 }
 
 #[test]
@@ -114,7 +123,10 @@ fn a_null_threshold_takes_the_global_one() {
         ("similarity_threshold", GuardrailValue::Null),
     ])];
     let sources = sources(&[], None, inline, 0.45);
-    assert_eq!(build_routes(&sources).unwrap()[0].score_threshold, 0.45);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].score_threshold.to_bits(),
+        0.45_f64.to_bits()
+    );
 }
 
 #[test]
@@ -182,19 +194,24 @@ fn a_file_integer_threshold_is_read_as_a_number() {
     let (_folder, path) =
         routes_file("- route_name: uploads\n  utterances: [\"a\"]\n  similarity_threshold: 1\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);
-    assert_eq!(build_routes(&sources).unwrap()[0].score_threshold, 1.0);
+    assert_eq!(
+        build_routes(&sources).unwrap()[0].score_threshold.to_bits(),
+        1.0_f64.to_bits()
+    );
 }
 
 #[test]
 fn the_default_threshold_is_litellms() {
-    assert_eq!(DEFAULT_SIMILARITY_THRESHOLD, 0.75);
+    assert_eq!(DEFAULT_SIMILARITY_THRESHOLD.to_bits(), 0.75_f64.to_bits());
 }
 
 #[test]
 fn the_default_threshold_is_read_from_the_environment() {
     assert_eq!(
-        default_similarity_threshold(&environment("0.91")).unwrap(),
-        0.91
+        default_similarity_threshold(&environment("0.91"))
+            .unwrap()
+            .to_bits(),
+        0.91_f64.to_bits()
     );
 }
 
@@ -202,16 +219,18 @@ fn the_default_threshold_is_read_from_the_environment() {
 fn an_unset_threshold_variable_keeps_litellms_default() {
     let unset: BTreeMap<String, String> = BTreeMap::new();
     assert_eq!(
-        default_similarity_threshold(&unset).unwrap(),
-        DEFAULT_SIMILARITY_THRESHOLD
+        default_similarity_threshold(&unset).unwrap().to_bits(),
+        DEFAULT_SIMILARITY_THRESHOLD.to_bits()
     );
 }
 
 #[test]
 fn an_empty_threshold_variable_keeps_litellms_default() {
     assert_eq!(
-        default_similarity_threshold(&environment("")).unwrap(),
-        DEFAULT_SIMILARITY_THRESHOLD
+        default_similarity_threshold(&environment(""))
+            .unwrap()
+            .to_bits(),
+        DEFAULT_SIMILARITY_THRESHOLD.to_bits()
     );
 }
 

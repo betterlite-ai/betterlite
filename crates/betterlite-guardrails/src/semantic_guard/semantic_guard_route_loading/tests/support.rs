@@ -6,6 +6,7 @@ use std::sync::Mutex;
 
 use async_trait::async_trait;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use tokio::runtime::Builder;
 
 use crate::semantic_guard::semantic_guard_route_loading::builder::SemanticRouterBuilder;
 use crate::semantic_guard::semantic_guard_route_loading::route::Route;
@@ -50,8 +51,11 @@ pub(super) fn environment(value: &str) -> BTreeMap<String, String> {
 }
 
 // the file is read before the future starts, so the test never blocks an async worker
-pub(super) fn block_on<F: Future>(future: F) -> F::Output {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    Builder::new_current_thread()
         .build()
         .unwrap()
         .block_on(future)
