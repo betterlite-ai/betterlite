@@ -70,6 +70,9 @@ fn latency_observations_behaviors(#[case] name: &str) {
 #[case::an_empty_window_averages_to_zero_and_has_no_percentile(
     "an_empty_window_averages_to_zero_and_has_no_percentile"
 )]
+#[case::the_average_divides_the_sum_by_the_sample_count(
+    "the_average_divides_the_sum_by_the_sample_count"
+)]
 #[case::a_non_positive_completion_count_has_no_normalized_time(
     "a_non_positive_completion_count_has_no_normalized_time"
 )]

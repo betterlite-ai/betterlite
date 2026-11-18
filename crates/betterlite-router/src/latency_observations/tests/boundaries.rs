@@ -46,6 +46,9 @@ pub(crate) fn run(name: &str) {
         "an_empty_window_averages_to_zero_and_has_no_percentile" => {
             an_empty_window_has_no_score();
         }
+        "the_average_divides_the_sum_by_the_sample_count" => {
+            the_average_divides_the_sum_by_the_sample_count();
+        }
         "a_non_positive_completion_count_has_no_normalized_time" => {
             a_non_positive_completion_count_has_no_normalized_time();
         }
@@ -200,6 +203,11 @@ fn a_percentile_at_one_takes_the_largest_sample() {
 fn an_empty_window_has_no_score() {
     assert_eq!(average(&[]), 0.0);
     assert_eq!(percentile(&[], 0.5), None);
+}
+
+fn the_average_divides_the_sum_by_the_sample_count() {
+    assert_eq!(average(&[1.0, 2.0, 3.0]), 2.0);
+    assert_eq!(average(&[0.5]), 0.5);
 }
 
 fn a_non_positive_completion_count_has_no_normalized_time() {
