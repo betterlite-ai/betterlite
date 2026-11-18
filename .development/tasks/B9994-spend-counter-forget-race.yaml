@@ -201,7 +201,7 @@ pitfalls:
   - Script both MGET replies before the read starts. FakeRedis pops them in order once the hold is released, and an unused second reply is harmless.
   - Spawn the in-flight read on a JoinSet with Arc::clone(&batch), as the deleted state.rs tests did; awaiting it on the test task blocks on the held MGET.
   - declare_pending calls request_batch.mget while it holds the state lock today; keep it that way, so the snapshot, the fetched marks and the inflight push stay one step.
-review_level: standard
+review_level: security
 budget:
   max_changed_lines: 350
   max_new_expects: 0
