@@ -1,16 +1,12 @@
+use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 
 // ServiceTypes.RESET_BUDGET_JOB: B012's service type, carried as the value the service-logging hook records.
 pub const RESET_BUDGET_JOB_SERVICE: &str = "reset_budget_job";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EventMetadataValue {
-    Count(usize),
-    Flag(bool),
-}
-
-pub type EventMetadata = BTreeMap<&'static str, EventMetadataValue>;
+// The hook takes LiteLLM's dict[str, object], so a value is the repo's typed JSON tree; a two-variant count-or-flag enum would also trip variant_size_differences.
+pub type EventMetadata = BTreeMap<&'static str, Json>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PhaseFailureEvent {

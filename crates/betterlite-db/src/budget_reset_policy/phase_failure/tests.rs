@@ -1,11 +1,13 @@
 #![cfg(test)]
 
 use super::{
-    EventMetadata, EventMetadataValue, PhaseFailureEvent, PhaseFailureSink, PhaseTiming,
-    RESET_BUDGET_JOB_SERVICE, report_phase_failure,
+    EventMetadata, PhaseFailureEvent, PhaseFailureSink, PhaseTiming, RESET_BUDGET_JOB_SERVICE,
+    report_phase_failure,
 };
 use crate::budget_reset_policy::tests::logging::{Logs, subscriber};
+use betterlite_models::decisions::Json;
 use chrono::{DateTime, TimeZone, Utc};
+use serde_json::Number;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use tracing::subscriber::set_default;
@@ -45,8 +47,8 @@ const fn timing(start: DateTime<Utc>, end: DateTime<Utc>) -> PhaseTiming {
 
 fn metadata() -> EventMetadata {
     BTreeMap::from([
-        ("num_keys_found", EventMetadataValue::Count(3)),
-        ("reset_truncated", EventMetadataValue::Flag(false)),
+        ("num_keys_found", Json::Number(Number::from(3_u8))),
+        ("reset_truncated", Json::Bool(false)),
     ])
 }
 
@@ -103,7 +105,7 @@ fn phase_failure_carries_event_metadata() {
     assert_eq!(event.event_metadata, metadata());
     assert_eq!(
         event.event_metadata.get("num_keys_found"),
-        Some(&EventMetadataValue::Count(3))
+        Some(&Json::Number(Number::from(3_u8)))
     );
 }
 
