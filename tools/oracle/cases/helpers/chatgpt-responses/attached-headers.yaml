@@ -1,0 +1,24 @@
+kind: helper
+name: chatgpt-responses-attached-headers
+call:
+  chatgpt_responses:
+    step: response
+    environment: {}
+    model: gpt-5
+    input: hi
+    options: {}
+    body: |-
+      data: {"type":"response.output_text.done","output_index":0,"text":"hello"}
+      data: {"type":"response.completed","response":{"id":"resp_1","created_at":1700000000,"object":"response"}}
+    status: 200
+    headers:
+      content-type: text/event-stream
+      x-request-id: req-1
+      x-ratelimit-remaining-requests: "9"
+    now: 1700000000
+    api_base: "https://auth.test/codex"
+    access_token: "token-1"
+    account_id: "acct-1"
+env: {}
+compare:
+  ignore: []
