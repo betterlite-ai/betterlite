@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::{AccessGroupSources, coerce_model_access_groups, request_model_access_groups};
+use crate::spend_metadata::as_object;
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("the fixture is JSON")
@@ -16,20 +17,11 @@ fn object(text: &str) -> JsonObject {
 fn groups(text: &str) -> Vec<String> {
     let fixture = object(text);
     let sources = AccessGroupSources {
-        standard_logging_object: fixture
-            .get("standard_logging_object")
-            .and_then(as_object_ref),
-        litellm_params: fixture.get("litellm_params").and_then(as_object_ref),
+        standard_logging_object: fixture.get("standard_logging_object").and_then(as_object),
+        litellm_params: fixture.get("litellm_params").and_then(as_object),
         auth_groups: fixture.get("auth_matched_model_access_groups"),
     };
     request_model_access_groups(&sources)
-}
-
-fn as_object_ref(value: &Json) -> Option<&JsonObject> {
-    match value {
-        Json::Object(entries) => Some(entries),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
 }
 
 #[test]
