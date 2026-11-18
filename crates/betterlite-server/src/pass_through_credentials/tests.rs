@@ -264,7 +264,11 @@ fn credential_accessor_override() {
 fn vertex_default_config_environment_references() {
     let mut resolver = router(
         Source::default(),
-        &[("PROJECT", "p"), ("DEFAULT_VERTEXAI_LOCATION", "us")],
+        &[
+            ("PROJECT", "p"),
+            ("GOOGLE_CREDS", "credentials-json"),
+            ("DEFAULT_VERTEXAI_LOCATION", "us"),
+        ],
     );
     resolver.set_default_vertex_config(Some(obj(&[
         (
@@ -272,6 +276,10 @@ fn vertex_default_config_environment_references() {
             Json::Text(String::from("os.environ/PROJECT")),
         ),
         ("vertex_location", Json::Text(String::from("us"))),
+        (
+            "vertex_credentials",
+            Json::Text(String::from("os.environ/GOOGLE_CREDS")),
+        ),
     ])));
     assert_eq!(
         resolver
@@ -280,6 +288,13 @@ fn vertex_default_config_environment_references() {
             .vertex_project
             .as_deref(),
         Some("p")
+    );
+    assert_eq!(
+        resolver
+            .get_vertex_credentials(None, None)
+            .unwrap()
+            .vertex_credentials,
+        Some(Json::Text(String::from("credentials-json")))
     );
     resolver.set_default_vertex_config(None);
     assert_eq!(
