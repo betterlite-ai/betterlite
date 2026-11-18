@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, NaiveDateTime, Weekday};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Weekday};
 
 use betterlite_models::decisions::Json;
 
@@ -8,30 +8,32 @@ pub fn decode_deprecation_date(text: &str) -> Option<NaiveDate> {
     let trimmed = text.trim_matches(|character: char| {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     });
-    match trimmed.as_bytes() {
+    let parsed = match trimmed.as_bytes() {
         &[y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1] | &[y0, y1, y2, y3, m0, m1, d0, d1] => {
             NaiveDate::from_ymd_opt(
                 calendar_year(&[y0, y1, y2, y3])?,
                 number(&[m0, m1])?,
                 number(&[d0, d1])?,
-            )
+            )?
         }
         &[y0, y1, y2, y3, b'-', b'W', w0, w1, b'-', d] | &[y0, y1, y2, y3, b'W', w0, w1, d] => {
             NaiveDate::from_isoywd_opt(
                 calendar_year(&[y0, y1, y2, y3])?,
                 number(&[w0, w1])?,
                 iso_weekday(decimal(d)?)?,
-            )
+            )?
         }
         &[y0, y1, y2, y3, b'-', b'W', w0, w1] | &[y0, y1, y2, y3, b'W', w0, w1] => {
             NaiveDate::from_isoywd_opt(
                 calendar_year(&[y0, y1, y2, y3])?,
                 number(&[w0, w1])?,
                 Weekday::Mon,
-            )
+            )?
         }
-        _ => None,
-    }
+        _ => return None,
+    };
+    // Python's date cannot hold a week date that spills into year 10000
+    (1..=9999).contains(&parsed.year()).then_some(parsed)
 }
 
 #[must_use]
