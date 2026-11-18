@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use betterlite_models::controls::json_value::JsonValue;
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 use serde_with::skip_serializing_none;
@@ -89,6 +91,8 @@ pub struct ThinkingBlock {
     pub thinking: Option<String>,
     pub signature: Option<String>,
     pub data: Option<String>,
+    // LiteLLM declares an open dict, ChatCompletionCachedContent or None, and the open arm covers the typed one.
+    pub cache_control: Option<IndexMap<String, JsonValue>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
