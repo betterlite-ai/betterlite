@@ -328,11 +328,15 @@ struct Fixture {
 
 impl Fixture {
     fn new() -> Self {
+        let timeline = Timeline::default();
         Self {
-            provider: ScriptedProvider::default(),
+            provider: ScriptedProvider {
+                timeline: timeline.clone(),
+                ..ScriptedProvider::default()
+            },
             backend_log: BackendLog::default(),
             client_log: ClientLog::default(),
-            timeline: Timeline::default(),
+            timeline,
         }
     }
 
