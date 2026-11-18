@@ -30,7 +30,7 @@ description: >-
   sync signs directly. cohere_batched_input: Cohere sends all inputs in one B627 transformed body. Merge default
   Content-Type=application/json with extra_headers, where an exact key overrides the default, then B595 get_request_headers
   signs json.dumps(data). Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native
-  B037 cohere_embedding with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding
+  B1418 betterlite_openai::cohere_legacy_embedding::execute with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding
   and the mutated original optional_params; api_key is explicitly None. This branch signs directly even for aembedding=true.
   titan_per_item_input: Only exact amazon.titan-embed-image-v1, amazon.titan-embed-text-v1, amazon.titan-embed-text-v2:0
   and amazon.titan-embed-g1-text-02 are accepted under provider amazon. Build one B627 request per input in order.
@@ -137,7 +137,7 @@ dod:
   - helper-python
 - text: 'cohere_batched_input: Cohere sends all inputs in one B627 transformed body. Merge default Content-Type=application/json
     with extra_headers, where an exact key overrides the default, then B595 get_request_headers signs json.dumps(data).
-    Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native B037 cohere_embedding
+    Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native B1418 betterlite_openai::cohere_legacy_embedding::execute
     with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding and the mutated
     original optional_params; api_key is explicitly None. This branch signs directly even for aembedding=true.'
   proof:
@@ -214,7 +214,7 @@ checks:
   - id: case-cohere-batched-input
     why: Cohere sends all inputs in one B627 transformed body. Merge default Content-Type=application/json with
       extra_headers, where an exact key overrides the default, then B595 get_request_headers signs json.dumps(data).
-      Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native B037 cohere_embedding
+      Convert prepared headers to a plain mapping or empty mapping when absent. Delegate native B1418 betterlite_openai::cohere_legacy_embedding::execute
       with prepared URL/headers, data, original input/model/response/encoding/timeout/client/aembedding and the
       mutated original optional_params; api_key is explicitly None. This branch signs directly even for aembedding=true.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_cases::case_[0-9]+_cohere_batched_input$/)'
