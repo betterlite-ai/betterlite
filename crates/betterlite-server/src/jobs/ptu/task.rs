@@ -48,6 +48,13 @@ impl<L: LockCache + 'static, A: OperatorAlert + 'static> ScheduledPtuRollup<L, A
         .await
     }
 
+    // One scheduler tick, with the run's failure logged inside the future it returns.
+    async fn tick(&self) {
+        if let Err(error) = self.run::<TokioSleeper>().await {
+            tracing::error!(error = %error, "PTU rollup: the scheduled run failed");
+        }
+    }
+
     // The registration the scheduler takes, absent when attribution is off at startup; a failed run is logged and never detached.
     #[must_use]
     pub fn registration(self: &Arc<Self>) -> Option<PtuRollupRegistration> {
@@ -60,11 +67,7 @@ impl<L: LockCache + 'static, A: OperatorAlert + 'static> ScheduledPtuRollup<L, A
         let job = Arc::clone(self);
         let run: JobTick = Arc::new(move || -> BoxFuture<'static, ()> {
             let tick = Arc::clone(&job);
-            Box::pin(async move {
-                if let Err(error) = tick.run::<TokioSleeper>().await {
-                    tracing::error!(error = %error, "PTU rollup: the scheduled run failed");
-                }
-            })
+            Box::pin(async move { tick.tick().await })
         });
         Some(PtuRollupRegistration {
             schedule: PTU_ROLLUP_SCHEDULE,
