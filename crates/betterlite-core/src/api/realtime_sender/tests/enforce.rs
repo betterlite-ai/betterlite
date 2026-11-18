@@ -286,17 +286,20 @@ fn replays_the_realtime_enforcement_corpus(
 #[case::not_a_number_in_array(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"values":[NaN]}}"#)]
 #[case::negative_infinity_after_comma(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"values":[0,-Infinity]}}"#)]
 #[case::transcription_session(r#"{"type":"transcription_session.update","session":{"type":"transcription","input_audio_transcription":{"model":"forbidden"},"note":"\ud800"}}"#)]
-fn enforce_rejects_a_frame_python_decodes(#[case] message: &str) {
+#[tokio::test]
+async fn enforce_rejects_a_frame_python_decodes(#[case] message: &str) {
     let fixture = Fixture::new();
     let mut state = fixture.state();
     state.force_transcription_model = Some("allowed".to_owned());
     let callbacks = no_guardrails();
     let mut sender = make(&mut state, &fixture, &callbacks);
     assert!(matches!(
-        sender.enforce_session_model(message),
+        sender.send_to_backend(message).await,
         Err(RealtimeSenderError::SessionUpdateUnreadable)
     ));
     assert!(!state.is_transcription_session.0);
+    assert!(fixture.script().seen.is_empty());
+    assert!(fixture.backend_log.sent().is_empty());
 }
 
 #[test]
@@ -322,18 +325,21 @@ fn enforce_rewrites_a_frame_with_a_surrogate_pair() {
 #[rstest]
 #[case::truncated(r#"{"type":"session.update","session":{"note":"\ud800"}"#)]
 #[case::trailing_comma(r#"{"type":"session.update","session":{"note":"\ud800",}}"#)]
-#[case::unquoted_key(r#"{NaN:1}"#)]
+#[case::unquoted_key("{NaN:1}")]
 #[case::number_then_constant(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":1NaN}}"#)]
 #[case::constant_with_fraction(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":NaN.0}}"#)]
 #[case::constant_then_digit(r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden"},"temperature":Infinity0}}"#)]
 #[case::invalid_escape(r#"{"type":"session.update","session":{"note":"\q"}}"#)]
 fn enforce_keeps_a_frame_python_cannot_decode(#[case] message: &str) {
-    let fixture = Fixture::new();
-    let mut state = fixture.state();
-    state.force_transcription_model = Some("allowed".to_owned());
-    let callbacks = no_guardrails();
-    let mut sender = make(&mut state, &fixture, &callbacks);
-    assert_eq!(sender.enforce_session_model(message).unwrap(), message);
+    let mut transcription = false;
+    let unchanged = super::super::enforce::enforce_session_update::<Infallible, Infallible>(
+        message,
+        "allowed",
+        &mut transcription,
+    )
+    .unwrap();
+    assert_eq!(unchanged, message);
+    assert!(!transcription);
 }
 
 #[test]

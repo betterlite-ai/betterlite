@@ -1,17 +1,9 @@
 use std::str;
 
-use betterlite_models::decisions::Json;
-
 // Python's json.loads reads an unpaired surrogate escape that serde_json refuses
 const SURROGATE_REPLACEMENT: &[u8] = b"\\uFFFD";
 const SURROGATE_FIRST: u16 = 0xD800;
 const SURROGATE_LAST: u16 = 0xDFFF;
-
-// The frame as Python's json.loads would decode it, found by replacing only the constructs serde_json cannot read
-pub(super) fn python_decoded(message: &str) -> Option<Json> {
-    let normalized = normalized_python_json(message)?;
-    serde_json::from_str(&normalized).ok()
-}
 
 enum Escape {
     // A \uXXXX escape spelling a surrogate: Python decodes it, and serde_json refuses an unpaired one
@@ -28,18 +20,17 @@ fn escape(bytes: &[u8], index: usize) -> Escape {
     if next != &b'u' {
         return Escape::Plain(2);
     }
-    let Some(value) = hex4(bytes, index.saturating_add(2)) else {
+    let Some(value) = rest
+        .get(2..6)
+        .and_then(|digits| str::from_utf8(digits).ok())
+        .and_then(|text| u16::from_str_radix(text, 16).ok())
+    else {
         return Escape::Plain(2);
     };
     if (SURROGATE_FIRST..=SURROGATE_LAST).contains(&value) {
         return Escape::Surrogate(6);
     }
     Escape::Plain(6)
-}
-
-fn hex4(bytes: &[u8], index: usize) -> Option<u16> {
-    let digits = bytes.get(index..)?.get(..4)?;
-    u16::from_str_radix(str::from_utf8(digits).ok()?, 16).ok()
 }
 
 // A constant is a value only after a value separator, so a token glued to a number is one Python's parser refuses
@@ -78,7 +69,7 @@ fn constant(bytes: &[u8], index: usize) -> Option<usize> {
 }
 
 // A replacement inside a string leaves the string valid, and an escape outside one stays invalid for both parsers
-fn normalized_python_json(message: &str) -> Option<String> {
+pub(super) fn normalize_extensions(message: &str) -> Option<String> {
     let bytes = message.as_bytes();
     let mut output = Vec::with_capacity(message.len());
     let mut index = 0_usize;

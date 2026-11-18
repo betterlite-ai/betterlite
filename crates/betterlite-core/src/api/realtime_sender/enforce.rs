@@ -160,7 +160,9 @@ where
         Ok(_) => return Err(RealtimeSenderError::SessionUpdateNotObject),
         // Forwarding a frame Python decodes would carry the client's model past the rewrite below
         Err(_) => {
-            return match python_json::python_decoded(message) {
+            let decoded = python_json::normalize_extensions(message)
+                .and_then(|normalized| serde_json::from_str::<Json>(&normalized).ok());
+            return match decoded {
                 Some(Json::Object(_)) => Err(RealtimeSenderError::SessionUpdateUnreadable),
                 Some(_) => Err(RealtimeSenderError::SessionUpdateNotObject),
                 None => Ok(message.to_owned()),
