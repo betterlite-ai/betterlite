@@ -3,7 +3,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::blocked_usage::OriginalResponse;
 use std::collections::BTreeMap;
 
-use super::*;
+use super::{BlockedException, SseChunk, build_block_sse_chunks, build_stream_error_items};
 
 fn frame_text(chunk: &[u8]) -> String {
     std::str::from_utf8(chunk).unwrap().to_owned()
@@ -126,4 +126,25 @@ fn error_frames_match_shared_error_builder() {
     let frame = frame_text(&frames[0]);
     assert!(frame.starts_with("event: error\n"), "{frame}");
     assert!(frame.contains("\"guardrail_error\""), "{frame}");
+}
+
+#[test]
+fn continuation_after_closed_blocks_uses_highest_seen_index() {
+    let previous = [SseChunk::Bytes(b"data: {\"type\":\"content_block_start\",\"index\":5}\ndata: {\"type\":\"content_block_stop\",\"index\":5}\n\n".to_vec())];
+    let frames = build_block_sse_chunks(&blocked("", None), true, Some(&previous)).unwrap();
+    assert_eq!(frames.len(), 5);
+    assert!(frame_text(&frames[0]).contains("\"index\": 6"));
+    assert!(frame_text(&frames[1]).contains("\"text\": \"\""));
+}
+
+#[test]
+fn standalone_reads_original_stream_bytes_usage() {
+    let original = serde_json::from_str(r#"[
+        "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"usage\":{\"input_tokens\":7}}}\n\n",
+        "event: message_delta\ndata: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":3}}\n\n"
+    ]"#).unwrap();
+    let converted = crate::guardrails::responses_translation::block_events::guardrail_json::blocked_original_response(Some(&original));
+    let frames = build_block_sse_chunks(&blocked("stop", Some(&converted)), false, None).unwrap();
+    assert!(frame_text(&frames[0]).contains("\"input_tokens\": 7"));
+    assert!(frame_text(&frames[4]).contains("\"output_tokens\": 3"));
 }

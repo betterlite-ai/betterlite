@@ -1,7 +1,15 @@
 #![expect(
     clippy::disallowed_types,
+    clippy::disallowed_methods,
     clippy::too_many_arguments,
     reason = "Responses stream data is an open wire boundary, and build_block_sse_chunks keeps LiteLLM's argument list"
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        reason = "serde_json fixtures compare JSON numbers and construct provider objects"
+    )
 )]
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -66,6 +74,7 @@ impl ResponsesCostCalculator for NoCost {
     }
 }
 
+#[must_use]
 pub fn blocked_output_item(message: &str, stamp: &BlockStamp) -> Value {
     json!({
         "type": "message",
@@ -77,14 +86,12 @@ pub fn blocked_output_item(message: &str, stamp: &BlockStamp) -> Value {
 }
 
 fn blocked_response(
-    message: &str,
     model: &str,
     original_response: Option<&Value>,
     stamp: &BlockStamp,
     response_id: &str,
-    output_item: Option<&Value>,
+    item: &Value,
 ) -> Value {
-    let item = output_item.map_or_else(|| blocked_output_item(message, stamp), Value::clone);
     json!({
         "id": response_id,
         "object": "response",
@@ -96,6 +103,7 @@ fn blocked_response(
     })
 }
 
+#[must_use]
 pub fn build_blocked_response(
     message: &str,
     model: &str,
@@ -103,15 +111,15 @@ pub fn build_blocked_response(
     stamp: &BlockStamp,
 ) -> Value {
     blocked_response(
-        message,
         model,
         original_response,
         stamp,
         &stamp.response_id,
-        None,
+        &blocked_output_item(message, stamp),
     )
 }
 
+#[must_use]
 pub fn continuation_identity(
     model: &str,
     responses_so_far: Option<&[Value]>,
@@ -148,28 +156,28 @@ fn block_item_events(message: &str, index: i64, item: &Value, stamp: &BlockStamp
             "type": "response.content_part.added",
             "item_id": stamp.message_id,
             "output_index": index,
-            "content_index": 0,
+            "content_index": 0_i64,
             "part": part,
         }),
         json!({
             "type": "response.output_text.delta",
             "item_id": stamp.message_id,
             "output_index": index,
-            "content_index": 0,
+            "content_index": 0_i64,
             "delta": message,
         }),
         json!({
             "type": "response.output_text.done",
             "item_id": stamp.message_id,
             "output_index": index,
-            "content_index": 0,
+            "content_index": 0_i64,
             "text": message,
         }),
         json!({
             "type": "response.content_part.done",
             "item_id": stamp.message_id,
             "output_index": index,
-            "content_index": 0,
+            "content_index": 0_i64,
             "part": part,
         }),
         json!({"type": "response.output_item.done", "output_index": index, "item": item}),
@@ -183,24 +191,24 @@ fn block_continuation_events(
     responses_so_far: Option<&[Value]>,
     stamp: &BlockStamp,
 ) -> Vec<Value> {
-    let (response_id, model, index) = continuation_identity(model, responses_so_far, stamp);
+    let (response_id, streamed_model, index) =
+        continuation_identity(model, responses_so_far, stamp);
     let item = blocked_output_item(message, stamp);
     let mut events = responses_so_far.map_or_else(Vec::new, open_item_closing_events);
     events.extend(block_item_events(message, index, &item, stamp));
     let response = blocked_response(
-        message,
-        model,
+        &streamed_model,
         original_response,
         stamp,
         &response_id,
-        Some(&item),
+        &item,
     );
     events.push(json!({"type": "response.completed", "response": response}));
     events
 }
 
-fn without_nulls(value: Value) -> Value {
-    match value {
+fn without_nulls(input: Value) -> Value {
+    match input {
         Value::Object(fields) => Value::Object(
             fields
                 .into_iter()
@@ -209,7 +217,7 @@ fn without_nulls(value: Value) -> Value {
                 .collect(),
         ),
         Value::Array(items) => Value::Array(items.into_iter().map(without_nulls).collect()),
-        value => value,
+        scalar @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) => scalar,
     }
 }
 
@@ -253,6 +261,7 @@ pub fn build_block_sse_chunks(
         .collect()
 }
 
+#[must_use]
 pub fn next_stream_sequence_number(responses_so_far: Option<&[Value]>) -> i64 {
     responses_so_far
         .into_iter()
@@ -262,6 +271,7 @@ pub fn next_stream_sequence_number(responses_so_far: Option<&[Value]>) -> i64 {
         .map_or(0, |number| number.saturating_add(1))
 }
 
+#[must_use]
 pub fn build_stream_error_items(
     status_code: u16,
     message: &str,

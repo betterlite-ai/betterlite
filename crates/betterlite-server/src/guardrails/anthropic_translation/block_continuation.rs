@@ -6,7 +6,8 @@ use betterlite_guardrails::guardrail_message_scope::blocked_usage::{
 use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::{Number, json};
+use serde::Serialize;
+use serde_json::Number;
 
 use super::sse_events::{SseChunk, content_block_state};
 
@@ -16,15 +17,36 @@ pub enum AnthropicBlockError {
     FakeStream(#[from] betterlite_core::api::messages_fake_stream::MessagesFakeStreamError),
     #[error("Anthropic stream event serialization failed: {0}")]
     Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    ErrorFrames(#[from] betterlite_guardrails::anthropic_sse::error::AnthropicSseError),
+    #[error("Anthropic stream error serialization failed: {source}")]
+    ErrorFrames {
+        #[source]
+        source: betterlite_guardrails::anthropic_sse::error::AnthropicSseError,
+    },
 }
 
-pub struct BlockedException<'a> {
-    pub message: &'a str,
-    pub model: &'a str,
-    pub message_id: &'a str,
-    pub original_response: Option<&'a OriginalResponse>,
+#[derive(Debug)]
+pub struct BlockedException<'blocked> {
+    pub message: &'blocked str,
+    pub model: &'blocked str,
+    pub message_id: &'blocked str,
+    pub original_response: Option<&'blocked OriginalResponse>,
+}
+
+#[derive(Serialize)]
+struct BlockedMessage<'message> {
+    id: &'message str,
+    r#type: &'message str,
+    role: &'message str,
+    content: [BlockedText<'message>; 1],
+    model: &'message str,
+    stop_reason: &'message str,
+    usage: BlockedUsage,
+}
+
+#[derive(Serialize)]
+struct BlockedText<'text> {
+    r#type: &'text str,
+    text: &'text str,
 }
 
 pub fn build_block_sse_chunks(
@@ -40,15 +62,19 @@ pub fn build_block_sse_chunks(
     if stream_started {
         return Ok(continuation_frames(blocked, usage, responses_so_far));
     }
-    let response: Json = serde_json::from_value(json!({
-        "id": blocked.message_id,
-        "type": "message",
-        "role": "assistant",
-        "content": [{"type": "text", "text": blocked.message}],
-        "model": blocked.model,
-        "stop_reason": "end_turn",
-        "usage": {"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens},
-    }))?;
+    let payload = BlockedMessage {
+        id: blocked.message_id,
+        r#type: "message",
+        role: "assistant",
+        content: [BlockedText {
+            r#type: "text",
+            text: blocked.message,
+        }],
+        model: blocked.model,
+        stop_reason: "end_turn",
+        usage,
+    };
+    let response: Json = serde_json::from_value(serde_json::to_value(payload)?)?;
     Ok(MessagesFakeStream::new(&response)?.collect())
 }
 
@@ -153,7 +179,8 @@ fn message_stop_frame() -> Vec<u8> {
 }
 
 pub fn build_stream_error_items(message: &str) -> Result<Vec<Vec<u8>>, AnthropicBlockError> {
-    Ok(anthropic_sse_error_frames(message)?)
+    anthropic_sse_error_frames(message)
+        .map_err(|source| AnthropicBlockError::ErrorFrames { source })
 }
 
 #[cfg(test)]

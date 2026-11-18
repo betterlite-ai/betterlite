@@ -5,11 +5,38 @@ use betterlite_server::guardrails::anthropic_translation::sse_events::{
     SseChunk, streaming_has_ended, streaming_scan_key, streaming_string_so_far,
 };
 use betterlite_server::guardrails::responses_translation::block_events as responses_block;
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
-fn response_frames(chunks: Vec<Vec<u8>>) -> HelperResult {
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Operation {
+    ResponsesStandalone,
+    ResponsesContinuation,
+    ResponsesOpenItem,
+    ResponsesStreamError,
+    AnthropicStandalone,
+    AnthropicContinuation,
+    AnthropicObservation,
+    AnthropicScanKey,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Input {
+    operation: Operation,
+    message: String,
+    model: String,
+    original_response: Option<Value>,
+    stamp: responses_block::BlockStamp,
+    events: Vec<Value>,
+    chunks: Vec<String>,
+    status_code: u16,
+    message_id: String,
+}
+
+fn response_frames(chunks: &[Vec<u8>]) -> HelperResult {
     let frames = chunks
         .iter()
         .map(|chunk| {
@@ -21,7 +48,7 @@ fn response_frames(chunks: Vec<Vec<u8>>) -> HelperResult {
     Ok(json!({"frames": frames}))
 }
 
-fn anthropic_frames(chunks: Vec<Vec<u8>>) -> HelperResult {
+fn anthropic_frames(chunks: &[Vec<u8>]) -> HelperResult {
     let frames = chunks
         .iter()
         .map(|chunk| {
@@ -35,72 +62,33 @@ fn anthropic_frames(chunks: Vec<Vec<u8>>) -> HelperResult {
                 .next()
                 .and_then(|line| line.strip_prefix("data: "))
                 .unwrap_or_default();
-            let data = serde_json::from_str::<Value>(data).or_value_error()?;
-            Ok(json!({"event": kind, "data": data}))
+            let payload = serde_json::from_str::<Value>(data).or_value_error()?;
+            Ok(json!({"event": kind, "data": payload}))
         })
         .collect::<Result<Vec<_>, Box<HelperError>>>()?;
     Ok(json!({"frames": frames}))
 }
 
-fn chunks(input: &Value) -> Vec<SseChunk> {
-    input
-        .get("chunks")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .map(|item| {
-            if let Some(bytes) = item.as_str() {
-                SseChunk::Bytes(bytes.as_bytes().to_vec())
-            } else if let Some(object) = item.as_object() {
-                SseChunk::Event(object.clone())
-            } else {
-                SseChunk::Other
-            }
-        })
-        .collect()
-}
-
-fn text_field<'input>(input: &'input Value, name: &str) -> &'input str {
-    input.get(name).and_then(Value::as_str).unwrap_or_default()
-}
-
-fn events_field(input: &Value) -> Vec<Value> {
-    input
-        .get("events")
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-}
-
-fn responses_answer(input: &Value, continuation: bool) -> HelperResult {
-    let stamp = input.get("stamp").cloned().unwrap_or_else(|| json!({}));
-    let stamp: responses_block::BlockStamp = serde_json::from_value(stamp).or_value_error()?;
-    let events = events_field(input);
+fn responses_answer(input: &Input, continuation: bool) -> HelperResult {
     let frames = responses_block::build_block_sse_chunks(
-        text_field(input, "message"),
-        text_field(input, "model"),
-        input.get("original_response"),
+        &input.message,
+        &input.model,
+        input.original_response.as_ref(),
         continuation,
-        continuation.then_some(events.as_slice()),
-        &stamp,
+        Some(&input.events),
+        &input.stamp,
     )
     .or_value_error()?;
-    response_frames(frames)
+    response_frames(&frames)
 }
 
-fn responses_error_answer(input: &Value) -> HelperResult {
-    let status_code = input
-        .get("status_code")
-        .and_then(Value::as_u64)
-        .unwrap_or_default();
-    let status_code = u16::try_from(status_code).unwrap_or_default();
-    let events = events_field(input);
-    let items = responses_block::build_stream_error_items(
-        status_code,
-        text_field(input, "message"),
-        Some(&events),
+fn responses_error_answer(input: &Input) -> HelperResult {
+    let events = responses_block::build_stream_error_items(
+        input.status_code,
+        &input.message,
+        Some(&input.events),
     );
-    let items = items
+    let items = events
         .iter()
         .map(|item| {
             let mut value = serde_json::to_value(item).or_value_error()?;
@@ -113,52 +101,52 @@ fn responses_error_answer(input: &Value) -> HelperResult {
     Ok(json!({"items": items}))
 }
 
-fn anthropic_answer(input: &Value, continuation: bool) -> HelperResult {
-    let sealed = chunks(input);
-    let original =
-        responses_block::guardrail_json::blocked_original_response(input.get("original_response"));
+fn anthropic_answer(input: &Input, continuation: bool, chunks: &[SseChunk]) -> HelperResult {
+    let original = responses_block::guardrail_json::blocked_original_response(
+        input.original_response.as_ref(),
+    );
     let blocked = anthro_block::BlockedException {
-        message: text_field(input, "message"),
-        model: text_field(input, "model"),
-        message_id: input
-            .get("message_id")
-            .and_then(Value::as_str)
-            .unwrap_or("msg_fixed"),
+        message: &input.message,
+        model: &input.model,
+        message_id: &input.message_id,
         original_response: Some(&original),
     };
-    anthropic_frames(
-        anthro_block::build_block_sse_chunks(&blocked, continuation, Some(&sealed))
-            .or_value_error()?,
-    )
-}
-
-fn observation_answer(input: &Value) -> HelperResult {
-    let sealed = chunks(input);
-    Ok(json!({
-        "text": streaming_string_so_far(&sealed),
-        "ended": streaming_has_ended(&sealed),
-    }))
-}
-
-fn scan_key_answer(input: &Value) -> HelperResult {
-    let sealed = chunks(input);
-    Ok(json!({"scan_key": streaming_scan_key(&sealed)}))
+    let frames = anthro_block::build_block_sse_chunks(&blocked, continuation, Some(chunks))
+        .or_value_error()?;
+    anthropic_frames(&frames)
 }
 
 impl Helper for Op {
-    type Input = Value;
+    type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let operation = text_field(input, "operation");
-        match operation {
-            "responses_standalone" => responses_answer(input, false),
-            "responses_continuation" | "responses_open_item" => responses_answer(input, true),
-            "responses_stream_error" => responses_error_answer(input),
-            "anthropic_standalone" => anthropic_answer(input, false),
-            "anthropic_continuation" => anthropic_answer(input, true),
-            "anthropic_observation" => observation_answer(input),
-            "anthropic_scan_key" => scan_key_answer(input),
-            _ => Self::not_built("b3673 operation"),
+        let chunks: Vec<SseChunk> = input
+            .chunks
+            .iter()
+            .map(|text| SseChunk::Bytes(text.as_bytes().to_vec()))
+            .collect();
+        match input.operation {
+            Operation::ResponsesStandalone => responses_answer(input, false),
+            Operation::ResponsesContinuation | Operation::ResponsesOpenItem => {
+                responses_answer(input, true)
+            }
+            Operation::ResponsesStreamError => responses_error_answer(input),
+            Operation::AnthropicStandalone => anthropic_answer(input, false, &chunks),
+            Operation::AnthropicContinuation => anthropic_answer(input, true, &chunks),
+            Operation::AnthropicObservation => Ok(json!({
+                "text": streaming_string_so_far(&chunks), "ended": streaming_has_ended(&chunks),
+            })),
+            Operation::AnthropicScanKey => {
+                let key = streaming_scan_key(&chunks);
+                let calls = key
+                    .tool_calls
+                    .iter()
+                    .map(|text| serde_json::from_str::<Value>(text))
+                    .collect::<Result<Vec<_>, _>>()
+                    .or_value_error()?;
+                Ok(json!({"scan_key": {"texts":key.texts,"tool_calls":calls,
+                    "stream_ended":key.stream_ended,"tool_calls_in_flight":key.tool_calls_in_flight}}))
+            }
         }
     }
 }

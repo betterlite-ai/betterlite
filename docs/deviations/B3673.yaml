@@ -22,6 +22,9 @@ deviations:
     why: B3669's anthropic_sse_error_frames serializes the frame and returns a Result, and the module's error enum carries that failure instead of discarding it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L352-L363
   - what: The scan key's tool_use fingerprints are B3663's compact JSON, not Python json.dumps with its default ", " and ": " separators and ensure_ascii escaping.
-    why: B3663 owns stream_item_fingerprint on both sides of the comparison, so the scan key and the buffered scan agree; the oracle case ignores the fingerprint text for this reason.
+    why: B3663 owns stream_item_fingerprint on both sides of the comparison, so the scan key and the buffered scan agree; the oracle parses fingerprint JSON before comparing it, preserving all fields while ignoring JSON whitespace.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L135-L137
+  - what: Sequence numbers and continuation indices saturate at i64::MAX instead of growing beyond Rust's signed integer range.
+    why: The stream API exposes i64 indices; saturation avoids an overflow panic at the boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/guardrail_translation/handler.py#L460-L465
 kept_bugs: []

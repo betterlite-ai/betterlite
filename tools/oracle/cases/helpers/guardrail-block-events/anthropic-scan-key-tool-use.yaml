@@ -20,7 +20,4 @@ call:
     status_code: 400
     message_id: msg_00000000-0000-0000-0000-000000000001
 env: {}
-compare:
-  ignore:
-    - pointer: /value/scan_key/tool_calls
-      why: "betterlite fingerprints use its compact JSON policy; LiteLLM uses json.dumps separators"
+compare: {ignore: []}

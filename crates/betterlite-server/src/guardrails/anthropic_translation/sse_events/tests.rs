@@ -1,5 +1,9 @@
 #![cfg(test)]
-use super::*;
+use super::{
+    SseChunk, content_block_state, extract_text_from_sse, iter_sse_events,
+    streamed_tool_use_fingerprints, streaming_has_ended, streaming_scan_key,
+    streaming_string_so_far,
+};
 use serde_json::json;
 
 #[test]
@@ -23,13 +27,13 @@ fn iter_events_preserves_parsed_event_and_ignores_other_item() {
 fn block_state_tracks_highest_open_and_seen() {
     let items = [
         SseChunk::Event(
-            serde_json::from_value(json!({"type":"content_block_start","index":2})).unwrap(),
+            serde_json::from_value(json!({"type":"content_block_start","index":2_i64})).unwrap(),
         ),
         SseChunk::Event(
-            serde_json::from_value(json!({"type":"content_block_start","index":5})).unwrap(),
+            serde_json::from_value(json!({"type":"content_block_start","index":5_i64})).unwrap(),
         ),
         SseChunk::Event(
-            serde_json::from_value(json!({"type":"content_block_stop","index":5})).unwrap(),
+            serde_json::from_value(json!({"type":"content_block_stop","index":5_i64})).unwrap(),
         ),
     ];
     assert_eq!(content_block_state(&items), (Some(2), Some(5)));
@@ -127,8 +131,10 @@ fn replays_the_anthropic_sse_events_corpus() {
     for entry in std::fs::read_dir(directory).unwrap() {
         let bytes = std::fs::read(entry.unwrap().path()).unwrap();
         let chunk = SseChunk::Bytes(bytes);
-        let _ = iter_sse_events(&chunk);
-        let _ = content_block_state(&[chunk]);
+        let _events = iter_sse_events(&chunk);
+        let _state = content_block_state(std::slice::from_ref(&chunk));
+        let _text = streaming_string_so_far(std::slice::from_ref(&chunk));
+        let _ended = streaming_has_ended(&[chunk]);
     }
 }
 
@@ -194,4 +200,111 @@ fn fingerprints_ignore_non_tool_use_content_blocks() {
         ),
     ];
     assert!(streamed_tool_use_fingerprints(&items).is_empty());
+}
+
+#[test]
+fn iter_events_trims_line_and_payload_whitespace() {
+    let chunk = SseChunk::Bytes(b"\x1c \tdata: \t{\"index\":2}\r\x1f\n".to_vec());
+    assert_eq!(
+        iter_sse_events(&chunk),
+        vec![serde_json::from_value(json!({"index":2_i64})).unwrap()]
+    );
+}
+
+#[rstest::rstest]
+#[case::absent(json!({}))]
+#[case::other_type(json!({"type":"other", "delta":{"stop_reason":"end_turn"}}))]
+#[case::null_delta(json!({"type":"message_delta", "delta":null}))]
+#[case::no_reason(json!({"type":"message_delta", "delta":{}}))]
+fn has_ended_rejects_non_terminal_events(#[case] event: serde_json::Value) {
+    let chunk = SseChunk::Event(event.as_object().unwrap().clone());
+    assert!(!streaming_has_ended(&[chunk]));
+}
+
+#[test]
+fn has_ended_accepts_empty_reason_and_last_event_line() {
+    let chunk = SseChunk::Bytes(
+        b"event: other\nevent: message_delta\ndata: {\"delta\":{\"stop_reason\":\"\"}}\n\n"
+            .to_vec(),
+    );
+    assert!(streaming_has_ended(&[chunk]));
+}
+
+#[test]
+fn text_and_end_skip_bad_json_and_missing_payloads() {
+    let chunk = SseChunk::Bytes(b"event: content_block_delta\ndata: bad\n\nevent: content_block_delta\ndata: \n\nevent: message_delta\ndata: bad\n\nevent: message_delta\ndata: \n\nevent: content_block_delta\n\nevent: message_delta\n\nevent: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"kept\"}}\n\n".to_vec());
+    assert_eq!(
+        streaming_string_so_far(std::slice::from_ref(&chunk)),
+        "kept"
+    );
+    assert!(!streaming_has_ended(&[chunk, SseChunk::Other]));
+}
+
+#[test]
+fn scan_key_without_tools_never_marks_calls_in_flight() {
+    let key = streaming_scan_key(&[]);
+    assert_eq!(key.texts, [""]);
+    assert!(key.tool_calls.is_empty());
+    assert!(!key.stream_ended);
+    assert!(!key.tool_calls_in_flight);
+}
+
+#[test]
+fn block_state_reopens_indices_and_retains_highest_seen() {
+    let chunk = SseChunk::Bytes(b"data: {\"type\":\"content_block_start\",\"index\":0}\ndata: {\"type\":\"content_block_stop\",\"index\":0}\ndata: {\"type\":\"content_block_start\",\"index\":-1}\ndata: {\"type\":\"content_block_stop\",\"index\":-1}\ndata: {\"type\":\"content_block_start\",\"index\":-1}\n".to_vec());
+    assert_eq!(content_block_state(&[chunk]), (Some(-1), Some(0)));
+    assert_eq!(content_block_state(&[]), (None, None));
+}
+
+#[derive(Clone, Default)]
+struct LogBuffer(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+
+impl std::io::Write for LogBuffer {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl tracing_subscriber::fmt::MakeWriter<'_> for LogBuffer {
+    type Writer = Self;
+
+    fn make_writer(&self) -> Self {
+        self.clone()
+    }
+}
+
+#[test]
+fn text_and_end_log_malformed_json_and_utf8() {
+    let logs = LogBuffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_target(false)
+        .with_writer(logs.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    assert_eq!(
+        extract_text_from_sse(b"event: content_block_delta\ndata: bad\n\n"),
+        ""
+    );
+    assert!(!streaming_has_ended(&[SseChunk::Bytes(
+        b"event: message_delta\ndata: bad\n\n".to_vec()
+    )]));
+    assert_eq!(extract_text_from_sse(&[0xff]), "");
+    assert!(!streaming_has_ended(&[SseChunk::Bytes(vec![0xff])]));
+    let bytes = logs.0.lock().unwrap();
+    let output = std::str::from_utf8(&bytes).unwrap();
+    assert_eq!(
+        output
+            .matches("WARN Failed to parse JSON from SSE data")
+            .count(),
+        2
+    );
+    assert!(output.contains("ERROR Error extracting text from SSE"));
+    assert!(output.contains("ERROR Error checking streaming end in SSE"));
 }

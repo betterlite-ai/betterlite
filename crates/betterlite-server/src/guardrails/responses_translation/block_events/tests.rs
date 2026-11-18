@@ -1,7 +1,11 @@
 #![cfg(test)]
 use serde_json::{Value, json};
 
-use super::*;
+use super::{
+    BlockStamp, CostTarget, NoCost, ResponsesCostCalculator, build_block_sse_chunks,
+    build_blocked_response, build_stream_error_items, continuation_identity,
+    next_stream_sequence_number,
+};
 
 fn stamp() -> BlockStamp {
     BlockStamp {
@@ -19,10 +23,10 @@ fn frame_value(frame: &[u8]) -> Value {
 fn original_usage() -> Value {
     json!({
         "usage": {
-            "input_tokens": 8,
-            "output_tokens": 2,
-            "total_tokens": 10,
-            "input_tokens_details": {"cached_tokens": 3},
+            "input_tokens": 8_i64,
+            "output_tokens": 2_i64,
+            "total_tokens": 10_i64,
+            "input_tokens_details": {"cached_tokens": 3_i64},
         }
     })
 }
@@ -81,7 +85,7 @@ fn standalone_block_emits_data_frames_and_sequence_numbers_advance() {
         .unwrap();
     assert_eq!(done["sequence_number"], 1);
     assert_eq!(
-        next_stream_sequence_number(Some(&[json!({"sequence_number":4})])),
+        next_stream_sequence_number(Some(&[json!({"sequence_number":4_i64})])),
         5
     );
 }
@@ -141,7 +145,7 @@ fn standalone_empty_message_emits_no_delta() {
 fn continuation_closes_open_function_call_incomplete_before_block_item() {
     let events = [
         json!({"type":"response.created","response":{"id":"resp_stream","model":"stream-model"}}),
-        json!({"type":"response.output_item.added","output_index":4,"item":{"type":"function_call","id":"call_1","call_id":"id","name":"tool","arguments":"{}"}}),
+        json!({"type":"response.output_item.added","output_index":4_i64,"item":{"type":"function_call","id":"call_1","call_id":"id","name":"tool","arguments":"{}"}}),
     ];
     let frames =
         build_block_sse_chunks("blocked", "m", None, true, Some(&events), &stamp()).unwrap();
@@ -160,8 +164,8 @@ fn continuation_closes_open_function_call_incomplete_before_block_item() {
 fn continuation_closes_open_message_and_adds_block_item() {
     let events = [
         json!({"type":"response.created","response":{"id":"resp_stream","model":"stream-model"}}),
-        json!({"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_open","role":"assistant"}}),
-        json!({"type":"response.content_part.added","item_id":"msg_open","content_index":0}),
+        json!({"type":"response.output_item.added","output_index":0_i64,"item":{"type":"message","id":"msg_open","role":"assistant"}}),
+        json!({"type":"response.content_part.added","item_id":"msg_open","content_index":0_i64}),
         json!({"type":"response.output_text.delta","item_id":"msg_open","delta":"part"}),
     ];
     let frames =
@@ -199,9 +203,10 @@ fn continuation_closes_open_message_and_adds_block_item() {
 #[test]
 fn continuation_identity_skips_empty_fields_and_advances_output_index() {
     let events = [
-        json!({"response":{"id":"","model":""},"output_index":1}),
-        json!({"response":{"id":"resp_stream"},"output_index":7}),
-        json!({"response":{"model":"model_stream"},"output_index":3}),
+        json!({"response":{"id":"","model":""},"output_index":1_i64}),
+        json!({"response":{"id":"resp_stream"},"output_index":7_i64}),
+        json!({"response":{"model":"model_stream"},"output_index":3_i64}),
+        json!({"response":{"id":"later","model":"later"}}),
     ];
     assert_eq!(
         continuation_identity("given-model", Some(&events), &stamp()),
@@ -219,7 +224,7 @@ fn continuation_identity_falls_back_to_stamp_and_given_model() {
 
 #[test]
 fn stream_error_has_guardrail_code_and_next_sequence() {
-    let events = [json!({"sequence_number":5}), json!({"type":"event"})];
+    let events = [json!({"sequence_number":5_i64}), json!({"type":"event"})];
     let errors = build_stream_error_items(403, "blocked", Some(&events));
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].error.r#type, "guardrail_error");
@@ -252,7 +257,7 @@ fn sequence_number_skips_missing_and_defaults_to_zero() {
     assert_eq!(next_stream_sequence_number(None), 0);
     assert_eq!(
         next_stream_sequence_number(Some(&[
-            json!({"sequence_number":8}),
+            json!({"sequence_number":8_i64}),
             json!({"type":"no_sequence"})
         ])),
         9
@@ -260,8 +265,50 @@ fn sequence_number_skips_missing_and_defaults_to_zero() {
     assert_eq!(
         next_stream_sequence_number(Some(&[
             json!({"sequence_number":"text"}),
-            json!({"sequence_number":2})
+            json!({"sequence_number":2_i64})
         ])),
         3
+    );
+}
+
+#[test]
+fn blocked_response_reads_completed_stream_usage() {
+    let original = json!([
+        {"type":"response.completed","response":{"usage":{"input_tokens":9_i64,"output_tokens":4_i64,"total_tokens":13_i64}}},
+        {"type":"response.in_progress","response":{"usage":{"input_tokens":1_i64,"output_tokens":1_i64,"total_tokens":2_i64}}}
+    ]);
+    let response = build_blocked_response("stop", "m", Some(&original), &stamp());
+    assert_eq!(
+        response["usage"],
+        json!({"input_tokens":9_i64,"output_tokens":4_i64,"total_tokens":13_i64})
+    );
+}
+
+#[test]
+fn blocked_response_preserves_nested_usage_details() {
+    let details =
+        json!({"nested":[null,true,false,-2_i64,18446744073709551615_u64,"detail",{"key":7_i64}]});
+    let original = json!({"usage":{"input_tokens":3_i64,"output_tokens":2_i64,"total_tokens":5_i64,"extra":details}});
+    let response = build_blocked_response("stop", "m", Some(&original), &stamp());
+    assert_eq!(response["usage"]["extra"], details);
+}
+
+#[test]
+fn sequence_number_uses_last_integer_and_saturates() {
+    let events = [
+        json!({"sequence_number":9_i64}),
+        json!({"sequence_number":2_i64}),
+        json!({"sequence_number":null}),
+    ];
+    assert_eq!(next_stream_sequence_number(Some(&events)), 3);
+    assert_eq!(
+        next_stream_sequence_number(Some(&[json!({"sequence_number":i64::MAX})])),
+        i64::MAX
+    );
+    assert_eq!(
+        next_stream_sequence_number(Some(&[
+            json!({"sequence_number":i64::MAX.saturating_sub(1)})
+        ])),
+        i64::MAX
     );
 }

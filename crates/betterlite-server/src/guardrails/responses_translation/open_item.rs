@@ -1,6 +1,14 @@
 #![expect(
     clippy::disallowed_types,
+    clippy::disallowed_methods,
     reason = "Responses stream events are provider JSON kept so the still-open item can be closed"
+)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        reason = "serde_json fixtures compare JSON numbers and construct provider objects"
+    )
 )]
 
 use serde_json::{Map, Value, json};
@@ -17,8 +25,14 @@ pub struct OpenItemState {
     pub payload: Value,
 }
 
+#[must_use]
 pub fn incomplete_item_fields(payload: &Value) -> Map<String, Value> {
-    payload.as_object().cloned().unwrap_or_default()
+    match payload {
+        Value::Object(fields) => fields.clone(),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
+            Map::new()
+        }
+    }
 }
 
 fn open_added_item(responses_so_far: &[Value]) -> Option<(i64, &Value)> {
@@ -28,13 +42,13 @@ fn open_added_item(responses_so_far: &[Value]) -> Option<(i64, &Value)> {
         let index = event.get("output_index").and_then(Value::as_i64);
         match event.get("type").and_then(Value::as_str) {
             Some("response.output_item.added") => {
-                if let Some(index) = index {
-                    added.push((index, event.get("item")));
+                if let Some(added_index) = index {
+                    added.push((added_index, event.get("item")));
                 }
             }
             Some("response.output_item.done") => {
-                if let Some(index) = index {
-                    done.push(index);
+                if let Some(done_index) = index {
+                    done.push(done_index);
                 }
             }
             _ => {}
@@ -44,7 +58,7 @@ fn open_added_item(responses_so_far: &[Value]) -> Option<(i64, &Value)> {
         .into_iter()
         .rev()
         .find(|(index, _)| !done.contains(index))?;
-    payload.map(|payload| (output_index, payload))
+    payload.map(|item| (output_index, item))
 }
 
 fn open_part_state(responses_so_far: &[Value], item_id: &str) -> (i64, bool, String) {
@@ -58,13 +72,13 @@ fn open_part_state(responses_so_far: &[Value], item_id: &str) -> (i64, bool, Str
         let index = event.get("content_index").and_then(Value::as_i64);
         match event.get("type").and_then(Value::as_str) {
             Some("response.content_part.added") => {
-                if let Some(index) = index {
-                    parts.push(index);
+                if let Some(added_index) = index {
+                    parts.push(added_index);
                 }
             }
             Some("response.content_part.done") => {
-                if let Some(index) = index {
-                    closed.push(index);
+                if let Some(done_index) = index {
+                    closed.push(done_index);
                 }
             }
             Some("response.output_text.delta") => {
@@ -92,6 +106,7 @@ fn non_empty_field<'payload>(payload: &'payload Value, name: &str) -> Option<&'p
         .filter(|value| !value.is_empty())
 }
 
+#[must_use]
 pub fn open_item_state(responses_so_far: &[Value]) -> Option<OpenItemState> {
     let (output_index, payload) = open_added_item(responses_so_far)?;
     let item_id = payload.get("id").and_then(Value::as_str)?;
@@ -130,7 +145,7 @@ fn message_closing_events(state: &OpenItemState) -> Vec<Value> {
             "item_id": state.item_id,
             "output_index": state.output_index,
             "content_index": state.content_index,
-            "part": {"type": "output_text", "text": state.text, "annotations": []},
+            "part": {"type": "output_text", "text": state.text, "annotations": [], "logprobs": null},
         }));
     }
     events.push(json!({
@@ -147,6 +162,7 @@ fn message_closing_events(state: &OpenItemState) -> Vec<Value> {
     events
 }
 
+#[must_use]
 pub fn open_item_closing_events(responses_so_far: &[Value]) -> Vec<Value> {
     let Some(state) = open_item_state(responses_so_far) else {
         return Vec::new();

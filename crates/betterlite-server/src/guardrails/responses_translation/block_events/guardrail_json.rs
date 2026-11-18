@@ -1,24 +1,36 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_message_scope::{
-    Object,
+    Object, StreamItem,
     blocked_usage::{OriginalResponse, blocked_responses_stream_usage},
 };
 use serde_json::{Map, Value};
 
+#[must_use]
 pub fn blocked_original_response(original_response: Option<&Value>) -> OriginalResponse {
-    match original_response.and_then(Value::as_object) {
-        Some(fields) => OriginalResponse::Response(
+    match original_response {
+        Some(Value::Array(items)) => OriginalResponse::Stream(
+            items
+                .iter()
+                .map(|item| match item {
+                    Value::String(text) => StreamItem::Bytes(text.as_bytes().to_vec()),
+                    _ => StreamItem::Json(to_guardrail(item)),
+                })
+                .collect(),
+        ),
+        Some(Value::Object(fields)) => OriginalResponse::Response(
             fields
                 .iter()
                 .map(|(name, value)| (name.clone(), to_guardrail(value)))
                 .collect::<Object>(),
         ),
-        None => OriginalResponse::Absent,
+        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_)) | None => {
+            OriginalResponse::Absent
+        }
     }
 }
 
-pub(crate) fn to_guardrail(value: &Value) -> GuardrailValue {
-    match value {
+pub(crate) fn to_guardrail(input: &Value) -> GuardrailValue {
+    match input {
         Value::Null => GuardrailValue::Null,
         Value::Bool(flag) => GuardrailValue::Boolean(*flag),
         Value::Number(number) => number.as_i64().map_or_else(
@@ -41,8 +53,8 @@ pub(crate) fn to_guardrail(value: &Value) -> GuardrailValue {
     }
 }
 
-fn from_guardrail(value: &GuardrailValue) -> Value {
-    match value {
+fn from_guardrail(input: &GuardrailValue) -> Value {
+    match input {
         GuardrailValue::Null => Value::Null,
         GuardrailValue::Boolean(flag) => Value::Bool(*flag),
         GuardrailValue::SignedInteger(number) => Value::from(*number),

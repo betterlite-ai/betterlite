@@ -2,8 +2,16 @@
     clippy::disallowed_types,
     reason = "provider SSE JSON is an open wire boundary"
 )]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        reason = "serde_json fixtures compare JSON numbers and construct provider objects"
+    )
+)]
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use crate::guardrails::responses_translation::block_events::guardrail_json::to_guardrail;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::guardrail_message_scope::fingerprint::stream_item_fingerprint;
 use betterlite_guardrails::guardrail_translation::StreamingScanKey;
@@ -16,32 +24,8 @@ pub enum SseChunk {
     Other,
 }
 
-fn guardrail_value(value: &Value) -> GuardrailValue {
-    match value {
-        Value::Null => GuardrailValue::Null,
-        Value::Bool(value) => GuardrailValue::Boolean(*value),
-        Value::Number(value) => value.as_i64().map_or_else(
-            || {
-                value.as_u64().map_or_else(
-                    || GuardrailValue::Decimal(value.as_f64().unwrap_or_default()),
-                    GuardrailValue::UnsignedInteger,
-                )
-            },
-            GuardrailValue::SignedInteger,
-        ),
-        Value::String(value) => GuardrailValue::Text(value.clone()),
-        Value::Array(values) => GuardrailValue::Array(values.iter().map(guardrail_value).collect()),
-        Value::Object(values) => GuardrailValue::Object(
-            values
-                .iter()
-                .map(|(key, value)| (key.clone(), guardrail_value(value)))
-                .collect(),
-        ),
-    }
-}
-
 // Python's str.strip also drops U+001C to U+001F, which Rust's trim leaves in place.
-fn python_trim(text: &str) -> &str {
+fn trim_sse(text: &str) -> &str {
     text.trim_matches(|character: char| {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     })
@@ -59,15 +43,17 @@ fn utf8_replacing_invalid(bytes: &[u8]) -> String {
     text
 }
 
+#[must_use]
 pub fn parse_sse_data_line(raw_line: &str) -> Option<Map<String, Value>> {
-    let line = python_trim(raw_line);
-    let data = python_trim(line.strip_prefix("data:")?);
+    let line = trim_sse(raw_line);
+    let data = trim_sse(line.strip_prefix("data:")?);
     match serde_json::from_str::<Value>(data) {
         Ok(Value::Object(fields)) => Some(fields),
         Ok(_) | Err(_) => None,
     }
 }
 
+#[must_use]
 pub fn iter_sse_events(item: &SseChunk) -> Vec<Map<String, Value>> {
     match item {
         SseChunk::Event(event) => vec![event.clone()],
@@ -79,22 +65,21 @@ pub fn iter_sse_events(item: &SseChunk) -> Vec<Map<String, Value>> {
     }
 }
 
+#[must_use]
 pub fn content_block_state(items: &[SseChunk]) -> (Option<i64>, Option<i64>) {
     let mut open = Vec::<i64>::new();
     let mut highest = None;
     for event in items.iter().flat_map(iter_sse_events) {
-        let index = event.get("index").and_then(Value::as_i64);
+        let Some(index) = event.get("index").and_then(Value::as_i64) else {
+            continue;
+        };
         match event.get("type").and_then(Value::as_str) {
             Some("content_block_start") => {
-                if let Some(index) = index {
-                    highest = Some(highest.map_or(index, |previous: i64| previous.max(index)));
-                    open.push(index);
-                }
+                highest = Some(highest.map_or(index, |previous: i64| previous.max(index)));
+                open.push(index);
             }
             Some("content_block_stop") => {
-                if let Some(index) = index {
-                    open.retain(|open_index| *open_index != index);
-                }
+                open.retain(|open_index| *open_index != index);
             }
             _ => {}
         }
@@ -103,9 +88,9 @@ pub fn content_block_state(items: &[SseChunk]) -> (Option<i64>, Option<i64>) {
 }
 
 fn last_prefixed_line<'block>(block: &'block str, prefix: &str) -> Option<&'block str> {
-    python_trim(block)
+    trim_sse(block)
         .split('\n')
-        .filter_map(|line| line.strip_prefix(prefix).map(python_trim))
+        .filter_map(|line| line.strip_prefix(prefix).map(trim_sse))
         .last()
 }
 
@@ -125,10 +110,7 @@ fn stop_reason_is_set(event: &Map<String, Value>) -> bool {
         .is_some_and(|reason| !reason.is_null())
 }
 
-fn event_has_ended(event: &Map<String, Value>) -> bool {
-    event.get("type").and_then(Value::as_str) == Some("message_delta") && stop_reason_is_set(event)
-}
-
+#[must_use]
 pub fn extract_text_from_sse(bytes: &[u8]) -> String {
     let Ok(source) = std::str::from_utf8(bytes) else {
         tracing::error!("Error extracting text from SSE");
@@ -136,7 +118,7 @@ pub fn extract_text_from_sse(bytes: &[u8]) -> String {
     };
     let mut text = String::new();
     for block in source.split("\n\n") {
-        if python_trim(block).is_empty() {
+        if trim_sse(block).is_empty() {
             continue;
         }
         if last_prefixed_line(block, "event:") != Some("content_block_delta") {
@@ -161,6 +143,7 @@ pub fn extract_text_from_sse(bytes: &[u8]) -> String {
     text
 }
 
+#[must_use]
 pub fn streaming_string_so_far(items: &[SseChunk]) -> String {
     items
         .iter()
@@ -172,10 +155,14 @@ pub fn streaming_string_so_far(items: &[SseChunk]) -> String {
         .collect()
 }
 
+#[must_use]
 pub fn streaming_has_ended(items: &[SseChunk]) -> bool {
     items.iter().any(|item| match item {
         SseChunk::Bytes(bytes) => has_ended_bytes(bytes),
-        SseChunk::Event(event) => event_has_ended(event),
+        SseChunk::Event(event) => {
+            event.get("type").and_then(Value::as_str) == Some("message_delta")
+                && stop_reason_is_set(event)
+        }
         SseChunk::Other => false,
     })
 }
@@ -204,6 +191,7 @@ fn has_ended_bytes(bytes: &[u8]) -> bool {
     false
 }
 
+#[must_use]
 pub fn streamed_tool_use_fingerprints(items: &[SseChunk]) -> Vec<String> {
     items
         .iter()
@@ -218,11 +206,12 @@ pub fn streamed_tool_use_fingerprints(items: &[SseChunk]) -> Vec<String> {
         })
         .filter_map(|event| {
             let block = event.get("content_block")?;
-            stream_item_fingerprint(&StreamItem::Json(guardrail_value(block))).ok()
+            stream_item_fingerprint(&StreamItem::Json(to_guardrail(block))).ok()
         })
         .collect()
 }
 
+#[must_use]
 pub fn streaming_scan_key(items: &[SseChunk]) -> StreamingScanKey {
     let stream_ended = streaming_has_ended(items);
     let fingerprints = streamed_tool_use_fingerprints(items);
