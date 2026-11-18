@@ -1,0 +1,132 @@
+kind: helper
+name: provider-failure-event
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    steps:
+    - method: provider_failure
+      class_name: AccessDeniedException
+      message: denied
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ConflictException
+      message: conflict
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: InternalServerException
+      message: internal
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ModelErrorException
+      message: model error
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ModelNotReadyException
+      message: not ready
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ModelStreamErrorException
+      message: stream error
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ModelTimeoutException
+      message: timed out
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ResourceNotFoundException
+      message: missing
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ServiceQuotaExceededException
+      message: quota
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ServiceUnavailableException
+      message: unavailable
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ThrottlingException
+      message: slow down
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ValidationException
+      message: bad request
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: UnknownThrottlingException
+      message: unknown failure
+      scope:
+        pending_session_update: null
+        session_committed: null
+        committed_failure: null
+    - method: provider_failure
+      class_name: ThrottlingException
+      message: slow down
+      scope:
+        pending_session_update: null
+        session_committed: true
+        committed_failure: null
+    - method: provider_failure
+      class_name: UnknownThrottlingException
+      message: unknown failure
+      scope:
+        pending_session_update: null
+        session_committed: true
+        committed_failure: null
+    - method: provider_failure
+      class_name: ValidationException
+      message: already recorded
+      scope:
+        pending_session_update: null
+        session_committed: true
+        committed_failure: earlier failure
+    - method: provider_failure
+      class_name: ThrottlingException
+      message: slow down
+      scope:
+        pending_session_update: null
+        session_committed: 1
+        committed_failure: null
+env: {}
+compare:
+  ignore: []
