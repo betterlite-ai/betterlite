@@ -24,7 +24,7 @@ pub struct InFlightCall {
 
 impl InFlightCall {
     // the guard one pre-call hands back for an attempt that now holds a count
-    pub(super) fn started(service: Arc<LeastBusy>, key: RouteKey) -> Self {
+    pub(super) const fn started(service: Arc<LeastBusy>, key: RouteKey) -> Self {
         Self {
             service,
             key,
@@ -54,6 +54,24 @@ pub(super) enum LocalWrite {
     Rejected(LeastBusyWarning),
 }
 
+// how one increment landed, the same arms in both tiers: only a negative counter needs the corrective write
+enum IncrementOutcome {
+    Negative(i64),
+    Counted,
+    NotACount,
+}
+
+const fn increment_outcome(value: RouteValue) -> IncrementOutcome {
+    match value {
+        RouteValue::Counter(count) if count.is_negative() => IncrementOutcome::Negative(count),
+        RouteValue::Counter(_) => IncrementOutcome::Counted,
+        RouteValue::Spend(_)
+        | RouteValue::Pin(_)
+        | RouteValue::SchedulerTuple(_)
+        | RouteValue::Members(_) => IncrementOutcome::NotACount,
+    }
+}
+
 // increment_cache with local_only: a counter driven below zero is written back as zero
 pub(super) fn write_local(
     store: &RoutingValueStore,
@@ -61,16 +79,21 @@ pub(super) fn write_local(
     delta: i64,
     ttl: Option<f64>,
 ) -> LocalWrite {
-    match store.increment(key, &RouteIncrement::Counter(delta), ttl) {
-        Ok(RouteValue::Counter(value)) if value.is_negative() => {
-            match store.set(key, &RouteValue::Counter(0), ttl) {
-                Ok(()) => LocalWrite::Written,
-                Err(source) => LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source))),
-            }
+    let landed = match store.increment(key, &RouteIncrement::Counter(delta), ttl) {
+        Ok(value) => increment_outcome(value),
+        Err(source) => {
+            return LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source)));
         }
-        Ok(RouteValue::Counter(_)) => LocalWrite::Written,
-        Ok(_) => LocalWrite::Rejected(unwritable(key, UnwrittenCount::NotACount)),
-        Err(source) => LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source))),
+    };
+    match landed {
+        IncrementOutcome::Negative(_) => match store.set(key, &RouteValue::Counter(0), ttl) {
+            Ok(()) => LocalWrite::Written,
+            Err(source) => LocalWrite::Rejected(unwritable(key, UnwrittenCount::Local(source))),
+        },
+        IncrementOutcome::Counted => LocalWrite::Written,
+        IncrementOutcome::NotACount => {
+            LocalWrite::Rejected(unwritable(key, UnwrittenCount::NotACount))
+        }
     }
 }
 
@@ -81,26 +104,24 @@ pub(super) async fn write_shared(
     delta: i64,
     ttl: Option<f64>,
 ) -> Option<LeastBusyWarning> {
-    let failed = match store
+    let landed = match store
         .increment(key, &RouteIncrement::Counter(delta), ttl)
         .await
     {
-        Ok(Observed { value, .. }) => match value {
-            RouteValue::Counter(count) if count.is_negative() => {
-                let floor = count.saturating_neg();
-                store
-                    .increment(key, &RouteIncrement::Counter(floor), ttl)
-                    .await
-                    .err()
-                    .map(UnwrittenCount::Shared)
-            }
-            RouteValue::Counter(_) => None,
-            RouteValue::Spend(_)
-            | RouteValue::Pin(_)
-            | RouteValue::SchedulerTuple(_)
-            | RouteValue::Members(_) => Some(UnwrittenCount::NotACount),
-        },
-        Err(source) => Some(UnwrittenCount::Shared(source)),
+        Ok(Observed { value, .. }) => increment_outcome(value),
+        Err(source) => return Some(unwritable(key, UnwrittenCount::Shared(source))),
+    };
+    let failed = match landed {
+        IncrementOutcome::Negative(count) => {
+            let floor = count.saturating_neg();
+            store
+                .increment(key, &RouteIncrement::Counter(floor), ttl)
+                .await
+                .err()
+                .map(UnwrittenCount::Shared)
+        }
+        IncrementOutcome::Counted => None,
+        IncrementOutcome::NotACount => Some(UnwrittenCount::NotACount),
     };
     failed.map(|cause| unwritable(key, cause))
 }
