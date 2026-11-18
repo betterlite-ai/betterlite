@@ -146,12 +146,12 @@ fn headers(metadata: Option<&Json>) -> Result<Json, OperationError> {
             message: source.to_string(),
         }
     })?;
-    let request: RoutingValue =
+    let routing: RoutingValue =
         serde_json::from_value(request).map_err(|source| OperationError::InvalidRequest {
             message: source.to_string(),
         })?;
     let mut additional = BTreeMap::new();
-    apply_quality_headers(&mut additional, &request);
+    apply_quality_headers(&mut additional, &routing);
     let value =
         serde_json::to_value(additional).map_err(|source| OperationError::InvalidRequest {
             message: source.to_string(),

@@ -7,12 +7,13 @@ from litellm.router_utils.add_retry_fallback_headers import (
     apply_quality_router_decision_headers,
     ensure_response_additional_headers,
 )
+from litellm.types.router import PreRoutingStrategy
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
-# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
+# pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true, reportMissingTypeStubs=false
 
 _HEADERS: Final = TypeAdapter(dict[str, str])
 
@@ -32,7 +33,8 @@ class ParamsInput(Strict):
 
 class InfoInput(Strict):
     litellm_routing_preferences: dict[str, JsonValue] | None = None
-    input_cost_per_token: float | None = None
+    # a price may be written as a JSON string, which LiteLLM's model_info coerces to a float
+    input_cost_per_token: float | str | None = None
 
 
 class DeploymentInput(Strict):
@@ -106,10 +108,12 @@ class QualityRouter(Operation):
             default_model=self.default_model,
             quality_router_config=configured,
         )
+        # typed as the protocol the router calls with: the concrete method's bare dict is partially unknown
+        strategy: PreRoutingStrategy = quality
         request_kwargs: dict[str, JsonValue] = {}
         try:
             response = asyncio.run(
-                quality.async_pre_routing_hook(
+                strategy.async_pre_routing_hook(
                     model=chosen.model_name,
                     request_kwargs=request_kwargs,
                     messages=self.messages,
