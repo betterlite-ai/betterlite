@@ -88,9 +88,23 @@ fn organic_results(text: &str) -> Result<Vec<SearchResult>, ApiserpentSearchErro
     match reply.organic {
         None => Ok(Vec::new()),
         Some(None) => Err(ApiserpentSearchError::OrganicShape),
-        Some(Some(raw)) if empty_sequence(&raw) => Ok(Vec::new()),
-        Some(Some(raw)) => decode_results(raw.get()),
+        Some(Some(raw)) => organic_list(&raw),
     }
+}
+
+// a container the source iterates zero times is an empty result list; anything else it cannot read
+fn organic_list(raw: &RawValue) -> Result<Vec<SearchResult>, ApiserpentSearchError> {
+    let text = raw.get().trim_ascii();
+    match text.as_bytes().first().copied() {
+        Some(b'[') => decode_results(text),
+        Some(b'{') if is_empty_object(text) => Ok(Vec::new()),
+        Some(b'"') if text == "\"\"" => Ok(Vec::new()),
+        _ => Err(ApiserpentSearchError::OrganicShape),
+    }
+}
+
+fn is_empty_object(text: &str) -> bool {
+    serde_json::from_str::<Object>(text).is_ok_and(|fields| fields.is_empty())
 }
 
 fn project(result: ApiserpentResult) -> SearchResult {
@@ -104,26 +118,12 @@ fn project(result: ApiserpentResult) -> SearchResult {
     }
 }
 
-// the source turns a falsey results value into {}, whose organic member is then absent
+// only the empty string needs this: an empty list or object decodes to no results anyway
 fn is_falsey(raw: &RawValue) -> bool {
     let text = raw.get().trim_ascii();
     match text.as_bytes().first().copied() {
-        Some(b'f' | b'n') => true,
-        Some(b'"' | b'[' | b'{') => empty_sequence(raw),
-        _ => is_zero(text),
-    }
-}
-
-// only a list, an object or a string can iterate zero times; the source fails on other falsey values
-fn empty_sequence(raw: &RawValue) -> bool {
-    let text = raw.get().trim_ascii();
-    match text.as_bytes().first().copied() {
-        Some(b'[') => {
-            serde_json::from_str::<Vec<Box<RawValue>>>(text).is_ok_and(|items| items.is_empty())
-        }
-        Some(b'{') => serde_json::from_str::<Object>(text).is_ok_and(|fields| fields.is_empty()),
         Some(b'"') => text == "\"\"",
-        _ => false,
+        _ => is_zero(text) || text == "false",
     }
 }
 
