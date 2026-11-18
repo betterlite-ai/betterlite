@@ -5,8 +5,8 @@ description: >-
   custom validation hook, identity/admin authorization and the independent JWT team authorization service.
   For managed agents, require trusted issuer/audience, allowed inference/discovery route and successful
   identity-evidence recording; inject the AgentIdentity port that B8646 installs. Preserve source common-check ordering
-  and AuthContext conversion. Reject litellm_jwtauth.custom_validate at startup until B054 installs its
-  B165-backed callable; no success placeholder is permitted.
+  and AuthContext conversion. A configured litellm_jwtauth.custom_validate already fails startup in B869's
+  jwt_settings section until B054 installs its B165-backed loader; add no success placeholder and no second check.
 
 
   Build the production jwt_auth module in betterlite-server; reuse the typed dependencies listed in the
@@ -21,9 +21,11 @@ description: >-
   lines), JWTAuthManager.authorize_jwt.identity_admin (L2488-L2629; 129 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.team_id_upsert=False;
-  litellm_jwtauth.user_id_upsert=False; litellm_jwtauth.scope_mappings=None; litellm_jwtauth.enforce_scope_based_access=False;
-  litellm_jwtauth.custom_validate=None; litellm_jwtauth.oidc_userinfo_enabled=False.
+  Pinned settings read by this component: litellm_jwtauth.team_id_upsert=False; litellm_jwtauth.user_id_upsert=False;
+  litellm_jwtauth.scope_mappings=None; litellm_jwtauth.enforce_scope_based_access=False; litellm_jwtauth.custom_validate=None;
+  litellm_jwtauth.oidc_userinfo_enabled=False. All six are fields of LiteLLM_JWTAuth, and B869's jwt_settings section
+  (config.sections.jwt_settings) parses and validates that whole object, the scope_mappings and enforce_scope_based_access
+  check included. Read the typed values from there; this task adds no config section and parses none of these keys again.
 
 
   Add the jwt_auth operation under B856 Management::jwt. Python calls only the owned MIT helper with injected
@@ -47,11 +49,8 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::jwt_auth::tests::loads_settings, defaults_and_precedence and invalid_value_fallback.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B869's section tests own the loading, defaults and invalid values of these settings, so this task writes no
+  config tests and no config_yaml seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -66,7 +65,7 @@ description: >-
 
   Sizing: 258 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
   258 production, 148 behavior/Postgres tests, 65 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
-  and 50 config lines, 586 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
+  and 0 config lines, 536 changed lines estimated within a 600-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -91,10 +90,6 @@ scope:
     - crates/betterlite-server/src/state/jwt_auth.rs
     - crates/betterlite-server/src/state/jwt_auth/**
     - tools/oracle/cases/auth/jwt-auth/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-auth-*
-    - crates/betterlite-config/src/sections/jwt_auth.rs
-    - crates/betterlite-config/src/sections/jwt_auth/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/handle_jwt.py#L2391-L2971
@@ -139,11 +134,6 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: 'The recorded deviations are covered by native behavior tests: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.'
     proof:
       - behavior-tests
@@ -165,15 +155,6 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/jwt-auth-*")"
         && grep -rlq "jwt_auth" tools/oracle/fuzz/corpus/helper_case/jwt-auth-* && cargo nextest run --locked
         -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_auth::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-auth-*")"
-        && grep -rlq "team_id_upsert" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-auth-* && cargo
-        nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/jwt-auth/verified-jwt-request.yaml
   - tools/oracle/cases/helpers/jwt-auth/jwt-mapped-key-revoked.yaml
