@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_roi::settings::ROISettingsResponse;
+use secrecy::ExposeSecret as _;
 
-use crate::roi_settings::store::decrypt;
+use crate::roi_settings::store::SettingsCipher;
 use crate::roi_settings::support::MemoryRepository;
 use crate::roi_settings::support::admin_caller;
 use crate::roi_settings::support::call;
@@ -59,7 +60,10 @@ async fn put_url_change_preserves_the_estimator_key() {
     let response: ROISettingsResponse = reply.json();
     assert!(response.has_estimator_key);
     let saved = memory.stored().expect("saved settings");
-    assert_eq!(decrypt(&cipher(), &saved.estimator_key), "sk-old");
+    assert_eq!(
+        cipher().open(&saved.estimator_key).expose_secret(),
+        "sk-old"
+    );
 }
 
 #[tokio::test]
@@ -81,5 +85,8 @@ async fn put_url_change_keeps_a_newly_supplied_token() {
     let response: ROISettingsResponse = reply.json();
     assert!(response.has_github_token);
     let saved = memory.stored().expect("saved settings");
-    assert_eq!(decrypt(&cipher(), &saved.github_token), "ghp-new");
+    assert_eq!(
+        cipher().open(&saved.github_token).expose_secret(),
+        "ghp-new"
+    );
 }

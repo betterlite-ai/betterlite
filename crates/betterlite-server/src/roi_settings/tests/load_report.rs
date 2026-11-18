@@ -36,6 +36,6 @@ async fn load_report_rejects_an_invalid_report() {
     repository.seed(REPORT_KEY, r#"{"mode":"backfill"}"#);
     assert!(matches!(
         load_report(&repository).await,
-        Err(RoiSettingsError::StoredReport)
+        Err(RoiSettingsError::StoredReport(_))
     ));
 }

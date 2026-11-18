@@ -4,7 +4,8 @@ use betterlite_auth::auth_identity::roles::Role;
 use rstest::rstest;
 
 use crate::roi_settings::auth::WRITE_FORBIDDEN;
-use crate::roi_settings::auth::write_admin;
+use crate::roi_settings::auth::WRITE_ROLES;
+use crate::roi_settings::auth::require_admin;
 use crate::roi_settings::error::RoiSettingsError;
 use crate::roi_settings::support::caller;
 
@@ -22,13 +23,16 @@ fn write_admin_accepts_only_the_proxy_admin(
     #[case] allowed: bool,
 ) {
     let context = caller(subject, roles);
-    assert_eq!(write_admin(Some(&context)).is_ok(), allowed);
+    assert_eq!(
+        require_admin(Some(&context), WRITE_ROLES, WRITE_FORBIDDEN).is_ok(),
+        allowed
+    );
 }
 
 #[test]
 fn write_admin_without_a_caller_is_unauthenticated() {
     assert!(matches!(
-        write_admin(None),
+        require_admin(None, WRITE_ROLES, WRITE_FORBIDDEN),
         Err(RoiSettingsError::Unauthenticated)
     ));
 }
@@ -37,7 +41,7 @@ fn write_admin_without_a_caller_is_unauthenticated() {
 fn write_admin_refuses_with_litellms_detail() {
     let context = caller("user", vec![Role::PlatformViewer]);
     assert!(matches!(
-        write_admin(Some(&context)),
+        require_admin(Some(&context), WRITE_ROLES, WRITE_FORBIDDEN),
         Err(RoiSettingsError::Forbidden(WRITE_FORBIDDEN))
     ));
 }

@@ -60,7 +60,7 @@ async fn load_settings_rejects_settings_that_fail_validation() {
     repository.seed(SETTINGS_KEY, r#"{"repos":["not-a-repository"]}"#);
     assert!(matches!(
         load_settings(&repository, &cipher()).await,
-        Err(RoiSettingsError::StoredSettings)
+        Err(RoiSettingsError::StoredSettings(_))
     ));
 }
 
@@ -70,6 +70,6 @@ async fn load_settings_rejects_an_interval_between_zero_and_five_minutes() {
     repository.seed(SETTINGS_KEY, r#"{"update_interval_minutes":3}"#);
     assert!(matches!(
         load_settings(&repository, &cipher()).await,
-        Err(RoiSettingsError::StoredSettings)
+        Err(RoiSettingsError::StoredSettings(_))
     ));
 }

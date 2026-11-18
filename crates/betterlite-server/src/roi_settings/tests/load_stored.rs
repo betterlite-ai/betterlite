@@ -71,7 +71,7 @@ async fn load_stored_rejects_a_value_that_is_not_an_object() {
     repository.seed(SETTINGS_KEY, r#""not settings""#);
     assert!(matches!(
         load_stored(&repository).await,
-        Err(RoiSettingsError::StoredSettings)
+        Err(RoiSettingsError::StoredSettings(_))
     ));
 }
 

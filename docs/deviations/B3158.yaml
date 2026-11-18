@@ -55,6 +55,14 @@ deviations:
       pydantic's type, loc and msg, and docs/compatibility.md accepts an error that names the
       field where Python's runtime decides what is valid.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L385-L386
+  - what: >-
+      A database outage answers 503 no_db_connection with code as the string "503", where LiteLLM
+      passes HTTPStatus.SERVICE_UNAVAILABLE.value and its JSON carries the number 503.
+    why: >-
+      Every betterlite error envelope writes code as a JSON string and clients compare it as
+      text. The status, type, param "None" and the four field names match LiteLLM's
+      service_unavailable_proxy_exception, and the message is betterlite's own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L383-L390
 kept_bugs:
   - what: >-
       A stored settings object with a key outside _StoredSettings loads, and the next PUT writes the
@@ -76,8 +84,9 @@ kept_bugs:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L342-L345
   - what: >-
       A stored token or estimator key that does not decrypt is treated as absent. The request
-      succeeds, the public response reports has_github_token or has_estimator_key false, and the
-      unreadable ciphertext stays in the row until a PUT supplies a new secret.
+      succeeds and the public response reports has_github_token or has_estimator_key false. An
+      unchanged-URL PUT without a token leaves the unreadable token ciphertext in the row, and
+      the next PUT rewrites the unreadable estimator key as an empty string.
     why: >-
       A proxy whose salt key changed still serves the settings route, and a request that did not
       supply a token does not overwrite the stored ciphertext. The cost is that the UI shows no

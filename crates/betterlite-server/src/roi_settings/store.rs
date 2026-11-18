@@ -1,17 +1,23 @@
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_db::stored_cipher::DbCipher;
 use betterlite_roi::records::ROIReport;
 use betterlite_roi::settings::DEFAULT_PROMPT;
 use betterlite_roi::settings::ROISettings;
+use betterlite_roi::settings::SettingsError;
+use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::DecryptPolicy;
 use betterlite_secrets::secret_codec::FailureLog;
 use betterlite_secrets::secret_codec::FailureValue;
+use betterlite_secrets::secret_codec::NonceSource;
+use betterlite_secrets::secret_codec::StoredCipher;
 use betterlite_secrets::secret_codec::StoredValue;
+use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
+use thiserror::Error;
 
 use super::error::InternalError;
 use super::error::RoiSettingsError;
@@ -25,6 +31,16 @@ const DECRYPT: DecryptPolicy = DecryptPolicy {
     log: FailureLog::Debug,
     value: FailureValue::Nothing,
 };
+
+#[derive(Debug, Error)]
+pub enum StoredSettingsError {
+    #[error("the stored settings do not decode")]
+    Decode(#[source] serde_json::Error),
+    #[error("the stored settings are outside the allowed range")]
+    Bounds,
+    #[error("the stored settings do not validate")]
+    Validate(#[source] SettingsError),
+}
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -59,56 +75,95 @@ impl Default for StoredSettings {
 impl StoredSettings {
     fn check_bounds(&self) -> Result<(), RoiSettingsError> {
         if !(1..=3650).contains(&self.backfill_days) {
-            return Err(RoiSettingsError::StoredSettings);
+            return Err(RoiSettingsError::StoredSettings(
+                StoredSettingsError::Bounds,
+            ));
         }
         let interval = self.update_interval_minutes;
         if !interval.is_finite() || !(0.0..=43_200.0).contains(&interval) {
-            return Err(RoiSettingsError::StoredSettings);
+            return Err(RoiSettingsError::StoredSettings(
+                StoredSettingsError::Bounds,
+            ));
         }
         Ok(())
     }
 }
 
-// LiteLLM's decrypt_value_helper in _load_settings: a value that does not decrypt becomes an empty secret
-pub(super) fn decrypt(cipher: &DbCipher, value: &str) -> String {
-    if value.is_empty() {
-        return String::new();
+pub trait SettingsCipher: Send + Sync {
+    fn seal(&self, value: &SecretString) -> Result<String, SecretError>;
+    fn open(&self, value: &str) -> SecretString;
+}
+
+impl<N, D> SettingsCipher for StoredCipher<N, D>
+where
+    N: NonceSource + Send + Sync,
+    D: SecretDiagnostics + Send + Sync,
+{
+    fn seal(&self, value: &SecretString) -> Result<String, SecretError> {
+        // LiteLLM encrypts only the non-empty secrets; an empty value stays an empty string
+        if value.expose_secret().is_empty() {
+            return Ok(String::new());
+        }
+        let sealed = self.encrypt_value(StoredValue::<()>::Text(value.clone()), None)?;
+        match sealed {
+            StoredValue::Text(text) => Ok(text.expose_secret().to_owned()),
+            StoredValue::Other(()) => Ok(value.expose_secret().to_owned()),
+        }
     }
-    let stored = StoredValue::<()>::Text(SecretString::from(value.to_owned()));
-    match cipher.decrypt_value(stored, SETTINGS_KEY, DECRYPT) {
-        Some(StoredValue::Text(plaintext)) => plaintext.expose_secret().to_owned(),
-        Some(StoredValue::Other(())) | None => String::new(),
+
+    // LiteLLM's decrypt_value_helper in _load_settings: a value that does not decrypt becomes an empty secret
+    fn open(&self, value: &str) -> SecretString {
+        if value.is_empty() {
+            return SecretString::default();
+        }
+        let stored = StoredValue::<()>::Text(SecretString::from(value.to_owned()));
+        match self.decrypt_value(stored, SETTINGS_KEY, DECRYPT) {
+            Some(StoredValue::Text(plaintext)) => plaintext,
+            Some(StoredValue::Other(())) | None => SecretString::default(),
+        }
     }
+}
+
+async fn stored_param(
+    repository: &dyn SettingsRepository,
+    key: &str,
+) -> Result<Option<JsonData>, RoiSettingsError> {
+    repository
+        .param(key)
+        .await
+        .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))
+}
+
+fn decode_parameter<T: DeserializeOwned>(
+    parameter: &JsonData,
+    invalid: impl FnOnce(serde_json::Error) -> RoiSettingsError,
+) -> Result<T, RoiSettingsError> {
+    let bytes = serde_json::to_vec(parameter).map_err(InternalError::Encode)?;
+    serde_json::from_slice(&bytes).map_err(invalid)
 }
 
 pub(super) async fn load_stored(
     repository: &dyn SettingsRepository,
 ) -> Result<StoredSettings, RoiSettingsError> {
-    let Some(parameter) = repository
-        .param(SETTINGS_KEY)
-        .await
-        .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))?
-    else {
+    let Some(parameter) = stored_param(repository, SETTINGS_KEY).await? else {
         return Ok(StoredSettings::default());
     };
-    let bytes = serde_json::to_vec(&parameter)
-        .map_err(InternalError::Encode)
-        .map_err(RoiSettingsError::Internal)?;
-    let stored: StoredSettings =
-        serde_json::from_slice(&bytes).map_err(|_error| RoiSettingsError::StoredSettings)?;
+    let stored: StoredSettings = decode_parameter(&parameter, |source| {
+        RoiSettingsError::StoredSettings(StoredSettingsError::Decode(source))
+    })?;
     stored.check_bounds()?;
     Ok(stored)
 }
 
 pub(super) async fn load_settings(
     repository: &dyn SettingsRepository,
-    cipher: &DbCipher,
+    cipher: &dyn SettingsCipher,
 ) -> Result<ROISettings, RoiSettingsError> {
     let stored = load_stored(repository).await?;
     let settings = ROISettings {
         github_api_url: stored.github_api_url,
-        github_token: SecretString::from(decrypt(cipher, &stored.github_token)),
-        estimator_key: SecretString::from(decrypt(cipher, &stored.estimator_key)),
+        github_token: cipher.open(&stored.github_token),
+        estimator_key: cipher.open(&stored.estimator_key),
         repos: stored.repos,
         estimator_model: stored.estimator_model,
         estimator_prompt: stored.estimator_prompt,
@@ -118,38 +173,27 @@ pub(super) async fn load_settings(
     };
     settings
         .validate()
-        .map_err(|_error| RoiSettingsError::StoredSettings)
+        .map_err(|source| RoiSettingsError::StoredSettings(StoredSettingsError::Validate(source)))
 }
 
 pub(super) async fn save_settings(
     repository: &dyn SettingsRepository,
     stored: &StoredSettings,
 ) -> Result<(), RoiSettingsError> {
-    let bytes = serde_json::to_vec(stored)
-        .map_err(InternalError::Encode)
-        .map_err(RoiSettingsError::Internal)?;
-    let value: JsonData = serde_json::from_slice(&bytes)
-        .map_err(InternalError::Encode)
-        .map_err(RoiSettingsError::Internal)?;
+    let bytes = serde_json::to_vec(stored).map_err(InternalError::Encode)?;
+    let value: JsonData = serde_json::from_slice(&bytes).map_err(InternalError::Encode)?;
     repository
         .set_param(SETTINGS_KEY, value)
         .await
         .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))
 }
 
-pub(super) async fn load_report(
+pub async fn load_report(
     repository: &dyn SettingsRepository,
 ) -> Result<Option<ROIReport>, RoiSettingsError> {
-    let Some(parameter) = repository
-        .param(REPORT_KEY)
-        .await
-        .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))?
-    else {
+    let Some(parameter) = stored_param(repository, REPORT_KEY).await? else {
         return Ok(None);
     };
-    let bytes = serde_json::to_vec(&parameter)
-        .map_err(InternalError::Encode)
-        .map_err(RoiSettingsError::Internal)?;
-    let report = serde_json::from_slice(&bytes).map_err(|_error| RoiSettingsError::StoredReport)?;
+    let report = decode_parameter(&parameter, RoiSettingsError::StoredReport)?;
     Ok(Some(report))
 }

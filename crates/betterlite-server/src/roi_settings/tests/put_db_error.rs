@@ -7,7 +7,9 @@ use betterlite_auth::auth_identity::roles::Role;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 
 use crate::roi_settings::auth::WRITE_FORBIDDEN;
+use crate::roi_settings::error::DB_UNAVAILABLE;
 use crate::roi_settings::support::MemoryRepository;
+use crate::roi_settings::support::MissingRowRepository;
 use crate::roi_settings::support::admin_caller;
 use crate::roi_settings::support::call;
 use crate::roi_settings::support::caller;
@@ -31,14 +33,32 @@ async fn put_db_error_without_a_database_is_db_not_connected() {
 }
 
 #[tokio::test]
-async fn put_db_error_from_the_repository_is_an_internal_error() {
+async fn put_db_error_maps_a_database_outage_to_503() {
     let reply = call(
         settings_app(Some(Arc::new(disconnected_repository())), None),
         put_request(Some(&admin_caller()), r#"{"backfill_days":10}"#),
     )
     .await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    let error = reply.error();
+    assert_eq!(error.message, DB_UNAVAILABLE);
+    assert_eq!(error.kind, "no_db_connection");
+    assert_eq!(error.param.as_deref(), Some("None"));
+    assert_eq!(error.code.as_deref(), Some("503"));
+}
+
+#[tokio::test]
+async fn put_db_error_maps_other_failures_to_internal_server_error() {
+    let reply = call(
+        settings_app(Some(Arc::new(MissingRowRepository)), None),
+        put_request(Some(&admin_caller()), r#"{"backfill_days":10}"#),
+    )
+    .await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
-    assert_eq!(reply.detail(), "Internal server error");
+    assert_eq!(
+        reply.text(),
+        r#"{"error":{"message":"Internal server error","type":"internal_server_error"}}"#
+    );
 }
 
 #[tokio::test]

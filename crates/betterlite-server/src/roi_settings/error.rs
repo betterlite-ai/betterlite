@@ -1,11 +1,16 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
+use betterlite_db::auxiliary_repository::repository::TableError;
+use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_repository::config::ConfigError;
+use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use betterlite_roi::settings::ROISettingsUpdate;
 use betterlite_roi::settings::SettingsError;
+use betterlite_secrets::error::SecretError;
+
+use super::store::StoredSettingsError;
 use serde::Serialize;
 use serde_json::error::Category;
 use serde_path_to_error::Segment;
@@ -16,7 +21,7 @@ use crate::tracing_routes::router::unauthenticated;
 pub(super) const INVALID_SETTINGS: &str = "Stored ROI Calculator settings are invalid.";
 pub(super) const INVALID_REPORT: &str = "Stored ROI Calculator report is invalid.";
 pub(super) const NULL_URL: &str = "GitHub API URL cannot be null.";
-const INTERNAL: &str = "Internal server error";
+pub(super) const DB_UNAVAILABLE: &str = "the ROI Calculator settings database is unavailable";
 const FIELD_REQUIRED: &str = "Field required";
 const JSON_DECODE_ERROR: &str = "JSON decode error";
 const MODEL_ATTRIBUTES_MESSAGE: &str =
@@ -30,9 +35,9 @@ pub enum RoiSettingsError {
     #[error("{0}")]
     Forbidden(&'static str),
     #[error("Stored ROI Calculator settings are invalid.")]
-    StoredSettings,
+    StoredSettings(#[source] StoredSettingsError),
     #[error("Stored ROI Calculator report is invalid.")]
-    StoredReport,
+    StoredReport(#[source] serde_json::Error),
     #[error("GitHub API URL cannot be null.")]
     NullUrl,
     #[error("the request body is empty")]
@@ -46,7 +51,7 @@ pub enum RoiSettingsError {
     #[error("the settings do not validate")]
     Validation(#[source] SettingsError),
     #[error("the ROI settings request failed")]
-    Internal(#[source] InternalError),
+    Internal(#[from] InternalError),
 }
 
 #[derive(Debug, Error)]
@@ -55,8 +60,8 @@ pub enum InternalError {
     Config(#[from] ConfigError),
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
-    #[error("no salt key is configured to encrypt secrets with")]
-    Encryption,
+    #[error("the settings secret could not be encrypted")]
+    Encryption(#[source] SecretError),
     #[error("the database is not connected")]
     DbNotConnected,
 }
@@ -81,6 +86,19 @@ struct DetailBody {
     detail: Detail,
 }
 
+// otel_unhandled_exception_handler's body for an uncaught exception: no param or code fields
+#[derive(Debug, Serialize)]
+struct InternalBody {
+    error: InternalMessage,
+}
+
+#[derive(Debug, Serialize)]
+struct InternalMessage {
+    message: &'static str,
+    #[serde(rename = "type")]
+    error_type: &'static str,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(untagged)]
 enum Detail {
@@ -93,11 +111,11 @@ impl IntoResponse for RoiSettingsError {
         match self {
             Self::Unauthenticated => unauthenticated(),
             Self::Forbidden(detail) => detail_response(StatusCode::FORBIDDEN, detail.to_owned()),
-            Self::StoredSettings => detail_response(
+            Self::StoredSettings(_) => detail_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 INVALID_SETTINGS.to_owned(),
             ),
-            Self::StoredReport => {
+            Self::StoredReport(_) => {
                 detail_response(StatusCode::INTERNAL_SERVER_ERROR, INVALID_REPORT.to_owned())
             }
             Self::NullUrl => detail_response(StatusCode::UNPROCESSABLE_ENTITY, NULL_URL.to_owned()),
@@ -106,7 +124,27 @@ impl IntoResponse for RoiSettingsError {
             Self::Body(source) => issues_response(vec![body_issue(&source)]),
             Self::Request(issues) => issues_response(issues),
             Self::Validation(error) => issues_response(vec![settings_issue(&error)]),
-            Self::Internal(error) => internal_response(&error),
+            Self::Internal(error) => match &error {
+                InternalError::DbNotConnected => detail_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
+                ),
+                InternalError::Config(source) if is_database_outage(source) => {
+                    database_unavailable()
+                }
+                InternalError::Config(_)
+                | InternalError::Encode(_)
+                | InternalError::Encryption(_) => {
+                    tracing::error!(error = ?error, "the ROI settings request failed");
+                    let body = InternalBody {
+                        error: InternalMessage {
+                            message: "Internal server error",
+                            error_type: "internal_server_error",
+                        },
+                    };
+                    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+                }
+            },
         }
     }
 }
@@ -125,15 +163,29 @@ fn issues_response(issues: Vec<Issue>) -> Response {
     (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
 }
 
-fn internal_response(error: &InternalError) -> Response {
-    match error {
-        InternalError::DbNotConnected => detail_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
-        ),
-        InternalError::Config(_) | InternalError::Encode(_) | InternalError::Encryption => {
-            tracing::error!(error = ?error, "the ROI settings request failed");
-            detail_response(StatusCode::INTERNAL_SERVER_ERROR, INTERNAL.to_owned())
+fn database_unavailable() -> Response {
+    let body = ErrorResponse {
+        error: ErrorObject {
+            message: DB_UNAVAILABLE.to_owned(),
+            error_type: WireField::Text("no_db_connection".to_owned()),
+            param: WireField::MISSING,
+            code: WireField::Text("503".to_owned()),
+        },
+    };
+    (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
+}
+
+fn is_database_outage(error: &ConfigError) -> bool {
+    let source = match error {
+        ConfigError::Database(source) => source,
+        ConfigError::Table(TableError::Database(source)) => source,
+        ConfigError::Table(_) | ConfigError::Json(_) => return false,
+    };
+    match source {
+        DbError::NoDbConnected | DbError::Pool { .. } | DbError::Backend { .. } => true,
+        DbError::SqlState { code, .. } => code.code().starts_with("08"),
+        DbError::InvalidRecord { .. } | DbError::CreateNull | DbError::UniqueViolation { .. } => {
+            false
         }
     }
 }
@@ -160,7 +212,12 @@ fn body_issue(source: &serde_path_to_error::Error<serde_json::Error>) -> Issue {
     }
     let message = source.inner().to_string();
     if let Some(field) = unknown_field(&message) {
-        return extra_field(field);
+        let loc = vec![LocPart::Field("body".to_owned()), LocPart::Field(field)];
+        return Issue {
+            kind: "extra_forbidden",
+            loc,
+            msg: EXTRA_FORBIDDEN_MESSAGE.to_owned(),
+        };
     }
     let loc = body_loc(source);
     if message.starts_with("invalid type: null") {
@@ -195,14 +252,6 @@ fn body_loc(source: &serde_path_to_error::Error<serde_json::Error>) -> Vec<LocPa
         }
     }
     loc
-}
-
-fn extra_field(field: String) -> Issue {
-    Issue {
-        kind: "extra_forbidden",
-        loc: vec![LocPart::Field("body".to_owned()), LocPart::Field(field)],
-        msg: EXTRA_FORBIDDEN_MESSAGE.to_owned(),
-    }
 }
 
 fn unknown_field(message: &str) -> Option<String> {

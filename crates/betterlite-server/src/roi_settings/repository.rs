@@ -19,27 +19,29 @@ pub struct DatabaseSettingsRepository {
     pub availability: Availability,
 }
 
-#[async_trait]
-impl SettingsRepository for DatabaseSettingsRepository {
-    async fn param(&self, name: &str) -> Result<Option<JsonData>, ConfigError> {
+impl DatabaseSettingsRepository {
+    // LiteLLM builds the repository with use_writer=True, so the row is read from the writer too
+    fn repository(&self) -> ConfigRepository<'_> {
         let client = PrismaClient {
             writer: self.store.as_ref(),
             reader: self.store.as_ref(),
             availability: &self.availability,
         };
-        // LiteLLM builds the repository with use_writer=True, so the row is read from the writer too
-        let repository = ConfigRepository::new(Some(client), true);
-        let parameter = repository.get_param(name).await?;
+        ConfigRepository::new(Some(client), true)
+    }
+}
+
+#[async_trait]
+impl SettingsRepository for DatabaseSettingsRepository {
+    async fn param(&self, name: &str) -> Result<Option<JsonData>, ConfigError> {
+        let parameter = self.repository().get_param(name).await?;
         Ok(parameter.map(|param| param.param_value))
     }
 
     async fn set_param(&self, name: &str, value: JsonData) -> Result<(), ConfigError> {
-        let client = PrismaClient {
-            writer: self.store.as_ref(),
-            reader: self.store.as_ref(),
-            availability: &self.availability,
-        };
-        let repository = ConfigRepository::new(Some(client), true);
-        repository.set_param(name, value).await.map(|_param| ())
+        self.repository()
+            .set_param(name, value)
+            .await
+            .map(|_param| ())
     }
 }

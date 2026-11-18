@@ -16,18 +16,18 @@ use betterlite_auth::auth_identity::records::SourceKey;
 use betterlite_auth::auth_identity::roles::AuthMethod;
 use betterlite_auth::auth_identity::roles::PrincipalType;
 use betterlite_auth::auth_identity::roles::Role;
+use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::resource_repository::config::ConfigError;
 use betterlite_db::stored_cipher::DbCipher;
-use betterlite_roi::settings::DEFAULT_PROMPT;
 use betterlite_roi::settings::ROISettings;
+use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::Algorithm;
 use betterlite_secrets::secret_codec::CipherSettings;
 use betterlite_secrets::secret_codec::OsNonces;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
-use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
@@ -38,13 +38,12 @@ use crate::roi_settings::deployments::RouterCatalog;
 use crate::roi_settings::deployments::RouterEstimatorDeployment;
 use crate::roi_settings::deployments::RouterEstimatorModelInfo;
 use crate::roi_settings::deployments::RouterEstimatorParams;
-use crate::roi_settings::patch::encrypt;
 use crate::roi_settings::repository::DatabaseSettingsRepository;
 use crate::roi_settings::repository::SettingsRepository;
 use crate::roi_settings::route::router;
 use crate::roi_settings::state::RoiSettingsState;
-use crate::roi_settings::store::DEFAULT_GITHUB_API_URL;
 use crate::roi_settings::store::SETTINGS_KEY;
+use crate::roi_settings::store::SettingsCipher;
 use crate::roi_settings::store::StoredSettings;
 
 pub(crate) const SALT: &str = "a sufficiently long roi settings test salt";
@@ -65,7 +64,9 @@ pub(crate) fn cipher() -> DbCipher {
 }
 
 pub(crate) fn sealed(value: &str) -> String {
-    encrypt(&cipher(), value).expect("seal a test secret")
+    cipher()
+        .seal(&SecretString::from(value.to_owned()))
+        .expect("seal a test secret")
 }
 
 pub(crate) fn deployment(
@@ -99,31 +100,11 @@ pub(crate) fn fake_catalog() -> FakeCatalog {
 }
 
 pub(crate) fn roi_settings() -> ROISettings {
-    ROISettings {
-        github_api_url: DEFAULT_GITHUB_API_URL.to_owned(),
-        github_token: SecretString::default(),
-        estimator_key: SecretString::default(),
-        repos: Vec::new(),
-        estimator_model: String::new(),
-        estimator_prompt: DEFAULT_PROMPT.to_owned(),
-        backfill_days: 7,
-        update_interval_minutes: 1440.0_f64,
-        identity_map: IndexMap::new(),
-    }
+    ROISettings::default()
 }
 
 pub(crate) fn stored_settings() -> StoredSettings {
-    StoredSettings {
-        github_api_url: DEFAULT_GITHUB_API_URL.to_owned(),
-        github_token: String::new(),
-        estimator_key: String::new(),
-        repos: Vec::new(),
-        estimator_model: String::new(),
-        estimator_prompt: DEFAULT_PROMPT.to_owned(),
-        backfill_days: 7,
-        update_interval_minutes: 1440.0,
-        identity_map: IndexMap::new(),
-    }
+    StoredSettings::default()
 }
 
 impl RouterCatalog for FakeCatalog {
@@ -195,6 +176,31 @@ impl SettingsRepository for MemoryRepository {
     }
 }
 
+pub(crate) struct MissingRowRepository;
+
+#[async_trait]
+impl SettingsRepository for MissingRowRepository {
+    async fn param(&self, _name: &str) -> Result<Option<JsonData>, ConfigError> {
+        Err(ConfigError::Table(TableError::MissingRow))
+    }
+
+    async fn set_param(&self, _name: &str, _value: JsonData) -> Result<(), ConfigError> {
+        Err(ConfigError::Table(TableError::MissingRow))
+    }
+}
+
+pub(crate) struct FailingCipher;
+
+impl SettingsCipher for FailingCipher {
+    fn seal(&self, _value: &SecretString) -> Result<String, SecretError> {
+        Err(SecretError::MissingKey)
+    }
+
+    fn open(&self, _value: &str) -> SecretString {
+        SecretString::default()
+    }
+}
+
 pub(crate) fn catalog(names: Vec<String>) -> Arc<dyn RouterCatalog> {
     let mut catalog = fake_catalog();
     catalog.names = names;
@@ -212,18 +218,23 @@ pub(crate) fn disconnected_repository() -> DatabaseSettingsRepository {
     }
 }
 
-pub(crate) fn settings_state(
-    repository: Option<Arc<dyn SettingsRepository>>,
-    catalog: Option<Arc<dyn RouterCatalog>>,
-) -> RoiSettingsState {
-    RoiSettingsState::new(repository, catalog, cipher_settings())
-}
-
 pub(crate) fn settings_app(
     repository: Option<Arc<dyn SettingsRepository>>,
     catalog: Option<Arc<dyn RouterCatalog>>,
 ) -> Router {
-    router(settings_state(repository, catalog))
+    settings_app_with_cipher(repository, catalog, Arc::new(cipher()))
+}
+
+pub(crate) fn settings_app_with_cipher(
+    repository: Option<Arc<dyn SettingsRepository>>,
+    catalog: Option<Arc<dyn RouterCatalog>>,
+    cipher: Arc<dyn SettingsCipher>,
+) -> Router {
+    router(RoiSettingsState {
+        repository,
+        catalog,
+        cipher,
+    })
 }
 
 pub(crate) fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
@@ -310,6 +321,10 @@ impl Reply {
         self.json::<DetailIssues>().detail
     }
 
+    pub(crate) fn error(&self) -> TestErrorFields {
+        self.json::<TestErrorBody>().error
+    }
+
     pub(crate) fn text(&self) -> String {
         String::from_utf8(self.body.clone()).expect("utf-8 body")
     }
@@ -323,6 +338,20 @@ struct DetailText {
 #[derive(Deserialize)]
 struct DetailIssues {
     detail: Vec<TestIssue>,
+}
+
+#[derive(Deserialize)]
+struct TestErrorBody {
+    error: TestErrorFields,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct TestErrorFields {
+    pub(crate) message: String,
+    #[serde(rename = "type")]
+    pub(crate) kind: String,
+    pub(crate) param: Option<String>,
+    pub(crate) code: Option<String>,
 }
 
 #[derive(Deserialize)]

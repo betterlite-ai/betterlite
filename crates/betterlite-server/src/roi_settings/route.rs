@@ -10,17 +10,20 @@ use serde::de::DeserializeOwned;
 
 use crate::auth::auth_identity::AuthContext;
 
-use super::auth::read_admin;
-use super::auth::write_admin;
+use super::auth::READ_FORBIDDEN;
+use super::auth::READ_ROLES;
+use super::auth::WRITE_FORBIDDEN;
+use super::auth::WRITE_ROLES;
+use super::auth::require_admin;
 use super::error::InternalError;
 use super::error::RoiSettingsError;
 use super::error::request_issues;
 use super::patch::PatchPresence;
 use super::patch::build_settings;
 use super::patch::patched_secrets;
-use super::patch::stored_from;
 use super::public::public_settings;
 use super::state::RoiSettingsState;
+use super::store::StoredSettings;
 use super::store::load_settings;
 use super::store::load_stored;
 use super::store::save_settings;
@@ -39,7 +42,8 @@ async fn get_settings(
     State(state): State<RoiSettingsState>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Json<ROISettingsResponse>, RoiSettingsError> {
-    read_admin(caller.as_ref().map(|extension| &extension.0))?;
+    let caller = caller.as_ref().map(|extension| &extension.0);
+    require_admin(caller, READ_ROLES, READ_FORBIDDEN)?;
     let Some(repository) = state.repository.as_deref() else {
         return Err(RoiSettingsError::Internal(InternalError::DbNotConnected));
     };
@@ -52,12 +56,12 @@ async fn update_settings(
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Result<Json<ROISettingsResponse>, RoiSettingsError> {
-    write_admin(caller.as_ref().map(|extension| &extension.0))?;
+    let caller = caller.as_ref().map(|extension| &extension.0);
+    require_admin(caller, WRITE_ROLES, WRITE_FORBIDDEN)?;
     let Some(repository) = state.repository.as_deref() else {
         return Err(RoiSettingsError::Internal(InternalError::DbNotConnected));
     };
-    let patch: ROISettingsUpdate = decode_body(&body)?;
-    let presence: PatchPresence = decode_body(&body)?;
+    let (patch, presence) = parse_update_body(&body)?;
     let issues = request_issues(&patch);
     if !issues.is_empty() {
         return Err(RoiSettingsError::Request(issues));
@@ -69,8 +73,27 @@ async fn update_settings(
     }
     let secrets = patched_secrets(&patch, &presence, &stored, &current, &state.cipher)?;
     let settings = build_settings(patch, &current, &secrets)?;
-    save_settings(repository, &stored_from(&settings, &secrets)).await?;
+    let record = StoredSettings {
+        github_api_url: settings.github_api_url.clone(),
+        github_token: secrets.encrypted_token,
+        estimator_key: secrets.encrypted_estimator_key,
+        repos: settings.repos.clone(),
+        estimator_model: settings.estimator_model.clone(),
+        estimator_prompt: settings.estimator_prompt.clone(),
+        backfill_days: settings.backfill_days,
+        update_interval_minutes: settings.update_interval_minutes,
+        identity_map: settings.identity_map.clone(),
+    };
+    save_settings(repository, &record).await?;
     Ok(Json(public_settings(&settings, state.catalog.as_deref())))
+}
+
+pub fn parse_update_body(
+    body: &[u8],
+) -> Result<(ROISettingsUpdate, PatchPresence), RoiSettingsError> {
+    let patch: ROISettingsUpdate = decode_body(body)?;
+    let presence: PatchPresence = decode_body(body)?;
+    Ok((patch, presence))
 }
 
 fn decode_body<T>(body: &[u8]) -> Result<T, RoiSettingsError>

@@ -8,6 +8,7 @@ use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use betterlite_roi::settings::ROISettingsResponse;
 
 use crate::roi_settings::auth::READ_FORBIDDEN;
+use crate::roi_settings::error::DB_UNAVAILABLE;
 use crate::roi_settings::error::INVALID_SETTINGS;
 use crate::roi_settings::store::SETTINGS_KEY;
 use crate::roi_settings::support::MemoryRepository;
@@ -15,6 +16,7 @@ use crate::roi_settings::support::admin_caller;
 use crate::roi_settings::support::call;
 use crate::roi_settings::support::caller;
 use crate::roi_settings::support::catalog;
+use crate::roi_settings::support::disconnected_repository;
 use crate::roi_settings::support::erased;
 use crate::roi_settings::support::get_request;
 use crate::roi_settings::support::sealed;
@@ -86,6 +88,21 @@ async fn get_route_reports_a_missing_database() {
         reply.detail(),
         CommonProxyErrors::DbNotConnectedError.as_str()
     );
+}
+
+#[tokio::test]
+async fn get_route_reports_a_database_outage() {
+    let app = settings_app(
+        Some(Arc::new(disconnected_repository())),
+        Some(catalog(Vec::new())),
+    );
+    let reply = call(app, get_request(Some(&admin_caller()))).await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    let error = reply.error();
+    assert_eq!(error.message, DB_UNAVAILABLE);
+    assert_eq!(error.kind, "no_db_connection");
+    assert_eq!(error.param.as_deref(), Some("None"));
+    assert_eq!(error.code.as_deref(), Some("503"));
 }
 
 #[tokio::test]
