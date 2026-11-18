@@ -56,8 +56,9 @@ class TypedCache(Protocol):
         self, keys: list[str], *, local_only: bool = False, throttle_redis: bool = True
     ) -> list[JsonValue] | None: ...
     async def async_get_ttl(self, key: str) -> JsonValue: ...
+    @staticmethod
     async def async_batch_get_cache_shared(
-        self, reads: list[tuple["TypedCache", list[str]]]
+        reads: list[tuple["TypedCache", list[str]]],
     ) -> list[JsonValue]: ...
 
 
