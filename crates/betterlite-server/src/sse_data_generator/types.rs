@@ -13,6 +13,9 @@ use crate::stream_keepalive::KeepaliveRouter;
 
 pub type ItemStream = BoxStream<'static, Result<StreamItem, StreamFailure>>;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(super) struct Flag(pub(super) bool);
+
 // getattr(e, "param", "None") as a JSON field: the attribute is absent, present and null, or text
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FailureParam {
@@ -27,7 +30,8 @@ pub enum FailureKind {
     Other,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct StreamFailure {
     pub message: String,
     pub error_type: Option<String>,

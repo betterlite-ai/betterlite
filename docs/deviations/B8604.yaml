@@ -6,4 +6,7 @@ deviations:
   - what: Stream cleanup is handed to a synchronous port that the server runs on its task tracker instead of being awaited inside this generator.
     why: Rust cannot await in Drop and detached tasks are forbidden; cleanup still receives the completion and disconnect flags exactly once.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10070-L10079
+  - what: The failure log line says "Exception occurred" where LiteLLM's source misspells it "Exception occured".
+    why: the repository's spelling check rejects the misspelling; the log text is not part of the response and the message after the dash is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10032
 kept_bugs: []

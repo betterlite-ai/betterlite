@@ -1,11 +1,13 @@
-use crate::data_generator_select::{AsyncDataGenerator, GeneratorInput};
-use bytes::Bytes;
-use futures_util::stream::BoxStream;
 use std::io;
 
-use super::*;
+use bytes::Bytes;
+use futures_util::stream::BoxStream;
+
+use super::types::{SseDataGenerator, StreamSource};
+use crate::data_generator_select::{AsyncDataGenerator, GeneratorInput};
+
 impl<Key: Send + Sync + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Key> {
-    type Response = super::StreamSource;
+    type Response = StreamSource;
     type Stream = BoxStream<'static, Result<Bytes, io::Error>>;
 
     fn generate(&self, input: GeneratorInput<Self::Response, Key>) -> Self::Stream {
