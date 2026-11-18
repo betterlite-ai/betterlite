@@ -11,7 +11,7 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use bytes::BytesMut;
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use futures_util::stream::iter;
 use rstest::rstest;
 use tokio::runtime::Builder;
