@@ -6,8 +6,7 @@ use betterlite_models::model_registration::JsonObject;
 use serde_json::Number;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::set_default;
-use tracing_subscriber::fmt;
-use tracing_subscriber::fmt::MakeWriter;
+use tracing_subscriber::fmt::{MakeWriter, fmt};
 
 use super::super::cleanup::DisconnectCleanup;
 use super::super::ports::{CleanupError, CleanupFuture, RequestLogging, SlotRelease};

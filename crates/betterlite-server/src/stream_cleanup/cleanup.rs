@@ -17,7 +17,7 @@ pub struct DisconnectCleanup<Key> {
     pub disable_streaming_logging: bool,
 }
 
-impl<Key> DisconnectCleanup<Key> {
+impl<Key: Send + Sync> DisconnectCleanup<Key> {
     pub async fn run_cleanup(&self, mut outcome: CleanupOutcome<Key>) -> Result<(), CleanupError> {
         if outcome.client_disconnected {
             self.settle_disconnect(&mut outcome).await?;
