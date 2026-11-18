@@ -124,10 +124,10 @@ deviations: []
 out_of_scope:
 - "ProxyModelNotFoundError and route_endpoint: B9964. route_with_read_through and ModelReadThrough: B9949."
 - "The production models read-through: B9948. Filling this slot from Shared: B8610."
-- "Moving these routes from the executor's deployment list onto the router (state.shared.router), and with it the rest of _route_request_single_attempt on them (team model names, wildcards, pass_through_all_models, default_deployment, deployment_names): no task owns it."
+- "Moving the pick from the executor's deployment list onto the live router: B9946. The rest of _route_request_single_attempt on these routes (team model names, pass_through_all_models, default_deployment, deployment_names): no task owns it."
 - "/v1/messages: B9800 raises the error through the same retry. The other model routes raise it in their own tasks."
 pitfalls:
-- 'The retry cannot find a model yet: these routes pick from the executor''s config list (ChatExecutor.deployments), and B9948''s read-through adds rows to B8611''s router. The second pick misses again, so return its not-found as it is and add no special case.'
+- 'The retry cannot find a model yet: these routes pick from the executor''s config list (ChatExecutor.deployments), and B9948''s read-through adds rows to B8611''s router. B9946 moves the pick onto the live router; until then the second pick misses again, so return its not-found as it is and add no special case.'
 - 'Give route_with_read_through the model as an Option from the request, never the "None" text the message uses, or a request without a model reaches the read-through.'
 - 'routes/chat/tests.rs answers_failures_in_litellm_shape already expects provider_specific_fields for the unknown_model case, and error_normalization_tests_behavior sends a model that looks like a key; both must keep passing with the new text.'
 - 'Write no message text in the routes: the detail and the hint come from B9964''s ProxyModelNotFoundError.'

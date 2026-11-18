@@ -76,6 +76,8 @@ dod:
     proof: [deployment-sync-tests]
   - text: Credentials missing from both database and config are dropped, and the subscribers start once with Redis and stop without failing shutdown.
     proof: [deployment-sync-tests]
+  - text: DeploymentSync has pub sync_credentials and add_rows methods that take no lock, and add_rows adds only the rows it is given.
+    proof: [deployment-sync-tests, read-through-steps]
 checks:
   optional: []
   commands:
@@ -83,6 +85,11 @@ checks:
       why: The deployment reconcile, callback or router settings sync, credential sync or a subscriber is missing or differs from LiteLLM
       run: >-
         cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^deployment_sync::/)'
+    - id: read-through-steps
+      why: sync_credentials or add_rows is missing or not pub, so B9948's model read-through cannot call them
+      run: >-
+        grep -rqE 'pub (async )?fn sync_credentials\(' crates/betterlite/src
+        && grep -rqE 'pub (async )?fn add_rows\(' crates/betterlite/src
 oracle_cases: []
 deviations: []
 out_of_scope:

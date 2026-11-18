@@ -114,7 +114,7 @@ deviations:
 out_of_scope:
 - "_route_user_config_request (L38-L50): no router is built from request data, see deviations."
 - "add_shared_session_to_data and _get_shared_session_lock (L243-L327): aiohttp session reuse; betterlite's pooled HTTP client already reuses connections."
-- "The acompletion batch branch (L499-L511), the Google GenAI generationConfig rewrite (L488-L492) and the eval, container, interaction, agent, video and moderation lists (L549-L706): other route types; B004 and B014 own chat, B9372 the evals, B7430 the containers, B6460 the videos."
+- "The acompletion batch branch (L499-L511), the Google GenAI generationConfig rewrite (L488-L492) and the eval, container, interaction, agent, video and moderation lists (L549-L706): other route types; nothing builds the chat batch branch yet, B9372 owns the evals, B7430 the containers, B6460 the videos."
 - "Router.anthropic_messages and its stream fallbacks: B6021 and B312, reached through MessagesRouting. route_a2a_agent_request: B4788. model_registry_read_through: B8231. The retry around the attempt and the ModelReadThrough port: B9949. The production MessagesRouting and ModelReadThrough and their swap into B081's routes(state): see B081's notes."
 - "litellm.anthropic_messages and the provider call behind it: B1134 and B982."
 - "ProxyModelNotFoundError and the route map, route_endpoint: B9964."
