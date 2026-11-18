@@ -188,3 +188,10 @@ path = "fuzz_targets/bedrock_embedding_io.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_services_realtime_events"
+path = "fuzz_targets/bedrock_services_realtime_events.rs"
+test = false
+doc = false
+bench = false
