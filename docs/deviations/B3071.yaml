@@ -1,0 +1,30 @@
+task: B3071
+deviations:
+  - what: Credentials are validated when an export runs, not when the logger is built, and a missing credential is returned as CloudZeroExportError::MissingConfiguration whose Display text is the exact ValueError message. dry_run_export_usage_data needs no credentials.
+    why: betterlite validates at the operation boundary, so a logger can be built before its environment exists and previews work without credentials; Rust reports the failure as a typed error instead of raising.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L119-L122
+  - what: Logging goes through tracing instead of litellm.verbose_logger, and the export errors are returned to the caller, which logs them (the scheduled job logs a failure at error level), where LiteLLM logs inside a try/except and re-raises.
+    why: betterlite uses structured logging rather than console output, and the caller owns the log level.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L40-L41
+  - what: The scheduler and the pod lock manager are injected through CloudZeroScheduler and UsageExportLease instead of coming from litellm.proxy.proxy_server state; PodLockManager implements UsageExportLease, and redis_available is its cache.is_some().
+    why: Injected dependencies remove the global proxy state and let a test drive locking and scheduling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L59
+  - what: The hourly export window comes from an injected Clock, which also stamps the records, instead of datetime.now(timezone.utc).
+    why: Tests and callers control the clock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L80-L84
+  - what: An interval whose doubled lookback or subtraction leaves the supported datetime range returns CloudZeroExportError::WindowOutOfRange instead of raising Python's OverflowError from timedelta.
+    why: betterlite reports an out-of-range window as a typed error with a message rather than leaking an arithmetic exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L85
+  - what: The scheduled export job is registered under the id cloudzero_export_usage_data. LiteLLM passes no job id to scheduler.add_job, so APScheduler mints one.
+    why: A stable job id lets a restart replace its own job and matches the lease key the job uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L358-L363
+  - what: The logger's construction logs nothing. LiteLLM logs the connection ID and the timezone at debug on initialization; betterlite has no initialization log line, and the credentials stay in SecretString.
+    why: betterlite keeps credentials out of logs; the connection ID is part of the billing-drop URL.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L40-L41
+  - what: The dry-run totals are a rust_decimal Decimal and an i64, and a sum that overflows returns DryRunError::TotalOverflow, where LiteLLM sums Python floats and ints without a bound.
+    why: betterlite keeps money exact and reports a total it cannot represent instead of producing an infinite or imprecise one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/cloudzero.py#L236-L245
+  - what: The usage row to UsageRecord conversion is a typed step in this module; a column of the wrong type returns UsageRowError naming the column. LiteLLM reads the cells inside CBFTransformer with int() and float() in a per-record try/except that skips the record instead.
+    why: Betterlite rows are typed JSON and a value of the wrong type is an error that names the field, as docs/compatibility.md says, rather than a record quietly dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/cloudzero/transform.py#L69-L102
+kept_bugs: []

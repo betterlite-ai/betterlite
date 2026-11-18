@@ -1,0 +1,383 @@
+id: B9986
+title: Anthropic chat adapter in betterlite-provider
+description: >-
+  Fill impl Adapter for Anthropic so betterlite-provider answers buffered and streaming Anthropic chat. Today the impl
+  in crates/betterlite-provider/src/anthropic_dispatch.rs holds only NAME, so every Anthropic chat answers
+  OperationError::UnavailableAdapter. prepare, execute and decode call what B027 and B584 built:
+  anthropic_dispatch::completion::complete with the anthropic_dispatch::native::Native handler, and that handler runs
+  B584's chat_call. Never reimplement a request transform, a send path, a response transform or a stream decoder that
+  already exists; call it. B9984 makes those futures Send. B9989 moves the stream wrapper, the file blocks, the chat
+  field split and B175's listed parameter mapping to where this task calls them. B9990 wires the result into the proxy
+  routes; this task changes betterlite-server only where a new OperationError variant needs an arm.
+
+
+  Surface. Anthropic becomes pub struct Anthropic { pub surface: Surface }, with Surface from anthropic_dispatch::base,
+  deriving Debug, Clone, Copy, PartialEq and Eq. Drop Default, since nothing calls Anthropic::default().
+  Provider::from_slug in crates/betterlite-provider/src/provider.rs maps anthropic to Surface::Messages and
+  anthropic_text to Surface::Legacy. A Legacy adapter answers OperationError::UnavailableAdapter from prepare, as both
+  slugs do today.
+
+
+  Runtime. Add the module crates/betterlite-provider/src/anthropic_dispatch/gateway.rs, declared by pub mod gateway;
+  in anthropic_dispatch.rs, with its children under gateway/. gateway/runtime.rs holds two structs. pub struct
+  AnthropicBases { pub globals: Globals, pub environment: Environment, pub disable_suffix: bool } has pub fn
+  new(config: &Config) -> Self. globals.api_base and globals.api_key come from config.sections.resource_sdk_settings
+  (litellm_settings.api_base and api_key), and globals.anthropic_key is None. environment.api_base is
+  Some(config.sections.anthropic_credentials.api_base); that section already reads it from ANTHROPIC_API_BASE, then
+  ANTHROPIC_BASE_URL, then the default. environment.base_url is None, environment.api_key is that section's api_key
+  and disable_suffix is its disable_url_suffix. B9990 calls AnthropicBases::new for the deployment defaults.
+
+
+  pub struct AnthropicRuntime is built once by pub fn new(config: &Config, client: &ProxiedClient, catalog:
+  Arc<ModelCatalog>) -> Result<Self, RuntimeError> and owns every value the Native handler borrows.
+  native/tests/support/fixture.rs and execution.rs list them; take each from its production source. The bases are an
+  AnthropicBases. AnthropicSettings takes api_key, auth_token, api_base and use_bearer_for_custom_base from
+  config.sections.anthropic_credentials and the version AnthropicSettings::default() sets. The beta matrix comes from
+  betterlite_core::api::anthropic_beta_config::BetaConfigLoader::new(client.clone(),
+  config.sections.anthropic_beta_config.clone(), ApiLimits::default()); execute awaits its matrix(), and the loader
+  caches the matrix after the first load. ModelCatalog is the shared Arc. ModelCostMap::parse and RawCatalog
+  (serde_json::from_slice) read the bytes of (BundledCatalog::default().asset)() once. CandidatePatterns::new(),
+  CatalogGeneralizations::default(), betterlite_models::fireworks_catalog_metadata::Catalog::new(), NoDynamicMetadata
+  and HfConfigClient { client: NoHfConfig, base_url: HF_CONFIG_BASE_URL } fill the capability environment, with a
+  ResolutionContext built from the same config the way crates/betterlite-server/src/server/chat_setup.rs builds the
+  one it passes to chat_deployments. The encoding is the bundled cl100k TiktokenEngine the fixture loads. Media goes
+  through B5083's betterlite_prompts::media_fetch::fetcher::Fetcher::new(client.clone(), UserUrlFetcher { validator:
+  UrlValidator::new(SystemResolver, &config.sections.user_url_policy.user_url_allowed_hosts,
+  &Verification::Enabled), validation: config.sections.user_url_policy.user_url_validation },
+  config.sections.image_url_download.max_download_size_mb, a wall clock), never a refusing fetcher; file blocks go
+  through B9989's betterlite_prompts::anthropic_invokes::file_blocks::RemoteFileBlocks over that fetcher. OptionDefaults
+  and max_tokens come from config.sections.anthropic_option_primitives (litellm_settings and default_chat_max_tokens),
+  the legacy OptionValues from config.sections.anthropic_completion.litellm_settings, the capability budgets from
+  config.sections.anthropic_capability_catalog and global_drop_params from
+  config.sections.drop_params.policy.global_drop_params. The runtime owns the Redactor the logging builder needs,
+  Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH). The legacy PromptFactory uses Hub::Unreachable with a one-line comment that
+  the Messages surface never reads it. A value no config section reads at the pin takes LiteLLM's module default, with
+  a one-line comment naming it. Implement Debug for AnthropicRuntime by hand with
+  debug_struct("AnthropicRuntime").finish_non_exhaustive(), since Deployment derives Debug.
+
+
+  The runtime reaches the adapter through the deployment. Add pub anthropic: Option<Arc<AnthropicRuntime>> to
+  Deployment in crates/betterlite-provider/src/prepared/deployment.rs. from_chat and from_params set None, and so does
+  every Deployment literal in the test files in scope. B9990 sets it on the chat route.
+
+
+  prepare. For Surface::Messages, RequestKind::Chat(chat) gives PreparedRequest::Anthropic(AnthropicPrepared { chat:
+  Box<ChatOperation>, stream: false }), and RequestKind::Stream(chat) gives the same with stream: true. Any other kind
+  answers OperationError::UnsupportedOperation { provider: anthropic, operation }. With deployment.anthropic None,
+  prepare answers UnavailableAdapter. AnthropicPrepared derives only Debug and Clone, since PreparedRequest derives
+  those two.
+
+
+  execute, in gateway/call.rs. It takes the runtime from deployment.anthropic and builds the call LiteLLM's
+  _complete_anthropic builds. The borrowing structs (ResolutionContext, CapabilityEnvironment, CatalogSources,
+  PromptDeps, Preparation, Runtime and Native) are built inside execute from &runtime, once per call.
+
+
+  Parameters, in gateway/parameters.rs, follow get_optional_params at the pin. B9989's
+  chat_request_fields(&chat.request) gives the messages and
+  the remaining fields. Take drop_params, additional_drop_params and allowed_openai_params out of the fields into a
+  betterlite_models::params::ParameterPolicy, with drop_params true when the request sets it or the runtime's
+  global_drop_params is on. Take extra_headers out into CompletionCall.headers, and extra_body out into
+  optional_params under extra_body, as LiteLLM's non-OpenAI branch keeps it. Remove the other names in
+  betterlite_models::params::classification::RESERVED_PARAMETER_NAMES, since LiteLLM reads them as call arguments,
+  then deserialize the rest into ChatParameters.
+  betterlite_anthropic::capabilities::supported_params::get_supported_openai_params(&deployment.model,
+  Some(anthropic), &mut environment, &catalogs) gives the supported list, and B9989's
+  map_listed_parameters(&supported, &deployment.model, CallType::ChatCompletion, &parameters, &policy) runs LiteLLM's
+  _check_valid_arg. Every ParameterError becomes a new OperationError::Parameters { #[source] source: ParameterError }
+  in crates/betterlite-provider/src/operation.rs; ParameterError::Unsupported is the UnsupportedParamsError LiteLLM
+  raises with status 400 unless drop_params is set. The mapping's standard map is the non_default_params for B576's
+  betterlite_anthropic::params::map_openai_params with a ParamsRequest for deployment.model, provider anthropic, the
+  runtime's budgets and default_max_tokens the runtime's max_tokens. The mapping's provider_fields then go into
+  optional_params at the top level, as add_provider_specific_params_to_optional_params does for a non-OpenAI provider.
+
+
+  Remote file data, in gateway/files.rs. LiteLLM's anthropic_process_openai_file_message fetches a file_data value
+  that starts with http through convert_url_to_base64 while it builds the messages. The FileBlocks seam is
+  synchronous, so RemoteFileBlocks answers FileBlockError::Pending for such a URL today. Before the call, walk the
+  messages in order, collect every file content part whose file.file_data is a text starting with http, and fetch
+  each distinct URL once with the runtime's Fetcher through RemoteMediaFetcher::convert_url; write no new fetch code.
+  The results go into a BTreeMap<String, Result<String, Arc<ImageFetchError>>> keyed by URL. The walk stops at the
+  first failed fetch, so no URL after it is fetched, as LiteLLM stops at its first raise. In
+  crates/betterlite-prompts/src/anthropic_invokes/file_blocks.rs, RemoteFileBlocks gains pub fetched: &'call
+  BTreeMap<String, Result<String, Arc<ImageFetchError>>> and FileBlockError gains Prefetched(Arc<ImageFetchError>)
+  with #[error(transparent)]. file_block looks an http file_data up in fetched first: a fetched data URL replaces
+  file_data in a copy of the element before process_openai_file_message runs, a stored failure answers
+  FileBlockError::Prefetched with that error, and a URL not in the map keeps today's path. The failure then reaches
+  the client the way LiteLLM's does: prompt assembly wraps it in RequestError::Prompt, the 400 AnthropicError with
+  the Received Messages text. snowflake/messages/files.rs passes an empty map, since its own prefetch rewrites the
+  parts first. execute builds RemoteFileBlocks per call with the runtime's Fetcher and the map.
+
+
+  The call. The CompletionCall carries deployment.model, provider anthropic, the messages, ResponseEnvelope::new with
+  a chatcmpl- id from a new UUID, the optional params, api_key deployment.api_key, api_base Some(deployment.api_base),
+  stream from AnthropicPrepared, acompletion true, client None, the runtime's encoding and deployment.timeout.
+  CompletionSettings borrows the runtime's bases with selection None, and selected_config turns that into
+  ChatConfigTag::Anthropic. The Native handler borrows the runtime with pooled set to execute's client and now set to
+  Utc::now(). gateway/logging.rs holds the production sinks: a LogSink that writes each LogRecord with
+  tracing::debug!, as TracingCompletionLog does for the text bridge, and a StreamLogger whose post_call does the same.
+  The per-call LoggingState and PrePostEnv come from one pub(crate) builder there that takes the sink, the redactor,
+  the model and a call id; fixtures/runtime.rs::logging calls it with its Discard sink and its fixed values instead of
+  keeping its own copy. completion::complete(Surface::Messages, call, &settings, &mut handler, &mut log) runs the call.
+  Reply::Messages(outcome) becomes Upstream::Anthropic(Box<AnthropicUpstream>), a new variant in
+  crates/betterlite-provider/src/prepared.rs. AnthropicUpstream { pub headers: HeaderMap, pub outcome:
+  ChatOutcome<StreamFailure, Counter> } lives in gateway.rs. headers holds the projected provider headers B584 already
+  built: additional_headers from the envelope's hidden params on a reply, response_headers on a stream.
+  Upstream::headers() returns them. ChatOutcome::Embedding and Reply::Legacy answer UnsupportedOperation.
+
+
+  decode. ChatOutcome::Reply(envelope) becomes OperationResult::Anthropic(AnthropicResult::Reply(Box<AnthropicReply>)).
+  AnthropicReply in gateway/reply.rs is the client view of ResponseEnvelope: id, object, created, model,
+  system_fingerprint, choices and usage, without _hidden_params, since LiteLLM never sends those to the client. model
+  is the client's requested model name when the ChatRequest has one, as ChatResponse::for_client does.
+  ChatOutcome::Stream becomes OperationResult::Anthropic(AnthropicResult::Stream(frames)), frames being a
+  BoxStream<'static, Result<Vec<u8>, HttpError>> built in gateway/frames.rs. AnthropicResult turns from the B010 unit
+  struct into this two-variant enum with no derives; OperationResult derives nothing.
+
+
+  Stream frames. LiteLLM wraps the Anthropic stream in CustomStreamWrapper with custom_llm_provider anthropic.
+  frames.rs builds B9989's StreamWrapper with provider anthropic, the request's stream_options and model, and reads the
+  WrappedStream's completion_stream: DecodedChunk::Event becomes ProviderChunk::Json of the serialized event and
+  DecodedChunk::Generic becomes ProviderChunk::Generic. Each StreamChunk from push goes through
+  betterlite_openai::text_completion_stream::chat_chunk(chunk, model, include_usage), the projection the server's
+  TextSource already uses, and is written as a data: frame with a blank line after it. After the source ends, finish
+  gives the closing chunks. A failed read or shaping step logs with tracing::warn! and ends the stream with
+  HttpError::Timeout, as TextSource does.
+
+
+  The chunk projection, in betterlite-openai. The gateway relay parses every frame into
+  betterlite_openai::stream::chunk::Chunk, whose Delta carries reasoning_content and thinking_blocks since B9989.
+  chat_choice in crates/betterlite-openai/src/text_completion_stream.rs writes only role and content today; it also
+  writes the delta's tool_calls (each with only index, id, type and function, since ToolCall denies unknown fields),
+  reasoning_content and thinking_blocks when present. The text path never fills them, so its output does not change.
+
+
+  Errors, in gateway/error.rs. LiteLLM raises an AnthropicError with a status for an upstream error and for a failed
+  request build, so a failure that carries a status keeps it. DispatchError::Completion(Failure::Chat(error)) with
+  Some(status) from ChatCallError::status_code, and DispatchError::Completion(Failure::Prepare(error)) with
+  Some(status) from RequestError::status_code, become OperationError::Provider with an UpstreamResponse of that
+  status, the provider headers the error carries (none for a request build failure) and the error's message as
+  body. Failure::Http(error) passes its OperationError on. A transport timeout becomes OperationError::Timeout and a
+  missing key OperationError::MissingApiKey. Every other failure becomes a new OperationError::Anthropic { #[source]
+  source: Box<AnthropicCallError> } in crates/betterlite-provider/src/operation.rs. chat_error in
+  crates/betterlite-server/src/server/chat_setup/provider_call.rs and its twin in provider_call/embedding.rs match
+  OperationError exhaustively, so both gain the two arms here: OperationError::Anthropic goes to CallError::Operation
+  next to TransformRetry, a 500. OperationError::Parameters with ParameterError::Unsupported { names, .. } goes to
+  ChatError::Request with RequestError::Unsupported { name: names joined with a comma and a space }, the 400 the route
+  already answers for a rejected parameter. ParameterError::Encode { source } goes to ChatError::Request with
+  RequestError::Body { source }, also a 400, since a value of the wrong type is the client's error. Any other
+  ParameterError goes to CallError::Operation, a 500.
+
+
+  The other Upstream matches. openai_dispatch.rs and aiohttp_openai_dispatch.rs add Upstream::Anthropic(_) to their
+  unsupported arms. anthropic_dispatch/native/legacy.rs gets an arm for it that answers
+  Failure::Http(OperationError::UnsupportedOperation), since the legacy send never yields it.
+
+
+  Tests. Extend the rstest anthropic_dispatch_cases in crates/betterlite-provider/src/anthropic_dispatch/tests.rs with
+  a Family enum the way openai_dispatch/tests.rs does: Family::Helper keeps the ten helper-case files under their
+  current names, and Family::Gateway drives Anthropic prepare, execute and decode against a loopback upstream from the
+  new child module anthropic_dispatch/tests/gateway.rs. The loopback is native/tests/support/wire.rs::server; widen it
+  and the modules above it to pub(crate) instead of writing a second one. Add the named cases
+  anthropic_provider_dispatch_http (a buffered reply, the request's x-api-key and anthropic-version, the client view
+  without _hidden_params), anthropic_provider_dispatch_stream (frames that Chunk::parse accepts, a tool_use block
+  arriving as delta tool_calls, a closing finish_reason chunk), anthropic_provider_dispatch_thinking (a thinking block
+  arriving as delta reasoning_content and thinking_blocks after Chunk::parse), anthropic_provider_dispatch_error (a 400
+  from the upstream becomes OperationError::Provider with that status), anthropic_provider_unsupported_param
+  (logit_bias answers OperationError::Parameters with ParameterError::Unsupported and nothing is sent), anthropic_provider_dropped_param (the
+  same request with drop_params true is sent without logit_bias), anthropic_provider_remote_file (a file_data URL the
+  loopback serves as a PDF is fetched once and sent as a base64 document block) and anthropic_provider_remote_file_error
+  (a file_data URL the loopback answers with 404 becomes OperationError::Provider with status 400, a body naming the
+  URL, and no Messages request upstream). In crates/betterlite-provider/src/provider/tests.rs the case anthropic
+  becomes anthropic_text, built with Surface::Legacy and still asserting the refusal. Test configs set
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS so the beta matrix never leaves the machine, and set litellm_settings.user_url_validation:
+  false so the fetcher reaches the loopback.
+scope:
+  paths:
+  - crates/betterlite-provider/src/anthropic_dispatch.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/gateway.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/gateway/**
+  - crates/betterlite-provider/src/anthropic_dispatch/tests.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/tests/**
+  - crates/betterlite-provider/src/anthropic_dispatch/fixtures/runtime.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/native.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/native/legacy.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/native/tests.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/native/tests/support.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/native/tests/support/wire.rs
+  - crates/betterlite-provider/src/provider.rs
+  - crates/betterlite-provider/src/provider/tests.rs
+  - crates/betterlite-provider/src/provider/tests/openai.rs
+  - crates/betterlite-provider/src/prepared.rs
+  - crates/betterlite-provider/src/prepared/deployment.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/tests.rs
+  - crates/betterlite-provider/src/openai_dispatch.rs
+  - crates/betterlite-provider/src/aiohttp_openai_dispatch.rs
+  - crates/betterlite-provider/src/aiohttp_openai_dispatch/tests.rs
+  - crates/betterlite-provider/src/embedding_rerank_providers/tests.rs
+  - crates/betterlite-provider/src/snowflake/messages/files.rs
+  - crates/betterlite-prompts/src/anthropic_invokes/file_blocks.rs
+  - crates/betterlite-openai/src/text_completion_stream.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/embedding.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5965-L5968
+  why: main.completion sends anthropic_text to _complete_anthropic_text and anthropic to _complete_anthropic.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2882-L2945
+  why: _complete_anthropic resolves the key and base and calls the chat handler; B027's complete() ports it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L204-L538
+  why: The stream and buffered handlers B584's chat_call ports, and the CustomStreamWrapper with custom_llm_provider
+    anthropic that wraps the stream.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4570
+  why: _check_valid_arg raises UnsupportedParamsError for a name outside the supported list unless drop_params is set,
+    then AnthropicConfig.map_openai_params maps the non-default params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L945-L967
+  why: UnsupportedParamsError always sets status_code 400, whatever status its caller passes.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5049-L5089
+  why: For a non-OpenAI provider the params outside the OpenAI list go into optional_params at the top level, nulls
+    skipped.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L1916-L1940
+  why: anthropic_process_openai_file_message turns a file_data value into a document block through
+    convert_to_anthropic_image_obj.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L792-L826
+  why: convert_to_anthropic_image_obj fetches a file_data URL that starts with http and lets ImageFetchError through.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1998-L2002
+  why: A failed message translation, a failed fetch included, is raised as a 400 AnthropicError with the Received
+    Messages text.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L2709-L2761
+  why: transform_response builds the ModelResponse with a generated id and the provider headers in
+    _hidden_params.additional_headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1403-L1535
+  why: chunk_creator shapes each Anthropic chunk; the shared betterlite-streaming chunk_creator ports it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L10081
+  why: async_data_generator writes each chunk as a data frame with its delta fields, reasoning_content and
+    thinking_blocks included, and ends with data [DONE].
+- url: https://github.com/betterlite-ai/betterlite/blob/main/.development/decisions/2026-11-18-provider-futures-send.md
+  why: Why B9984 lands first and the Anthropic gateway wiring follows it.
+dod:
+- text: >-
+    anthropic buffered: Anthropic prepare, execute and decode turn a loopback Messages reply into LiteLLM's client
+    view through B027's complete() and the Native handler.
+  proof:
+  - adapter-buffered
+- text: >-
+    anthropic stream: an Anthropic event stream becomes data frames shaped by StreamWrapper that Chunk::parse accepts,
+    with tool calls in the delta and a closing finish_reason chunk.
+  proof:
+  - adapter-stream
+- text: >-
+    anthropic thinking: a thinking block reaches the frames as delta reasoning_content and thinking_blocks.
+  proof:
+  - adapter-thinking
+- text: >-
+    anthropic upstream error: a non-2xx Anthropic answer becomes OperationError::Provider with its status and body.
+  proof:
+  - adapter-error
+- text: >-
+    unsupported params: a param outside Anthropic's supported list answers OperationError::Parameters (Unsupported) unless
+    drop_params is set, and with drop_params the call is sent without it.
+  proof:
+  - adapter-params
+- text: >-
+    remote file data: a file_data URL is fetched once through the runtime's Fetcher before the call and sent as a
+    document block, and a failed fetch answers LiteLLM's 400 with nothing sent upstream.
+  proof:
+  - adapter-files
+- text: >-
+    anthropic_text stays refused: an anthropic_text deployment still answers UnavailableAdapter.
+  proof:
+  - adapter-surface
+- text: >-
+    nothing regresses: the provider, OpenAI stream, core mock, bedrock stream and server chat setup modules this task
+    changes keep passing.
+  proof:
+  - regressions
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: adapter-buffered
+    why: Anthropic prepare, execute and decode do not turn a buffered loopback reply into the client view.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_http$/)'
+  - id: adapter-stream
+    why: Anthropic execute and decode do not turn a loopback event stream with a tool_use block into parseable frames.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_stream$/)'
+  - id: adapter-thinking
+    why: A thinking block does not reach the frames as delta reasoning_content and thinking_blocks.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_thinking$/)'
+  - id: adapter-error
+    why: An Anthropic 400 does not become OperationError::Provider with that status.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_error$/)'
+  - id: adapter-params
+    why: An unsupported param is sent, is dropped without drop_params, or is not dropped with it.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_(unsupported|dropped)_param$/)'
+  - id: adapter-files
+    why: A file_data URL is not fetched before the call, is fetched twice, or a failed fetch does not answer 400
+      before anything is sent upstream.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_remote_file(_error)?$/)'
+  - id: adapter-surface
+    why: The anthropic_text adapter no longer refuses, or the anthropic case was not split by surface.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::provider_framework_tests_behavior::case_[0-9]+_anthropic_text$/)'
+  - id: regressions
+    why: The Upstream variant, the Deployment field, the OperationError variants, the chunk projection or the file block
+      map broke a test in a module this task changes.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_dispatch_http$/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^anthropic_dispatch::/) | test(/^provider::tests::/) | test(/^operation::/) | test(/^aiohttp_openai_dispatch::/) | test(/^embedding_rerank_providers::/) | test(/::openai_dispatch_cases::/) | test(/^snowflake::/)' && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^anthropic_invokes::/)' && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^text_completion_stream::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  The proxy routes are B9990: the deployment's own credentials, the runtime on ChatCalls, the route arms for
+  AnthropicResult, the route tests and the HTTP oracle case.
+- >-
+  The anthropic_text surface on the gateway (Surface::Legacy, _complete_anthropic_text). The Native handler already
+  serves it; its adapter keeps answering UnavailableAdapter.
+- >-
+  The /v1/messages route, count tokens, batches and files through the gateway. B027's dispatch() serves them as
+  helpers; their routes belong to their own tasks.
+- >-
+  The rest of LiteLLM's CustomStreamWrapper (logging callbacks, the stream cache, hooks, rules) is not ported here.
+  StreamWrapper carries only the shaping loop.
+- >-
+  Shared transport pooling, timeout, TLS and proxy settings are B173; build no second outbound client.
+- >-
+  A deployment's own litellm_params.drop_params and additional_drop_params are B9992; here only the request's
+  values and the proxy-wide flag count.
+pitfalls:
+- >-
+  Dispatched runs cannot compile, so follow the type names in the description and check each trait bound against
+  the code: native::Native's CompletionHandler impl needs Client: ChatTransport + legacy::Transport, Fetcher:
+  RemoteMediaFetcher + Sync, Blocks: FileBlocks + Sync and Ids: Fn() -> String + Sync. ChatTransport extends
+  StreamTransport, so ProxiedClient's failure type is StreamFailure on both.
+- >-
+  map_openai_params takes IndexMap<String, betterlite_models::decisions::Json>, ParameterMapping holds serde_json
+  Value maps and chat_request_fields returns betterlite_models::controls::json_value::JsonValue; convert through
+  serde_json once at each seam, not per field.
+- >-
+  The projected provider headers already carry the llm_provider- prefix and the x-ratelimit- aliases from
+  RATE_LIMIT_ALIASES. Hand them over as they are; the server's provider_prefixed_name keeps names that contain
+  llm_provider.
+- >-
+  B9984 bans LocalBoxFuture and LocalBoxStream in clippy.toml, so frames.rs builds a futures_util BoxStream.
+- >-
+  BetaConfigLoader fetches the remote beta matrix unless LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS is set, so every test
+  config sets it.
+- >-
+  The rstest anthropic_dispatch_cases keeps its ten helper cases under their current names, so the helper replays
+  still match their YAML files.
+- >-
+  File sizes. Every file stays at or under 300 lines, and every function at or under 40. gateway/parameters.rs,
+  gateway/files.rs and gateway/logging.rs keep those steps out of gateway/call.rs; split call.rs further if it still
+  grows past that.
+- >-
+  B9988 and this task share files: server/chat_setup/provider_call.rs, provider_call/embedding.rs,
+  crates/betterlite-provider/src/operation.rs, operation/tests.rs, prepared/deployment.rs,
+  aiohttp_openai_dispatch/tests.rs and provider/tests/openai.rs. free.pl runs them one after the other, so the second
+  one merges main and finds the other's variants: B9988 adds OperationError::RejectedFields, OperationResult::OutputLimit
+  and Deployment.global_drop_params. Keep its arms in chat_error and its embedding twin, add the two arms here beside
+  them, and set every field B9988 added in the Deployment literals.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security
