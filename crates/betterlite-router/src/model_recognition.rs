@@ -1,18 +1,18 @@
-pub mod error;
 pub mod kwargs;
 
 mod tests;
 
+use indexmap::IndexMap;
+
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::model_catalog_lookup::alias::AliasMap;
 use crate::routing_groups::group::RoutingGroup;
-use crate::routing_groups::index::RoutingGroupIndex;
 
-// The model list, aliases and routing groups one snapshot of the router serves.
+// The model list, aliases and Router._routing_groups groups one snapshot of the router serves.
 pub struct ModelRecognition<'catalog> {
     pub catalog: &'catalog DeploymentCatalog,
     pub model_group_alias: &'catalog AliasMap,
-    pub routing_groups: &'catalog RoutingGroupIndex,
+    pub routing_groups: &'catalog IndexMap<String, RoutingGroup>,
 }
 
 impl ModelRecognition<'_> {
@@ -24,7 +24,7 @@ impl ModelRecognition<'_> {
         {
             return None;
         }
-        self.routing_groups.callable_group(model_name)
+        self.routing_groups.get(model_name)
     }
 
     // Router.is_recognized_model: a deployment model_name, a deployment id, an alias, or a callable group.

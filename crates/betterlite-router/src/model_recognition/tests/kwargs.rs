@@ -1,29 +1,25 @@
 use rstest::rstest;
 
-use crate::model_recognition::kwargs::model_group_from_kwargs;
-use crate::router_predicates::JsonMap;
+use crate::model_recognition::kwargs::{CallbackKwargs, model_group_from_kwargs};
 
-fn kwargs(source: &str) -> JsonMap {
+fn callback_kwargs(source: &str) -> CallbackKwargs {
     serde_json::from_str(source).unwrap()
 }
 
 #[rstest]
 #[case::metadata(
     r#"{"litellm_params":{"metadata":{"model_group":"gpt-4"}}}"#,
-    Some("gpt-4".to_owned())
+    Some("gpt-4")
 )]
 #[case::litellm_metadata(
     r#"{"litellm_metadata":{},"litellm_params":{"litellm_metadata":{"model_group":"gpt-4"}}}"#,
-    Some("gpt-4".to_owned())
+    Some("gpt-4")
 )]
 #[case::newer_bucket_wins_even_when_null(
     r#"{"litellm_metadata":null,"litellm_params":{"metadata":{"model_group":"old"},"litellm_metadata":{"model_group":"new"}}}"#,
-    Some("new".to_owned())
+    Some("new")
 )]
-#[case::empty_group(
-    r#"{"litellm_params":{"metadata":{"model_group":""}}}"#,
-    Some(String::new())
-)]
+#[case::empty_group(r#"{"litellm_params":{"metadata":{"model_group":""}}}"#, Some(""))]
 #[case::no_litellm_params("{}", None)]
 #[case::null_litellm_params(r#"{"litellm_params":null}"#, None)]
 #[case::null_metadata(r#"{"litellm_params":{"metadata":null}}"#, None)]
@@ -41,28 +37,21 @@ fn kwargs(source: &str) -> JsonMap {
 )]
 fn model_group_reads_the_selected_metadata_bucket(
     #[case] source: &str,
-    #[case] expected: Option<String>,
+    #[case] expected: Option<&str>,
 ) {
-    assert_eq!(model_group_from_kwargs(&kwargs(source)).unwrap(), expected);
+    let kwargs = callback_kwargs(source);
+    assert_eq!(model_group_from_kwargs(&kwargs), expected);
 }
 
 #[rstest]
-#[case::params_list(r#"{"litellm_params":[]}"#, "litellm_params must be an object")]
-#[case::params_text(r#"{"litellm_params":"params"}"#, "litellm_params must be an object")]
-#[case::metadata_number(r#"{"litellm_params":{"metadata":7}}"#, "metadata must be an object")]
+#[case::params_list(r#"{"litellm_params":[]}"#)]
+#[case::params_text(r#"{"litellm_params":"params"}"#)]
+#[case::metadata_number(r#"{"litellm_params":{"metadata":7}}"#)]
 #[case::litellm_metadata_text(
-    r#"{"litellm_metadata":{},"litellm_params":{"litellm_metadata":"meta"}}"#,
-    "litellm_metadata must be an object"
+    r#"{"litellm_metadata":{},"litellm_params":{"litellm_metadata":"meta"}}"#
 )]
-#[case::model_group_number(
-    r#"{"litellm_params":{"metadata":{"model_group":7}}}"#,
-    "model_group must be a string"
-)]
-#[case::model_group_list(
-    r#"{"litellm_params":{"metadata":{"model_group":["a"]}}}"#,
-    "model_group must be a string"
-)]
-fn model_group_names_the_field_it_cannot_read(#[case] source: &str, #[case] expected: &str) {
-    let error = model_group_from_kwargs(&kwargs(source)).unwrap_err();
-    assert_eq!(error.to_string(), expected);
+#[case::model_group_number(r#"{"litellm_params":{"metadata":{"model_group":7}}}"#)]
+#[case::model_group_list(r#"{"litellm_params":{"metadata":{"model_group":["a"]}}}"#)]
+fn callback_kwargs_reject_a_value_the_field_cannot_hold(#[case] source: &str) {
+    assert!(serde_json::from_str::<CallbackKwargs>(source).is_err());
 }

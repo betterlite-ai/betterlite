@@ -4,7 +4,7 @@ use super::support::{Snapshot, group};
 
 #[test]
 fn routing_group_returns_a_callable_group() {
-    let snapshot = Snapshot::default().with_groups(vec![group("cheap", &["a", "b"])], &[], &[]);
+    let snapshot = Snapshot::default().with_groups(vec![group("cheap", &["a", "b"])]);
     let recognition = snapshot.recognition();
     let found = recognition
         .routing_group("cheap")
@@ -17,7 +17,7 @@ fn routing_group_returns_a_callable_group() {
 fn routing_group_returns_none_when_a_deployment_shadows_the_name() {
     let snapshot = Snapshot::default()
         .with_deployment("cheap", "dep-1")
-        .with_groups(vec![group("cheap", &["a"])], &[], &[]);
+        .with_groups(vec![group("cheap", &["a"])]);
     assert!(snapshot.recognition().routing_group("cheap").is_none());
 }
 
@@ -25,20 +25,36 @@ fn routing_group_returns_none_when_a_deployment_shadows_the_name() {
 fn routing_group_returns_none_when_an_alias_shadows_the_name() {
     let snapshot = Snapshot::default()
         .with_alias("cheap", "gpt-4o")
-        .with_groups(vec![group("cheap", &["a"])], &[], &[]);
+        .with_groups(vec![group("cheap", &["a"])]);
     assert!(snapshot.recognition().routing_group("cheap").is_none());
+}
+
+#[test]
+fn routing_group_returns_after_the_last_shadowing_deployment_is_removed() {
+    let mut snapshot = Snapshot::default()
+        .with_deployment("cheap", "dep-1")
+        .with_groups(vec![group("cheap", &["a"])]);
+    assert!(snapshot.recognition().routing_group("cheap").is_none());
+    assert!(snapshot.catalog.remove("dep-1", 0).is_some());
+    assert!(snapshot.recognition().routing_group("cheap").is_some());
+    assert!(snapshot.recognition().is_recognized("cheap"));
+}
+
+#[test]
+fn routing_group_returns_after_the_shadowing_alias_is_removed() {
+    let mut snapshot = Snapshot::default()
+        .with_alias("cheap", "gpt-4o")
+        .with_groups(vec![group("cheap", &["a"])]);
+    assert!(snapshot.recognition().routing_group("cheap").is_none());
+    assert!(snapshot.aliases.shift_remove("cheap").is_some());
+    assert!(snapshot.recognition().routing_group("cheap").is_some());
+    assert!(snapshot.recognition().is_recognized("cheap"));
 }
 
 #[test]
 fn routing_group_returns_none_for_an_unknown_name() {
-    let snapshot = Snapshot::default().with_groups(vec![group("cheap", &["a"])], &[], &[]);
+    let snapshot = Snapshot::default().with_groups(vec![group("cheap", &["a"])]);
     assert!(snapshot.recognition().routing_group("expensive").is_none());
-}
-
-#[test]
-fn routing_group_returns_none_when_the_index_marked_the_name_shadowed() {
-    let snapshot = Snapshot::default().with_groups(vec![group("cheap", &["a"])], &["cheap"], &[]);
-    assert!(snapshot.recognition().routing_group("cheap").is_none());
 }
 
 #[test]
@@ -53,11 +69,9 @@ fn routing_group_returns_none_without_groups() {
 
 #[test]
 fn routing_group_keeps_a_group_named_like_an_alias_target() {
-    let snapshot = Snapshot::default().with_alias("fast", "cheap").with_groups(
-        vec![group("cheap", &["a"])],
-        &[],
-        &[],
-    );
+    let snapshot = Snapshot::default()
+        .with_alias("fast", "cheap")
+        .with_groups(vec![group("cheap", &["a"])]);
     assert!(snapshot.recognition().routing_group("cheap").is_some());
 }
 
@@ -65,7 +79,7 @@ fn served() -> Snapshot {
     Snapshot::default()
         .with_deployment("gpt-4o", "dep-1")
         .with_alias("fast", "elsewhere")
-        .with_groups(vec![group("cheap", &["gpt-4o"])], &[], &[])
+        .with_groups(vec![group("cheap", &["gpt-4o"])])
 }
 
 #[rstest]
@@ -91,11 +105,4 @@ fn is_recognized_rejects_a_name_it_does_not_serve(#[case] model: &str) {
 fn is_recognized_ignores_wildcard_patterns() {
     let snapshot = Snapshot::default().with_deployment("openai/*", "wild-1");
     assert!(!snapshot.recognition().is_recognized("openai/gpt-4o"));
-}
-
-#[test]
-fn is_recognized_rejects_a_group_the_index_marked_shadowed() {
-    let snapshot =
-        Snapshot::default().with_groups(vec![group("cheap", &["gpt-4o"])], &["cheap"], &[]);
-    assert!(!snapshot.recognition().is_recognized("cheap"));
 }

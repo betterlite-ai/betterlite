@@ -1,14 +1,12 @@
-use std::collections::{BTreeMap, BTreeSet};
-
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use indexmap::IndexMap;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use crate::model_recognition::ModelRecognition;
 use crate::routing_groups::group::RoutingGroup;
-use crate::routing_groups::index::RoutingGroupIndex;
 
 pub(super) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -34,28 +32,12 @@ pub(super) fn group(name: &str, members: &[&str]) -> RoutingGroup {
     RoutingGroup::new(name.to_owned(), named, "simple-shuffle", None, None).unwrap()
 }
 
-// RoutingGroupIndex._init_routing_groups: the groups plus the names and aliases that shadow them.
-pub(super) fn index(
-    groups: Vec<RoutingGroup>,
-    known: &[&str],
-    aliases: &[&str],
-) -> RoutingGroupIndex {
-    let model_names: BTreeSet<String> = known.iter().map(|name| (*name).to_owned()).collect();
-    let alias_map: BTreeMap<String, String> = aliases
-        .iter()
-        .map(|name| ((*name).to_owned(), (*name).to_owned()))
-        .collect();
-    RoutingGroupIndex::build(groups, &model_names, &alias_map)
-        .unwrap()
-        .index
-}
-
-// One catalog snapshot with the aliases and group index built beside it.
+// One snapshot: the catalog, the aliases and Router._routing_groups, every parsed group included.
 #[derive(Default)]
 pub(super) struct Snapshot {
     pub(super) catalog: DeploymentCatalog,
     pub(super) aliases: AliasMap,
-    pub(super) groups: RoutingGroupIndex,
+    pub(super) groups: IndexMap<String, RoutingGroup>,
 }
 
 impl Snapshot {
@@ -73,13 +55,11 @@ impl Snapshot {
         self
     }
 
-    pub(super) fn with_groups(
-        mut self,
-        groups: Vec<RoutingGroup>,
-        known: &[&str],
-        aliases: &[&str],
-    ) -> Self {
-        self.groups = index(groups, known, aliases);
+    pub(super) fn with_groups(mut self, groups: Vec<RoutingGroup>) -> Self {
+        self.groups = groups
+            .into_iter()
+            .map(|group| (group.group_name.clone(), group))
+            .collect();
         self
     }
 
