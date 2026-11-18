@@ -5,6 +5,7 @@ use std::sync::Arc;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use betterlite_secret_managers::secret_lookup::manager::ManagerState;
+use betterlite_secret_managers::secret_lookup::ports::OidcTokenCache;
 use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient;
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -99,7 +100,7 @@ fn owned_secret_lookup(secrets: &SecretLookup) -> SecretLookup {
         oidc_http: Arc::clone(&secrets.oidc_http),
         azure_tokens: Arc::clone(&secrets.azure_tokens),
         clock: Arc::clone(&secrets.clock),
-        oidc_cache: Default::default(),
+        oidc_cache: OidcTokenCache::default(),
     }
 }
 
