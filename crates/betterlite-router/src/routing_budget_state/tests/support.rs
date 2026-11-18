@@ -212,21 +212,21 @@ pub(super) async fn spend_error(harness: &Harness) -> BudgetStateError {
 }
 
 pub(super) fn harness(windows: BudgetWindows) -> Harness {
-    harness_at(windows, TestClock::new(0.0))
+    harness_at(windows, &TestClock::new(0.0))
 }
 
-pub(super) fn harness_at(windows: BudgetWindows, clock: TestClock) -> Harness {
+pub(super) fn harness_at(windows: BudgetWindows, clock: &TestClock) -> Harness {
     harness_with(windows, Some(FakeBudgetRedis::default()), clock)
 }
 
 pub(super) fn harness_without_store(windows: BudgetWindows) -> Harness {
-    harness_with(windows, None, TestClock::new(0.0))
+    harness_with(windows, None, &TestClock::new(0.0))
 }
 
 fn harness_with(
     windows: BudgetWindows,
     store: Option<FakeBudgetRedis>,
-    clock: TestClock,
+    clock: &TestClock,
 ) -> Harness {
     let memory = Arc::new(Mutex::new(
         LocalTtlCache::with_clock(
@@ -329,7 +329,7 @@ pub(super) fn event<'event>(
 pub(super) async fn concurrent_syncs() {
     let harness = harness(all_windows());
     let mut loggers = JoinSet::new();
-    for _worker in 0..32 {
+    for _worker in 0..32_u32 {
         let _task = loggers.spawn(log_costs(Arc::clone(&harness.state)));
     }
     let mut syncs = JoinSet::new();
@@ -344,7 +344,7 @@ pub(super) async fn concurrent_syncs() {
 
 async fn log_costs(state: Arc<RoutingBudgetState<FakeBudgetRedis>>) {
     let tags: [String; 0] = [];
-    for _step in 0..8 {
+    for _step in 0..8_u32 {
         state
             .log_success(&event(Some("openai"), None, &tags, cost("0.01")))
             .await
@@ -353,7 +353,7 @@ async fn log_costs(state: Arc<RoutingBudgetState<FakeBudgetRedis>>) {
 }
 
 async fn sync_rounds(state: Arc<RoutingBudgetState<FakeBudgetRedis>>) {
-    for _round in 0..16 {
+    for _round in 0..16_u32 {
         let _synced = state.sync_with_redis().await;
         yield_now().await;
     }

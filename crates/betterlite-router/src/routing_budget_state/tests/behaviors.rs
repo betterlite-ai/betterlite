@@ -36,14 +36,11 @@ const CASES: &[(&str, Case)] = &[
     ("cancel_stops_the_periodic_sync", || Box::pin(cancel_stops_the_periodic_sync())),
 ];
 
-pub(super) async fn run(name: &str) {
-    for (case, build) in CASES {
-        if *case == name {
-            build().await;
-            return;
-        }
-    }
-    panic!("unknown case {name}");
+pub(super) fn run(name: &str) -> CaseFuture {
+    let Some((_, case)) = CASES.iter().find(|(case_name, _)| *case_name == name) else {
+        panic!("unknown case {name}");
+    };
+    (*case)()
 }
 
 // async_log_success_event increments the provider, the deployment and each configured tag entry
@@ -246,7 +243,7 @@ async fn cancelled_sync_still_writes_the_flush() {
     harness.store().hold(false);
     harness.store().release();
     let aborted = syncs.join_next().await.unwrap();
-    assert!(aborted.is_err());
+    aborted.unwrap_err();
     // the next flush waits behind the write the cancelled sync started, then finds the queue cleared
     let flushed = harness
         .state

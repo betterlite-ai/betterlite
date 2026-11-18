@@ -45,8 +45,9 @@ fn routing_budget_state_behaviors(#[case] name: &str, #[case] paused: bool) {
     "spend_keys_cover_every_tier_and_the_sync_reads_them",
     false
 )]
-#[case::shared_spend_read_decodes_values_and_failures(
-    "shared_spend_read_decodes_values_and_failures",
+#[case::shared_spend_read_decodes_values("shared_spend_read_decodes_values", false)]
+#[case::shared_spend_read_fails_on_unreadable_replies(
+    "shared_spend_read_fails_on_unreadable_replies",
     false
 )]
 #[case::copy_keeps_a_live_expiry_and_replaces_an_expired_one(

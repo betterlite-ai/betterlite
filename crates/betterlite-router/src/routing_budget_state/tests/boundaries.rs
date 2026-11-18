@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
+use std::error::Error as _;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -27,7 +28,8 @@ type Case = fn() -> CaseFuture;
 const CASES: &[(&str, Case)] = &[
     ("zero_cost_still_opens_the_window", || Box::pin(zero_cost_still_opens_the_window())),
     ("spend_keys_cover_every_tier_and_the_sync_reads_them", || Box::pin(spend_keys_cover_every_tier_and_the_sync_reads_them())),
-    ("shared_spend_read_decodes_values_and_failures", || Box::pin(shared_spend_read_decodes_values_and_failures())),
+    ("shared_spend_read_decodes_values", || Box::pin(async { shared_spend_read_decodes_values() })),
+    ("shared_spend_read_fails_on_unreadable_replies", || Box::pin(async { shared_spend_read_fails_on_unreadable_replies() })),
     ("copy_keeps_a_live_expiry_and_replaces_an_expired_one", || Box::pin(copy_keeps_a_live_expiry_and_replaces_an_expired_one())),
     ("repeated_failures_merge_the_batch_once", || Box::pin(repeated_failures_merge_the_batch_once())),
     ("increment_error_reports_the_key_and_source", || Box::pin(increment_error_reports_the_key_and_source())),
@@ -38,14 +40,11 @@ const CASES: &[(&str, Case)] = &[
     ("shutdown_reports_the_entries_it_could_not_write", || Box::pin(shutdown_reports_the_entries_it_could_not_write())),
 ];
 
-pub(super) async fn run(name: &str) {
-    for (case, build) in CASES {
-        if *case == name {
-            build().await;
-            return;
-        }
-    }
-    panic!("unknown case {name}");
+pub(super) fn run(name: &str) -> CaseFuture {
+    let Some((_, case)) = CASES.iter().find(|(case_name, _)| *case_name == name) else {
+        panic!("unknown case {name}");
+    };
+    (*case)()
 }
 
 // a zero cost is still a spend: the window opens and the increment reaches the shared store
@@ -77,45 +76,53 @@ async fn spend_keys_cover_every_tier_and_the_sync_reads_them() {
     assert_eq!(harness.store().read_keys(), expected);
 }
 
-// a numeric reply decodes, a null reply is no spend, and a shape float() cannot read fails the batch
-async fn shared_spend_read_decodes_values_and_failures() {
+// a numeric or text reply decodes, and a null reply is no spend
+fn shared_spend_read_decodes_values() {
     let keys = vec![
         PROVIDER_KEY.to_owned(),
         TAG_KEY.to_owned(),
         DEPLOYMENT_KEY.to_owned(),
     ];
-    let mut values = HashMap::new();
-    values.insert(
-        PROVIDER_KEY.to_owned(),
-        Some(CachedValue::Number(Number::from_f64(2.5).unwrap())),
-    );
-    values.insert(
-        TAG_KEY.to_owned(),
-        Some(CachedValue::Text("3.75".to_owned())),
-    );
+    let values = HashMap::from([
+        (
+            PROVIDER_KEY.to_owned(),
+            Some(CachedValue::Number(Number::from_f64(2.5).unwrap())),
+        ),
+        (
+            TAG_KEY.to_owned(),
+            Some(CachedValue::Text("3.75".to_owned())),
+        ),
+    ]);
     let SpendRead::Values(spends) = decode_spends(&keys, &values) else {
         panic!("a numeric reply decodes");
     };
     assert_eq!(spends.get(PROVIDER_KEY), Some(&Some(cost("2.5"))));
     assert_eq!(spends.get(TAG_KEY), Some(&Some(cost("3.75"))));
     assert_eq!(spends.get(DEPLOYMENT_KEY), Some(&None));
-    let mut nulls = HashMap::new();
-    nulls.insert(PROVIDER_KEY.to_owned(), None);
-    let SpendRead::Values(spends) = decode_spends(&keys, &nulls) else {
+    let nulls = HashMap::from([(PROVIDER_KEY.to_owned(), None)]);
+    let SpendRead::Values(null_spends) = decode_spends(&keys, &nulls) else {
         panic!("a null reply decodes to no spend");
     };
-    assert_eq!(spends.get(PROVIDER_KEY), Some(&None));
+    assert_eq!(null_spends.get(PROVIDER_KEY), Some(&None));
+}
+
+// a shape float() cannot read fails the batch, and an empty reply to a non-empty request fails it too
+fn shared_spend_read_fails_on_unreadable_replies() {
+    let keys = vec![
+        PROVIDER_KEY.to_owned(),
+        TAG_KEY.to_owned(),
+        DEPLOYMENT_KEY.to_owned(),
+    ];
     for unreadable in [
         CachedValue::Boolean(true),
         CachedValue::Text("not money".to_owned()),
         CachedValue::Array(Vec::new()),
     ] {
-        let mut values = HashMap::new();
-        values.insert(PROVIDER_KEY.to_owned(), Some(unreadable));
-        assert_eq!(decode_spends(&keys, &values), SpendRead::Failed);
+        let reply = HashMap::from([(PROVIDER_KEY.to_owned(), Some(unreadable))]);
+        assert_eq!(decode_spends(&keys, &reply), SpendRead::Failed);
     }
-    // an empty reply to a non-empty request is a failed batch, while an empty request reads nothing
     assert_eq!(decode_spends(&keys, &HashMap::new()), SpendRead::Failed);
+    // an empty request reads nothing
     assert_eq!(
         decode_spends(&[], &HashMap::new()),
         SpendRead::Values(BTreeMap::new())
@@ -125,18 +132,18 @@ async fn shared_spend_read_decodes_values_and_failures() {
 // async_set_cache keeps a live expiry and gives an entry that already expired the cache default
 async fn copy_keeps_a_live_expiry_and_replaces_an_expired_one() {
     let clock = TestClock::new(0.0);
-    let harness = harness_at(all_windows(), clock.clone());
+    let harness = harness_at(all_windows(), &clock);
     harness
         .state
         .log_success(&event(Some("openai"), None, &[], cost("0.5")))
         .await
         .unwrap();
-    assert_eq!(harness.expiry(PROVIDER_KEY), Some(86_400.0));
+    assert_eq!(harness.expiry(PROVIDER_KEY), Some(86_400.0_f64));
     assert!(harness.state.sync_with_redis().await);
-    assert_eq!(harness.expiry(PROVIDER_KEY), Some(86_400.0));
+    assert_eq!(harness.expiry(PROVIDER_KEY), Some(86_400.0_f64));
     clock.set(90_000.0);
     assert!(harness.state.sync_with_redis().await);
-    assert_eq!(harness.expiry(PROVIDER_KEY), Some(90_600.0));
+    assert_eq!(harness.expiry(PROVIDER_KEY), Some(90_600.0_f64));
 }
 
 // each failed flush requeues its batch, and the retry writes the merged total exactly once
@@ -186,13 +193,14 @@ async fn increment_error_reports_the_key_and_source() {
 
 // a clock that is not a finite number fails before any window is read
 async fn invalid_clock_reports_the_key() {
-    let harness = harness_at(all_windows(), TestClock::new(f64::NAN));
+    let harness = harness_at(all_windows(), &TestClock::new(f64::NAN));
     let error = spend_error(&harness).await;
     assert_eq!(
         error.to_string(),
         format!("the budget spend increment for {PROVIDER_KEY} failed")
     );
-    let source = std::error::Error::source(&error)
+    let source = error
+        .source()
         .and_then(|source| source.downcast_ref::<IncrementError>())
         .expect("the increment kept its source");
     assert!(matches!(source, IncrementError::InvalidSeconds { .. }));
