@@ -11,41 +11,15 @@ deviations:
       error envelope, and stale_map_precondition proves the same entries fail there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11670-L11671
   - what: >-
-      The unfiltered get_model_ids lists the id map's keys in the id map's own order, and betterlite's
-      id index is a sorted map, so ids inserted out of lexicographic order list sorted instead. LiteLLM
-      walks model_id_to_deployment_index_map, a dict, in insertion order.
-    why: >-
-      The two orders differ only for ids whose insertion order is not already sorted; the
-      id-order-and-team-exclusion case inserts them sorted so the oracle compares equal. The id index is
-      B368's DeploymentCatalog, outside this task; giving that field an insertion-ordered map restores
-      LiteLLM's order for every caller.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11468-L11474
-  - what: >-
-      A wildcard result takes its row from the pattern that matched, by the candidate's id and its
-      position among the rows that scope registered under that id. When two different wildcard patterns
-      in one router hold rows that share an id, LiteLLM's deep copy returns the row of the pattern that
-      matched, and betterlite can return the other row's model_info. A unique id, or duplicate ids under
-      one pattern or in different scopes, resolves to the same row LiteLLM returns.
-    why: >-
-      The pattern catalog keeps a candidate's model id and provider model only (B367's Candidate), so the
-      row identity is gone before this module sees it, and resolving through the id map alone returned
-      whichever row that map last indexed, a team row leaking into a global wildcard result. Recovering
-      the identity exactly needs Candidate to carry the deployment's row index, a change in B367's
-      wildcard_catalog, which is outside this task. duplicate_wildcard_id pins a global wildcard row
-      against a later team row that shares its id, duplicate_pattern_row pins two rows of one pattern
-      that share an id, and pattern_row_by_id pins that a candidate reads the row with its own id.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L113-L123
-  - what: >-
-      The early-resolve step of get_candidate_model_ids_for_route models only a deployment sequence.
-      The mapping form, the default_deployment singleton, is not built.
+      The early-resolve step of get_candidate_model_ids_for_route and of the request resolver models only
+      a deployment sequence. The mapping form, the default_deployment singleton, is not built.
     why: >-
       default_deployment is None for the whole life of a router at the pin: its assignment in __init__
       is None and the only other one, in _add_deployment, is commented out, so no configured setup
-      reaches the mapping arm. B302's CatalogResolver answers candidate ids over a CandidateView and keeps
-      its wildcard_pool and early_resolve private, so this module resolves patterns itself; reusing that
-      resolver needs B302 to expose a read-only entry that keeps the deployment row, an owner change outside
-      this task. B302 owns _try_early_resolve_deployments_for_model_not_in_names and would add the mapping
-      form if the field ever gains a writer.
+      reaches the mapping arm. Both callers resolve through one shared early_deployments in
+      deployment_catalog::lookup, the same function the request path uses, and it returns the sequence
+      arm only. B302 owns _try_early_resolve_deployments_for_model_not_in_names and would add the
+      mapping form if the field ever gains a writer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12681-L12686
   - what: >-
       _deployment_ids collects text, number and bool ids as Python str() spells them, so 42 becomes
@@ -57,13 +31,14 @@ deviations:
       reaches the difference.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11506-L11513
   - what: >-
-      A wildcard candidate whose model id no row in the model list carries fails with the typed
-      UnindexedCandidate. LiteLLM's pattern map holds deep copies of the registered deployments, so its
-      lookup cannot reach a missing row and has no answer to compare.
+      A wildcard candidate registered without a model-list row fails with the typed UnindexedCandidate.
+      LiteLLM's pattern map holds deep copies of the registered deployments, so its lookup cannot reach
+      a missing row and has no answer to compare.
     why: >-
-      betterlite keeps the candidate's id in B367's pattern catalog and resolves it back to the row, so a
-      row whose id was removed after registration leaves a candidate with no row. The typed error refuses
-      to return some other deployment, and unindexed_candidate proves the error.
+      The pattern catalog records the model-list row each registration was pushed at, and a candidate
+      added to the catalog without one, as the crate's own tests and the oracle harness do, has no
+      deployment to resolve. The typed error refuses to return some other deployment, and
+      unindexed_candidate proves the error.
     link: ""
 kept_bugs:
   - what: >-

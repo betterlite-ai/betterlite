@@ -166,7 +166,8 @@ def listing_answer(router: Router, call: Input) -> JsonValue:
             names.extend(router.get_model_names(arguments.get("team_id")))
             return names
         case "get_model_list":
-            return listing_rows(router.get_model_list(arguments.get("model_name"), arguments.get("team_id")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
+            model_name = arguments.get("model_name")
+            return listing_rows(router.get_model_list(model_name, arguments.get("team_id")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
         case "get_model_list_from_model_alias":
             return listing_rows(router.get_model_list_from_model_alias(arguments.get("model_name")))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11851-L11857
         case "should_include_deployment":

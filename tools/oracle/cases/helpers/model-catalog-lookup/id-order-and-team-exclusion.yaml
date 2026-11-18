@@ -8,7 +8,7 @@ call:
         litellm_params:
           model: openai/gpt-4o
         model_info:
-          id: a
+          id: z
       - model_name: gpt-4o
         litellm_params:
           model: azure/gpt-4o
@@ -24,7 +24,7 @@ call:
         litellm_params:
           model: openai/shared
         model_info:
-          id: u
+          id: a
           team_id: t2
     model_group_alias: {}
     routing_groups: []
@@ -40,7 +40,7 @@ calls:
           litellm_params:
             model: openai/gpt-4o
           model_info:
-            id: a
+            id: z
         - model_name: gpt-4o
           litellm_params:
             model: azure/gpt-4o
@@ -56,7 +56,7 @@ calls:
           litellm_params:
             model: openai/shared
           model_info:
-            id: u
+            id: a
             team_id: t2
       model_group_alias: {}
       routing_groups: []
