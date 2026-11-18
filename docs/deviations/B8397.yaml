@@ -39,6 +39,12 @@ deviations:
   - what: The team upsert is two statements, an UPDATE filtered on the resolved team_id followed by an INSERT of the create row when no row matched, where Prisma issues one atomic upsert.
     why: The two statements keep Prisma's where/create/update payloads separate in typed SQL, so a payload team_id different from the lookup team_id reaches only the written row; two callers creating the same team at once can have the later insert fail on the unique key where Prisma's upsert would update.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
+  - what: The team find_all by user_id branch returns the team rows without a budget-table join; LiteLLM asks Prisma to include litellm_budget_table on LiteLLM_TeamTable, a relation that model never declares, so Prisma raises on every call of that branch.
+    why: A working setup can only read the members branch if the include is dropped, and betterlite's typed read keeps the members filter and returns the rows; adding a budget relation would change a schema LiteLLM never migrated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5104-L5110
+  - what: Deleting a team's keys returns the number of removed rows; LiteLLM's delete_data branch for table_name key and team_id_list deletes them and falls out of the function without a return value.
+    why: The typed caller, B811's team delete, is the only consumer, and it wants to know how many keys went with the team; the count comes from the same DELETE ... RETURNING the branch already runs, and no wire response carries it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5709-L5711
 kept_bugs:
   - what: Every failed table operation is retried three times within ten seconds, including failures no retry can fix, such as a missing row or a value the database rejects on every attempt.
     why: The backoff decorator catches Exception, and a working setup relies on it for transient database faults; LiteLLM never classifies errors, so neither does betterlite.
