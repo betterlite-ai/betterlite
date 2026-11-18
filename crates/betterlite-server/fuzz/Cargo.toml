@@ -269,3 +269,10 @@ path = "fuzz_targets/proxy_request_contracts.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "user_contracts"
+path = "fuzz_targets/user_contracts.rs"
+test = false
+doc = false
+bench = false
