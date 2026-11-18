@@ -141,15 +141,16 @@ pub enum TierEntry {
     Detailed(TierModelEntry),
 }
 
-// LiteLLM accepts one entry or a list of them under a tier key
+// LiteLLM accepts one entry or a list of them under a tier key; the list comes first, since an
+// untagged struct also parses a one-element sequence positionally and would swallow the list
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(
     untagged,
     expecting = "a model name, a tier model entry, or a list of either"
 )]
 pub enum TierPool {
-    Single(TierEntry),
     Pool(Vec<TierEntry>),
+    Single(TierEntry),
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
