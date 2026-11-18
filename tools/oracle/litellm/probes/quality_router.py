@@ -1,5 +1,5 @@
 import asyncio
-from typing import Final, TypedDict
+from typing import Final, Protocol, TypedDict
 
 from litellm.router import Router
 from litellm.router_strategy.quality_router.quality_router import QualityRouter as LiteLLMQualityRouter
@@ -7,7 +7,7 @@ from litellm.router_utils.add_retry_fallback_headers import (
     apply_quality_router_decision_headers,
     ensure_response_additional_headers,
 )
-from litellm.types.router import PreRoutingStrategy
+from litellm.types.router import PreRoutingHookResponse
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -24,6 +24,27 @@ class ResponseFields(TypedDict):
 
 
 _RESPONSE: Final = TypeAdapter(ResponseFields)
+
+
+# the hook as the router calls it: the concrete method's bare dict and list are partially unknown
+class PreRoutingHook(Protocol):
+    async def async_pre_routing_hook(
+        self,
+        model: str,
+        request_kwargs: dict[str, JsonValue],
+        messages: list[dict[str, JsonValue]] | None,
+    ) -> PreRoutingHookResponse | None: ...
+
+
+def pre_route(
+    hook: PreRoutingHook,
+    model: str,
+    request_kwargs: dict[str, JsonValue],
+    messages: list[dict[str, JsonValue]] | None,
+) -> PreRoutingHookResponse | None:
+    return asyncio.run(
+        hook.async_pre_routing_hook(model=model, request_kwargs=request_kwargs, messages=messages)
+    )
 
 
 class ParamsInput(Strict):
@@ -108,17 +129,9 @@ class QualityRouter(Operation):
             default_model=self.default_model,
             quality_router_config=configured,
         )
-        # typed as the protocol the router calls with: the concrete method's bare dict is partially unknown
-        strategy: PreRoutingStrategy = quality
         request_kwargs: dict[str, JsonValue] = {}
         try:
-            response = asyncio.run(
-                strategy.async_pre_routing_hook(
-                    model=chosen.model_name,
-                    request_kwargs=request_kwargs,
-                    messages=self.messages,
-                )
-            )
+            response = pre_route(quality, chosen.model_name, request_kwargs, self.messages)
         except ValueError as error:
             raise ProbeError("invalid_request", str(error)) from error
         metadata = request_kwargs.get("metadata")
