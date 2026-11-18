@@ -17,7 +17,7 @@ use crate::database_replica::availability::Availability;
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::session::PostgresStore;
 use crate::reload_schedule::RELOAD_CONFIG_PARAM_NAME;
-use crate::reload_schedule::evictor::{ConfigParamEvictor, EvictFuture};
+use crate::reload_schedule::evictor::{ConfigParamEvictor, EvictError, EvictFuture};
 
 const SEED_SQL: &str = r#"INSERT INTO "LiteLLM_Config" ("param_name", "param_value", "last_run_at", "reload_revision")
 VALUES ($1, $2::text::jsonb, $3, $4)"#;
@@ -100,7 +100,21 @@ impl ConfigParamEvictor for RecordingEvictor {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(name);
+            Ok(())
         })
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct FailingEvictor;
+
+impl ConfigParamEvictor for FailingEvictor {
+    fn evict_param<'call>(&'call self, param_name: &'call str) -> EvictFuture<'call> {
+        let refusal = EvictError {
+            param_name: param_name.to_owned(),
+            source: Box::new(std::io::Error::other("the cache refused the eviction")),
+        };
+        Box::pin(std::future::ready(Err(refusal)))
     }
 }
 

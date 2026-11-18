@@ -8,8 +8,14 @@ pub mod pod_reload_decision;
 pub mod status_formatting;
 pub mod store;
 
+#[path = "reload_schedule/tests/bounded_writes.rs"]
+mod bounded_writes;
+
 #[path = "reload_schedule/tests/clear_interval.rs"]
 mod clear_interval;
+
+#[path = "reload_schedule/tests/eviction_failures.rs"]
+mod eviction_failures;
 
 #[path = "reload_schedule/tests/manual_reload_atomic.rs"]
 mod manual_reload_atomic;

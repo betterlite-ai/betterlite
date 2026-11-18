@@ -6,15 +6,20 @@ use super::support::{
 use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::DbError;
 use crate::reload_schedule::RELOAD_CONFIG_PARAM_NAME;
-use crate::reload_schedule::store::{ReloadScheduleError, record_manual_reload};
+use crate::reload_schedule::store::{ReloadScheduleError, ScheduleDeadlines, record_manual_reload};
 
 #[tokio::test]
 async fn manual_reload_creates_the_row_at_revision_one() {
     let database = Database::provision().await;
     let evictor = RecordingEvictor::default();
-    let revision = record_manual_reload(Some(database.client()), &evictor, instant().and_utc())
-        .await
-        .unwrap();
+    let revision = record_manual_reload(
+        Some(database.client()),
+        &evictor,
+        instant().and_utc(),
+        ScheduleDeadlines::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(revision, 1);
     let row = stored_row(&database).await.unwrap();
     assert_eq!(row.last_run_at, Some(instant()));
@@ -29,9 +34,14 @@ async fn manual_reload_increments_the_published_revision() {
     let database = Database::provision().await;
     seed_row(&database, Some(serialized_interval(6)), None, 3).await;
     let evictor = RecordingEvictor::default();
-    let revision = record_manual_reload(Some(database.client()), &evictor, instant().and_utc())
-        .await
-        .unwrap();
+    let revision = record_manual_reload(
+        Some(database.client()),
+        &evictor,
+        instant().and_utc(),
+        ScheduleDeadlines::default(),
+    )
+    .await
+    .unwrap();
     assert_eq!(revision, 4);
     let row = stored_row(&database).await.unwrap();
     assert_eq!(row.reload_revision, 4);
@@ -48,8 +58,18 @@ async fn manual_reload_publishes_distinct_revisions_for_concurrent_requests() {
     let database = Database::provision().await;
     let evictor = RecordingEvictor::default();
     let ran_at = instant().and_utc();
-    let first = record_manual_reload(Some(database.client()), &evictor, ran_at);
-    let second = record_manual_reload(Some(database.client()), &evictor, ran_at);
+    let first = record_manual_reload(
+        Some(database.client()),
+        &evictor,
+        ran_at,
+        ScheduleDeadlines::default(),
+    );
+    let second = record_manual_reload(
+        Some(database.client()),
+        &evictor,
+        ran_at,
+        ScheduleDeadlines::default(),
+    );
     let (left, right) = tokio::join!(first, second);
     let mut revisions = vec![left.unwrap(), right.unwrap()];
     revisions.sort_unstable();
@@ -61,9 +81,14 @@ async fn manual_reload_publishes_distinct_revisions_for_concurrent_requests() {
 #[tokio::test]
 async fn manual_reload_reports_a_missing_database_and_leaves_the_cache_alone() {
     let evictor = RecordingEvictor::default();
-    let error = record_manual_reload(None, &evictor, instant().and_utc())
-        .await
-        .unwrap_err();
+    let error = record_manual_reload(
+        None,
+        &evictor,
+        instant().and_utc(),
+        ScheduleDeadlines::default(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         ReloadScheduleError::Database(DbError::NoDbConnected)
@@ -76,9 +101,14 @@ async fn manual_reload_reports_a_revision_past_u32() {
     let database = Database::provision().await;
     seed_row(&database, None, None, 4_294_967_295).await;
     let evictor = RecordingEvictor::default();
-    let error = record_manual_reload(Some(database.client()), &evictor, instant().and_utc())
-        .await
-        .unwrap_err();
+    let error = record_manual_reload(
+        Some(database.client()),
+        &evictor,
+        instant().and_utc(),
+        ScheduleDeadlines::default(),
+    )
+    .await
+    .unwrap_err();
     assert!(matches!(
         error,
         ReloadScheduleError::Revision {

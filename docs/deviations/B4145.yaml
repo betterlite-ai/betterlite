@@ -1,6 +1,6 @@
 task: B4145
 deviations:
-  - what: parse_reload_schedule accepts param_value as a JSON string or an already-decoded object, and reads an absent, wrong-typed or unparseable value as no schedule rather than failing the read.
+  - what: parse_reload_schedule accepts param_value as a JSON string or an already-decoded object, and reads an absent, wrong-typed or unparsable value as no schedule rather than failing the read.
     why: LiteLLM's _parse_interval_hours accepts both shapes because a raw row read hands a Json column back as a string under one driver and a decoded object under another, and it maps a pydantic ValidationError to None.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
   - what: A stored last_run_at is a naive timestamp and is read as UTC without checking that it was stored as UTC.
@@ -12,12 +12,15 @@ deviations:
   - what: record_reload_run updates last_run_at without an upsert, so a row deleted mid-poll is not recreated and the statement affecting zero rows is not an error.
     why: LiteLLM writes it with update_many and never checks the affected count; a schedule deleted while a reload ran stays deleted, which is the admin's intent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L206-L213
-  - what: A stored interval_hours that is negative, fractional or past u32::MAX reads as no schedule, where LiteLLM keeps the Python int it finds.
-    why: ReloadSchedule.interval_hours is Option<u32> per the task, and the endpoint that writes the row rejects hours below 1; LiteLLM with a negative interval would fire on every poll, which no working setup can want, so the value reads as unscheduled instead.
+  - what: A stored interval_hours that is negative or past u32::MAX reads as no schedule, where LiteLLM keeps the Python int it finds.
+    why: ReloadSchedule.interval_hours is Option<u32> per the task, and the endpoint that writes the row rejects hours below 1; LiteLLM with a negative interval would fire on every poll, which no working setup can want, so the value reads as unscheduled instead. A fractional, textual or bool value fails pydantic's strict int validation in LiteLLM too, so reading it as no schedule is parity.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
-  - what: A stored reload_revision outside 0..=u32::MAX reads as 0, where LiteLLM keeps the int the BIGINT column holds.
-    why: reload_revision is a u32 per the task; the column reaches past u32 only after four billion manual reloads or a hand edit, and a pod that reads 0 applies the same one reload a mismatched revision would trigger.
+  - what: A stored reload_revision outside 0..=u32::MAX fails the read with a Revision error, where LiteLLM keeps the int the BIGINT column holds.
+    why: reload_revision is a u32 per the task, and reading such a value as 0 would make a booting pod's revision 0 match the published one, silently skipping the manual reload; the read fails instead so the caller sees the column is unusable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L111-L116
+  - what: record_reload_run and record_manual_reload wait for a pooled connection and run their statement under finite deadlines, 10 seconds to acquire and 30 for the statement by default, and fail with a typed Timeout; a statement that overruns closes its connection so the server drops the lock wait.
+    why: LiteLLM's Prisma awaits have no deadline of their own, so a drained pool or a locked config row would hold the periodic poll or an admin reload open indefinitely; the deadline turns it into the typed failure the caller already handles, and ScheduleDeadlines lets a caller change both values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L206-L231
   - what: record_manual_reload returns a Revision error when the incremented counter leaves u32, after the increment is already stored, where LiteLLM returns the arbitrary-precision int.
     why: The counter is a u32, so the caller cannot adopt the stored value; the error names the value instead of silently truncating it. The row is incremented either way, so the next revision is accepted again once the column is reset.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L216-L231

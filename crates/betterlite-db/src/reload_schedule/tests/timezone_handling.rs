@@ -19,7 +19,7 @@ fn timezone_handling_attaches_utc_to_a_naive_timestamp() {
         last_run_at: Some(naive()),
         reload_revision: Some(2),
     };
-    let schedule = parse_reload_schedule(&row);
+    let schedule = parse_reload_schedule(&row).unwrap();
     assert_eq!(schedule.last_run_at, Some(naive().and_utc()));
     assert_eq!(
         schedule.last_run_at.unwrap().to_rfc3339(),
@@ -34,5 +34,5 @@ fn timezone_handling_leaves_a_missing_timestamp_absent() {
         last_run_at: None,
         reload_revision: Some(0),
     };
-    assert_eq!(parse_reload_schedule(&row).last_run_at, None);
+    assert_eq!(parse_reload_schedule(&row).unwrap().last_run_at, None);
 }

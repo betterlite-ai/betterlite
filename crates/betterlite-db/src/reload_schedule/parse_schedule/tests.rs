@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 
 use crate::budget_permission_rows::JsonData;
-use crate::reload_schedule::parse_schedule::{ReloadConfigRow, parse_reload_schedule};
+use crate::reload_schedule::parse_schedule::{
+    ParseScheduleError, ReloadConfigRow, parse_reload_schedule,
+};
 
 fn config_row(param_value: JsonData) -> ReloadConfigRow {
     ReloadConfigRow {
@@ -17,7 +19,8 @@ fn config_row(param_value: JsonData) -> ReloadConfigRow {
 fn parse_schedule_reads_a_serialized_json_string() {
     let schedule = parse_reload_schedule(&config_row(JsonData::String(
         r#"{"interval_hours": 8}"#.to_owned(),
-    )));
+    )))
+    .unwrap();
     assert_eq!(schedule.interval_hours, Some(8));
 }
 
@@ -28,7 +31,7 @@ fn parse_schedule_reads_a_decoded_object() {
         "interval_hours".to_owned(),
         JsonData::Number(serde_json::Number::from(6_i32)),
     );
-    let schedule = parse_reload_schedule(&config_row(JsonData::Object(fields)));
+    let schedule = parse_reload_schedule(&config_row(JsonData::Object(fields))).unwrap();
     assert_eq!(schedule.interval_hours, Some(6));
 }
 
@@ -36,7 +39,8 @@ fn parse_schedule_reads_a_decoded_object() {
 fn parse_schedule_keeps_a_null_interval_as_no_schedule() {
     let schedule = parse_reload_schedule(&config_row(JsonData::String(
         r#"{"interval_hours": null}"#.to_owned(),
-    )));
+    )))
+    .unwrap();
     assert_eq!(schedule.interval_hours, None);
     assert_eq!(schedule.reload_revision, 0);
     assert_eq!(schedule.last_run_at, None);
@@ -44,7 +48,7 @@ fn parse_schedule_keeps_a_null_interval_as_no_schedule() {
 
 #[test]
 fn parse_schedule_defaults_a_missing_revision_to_zero() {
-    let schedule = parse_reload_schedule(&config_row(JsonData::Object(BTreeMap::new())));
+    let schedule = parse_reload_schedule(&config_row(JsonData::Object(BTreeMap::new()))).unwrap();
     assert_eq!(schedule.reload_revision, 0);
 }
 
@@ -55,5 +59,32 @@ fn parse_schedule_keeps_the_stored_revision() {
         last_run_at: None,
         reload_revision: Some(7),
     };
-    assert_eq!(parse_reload_schedule(&row).reload_revision, 7);
+    assert_eq!(parse_reload_schedule(&row).unwrap().reload_revision, 7);
+}
+
+#[test]
+fn parse_schedule_rejects_a_revision_past_u32() {
+    let row = ReloadConfigRow {
+        param_value: JsonData::Null,
+        last_run_at: None,
+        reload_revision: Some(4_294_967_296),
+    };
+    let error = parse_reload_schedule(&row).unwrap_err();
+    assert!(matches!(
+        error,
+        ParseScheduleError::Revision {
+            value: 4_294_967_296
+        }
+    ));
+}
+
+#[test]
+fn parse_schedule_rejects_a_negative_revision() {
+    let row = ReloadConfigRow {
+        param_value: JsonData::Null,
+        last_run_at: None,
+        reload_revision: Some(-1),
+    };
+    let error = parse_reload_schedule(&row).unwrap_err();
+    assert!(matches!(error, ParseScheduleError::Revision { value: -1 }));
 }

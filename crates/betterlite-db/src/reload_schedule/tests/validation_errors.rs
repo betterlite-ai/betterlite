@@ -14,6 +14,7 @@ fn interval_of(param_value: JsonData) -> Option<u32> {
         last_run_at: None,
         reload_revision: Some(0),
     })
+    .unwrap()
     .interval_hours
 }
 

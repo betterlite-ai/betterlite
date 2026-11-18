@@ -6,6 +6,7 @@ use super::support::{Database, instant, seed_row, serialized_interval};
 use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::DbError;
 use crate::reload_schedule::ReloadSchedule;
+use crate::reload_schedule::parse_schedule::ParseScheduleError;
 use crate::reload_schedule::store::{ReloadScheduleError, read_reload_schedule};
 
 #[tokio::test]
@@ -65,14 +66,18 @@ async fn read_from_db_leaves_a_null_param_value_without_a_schedule() {
 }
 
 #[tokio::test]
-async fn read_from_db_reads_a_revision_past_u32_as_zero() {
+async fn read_from_db_reports_a_revision_past_u32() {
     let database = Database::provision().await;
     seed_row(&database, Some(serialized_interval(1)), None, 4_294_967_296).await;
-    let schedule = read_reload_schedule(Some(database.client()))
+    let error = read_reload_schedule(Some(database.client()))
         .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(schedule.reload_revision, 0);
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ReloadScheduleError::Parse(ParseScheduleError::Revision {
+            value: 4_294_967_296
+        })
+    ));
     database.close().await;
 }
 
