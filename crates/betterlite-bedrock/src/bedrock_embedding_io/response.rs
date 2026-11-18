@@ -63,15 +63,6 @@ pub fn transform_response(
     if let Some(response) = titan_response(response_list, model, batch_data)? {
         return Ok(titan_embedding_reply(response));
     }
-    regular_reply(response_list, model, provider, batch_data)
-}
-
-fn regular_reply(
-    response_list: &[Object],
-    model: &str,
-    provider: BedrockEmbeddingProvider,
-    batch_data: Option<&[Object]>,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
     match provider {
         BedrockEmbeddingProvider::Twelvelabs => {
             let batch = batch_data
