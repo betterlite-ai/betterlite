@@ -113,8 +113,8 @@ impl FixtureClient {
                     .iter()
                     .filter_map(|(name, value)| {
                         Some((
-                            http::HeaderName::try_from(name).ok()?,
-                            http::HeaderValue::try_from(value).ok()?,
+                            http::HeaderName::try_from(name.as_str()).ok()?,
+                            http::HeaderValue::try_from(value.as_str()).ok()?,
                         ))
                     })
                     .collect(),

@@ -36,6 +36,7 @@ pub(crate) fn run(case: &Case) -> Result<Harness, AdapterError> {
     let bearer = case
         .environment
         .get("AWS_BEARER_TOKEN_BEDROCK")
+        .map(String::as_str)
         .map(SecretString::from);
     let extra: Option<Vec<(String, String)>> = case.extra_headers.as_ref().map(|headers| {
         headers
@@ -109,7 +110,12 @@ pub(crate) fn run(case: &Case) -> Result<Harness, AdapterError> {
         requests,
         factory: factory.calls(),
         phases: capture.phases(),
-        remaining: remaining_options(&call.optional_params)?,
+        remaining: remaining_options(&call.optional_params).map_err(|error| match error {
+            EmbeddingCallError::Json { source } => AdapterError::Json(source),
+            other => AdapterError::Setup {
+                message: other.to_string(),
+            },
+        })?,
     })
 }
 
