@@ -1,0 +1,54 @@
+kind: helper
+name: mcp-sse-results
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, text/event-stream]]
+    body: |-
+      event: message
+      data: {"result":{"structuredContent":[{"title":"sse"}]}}
+calls:
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: |-
+        data: {"result":{"structuredContent":
+        data: [{"title":"joined"}]}}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: |-
+        data: {"result":{"structuredContent":[{"title":"first"}]}}
+
+        data: {"result":{"structuredContent":[{"title":"second"}]}}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: |-
+        event: ping
+
+        data: not json
+
+        data: [1,2]
+
+        data:    {"result":{"structuredContent":[{"title":"kept"}]}}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: |-
+        data: {"jsonrpc":"2.0","method":"notifications/progress"}
+
+        data: {"jsonrpc":"2.0","method":"notifications/message"}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: |-
+        data: {"jsonrpc":"2.0","id":1,"result":null}
+
+        data: {"result":{"structuredContent":[{"title":"late"}]}}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: "  data: {\"result\":{\"structuredContent\":[{\"title\":\"no\"}]}}"
+env: {}
+compare: {ignore: []}
