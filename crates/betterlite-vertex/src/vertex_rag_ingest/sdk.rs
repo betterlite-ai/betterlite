@@ -1,16 +1,23 @@
+use std::sync::Arc;
+
 use google_cloud_aiplatform_v1::client::VertexRagDataService;
 use google_cloud_aiplatform_v1::model::import_rag_files_config::ImportSource;
 use google_cloud_aiplatform_v1::model::rag_file_chunking_config::{
     ChunkingConfig, FixedLengthChunking,
 };
 use google_cloud_aiplatform_v1::model::{
-    GcsSource, ImportRagFilesConfig, RagFileChunkingConfig, RagFileTransformationConfig,
+    GcsSource, ImportRagFilesConfig, ImportRagFilesOperationMetadata, ImportRagFilesResponse,
+    RagFileChunkingConfig, RagFileTransformationConfig,
 };
 use google_cloud_auth::credentials::Credentials;
+use google_cloud_gax::error::Error as GaxError;
+use google_cloud_gax::exponential_backoff::ExponentialBackoff;
+use google_cloud_gax::polling_error_policy::Aip194Strict;
 use google_cloud_lro::Poller as _;
+use google_cloud_lro::internal::{Operation, new_poller};
 
 use crate::vertex_rag_ingest::ports::{
-    CorpusImport, ImportError, ImportFuture, ImportOutcome, ImportRequest,
+    CorpusImport, ImportError, ImportFuture, ImportOutcome, ImportRequest, SubmitFuture,
 };
 
 // vertexai.init(project, location) reads application-default credentials; the endpoint and any credentials are injected here
@@ -60,8 +67,18 @@ impl VertexRagDataImport {
     }
 }
 
+type Submitted = (
+    VertexRagDataService,
+    Operation<ImportRagFilesResponse, ImportRagFilesOperationMetadata>,
+);
+
 impl CorpusImport for VertexRagDataImport {
-    fn import<'request>(&'request self, request: ImportRequest) -> ImportFuture<'request> {
+    type Handle = Submitted;
+
+    fn submit<'request>(
+        &'request self,
+        request: ImportRequest,
+    ) -> SubmitFuture<'request, Self::Handle> {
         Box::pin(async move {
             let client = self.open().await?;
             let chunking = request.chunking.chunking_config;
@@ -76,11 +93,38 @@ impl CorpusImport for VertexRagDataImport {
                 .set_import_source(ImportSource::GcsSource(Box::new(
                     GcsSource::new().set_uris([request.gcs_uri]),
                 )));
-            let response = client
+            let operation = client
                 .import_rag_files()
                 .set_parent(request.corpus)
                 .set_import_rag_files_config(config)
-                .poller()
+                .send()
+                .await
+                .map_err(|source| ImportError::Rpc { source })?;
+            Ok((client, Operation::new(operation)))
+        })
+    }
+
+    fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request> {
+        Box::pin(async move {
+            let (client, operation) = handle;
+            let start = move || async move { Ok::<_, GaxError>(operation) };
+            let query = move |name: String| {
+                let client = client.clone();
+                async move {
+                    let operation = client.get_operation().set_name(name).send().await?;
+                    Ok::<_, GaxError>(Operation::<
+                        ImportRagFilesResponse,
+                        ImportRagFilesOperationMetadata,
+                    >::new(operation))
+                }
+            };
+            let poller = new_poller(
+                Arc::new(Aip194Strict),
+                Arc::new(ExponentialBackoff::default()),
+                start,
+                query,
+            );
+            let response = poller
                 .until_done()
                 .await
                 .map_err(|source| ImportError::Rpc { source })?;

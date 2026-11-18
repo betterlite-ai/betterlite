@@ -1,5 +1,6 @@
-use std::future::{pending, ready};
+use std::future::{Future, pending, ready};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_config::rag::document::ingest::VertexAIVectorStoreOptions;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
@@ -9,14 +10,15 @@ use betterlite_openai::files::records::{
 };
 use google_cloud_gax::error::Error;
 use secrecy::ExposeSecret as _;
+use tokio::time::{Instant, sleep, timeout};
 
 use crate::vertex_rag_ingest::chunking::{ChunkDefaults, ChunkingRecord, RagChunkingStrategy};
 use crate::vertex_rag_ingest::error::RagIngestError;
-use crate::vertex_rag_ingest::execution::{StoreRequest, VertexRagIngest};
+use crate::vertex_rag_ingest::execution::{StoreLimits, StoreRequest, VertexRagIngest};
 use crate::vertex_rag_ingest::options::{RagIngestOptions, RagIngestSettings};
 use crate::vertex_rag_ingest::ports::{
     CorpusImport, ImportError, ImportFuture, ImportOutcome, ImportRequest, NativeFileUpload,
-    UploadFuture, UploadRequest,
+    SubmitFuture, UploadFuture, UploadRequest,
 };
 
 pub(super) const CORPUS_ID: &str = "corpus";
@@ -31,13 +33,22 @@ pub(super) const EMPTY_CONTENT_WARNING: &str =
 pub(super) enum Step {
     Upload,
     Import,
+    Wait,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum ImportBehavior {
     Imported(i64),
     Rejected,
+    NeverSubmits,
     NeverFinishes,
+    SlowSubmit { seconds: u64, imported: i64 },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) enum UploadBehavior {
+    Stored,
+    Pending,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,6 +102,7 @@ impl Recorder {
 
 pub(super) struct FakeUpload {
     recorder: Arc<Recorder>,
+    behavior: UploadBehavior,
 }
 
 impl NativeFileUpload for FakeUpload {
@@ -119,13 +131,8 @@ impl NativeFileUpload for FakeUpload {
                     .as_ref()
                     .map(|secret| secret.expose_secret().to_owned()),
             });
-        self.recorder
-            .retained
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(uri.clone());
         let object = FileObject {
-            id: uri,
+            id: uri.clone(),
             bytes: i64::try_from(request.file.data.len()).unwrap_or(i64::MAX),
             created_at: 0,
             filename,
@@ -135,7 +142,17 @@ impl NativeFileUpload for FakeUpload {
             expires_at: None,
             status_details: None,
         };
-        Box::pin(ready(Ok(object)))
+        match self.behavior {
+            UploadBehavior::Stored => {
+                self.recorder
+                    .retained
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .push(uri);
+                Box::pin(ready(Ok(object)))
+            }
+            UploadBehavior::Pending => Box::pin(pending()),
+        }
     }
 }
 
@@ -145,7 +162,13 @@ pub(super) struct FakeImport {
 }
 
 impl CorpusImport for FakeImport {
-    fn import<'request>(&'request self, request: ImportRequest) -> ImportFuture<'request> {
+    // the count the submitted operation completes with, or None for one that never completes
+    type Handle = Option<i64>;
+
+    fn submit<'request>(
+        &'request self,
+        request: ImportRequest,
+    ) -> SubmitFuture<'request, Self::Handle> {
         self.recorder
             .steps
             .lock()
@@ -163,13 +186,32 @@ impl CorpusImport for FakeImport {
         let behavior = self.behavior;
         Box::pin(async move {
             match behavior {
-                ImportBehavior::Imported(count) => Ok(ImportOutcome {
-                    imported_rag_files_count: count,
-                }),
+                ImportBehavior::Imported(count) => Ok(Some(count)),
                 ImportBehavior::Rejected => Err(ImportError::Rpc {
                     source: Error::deser("the corpus rejected the file"),
                 }),
-                ImportBehavior::NeverFinishes => pending().await,
+                ImportBehavior::NeverSubmits => pending().await,
+                ImportBehavior::NeverFinishes => Ok(None),
+                ImportBehavior::SlowSubmit { seconds, imported } => {
+                    sleep(Duration::from_secs(seconds)).await;
+                    Ok(Some(imported))
+                }
+            }
+        })
+    }
+
+    fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request> {
+        self.recorder
+            .steps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Step::Wait);
+        Box::pin(async move {
+            match handle {
+                Some(count) => Ok(ImportOutcome {
+                    imported_rag_files_count: count,
+                }),
+                None => pending().await,
             }
         })
     }
@@ -226,15 +268,28 @@ pub(super) fn provider(
     record: VertexAIVectorStoreOptions,
     chunking_strategy: Option<RagChunkingStrategy>,
     behavior: ImportBehavior,
+    upload: UploadBehavior,
+    limits: StoreLimits,
 ) -> (VertexRagIngest<FakeUpload, FakeImport>, Arc<Recorder>) {
-    let recorder = Arc::new(Recorder::default());
     let settings =
         resolve(&options(record, chunking_strategy)).expect("the required values resolve");
+    provider_from_settings(settings, behavior, upload, limits)
+}
+
+pub(super) fn provider_from_settings(
+    settings: RagIngestSettings,
+    behavior: ImportBehavior,
+    upload: UploadBehavior,
+    limits: StoreLimits,
+) -> (VertexRagIngest<FakeUpload, FakeImport>, Arc<Recorder>) {
+    let recorder = Arc::new(Recorder::default());
     let ingest = VertexRagIngest::new(
         settings,
         ChunkDefaults::LITELLM,
+        limits,
         FakeUpload {
             recorder: Arc::clone(&recorder),
+            behavior: upload,
         },
         FakeImport {
             recorder: Arc::clone(&recorder),
@@ -242,6 +297,29 @@ pub(super) fn provider(
         },
     );
     (ingest, recorder)
+}
+
+// the paused clock must show the future pending until its deadline and resolving exactly at it
+pub(super) async fn resolve_at_deadline<F: Future>(future: F, deadline: Duration) -> F::Output {
+    let started = Instant::now();
+    let mut future = std::pin::pin!(future);
+    if deadline > Duration::ZERO {
+        let early = timeout(
+            deadline.saturating_sub(Duration::from_secs(1)),
+            future.as_mut(),
+        )
+        .await;
+        assert!(early.is_err(), "the future resolved before {deadline:?}");
+    }
+    let output = timeout(Duration::from_secs(2), future.as_mut())
+        .await
+        .expect("the future resolves at its deadline");
+    assert_eq!(
+        started.elapsed(),
+        deadline,
+        "the future waited a different deadline"
+    );
+    output
 }
 
 pub(super) fn store_request<'request>(

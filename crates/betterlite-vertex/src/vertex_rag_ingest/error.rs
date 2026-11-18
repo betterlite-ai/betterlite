@@ -22,6 +22,14 @@ pub enum RagIngestError {
         #[source]
         source: ImportError,
     },
+    #[error("the file is {size} bytes, over the {limit} byte Vertex RAG ingestion limit")]
+    FileTooLarge { size: usize, limit: usize },
+    #[error("the filename is {length} bytes, over the {limit} byte filename limit")]
+    FilenameTooLong { length: usize, limit: usize },
+    #[error("the content type is {length} bytes, over the {limit} byte content type limit")]
+    ContentTypeTooLong { length: usize, limit: usize },
+    #[error("the file upload timed out after {seconds} seconds")]
+    UploadTimeout { seconds: u64 },
     #[error(transparent)]
     Upload(#[from] VertexFilesError),
 }

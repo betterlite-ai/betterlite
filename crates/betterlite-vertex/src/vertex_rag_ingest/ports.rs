@@ -36,12 +36,20 @@ pub struct ImportOutcome {
     pub imported_rag_files_count: i64,
 }
 
+pub type SubmitFuture<'request, Handle> =
+    Pin<Box<dyn Future<Output = Result<Handle, ImportError>> + Send + 'request>>;
+
 pub type ImportFuture<'request> =
     Pin<Box<dyn Future<Output = Result<ImportOutcome, ImportError>> + Send + 'request>>;
 
-// vertexai.rag.import_files: the SDK owns the long-running operation and its transport decoding
+// vertexai.rag.import_files: the submission starts the operation, and only the wait after it takes the timeout
 pub trait CorpusImport: Send + Sync {
-    fn import<'request>(&'request self, request: ImportRequest) -> ImportFuture<'request>;
+    type Handle: Send + 'static;
+    fn submit<'request>(
+        &'request self,
+        request: ImportRequest,
+    ) -> SubmitFuture<'request, Self::Handle>;
+    fn wait<'request>(&'request self, handle: Self::Handle) -> ImportFuture<'request>;
 }
 
 #[derive(Debug, Error)]
@@ -56,6 +64,8 @@ pub enum ImportError {
         #[source]
         source: google_cloud_gax::error::Error,
     },
+    #[error("the import submission timed out after {seconds} seconds")]
+    SubmitTimeout { seconds: u64 },
     #[error("the import timed out after {seconds} seconds")]
     Timeout { seconds: u64 },
     #[error("the {field} value {value} does not fit the Vertex RAG integer field")]

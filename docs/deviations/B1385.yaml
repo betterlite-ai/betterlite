@@ -36,6 +36,28 @@ deviations:
       opaque transport error into a load-time answer.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/transformation.py#L97-L102
+  - what: >-
+      import_timeout bounds only the wait for the import operation after it is submitted, and the
+      submission itself is capped at 60 seconds. LiteLLM hands import_timeout to
+      vertexai.rag.import_files, which sends the submission RPC under the SDK's own request timeout
+      and applies import_timeout to Operation.result alone.
+    why: >-
+      A submission that takes longer than import_timeout but returns a finished operation succeeds in
+      LiteLLM, so keeping the deadline on the wait alone preserves that outcome. The 60 second
+      submission cap matches the SDK's default request timeout and bounds the RPC betterlite sends.
+    link: >-
+      https://github.com/googleapis/python-aiplatform/blob/v1.133.0/vertexai/rag/rag_data.py#L616-L626
+  - what: >-
+      A store request whose content is over 512 MiB, whose filename is over 1024 bytes or whose
+      content type is over 255 bytes is refused with an error that names the field, before the bytes
+      are copied into an upload. LiteLLM passes content, filename and MIME type to acreate_file
+      without any size check.
+    why: >-
+      The upload copies the request, so an unbounded input allocates without limit before the provider
+      can refuse it. The file cap is betterlite's shared MAX_UPLOAD_SIZE_BYTES, and the filename bound
+      is the size of a GCS object name.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/rag_engine/ingestion.py#L131-L139
 kept_bugs:
   - what: >-
       wait_for_import false calls the SDK's async import without awaiting it, so no import request leaves

@@ -10,6 +10,7 @@ use google_cloud_auth::credentials::testing::error_credentials;
 use google_cloud_gax::error::Error;
 use google_cloud_gax::options::RequestOptions;
 use google_cloud_gax::response::Response;
+use google_cloud_longrunning::model::GetOperationRequest;
 use google_cloud_longrunning::model::Operation;
 use google_cloud_longrunning::model::operation::Result as OperationResult;
 use google_cloud_wkt::Any;
@@ -27,6 +28,8 @@ const GCS_URI: &str = "gs://bucket/report.txt";
 #[derive(Debug, Clone, Default)]
 struct CaptureImport {
     requests: Arc<Mutex<Vec<ImportRagFilesRequest>>>,
+    operations: Arc<Mutex<Vec<GetOperationRequest>>>,
+    completed_on_poll: bool,
 }
 
 impl VertexRagDataStub for CaptureImport {
@@ -39,7 +42,24 @@ impl VertexRagDataStub for CaptureImport {
             .lock()
             .expect("the capture lock")
             .push(request);
-        ready(Ok(Response::from(done_operation(3))))
+        let operation = if self.completed_on_poll {
+            pending_operation()
+        } else {
+            done_operation(3)
+        };
+        ready(Ok(Response::from(operation)))
+    }
+
+    fn get_operation(
+        &self,
+        request: GetOperationRequest,
+        _options: RequestOptions,
+    ) -> impl Future<Output = Result<Response<Operation>, Error>> + Send {
+        self.operations
+            .lock()
+            .expect("the capture lock")
+            .push(request);
+        ready(Ok(Response::from(done_operation(7))))
     }
 }
 
@@ -51,6 +71,10 @@ fn done_operation(imported_rag_files_count: i64) -> Operation {
         .set_name("operations/import")
         .set_done(true)
         .set_result(OperationResult::Response(Box::new(result)))
+}
+
+fn pending_operation() -> Operation {
+    Operation::new().set_name("operations/import")
 }
 
 fn import_request(chunking: ChunkingRecord) -> ImportRequest {
@@ -89,8 +113,12 @@ async fn import_request_carries_the_chunking_config() {
         serde_json::from_str(r#"{"chunk_size": 512, "chunk_overlap": 16}"#)
             .expect("the strategy is valid");
     let chunking = transform_chunking_strategy(Some(&strategy), ChunkDefaults::LITELLM);
+    let handle = port
+        .submit(import_request(chunking))
+        .await
+        .expect("the stubbed import starts");
     let outcome = port
-        .import(import_request(chunking))
+        .wait(handle)
         .await
         .expect("the stubbed import completes");
     assert_eq!(outcome.imported_rag_files_count, 3);
@@ -139,7 +167,7 @@ async fn an_out_of_range_chunk_value_is_refused(
     let capture = CaptureImport::default();
     let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
     let error = port
-        .import(import_request(fixed_length(chunk_size, chunk_overlap)))
+        .submit(import_request(fixed_length(chunk_size, chunk_overlap)))
         .await
         .unwrap_err();
     assert_eq!(
@@ -153,4 +181,30 @@ async fn an_out_of_range_chunk_value_is_refused(
             .expect("the capture lock")
             .is_empty()
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn wait_polls_the_submitted_operation() {
+    let capture = CaptureImport {
+        completed_on_poll: true,
+        ..CaptureImport::default()
+    };
+    let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
+    let handle = port
+        .submit(import_request(fixed_length(10, 1)))
+        .await
+        .expect("the stubbed import starts");
+    let outcome = port
+        .wait(handle)
+        .await
+        .expect("the polled import completes");
+    assert_eq!(outcome.imported_rag_files_count, 7);
+    assert_eq!(
+        capture.requests.lock().expect("the capture lock").len(),
+        1,
+        "the wait must not submit the import again"
+    );
+    let operations = capture.operations.lock().expect("the capture lock");
+    assert_eq!(operations.len(), 1);
+    assert_eq!(operations[0].name, "operations/import");
 }

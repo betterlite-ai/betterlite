@@ -12,7 +12,8 @@ use crate::vertex_rag_ingest::chunking::{
 };
 use crate::vertex_rag_ingest::error::RagIngestError;
 use crate::vertex_rag_ingest::execution::{
-    DEFAULT_CONTENT_TYPE, RagIngest, StoreOutcome, StoreRequest,
+    DEFAULT_CONTENT_TYPE, DEFAULT_IMPORT_SUBMIT_TIMEOUT, DEFAULT_UPLOAD_TIMEOUT,
+    MAX_CONTENT_TYPE_BYTES, MAX_FILENAME_BYTES, RagIngest, StoreLimits, StoreOutcome, StoreRequest,
 };
 use crate::vertex_rag_ingest::options::{
     DEFAULT_IMPORT_TIMEOUT, DEFAULT_LOCATION, RagIngestOptions, RagIngestSettings,
@@ -24,8 +25,8 @@ mod support;
 
 use self::support::{
     BUCKET, CORPUS_ID, CORPUS_NAME, EMPTY_CONTENT_WARNING, GCS_URI, ImportBehavior, Imported,
-    PROJECT, Step, Uploaded, corpus_record, options, provider, resolve, store_request,
-    vertex_settings,
+    PROJECT, Step, UploadBehavior, Uploaded, corpus_record, options, provider,
+    provider_from_settings, resolve, resolve_at_deadline, store_request, vertex_settings,
 };
 
 #[test]
@@ -170,7 +171,13 @@ fn the_ingest_document_is_read_through_the_provider_options() {
 #[tokio::test]
 async fn empty_source_warning(#[case] content: Option<&[u8]>, #[case] filename: Option<&str>) {
     let (_guard, logs) = install();
-    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let outcome = ingest
         .store(StoreRequest {
             file_content: content,
@@ -196,7 +203,13 @@ async fn empty_source_warning(#[case] content: Option<&[u8]>, #[case] filename: 
 #[tokio::test]
 async fn upload_then_import() {
     let (_guard, logs) = install();
-    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let outcome = ingest
         .store(store_request(b"hello", "report.txt", None))
         .await
@@ -205,7 +218,10 @@ async fn upload_then_import() {
         (outcome.corpus_id.as_deref(), outcome.file_id.as_deref()),
         (Some(CORPUS_ID), Some(GCS_URI))
     );
-    assert_eq!(recorder.steps(), vec![Step::Upload, Step::Import]);
+    assert_eq!(
+        recorder.steps(),
+        vec![Step::Upload, Step::Import, Step::Wait]
+    );
     assert_eq!(
         recorder.upload().content_type.as_deref(),
         Some(DEFAULT_CONTENT_TYPE)
@@ -240,7 +256,13 @@ async fn upload_then_import() {
 
 #[tokio::test]
 async fn an_empty_content_type_takes_the_default() {
-    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     ingest
         .store(store_request(b"hello", "report.txt", Some("")))
         .await
@@ -253,7 +275,13 @@ async fn an_empty_content_type_takes_the_default() {
 
 #[tokio::test]
 async fn embed_returns_none() {
-    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let chunks = [String::from("first chunk"), String::from("second chunk")];
     assert!(ingest.embed(&chunks).await.is_none());
     assert_eq!(recorder.steps(), Vec::new());
@@ -261,7 +289,13 @@ async fn embed_returns_none() {
 
 #[tokio::test]
 async fn supplied_chunks_and_embeddings_are_ignored() {
-    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let chunks = vec!["chunk".to_owned()];
     let embeddings = vec![vec![0.25_f32, 0.75_f32]];
     let outcome = ingest
@@ -277,15 +311,30 @@ async fn supplied_chunks_and_embeddings_are_ignored() {
         .unwrap();
     assert_eq!(outcome.file_id.as_deref(), Some(GCS_URI));
     assert_eq!(recorder.upload().data, b"hello");
-    assert_eq!(recorder.steps(), vec![Step::Upload, Step::Import]);
+    assert_eq!(
+        recorder.steps(),
+        vec![Step::Upload, Step::Import, Step::Wait]
+    );
 }
 
 #[tokio::test]
 async fn upload_identity_vs_adc() {
     let mut with_credentials = corpus_record();
     with_credentials.vertex_credentials = Some(SecretString::from("service-account.json"));
-    let (without, without_recorder) = provider(corpus_record(), None, ImportBehavior::Imported(1));
-    let (with, with_recorder) = provider(with_credentials, None, ImportBehavior::Imported(1));
+    let (without, without_recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
+    let (with, with_recorder) = provider(
+        with_credentials,
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let first = without
         .store(store_request(b"hello", "report.txt", Some("text/plain")))
         .await
@@ -318,7 +367,13 @@ async fn upload_identity_vs_adc() {
 #[tokio::test]
 async fn import_error_keeps_file() {
     let (_guard, logs) = install();
-    let (ingest, recorder) = provider(corpus_record(), None, ImportBehavior::Rejected);
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Rejected,
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let error = ingest
         .store(store_request(b"hello", "report.txt", None))
         .await
@@ -347,7 +402,13 @@ async fn false_wait_no_rpc() {
     let strategy: RagChunkingStrategy =
         serde_json::from_str(r#"{"chunk_size": 10, "separators": ["\n"]}"#)
             .expect("the strategy is valid");
-    let (ingest, recorder) = provider(record, Some(strategy), ImportBehavior::Rejected);
+    let (ingest, recorder) = provider(
+        record,
+        Some(strategy),
+        ImportBehavior::Rejected,
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
     let outcome = ingest
         .store(store_request(b"hello", "report.txt", None))
         .await
@@ -369,13 +430,91 @@ async fn import_timeout(#[case] import_timeout: Option<i64>, #[case] message: &s
     let (_guard, logs) = install();
     let mut record = corpus_record();
     record.import_timeout = import_timeout;
-    let (ingest, recorder) = provider(record, None, ImportBehavior::NeverFinishes);
-    let error = ingest
-        .store(store_request(b"hello", "report.txt", None))
-        .await
-        .unwrap_err();
+    let settings = resolve(&options(record, None)).expect("the required values resolve");
+    let deadline = settings.import_timeout;
+    let (ingest, recorder) = provider_from_settings(
+        settings,
+        ImportBehavior::NeverFinishes,
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
+    let error = resolve_at_deadline(
+        ingest.store(store_request(b"hello", "report.txt", None)),
+        deadline,
+    )
+    .await
+    .unwrap_err();
     let RagIngestError::Import { source } = &error else {
         panic!("a pending import is an import timeout");
+    };
+    assert_eq!(source.to_string(), message);
+    assert_eq!(
+        error.to_string(),
+        format!("Failed to import file into RAG corpus: {message}")
+    );
+    assert_eq!(
+        recorder.steps(),
+        vec![Step::Upload, Step::Import, Step::Wait]
+    );
+    assert!(
+        logs.errors()
+            .iter()
+            .any(|line| line.starts_with("Failed to import file into RAG corpus: "))
+    );
+}
+
+#[rstest]
+#[case::waiting(true)]
+#[case::not_waiting(false)]
+#[tokio::test(start_paused = true)]
+async fn a_pending_upload_times_out(#[case] wait_for_import: bool) {
+    let mut record = corpus_record();
+    record.wait_for_import = Some(wait_for_import);
+    let (ingest, recorder) = provider(
+        record,
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Pending,
+        StoreLimits::default(),
+    );
+    let error = resolve_at_deadline(
+        ingest.store(store_request(b"hello", "report.txt", None)),
+        DEFAULT_UPLOAD_TIMEOUT,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "the file upload timed out after {} seconds",
+            DEFAULT_UPLOAD_TIMEOUT.as_secs()
+        )
+    );
+    assert_eq!(recorder.steps(), vec![Step::Upload]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_pending_import_submission_times_out() {
+    let (_guard, logs) = install();
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::NeverSubmits,
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
+    let error = resolve_at_deadline(
+        ingest.store(store_request(b"hello", "report.txt", None)),
+        DEFAULT_IMPORT_SUBMIT_TIMEOUT,
+    )
+    .await
+    .unwrap_err();
+    let message = format!(
+        "the import submission timed out after {} seconds",
+        DEFAULT_IMPORT_SUBMIT_TIMEOUT.as_secs()
+    );
+    let RagIngestError::Import { source } = &error else {
+        panic!("a pending submission is an import timeout");
     };
     assert_eq!(source.to_string(), message);
     assert_eq!(
@@ -388,4 +527,144 @@ async fn import_timeout(#[case] import_timeout: Option<i64>, #[case] message: &s
             .iter()
             .any(|line| line.starts_with("Failed to import file into RAG corpus: "))
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_slow_submission_leaves_the_wait_to_the_import_timeout() {
+    let (_guard, logs) = install();
+    let mut record = corpus_record();
+    record.import_timeout = Some(1);
+    let (ingest, recorder) = provider(
+        record,
+        None,
+        ImportBehavior::SlowSubmit {
+            seconds: 2,
+            imported: 3,
+        },
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
+    let outcome = ingest
+        .store(store_request(b"hello", "report.txt", None))
+        .await
+        .unwrap();
+    assert_eq!(outcome.file_id.as_deref(), Some(GCS_URI));
+    assert_eq!(
+        recorder.steps(),
+        vec![Step::Upload, Step::Import, Step::Wait]
+    );
+    assert!(
+        logs.infos()
+            .contains(&"Import complete: 3 files imported".to_owned())
+    );
+}
+
+#[tokio::test]
+async fn inputs_at_each_limit_are_stored() {
+    let limits = StoreLimits {
+        max_file_bytes: 5,
+        ..StoreLimits::default()
+    };
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        limits,
+    );
+    let filename = "a".repeat(MAX_FILENAME_BYTES);
+    let content_type = "c".repeat(MAX_CONTENT_TYPE_BYTES);
+    let outcome = ingest
+        .store(store_request(
+            b"hello",
+            filename.as_str(),
+            Some(content_type.as_str()),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(outcome.file_id.as_deref(), Some(GCS_URI));
+    assert_eq!(
+        recorder.upload().filename.as_deref(),
+        Some(filename.as_str())
+    );
+    assert_eq!(
+        recorder.upload().content_type.as_deref(),
+        Some(content_type.as_str())
+    );
+    assert_eq!(
+        recorder.steps(),
+        vec![Step::Upload, Step::Import, Step::Wait]
+    );
+}
+
+#[tokio::test]
+async fn an_oversized_file_is_refused_before_the_upload() {
+    let limits = StoreLimits {
+        max_file_bytes: 5,
+        ..StoreLimits::default()
+    };
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        limits,
+    );
+    let error = ingest
+        .store(store_request(b"hello!", "report.txt", None))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the file is 6 bytes, over the 5 byte Vertex RAG ingestion limit"
+    );
+    assert!(recorder.steps().is_empty());
+}
+
+#[tokio::test]
+async fn an_oversized_filename_is_refused_before_the_upload() {
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
+    let filename = "a".repeat(MAX_FILENAME_BYTES.saturating_add(1));
+    let error = ingest
+        .store(store_request(b"hello", &filename, None))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "the filename is {} bytes, over the {MAX_FILENAME_BYTES} byte filename limit",
+            MAX_FILENAME_BYTES.saturating_add(1)
+        )
+    );
+    assert!(recorder.steps().is_empty());
+}
+
+#[tokio::test]
+async fn an_oversized_content_type_is_refused_before_the_upload() {
+    let (ingest, recorder) = provider(
+        corpus_record(),
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    );
+    let content_type = "c".repeat(MAX_CONTENT_TYPE_BYTES.saturating_add(1));
+    let error = ingest
+        .store(store_request(b"hello", "report.txt", Some(&content_type)))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "the content type is {} bytes, over the {MAX_CONTENT_TYPE_BYTES} byte content type limit",
+            MAX_CONTENT_TYPE_BYTES.saturating_add(1)
+        )
+    );
+    assert!(recorder.steps().is_empty());
 }
