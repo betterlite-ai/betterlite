@@ -75,7 +75,9 @@ fn a_deployment_without_the_keys_keeps_its_place() {
         resolved.deployments,
         vec![Deployment {
             model_name: "plain".to_owned(),
-            ..Deployment::default()
+            config: None,
+            preferences: None,
+            input_cost_per_token: None,
         }]
     );
 }
@@ -90,10 +92,10 @@ fn a_full_configuration_resolves_every_key() {
         Some(RouterConfig {
             available_models: strings(&["fast", "strong"]),
             default_model: Some("fallback".to_owned()),
-            complexity_to_quality: Some(BTreeMap::from([
+            complexity_to_quality: BTreeMap::from([
                 ("SIMPLE".to_owned(), 1),
                 ("REASONING".to_owned(), 4),
-            ])),
+            ]),
             extras: BTreeMap::new(),
         })
     );
@@ -128,8 +130,16 @@ model_list:
     let resolved = settings(source, &[]).unwrap();
     let config = resolved.deployments[0].config.as_ref().unwrap();
     assert_eq!(config.default_model, None);
-    // absent here, so the pinned default table applies in the router
-    assert_eq!(config.complexity_to_quality, None);
+    // absent here, so the pinned default table lands in the field
+    assert_eq!(
+        config.complexity_to_quality,
+        BTreeMap::from([
+            ("COMPLEX".to_owned(), 3),
+            ("MEDIUM".to_owned(), 2),
+            ("REASONING".to_owned(), 4),
+            ("SIMPLE".to_owned(), 1),
+        ])
+    );
     let preferences = resolved.deployments[1].preferences.as_ref().unwrap();
     assert_eq!(preferences.keywords, Vec::<String>::new());
     assert_eq!(preferences.order, None);
@@ -173,7 +183,7 @@ fn environment_references_resolve_once_at_load() {
     assert_eq!(config.default_model, Some("fallback".to_owned()));
     assert_eq!(
         config.complexity_to_quality,
-        Some(BTreeMap::from([("SIMPLE".to_owned(), 2)]))
+        BTreeMap::from([("SIMPLE".to_owned(), 2)])
     );
     let fast = &resolved.deployments[1];
     let preferences = fast.preferences.as_ref().unwrap();
@@ -181,6 +191,28 @@ fn environment_references_resolve_once_at_load() {
     assert_eq!(preferences.keywords, strings(&["code"]));
     assert_eq!(preferences.order, Some(7));
     assert_eq!(fast.input_cost_per_token, Some(Decimal::new(2, 6)));
+}
+
+#[test]
+fn an_environment_reference_names_a_deployment() {
+    let source = "model_list:\n  - model_name: os.environ/FAST\n    model_info:\n      litellm_routing_preferences:\n        quality_tier: 1\n";
+    let resolved = settings(source, &[("FAST", "fast")]).unwrap();
+    assert_eq!(resolved.deployments[0].model_name, "fast");
+}
+
+#[test]
+fn a_price_keeps_the_digits_the_file_writes() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: 0.1000000000000000001
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some("0.1000000000000000001".parse().unwrap())
+    );
 }
 
 #[test]
@@ -201,11 +233,18 @@ model_list:
 ";
     let resolved = settings(source, &[("SIMPLE", " "), ("ORDER", "")]).unwrap();
     let config = resolved.deployments[0].config.as_ref().unwrap();
-    assert_eq!(config.complexity_to_quality, Some(BTreeMap::new()));
+    assert_eq!(config.complexity_to_quality, BTreeMap::new());
     assert_eq!(
         resolved.deployments[1].preferences.as_ref().unwrap().order,
         None
     );
+}
+
+#[test]
+fn an_empty_environment_quality_tier_is_refused() {
+    let source = "model_list:\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        quality_tier: os.environ/TIER\n";
+    let error = settings(source, &[("TIER", "")]).unwrap_err();
+    assert!(error.contains("quality_tier"), "{error}");
 }
 
 #[test]
@@ -266,7 +305,15 @@ model_list:
     let config = resolved.deployments[0].config.as_ref().unwrap();
     assert_eq!(config.available_models, Vec::<String>::new());
     assert_eq!(config.default_model, None);
-    assert_eq!(config.complexity_to_quality, None);
+    assert_eq!(
+        config.complexity_to_quality,
+        BTreeMap::from([
+            ("COMPLEX".to_owned(), 3),
+            ("MEDIUM".to_owned(), 2),
+            ("REASONING".to_owned(), 4),
+            ("SIMPLE".to_owned(), 1),
+        ])
+    );
     let fast = &resolved.deployments[1];
     let preferences = fast.preferences.as_ref().unwrap();
     assert_eq!(preferences.quality_tier, 2);

@@ -6,6 +6,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
+use crate::resolve::{parse_money, resolve_number, resolve_string};
 use crate::sections::Section;
 
 mod resolve;
@@ -34,8 +35,13 @@ struct RawParams {
 #[derive(Debug, Default, Deserialize)]
 struct RawInfo {
     litellm_routing_preferences: Option<RawPreferences>,
-    input_cost_per_token: Option<RawNumber>,
+    input_cost_per_token: Option<RawPrice>,
 }
+
+// a price arrives as the scalar's written text, so Decimal reads the digits the file holds
+#[derive(Debug, Deserialize)]
+#[serde(transparent)]
+struct RawPrice(String);
 
 #[derive(Debug, Deserialize)]
 struct RawRouterConfig {
@@ -57,16 +63,27 @@ struct RawPreferences {
     extras: BTreeMap<String, Json>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+// DEFAULT_COMPLEXITY_TO_QUALITY: the pinned mapping a file replaces by declaring its own table
+#[must_use]
+pub fn default_complexity_to_quality() -> BTreeMap<String, i64> {
+    BTreeMap::from([
+        ("SIMPLE".to_owned(), 1),
+        ("MEDIUM".to_owned(), 2),
+        ("COMPLEX".to_owned(), 3),
+        ("REASONING".to_owned(), 4),
+    ])
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RouterConfig {
     pub available_models: Vec<String>,
     pub default_model: Option<String>,
-    // None when the file omits the key, so the pinned default table applies
-    pub complexity_to_quality: Option<BTreeMap<String, i64>>,
+    // resolved at load time: an absent or null table is the pinned default, an explicit one is used as given
+    pub complexity_to_quality: BTreeMap<String, i64>,
     pub extras: BTreeMap<String, Json>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Preferences {
     pub quality_tier: i64,
     pub keywords: Vec<String>,
@@ -74,7 +91,7 @@ pub struct Preferences {
     pub extras: BTreeMap<String, Json>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deployment {
     pub model_name: String,
     pub config: Option<RouterConfig>,
@@ -109,6 +126,7 @@ impl RawDeployment {
         L: EnvironmentLookup,
     {
         let prefix = format!("model_list.{index}");
+        let model_name = resolve_string(self.model_name, &format!("{prefix}.model_name"), lookup)?;
         let config = self
             .litellm_params
             .quality_router_config
@@ -130,10 +148,13 @@ impl RawDeployment {
             })
             .transpose()?;
         let cost_path = format!("{prefix}.model_info.input_cost_per_token");
-        let input_cost_per_token =
-            resolve::money(self.model_info.input_cost_per_token, &cost_path, lookup)?;
+        let price = self
+            .model_info
+            .input_cost_per_token
+            .map(|price| RawNumber::Text(price.0));
+        let input_cost_per_token = resolve_number(price, &cost_path, lookup, parse_money)?;
         Ok(Deployment {
-            model_name: self.model_name,
+            model_name,
             config,
             preferences,
             input_cost_per_token,
