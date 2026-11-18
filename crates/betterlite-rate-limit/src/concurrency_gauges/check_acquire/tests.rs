@@ -58,7 +58,7 @@ async fn precheck_rejects_without_calling_the_acquire_script() {
 async fn precheck_lets_a_count_below_the_limit_reach_the_script() {
     let cache = RecordingCache::new();
     cache.seed("g1", int_counter(1));
-    let (gauges, script) = acquire_gauges(Arc::clone(&cache), vec![int_values(&[2])]);
+    let (gauges, script) = acquire_gauges(Arc::clone(&cache), vec![int_values(&[0, 2])]);
     let response = check_acquire(&gauges, &[gauge("g1", 2)], &key_list(&["g1"]), "slot-a")
         .await
         .expect("an acquired gauge");
@@ -70,7 +70,7 @@ async fn precheck_lets_a_count_below_the_limit_reach_the_script() {
 #[tokio::test]
 async fn redis_success_mirrors_counts_and_returns_statuses() {
     let cache = RecordingCache::new();
-    let (gauges, script) = acquire_gauges(Arc::clone(&cache), vec![int_values(&[1, 2])]);
+    let (gauges, script) = acquire_gauges(Arc::clone(&cache), vec![int_values(&[0, 1, 2])]);
     let response = check_acquire(
         &gauges,
         &[gauge("g1", 5), gauge("g2", 4)],
