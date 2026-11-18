@@ -116,7 +116,7 @@ out_of_scope:
   - "_build_message_send_params is B6950."
   - "_served_version is B8589's and the 0.3/1.0 conversion is B4812."
   - "resolve_a2a_hop_auth_header stays B8100's. This task only calls it through the HopAuth port."
-  - "get_chain_id_from_headers is B1105's (betterlite-core api::request_metadata_safety). ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError are in route_llm_request.py, which B004 covers, but B004 (done) built neither and main has neither. The callers pass the chain id and the route name in, and build the 400 from RoutingError::ModelNotFound themselves."
+  - "get_chain_id_from_headers is B1105's (betterlite-core api::request_metadata_safety). ROUTE_ENDPOINT_MAPPING and ProxyModelNotFoundError are in route_llm_request.py. B004 covers that file, but B004 (done) built neither and main has neither. The callers pass the chain id and the route name in, and build the 400 from RoutingError::ModelNotFound themselves."
 pitfalls:
   - The header map keeps names with their exact case. "x-trace" and "X-Trace" are two entries, but the passthrough filter and the backend-auth filter compare lowercase.
   - Python's `if user_id` drops an empty string as well as None. Do the same.
