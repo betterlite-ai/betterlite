@@ -272,14 +272,14 @@ pub(super) fn generate<Key: Send + Sync + 'static>(
                                 frame = state.mark_emitted(frame);
                             }
                             yield Ok(Bytes::from(frame));
-                            if pending {
-                                fallback_sent = true;
-                                yield Ok(Bytes::from(fallback_event_frame(
-                                    fallback.model.as_deref(),
-                                    &fallback.errors,
-                                    unix_timestamp(),
-                                )));
-                            }
+                        }
+                        if pending {
+                            fallback_sent = true;
+                            yield Ok(Bytes::from(fallback_event_frame(
+                                fallback.model.as_deref(),
+                                &fallback.errors,
+                                unix_timestamp(),
+                            )));
                         }
                             if let Some(message) = error_message.take() {
                                 guard.complete(true);
