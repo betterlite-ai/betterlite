@@ -1,0 +1,9 @@
+kind: helper
+name: agentcore-search-reply-json-results
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result":{"content":[{"type":"text","text":"[{\"title\":\"a\",\"url\":\"u1\"}]"}]}}'
+env: {}
+compare: {ignore: []}
