@@ -162,14 +162,14 @@ fn native_preparation_error_retains_its_variant_and_status() {
         CallStyle::Sync,
         true,
         ChatConfigTag::Anthropic,
-        r#"{"tools":true}"#,
+        r#"{"tools":[true]}"#,
     );
     assert_eq!(observed.posts, 0);
     let error = observed.preparation_error.unwrap();
     assert_eq!(error.status_code(), Some(400));
     assert!(matches!(
         *error,
-        RequestError::ToolList(ToolListError::NotList)
+        RequestError::ToolList(ToolListError::NotObject { index: 0 })
     ));
 }
 
@@ -189,4 +189,18 @@ fn native_legacy_stream_overrides_extra_body() {
         observed.content.as_deref(),
         Some("data: {\"completion\":\"legacy answer\",\"stop_reason\":\"stop_sequence\"}\n\n")
     );
+}
+
+#[test]
+fn native_messages_rejects_nonlist_tools_before_preparation() {
+    let observed = support::run(
+        Surface::Messages,
+        CallStyle::Sync,
+        true,
+        ChatConfigTag::Anthropic,
+        r#"{"tools":true}"#,
+    );
+    assert_eq!(observed.posts, 0);
+    assert_eq!(observed.status, Some(400));
+    assert!(observed.preparation_error.is_none());
 }
