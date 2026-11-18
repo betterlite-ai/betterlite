@@ -267,7 +267,7 @@ fn unknown_model_costs_ten() {
         spec("a", "openai/unknown", &[], &[], &[]),
         spec("b", "openai/known", &[], &[], &[]),
     ];
-    // the known model totals 9.9, so any default other than 5.0 changes the winner
+    // the 5.0 default puts the unknown model at 10.0, just over the known model's 9.9
     let costs = ProbeCosts::new(&[catalog("openai/known", "4.95", "4.95")]);
     assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
 }
