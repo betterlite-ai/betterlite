@@ -10,8 +10,8 @@ use super::blank_tiers;
 
 #[test]
 fn the_reply_and_scan_limits_are_the_declared_numbers() {
-    assert_eq!(MAX_REPLY_BYTES, 1_048_576);
-    assert_eq!(SCAN_BUDGET, 16_777_216);
+    assert_eq!(MAX_REPLY_BYTES, 0x0010_0000);
+    assert_eq!(SCAN_BUDGET, 0x0100_0000);
 }
 
 #[test]
