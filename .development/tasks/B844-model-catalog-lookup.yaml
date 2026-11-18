@@ -96,6 +96,12 @@ description: >-
   calls cover lookups on equivalent prebuilt snapshots. No HTTP or database fixtures are needed.
 scope:
   paths:
+    - "crates/betterlite-router/src/catalog_updates/tests.rs"
+    - "tools/oracle"
+    - "crates/betterlite-router/src/wildcard_catalog.rs"
+    - "crates/betterlite-router/src/model_catalog_lookup*.rs"
+    - "crates/betterlite-router/src/deployment_catalog/lookup.rs"
+    - "crates/betterlite-router/src/catalog_updates/catalog.rs"
     - crates/betterlite-router/src/model_catalog_lookup.rs
     - crates/betterlite-router/src/model_catalog_lookup/**
     - crates/betterlite-router/Cargo.toml
