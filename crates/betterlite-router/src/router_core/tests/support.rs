@@ -4,6 +4,8 @@ use std::time::SystemTime;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::message_content::Message;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use serde_json::Number;
@@ -21,7 +23,9 @@ use crate::router_core::no_deployment::NoDeployment;
 use crate::router_core::pipeline::{
     HealthyDeployments, StrategyRoute, healthy_deployments, prepare, resolve_catalog, route,
 };
-use crate::router_core::route::{ClientAccess, RouteContext, RoutePolicy, RouteRequest};
+use crate::router_core::route::{
+    ClientAccess, PromptInputs, RouteContext, RoutePolicy, RouteRequest,
+};
 use crate::router_core::services::{Cancelled, RouteServices};
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
 use crate::routing_groups::group::RoutingGroup;
@@ -58,11 +62,12 @@ impl TokenLimits for Windows {
     }
 }
 
-// A provider registry with one entry: the unknown arm knows no provider, the openai arm declares one param.
+// A provider registry whose unknown arm knows no provider, openai declares temperature, and mini adds response_format.
 #[derive(Clone, Copy)]
 pub(crate) enum Providers {
     Unknown,
     OpenAi,
+    Mini,
 }
 
 impl ParamSupport for Providers {
@@ -77,7 +82,7 @@ impl ParamSupport for Providers {
     ) -> Option<ResolvedProvider> {
         match self {
             Self::Unknown => None,
-            Self::OpenAi => Some(ResolvedProvider {
+            Self::OpenAi | Self::Mini => Some(ResolvedProvider {
                 model: model.to_owned(),
                 custom_llm_provider: "openai".to_owned(),
             }),
@@ -86,14 +91,18 @@ impl ParamSupport for Providers {
 
     fn supported_openai_params(
         &self,
-        _model: &str,
+        model: &str,
         _custom_llm_provider: &str,
         _base_model: Option<&str>,
     ) -> Option<Vec<String>> {
-        match self {
-            Self::Unknown => None,
-            Self::OpenAi => Some(vec![String::from("temperature")]),
+        if matches!(self, Self::Unknown) {
+            return None;
         }
+        let mut params = vec![String::from("temperature")];
+        if matches!(self, Self::Mini) && model.contains("mini") {
+            params.push(String::from("response_format"));
+        }
+        Some(params)
     }
 }
 
@@ -321,6 +330,9 @@ pub(super) struct RequestSetup {
     pub(super) pinned: bool,
     pub(super) excluded: Vec<String>,
     pub(super) retry_skipped: Vec<String>,
+    // the typed prompt and request arguments the prompt caching check reads
+    pub(super) messages: Option<Vec<Message>>,
+    pub(super) request_kwargs: Option<Object>,
     // the request's routing_strategy entry, which LiteLLM reads before the router's own strategy
     pub(super) routing_strategy: Option<String>,
     pub(super) clients: Option<CachedClients>,
@@ -336,6 +348,8 @@ impl RequestSetup {
             pinned: false,
             excluded: Vec::new(),
             retry_skipped: Vec::new(),
+            messages: None,
+            request_kwargs: None,
             routing_strategy: None,
             clients: None,
         }
@@ -351,6 +365,13 @@ impl RequestSetup {
             affinity_pinned: self.pinned,
             excluded_deployment_ids: &self.excluded,
             retry_skipped_deployment_ids: &self.retry_skipped,
+        }
+    }
+
+    pub(super) fn prompt_inputs(&self) -> PromptInputs<'_> {
+        PromptInputs {
+            messages: self.messages.as_deref(),
+            request_kwargs: self.request_kwargs.as_ref(),
         }
     }
 
@@ -416,6 +437,7 @@ pub(super) async fn run_route(
     let request = setup.request();
     let (limits, params) = (NoLimits, Providers::Unknown);
     let mut context = route_context(&request, services, &limits, &params);
+    context.policy.prompt = setup.prompt_inputs();
     context.clients = setup.client_access();
     drive(fixture, &context, setup, strategy, random).await
 }
@@ -429,6 +451,7 @@ pub(super) async fn run_checked(
 ) -> Result<AttemptResult, RoutingError> {
     let request = setup.request();
     let mut context = route_context(&request, services, checks.limits, checks.params);
+    context.policy.prompt = setup.prompt_inputs();
     context.policy.enable_pre_call_checks = checks.pre_call;
     context.clients = setup.client_access();
     let mut random = seeded();
@@ -463,7 +486,8 @@ pub(super) async fn run_healthy(
 ) -> Result<HealthyDeployments, RoutingError> {
     let request = setup.request();
     let (services, limits, params) = (NoServices, NoLimits, Providers::Unknown);
-    let context = route_context(&request, &services, &limits, &params);
+    let mut context = route_context(&request, &services, &limits, &params);
+    context.policy.prompt = setup.prompt_inputs();
     let matched = {
         let resolver = fixture.resolver();
         resolve_catalog(&resolver, context.request)?
