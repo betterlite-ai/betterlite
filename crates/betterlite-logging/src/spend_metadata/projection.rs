@@ -3,10 +3,11 @@ use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
 use rust_decimal::serde::arbitrary_precision_option;
 use serde::Deserialize;
+use subtle::ConstantTimeEq as _;
 
 use super::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
 use super::redaction::{is_non_secret_key_value, redact_logged_api_key};
-use super::{SpendMetadataError, metadata_text, nonempty_text};
+use super::{SpendMetadataError, as_text, nonempty_text};
 use crate::logging_metadata::decode::decode;
 use crate::spend_bodies::vector_store::redact_vector_store;
 use crate::spend_sanitize::SpendSanitizePolicy;
@@ -40,7 +41,7 @@ const STAMPED_FIELDS: [&str; 6] = [
 ];
 
 // The explicit arguments _get_spend_logs_metadata takes besides the metadata mapping.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct SpendMetadataArguments {
     pub applied_guardrails: Option<Vec<String>>,
     pub batch_models: Option<Vec<String>>,
@@ -59,6 +60,7 @@ pub struct SpendMetadataArguments {
     #[serde(default, with = "arbitrary_precision_option")]
     pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<JsonObject>,
+    #[serde(rename = "autorouter_baseline_observation")]
     pub baseline_observation: Option<String>,
     pub router_metadata: Option<SpendLogsRouterMetadata>,
     pub azure_spillover: Option<JsonObject>,
@@ -71,7 +73,7 @@ pub fn project_spend_logs_metadata(
     policy: &SpendSanitizePolicy,
 ) -> Result<SpendLogsMetadata, SpendMetadataError> {
     let Some(metadata) = metadata else {
-        return Ok(absent_metadata(arguments));
+        return Ok(absent_metadata(&arguments));
     };
     let mut record = project_identity(metadata)?;
     supply_provenance(&mut record, &arguments);
@@ -99,7 +101,7 @@ fn project_identity(metadata: &JsonObject) -> Result<SpendLogsMetadata, SpendMet
     record.hashed_user_api_key = redact_logged_api_key(
         nonempty_text(raw_key.as_ref()),
         trusted_redaction(metadata, raw_key.as_ref()),
-        metadata_text(metadata, "user_api_key_alias"),
+        metadata.get("user_api_key_alias").and_then(as_text),
     );
     Ok(record)
 }
@@ -155,23 +157,23 @@ fn supply_provenance(record: &mut SpendLogsMetadata, arguments: &SpendMetadataAr
 }
 
 // The metadata=None constructor: success status, no agent fields, and only the enrichment arguments the source keeps.
-fn absent_metadata(arguments: SpendMetadataArguments) -> SpendLogsMetadata {
+fn absent_metadata(arguments: &SpendMetadataArguments) -> SpendLogsMetadata {
     let mut record = SpendLogsMetadata {
         status: Some("success".to_owned()),
         ..SpendLogsMetadata::default()
     };
-    supply_provenance(&mut record, &arguments);
+    supply_provenance(&mut record, arguments);
     record
 }
 
 // The trusted hash must be a non-secret string equal to the raw metadata key before it disables hashing.
 fn trusted_redaction(metadata: &JsonObject, raw_key: Option<&Json>) -> bool {
-    let Some(trusted) = metadata_text(metadata, "user_api_key_hash") else {
+    let Some(trusted) = metadata.get("user_api_key_hash").and_then(as_text) else {
         return false;
     };
-    let alias = metadata_text(metadata, "user_api_key_alias");
+    let alias = metadata.get("user_api_key_alias").and_then(as_text);
     is_non_secret_key_value(trusted, alias)
-        && matches!(raw_key, Some(Json::Text(key)) if key.as_str() == trusted)
+        && matches!(raw_key, Some(Json::Text(key)) if bool::from(key.as_bytes().ct_eq(trusted.as_bytes())))
 }
 
 #[path = "projection/tests.rs"]

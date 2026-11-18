@@ -6,10 +6,16 @@ use std::sync::Arc;
 use betterlite_config::spend_attribution::Settings;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_models::model_registration::JsonObject;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_provider::identity::spend_proxy::DeploymentIdentity;
+use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
+use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
+use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use rstest::rstest;
 
 use super::{model_group_provider, model_name_is_valid};
@@ -126,15 +132,16 @@ fn team_public_names_are_exempt_from_model_syntax() {
     ));
 }
 
-#[test]
-fn catalog_aliases_supply_group_deployments() {
-    use betterlite_models::model_registration::JsonObject;
-    use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
-    use betterlite_router::deployment_identity::spec::DeploymentSpec;
-    use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
-    use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
-    use betterlite_router::routing_groups::index::RoutingGroupIndex;
-
+#[rstest]
+#[case::alias("public", true, Some("litellm_proxy"))]
+#[case::missing("missing", true, None)]
+#[case::detached("public", false, None)]
+#[case::empty("", true, None)]
+fn catalog_aliases_supply_group_deployments(
+    #[case] name: &str,
+    #[case] attached: bool,
+    #[case] provider: Option<&str>,
+) {
     let mut catalog = DeploymentCatalog::default();
     catalog.push(DeploymentSpec {
         model_name: "internal".to_owned(),
@@ -159,23 +166,15 @@ fn catalog_aliases_supply_group_deployments() {
     let fixture = Fixture::new();
     let context = fixture.context();
     assert_eq!(
-        super::catalog_group_provider("public", Some(&lookup), &Settings::default(), &context)
-            .unwrap()
-            .as_deref(),
-        Some("litellm_proxy")
-    );
-    assert_eq!(
-        super::catalog_group_provider("missing", Some(&lookup), &Settings::default(), &context)
-            .unwrap(),
-        None
-    );
-    assert_eq!(
-        super::catalog_group_provider("public", None, &Settings::default(), &context).unwrap(),
-        None
-    );
-    assert_eq!(
-        super::catalog_group_provider("", Some(&lookup), &Settings::default(), &context).unwrap(),
-        None
+        super::catalog_group_provider(
+            name,
+            attached.then_some(&lookup),
+            &Settings::default(),
+            &context
+        )
+        .unwrap()
+        .as_deref(),
+        provider
     );
 }
 

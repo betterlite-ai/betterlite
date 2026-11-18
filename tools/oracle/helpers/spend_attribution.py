@@ -1,9 +1,9 @@
 import os
+from collections.abc import Callable
 from types import SimpleNamespace
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 
 import litellm
-from litellm.proxy._types import SpendLogsRouterMetadata
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _deployment_provider,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L396
     _extract_usage_for_ocr_call,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L317
@@ -13,16 +13,7 @@ from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _redact_logged_api_key,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L122
     get_request_model_access_groups,
 )
-from litellm.types.router import DeploymentTypedDict
-from litellm.types.utils import (
-    AzureSpillover,
-    CostBreakdown,
-    StandardLoggingGuardrailInformation as GuardrailInfo,
-    StandardLoggingMCPToolCall,
-    StandardLoggingModelInformation as ModelInfo,
-    StandardLoggingVectorStoreRequest as VectorStoreRequest,
-)
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue, RootModel, TypeAdapter
 
 JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -43,21 +34,27 @@ class ProjectArguments(TypedDict):
     batch_models: list[str] | None
     batch_successful_requests: int | None
     batch_failed_requests: int | None
-    mcp_tool_call_metadata: StandardLoggingMCPToolCall | None
-    vector_store_request_metadata: list[VectorStoreRequest] | None
-    guardrail_information: list[GuardrailInfo] | None
+    mcp_tool_call_metadata: dict[str, JsonValue] | None
+    vector_store_request_metadata: list[dict[str, JsonValue]] | None
+    guardrail_information: list[dict[str, JsonValue]] | None
     usage_object: dict[str, JsonValue] | None
-    model_map_information: ModelInfo | None
+    model_map_information: dict[str, JsonValue] | None
     cold_storage_object_key: str | None
     litellm_overhead_time_ms: float | None
-    cost_breakdown: CostBreakdown | None
+    cost_breakdown: dict[str, JsonValue] | None
     litellm_call_id: str | None
     autorouter_savings: float | None
     autorouter_savings_estimate: dict[str, JsonValue] | None
-    baseline_observation: str | None
-    router_metadata: SpendLogsRouterMetadata | None
-    azure_spillover: AzureSpillover | None
+    autorouter_baseline_observation: str | None
+    router_metadata: dict[str, JsonValue] | None
+    azure_spillover: dict[str, JsonValue] | None
     used_client_oauth_token: bool | None
+
+
+class MetadataProjector(Protocol):
+    def __call__(
+        self, metadata: dict[str, JsonValue] | None, **arguments: Unpack[ProjectArguments]
+    ) -> JsonValue: ...
 
 
 class ProjectInput(TypedDict):
@@ -82,9 +79,14 @@ class OcrInput(TypedDict):
     attribute_usage_info: JsonValue
 
 
+class DeploymentInput(TypedDict):
+    model_name: str
+    litellm_params: dict[str, JsonValue]
+
+
 class ProvidersInput(TypedDict):
     function: Literal["providers"]
-    deployments: list[DeploymentTypedDict]
+    deployments: list[DeploymentInput]
     model_group: str
     recognized: list[str]
     team_public: list[str]
@@ -98,23 +100,19 @@ Input: TypeAlias = RedactInput | ProjectInput | AccessInput | OcrInput | Provide
 class RouterStub:
     def __init__(
         self,
-        deployments: list[DeploymentTypedDict],
+        deployments: list[DeploymentInput],
         recognized: frozenset[str],
         team_public: frozenset[str],
     ) -> None:
         self.deployments = deployments
-        self.recognized = recognized
+        self.is_recognized_model = recognized.__contains__
         self.team_public_model_names = team_public
 
-    def get_model_list(self, model_name: str) -> list[DeploymentTypedDict]:
+    def get_model_list(self, model_name: str) -> list[DeploymentInput]:
         return [
             deployment for deployment in self.deployments if deployment["model_name"] == model_name
         ]
 
-    def is_recognized_model(self, model: str) -> bool:
-        if model:
-            return model in self.recognized
-        return False
 
 
 def bucket(entries: dict[str, JsonValue], groups: list[str] | None) -> dict[str, JsonValue]:
@@ -135,30 +133,13 @@ def redact(input_value: RedactInput) -> JsonValue:
 
 def project(input_value: ProjectInput) -> JsonValue:
     os.environ["STORE_PROMPTS_IN_SPEND_LOGS"] = "true" if input_value["store_bodies"] else "false"
-    arguments = input_value["arguments"]
-    record = _get_spend_logs_metadata(
-        input_value["metadata"],
-        applied_guardrails=arguments["applied_guardrails"],
-        batch_models=arguments["batch_models"],
-        batch_successful_requests=arguments["batch_successful_requests"],
-        batch_failed_requests=arguments["batch_failed_requests"],
-        mcp_tool_call_metadata=arguments["mcp_tool_call_metadata"],
-        vector_store_request_metadata=arguments["vector_store_request_metadata"],
-        guardrail_information=arguments["guardrail_information"],
-        usage_object=arguments["usage_object"],
-        model_map_information=arguments["model_map_information"],
-        cold_storage_object_key=arguments["cold_storage_object_key"],
-        litellm_overhead_time_ms=arguments["litellm_overhead_time_ms"],
-        cost_breakdown=arguments["cost_breakdown"],
-        litellm_call_id=arguments["litellm_call_id"],
-        autorouter_savings=arguments["autorouter_savings"],
-        autorouter_savings_estimate=arguments["autorouter_savings_estimate"],
-        autorouter_baseline_observation=arguments["baseline_observation"],
-        router_metadata=arguments["router_metadata"],
-        azure_spillover=arguments["azure_spillover"],
-        used_client_oauth_token=arguments["used_client_oauth_token"],
+    project_metadata = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L165-L187
+        MetadataProjector,
+        _get_spend_logs_metadata,
     )
-    return JSON_VALUE.validate_python(record)
+    return JSON_VALUE.validate_python(
+        project_metadata(input_value["metadata"], **input_value["arguments"])
+    )
 
 
 def access_groups(input_value: AccessInput) -> JsonValue:
@@ -182,10 +163,14 @@ def ocr_usage(input_value: OcrInput) -> JsonValue:
         responses["usage_info"] = input_value["usage_info"]
     response_obj = SimpleNamespace()
     if input_value["attribute_present"]:
-        response_obj = SimpleNamespace(usage_info=input_value["attribute_usage_info"])
-    return JSON_VALUE.validate_python(
-        _extract_usage_for_ocr_call(response_obj, responses)  # pyright: ignore[reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L317
+        response_obj = SimpleNamespace(
+            usage_info=RootModel[JsonValue](input_value["attribute_usage_info"])
+        )
+    extract_usage = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L317
+        Callable[[SimpleNamespace, dict[str, JsonValue]], dict[str, JsonValue]],
+        _extract_usage_for_ocr_call,
     )
+    return JSON_VALUE.validate_python(extract_usage(response_obj, responses))
 
 
 def providers(input_value: ProvidersInput) -> JsonValue:
@@ -196,17 +181,21 @@ def providers(input_value: ProvidersInput) -> JsonValue:
         frozenset(input_value["recognized"]),
         frozenset(input_value["team_public"]),
     )
-    resolved = [
-        _deployment_provider(deployment) for deployment in input_value["deployments"]
-    ]
-    group_provider = _model_group_provider(
-        input_value["model_group"],
-        router,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L412
+    resolve_deployment = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L396
+        Callable[[DeploymentInput], str | None],
+        _deployment_provider,
     )
-    configured = _is_configured_model_group(
-        input_value["model_group"],
-        router,  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L423
+    resolve_group = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L412
+        Callable[[str, RouterStub], str | None],
+        _model_group_provider,
     )
+    recognizes_group = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L423
+        Callable[[str, RouterStub], bool],
+        _is_configured_model_group,
+    )
+    resolved = [resolve_deployment(deployment) for deployment in input_value["deployments"]]
+    group_provider = resolve_group(input_value["model_group"], router)
+    configured = recognizes_group(input_value["model_group"], router)
     return JSON_VALUE.validate_python(
         {"providers": resolved, "group_provider": group_provider, "configured": configured}
     )

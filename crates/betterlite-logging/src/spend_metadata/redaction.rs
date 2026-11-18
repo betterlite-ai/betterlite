@@ -1,5 +1,6 @@
 use betterlite_models::key_digest::hashing::hash_token;
 use betterlite_models::key_digest::is_valid_sha256_hash;
+use subtle::ConstantTimeEq as _;
 
 const CLI_SESSION_VALUE_PREFIX: &str = "cli-session-";
 const HASHED_JWT_PREFIX: &str = "hashed-jwt-";
@@ -40,8 +41,8 @@ pub fn is_non_secret_key_value(value: &str, key_alias: Option<&str>) -> bool {
 
 // re.sub(r"(?i)^bearer ", ""): exactly one case-insensitive ASCII prefix.
 fn strip_bearer(value: &str) -> &str {
-    match value.get(..7) {
-        Some(prefix) if prefix.eq_ignore_ascii_case("bearer ") => &value[7..],
+    match value.split_at_checked(7) {
+        Some((prefix, rest)) if prefix.eq_ignore_ascii_case("bearer ") => rest,
         Some(_) | None => value,
     }
 }
@@ -57,7 +58,8 @@ fn is_cli_session_alias(value: &str, key_alias: Option<&str>) -> bool {
     let Some(alias) = key_alias else {
         return false;
     };
-    value.starts_with(CLI_SESSION_VALUE_PREFIX) && value == alias
+    value.starts_with(CLI_SESSION_VALUE_PREFIX)
+        && bool::from(value.as_bytes().ct_eq(alias.as_bytes()))
 }
 
 #[path = "redaction/tests.rs"]

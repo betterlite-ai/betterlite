@@ -64,8 +64,8 @@ fn groups_from_metadata(metadata: &JsonObject, auth_groups: Option<&Json>) -> Ve
     }
     let on_auth_object = match metadata.get("user_api_key_auth") {
         Some(Json::Object(auth)) => auth.get("matched_model_access_groups"),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
-        | None => auth_groups,
+        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => None,
+        None => auth_groups,
     };
     coerce_model_access_groups(on_auth_object)
 }

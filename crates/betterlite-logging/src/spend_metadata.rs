@@ -26,7 +26,7 @@ pub enum SpendLogStatus {
 
 impl SpendLogStatus {
     #[must_use]
-    pub fn as_str(self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::Success => "success",
             Self::Failure => "failure",
@@ -34,7 +34,7 @@ impl SpendLogStatus {
     }
 }
 
-pub(crate) fn as_object(value: &Json) -> Option<&JsonObject> {
+pub(crate) const fn as_object(value: &Json) -> Option<&JsonObject> {
     match value {
         Json::Object(entries) => Some(entries),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
@@ -57,13 +57,6 @@ pub(crate) fn nonempty_text(value: Option<&Json>) -> Option<&str> {
     None
 }
 
-pub(crate) fn metadata_text<'a>(metadata: &'a JsonObject, name: &str) -> Option<&'a str> {
-    let Some(value) = metadata.get(name) else {
-        return None;
-    };
-    as_text(value)
-}
-
 // get_spend_logs_id: the first nonempty string among the response id, the standard payload id and the call id.
 #[must_use]
 pub fn spend_logs_id(
@@ -80,14 +73,7 @@ pub fn spend_logs_id(
         standard_logging_id,
         nonempty_text(kwargs.get("litellm_call_id")),
     ];
-    let mut resolved: Option<&str> = None;
-    for candidate in candidates {
-        if let Some(candidate) = candidate {
-            resolved = Some(candidate);
-            break;
-        }
-    }
-    let resolved = resolved?;
+    let resolved = candidates.into_iter().flatten().next()?;
     if call_type == "aretrieve_batch" {
         return Some(format!("{resolved}{BATCH_COST_REQUEST_ID_SUFFIX}"));
     }

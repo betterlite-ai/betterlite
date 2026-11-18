@@ -22,7 +22,7 @@ pub fn model_group_provider(
     };
     let mut provider: Option<String> = None;
     for deployment in deployments {
-        let Some(resolved) = deployment_provider(deployment, &selection, resolution) else {
+        let Some(resolved) = deployment_provider(deployment, selection, resolution) else {
             continue;
         };
         if provider.as_ref().is_some_and(|known| known != &resolved) {

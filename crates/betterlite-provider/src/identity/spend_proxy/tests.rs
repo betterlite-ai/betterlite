@@ -72,7 +72,7 @@ fn any_proxy_switch_names_the_proxy(#[case] selection: ProxySelection, #[case] f
     let fixture = Fixture::new();
     let resolution = fixture.context();
     assert_eq!(
-        deployment_provider(&openai_deployment(flag), &selection, &resolution).as_deref(),
+        deployment_provider(&openai_deployment(flag), selection, &resolution).as_deref(),
         Some("litellm_proxy")
     );
 }
@@ -84,7 +84,7 @@ fn a_quiet_deployment_resolves_its_prefixed_provider() {
     assert_eq!(
         deployment_provider(
             &openai_deployment(false),
-            &ProxySelection::default(),
+            ProxySelection::default(),
             &resolution
         )
         .as_deref(),
@@ -98,8 +98,7 @@ fn the_declared_authenticating_provider_wins_over_resolution() {
     let resolution = fixture.context();
     let copilot = params(&[("model", Json::Text("github_copilot/gpt-4".to_owned()))]);
     assert_eq!(
-        deployment_provider(&identity(&copilot), &ProxySelection::default(), &resolution)
-            .as_deref(),
+        deployment_provider(&identity(&copilot), ProxySelection::default(), &resolution).as_deref(),
         Some("github_copilot")
     );
     let chatgpt = params(&[
@@ -107,8 +106,7 @@ fn the_declared_authenticating_provider_wins_over_resolution() {
         ("custom_llm_provider", Json::Text("chatgpt".to_owned())),
     ]);
     assert_eq!(
-        deployment_provider(&identity(&chatgpt), &ProxySelection::default(), &resolution)
-            .as_deref(),
+        deployment_provider(&identity(&chatgpt), ProxySelection::default(), &resolution).as_deref(),
         Some("chatgpt")
     );
 }
@@ -124,7 +122,7 @@ fn resolves_the_custom_provider_defaults() {
     assert_eq!(
         deployment_provider(
             &identity(&anthropic),
-            &ProxySelection::default(),
+            ProxySelection::default(),
             &resolution
         )
         .as_deref(),
@@ -138,7 +136,7 @@ fn a_bare_known_model_resolves_from_the_bundled_catalog() {
     let resolution = fixture.context();
     let bare = params(&[("model", Json::Text("gpt-4o".to_owned()))]);
     assert_eq!(
-        deployment_provider(&identity(&bare), &ProxySelection::default(), &resolution).as_deref(),
+        deployment_provider(&identity(&bare), ProxySelection::default(), &resolution).as_deref(),
         Some("openai")
     );
 }
@@ -152,7 +150,7 @@ fn an_unknown_model_has_no_provider() {
         Json::Text("totally-unknown-provider/xyz".to_owned()),
     )]);
     assert_eq!(
-        deployment_provider(&identity(&unknown), &ProxySelection::default(), &resolution),
+        deployment_provider(&identity(&unknown), ProxySelection::default(), &resolution),
         None
     );
 }
@@ -168,7 +166,7 @@ fn an_empty_custom_provider_falls_back_to_the_model() {
     assert_eq!(
         deployment_provider(
             &identity(&empty_custom),
-            &ProxySelection::default(),
+            ProxySelection::default(),
             &resolution
         )
         .as_deref(),

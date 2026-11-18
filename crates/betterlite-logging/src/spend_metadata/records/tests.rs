@@ -2,18 +2,8 @@
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
-use serde_json::Map;
-use serde_json::Value;
 
 use super::{SpendLogsMetadata, SpendLogsRouterMetadata};
-
-fn serialized(record: &SpendLogsMetadata) -> Map<String, Value> {
-    serde_json::to_value(record)
-        .expect("the record serializes")
-        .as_object()
-        .cloned()
-        .expect("the record serializes as an object")
-}
 
 #[rstest]
 #[case::actor_agent_id("actor_agent_id")]
@@ -23,30 +13,46 @@ fn serialized(record: &SpendLogsMetadata) -> Map<String, Value> {
 #[case::verified_human_user_id("verified_human_user_id")]
 #[case::routing_decision("routing_decision")]
 fn the_absent_constructor_omits_the_agent_fields_and_routing_decision(#[case] absent: &str) {
-    let fields = serialized(&SpendLogsMetadata::default());
+    let fields = serde_json::to_value(SpendLogsMetadata::default())
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
     assert_eq!(fields.len(), 42);
     assert!(!fields.contains_key(absent), "{absent} is absent");
-    assert_eq!(fields.get("user_api_key"), Some(&Value::Null));
-    assert_eq!(fields.get("status"), Some(&Value::Null));
+    assert_eq!(fields.get("user_api_key"), Some(&serde_json::json!(null)));
+    assert_eq!(fields.get("status"), Some(&serde_json::json!(null)));
 }
 
 #[test]
 fn a_present_agent_field_serializes_its_null_value() {
-    let mut record = SpendLogsMetadata::default();
-    record.actor_agent_id = Some(None);
-    let fields = serialized(&record);
+    let record = SpendLogsMetadata {
+        actor_agent_id: Some(None),
+        ..SpendLogsMetadata::default()
+    };
+    let fields = serde_json::to_value(record)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
     assert_eq!(fields.len(), 43);
-    assert_eq!(fields.get("actor_agent_id"), Some(&Value::Null));
+    assert_eq!(fields.get("actor_agent_id"), Some(&serde_json::json!(null)));
 }
 
 #[test]
 fn routing_decision_serializes_its_payload() {
-    let mut record = SpendLogsMetadata::default();
-    record.routing_decision = Some(Some(Json::Text("router".to_owned())));
-    let fields = serialized(&record);
+    let record = SpendLogsMetadata {
+        routing_decision: Some(Some(Json::Text("router".to_owned()))),
+        ..SpendLogsMetadata::default()
+    };
+    let fields = serde_json::to_value(record)
+        .unwrap()
+        .as_object()
+        .unwrap()
+        .clone();
     assert_eq!(
         fields.get("routing_decision"),
-        Some(&Value::String("router".to_owned()))
+        Some(&serde_json::json!("router"))
     );
 }
 
@@ -62,7 +68,11 @@ fn the_router_metadata_serializes_every_field_as_null(#[case] name: &str) {
         .cloned()
         .expect("the router metadata serializes as an object");
     assert_eq!(fields.len(), 4);
-    assert_eq!(fields.get(name), Some(&Value::Null), "{name} is null");
+    assert_eq!(
+        fields.get(name),
+        Some(&serde_json::json!(null)),
+        "{name} is null"
+    );
 }
 
 #[test]

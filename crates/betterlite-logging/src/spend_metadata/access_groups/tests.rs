@@ -149,3 +149,10 @@ fn coercion_keeps_only_nonempty_texts_once() {
     let tuple_as_text = json(r#""a""#);
     assert!(coerce_model_access_groups(Some(&tuple_as_text)).is_empty());
 }
+
+#[test]
+fn a_present_invalid_auth_value_does_not_use_the_detached_object() {
+    assert!(groups(
+        r#"{"litellm_params":{"metadata":{"user_api_key_auth":null}},"auth_matched_model_access_groups":["detached"]}"#
+    ).is_empty());
+}

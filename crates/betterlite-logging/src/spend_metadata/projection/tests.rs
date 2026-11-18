@@ -4,7 +4,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::Value;
 
 use super::{SpendMetadataArguments, project_spend_logs_metadata};
 use crate::spend_metadata::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
@@ -37,29 +36,31 @@ fn project(
         .expect("the metadata projects")
 }
 
-fn serialized(record: &SpendLogsMetadata) -> Value {
-    serde_json::to_value(record).expect("the record serializes")
+fn absent_arguments() -> SpendMetadataArguments {
+    SpendMetadataArguments {
+        cold_storage_object_key: Some("cold".to_owned()),
+        litellm_call_id: Some("call".to_owned()),
+        autorouter_savings: Some(Decimal::new(15, 1)),
+        autorouter_savings_estimate: Some(object(r#"{"saved":1}"#)),
+        baseline_observation: Some("baseline".to_owned()),
+        router_metadata: Some(SpendLogsRouterMetadata {
+            requested_model: Some("requested".to_owned()),
+            selected_model: None,
+            selected_provider: Some("openai".to_owned()),
+            router_correlation_id: None,
+        }),
+        azure_spillover: Some(object(r#"{"region":"east"}"#)),
+        used_client_oauth_token: Some(true),
+        applied_guardrails: Some(vec!["ignored".to_owned()]),
+        ..SpendMetadataArguments::default()
+    }
 }
 
 #[test]
 fn the_absent_mapping_builds_the_constructor_payload() {
-    let mut arguments = SpendMetadataArguments::default();
-    arguments.cold_storage_object_key = Some("cold".to_owned());
-    arguments.litellm_call_id = Some("call".to_owned());
-    arguments.autorouter_savings = Some(Decimal::new(15, 1));
-    arguments.autorouter_savings_estimate = Some(object(r#"{"saved":1}"#));
-    arguments.baseline_observation = Some("baseline".to_owned());
-    arguments.router_metadata = Some(SpendLogsRouterMetadata {
-        requested_model: Some("requested".to_owned()),
-        selected_model: None,
-        selected_provider: Some("openai".to_owned()),
-        router_correlation_id: None,
-    });
-    arguments.azure_spillover = Some(object(r#"{"region":"east"}"#));
-    arguments.used_client_oauth_token = Some(true);
-    arguments.applied_guardrails = Some(vec!["ignored".to_owned()]);
+    let arguments = absent_arguments();
 
-    let value = serialized(&project(None, arguments, true));
+    let value = serde_json::to_value(project(None, arguments, true)).unwrap();
     let fields = value.as_object().expect("the record is an object");
     assert_eq!(fields.len(), 42);
     assert_eq!(value["status"], "success");
@@ -69,10 +70,13 @@ fn the_absent_mapping_builds_the_constructor_payload() {
     assert_eq!(value["autorouter_savings_estimate"]["saved"], 1);
     assert_eq!(value["autorouter_baseline_observation"], "baseline");
     assert_eq!(value["router_metadata"]["requested_model"], "requested");
-    assert_eq!(value["router_metadata"]["selected_model"], Value::Null);
+    assert_eq!(
+        value["router_metadata"]["selected_model"],
+        serde_json::json!(null)
+    );
     assert_eq!(value["azure_spillover"]["region"], "east");
     assert_eq!(value["used_client_oauth_token"], true);
-    assert_eq!(value["applied_guardrails"], Value::Null);
+    assert_eq!(value["applied_guardrails"], serde_json::json!(null));
     assert!(!fields.contains_key("actor_agent_id"));
     assert!(!fields.contains_key("routing_decision"));
 }
@@ -88,14 +92,15 @@ fn the_absent_mapping_builds_the_constructor_payload() {
 #[case::status("status")]
 fn an_empty_mapping_has_every_field(#[case] name: &str) {
     let metadata = object("{}");
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     let fields = value.as_object().expect("the record is an object");
     assert_eq!(fields.len(), 48);
-    assert_eq!(value[name], Value::Null, "{name} is null");
+    assert_eq!(value[name], serde_json::json!(null), "{name} is null");
 }
 
 #[rstest]
@@ -116,12 +121,13 @@ fn forged_stamped_values_never_win(#[case] name: &str) {
             "used_client_oauth_token": true
         }"#,
     );
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
-    assert_eq!(value[name], Value::Null, "{name} is null");
+    ))
+    .unwrap();
+    assert_eq!(value[name], serde_json::json!(null), "{name} is null");
 }
 
 #[rstest]
@@ -156,39 +162,45 @@ fn forged_overridden_values_are_replaced_by_the_arguments(#[case] name: &str) {
             "litellm_call_id": "forged"
         }"#,
     );
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
-    assert_eq!(value[name], Value::Null, "{name} is null");
+    ))
+    .unwrap();
+    assert_eq!(value[name], serde_json::json!(null), "{name} is null");
+}
+
+fn enriched_arguments() -> SpendMetadataArguments {
+    SpendMetadataArguments {
+        applied_guardrails: Some(vec!["guard".to_owned()]),
+        batch_models: Some(vec!["batch".to_owned()]),
+        batch_successful_requests: Some(3),
+        batch_failed_requests: Some(1),
+        mcp_tool_call_metadata: Some(object(r#"{"tool":"mcp"}"#)),
+        vector_store_request_metadata: Some(vec![json(r#"{"vector_store_id":"vs"}"#)]),
+        guardrail_information: Some(json(r#"{"guardrail_name":"guard"}"#)),
+        usage_object: Some(object(r#"{"total_tokens":4}"#)),
+        model_map_information: Some(object(r#"{"model":"mapped"}"#)),
+        cold_storage_object_key: Some("cold".to_owned()),
+        litellm_overhead_time_ms: Some(Decimal::new(225, 2)),
+        cost_breakdown: Some(object(r#"{"total":0.5}"#)),
+        litellm_call_id: Some("call".to_owned()),
+        autorouter_savings: Some(Decimal::new(75, 2)),
+        autorouter_savings_estimate: Some(object(r#"{"saved":2}"#)),
+        baseline_observation: Some("baseline".to_owned()),
+        router_metadata: Some(SpendLogsRouterMetadata::default()),
+        azure_spillover: Some(object(r#"{"region":"west"}"#)),
+        used_client_oauth_token: Some(false),
+    }
 }
 
 #[test]
 fn the_arguments_are_projected_into_the_record() {
-    let mut arguments = SpendMetadataArguments::default();
-    arguments.applied_guardrails = Some(vec!["guard".to_owned()]);
-    arguments.batch_models = Some(vec!["batch".to_owned()]);
-    arguments.batch_successful_requests = Some(3);
-    arguments.batch_failed_requests = Some(1);
-    arguments.mcp_tool_call_metadata = Some(object(r#"{"tool":"mcp"}"#));
-    arguments.vector_store_request_metadata = Some(vec![json(r#"{"vector_store_id":"vs"}"#)]);
-    arguments.guardrail_information = Some(json(r#"{"guardrail_name":"guard"}"#));
-    arguments.usage_object = Some(object(r#"{"total_tokens":4}"#));
-    arguments.model_map_information = Some(object(r#"{"model":"mapped"}"#));
-    arguments.cold_storage_object_key = Some("cold".to_owned());
-    arguments.litellm_overhead_time_ms = Some(Decimal::new(225, 2));
-    arguments.cost_breakdown = Some(object(r#"{"total":0.5}"#));
-    arguments.litellm_call_id = Some("call".to_owned());
-    arguments.autorouter_savings = Some(Decimal::new(75, 2));
-    arguments.autorouter_savings_estimate = Some(object(r#"{"saved":2}"#));
-    arguments.baseline_observation = Some("baseline".to_owned());
-    arguments.router_metadata = Some(SpendLogsRouterMetadata::default());
-    arguments.azure_spillover = Some(object(r#"{"region":"west"}"#));
-    arguments.used_client_oauth_token = Some(false);
+    let arguments = enriched_arguments();
 
     let metadata = object("{}");
-    let value = serialized(&project(Some(&metadata), arguments, true));
+    let value = serde_json::to_value(project(Some(&metadata), arguments, true)).unwrap();
     assert_eq!(value["applied_guardrails"][0], "guard");
     assert_eq!(value["batch_models"][0], "batch");
     assert_eq!(value["batch_successful_requests"], 3);
@@ -201,6 +213,12 @@ fn the_arguments_are_projected_into_the_record() {
     assert_eq!(value["guardrail_information"]["guardrail_name"], "guard");
     assert_eq!(value["usage_object"]["total_tokens"], 4);
     assert_eq!(value["model_map_information"]["model"], "mapped");
+}
+
+#[test]
+fn trusted_arguments_are_projected() {
+    let metadata = object("{}");
+    let value = serde_json::to_value(project(Some(&metadata), enriched_arguments(), true)).unwrap();
     assert_eq!(value["cold_storage_object_key"], "cold");
     assert_eq!(value["litellm_overhead_time_ms"], 2.25);
     assert_eq!(value["cost_breakdown"]["total"], 0.5);
@@ -208,7 +226,10 @@ fn the_arguments_are_projected_into_the_record() {
     assert_eq!(value["autorouter_savings"], 0.75);
     assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
     assert_eq!(value["autorouter_baseline_observation"], "baseline");
-    assert_eq!(value["router_metadata"]["requested_model"], Value::Null);
+    assert_eq!(
+        value["router_metadata"]["requested_model"],
+        serde_json::json!(null)
+    );
     assert_eq!(value["azure_spillover"]["region"], "west");
     assert_eq!(value["used_client_oauth_token"], false);
 }
@@ -226,11 +247,12 @@ fn copied_metadata_fields_keep_their_values() {
             "routing_decision": {"model": "chosen"}
         }"#,
     );
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["status"], "failure");
     assert_eq!(value["user_agent"], "ua");
     assert_eq!(value["attempted_retries"], 2);
@@ -257,22 +279,24 @@ fn a_mistyped_copied_field_names_the_record_and_the_field() {
 #[test]
 fn a_raw_secret_is_hashed() {
     let metadata = object(r#"{"user_api_key": "sk-abc"}"#);
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], SK_ABC);
 }
 
 #[test]
 fn a_bearer_prefixed_secret_is_hashed_without_the_prefix() {
     let metadata = object(r#"{"user_api_key": "Bearer sk-abc"}"#);
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], SK_ABC);
 }
 
@@ -281,22 +305,24 @@ fn a_trusted_digest_is_kept() {
     let metadata = object(&format!(
         r#"{{"user_api_key": "{SK_ABC}", "user_api_key_hash": "{SK_ABC}"}}"#
     ));
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], SK_ABC);
 }
 
 #[test]
 fn an_untrusted_digest_is_hashed_again() {
     let metadata = object(&format!(r#"{{"user_api_key": "{SK_ABC}"}}"#));
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], SK_ABC_HASHED);
 }
 
@@ -305,11 +331,12 @@ fn a_trusted_hash_that_differs_from_the_key_does_not_disable_hashing() {
     let metadata = object(&format!(
         r#"{{"user_api_key": "{SK_ABC}", "user_api_key_hash": "litellm-cli"}}"#
     ));
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], SK_ABC_HASHED);
 }
 
@@ -318,11 +345,12 @@ fn a_non_text_trusted_hash_does_not_disable_hashing() {
     let metadata = object(&format!(
         r#"{{"user_api_key": "{SK_ABC}", "user_api_key_hash": 5}}"#
     ));
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], SK_ABC_HASHED);
 }
 
@@ -335,11 +363,12 @@ fn the_alias_allows_a_cli_session_key() {
             "user_api_key_alias": "cli-session-abc"
         }"#,
     );
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
+    ))
+    .unwrap();
     assert_eq!(value["user_api_key"], "cli-session-abc");
     assert_eq!(value["user_api_key_alias"], "cli-session-abc");
 }
@@ -350,28 +379,32 @@ fn the_alias_allows_a_cli_session_key() {
 #[case::bare_bearer(r#"{"user_api_key": "Bearer "}"#)]
 fn non_text_and_empty_keys_become_null(#[case] fixture: &str) {
     let metadata = object(fixture);
-    let value = serialized(&project(
+    let value = serde_json::to_value(project(
         Some(&metadata),
         SpendMetadataArguments::default(),
         true,
-    ));
-    assert_eq!(value["user_api_key"], Value::Null, "{fixture}");
+    ))
+    .unwrap();
+    assert_eq!(value["user_api_key"], serde_json::json!(null), "{fixture}");
 }
 
 #[test]
 fn vector_store_bodies_are_redacted_unless_bodies_are_stored() {
-    let mut arguments = SpendMetadataArguments::default();
-    arguments.vector_store_request_metadata = Some(vec![json(
-        r#"{"vector_store_search_response":{"data":[{"content":[{"text":"secret"}]}]}}"#,
-    )]);
+    let arguments = SpendMetadataArguments {
+        vector_store_request_metadata: Some(vec![json(
+            r#"{"vector_store_search_response":{"data":[{"content":[{"text":"secret"}]}]}}"#,
+        )]),
+        ..SpendMetadataArguments::default()
+    };
     let metadata = object("{}");
-    let redacted = serialized(&project(Some(&metadata), arguments.clone(), false));
+    let redacted =
+        serde_json::to_value(project(Some(&metadata), arguments.clone(), false)).unwrap();
     assert_eq!(
         redacted["vector_store_request_metadata"][0]["vector_store_search_response"]["data"][0]["content"]
             [0]["text"],
         "REDACTED_BY_LITELM"
     );
-    let stored = serialized(&project(Some(&metadata), arguments, true));
+    let stored = serde_json::to_value(project(Some(&metadata), arguments, true)).unwrap();
     assert_eq!(
         stored["vector_store_request_metadata"][0]["vector_store_search_response"]["data"][0]["content"]
             [0]["text"],
@@ -381,17 +414,20 @@ fn vector_store_bodies_are_redacted_unless_bodies_are_stored() {
 
 #[test]
 fn guardrail_information_is_sanitized_unless_bodies_are_stored() {
-    let mut arguments = SpendMetadataArguments::default();
-    arguments.guardrail_information = Some(json(
-        r#"[{"guardrail_name":"guard","guardrail_response":"secret"}]"#,
-    ));
+    let arguments = SpendMetadataArguments {
+        guardrail_information: Some(json(
+            r#"[{"guardrail_name":"guard","guardrail_response":"secret"}]"#,
+        )),
+        ..SpendMetadataArguments::default()
+    };
     let metadata = object("{}");
-    let redacted = serialized(&project(Some(&metadata), arguments.clone(), false));
+    let redacted =
+        serde_json::to_value(project(Some(&metadata), arguments.clone(), false)).unwrap();
     assert_eq!(
         redacted["guardrail_information"][0]["guardrail_response"],
         "REDACTED_BY_LITELM"
     );
-    let stored = serialized(&project(Some(&metadata), arguments, true));
+    let stored = serde_json::to_value(project(Some(&metadata), arguments, true)).unwrap();
     assert_eq!(
         stored["guardrail_information"][0]["guardrail_response"],
         "secret"
@@ -402,7 +438,7 @@ fn guardrail_information_is_sanitized_unless_bodies_are_stored() {
 fn savings_preserve_decimal_precision() {
     let arguments: SpendMetadataArguments =
         serde_json::from_str(r#"{"autorouter_savings":0.1234567890123456789012345678}"#).unwrap();
-    let value = serialized(&project(Some(&object("{}")), arguments, true));
+    let value = serde_json::to_value(project(Some(&object("{}")), arguments, true)).unwrap();
     assert_eq!(
         value["autorouter_savings"].to_string(),
         "0.1234567890123456789012345678"

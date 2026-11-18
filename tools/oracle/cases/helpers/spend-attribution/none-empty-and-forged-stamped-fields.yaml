@@ -21,7 +21,7 @@ call:
       litellm_call_id: call
       autorouter_savings: 1.5
       autorouter_savings_estimate: {saved: 1}
-      baseline_observation: baseline
+      autorouter_baseline_observation: baseline
       router_metadata:
         requested_model: requested
         selected_model: null
@@ -50,7 +50,7 @@ calls:
         litellm_call_id: null
         autorouter_savings: null
         autorouter_savings_estimate: null
-        baseline_observation: null
+        autorouter_baseline_observation: null
         router_metadata: null
         azure_spillover: null
         used_client_oauth_token: null
@@ -91,7 +91,7 @@ calls:
         litellm_call_id: call
         autorouter_savings: 0.5
         autorouter_savings_estimate: {saved: 2}
-        baseline_observation: baseline
+        autorouter_baseline_observation: baseline
         router_metadata:
           requested_model: requested
           selected_model: selected
@@ -121,7 +121,7 @@ calls:
         litellm_call_id: call
         autorouter_savings: 1.5
         autorouter_savings_estimate: {saved: 1}
-        baseline_observation: baseline
+        autorouter_baseline_observation: baseline
         router_metadata:
           requested_model: requested
           selected_model: null

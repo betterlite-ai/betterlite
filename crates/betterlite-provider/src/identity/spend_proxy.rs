@@ -46,8 +46,8 @@ impl<'a> DeploymentIdentity<'a> {
 }
 
 #[must_use]
-pub fn use_litellm_proxy_by_default(
-    selection: &ProxySelection,
+pub const fn use_litellm_proxy_by_default(
+    selection: ProxySelection,
     deployment_use_litellm_proxy: bool,
 ) -> bool {
     if selection.environment || deployment_use_litellm_proxy {
@@ -60,7 +60,7 @@ pub fn use_litellm_proxy_by_default(
 #[must_use]
 pub fn deployment_provider(
     deployment: &DeploymentIdentity<'_>,
-    selection: &ProxySelection,
+    selection: ProxySelection,
     resolution: &ResolutionContext<'_>,
 ) -> Option<String> {
     if use_litellm_proxy_by_default(selection, deployment.use_litellm_proxy) {

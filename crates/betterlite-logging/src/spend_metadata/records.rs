@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option as nullable;
 
 // SpendLogsRouterMetadata: trusted router provenance, every field present and null when unknown.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct SpendLogsRouterMetadata {
     pub requested_model: Option<String>,
@@ -15,7 +15,7 @@ pub struct SpendLogsRouterMetadata {
 }
 
 // SpendLogsMetadata: one field per _types.py annotation, in declaration order.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
 pub struct SpendLogsMetadata {
     // The five NotRequired agent fields and routing_decision are absent from the metadata=None constructor.

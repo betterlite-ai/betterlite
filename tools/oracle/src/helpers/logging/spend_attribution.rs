@@ -23,8 +23,7 @@ use betterlite_provider::identity::spend_proxy::{
     DeploymentIdentity, ProxySelection, deployment_provider,
 };
 use betterlite_server::spend::attribution::{configured_model_group, model_group_provider};
-use serde::Deserialize;
-use serde_json::json;
+use serde::{Deserialize, Serialize};
 
 pub(crate) struct Op;
 
@@ -32,7 +31,7 @@ pub(crate) struct Op;
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
     Redact(RedactInput),
-    Project(ProjectInput),
+    Project(Box<ProjectInput>),
     AccessGroups(AccessGroupsInput),
     OcrUsage(OcrUsageInput),
     Providers(ProvidersInput),
@@ -96,60 +95,21 @@ struct DeploymentInput {
     litellm_params: JsonObject,
 }
 
+#[derive(Serialize)]
+struct ProviderOutput {
+    providers: Vec<Option<String>>,
+    group_provider: Option<String>,
+    configured: bool,
+}
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Redact(case) => {
-                let values = case
-                    .values
-                    .iter()
-                    .map(|key| {
-                        redact_logged_api_key(
-                            key.value.as_deref(),
-                            key.already_redacted,
-                            key.key_alias.as_deref(),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                Ok(json!(values))
-            }
-            Input::Project(case) => {
-                let policy = SpendSanitizePolicy {
-                    store_bodies: case.store_bodies,
-                    max_string_length: 0,
-                };
-                let record = project_spend_logs_metadata(
-                    case.metadata.as_ref(),
-                    case.arguments.clone(),
-                    &policy,
-                )
-                .or_value_error()?;
-                serde_json::to_value(record).or_value_error()
-            }
-            Input::AccessGroups(case) => {
-                let mut params = JsonObject::new();
-                if let Some(metadata) = &case.metadata {
-                    params.insert("metadata".to_owned(), Json::Object(metadata.clone()));
-                }
-                if let Some(metadata) = &case.litellm_metadata {
-                    params.insert(
-                        "litellm_metadata".to_owned(),
-                        Json::Object(metadata.clone()),
-                    );
-                }
-                let auth_groups = case
-                    .auth_groups
-                    .as_ref()
-                    .map(|groups| Json::List(groups.iter().cloned().map(Json::Text).collect()));
-                let groups = request_model_access_groups(&AccessGroupSources {
-                    standard_logging_object: case.standard_logging_object.as_ref(),
-                    litellm_params: Some(&params),
-                    auth_groups: auth_groups.as_ref(),
-                });
-                serde_json::to_value(groups).or_value_error()
-            }
+            Input::Redact(case) => redact(case),
+            Input::Project(case) => project(case),
+            Input::AccessGroups(case) => access_groups(case),
             Input::OcrUsage(case) => serde_json::to_value(extract_usage_for_ocr_call(
                 case.usage_info.as_ref(),
                 case.attribute_present.then_some(&case.attribute_usage_info),
@@ -158,6 +118,55 @@ impl Helper for Op {
             Input::Providers(case) => providers(case),
         }
     }
+}
+
+fn redact(case: &RedactInput) -> HelperResult {
+    let values = case
+        .values
+        .iter()
+        .map(|key| {
+            redact_logged_api_key(
+                key.value.as_deref(),
+                key.already_redacted,
+                key.key_alias.as_deref(),
+            )
+        })
+        .collect::<Vec<_>>();
+    serde_json::to_value(values).or_value_error()
+}
+
+fn project(case: &ProjectInput) -> HelperResult {
+    let policy = SpendSanitizePolicy {
+        store_bodies: case.store_bodies,
+        max_string_length: 0,
+    };
+    let record =
+        project_spend_logs_metadata(case.metadata.as_ref(), case.arguments.clone(), &policy)
+            .or_value_error()?;
+    serde_json::to_value(record).or_value_error()
+}
+
+fn access_groups(case: &AccessGroupsInput) -> HelperResult {
+    let mut params = JsonObject::new();
+    if let Some(metadata) = &case.metadata {
+        params.insert("metadata".to_owned(), Json::Object(metadata.clone()));
+    }
+    if let Some(metadata) = &case.litellm_metadata {
+        params.insert(
+            "litellm_metadata".to_owned(),
+            Json::Object(metadata.clone()),
+        );
+    }
+    let auth_groups = case
+        .auth_groups
+        .as_ref()
+        .map(|groups| Json::List(groups.iter().cloned().map(Json::Text).collect()));
+    let groups = request_model_access_groups(&AccessGroupSources {
+        standard_logging_object: case.standard_logging_object.as_ref(),
+        litellm_params: Some(&params),
+        auth_groups: auth_groups.as_ref(),
+    });
+    serde_json::to_value(groups).or_value_error()
 }
 
 fn providers(input: &ProvidersInput) -> HelperResult {
@@ -175,6 +184,10 @@ fn providers(input: &ProvidersInput) -> HelperResult {
         policies: ProviderPolicies::default(),
         globals: GlobalCredentials::default(),
     };
+    provider_results(input, &context)
+}
+
+fn provider_results(input: &ProvidersInput, context: &ResolutionContext<'_>) -> HelperResult {
     let selection = ProxySelection {
         environment: input.env_proxy,
         global: input.global_proxy,
@@ -186,7 +199,7 @@ fn providers(input: &ProvidersInput) -> HelperResult {
         .collect();
     let resolved: Vec<Option<String>> = identities
         .iter()
-        .map(|identity| deployment_provider(identity, &selection, &context))
+        .map(|identity| deployment_provider(identity, selection, context))
         .collect();
     let matching: Vec<DeploymentIdentity<'_>> = input
         .deployments
@@ -200,21 +213,14 @@ fn providers(input: &ProvidersInput) -> HelperResult {
         global_use_litellm_proxy: input.global_proxy,
         deployment_use_litellm_proxy: Vec::new(),
     };
-    let group_provider = model_group_provider(&input.model_group, &matching, &settings, &context);
-    let recognized = input
-        .recognized
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<String>>();
-    let team_public = input
-        .team_public
-        .iter()
-        .cloned()
-        .collect::<BTreeSet<String>>();
+    let group_provider = model_group_provider(&input.model_group, &matching, &settings, context);
+    let recognized = input.recognized.iter().cloned().collect();
+    let team_public = input.team_public.iter().cloned().collect();
     let configured = configured_model_group(&input.model_group, &recognized, &team_public);
-    Ok(json!({
-        "providers": resolved,
-        "group_provider": group_provider,
-        "configured": configured,
-    }))
+    serde_json::to_value(ProviderOutput {
+        providers: resolved,
+        group_provider,
+        configured,
+    })
+    .or_value_error()
 }

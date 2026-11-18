@@ -47,5 +47,11 @@ calls:
         user_api_key_matched_model_access_groups: [stamp]
       litellm_metadata: null
       auth_groups: null
+  - spend_attribution:
+      function: access_groups
+      standard_logging_object: null
+      metadata: {user_api_key_auth: null}
+      litellm_metadata: null
+      auth_groups: [detached]
 env: {}
 compare: {ignore: []}
