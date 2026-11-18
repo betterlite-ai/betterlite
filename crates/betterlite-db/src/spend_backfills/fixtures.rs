@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::SPEND_BACKFILL_TABLES;
 use chrono::{NaiveDate, NaiveDateTime};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
@@ -8,11 +9,9 @@ use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
-use tokio_postgres::{Client, Config, NoTls};
+use tokio_postgres::{Client, NoTls};
 
 use crate::postgres_store::session::PostgresStore;
-
-pub const SCHEMA_SQL: &str = include_str!("fixtures/schema.sql");
 
 const LOG_SQL: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, api_key, spend, total_tokens, "startTime") VALUES ($1, $2, $3, $4, $5)"#;
 const TOOL_SQL: &str = r#"INSERT INTO "LiteLLM_SpendLogToolIndex" (request_id, tool_name, start_time) VALUES ($1, $2, $3)"#;
@@ -76,10 +75,11 @@ impl SpendBackfillCase {
         let url = Environment::parse_from(["spend-backfills"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
+        let tables = vec![SPEND_BACKFILL_TABLES.to_owned()];
+        let fixture = PostgresFixture::provision_with_statements(url.as_ref(), tables)
             .resolve()
             .await
-            .expect("a test schema");
+            .expect("a test database");
         let store = store(&fixture, session_time_zone);
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
@@ -87,10 +87,6 @@ impl SpendBackfillCase {
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .batch_execute(SCHEMA_SQL)
-            .await
-            .expect("the pinned tables");
         Self {
             fixture,
             store,
@@ -111,7 +107,10 @@ impl SpendBackfillCase {
         if let Some(pool) = store.pool {
             pool.close();
         }
-        fixture.close_async().await.expect("the schema is dropped");
+        fixture
+            .close_async()
+            .await
+            .expect("the database is dropped");
     }
 
     pub async fn seed_log(&self, seed: SpendLogSeed<'_>) {
@@ -215,14 +214,8 @@ impl SpendBackfillCase {
     }
 }
 
-// parse the URL: options.config re-encodes the schema option's leading space as '+', which Postgres rejects
 fn store(fixture: &PostgresFixture, session_time_zone: Option<&str>) -> PostgresStore {
-    let mut configuration: Config = fixture
-        .options
-        .url
-        .expose_secret()
-        .parse()
-        .expect("the fixture URL parses");
+    let mut configuration = fixture.options.config.clone();
     let previous = configuration.get_options().unwrap_or_default().to_owned();
     if let Some(zone) = session_time_zone {
         configuration.options(format!("{previous} -ctimezone={zone}"));

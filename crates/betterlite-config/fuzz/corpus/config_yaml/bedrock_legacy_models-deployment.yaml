@@ -1,0 +1,45 @@
+model_list:
+- model_name: jurassic
+  litellm_params:
+    model: bedrock/ai21.j2-mid-v1
+    maxTokens: 256
+    temperature: 0.4
+    topP: 0.9
+    stopSequences: [END]
+    frequencePenalty: {scale: 0}
+    presencePenalty: {scale: 1}
+    countPenalty: {scale: 2}
+- model_name: cohere
+  litellm_params:
+    model: bedrock/cohere.command-text-v14
+    max_tokens: 128
+    temperature: 0
+    return_likelihood: GENERATION
+- model_name: llama
+  litellm_params:
+    model: bedrock/meta.llama3-8b-instruct-v1:0
+    maxTokenCount: 64
+    topP: 1
+- model_name: mistral
+  litellm_params:
+    model: bedrock/mistral.mistral-7b-instruct-v0:2
+    max_tokens: 32
+    top_p: 0.5
+    top_k: 40
+    stop: [END]
+- model_name: titan
+  litellm_params:
+    model: bedrock/amazon.titan-text-express-v1
+    maxTokenCount: 0
+    stopSequences: []
+    temperature: 1.0
+    topP: 0.75
+- model_name: claude2
+  litellm_params:
+    model: bedrock/anthropic.claude-v2
+    max_tokens_to_sample: 512
+    stop_sequences: [END]
+    temperature: 0.5
+    top_k: 8
+    top_p: 0.9
+    anthropic_version: bedrock-2023-05-31

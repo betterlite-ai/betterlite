@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-claude-invoke-response
+call:
+  bedrock_claude_invoke:
+    function: response
+    calls:
+      - model: claude-plain
+        raw_text: '{"id": "msg_bdrk_01", "model": "claude-plain", "type": "message", "role": "assistant", "content": [{"type": "text", "text": "hi"}], "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 2}}'
+        messages: [{role: user, content: hello}]
+        optional_params: {}
+        litellm_params: {}
+        now: 1767225600
+env: {}
+compare: {ignore: []}

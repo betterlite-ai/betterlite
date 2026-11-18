@@ -1,9 +1,5 @@
 use betterlite_db::migration_deploy::catalog::Migration;
-use betterlite_db::{
-    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
-    schema_identity_history, schema_managed_resources, schema_policy_resources,
-    schema_routing_state,
-};
+use betterlite_db::migration_ledger::baseline::PACKAGED_CATALOGS;
 
 // baseline detection compares this file's SHA256 with the one recorded for the packaged migrations
 pub const SCHEMA_PRISMA: &[u8] =
@@ -12,17 +8,7 @@ pub const SCHEMA_PRISMA: &[u8] =
 // The migration files the crates ship, in the timestamp order prisma migrate applies them.
 #[must_use]
 pub fn migrations() -> Vec<Migration> {
-    let catalogs = [
-        schema_baseline::MIGRATION_CATALOG,
-        schema_daily_usage::MIGRATION_CATALOG,
-        schema_managed_resources::MIGRATION_CATALOG,
-        schema_identity_history::MIGRATION_CATALOG,
-        schema_policy_resources::MIGRATION_CATALOG,
-        schema_routing_state::MIGRATION_CATALOG,
-        schema_budget_windows::MIGRATION_CATALOG,
-        schema_agent_identity::MIGRATION_CATALOG,
-    ];
-    let mut migrations: Vec<Migration> = catalogs
+    let mut migrations: Vec<Migration> = PACKAGED_CATALOGS
         .into_iter()
         .flat_map(|catalog| catalog.files)
         .map(|file| Migration {

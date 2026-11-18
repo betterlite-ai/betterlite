@@ -175,7 +175,7 @@ async fn database() -> (PostgresFixture, Client, String) {
     let url = Environment::parse_from(["request-log-index-catalog-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), Vec::new())
         .resolve()
         .await
         .unwrap();
