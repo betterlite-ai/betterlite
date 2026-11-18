@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -93,32 +94,40 @@ impl RecordingLease {
 }
 
 impl LockCache for RecordingLease {
-    async fn get_owner(&self, _key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
-        Ok(self.owner.lock().unwrap().clone().map(String::into_bytes))
+    fn get_owner(
+        &self,
+        _key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
+        ready(Ok(self
+            .owner
+            .lock()
+            .unwrap()
+            .clone()
+            .map(String::into_bytes)))
     }
 
-    async fn set_owner_if_absent(
+    fn set_owner_if_absent(
         &self,
         _key: &str,
         owner: &str,
         _ttl_seconds: i64,
-    ) -> Result<bool, LockCacheError> {
+    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         let mut held = self.owner.lock().unwrap();
         if held.is_some() {
-            return Ok(false);
+            return ready(Ok(false));
         }
         *held = Some(owner.to_owned());
         drop(held);
         self.acquired.lock().unwrap().push(owner.to_owned());
-        Ok(true)
+        ready(Ok(true))
     }
 
-    async fn delete(&self, _key: &str) -> Result<i64, LockCacheError> {
+    fn delete(&self, _key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         let removed = self.owner.lock().unwrap().take();
         let mut deletes = self.deletes.lock().unwrap();
         *deletes = deletes.saturating_add(1);
         drop(deletes);
-        Ok(i64::from(removed.is_some()))
+        ready(Ok(i64::from(removed.is_some())))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
