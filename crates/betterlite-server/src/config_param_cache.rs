@@ -242,7 +242,6 @@ where
     ClientError: Error + Send + Sync + 'static,
 {
     match cached {
-        Json::Text(text) if text == MISS_MARKER => Ok(None),
         Json::Object(_) => {
             let wire = serde_json::to_value(cached)
                 .map_err(|source| ConfigParamCacheError::Decode { source })?;
@@ -250,6 +249,7 @@ where
                 .map_err(|source| ConfigParamCacheError::Decode { source })?;
             Ok(Some(row))
         }
+        // the only other entry the cache holds is the miss marker, and a marker reads as a miss
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Ok(None),
     }
 }
