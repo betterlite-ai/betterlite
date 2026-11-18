@@ -48,10 +48,10 @@ pub(super) fn logging_state(recorded: Option<&str>) -> Result<LoggingState, Box<
         Duration::default,
     )
     .map_err(failure)?;
-    if let Some(recorded) = recorded {
+    if let Some(recording) = recorded {
         state.model_call_details.insert(
             "original_response".to_owned(),
-            Json::Text(recorded.to_owned()),
+            Json::Text(recording.to_owned()),
         );
     }
     Ok(state)

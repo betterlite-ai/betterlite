@@ -157,9 +157,9 @@ fn chat_usage(usage: Option<&ResponseApiUsage>) -> Result<Value, Error> {
             .as_ref()
             .map_or(Value::Null, completion_details_value),
     );
-    if let Some(cost) = cost {
+    if let Some(amount) = cost {
         // LiteLLM types cost as a Python float, so model_dump prints an integer cost as 2.0
-        fields.insert("cost".to_owned(), Value::from(cost.as_f64()));
+        fields.insert("cost".to_owned(), Value::from(amount.as_f64()));
     }
     Ok(Value::Object(fields))
 }
@@ -196,8 +196,8 @@ fn prompt_details_value(details: &PromptTokensDetails) -> Value {
             details.google_maps_grounding_requests,
         ),
     ] {
-        if let Some(counter) = counter {
-            fields.insert(key.to_owned(), Value::from(counter));
+        if let Some(amount) = counter {
+            fields.insert(key.to_owned(), Value::from(amount));
         }
     }
     Value::Object(fields)
