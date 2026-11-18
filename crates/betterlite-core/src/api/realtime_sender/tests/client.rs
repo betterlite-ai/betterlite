@@ -35,6 +35,24 @@ async fn realtime_client_send_translation() {
 }
 
 #[tokio::test]
+async fn non_beta_client_gets_the_event_untranslated() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    let callbacks = no_guardrails();
+    let mut sender = RealtimeSender {
+        state: &mut state,
+        provider: Some(&fixture.provider),
+        guardrails: &callbacks,
+    };
+    let done = parsed(r#"{"type":"conversation.item.done"}"#);
+    assert!(sender.send_event_to_client(&done, "raw").await.unwrap());
+    assert_eq!(
+        fixture.client_log.sent(),
+        vec![r#"{"type":"conversation.item.done"}"#.to_owned()]
+    );
+}
+
+#[tokio::test]
 async fn nonobject_events_are_forwarded_untranslated() {
     let fixture = Fixture::new();
     let mut state = fixture.state();
