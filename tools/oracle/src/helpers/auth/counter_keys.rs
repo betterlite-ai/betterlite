@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_auth::spend_batch::keys::{
-    CounterEntities, PostCallCounters, admission_counter_keys, post_call_counter_keys,
+    CounterId, EntityCounterIds, PostCallCounterKeys, admission_counter_keys,
+    post_call_counter_keys,
 };
 use betterlite_db::budget_permission_rows::JsonData;
 use serde::Deserialize;
@@ -67,17 +68,17 @@ fn admission_keys(fields: &AdmissionFields) -> Result<BTreeSet<String>, Box<Help
 }
 
 fn post_call_keys(fields: &PostCallFields) -> BTreeSet<String> {
-    post_call_counter_keys(&PostCallCounters {
-        entities: CounterEntities {
-            key_token: fields.token.as_deref(),
-            team: fields.team_id.as_deref(),
-            user: fields.user_id.as_deref(),
-            end_user: fields.end_user_id.as_deref(),
-            org: fields.org_id.as_deref(),
-            project: fields.project_id.as_deref(),
+    post_call_counter_keys(&PostCallCounterKeys {
+        entity: EntityCounterIds {
+            token: CounterId::from_text(fields.token.as_deref()),
+            team_id: CounterId::from_text(fields.team_id.as_deref()),
+            user_id: CounterId::from_text(fields.user_id.as_deref()),
+            org_id: CounterId::from_text(fields.org_id.as_deref()),
+            project_id: CounterId::from_text(fields.project_id.as_deref()),
+            end_user_id: CounterId::from_text(fields.end_user_id.as_deref()),
         },
         tags: &fields.tags,
-        access_groups: &fields.model_access_groups,
+        model_access_groups: &fields.model_access_groups,
     })
 }
 
