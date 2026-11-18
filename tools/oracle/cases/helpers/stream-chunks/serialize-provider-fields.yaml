@@ -1,0 +1,95 @@
+kind: helper
+name: stream-chunks-serialize-provider-fields
+call:
+  b8602:
+    function: chunk_view
+    view: serialized
+    chunks:
+      - kind: stream
+        body:
+          id: chatcmpl-psf-1
+          object: chat.completion.chunk
+          created: 10
+          model: gpt-4o
+          provider_specific_fields:
+            nullable: null
+            nested: {a: null, b: 1}
+            items: [null, {c: null}]
+          choices:
+            - index: 0
+              delta: {content: hi, role: assistant}
+      - kind: stream
+        body:
+          id: chatcmpl-psf-2
+          object: chat.completion.chunk
+          created: 11
+          model: gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: hi
+                role: assistant
+                provider_specific_fields:
+                  nullable: null
+                  nested: {a: null, b: 1}
+      - kind: full
+        body:
+          id: chatcmpl-psf-3
+          object: chat.completion
+          created: 12
+          model: gpt-4o
+          choices:
+            - index: 0
+              finish_reason: stop
+              provider_specific_fields: {nullable: null}
+              message:
+                role: assistant
+                content: hi
+                provider_specific_fields:
+                  nullable: null
+                  nested: {a: null, b: 1}
+      - kind: stream
+        body:
+          id: chatcmpl-psf-4
+          object: chat.completion.chunk
+          created: 13
+          model: gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: hi
+                role: assistant
+                tool_calls:
+                  - index: 0
+                    type: function
+                    function: {name: null, arguments: "{}"}
+                thinking_blocks:
+                  - {type: thinking, thinking: t, signature: null}
+              logprobs:
+                content:
+                  - token: hi
+                    bytes: null
+                    logprob: -0.1
+                    top_logprobs:
+                      - {token: hi, bytes: null, logprob: -0.1}
+      - kind: event
+        body:
+          type: response.created
+          nullable: null
+          response: {id: null, status: in_progress}
+      - kind: full
+        body:
+          id: chatcmpl-psf-5
+          object: chat.completion
+          created: 14
+          model: gpt-4o
+          choices:
+            - index: 0
+              finish_reason: stop
+              message:
+                role: assistant
+                content: hi
+                reasoning_items:
+                  - {type: reasoning, id: rs-1, encrypted_content: null, summary: []}
+env: {}
+compare: {ignore: []}
