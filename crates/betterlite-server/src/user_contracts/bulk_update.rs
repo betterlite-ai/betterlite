@@ -1,23 +1,21 @@
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 
 use crate::proxy_request_contracts::user::{UpdateUserFields, UpdateUserRequest};
-use crate::proxy_request_contracts::{ContractError, decode, require_object};
+use crate::proxy_request_contracts::{ContractError, Fields, decode, require_object};
 
 const SELECTION_MISSING: &str = "Must specify either 'users' for individual updates or 'all_users=True' with 'user_updates' for bulk updates";
 const SELECTION_CONFLICT: &str =
     "Cannot specify both 'users' and 'all_users=True'. Choose one approach.";
 
-// The wrapper keeps pydantic's absent default and its explicit null apart; each nested record decodes like B8411's request.
+// The one scalar this wrapper decodes itself; each nested record keeps B8411's own request decoder.
 #[derive(Deserialize)]
-struct BulkUpdateUserWire {
-    #[serde(default)]
-    users: Option<Vec<JsonValue>>,
+struct AllUsersWire {
     #[serde(default)]
     all_users: Option<bool>,
-    #[serde(default)]
-    user_updates: Option<JsonValue>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,32 +25,55 @@ pub struct BulkUpdateUserRequest {
     pub user_updates: Option<UpdateUserFields>,
 }
 
+// Each row is a whole UpdateUserRequest, so B8411's blank-budget, selector, role and fields-set checks all run.
+fn decode_rows(fields: &Fields) -> Result<Option<Vec<UpdateUserRequest>>, ContractError> {
+    let Some(raw) = fields.get("users") else {
+        return Ok(None);
+    };
+    if matches!(raw, JsonData::Null) {
+        return Ok(None);
+    }
+    let JsonData::Array(rows) = raw else {
+        return Err(ContractError::Decode {
+            source: serde_json::Error::custom("users is not a JSON array"),
+        });
+    };
+    let mut requests = Vec::with_capacity(rows.len());
+    for row in rows {
+        let value = serde_json::to_value(row).map_err(ContractError::from)?;
+        requests.push(UpdateUserRequest::from_value(&value)?);
+    }
+    Ok(Some(requests))
+}
+
+// UpdateUserRequestNoUserIDorEmail has no selector, so the updates model runs the same decoder without one.
+fn decode_updates(fields: &Fields) -> Result<Option<UpdateUserFields>, ContractError> {
+    let Some(raw) = fields.get("user_updates") else {
+        return Ok(None);
+    };
+    if matches!(raw, JsonData::Null) {
+        return Ok(None);
+    }
+    let value = serde_json::to_value(raw).map_err(ContractError::from)?;
+    Ok(Some(UpdateUserFields::from_value(&value)?))
+}
+
 impl BulkUpdateUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
         let fields = require_object(value)?;
+        // pydantic's field validator runs only for a supplied user_updates, explicit null included
         let supplied_updates = fields.contains_key("user_updates");
-        let wire: BulkUpdateUserWire = decode(&fields)?;
-        let users = wire
-            .users
-            .as_ref()
-            .map(|rows| rows.iter().map(UpdateUserRequest::from_value).collect())
-            .transpose()?;
-        let user_updates = wire
-            .user_updates
-            .as_ref()
-            .map(UpdateUserFields::from_value)
-            .transpose()?;
+        let users = decode_rows(&fields)?;
         let all_users = if fields.contains_key("all_users") {
-            wire.all_users
+            decode::<AllUsersWire>(&fields)?.all_users
         } else {
             Some(false)
         };
         let request = Self {
             users,
             all_users,
-            user_updates,
+            user_updates: decode_updates(&fields)?,
         };
-        // pydantic's field validator runs only for a supplied user_updates, explicit null included
         if supplied_updates {
             request.check_selection()?;
         }
