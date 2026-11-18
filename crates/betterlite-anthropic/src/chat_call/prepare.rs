@@ -21,7 +21,7 @@ use crate::request::BillingHeader;
 use crate::usage::ReasoningTokenCounter;
 
 use super::config::{ChatConfig, TransformOutcome, TransformRequest};
-use super::error::ChatCallError;
+use super::error::{ChatCallError, ConfigError};
 use super::transport::ChatTransport;
 use super::{CallStyle, ChatCall, ChatDeps};
 
@@ -70,17 +70,13 @@ where
             headers: &validated,
             billing_header: BillingHeader::Keep,
         };
-        let transformed = if call.style == CallStyle::Async {
-            deps.config.async_transform_outcome(&transform).await
-        } else {
-            deps.config.transform_outcome(&transform)
-        };
         let TransformOutcome {
             mut body,
-            headers: AnthropicHeaders {
-                values: mut headers,
-            },
-        } = transformed.map_err(|source| ChatCallError::Prepare { source })?;
+            headers: mapped,
+        } = map_request(deps.config, &transform, call.style)
+            .await
+            .map_err(|source| ChatCallError::Prepare { source })?;
+        let mut headers = mapped.values;
         deps.config
             .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
             .map_err(|source| ChatCallError::Filter { source })?;
@@ -98,6 +94,17 @@ where
             json_mode,
         })
     })
+}
+async fn map_request<Config: ChatConfig>(
+    config: &Config,
+    request: &TransformRequest<'_>,
+    style: CallStyle,
+) -> Result<TransformOutcome, ConfigError> {
+    if style == CallStyle::Async {
+        config.async_transform_outcome(request).await
+    } else {
+        config.transform_outcome(request)
+    }
 }
 fn take_params(mut popped: IndexMap<String, Json>) -> Result<Params, ParameterError> {
     let is_vertex_request = take_bool(&mut popped, "is_vertex_request", false)?;
