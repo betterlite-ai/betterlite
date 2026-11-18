@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-scan-key-tool-use
+call:
+  b3673:
+    operation: anthropic_scan_key
+    message: blocked
+    model: claude-test
+    original_response: null
+    stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
+    events: []
+    chunks:
+      - |-
+        event: content_block_start
+        data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"tool_1","name":"run","input":{"x":1}}}
+
+      - |-
+        event: message_delta
+        data: {"type":"message_delta","delta":{"stop_reason":"tool_use"}}
+
+    status_code: 400
+    message_id: msg_00000000-0000-0000-0000-000000000001
+env: {}
+compare: {ignore: []}
