@@ -1,0 +1,14 @@
+model_list:
+  - model_name: complexity-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        custom_dimensions:
+          - name: domain
+            weight: 0.8
+            keywords: [alpha, beta]
+            patterns: ['gamma', '[0-9]{2}']
+            scoring_mode: match_count
+          - name: brevity
+            weight: 1
+            patterns: ['^a{1,3}$']

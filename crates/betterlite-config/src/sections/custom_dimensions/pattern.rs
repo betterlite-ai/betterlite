@@ -1,0 +1,46 @@
+use std::fmt;
+
+mod cost;
+mod model;
+mod scan;
+
+pub const MAX_CUSTOM_PATTERN_REPEAT: u64 = 64;
+pub const MAX_CUSTOM_PATTERN_WORK: u64 = 2048;
+pub const MAX_CUSTOM_PATTERN_DEPTH: u64 = 16;
+pub const MAX_REPEAT: u64 = 4_294_967_295;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternProblem {
+    Syntax,
+    Unsupported,
+    Repeat,
+    Depth,
+    Work,
+}
+
+impl PatternProblem {
+    #[must_use]
+    pub const fn message(self) -> &'static str {
+        match self {
+            Self::Syntax => "is not a valid regex",
+            Self::Unsupported => "contains an unsupported regex construct",
+            Self::Repeat => {
+                "requires a single character or class repeated at most 64 times; use {n,m} instead of *, + or {n,}"
+            }
+            Self::Depth => "nests deeper than 16 levels",
+            Self::Work => "exceeds the per-pattern regex work budget",
+        }
+    }
+}
+
+impl fmt::Display for PatternProblem {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+pub fn pattern_work(pattern: &str) -> Result<u64, PatternProblem> {
+    let canonical = scan::canonical(pattern)?;
+    let nodes = model::parse(&canonical)?;
+    cost::work(&nodes)
+}
