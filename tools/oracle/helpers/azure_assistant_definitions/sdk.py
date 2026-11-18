@@ -1,12 +1,8 @@
-import asyncio
-import os
-from collections.abc import Coroutine, Generator
-from contextlib import contextmanager
+from collections.abc import Coroutine
 from dataclasses import dataclass
 from typing import Literal, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
-import litellm
 import pydantic
 from litellm.llms.azure.assistants import AzureAssistantsAPI
 from openai import AsyncAzureOpenAI, AzureOpenAI
@@ -145,41 +141,15 @@ def record(request: httpx.Request) -> JsonValue:
     body: JsonValue = None
     if request.content:
         body = JSON.validate_json(request.content)
+    headers = {name.lower(): value for name, value in request.headers.multi_items()}
     recorded: dict[str, JsonValue] = {
         "method": request.method,
         "url": str(request.url),
-        "api-key": request.headers.get("api-key"),
-        "authorization": request.headers.get("authorization"),
-        "openai-beta": request.headers.get("openai-beta"),
-        "accept": request.headers.get("accept"),
-        "content-type": request.headers.get("content-type"),
+        "api-key": headers.get("api-key"),
+        "authorization": headers.get("authorization"),
+        "openai-beta": headers.get("openai-beta"),
+        "accept": headers.get("accept"),
+        "content-type": headers.get("content-type"),
         "body": body,
     }
     return recorded
-
-
-@contextmanager
-def session(step: Step, canned: str) -> Generator[Wire, None, None]:
-    reply: Reply | None = None
-    if "reply" in step:
-        reply = step["reply"]
-    wire = Wire(canned, reply)
-    environment: dict[str, str] = {}
-    if "environment" in step:
-        environment = step["environment"]
-    saved = dict(os.environ)
-    os.environ.clear()
-    os.environ.update(environment)
-    sync_client = httpx.Client(transport=httpx.MockTransport(wire))
-    async_client = httpx.AsyncClient(transport=httpx.MockTransport(wire))
-    litellm.client_session = sync_client
-    litellm.aclient_session = async_client
-    try:
-        yield wire
-    finally:
-        litellm.client_session = None
-        litellm.aclient_session = None
-        sync_client.close()
-        asyncio.run(async_client.aclose())
-        os.environ.clear()
-        os.environ.update(saved)

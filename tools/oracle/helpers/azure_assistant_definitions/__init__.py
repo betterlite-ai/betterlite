@@ -1,10 +1,14 @@
 import asyncio
-from collections.abc import Coroutine
+import os
+from collections.abc import Coroutine, Generator
+from contextlib import contextmanager
 from typing import Literal, cast
 
+import httpx
+import litellm
+import openai
 from pydantic import JsonValue
 
-from azure_assistant_definitions.reports import client_report, report, reported
 from azure_assistant_definitions.sdk import (
     ASSISTANT,
     ASYNC_GET_CLIENT,
@@ -18,6 +22,7 @@ from azure_assistant_definitions.sdk import (
     PAGE,
     Call,
     Input,
+    Reply,
     Result,
     SdkClient,
     Settled,
@@ -26,8 +31,76 @@ from azure_assistant_definitions.sdk import (
     SuppliedMark,
     Values,
     Wire,
-    session,
 )
+
+
+@contextmanager
+def session(step: Step, canned: str) -> Generator[Wire, None, None]:
+    reply: Reply | None = None
+    if "reply" in step:
+        reply = step["reply"]
+    wire = Wire(canned, reply)
+    environment: dict[str, str] = {}
+    if "environment" in step:
+        environment = step["environment"]
+    saved = dict(os.environ)
+    os.environ.clear()
+    os.environ.update(environment)
+    sync_client = httpx.Client(transport=httpx.MockTransport(wire))
+    async_client = httpx.AsyncClient(transport=httpx.MockTransport(wire))
+    litellm.client_session = sync_client
+    litellm.aclient_session = async_client
+    try:
+        yield wire
+    finally:
+        litellm.client_session = None
+        litellm.aclient_session = None
+        sync_client.close()
+        asyncio.run(async_client.aclose())
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+@contextmanager
+def reported(wire: Wire) -> Generator[None, None, None]:
+    try:
+        yield
+    except openai.APIStatusError as error:
+        wire.error = {"kind": "status", "status": error.status_code}
+    except openai.OpenAIError:
+        wire.error = {"kind": "configuration"}
+    except ValueError:
+        wire.error = {"kind": "value"}
+
+
+def report(wire: Wire) -> JsonValue:
+    values: dict[str, JsonValue] = {"requests": wire.seen}
+    if wire.error is None:
+        values["kind"] = wire.kind
+        values["result"] = wire.result
+    else:
+        values["error"] = wire.error
+    return values
+
+
+def client_report(client: SdkClient, kind: str, source: str) -> JsonValue:
+    timeout = client.timeout
+    read_seconds: JsonValue = None
+    match timeout:
+        case float() | int() as seconds:
+            read_seconds = float(seconds)
+        case httpx.Timeout(read=float() as read):
+            read_seconds = float(read)
+        case None | httpx.Timeout():
+            read_seconds = None
+    values: dict[str, JsonValue] = {
+        "kind": kind,
+        "source": source,
+        "base_url": str(client.base_url).rstrip("/"),
+        "max_retries": client.max_retries,
+        "timeout": read_seconds,
+    }
+    return values
 
 
 def values_of(step: Step) -> Values:
