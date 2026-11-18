@@ -120,27 +120,34 @@ impl LocalWindows {
 
 impl UsageWindows for LocalWindows {
     fn read(&self, key: &str) -> Result<Option<Counts>, WindowError> {
-        if self.read_failures.load(Ordering::Relaxed)
-            || self.failing_read.lock().unwrap().as_deref() == Some(key)
-        {
-            return Err(WindowError::Unavailable);
-        }
-        Ok(self.counts.lock().unwrap().get(key).cloned())
-    }
-
-    fn write(&self, key: &str, counts: &Counts, ttl_seconds: i64) -> Result<(), WindowError> {
-        if self.write_failures.load(Ordering::Relaxed)
-            || self.failing_write.lock().unwrap().as_deref() == Some(key)
-        {
+        let failing = self
+            .failing_read
+            .lock()
+            .is_ok_and(|guard| guard.as_deref() == Some(key));
+        if self.read_failures.load(Ordering::Relaxed) || failing {
             return Err(WindowError::Unavailable);
         }
         self.counts
             .lock()
-            .unwrap()
+            .map(|counts| counts.get(key).cloned())
+            .map_err(|_| WindowError::Unavailable)
+    }
+
+    fn write(&self, key: &str, counts: &Counts, ttl_seconds: i64) -> Result<(), WindowError> {
+        let failing = self
+            .failing_write
+            .lock()
+            .is_ok_and(|guard| guard.as_deref() == Some(key));
+        if self.write_failures.load(Ordering::Relaxed) || failing {
+            return Err(WindowError::Unavailable);
+        }
+        self.counts
+            .lock()
+            .map_err(|_| WindowError::Unavailable)?
             .insert(key.to_owned(), counts.clone());
         self.ttls
             .lock()
-            .unwrap()
+            .map_err(|_| WindowError::Unavailable)?
             .insert(key.to_owned(), ttl_seconds);
         Ok(())
     }
