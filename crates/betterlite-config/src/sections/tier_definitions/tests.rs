@@ -3,13 +3,15 @@
 use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
+use secrecy::zeroize::Zeroize;
 use serde_json::Number;
 
 use crate::loader::ConfigLoader;
 use crate::sections::Section;
 use crate::sections::parse_section;
 use crate::sections::tier_definitions::{
-    Config, Raw, Settings, TierDefinition, TierEntry, TierModelEntry, TierParam, TierPool,
+    Config, ParamText, Raw, Settings, TierDefinition, TierEntry, TierModelEntry, TierParam,
+    TierPool,
 };
 
 fn parse(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
@@ -528,6 +530,13 @@ fn parameter_text_equality_compares_every_byte() {
     assert_eq!(first, same);
     assert_ne!(first, swapped);
     assert_ne!(first, longer);
+}
+
+#[test]
+fn a_parameter_text_zeroizes_its_bytes() {
+    let mut text = ParamText("sk-secret".to_owned());
+    text.zeroize();
+    assert!(text.0.is_empty());
 }
 
 #[test]
