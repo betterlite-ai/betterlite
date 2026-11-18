@@ -150,6 +150,24 @@ fn completion_region_uses_explicit_then_environment_without_session_region() {
 }
 
 #[test]
+fn explicit_completion_region_overrides_environment() {
+    let raw = serde_json::value::RawValue::from_string(String::from("\"ap-northeast-1\""))
+        .expect("region JSON");
+    let params = ParamMap::from([(String::from("aws_region_name"), raw)]);
+    assert!(matches!(
+        call_region(
+            &params,
+            crate::signing::target::RegionInputs {
+                environment_region_name: Some("eu-west-1"),
+                environment_region: Some("us-east-1"),
+                session_region: None,
+            }
+        ),
+        Ok(region) if region == "ap-northeast-1"
+    ));
+}
+
+#[test]
 fn chat_region_prefers_region_from_model_arn() {
     let params = ParamMap::new();
     assert!(matches!(
@@ -213,4 +231,13 @@ async fn stream_error_reads_only_the_bounded_error_body() {
     let error = stream_error(503, chunks).await;
     assert_eq!(error.status_code, 503);
     assert_eq!(error.message.len(), 65_536);
+}
+
+#[tokio::test]
+async fn stream_error_truncates_the_chunk_crossing_the_body_limit() {
+    let chunks = stream::iter(vec![Ok(vec![b'a'; 32_768]), Ok(vec![b'b'; 40_960])]);
+    let chunks: super::runtime::ChunkStream = Box::pin(chunks);
+    let error = stream_error(503, chunks).await;
+    assert_eq!(error.message.len(), 65_536);
+    assert!(error.message.as_bytes().ends_with(&vec![b'b'; 32_768]));
 }
