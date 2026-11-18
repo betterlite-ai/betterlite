@@ -37,13 +37,13 @@ impl WindowRedis for RecordingStore {
     async fn write_spend(&self, _key: &str, _cost: Decimal, _ttl: Duration) {}
 
     async fn write_increments(&self, operations: &[QueuedIncrement]) -> bool {
-        {
-            let mut spends = self.spends.lock().unwrap();
-            for operation in operations {
-                let total = spends.entry(operation.key.clone()).or_default();
-                *total = total.saturating_add(operation.increment_value);
-            }
+        let mut spends = self.spends.lock().unwrap();
+        let mut updated = spends.clone();
+        for operation in operations {
+            let total = updated.entry(operation.key.clone()).or_default();
+            *total = total.saturating_add(operation.increment_value);
         }
+        *spends = updated;
         true
     }
 }
