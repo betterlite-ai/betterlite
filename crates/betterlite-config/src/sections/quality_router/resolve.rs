@@ -69,7 +69,7 @@ impl RawPreferences {
     {
         Ok(Preferences {
             quality_tier: required_tier(
-                Some(self.quality_tier),
+                self.quality_tier,
                 &format!("{prefix}.quality_tier"),
                 lookup,
             )?,

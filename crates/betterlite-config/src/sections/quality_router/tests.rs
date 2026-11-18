@@ -433,7 +433,7 @@ model_list:
 
 #[test]
 fn an_empty_environment_quality_tier_is_refused() {
-    let source = "model_list:\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        quality_tier: os.environ/TIER\n";
+    let source = "model_list:\n  - model_name: router\n    litellm_params:\n      quality_router_config:\n        available_models: [fast]\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        quality_tier: os.environ/TIER\n";
     let error = settings(source, &[("TIER", "")]).unwrap_err();
     assert!(error.contains("quality_tier"), "{error}");
 }
@@ -461,7 +461,7 @@ model_list:
 #[case::fractional("quality_tier: 2.5")]
 fn a_wrongly_typed_quality_tier_is_refused(#[case] tier: &str) {
     let source = format!(
-        "model_list:\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        {tier}\n"
+        "model_list:\n  - model_name: router\n    litellm_params:\n      quality_router_config:\n        available_models: [fast]\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        {tier}\n"
     );
     let error = settings(&source, &[]).unwrap_err();
     assert!(error.contains("quality_tier"), "{error}");
@@ -469,9 +469,17 @@ fn a_wrongly_typed_quality_tier_is_refused(#[case] tier: &str) {
 
 #[test]
 fn a_preferences_block_without_a_quality_tier_is_refused() {
-    let source = "model_list:\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        keywords: [code]\n";
+    let source = "model_list:\n  - model_name: router\n    litellm_params:\n      quality_router_config:\n        available_models: [fast]\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        keywords: [code]\n";
     let error = settings(source, &[]).unwrap_err();
     assert!(error.contains("quality_tier"), "{error}");
+}
+
+#[test]
+fn an_explicit_null_available_models_list_is_empty() {
+    let source = "model_list:\n  - model_name: router\n    litellm_params:\n      quality_router_config:\n        available_models: null\n";
+    let resolved = settings(source, &[]).unwrap();
+    let config = resolved.deployments[0].config.as_ref().unwrap();
+    assert_eq!(config.available_models, Vec::<String>::new());
 }
 
 #[test]
@@ -481,7 +489,7 @@ model_list:
   - model_name: router
     litellm_params:
       quality_router_config:
-        available_models: null
+        available_models: [fast]
         default_model: null
         complexity_to_quality: null
   - model_name: fast
@@ -494,7 +502,7 @@ model_list:
 ";
     let resolved = settings(source, &[]).unwrap();
     let config = resolved.deployments[0].config.as_ref().unwrap();
-    assert_eq!(config.available_models, Vec::<String>::new());
+    assert_eq!(config.available_models, strings(&["fast"]));
     assert_eq!(config.default_model, None);
     assert_eq!(
         config.complexity_to_quality,
@@ -526,9 +534,9 @@ fn an_unknown_router_config_key_is_preserved_and_accepted() {
 
 #[test]
 fn an_unknown_preference_key_is_preserved_and_accepted() {
-    let source = "model_list:\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        quality_tier: 2\n        odd: x\n";
-    let deployment = only(source, &[]).unwrap();
-    let preferences = deployment.preferences.unwrap();
+    let source = "model_list:\n  - model_name: router\n    litellm_params:\n      quality_router_config:\n        available_models: [fast]\n  - model_name: fast\n    model_info:\n      litellm_routing_preferences:\n        quality_tier: 2\n        odd: x\n";
+    let resolved = settings(source, &[]).unwrap();
+    let preferences = resolved.deployments[1].preferences.as_ref().unwrap();
     assert_eq!(preferences.quality_tier, 2);
     assert_eq!(
         preferences.extras,

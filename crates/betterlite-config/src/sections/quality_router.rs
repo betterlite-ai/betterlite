@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use betterlite_models::decisions::Json;
@@ -90,7 +90,8 @@ struct RawRouterConfig {
 
 #[derive(Debug, Deserialize)]
 struct RawPreferences {
-    quality_tier: RawNumber,
+    // checked only for a deployment a router's available_models names, the skip LiteLLM makes before it reads them
+    quality_tier: Option<RawNumber>,
     keywords: Option<Vec<String>>,
     order: Option<RawNumber>,
     #[serde(flatten)]
@@ -139,6 +140,15 @@ pub struct Settings {
     pub deployments: Vec<Deployment>,
 }
 
+// everything a deployment resolves to before its preferences, which wait for every router's available_models
+struct PartialDeployment {
+    model_name: String,
+    config: Option<RouterConfig>,
+    preferences: Option<RawPreferences>,
+    preferences_path: String,
+    input_cost_per_token: Option<Decimal>,
+}
+
 impl Section for Raw {
     type Settings = Settings;
 
@@ -146,16 +156,41 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let mut deployments = Vec::with_capacity(self.model_list.len());
+        let mut partials = Vec::with_capacity(self.model_list.len());
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            deployments.push(deployment.resolve(index, lookup)?);
+            partials.push(deployment.resolve_without_preferences(index, lookup)?);
+        }
+        // a deployment no router's available_models names never carries a route, so LiteLLM skips its preferences
+        let referenced: BTreeSet<String> = partials
+            .iter()
+            .filter_map(|deployment| deployment.config.as_ref())
+            .flat_map(|config| config.available_models.iter().cloned())
+            .collect();
+        let mut deployments = Vec::with_capacity(partials.len());
+        for partial in partials {
+            let preferences = match partial.preferences {
+                Some(preferences) if referenced.contains(&partial.model_name) => {
+                    Some(preferences.resolve(&partial.preferences_path, lookup)?)
+                }
+                _ => None,
+            };
+            deployments.push(Deployment {
+                model_name: partial.model_name,
+                config: partial.config,
+                preferences,
+                input_cost_per_token: partial.input_cost_per_token,
+            });
         }
         Ok(Settings { deployments })
     }
 }
 
 impl RawDeployment {
-    fn resolve<L>(self, index: usize, lookup: &L) -> Result<Deployment, ConfigError>
+    fn resolve_without_preferences<L>(
+        self,
+        index: usize,
+        lookup: &L,
+    ) -> Result<PartialDeployment, ConfigError>
     where
         L: EnvironmentLookup,
     {
@@ -171,23 +206,14 @@ impl RawDeployment {
                 )
             })
             .transpose()?;
-        let preferences = self
-            .model_info
-            .litellm_routing_preferences
-            .map(|preferences| {
-                preferences.resolve(
-                    &format!("{prefix}.model_info.litellm_routing_preferences"),
-                    lookup,
-                )
-            })
-            .transpose()?;
         let cost_path = format!("{prefix}.model_info.input_cost_per_token");
         let input_cost_per_token =
             resolve::resolve_price(self.model_info.input_cost_per_token, &cost_path, lookup)?;
-        Ok(Deployment {
+        Ok(PartialDeployment {
             model_name,
             config,
-            preferences,
+            preferences: self.model_info.litellm_routing_preferences,
+            preferences_path: format!("{prefix}.model_info.litellm_routing_preferences"),
             input_cost_per_token,
         })
     }

@@ -68,14 +68,15 @@ fn keyword_ties_take_quality_then_order_then_price_then_name() {
         ],
     );
     assert_eq!(pick(&by_order, &request).as_deref(), Some("pricier"));
+    // the cheaper model sorts last, so only the cost key keeps it
     let by_price = router(
-        &["pricier", "cheaper"],
+        &["alpha-pricier", "zeta-cheaper"],
         &[
-            keyword(priced(deployment("pricier", 2), 5, 1), "k"),
-            keyword(priced(deployment("cheaper", 2), 1, 1), "k"),
+            keyword(priced(deployment("alpha-pricier", 2), 5, 1), "k"),
+            keyword(priced(deployment("zeta-cheaper", 2), 1, 1), "k"),
         ],
     );
-    assert_eq!(pick(&by_price, &request).as_deref(), Some("cheaper"));
+    assert_eq!(pick(&by_price, &request).as_deref(), Some("zeta-cheaper"));
     let by_name = router(
         &["bbb", "aaa"],
         &[
@@ -110,26 +111,28 @@ fn an_unset_order_and_cost_sort_after_declared_ones() {
 #[test]
 fn a_tier_tie_takes_order_then_price_then_name() {
     let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    // the lower order costs more and sorts last, so only the order-first key keeps it
     let by_order = router_with(
-        &["late", "early"],
+        &["zeta-first", "alpha-cheap"],
         Some(table(&[("SIMPLE", 2)])),
         None,
         &[
-            ordered(deployment("late", 2), 3),
-            ordered(deployment("early", 2), 1),
+            ordered(priced(deployment("zeta-first", 2), 5, 1), 1),
+            ordered(priced(deployment("alpha-cheap", 2), 1, 1), 3),
         ],
     );
-    assert_eq!(pick(&by_order, &request).as_deref(), Some("early"));
+    assert_eq!(pick(&by_order, &request).as_deref(), Some("zeta-first"));
+    // the cheaper model sorts last, so only the cost-first key keeps it
     let by_price = router_with(
-        &["pricey", "cheap"],
+        &["alpha-pricey", "zeta-cheap"],
         Some(table(&[("SIMPLE", 2)])),
         None,
         &[
-            priced(deployment("pricey", 2), 5, 1),
-            priced(deployment("cheap", 2), 1, 1),
+            priced(deployment("alpha-pricey", 2), 5, 1),
+            priced(deployment("zeta-cheap", 2), 1, 1),
         ],
     );
-    assert_eq!(pick(&by_price, &request).as_deref(), Some("cheap"));
+    assert_eq!(pick(&by_price, &request).as_deref(), Some("zeta-cheap"));
     let by_name = router_with(
         &["bbb", "aaa"],
         Some(table(&[("SIMPLE", 2)])),
@@ -424,4 +427,32 @@ fn the_shipped_seeds_define_the_routers_document() {
     let request = messages(r#"[{"role":"user","content":"please write code"}]"#);
     assert_eq!(pick(&router, &request).as_deref(), Some("quality-fast"));
     text_settings(CONFIG_INVALID).unwrap_err();
+}
+
+const UNUSED_PREFERENCES_CONFIG: &str = "\
+model_list:
+  - model_name: qr
+    litellm_params:
+      quality_router_config:
+        available_models: [one]
+  - model_name: one
+    model_info:
+      litellm_routing_preferences: {quality_tier: 1}
+  - model_name: unused
+    model_info:
+      litellm_routing_preferences: {keywords: [code]}
+";
+
+// LiteLLM skips a deployment available_models never names before it validates that deployment's preferences
+#[test]
+fn an_unused_deployment_keeps_its_preferences_unchecked() {
+    let settings = text_settings(UNUSED_PREFERENCES_CONFIG).unwrap();
+    assert_eq!(settings.deployments.len(), 3);
+    let referenced = settings.deployments[1].preferences.as_ref().unwrap();
+    assert_eq!(referenced.quality_tier, 1);
+    assert_eq!(settings.deployments[2].preferences, None);
+    let config = settings.deployments[0].config.as_ref().unwrap();
+    let router = QualityRouter::new("qr", Some(config), None, &settings.deployments).unwrap();
+    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    assert_eq!(pick(&router, &request).as_deref(), Some("one"));
 }
