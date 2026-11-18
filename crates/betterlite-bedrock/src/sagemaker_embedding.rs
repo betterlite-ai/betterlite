@@ -16,10 +16,10 @@ pub enum EmbeddingConfig {
 // get_model_config: the voyage check runs first, so a cohere-voyage model is a Voyage one
 #[must_use]
 pub fn get_model_config(model: &str) -> EmbeddingConfig {
-    let model = model.to_lowercase();
-    if model.contains("voyage") {
+    let lowered = model.to_lowercase();
+    if lowered.contains("voyage") {
         EmbeddingConfig::Voyage
-    } else if model.contains("cohere") {
+    } else if lowered.contains("cohere") {
         EmbeddingConfig::Cohere
     } else {
         EmbeddingConfig::HuggingFace
