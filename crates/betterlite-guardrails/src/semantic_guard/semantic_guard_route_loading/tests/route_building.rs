@@ -283,6 +283,23 @@ fn a_file_case_variant_null_stays_text() {
 }
 
 #[test]
+fn a_file_merge_key_keeps_merged_route_fields() {
+    let (_folder, path) = routes_file(
+        "- <<: {description: merged description, similarity_threshold: 0.8}\n  route_name: merged_route\n  utterances: [merged utterance]\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap(),
+        vec![route(
+            "merged_route",
+            Some("merged description"),
+            &["merged utterance"],
+            0.8
+        )]
+    );
+}
+
+#[test]
 fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
     let (_folder, path) = routes_file(
         "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n    - 1:30.5\n",

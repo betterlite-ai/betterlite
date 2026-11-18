@@ -41,15 +41,89 @@ pub enum CustomRoutesError {
 struct PyYamlTextSpans<'sink> {
     spans: &'sink mut Vec<(Span, String)>,
     non_text: &'sink Regex,
+    collections: Vec<YamlCollection>,
+}
+
+enum YamlCollection {
+    Mapping {
+        expecting_key: bool,
+        key: Option<String>,
+    },
+    Sequence {
+        quote_text: bool,
+    },
+}
+
+impl PyYamlTextSpans<'_> {
+    fn start_value(&mut self) -> bool {
+        match self.collections.last_mut() {
+            Some(YamlCollection::Mapping { expecting_key, key }) if !*expecting_key => {
+                *expecting_key = true;
+                let field = key.take();
+                matches!(
+                    field.as_deref(),
+                    Some("route_name" | "description" | "utterances")
+                )
+            }
+            Some(YamlCollection::Sequence { quote_text }) => *quote_text,
+            Some(YamlCollection::Mapping { .. }) | None => false,
+        }
+    }
+
+    fn scalar(&mut self, text: &str) -> bool {
+        match self.collections.last_mut() {
+            Some(YamlCollection::Mapping { expecting_key, key }) if *expecting_key => {
+                *key = Some(text.to_owned());
+                *expecting_key = false;
+                false
+            }
+            Some(YamlCollection::Mapping { expecting_key, key }) => {
+                *expecting_key = true;
+                let field = key.take();
+                matches!(
+                    field.as_deref(),
+                    Some("route_name" | "description" | "utterances")
+                )
+            }
+            Some(YamlCollection::Sequence { quote_text }) => *quote_text,
+            None => false,
+        }
+    }
 }
 
 impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
     fn on_event(&mut self, event: Event<'input>, span: Span) {
-        let Event::Scalar(text, ScalarStyle::Plain, _, None) = event else {
-            return;
-        };
-        if !self.non_text.is_match(text.as_ref()) {
-            self.spans.push((span, text.into_owned()));
+        match event {
+            Event::MappingStart(..) => {
+                let _ = self.start_value();
+                self.collections.push(YamlCollection::Mapping {
+                    expecting_key: true,
+                    key: None,
+                });
+            }
+            Event::SequenceStart(..) => {
+                let quote_text = self.start_value();
+                self.collections
+                    .push(YamlCollection::Sequence { quote_text });
+            }
+            Event::MappingEnd => {
+                let _ = self.collections.pop();
+            }
+            Event::SequenceEnd => {
+                let _ = self.collections.pop();
+            }
+            Event::Scalar(text, ScalarStyle::Plain, _, None)
+                if self.scalar(text.as_ref()) && !self.non_text.is_match(text.as_ref()) =>
+            {
+                self.spans.push((span, text.into_owned()));
+            }
+            Event::Scalar(text, ..) => {
+                let _ = self.scalar(text.as_ref());
+            }
+            Event::Alias(_) | Event::UnresolvedAlias(_) => {
+                let _ = self.start_value();
+            }
+            _ => {}
         }
     }
 }
@@ -69,6 +143,7 @@ fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
             &mut PyYamlTextSpans {
                 spans: &mut spans,
                 non_text: &non_text,
+                collections: Vec::new(),
             },
             false,
         )
