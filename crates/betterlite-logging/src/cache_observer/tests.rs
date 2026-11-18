@@ -222,6 +222,28 @@ fn cache_observation_accepts_a_valid_entry() {
     assert!(observation(FINGERPRINT, 100, 300.0).validated().is_some());
 }
 
+#[test]
+fn cache_observation_accepts_the_zero_time_boundary() {
+    let entry = CacheObservation {
+        fingerprint: FINGERPRINT.to_owned(),
+        cached_tokens: 1,
+        observed_at: 0.0,
+        expires_at: 0.0,
+    };
+    assert!(entry.validated().is_some());
+}
+
+#[test]
+fn cache_observation_rejects_a_fingerprint_one_character_too_long() {
+    let entry = CacheObservation {
+        fingerprint: format!("{FINGERPRINT}a"),
+        cached_tokens: 100,
+        observed_at: 0.0,
+        expires_at: 300.0,
+    };
+    assert!(entry.validated().is_none());
+}
+
 #[rstest]
 #[case::empty_fingerprint("", 100, 0.0, 300.0)]
 #[case::short_fingerprint("abc", 100, 0.0, 300.0)]
