@@ -42,13 +42,13 @@ fn field_text(
     value: Option<&Json>,
     field: &'static str,
 ) -> Result<Option<String>, EnterpriseError> {
-    let Some(value) = value else {
+    let Some(stored) = value else {
         return Ok(None);
     };
-    if let Json::Text(text) = value {
+    if let Json::Text(text) = stored {
         return Ok(Some(text.clone()));
     }
-    if matches!(value, Json::Null) {
+    if matches!(stored, Json::Null) {
         return Ok(None);
     }
     Err(EnterpriseError::FieldType { field })
@@ -139,8 +139,8 @@ fn text_credentials(
         Some(value) => Some(value),
         None => field_text(fields.get("watsonx_token"), "watsonx_token")?,
     };
-    if let Some(token) = token {
-        params.insert(String::from("token"), Json::Text(token));
+    if let Some(value) = token {
+        params.insert(String::from("token"), Json::Text(value));
     }
     Ok(())
 }

@@ -5,6 +5,7 @@ use betterlite_openai::sagemaker_completion::request::CustomPromptEntry;
 use betterlite_prompts::arguments::json::Object;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde_json::value::to_raw_value;
 
 use super::error::EnterpriseError;
 
@@ -31,7 +32,7 @@ pub fn signing_params(optional_params: &Object) -> Result<ParamMap, EnterpriseEr
     optional_params
         .iter()
         .map(|(name, value)| {
-            serde_json::value::to_raw_value(value)
+            to_raw_value(value)
                 .map(|raw| (name.clone(), raw))
                 .map_err(|source| EnterpriseError::Encode { source })
         })

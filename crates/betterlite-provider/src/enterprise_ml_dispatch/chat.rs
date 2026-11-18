@@ -23,7 +23,7 @@ static NO_PROMPTS: BTreeMap<String, CustomPromptEntry> = BTreeMap::new();
 
 pub enum Completion<R> {
     Handler(R),
-    Sagemaker(SagemakerReply),
+    Sagemaker(Box<SagemakerReply>),
 }
 
 // LiteLLM's dispatch arms for the three enterprise ML platforms; the skip keeps the long no-op arm short enough for clippy's 40-line limit
@@ -40,7 +40,7 @@ pub fn dispatch<R>(
         ChatConfigTag::IbmWatsonXChat => Some(handler.complete(&passthrough(&context.base, "watsonx")).map(Completion::Handler).map_err(EnterpriseError::from)),
         ChatConfigTag::IbmWatsonXAi => Some(watsonx::text_call(context).and_then(|call| handler.complete(&call).map(Completion::Handler).map_err(EnterpriseError::from))),
         ChatConfigTag::SagemakerChat | ChatConfigTag::SagemakerNova => Some(handler.complete(&passthrough(&context.base, context.base.custom_llm_provider)).map(Completion::Handler).map_err(EnterpriseError::from)),
-        ChatConfigTag::Sagemaker => Some(sagemaker_completion(context, deps).map(Completion::Sagemaker)),
+        ChatConfigTag::Sagemaker => Some(sagemaker_completion(context, deps).map(|reply| Completion::Sagemaker(Box::new(reply)))),
         ChatConfigTag::A2a | ChatConfigTag::Ai21Chat | ChatConfigTag::AiohttpOpenAiChat | ChatConfigTag::AmazonNovaChat | ChatConfigTag::Anthropic | ChatConfigTag::AnthropicText
         | ChatConfigTag::AzureAiStudio | ChatConfigTag::AzureAnthropic | ChatConfigTag::AzureModelRouter | ChatConfigTag::AzureOpenAi | ChatConfigTag::AzureOpenAiGpt5
         | ChatConfigTag::AzureOpenAiO1 | ChatConfigTag::AzureOpenAiText | ChatConfigTag::Baseten | ChatConfigTag::Bedrock(_) | ChatConfigTag::BedrockMantleChat

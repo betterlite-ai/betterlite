@@ -4,6 +4,7 @@ use std::time::Duration;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
 use betterlite_prompts::arguments::json::{Json, Object};
+use http::header::{AUTHORIZATION, HeaderName};
 
 use crate::enterprise_ml_dispatch::embed::{self, EmbeddingContext, EmbeddingReply};
 use crate::enterprise_ml_dispatch::error::EnterpriseError;
@@ -86,7 +87,7 @@ async fn sap_embedding_sends_the_orchestration_headers() {
 
 fn assert_sap_headers(transport: &Scripted) {
     for index in 1..=4 {
-        let auth = transport.header(index, http::header::AUTHORIZATION);
+        let auth = transport.header(index, AUTHORIZATION);
         assert_eq!(auth.as_deref(), Some("Bearer oracle-token"));
         assert_eq!(resource_group(transport, index).as_deref(), Some("default"));
         assert_eq!(client_type(transport, index).as_deref(), Some("LiteLLM"));
@@ -133,17 +134,11 @@ async fn sap_embedding_sends_the_orchestration_body() {
 }
 
 fn resource_group(transport: &Scripted, index: usize) -> Option<String> {
-    transport.header(
-        index,
-        http::header::HeaderName::from_static("ai-resource-group"),
-    )
+    transport.header(index, HeaderName::from_static("ai-resource-group"))
 }
 
 fn client_type(transport: &Scripted, index: usize) -> Option<String> {
-    transport.header(
-        index,
-        http::header::HeaderName::from_static("ai-client-type"),
-    )
+    transport.header(index, HeaderName::from_static("ai-client-type"))
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -162,20 +157,20 @@ async fn sap_chat_prepare_runs_the_chat_deployment_lookup() {
     assert_eq!(
         prepared
             .headers
-            .get(http::header::AUTHORIZATION)
+            .get(AUTHORIZATION)
             .and_then(|value| value.to_str().ok()),
         Some("Bearer oracle-token")
     );
     assert_eq!(transport.sent().len(), 3);
 
     let empty = Env::new(sap_environment(&[]));
-    let request = SapRequest {
+    let empty_request = SapRequest {
         api_key: None,
         sap_service_key: None,
         env: empty.source(),
     };
-    let error =
-        sap::prepare_chat(request, &transport, &FixedClock).expect_err("no credentials are set");
+    let error = sap::prepare_chat(empty_request, &transport, &FixedClock)
+        .expect_err("no credentials are set");
     assert!(matches!(
         error,
         EnterpriseError::SapChat(SapChatError::Orchestration(_))
@@ -289,7 +284,7 @@ async fn watsonx_embedding_posts_the_project_request() {
         "https://wx.example.com/ml/v1/text/embeddings?version=2024-03-13"
     );
     assert_eq!(
-        transport.header(0, http::header::AUTHORIZATION).as_deref(),
+        transport.header(0, AUTHORIZATION).as_deref(),
         Some("Bearer env-token")
     );
 }
@@ -396,7 +391,7 @@ async fn sagemaker_embedding_posts_the_hf_request() {
         sent[0].url,
         "https://runtime.sagemaker.us-west-2.amazonaws.com/endpoints/endpoint/invocations"
     );
-    assert!(sent[0].headers.get(http::header::AUTHORIZATION).is_some());
+    assert!(sent[0].headers.get(AUTHORIZATION).is_some());
     assert_eq!(
         at(&sagemaker.transport.body(0), &["inputs"]),
         &Json::List(vec![Json::Text(String::from("hi"))])

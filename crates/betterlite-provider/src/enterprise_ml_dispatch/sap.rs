@@ -1,4 +1,6 @@
 use std::collections::BTreeMap;
+use std::fs::read_to_string;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -8,6 +10,8 @@ use chrono::{DateTime, Utc};
 use http::Method;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Handle;
+use tokio::task::block_in_place;
 use url::Url;
 
 use crate::data_cloud_dispatch::context::EnvironmentSource;
@@ -56,8 +60,8 @@ impl SapEnvironment for ProcessEnvironment<'_> {
         path.exists()
     }
 
-    fn read_file(&self, path: &Path) -> Result<String, std::io::Error> {
-        std::fs::read_to_string(path)
+    fn read_file(&self, path: &Path) -> Result<String, io::Error> {
+        read_to_string(path)
     }
 
     fn home_dir(&self) -> PathBuf {
@@ -108,10 +112,8 @@ impl SapTokenTransport for TokenTransport<'_> {
             body: RequestBody::Json(form.finish().into_bytes()),
             deadline: REQUEST_TIMEOUT,
         };
-        let response = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.transport.send(outbound))
-        })
-        .map_err(|source| TokenTransportError::Transport(Box::new(source)))?;
+        let response = block_in_place(|| Handle::current().block_on(self.transport.send(outbound)))
+            .map_err(|source| TokenTransportError::Transport(Box::new(source)))?;
         String::from_utf8(response.body)
             .map_err(|source| TokenTransportError::Message(source.to_string()))
     }
@@ -134,8 +136,8 @@ impl DeploymentConfigurations for Deployments<'_> {
                 configuration_id.to_owned(),
             ));
         };
-        let response = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(self.transport.send(OutboundRequest {
+        let response = block_in_place(|| {
+            Handle::current().block_on(self.transport.send(OutboundRequest {
                 method: Method::GET,
                 url,
                 query: Vec::new(),
@@ -176,8 +178,8 @@ fn deployment_listing(
             source,
         },
     )?;
-    let response = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(transport.send(OutboundRequest {
+    let response = block_in_place(|| {
+        Handle::current().block_on(transport.send(OutboundRequest {
             method: Method::GET,
             url,
             query: Vec::new(),
@@ -241,13 +243,12 @@ pub fn prepare_chat(
     transport: &dyn EnterpriseTransport,
     clock: &dyn SapClock,
 ) -> Result<SapChatCall, EnterpriseError> {
-    let prepared = session(request, transport, clock, DeploymentMode::Chat).map_err(|error| {
-        match error {
-            // LiteLLM wraps the credentials ValueError as a 400 and lets every other setup failure through
-            EnterpriseError::SapAuth(error) => {
-                EnterpriseError::SapChat(SapChatError::credentials(error))
-            }
-            other => other,
+    let prepared = session(request, transport, clock, DeploymentMode::Chat).map_err(|failure| {
+        // LiteLLM wraps the credentials ValueError as a 400 and lets every other setup failure through
+        if let EnterpriseError::SapAuth(auth) = failure {
+            EnterpriseError::SapChat(SapChatError::credentials(auth))
+        } else {
+            failure
         }
     })?;
     let (token, resource_group, deployment_url) = prepared;
@@ -261,12 +262,10 @@ pub fn prepare_chat(
 
 // the credentials failure the embedding arm reports as its own, and every other setup failure unchanged
 fn embedding_deployment_error(error: EnterpriseError) -> EnterpriseError {
-    match error {
-        EnterpriseError::SapAuth(error) => {
-            EnterpriseError::SapEmbedding(SapEmbeddingError::Auth(error))
-        }
-        other => other,
+    if let EnterpriseError::SapAuth(auth) = error {
+        return EnterpriseError::SapEmbedding(SapEmbeddingError::Auth(auth));
     }
+    error
 }
 
 pub fn prepare_embedding(

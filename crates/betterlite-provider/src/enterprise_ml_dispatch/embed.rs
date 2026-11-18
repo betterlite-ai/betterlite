@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -103,16 +104,15 @@ async fn sap(
 
 fn sap_reply(response: &UpstreamResponse) -> Result<EmbeddingReply, EnterpriseError> {
     if !(200..300).contains(&response.status) {
-        let message = std::str::from_utf8(&response.body)
-            .map_err(|source| EnterpriseError::Utf8 { source })?;
+        let message =
+            from_utf8(&response.body).map_err(|source| EnterpriseError::Utf8 { source })?;
         return Err(EnterpriseError::SapOrchestration(get_error_class(
             message,
             response.status,
             &response.headers,
         )));
     }
-    let text =
-        std::str::from_utf8(&response.body).map_err(|source| EnterpriseError::Utf8 { source })?;
+    let text = from_utf8(&response.body).map_err(|source| EnterpriseError::Utf8 { source })?;
     Ok(EmbeddingReply::Sap(Box::new(transform_embedding_response(
         text,
     )?)))
@@ -125,10 +125,10 @@ fn epoch_seconds() -> f64 {
 }
 
 fn source_headers(call: &EmbeddingCall) -> Result<http::HeaderMap, EnterpriseError> {
-    match &call.headers {
-        None => Ok(http::HeaderMap::new()),
-        Some(headers) => header_map(headers).map_err(|source| EnterpriseError::Headers { source }),
-    }
+    call.headers.as_ref().map_or_else(
+        || Ok(http::HeaderMap::new()),
+        |headers| header_map(headers).map_err(|source| EnterpriseError::Headers { source }),
+    )
 }
 
 // the watsonx embedding call's credentials, token, headers, url and body, over B5970's auth
@@ -146,11 +146,13 @@ async fn watsonx_request(
         &environment,
     )?;
     // LiteLLM copies the key whenever the credentials carry it, so an absent token reaches the body as null
-    let stored = match &credentials.token {
-        Some(token) => serde_json::to_value(token.expose_secret()),
-        None => Ok(serde_json::Value::Null),
-    }
-    .map_err(|source| EnterpriseError::Encode { source })?;
+    let stored = credentials
+        .token
+        .as_ref()
+        .map_or(Ok(serde_json::Value::Null), |token| {
+            serde_json::to_value(token.expose_secret())
+        })
+        .map_err(|failure| EnterpriseError::Encode { source: failure })?;
     params.insert(String::from("token"), stored);
     let auth = WatsonxAuth::new(
         environment,
@@ -170,7 +172,8 @@ async fn watsonx_request(
     let url = config.get_complete_url(Some(credentials.api_base.as_str()), &mut params)?;
     let input: EmbeddingInput = convert(&call.input)?;
     let body = config.transform_embedding_request(&call.model, &input, params)?;
-    let bytes = serde_json::to_vec(&body).map_err(|source| EnterpriseError::Encode { source })?;
+    let bytes =
+        serde_json::to_vec(&body).map_err(|failure| EnterpriseError::Encode { source: failure })?;
     Ok((url, headers, bytes))
 }
 
@@ -185,13 +188,13 @@ async fn watsonx_embedding(
     let response = transport
         .send(outbound)
         .await
-        .map_err(|source| EnterpriseError::Transport { source })?;
+        .map_err(|failure| EnterpriseError::Transport { source: failure })?;
     if !(200..300).contains(&response.status) {
-        return Err(EnterpriseError::Watsonx(WatsonxError::Api {
+        return Err(EnterpriseError::Watsonx(Box::new(WatsonxError::Api {
             status_code: response.status,
             message: body_text(&response.body),
             headers: Some(response.headers),
-        }));
+        })));
     }
     let reply = decode_watsonx_embedding_reply(&response.body)?;
     Ok(WatsonxEmbeddingConfig::transform_embedding_response(

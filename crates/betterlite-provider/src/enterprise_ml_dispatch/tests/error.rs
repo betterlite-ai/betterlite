@@ -23,11 +23,11 @@ fn enterprise_error_carries_the_provider_status() {
         message: String::from("teapot"),
     });
     assert_eq!(orchestration.status(), Some(418));
-    let watsonx = EnterpriseError::Watsonx(WatsonxError::Api {
+    let watsonx = EnterpriseError::Watsonx(Box::new(WatsonxError::Api {
         status_code: 401,
         message: String::from("no key"),
         headers: None,
-    });
+    }));
     assert_eq!(watsonx.status(), Some(401));
     let sagemaker = EnterpriseError::Sagemaker(SagemakerError {
         status_code: 500,

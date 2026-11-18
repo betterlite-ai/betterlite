@@ -26,6 +26,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 };
 use betterlite_tokenizer::engine::error::EngineError;
 use chrono::{DateTime, Utc};
+use http::header::HeaderName;
 use secrecy::{ExposeSecret as _, SecretString};
 use uuid::Uuid;
 
@@ -196,7 +197,7 @@ impl Scripted {
         serde_json::from_slice(&sent[index].body).expect("the fixture recorded JSON")
     }
 
-    pub(super) fn header(&self, index: usize, name: http::header::HeaderName) -> Option<String> {
+    pub(super) fn header(&self, index: usize, name: HeaderName) -> Option<String> {
         let sent = self.sent();
         sent[index]
             .headers

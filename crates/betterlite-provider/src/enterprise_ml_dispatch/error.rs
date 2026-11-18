@@ -1,3 +1,5 @@
+use std::str::Utf8Error;
+
 use betterlite_bedrock::sagemaker_runtime::error::RuntimeFailure;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
@@ -58,7 +60,7 @@ pub enum EnterpriseError {
     #[error(transparent)]
     SapOrchestration(#[from] SapOrchestrationError),
     #[error(transparent)]
-    Watsonx(#[from] WatsonxError),
+    Watsonx(Box<WatsonxError>),
     #[error(transparent)]
     WatsonxEmbedding(#[from] WatsonxEmbeddingError),
     #[error(transparent)]
@@ -89,7 +91,7 @@ pub enum EnterpriseError {
     #[error("the provider answer is not UTF-8: {source}")]
     Utf8 {
         #[source]
-        source: std::str::Utf8Error,
+        source: Utf8Error,
     },
     #[error("the provider could not be reached: {source}")]
     Transport {
@@ -109,23 +111,29 @@ pub enum EnterpriseError {
     },
 }
 
+impl From<WatsonxError> for EnterpriseError {
+    fn from(error: WatsonxError) -> Self {
+        Self::Watsonx(Box::new(error))
+    }
+}
+
 impl EnterpriseError {
     #[must_use]
     pub fn status(&self) -> Option<u16> {
         match self {
             Self::Handler(error) => error.status_code(),
             Self::SapChat(error) => error.status(),
-            // LiteLLM raises these from the embedding config constructor, so its mapper has no status to keep
-            Self::SapEmbedding(_) => None,
             Self::SapOrchestration(error) => Some(error.status_code),
             Self::Watsonx(error) => api_status(error),
             Self::WatsonxEmbedding(error) => error.status(),
             Self::WatsonxRerank(error) => error.status(),
             Self::Sagemaker(error) => Some(error.status_code),
             Self::SagemakerFailure(error) => error.status_code(),
+            // LiteLLM raises SapEmbedding from the embedding config constructor, and the rest carry no status
             Self::Dispatch(_)
             | Self::SapLookup(_)
             | Self::SapAuth(_)
+            | Self::SapEmbedding(_)
             | Self::MissingVocabulary
             | Self::Encoding { .. }
             | Self::FieldType { .. }

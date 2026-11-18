@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_openai::sagemaker_completion::request::CustomPromptEntry;
 use betterlite_prompts::arguments::json::{Json, Object};
+use http::header::AUTHORIZATION;
 
 use crate::data_cloud_dispatch::call::CompletionCall;
 use crate::enterprise_ml_dispatch::chat::{Completion, SAP_MODEL_VERSION};
@@ -350,12 +351,15 @@ fn watsonx_text_rejects_a_typed_key() {
 
     let mut nested = Chat::new("watsonx_text", "ibm/granite");
     nested.optional_params = object(r#"{"wx_credentials":{"url":5}}"#);
-    let outcome = dispatch(ChatConfigTag::IbmWatsonXAi, &nested, &sagemaker, &recorder)
+    let nested_outcome = dispatch(ChatConfigTag::IbmWatsonXAi, &nested, &sagemaker, &recorder)
         .expect("the text arm runs");
-    let Err(error) = outcome else {
+    let Err(nested_error) = nested_outcome else {
         panic!("the url is not a string");
     };
-    assert!(matches!(error, EnterpriseError::FieldType { field: "url" }));
+    assert!(matches!(
+        nested_error,
+        EnterpriseError::FieldType { field: "url" }
+    ));
 }
 
 #[test]
@@ -388,7 +392,10 @@ async fn sagemaker_completion_builds_the_signed_hf_call() {
     )
     .expect("the sagemaker arm runs")
     .expect("the runtime answers");
-    let Completion::Sagemaker(SagemakerReply::Completion(response)) = outcome else {
+    let Completion::Sagemaker(reply) = outcome else {
+        panic!("a completion reply is expected");
+    };
+    let SagemakerReply::Completion(response) = *reply else {
         panic!("a completion reply is expected");
     };
     assert_eq!(
@@ -404,12 +411,8 @@ async fn sagemaker_completion_builds_the_signed_hf_call() {
         sent[0].url,
         "https://runtime.sagemaker.us-west-2.amazonaws.com/endpoints/endpoint/invocations"
     );
-    assert!(
-        sagemaker
-            .transport
-            .header(0, http::header::AUTHORIZATION)
-            .is_some_and(|value| value.starts_with("AWS4-HMAC-SHA256"))
-    );
+    let auth = sagemaker.transport.header(0, AUTHORIZATION);
+    assert!(auth.is_some_and(|value| value.starts_with("AWS4-HMAC-SHA256")));
     assert_eq!(
         at(&sagemaker.transport.body(0), &["inputs"]),
         &Json::Text(String::from("hi"))

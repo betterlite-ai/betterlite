@@ -11,6 +11,7 @@ use betterlite_bedrock::sagemaker_runtime::endpoint::ParamMap;
 use betterlite_bedrock::sagemaker_runtime::runtime::{
     ChunkStream, SagemakerEnvironment, SagemakerRuntime,
 };
+use betterlite_bedrock::sagemaker_stream::SagemakerEvents;
 use betterlite_openai::chat::response::ChatResponse;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::embedding::EmbeddingInput;
@@ -24,6 +25,8 @@ use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::error::EngineError;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
+use tokio::runtime::Handle;
+use tokio::task::block_in_place;
 use uuid::Uuid;
 
 use super::error::EnterpriseError;
@@ -42,7 +45,7 @@ pub struct SagemakerDeps<'deps> {
     pub identifier: fn() -> Uuid,
 }
 
-impl<'deps> SagemakerDeps<'deps> {
+impl SagemakerDeps<'_> {
     fn runtime(&self) -> SagemakerRuntime<'_, SharedTransport<'_>, SharedCredentials<'_>> {
         SagemakerRuntime {
             transport: SharedTransport {
@@ -81,7 +84,7 @@ pub struct SagemakerEmbedding<'request> {
 
 pub enum SagemakerReply {
     Completion(ChatResponse),
-    Stream(betterlite_bedrock::sagemaker_stream::SagemakerEvents<ChunkStream>),
+    Stream(SagemakerEvents<ChunkStream>),
 }
 
 // _complete_sagemaker: B5840's completion, or its stream decoder when the optional params ask for a stream
@@ -100,15 +103,13 @@ pub fn complete(
         prompts: deps.prompts,
     };
     if call.stream {
-        let events = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(completion_call::completion_stream(&deps.runtime(), &inner))
+        let events = block_in_place(|| {
+            Handle::current().block_on(completion_call::completion_stream(&deps.runtime(), &inner))
         })?;
         return Ok(SagemakerReply::Stream(events));
     }
-    let reply = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current()
-            .block_on(completion_call::completion(&deps.runtime(), &inner))
+    let reply = block_in_place(|| {
+        Handle::current().block_on(completion_call::completion(&deps.runtime(), &inner))
     })?;
     Ok(SagemakerReply::Completion(reply))
 }
@@ -125,9 +126,8 @@ pub fn embedding(
         signing: call.signing,
         encoding: deps.encoding,
     };
-    let reply = tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current()
-            .block_on(embedding_call::embedding(&deps.runtime(), &inner))
+    let reply = block_in_place(|| {
+        Handle::current().block_on(embedding_call::embedding(&deps.runtime(), &inner))
     })?;
     Ok(reply)
 }
