@@ -372,6 +372,20 @@ fn reload_options_resolve_a_relative_config_against_the_watched_directory() {
 
 #[cfg(unix)]
 #[test]
+fn reload_options_follow_a_symlinked_watch_directory_to_its_target() {
+    use std::os::unix::fs::symlink;
+
+    let (_directory, root) = temporary_directory();
+    let target = root.join("target");
+    let link = root.join("link");
+    fs::create_dir(&target).expect("target directory");
+    symlink(&target, &link).expect("symlink");
+    let options = resolve_reload_options(&link, None).expect("reload options");
+    assert_eq!(options.reload_dirs, vec![target]);
+}
+
+#[cfg(unix)]
+#[test]
 fn reload_options_reject_a_config_name_that_is_not_utf8() {
     use std::ffi::OsStr;
     use std::os::unix::ffi::OsStrExt;
