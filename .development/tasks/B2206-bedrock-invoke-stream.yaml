@@ -131,6 +131,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/llms/bedrock/chat/invoke_transformations/base_invoke_transformation.py:
   AmazonInvokeConfig.transform_response L281-L419 belong to B612.'
 pitfalls:
+- StreamSourceError (crates/betterlite-sdk/src/chat_stream/ports.rs, from B5654) carries failure, class and message and no typed source, so every provider stream flattens its source error at that seam. A typed source for that seam is a separate decision for its owner, open with Max since 2026-11-18. This task keeps InvokeSourceError typed up to the seam (invoke_stream/source.rs) and maps it there, and a typed-errors finding about the flattening itself is not this task's (decision 2026-11-18).
 - 'The oracle helper for this task is pre-registered as bedrock_invoke_stream in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/invoke_stream.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_invoke_stream.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The fake-stream switch examines api_base, so an unrelated ai21 substring in the base also selects it.
 references:
