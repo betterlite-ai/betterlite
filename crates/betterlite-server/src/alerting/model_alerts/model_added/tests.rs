@@ -107,6 +107,23 @@ fn renders_the_exact_template_without_a_base_model() {
 }
 
 #[test]
+fn renders_the_keys_in_the_catalog_order() {
+    let catalog = catalog(vec![(
+        "litellm_name",
+        object(vec![
+            ("mode", Json::Text("chat".to_owned())),
+            ("input_cost_per_token", float(0.000002)),
+            ("max_tokens", integer(128)),
+        ]),
+    )]);
+
+    let message = render_model_added_message("my-model", "litellm_name", None, &catalog, None)
+        .expect("the message renders");
+
+    assert!(message.contains("mode: chat\ninput_cost_per_token: 0.00000200\nmax_tokens: 128\n"));
+}
+
+#[test]
 fn a_base_model_adds_its_line_and_selects_the_base_entry() {
     let catalog = catalog(vec![
         ("litellm_name", object(vec![("max_tokens", integer(1))])),
