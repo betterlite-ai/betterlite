@@ -277,6 +277,7 @@ enum FailureCase {
     IntegerStatus,
     EmptyHeaders,
     ResponseText,
+    ResponseWithoutText,
     NoConfig,
     MalformedReply,
     TimeoutAsyncUpdate,
@@ -295,6 +296,7 @@ enum FailureCase {
 #[case::integer_status(FailureCase::IntegerStatus)]
 #[case::empty_headers(FailureCase::EmptyHeaders)]
 #[case::response_text(FailureCase::ResponseText)]
+#[case::response_without_text(FailureCase::ResponseWithoutText)]
 #[case::no_config(FailureCase::NoConfig)]
 #[case::malformed_reply(FailureCase::MalformedReply)]
 #[case::timeout_async_update(FailureCase::TimeoutAsyncUpdate)]
@@ -494,6 +496,28 @@ async fn transport_failure(#[case] case: FailureCase) {
             );
             assert_eq!(error.message, "remote");
             assert_eq!(error.headers, expected);
+        }
+        FailureCase::ResponseWithoutText => {
+            let config = RecordingConfig::new("http://unused.test");
+            let error = handle_error(
+                &FailureFacts {
+                    response_status: Some(500),
+                    status: None,
+                    text: Some("local".to_owned()),
+                    headers: None,
+                    response: Some(ResponseFacts {
+                        status_code: 500,
+                        text: None,
+                        headers: None,
+                    }),
+                    display: "local".to_owned(),
+                },
+                Some(&config),
+            );
+            assert_eq!(error.status_code, 500);
+            assert!(!error.status_code_is_synthesized);
+            assert_eq!(error.message, "");
+            assert!(error.headers.is_empty());
         }
         FailureCase::NoConfig => {
             let error = handle_error(
