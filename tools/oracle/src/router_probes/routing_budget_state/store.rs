@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::str::FromStr as _;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -12,45 +11,15 @@ use betterlite_router::routing_budget_state::spend_redis::{SpendRead, SpendRedis
 use rust_decimal::Decimal;
 use tokio::sync::Notify;
 
-// the Redis the limiter talks to: INCRBYFLOAT per key, one float per key like the redis wire
+// the shared store the limiter writes to; it keeps the decimal, so a spend reads back as the sum it built
 #[derive(Clone, Default)]
 pub(super) struct ProbeStore {
-    spends: Arc<Mutex<BTreeMap<String, f64>>>,
-    starts: Arc<Mutex<BTreeMap<String, f64>>>,
-    fail: Arc<AtomicBool>,
-    hold: Arc<AtomicBool>,
-    entered: Arc<Notify>,
-    release: Arc<Notify>,
-}
-
-impl ProbeStore {
-    pub(super) fn spend(&self, key: &str) -> Option<f64> {
-        self.spends
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(key)
-            .copied()
-    }
-
-    pub(super) fn set_fail(&self, fail: bool) {
-        self.fail.store(fail, Ordering::SeqCst);
-    }
-
-    pub(super) fn set_hold(&self, hold: bool) {
-        self.hold.store(hold, Ordering::SeqCst);
-    }
-
-    pub(super) fn holding(&self) -> bool {
-        self.hold.load(Ordering::SeqCst)
-    }
-
-    pub(super) fn entered(&self) -> &Notify {
-        &self.entered
-    }
-
-    pub(super) fn release_writes(&self) {
-        self.release.notify_waiters();
-    }
+    pub(super) spends: Arc<Mutex<BTreeMap<String, Decimal>>>,
+    pub(super) starts: Arc<Mutex<BTreeMap<String, f64>>>,
+    pub(super) fail: Arc<AtomicBool>,
+    pub(super) hold: Arc<AtomicBool>,
+    pub(super) entered: Arc<Notify>,
+    pub(super) release: Arc<Notify>,
 }
 
 #[async_trait]
@@ -71,11 +40,11 @@ impl WindowRedis for ProbeStore {
         self.spends
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), cost.as_f64());
+            .insert(key.to_owned(), cost);
     }
 
     async fn write_increments(&self, operations: &[QueuedIncrement]) -> bool {
-        if self.holding() {
+        if self.hold.load(Ordering::SeqCst) {
             self.entered.notify_one();
             self.release.notified().await;
         }
@@ -86,12 +55,9 @@ impl WindowRedis for ProbeStore {
         let mut working = spends.clone();
         for operation in operations {
             let current = working.get(&operation.key).copied().unwrap_or_default();
-            let total: f64 = [current, operation.increment_value.as_f64()]
-                .into_iter()
-                .sum();
-            if !total.is_finite() {
+            let Some(total) = current.checked_add(operation.increment_value) else {
                 return false;
-            }
+            };
             working.insert(operation.key.clone(), total);
         }
         *spends = working;
@@ -102,25 +68,11 @@ impl WindowRedis for ProbeStore {
 #[async_trait]
 impl SpendRedis for ProbeStore {
     async fn read_spends(&self, keys: &[String]) -> SpendRead {
+        let spends = self.spends.lock().unwrap_or_else(PoisonError::into_inner);
         SpendRead::Values(
             keys.iter()
-                .map(|key| (key.clone(), self.spend_value(key)))
+                .map(|key| (key.clone(), spends.get(key).copied()))
                 .collect(),
         )
     }
-}
-
-impl ProbeStore {
-    fn spend_value(&self, key: &str) -> Option<Decimal> {
-        let spend = self.spend(key)?;
-        Decimal::from_str(&spend.to_string()).ok()
-    }
-}
-
-// the float the store answers with, rendered the way the Python probe renders the same float
-pub(super) fn render(spend: f64) -> String {
-    Decimal::from_str(&spend.to_string()).map_or_else(
-        |_source| spend.to_string(),
-        |spend| spend.normalize().to_string(),
-    )
 }

@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_config::sections::budget_windows as config;
 use betterlite_context::local_ttl_cache::{CacheError, LocalTtlCache};
 use betterlite_router::budget_increment::dual::DualWindowCache;
+use betterlite_router::budget_increment::increment::BudgetIncrement;
 use betterlite_router::budget_windows::service::BudgetWindows;
 use betterlite_router::routing_budget_state::error::BudgetStateError;
 use betterlite_router::routing_budget_state::service::RoutingBudgetState;
@@ -19,6 +20,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::task::{JoinError, JoinSet};
+use tokio_util::task::TaskTracker;
 
 use super::steps;
 use super::store::ProbeStore;
@@ -142,7 +144,11 @@ pub(super) enum ScenarioError {
     #[error("the step needs {what}")]
     Missing { what: &'static str },
     #[error("{text:?} is not money")]
-    Money { text: String },
+    Money {
+        text: String,
+        #[source]
+        source: rust_decimal::Error,
+    },
     #[error("the probe clock is out of range")]
     Clock,
     #[error("begin_sync needs hold_writes before it")]
@@ -174,7 +180,17 @@ pub(super) async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput
         redis: Some(store.clone()),
     });
     let memory = Arc::clone(&cache.memory);
-    let state = Arc::new(RoutingBudgetState::new(windows, cache, clock));
+    let state = Arc::new(RoutingBudgetState {
+        increments: BudgetIncrement {
+            cache,
+            clock,
+            queue: Arc::default(),
+            flush_lock: Arc::default(),
+        },
+        windows,
+        sync: Mutex::new(JoinSet::new()),
+        flushes: TaskTracker::new(),
+    });
     let mut run = Run {
         state,
         memory,
@@ -216,7 +232,11 @@ fn section(input: &ScenarioInput) -> Result<config::Settings, ScenarioError> {
     let mut deployments = Vec::with_capacity(input.deployments.len());
     for deployment in &input.deployments {
         deployments.push(config::DeploymentBudgetConfig {
-            max_budget: optional_money(deployment.max_budget.as_deref())?,
+            max_budget: deployment
+                .max_budget
+                .as_deref()
+                .map(money_text)
+                .transpose()?,
             budget_duration: deployment.budget_duration.clone(),
         });
     }
@@ -253,15 +273,18 @@ fn section(input: &ScenarioInput) -> Result<config::Settings, ScenarioError> {
     })
 }
 
-fn budget_map<'entry>(
-    entries: impl Iterator<Item = (&'entry String, Option<&'entry str>, Option<&'entry str>)>,
-) -> Result<IndexMap<String, config::BudgetValues>, ScenarioError> {
+fn budget_map<'entry, Entries>(
+    entries: Entries,
+) -> Result<IndexMap<String, config::BudgetValues>, ScenarioError>
+where
+    Entries: Iterator<Item = (&'entry String, Option<&'entry str>, Option<&'entry str>)>,
+{
     let mut budgets = IndexMap::new();
     for (name, limit, duration) in entries {
         budgets.insert(
             name.clone(),
             config::BudgetValues {
-                limit: optional_money(limit)?,
+                limit: limit.map(money_text).transpose()?,
                 duration: duration.map(str::to_owned),
             },
         );
@@ -269,17 +292,9 @@ fn budget_map<'entry>(
     Ok(budgets)
 }
 
-fn optional_money(text: Option<&str>) -> Result<Option<Decimal>, ScenarioError> {
-    text.map(money_text).transpose()
-}
-
-pub(super) fn money(text: Option<&str>) -> Result<Decimal, ScenarioError> {
-    let text = text.ok_or(ScenarioError::Missing { what: "a cost" })?;
-    money_text(text)
-}
-
-fn money_text(text: &str) -> Result<Decimal, ScenarioError> {
-    Decimal::from_str(text).map_err(|_source| ScenarioError::Money {
+pub(super) fn money_text(text: &str) -> Result<Decimal, ScenarioError> {
+    Decimal::from_str(text).map_err(|source| ScenarioError::Money {
         text: text.to_owned(),
+        source,
     })
 }

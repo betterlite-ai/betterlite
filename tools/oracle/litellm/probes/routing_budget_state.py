@@ -12,14 +12,14 @@ from litellm.caching.redis_cache import RedisCache
 from litellm.router import Router
 from litellm.types.caching import RedisPipelineIncrementOperation
 from litellm.types.utils import BudgetConfig
-from pydantic import Field, TypeAdapter
+from pydantic import Field, JsonValue, TypeAdapter
 from redis.exceptions import ConnectionError as RedisConnectionError
 from typing_extensions import override
 
 from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
-# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnusedCallResult=false, reportUnreachable=false
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnusedCallResult=false
 
 MONEY: Final = TypeAdapter(float | None)
 DEFAULT_MODEL: Final = "openai/gpt-4o-mini"
@@ -81,10 +81,10 @@ class Limiter(Protocol):
 
     async def async_log_success_event(
         self,
-        kwargs: dict[str, object],
-        response_obj: object,
-        start_time: object,
-        end_time: object,
+        kwargs: dict[str, JsonValue],
+        response_obj: JsonValue,
+        start_time: JsonValue,
+        end_time: JsonValue,
     ) -> None: ...
 
     async def periodic_sync_in_memory_spend_with_redis(self) -> None: ...
@@ -126,7 +126,7 @@ class FakeStore(RedisCache):
     async def async_increment_pipeline(
         self,
         increment_list: list[RedisPipelineIncrementOperation],
-        **_kwargs: object,
+        **_kwargs: JsonValue,
     ) -> list[float] | None:
         if self.hold:
             self.entered.set()
@@ -144,27 +144,26 @@ class FakeStore(RedisCache):
     async def async_batch_get_cache(
         self,
         key_list: list[str] | list[str | None],
-        **_kwargs: object,
+        **_kwargs: JsonValue,
     ) -> dict[str, float | None]:
         self.read_done.set()
         return {key: self.values.get(key) for key in key_list if key is not None}
 
-    # the first spend of a window goes through dual_cache.async_set_cache, so the store holds it before any flush
+    # a write-through would reach for the network; no step opens a budget window, so nothing calls this
     @override
     async def async_set_cache(
-        self, key: str, value: object, **_kwargs: object
+        self, key: str, value: JsonValue, **_kwargs: JsonValue
     ) -> None:
-        if isinstance(value, float):
-            self.values[key] = value
+        _ = key, value
 
     @override
-    async def async_get_cache(self, key: str, **_kwargs: object) -> float | None:
+    async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> float | None:
         _ = key
         return None
 
 
 def make_store() -> FakeStore:
-    store = FakeStore(
+    return FakeStore(
         values={},
         fail=False,
         hold=False,
@@ -172,8 +171,6 @@ def make_store() -> FakeStore:
         release=asyncio.Event(),
         read_done=asyncio.Event(),
     )
-    object.__setattr__(store, "default_ttl", 60)
-    return store
 
 
 @dataclass
@@ -199,8 +196,8 @@ class RoutingBudgetState(Operation):
             return asyncio.run(run_scenario(self, router))
 
 
-def deployment_entry(deployment: Deployment) -> dict[str, object]:
-    params: dict[str, object] = {"model": DEFAULT_MODEL}
+def deployment_entry(deployment: Deployment) -> dict[str, JsonValue]:
+    params: dict[str, JsonValue] = {"model": DEFAULT_MODEL}
     if deployment.max_budget is not None:
         params["max_budget"] = float(deployment.max_budget)
     if deployment.budget_duration is not None:
@@ -262,12 +259,12 @@ async def sleep_once(limiter: Limiter) -> None:
 
 async def success(index: int, step: Step, context: Context) -> Observation:
     cost = float(required(step.cost, "a cost"))
-    logging_object: dict[str, object] = {
+    logging_object: dict[str, JsonValue] = {
         "response_cost": cost,
         "model_id": "" if step.model_id is None else step.model_id,
         "custom_llm_provider": step.provider,
     }
-    payload: dict[str, object] = {"standard_logging_object": logging_object}
+    payload: dict[str, JsonValue] = {"standard_logging_object": logging_object}
     if step.call_type is not None:
         payload["call_type"] = step.call_type
     if step.tags is not None:
