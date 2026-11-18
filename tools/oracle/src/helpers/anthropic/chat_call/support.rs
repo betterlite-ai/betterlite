@@ -89,10 +89,9 @@ pub(crate) fn post_call_value(details: &IndexMap<String, Json>) -> Value {
     })
 }
 
-// the stream post_call body stays the JSON string LiteLLM sent, so the two sides compare it byte for byte
 pub(crate) fn logger_value(call: &LoggerCall) -> Value {
     json!({
         "input": call.input,
-        "body": call.complete_input_dict,
+        "body": serde_json::from_str::<Value>(&call.complete_input_dict).unwrap_or(Value::Null),
     })
 }
