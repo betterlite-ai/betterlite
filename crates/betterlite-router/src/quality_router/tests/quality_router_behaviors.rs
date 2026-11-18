@@ -2,10 +2,11 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::quality_router as section;
 use betterlite_prompts::message_content::Message;
+use rstest::rstest;
 
 use super::{
-    CONFIG_INVALID, CONFIG_VALID, deployment, json, keyword, messages, ordered, priced, router,
-    router_with, strings, table, text_settings,
+    CONFIG_INVALID, CONFIG_VALID, deployment, fallback_decision, json, keyword, keyword_decision,
+    messages, ordered, priced, router, router_with, strings, table, text_settings,
 };
 use crate::quality_router::QualityRouter;
 use crate::quality_router::decision::Decision;
@@ -39,7 +40,7 @@ fn a_keyword_override_short_circuits_the_classifier() {
         .unwrap();
     assert_eq!(route.model, "strong");
     assert_eq!(route.messages, request);
-    assert_eq!(route.decision, Decision::keyword("qr", "strong", "code", 3));
+    assert_eq!(route.decision, keyword_decision("qr", "strong", "code", 3));
     assert_eq!(
         metadata,
         Some(json(
@@ -180,18 +181,24 @@ fn an_exact_quality_tier_wins_before_rounding() {
 #[test]
 fn a_missing_quality_tier_rounds_up_before_down() {
     let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    // two tiers above the target: the nearer one wins
     let up = router_with(
-        &["one", "three"],
+        &["one", "three", "five"],
         Some(table(&[("SIMPLE", 2)])),
         None,
-        &[deployment("one", 1), deployment("three", 3)],
+        &[
+            deployment("one", 1),
+            deployment("three", 3),
+            deployment("five", 5),
+        ],
     );
     assert_eq!(pick(&up, &request).as_deref(), Some("three"));
+    // two tiers below the target: the nearer one wins
     let down = router_with(
-        &["one"],
+        &["zero", "one"],
         Some(table(&[("SIMPLE", 2)])),
         None,
-        &[deployment("one", 1)],
+        &[deployment("zero", 0), deployment("one", 1)],
     );
     assert_eq!(pick(&down, &request).as_deref(), Some("one"));
 }
@@ -224,8 +231,10 @@ fn an_empty_tier_index_falls_back_to_the_default_model() {
 #[test]
 fn a_constructor_default_model_wins_over_the_configured_one() {
     let config = section::RouterConfig {
+        available_models: Vec::new(),
         default_model: Some("configured".to_owned()),
-        ..section::RouterConfig::default()
+        complexity_to_quality: section::default_complexity_to_quality(),
+        extras: BTreeMap::new(),
     };
     let router = QualityRouter::new("qr", Some(&config), Some("explicit"), &[]).unwrap();
     let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
@@ -250,7 +259,7 @@ fn no_user_message_routes_to_the_default_model_without_a_stash() {
         .unwrap();
     assert_eq!(route.model, "fb");
     assert_eq!(route.messages, request);
-    assert_eq!(route.decision, Decision::default_fallback("qr", "fb"));
+    assert_eq!(route.decision, fallback_decision("qr", "fb"));
     assert_eq!(metadata, None);
 }
 
@@ -270,7 +279,7 @@ fn only_text_parts_of_a_content_list_carry_the_prompt() {
         .pre_route(Some(&blocks), &mut metadata)
         .unwrap()
         .unwrap();
-    assert_eq!(route.decision, Decision::keyword("qr", "one", "code", 2));
+    assert_eq!(route.decision, keyword_decision("qr", "one", "code", 2));
     let blank = messages(r#"[{"role":"user","content":[{"type":"text","text":"  "}]}]"#);
     let mut metadata = None;
     let route = router
@@ -278,7 +287,7 @@ fn only_text_parts_of_a_content_list_carry_the_prompt() {
         .unwrap()
         .unwrap();
     assert_eq!(route.model, "fb");
-    assert_eq!(route.decision, Decision::default_fallback("qr", "fb"));
+    assert_eq!(route.decision, fallback_decision("qr", "fb"));
 }
 
 #[test]
@@ -293,16 +302,16 @@ fn the_newest_user_message_and_system_prompt_are_read() {
 
 #[test]
 fn a_decision_records_its_route_for_the_response_metadata() {
-    let keyword = Decision::keyword("qr", "strong", "code", 3);
+    let keyword_route = keyword_decision("qr", "strong", "code", 3);
     assert_eq!(
-        keyword.record().unwrap(),
+        keyword_route.record().unwrap(),
         json(
             r#"{"router_model_name":"qr","router_type":"quality","routed_model":"strong","cause":"keyword","matched_keyword":"code","tier":"3"}"#
         )
     );
-    let fallback = Decision::default_fallback("qr", "fb");
+    let fallback_route = fallback_decision("qr", "fb");
     assert_eq!(
-        fallback.record().unwrap(),
+        fallback_route.record().unwrap(),
         json(
             r#"{"router_model_name":"qr","router_type":"quality","routed_model":"fb","cause":"default_fallback"}"#
         )
@@ -328,22 +337,42 @@ fn a_decision_records_its_route_for_the_response_metadata() {
     assert_eq!(route.decision.record().unwrap(), json(&expected));
 }
 
-#[test]
-fn an_absent_router_config_uses_the_pinned_default_table() {
+#[rstest]
+#[case::simple("hello there", "SIMPLE", 1)]
+#[case::medium("function class def", "MEDIUM", 2)]
+#[case::complex(
+    "function class architecture distributed system design document review",
+    "COMPLEX",
+    3
+)]
+#[case::reasoning(
+    "step by step think through the design carefully and explain the tradeoffs",
+    "REASONING",
+    4
+)]
+fn an_absent_router_config_uses_the_pinned_default_table(
+    #[case] prompt: &str,
+    #[case] complexity_tier: &str,
+    #[case] quality_tier: i64,
+) {
     let router = QualityRouter::new("qr", None, Some("fb"), &[]).unwrap();
-    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    let request = messages(&format!(r#"[{{"role":"user","content":"{prompt}"}}]"#));
     let mut metadata = None;
     let route = router
         .pre_route(Some(&request), &mut metadata)
         .unwrap()
         .unwrap();
     assert_eq!(route.model, "fb");
-    assert_eq!(
-        metadata,
-        Some(json(
-            r#"{"quality_router_decision":{"router_model_name":"qr","routed_model":"fb","routed_via":"quality_tier","matched_keyword":null,"quality_tier":1,"complexity_tier":"SIMPLE"}}"#
-        ))
-    );
+    let Decision::QualityTier {
+        quality_tier: decided_quality,
+        complexity_tier: decided_complexity,
+        ..
+    } = &route.decision
+    else {
+        panic!("the tier path decides a quality_tier route");
+    };
+    assert_eq!(*decided_quality, quality_tier);
+    assert_eq!(decided_complexity, complexity_tier);
 }
 
 #[test]
@@ -365,8 +394,9 @@ fn absent_or_empty_messages_leave_the_request_alone() {
 fn unknown_keys_are_reported_and_the_route_still_runs() {
     let config = section::RouterConfig {
         available_models: vec!["one".to_owned()],
+        default_model: None,
+        complexity_to_quality: section::default_complexity_to_quality(),
         extras: BTreeMap::from([("mystery".to_owned(), json("1"))]),
-        ..section::RouterConfig::default()
     };
     let mut one = deployment("one", 1);
     if let Some(preferences) = one.preferences.as_mut() {

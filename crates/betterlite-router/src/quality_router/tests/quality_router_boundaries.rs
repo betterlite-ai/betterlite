@@ -4,7 +4,10 @@ use betterlite_config::sections::quality_router as section;
 use betterlite_prompts::message_content::Message;
 use rstest::rstest;
 
-use super::{deployment, json, keyword, messages, ordered, priced, router, router_with, table};
+use super::{
+    deployment, json, keyword, keyword_decision, messages, ordered, router, router_with, table,
+    text_settings,
+};
 use crate::quality_router::QualityRouter;
 use crate::quality_router::decision::Decision;
 use crate::quality_router::error::QualityRouterError;
@@ -15,7 +18,9 @@ fn try_router(
 ) -> Result<QualityRouter, QualityRouterError> {
     let config = section::RouterConfig {
         available_models: available.iter().map(|name| (*name).to_owned()).collect(),
-        ..section::RouterConfig::default()
+        default_model: None,
+        complexity_to_quality: section::default_complexity_to_quality(),
+        extras: BTreeMap::new(),
     };
     QualityRouter::new("qr", Some(&config), None, deployments)
 }
@@ -32,7 +37,9 @@ fn error_for(router: &QualityRouter, request: &[Message]) -> QualityRouterError 
 fn an_available_model_without_preferences_is_refused() {
     let bare = section::Deployment {
         model_name: "ghost".to_owned(),
-        ..section::Deployment::default()
+        config: None,
+        preferences: None,
+        input_cost_per_token: None,
     };
     let Err(error) = try_router(&["ghost"], &[bare]) else {
         panic!("a model without routing preferences is refused");
@@ -153,7 +160,7 @@ fn keyword_matching_ignores_case_in_the_message_and_the_keyword() {
         .pre_route(Some(&request), &mut metadata)
         .unwrap()
         .unwrap();
-    assert_eq!(route.decision, Decision::keyword("qr", "one", "code", 1));
+    assert_eq!(route.decision, keyword_decision("qr", "one", "code", 1));
 }
 
 #[test]
@@ -258,18 +265,68 @@ fn large_orders_keep_more_precision_than_python_floats() {
     assert_eq!(route.model, "zzz");
 }
 
-// both prices become the same f64 in LiteLLM, so its name tiebreak picks aaa; Decimal keeps the order
+// both literals become the same f64 in LiteLLM, so its name tiebreak picks aaa; the loaded Decimal keeps zzz cheaper
 #[test]
-fn decimal_prices_keep_more_precision_than_python_floats() {
-    let mut pricier = keyword(deployment("aaa", 2), "k");
-    pricier.input_cost_per_token = Some("0.1000000000000000001".parse().unwrap());
-    let cheaper = keyword(priced(deployment("zzz", 2), 1, 1), "k");
-    let router = router(&["aaa", "zzz"], &[pricier, cheaper]);
-    let request = messages(r#"[{"role":"user","content":"k"}]"#);
+fn decimal_prices_keep_digits_past_float_precision() {
+    let source = "\
+model_list:
+  - model_name: qr
+    litellm_params:
+      quality_router_config:
+        available_models: [aaa, zzz]
+        complexity_to_quality: {SIMPLE: 2}
+  - model_name: aaa
+    litellm_params:
+      model: openai/aaa
+    model_info:
+      litellm_routing_preferences: {quality_tier: 2}
+      input_cost_per_token: 0.1000000000000000001
+  - model_name: zzz
+    litellm_params:
+      model: openai/zzz
+    model_info:
+      litellm_routing_preferences: {quality_tier: 2}
+      input_cost_per_token: 0.1
+";
+    let settings = text_settings(source).unwrap();
+    let aaa = settings
+        .deployments
+        .iter()
+        .find(|deployment| deployment.model_name == "aaa")
+        .unwrap();
+    assert_eq!(
+        aaa.input_cost_per_token,
+        Some("0.1000000000000000001".parse().unwrap())
+    );
+    let zzz = settings
+        .deployments
+        .iter()
+        .find(|deployment| deployment.model_name == "zzz")
+        .unwrap();
+    assert_eq!(zzz.input_cost_per_token, Some("0.1".parse().unwrap()));
+    let config = settings.deployments[0].config.as_ref().unwrap();
+    let router = QualityRouter::new("qr", Some(config), None, &settings.deployments).unwrap();
+    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
     let mut metadata = None;
     let route = router
         .pre_route(Some(&request), &mut metadata)
         .unwrap()
         .unwrap();
     assert_eq!(route.model, "zzz");
+}
+
+#[test]
+fn a_non_finite_score_is_refused_by_the_record() {
+    let decision = Decision::QualityTier {
+        router_model_name: "qr".to_owned(),
+        routed_model: "one".to_owned(),
+        quality_tier: 1,
+        complexity_tier: "SIMPLE".to_owned(),
+        score: f64::NAN,
+        signals: Vec::new(),
+    };
+    assert!(matches!(
+        decision.record(),
+        Err(QualityRouterError::NonFiniteScore)
+    ));
 }
