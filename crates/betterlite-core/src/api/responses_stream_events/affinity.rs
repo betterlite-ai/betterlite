@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
 
-use super::record::{Target, item_target};
+use super::record::{Slot, Target, slot_target};
 use crate::api::response_id_codecs::encrypted::wrap_encrypted_content;
 use crate::api::response_id_traversal::metadata::{AffinityMetadata, ModelInfo};
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
@@ -19,9 +19,8 @@ pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesS
     else {
         return;
     };
-    match item_target(event) {
-        Some(Target::Extra(extra)) => wrap_slot(extra.get_mut("encrypted_content"), model_id),
-        Some(Target::Value(_)) | None => {}
+    if let Some(Target::Extra(extra)) = slot_target(event, Slot::Item) {
+        wrap_slot(extra.get_mut("encrypted_content"), model_id);
     }
 }
 

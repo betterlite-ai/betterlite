@@ -1,3 +1,8 @@
+#![expect(
+    clippy::pub_use,
+    reason = "the task re-exports B2413's primitives through this stream surface"
+)]
+
 use std::error::Error;
 
 use async_trait::async_trait;

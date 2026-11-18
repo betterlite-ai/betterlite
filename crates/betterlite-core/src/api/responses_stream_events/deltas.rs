@@ -2,7 +2,7 @@ use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
 
-use super::EventKind;
+use super::kinds::EventKind;
 use crate::api::responses_stream_events::JsonShape;
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 
@@ -29,9 +29,15 @@ pub fn accumulate(
     let Some(text) = delta_text(event) else {
         return;
     };
-    if kind == EventKind::TextDelta {
-        state.generated_content.push_str(text);
-    } else if kind == EventKind::ArgsDelta {
-        state.generated_tool_arguments.push_str(text);
+    match kind {
+        EventKind::TextDelta => state.generated_content.push_str(text),
+        EventKind::ArgsDelta => state.generated_tool_arguments.push_str(text),
+        EventKind::Completed
+        | EventKind::Incomplete
+        | EventKind::Failed
+        | EventKind::Item
+        | EventKind::Annotation
+        | EventKind::Part
+        | EventKind::Other => {}
     }
 }

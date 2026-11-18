@@ -7,10 +7,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use super::record::{
-    PartTarget, Target, annotation_target, extra_of, item_target, json_of, part_target, record_of,
-    record_of_fields,
-};
+use super::record::{Slot, Target, json_of, record_of, record_of_fields, slot_target};
 use crate::api::response_id_traversal::container::encode_container_id;
 use crate::api::response_id_traversal::metadata::AffinityMetadata;
 use crate::api::response_id_traversal::record::TraversalError;
@@ -54,58 +51,25 @@ pub fn rewrite_response_value(
     provider: Option<&str>,
     metadata: &AffinityMetadata,
 ) -> Result<(), RewriteError> {
-    if !matches!(value, Json::Object(_)) {
-        return Ok(());
-    }
-    let mut record = record_of(value);
-    rewrite_response_id(&mut record, provider, metadata)?;
-    *value = json_of(&record);
-    Ok(())
-}
-
-pub fn encode_item(
-    event: &mut ResponsesAPIStreamingResponse,
-    provider: Option<&str>,
-    model_id: Option<&str>,
-) -> Result<(), RewriteError> {
-    match item_target(event) {
-        Some(target) => encode_target(target, provider, model_id),
-        None => Ok(()),
-    }
-}
-
-pub fn encode_annotation(
-    event: &mut ResponsesAPIStreamingResponse,
-    provider: Option<&str>,
-    model_id: Option<&str>,
-) -> Result<(), RewriteError> {
-    match annotation_target(event) {
-        Some(target) => encode_target(target, provider, model_id),
-        None => Ok(()),
-    }
-}
-
-pub fn encode_part(
-    event: &mut ResponsesAPIStreamingResponse,
-    provider: Option<&str>,
-    model_id: Option<&str>,
-) -> Result<(), RewriteError> {
-    match part_target(event) {
-        Some(PartTarget::Extra(annotations)) => {
-            let mut values: Vec<Json> = convert(annotations)?;
-            encode_values(&mut values, provider, model_id)?;
-            *annotations = convert(&values)?;
+    match value {
+        Json::Object(fields) => {
+            let mut record = record_of_fields(fields.iter());
+            rewrite_response_id(&mut record, provider, metadata)?;
+            *value = json_of(&record);
             Ok(())
         }
-        Some(PartTarget::Value(value)) => {
-            let Json::Object(fields) = value else {
-                return Ok(());
-            };
-            let Some(Json::List(annotations)) = fields.get_mut("annotations") else {
-                return Ok(());
-            };
-            encode_values(annotations, provider, model_id)
-        }
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Ok(()),
+    }
+}
+
+pub fn encode(
+    event: &mut ResponsesAPIStreamingResponse,
+    slot: Slot,
+    provider: Option<&str>,
+    model_id: Option<&str>,
+) -> Result<(), RewriteError> {
+    match slot_target(event, slot) {
+        Some(target) => encode_target(target, provider, model_id),
         None => Ok(()),
     }
 }
@@ -117,29 +81,43 @@ fn encode_target(
 ) -> Result<(), RewriteError> {
     match target {
         Target::Extra(extra) => {
-            let mut record = record_of_fields(extra.iter());
-            encode_container_id(&mut record, provider, model_id);
-            if let Some(encoded) = extra_of(&record) {
-                *extra = encoded;
-            }
+            let mut value: Json = convert(extra)?;
+            encode_value(&mut value, provider, model_id)?;
+            *extra = convert(&value)?;
             Ok(())
         }
-        Target::Value(value) => {
-            let mut record = record_of(value);
-            encode_container_id(&mut record, provider, model_id);
-            *value = json_of(&record);
+        Target::Extras(extras) => {
+            let mut value: Json = convert(extras)?;
+            encode_values(&mut value, provider, model_id)?;
+            *extras = convert(&value)?;
             Ok(())
         }
+        Target::Value(value) => encode_value(value, provider, model_id),
+        Target::Values(values) => encode_values(values, provider, model_id),
     }
 }
 
-fn encode_values(
-    values: &mut [Json],
+fn encode_value(
+    value: &mut Json,
     provider: Option<&str>,
     model_id: Option<&str>,
 ) -> Result<(), RewriteError> {
-    for value in values {
-        encode_target(Target::Value(value), provider, model_id)?;
+    let mut record = record_of(value);
+    encode_container_id(&mut record, provider, model_id);
+    *value = json_of(&record);
+    Ok(())
+}
+
+fn encode_values(
+    values: &mut Json,
+    provider: Option<&str>,
+    model_id: Option<&str>,
+) -> Result<(), RewriteError> {
+    let Json::List(items) = values else {
+        return Ok(());
+    };
+    for item in items {
+        encode_value(item, provider, model_id)?;
     }
     Ok(())
 }

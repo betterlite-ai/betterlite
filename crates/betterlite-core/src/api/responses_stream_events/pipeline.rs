@@ -5,7 +5,7 @@ use betterlite_openai::api::responses_event_records::records::ResponsesAPIStream
 use chrono::{DateTime, FixedOffset};
 
 use super::kinds::{EventKind, event_kind, is_terminal};
-use super::record::{ResponseTarget, response_target};
+use super::record::{ResponseTarget, Slot, response_target};
 use super::terminal::{self, EstimatedUsage};
 use super::{
     JsonShape, ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
@@ -21,8 +21,8 @@ use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
 
 const SSE_DONE: &str = "[DONE]";
 
-impl<'stream, 'details, Transform, Tokenization, Calculator>
-    ResponsesEventProcessor<'stream, 'details, Transform, Tokenization, Calculator>
+impl<Transform, Tokenization, Calculator>
+    ResponsesEventProcessor<'_, '_, Transform, Tokenization, Calculator>
 where
     Transform: ResponsesEventTransform,
     Tokenization: UsageTokenization,
@@ -77,11 +77,10 @@ where
     async fn dispatch_event(
         &mut self,
         parsed: &Json,
-        event: ResponsesAPIStreamingResponse,
+        mut event: ResponsesAPIStreamingResponse,
         state: &mut ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
     ) -> Result<Option<ResponsesAPIStreamingResponse>, ProcessEventError<Transform::Error>> {
-        let mut event = event;
         let kind = event_kind(&event);
         if has_response_key(parsed) {
             let metadata = affinity::request_metadata(state);
@@ -102,9 +101,11 @@ where
         let provider = state.custom_llm_provider.as_deref();
         let model_id = state.hidden_params.model_id.as_deref();
         match kind {
-            EventKind::Item => identity::encode_item(&mut event, provider, model_id)?,
-            EventKind::Annotation => identity::encode_annotation(&mut event, provider, model_id)?,
-            EventKind::Part => identity::encode_part(&mut event, provider, model_id)?,
+            EventKind::Item => identity::encode(&mut event, Slot::Item, provider, model_id)?,
+            EventKind::Annotation => {
+                identity::encode(&mut event, Slot::Annotation, provider, model_id)?;
+            }
+            EventKind::Part => identity::encode(&mut event, Slot::Part, provider, model_id)?,
             EventKind::Completed
             | EventKind::Incomplete
             | EventKind::Failed
@@ -124,12 +125,11 @@ where
 
     async fn store_terminal(
         &mut self,
-        event: ResponsesAPIStreamingResponse,
+        mut event: ResponsesAPIStreamingResponse,
         kind: EventKind,
         state: &mut ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
     ) -> Result<ResponsesAPIStreamingResponse, ProcessEventError<Transform::Error>> {
-        let mut event = event;
         let failed = kind == EventKind::Failed;
         {
             let generated = format!(
