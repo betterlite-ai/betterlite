@@ -1,0 +1,21 @@
+kind: helper
+name: responses-stream-events-event-identity-wrapping
+call:
+  responses_stream_events:
+    payloads:
+      - '{"type":"response.completed","sequence_number":2,"response":{"id":"resp_1","object":"response","created_at":0,"status":"completed","model":"gpt-4o","output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[{"type":"container_file_citation","container_id":"cntr_1","start_index":0,"end_index":2,"file_id":"file_1","filename":"a.txt"}],"logprobs":[]}]}],"parallel_tool_calls":false,"tool_choice":"auto","tools":[]}}'
+      - '{"type":"response.output_item.added","output_index":0,"sequence_number":3,"item":{"type":"code_interpreter_call","id":"ci_1","status":"in_progress","code":"","container_id":"cntr_1","outputs":[]}}'
+      - '{"type":"response.output_item.done","output_index":0,"sequence_number":4,"item":{"type":"code_interpreter_call","id":"ci_1","status":"completed","code":"print(1)","container_id":"cntr_2","outputs":[]}}'
+      - '{"type":"response.output_text.annotation.added","item_id":"msg_1","output_index":0,"content_index":0,"annotation_index":0,"sequence_number":5,"annotation":{"type":"container_file_citation","container_id":"cntr_1","start_index":0,"end_index":2,"file_id":"file_1","filename":"a.txt"}}'
+      - '{"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"sequence_number":6,"part":{"type":"output_text","text":"hi","annotations":[{"type":"container_file_citation","container_id":"cntr_1","start_index":0,"end_index":2,"file_id":"file_1","filename":"a.txt"}],"logprobs":[]}}'
+      - '{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"hi"}'
+    model: gpt-5
+    provider: openai
+    request_data: {"input": "hello"}
+    metadata: {"model_info": {"id": "deployment_a"}}
+    transform: configured
+    estimate: absent
+    cost: missing
+    cache: off
+env: {}
+compare: {ignore: []}
