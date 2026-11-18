@@ -632,8 +632,7 @@ fn search_where_and_list_rows() {
 
 #[rstest]
 fn replays_the_user_contracts_corpus(#[files("fuzz/corpus/user_contracts/*")] path: PathBuf) {
-    // every seed reaches the three body decoders, then the query parsers when it is UTF-8 text,
-    // exactly as the fuzz target drives them
+    // every seed reaches the three body decoders and, when UTF-8, the query parsers, as the fuzz target drives them
     let bytes = fs::read(&path).expect("a corpus seed");
     drop(decode_bulk_user_request(
         &bytes,

@@ -163,28 +163,25 @@ fn decode_users(
     Ok(Some(requests))
 }
 
-// UpdateUserRequestNoUserIDorEmail runs the same role validator without a selector check.
-fn decode_updates(
-    fields: Option<Option<UpdateUserFieldsWire>>,
-) -> Result<Option<UpdateUserFields>, ContractError> {
-    let Some(Some(update_fields)) = fields else {
-        return Ok(None);
-    };
-    let decoded = update_fields.into_fields();
-    check_user_role(decoded.user_role)?;
-    Ok(Some(decoded))
-}
-
 impl BulkUpdateUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
         let mut fields = require_object(value)?;
         blank_row_budgets(&mut fields);
         let wire: BulkUpdateUserWire = decode(&fields)?;
         let supplied_updates = wire.user_updates.is_some();
+        // UpdateUserRequestNoUserIDorEmail runs the same role validator without a selector check
+        let user_updates = match wire.user_updates {
+            Some(Some(update_fields)) => {
+                let decoded = update_fields.into_fields();
+                check_user_role(decoded.user_role)?;
+                Some(decoded)
+            }
+            Some(None) | None => None,
+        };
         let request = Self {
             users: decode_users(wire.users)?,
             all_users: wire.all_users.unwrap_or(Some(false)),
-            user_updates: decode_updates(wire.user_updates)?,
+            user_updates,
         };
         // pydantic's field validator runs only for a supplied user_updates, explicit null included
         if supplied_updates {
