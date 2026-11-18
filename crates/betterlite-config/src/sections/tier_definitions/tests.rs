@@ -527,6 +527,15 @@ fn parameter_text_equality_compares_every_byte() {
 }
 
 #[test]
+fn a_boolean_parameter_compares_as_a_json_value() {
+    let first = entry("small", &[("stream", Json::Bool(true))]);
+    let same = entry("small", &[("stream", Json::Bool(true))]);
+    let different = entry("small", &[("stream", Json::Bool(false))]);
+    assert_eq!(first, same);
+    assert_ne!(first, different);
+}
+
+#[test]
 fn parameter_values_serialize_in_the_shape_the_file_spells() {
     let keys = "        tier_models:
           SIMPLE:
