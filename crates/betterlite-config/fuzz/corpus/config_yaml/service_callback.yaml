@@ -1,0 +1,9 @@
+litellm_settings:
+  service_callback:
+    - datadog
+    - otel
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY

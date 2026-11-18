@@ -1,0 +1,5 @@
+kind: helper
+name: key-user-writes-json-seed
+call: {key_user_writes: {function: class_json, fields: {metadata: {team: acme}, plain_text: text, listed: [1, 2]}}}
+env: {}
+compare: {ignore: []}

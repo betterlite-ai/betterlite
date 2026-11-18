@@ -1,0 +1,27 @@
+kind: probe
+name: query-attribution
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      semantic_router:
+        config: '{"routes": [{"name": "code", "utterances": ["ask"], "score_threshold": 0.3}]}'
+        default_model: fallback-model
+        embedding_model: openai/text-embedding-3-small
+        messages:
+          - {role: user, content: ask}
+        metadata:
+          user_api_key_team_id: team-1
+          user_api_key_budget_reservation: reservation-1
+          user_api_key_auth: {team_id: team-1, budget_reservation: auth-reservation}
+        litellm_metadata:
+          user_api_key: key-1
+        litellm_params_metadata:
+          turn_off_message_logging: true
+          user_api_key_org_id: org-1
+        litellm_session_id: session-1
+        litellm_trace_id: 7
+        vectors:
+          test: [1, 0]
+          ask: [1, 0]
+compare: {ignore: []}

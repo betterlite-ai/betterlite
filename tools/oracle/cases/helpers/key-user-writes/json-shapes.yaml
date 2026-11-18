@@ -1,0 +1,22 @@
+kind: helper
+name: jsonifies_only_top_level_dicts
+call:
+  key_user_writes:
+    function: class_json
+    fields:
+      metadata:
+        team: acme
+        nested:
+          level: 2
+      listed:
+        - team: acme
+        - plain
+      plain_text: already a string
+      json_text: '{"team":"acme"}'
+      null_value: null
+      flag: true
+      number: 7
+      ratio: 1.5
+env: {}
+compare:
+  ignore: []

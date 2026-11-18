@@ -1,0 +1,28 @@
+kind: helper
+name: no-url-body-classification
+call:
+  bedrock_services_batch_embeddings:
+    function: classify_records
+    records:
+      - {body: {messages: [{role: user, content: hi}]}}
+      - {body: {prompt: p}}
+      - {body: {input: x}}
+      - {body: {prompt: null, input: null}}
+      - {body: {messages: null, prompt: p}}
+      - {body: {input: null}}
+      - {body: {other: 1}}
+      - {body: x}
+      - {body: [1, 2]}
+      - {body: null}
+      - {body: {}}
+      - {}
+calls:
+  - bedrock_services_batch_embeddings:
+      function: classify_records
+      records:
+        - {url: "", body: {messages: null, prompt: null, input: null}}
+        - {url: null, body: {messages: [], prompt: p, input: x}}
+        - {url: null, body: {prompt: p, input: x}}
+env: {}
+compare:
+  ignore: []

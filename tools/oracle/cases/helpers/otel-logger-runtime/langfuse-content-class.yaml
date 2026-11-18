@@ -1,0 +1,31 @@
+kind: helper
+name: langfuse-content-class
+call:
+  b8910:
+    function: logger_class
+    config:
+      exporters: []
+      mapper_names: [genai, langfuse]
+      capture_message_content: span_only
+calls:
+  - b8910:
+      function: logger_class
+      config:
+        exporters: []
+        mapper_names: [genai, langfuse]
+        capture_message_content: span_and_event
+  - b8910:
+      function: logger_class
+      config:
+        exporters: []
+        mapper_names: [genai]
+        capture_message_content: span_and_event
+  - b8910:
+      function: logger_class
+      config:
+        exporters: []
+        mapper_names: [genai, langfuse_otel]
+        capture_message_content: span_only
+env: {}
+compare:
+  ignore: []
