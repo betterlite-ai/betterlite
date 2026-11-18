@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use secrecy::SecretString;
 
 pub const MESSAGES_SUFFIX: &str = "/v1/messages";
@@ -35,7 +33,15 @@ pub struct Globals {
 }
 
 // The injected environment; the secret manager loaders belong to B567 and B500.
-pub type Environment = BTreeMap<String, String>;
+#[derive(Debug, Clone, Default, serde::Deserialize)]
+pub struct Environment {
+    #[serde(default, rename = "ANTHROPIC_API_BASE")]
+    pub api_base: Option<String>,
+    #[serde(default, rename = "ANTHROPIC_BASE_URL")]
+    pub base_url: Option<String>,
+    #[serde(default, rename = "ANTHROPIC_API_KEY")]
+    pub api_key: Option<SecretString>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedBase {
@@ -57,8 +63,8 @@ pub fn resolve_base(
     let base = [
         explicit,
         globals.api_base.as_deref(),
-        environment.get(API_BASE_VARIABLE).map(String::as_str),
-        environment.get(BASE_URL_VARIABLE).map(String::as_str),
+        environment.api_base.as_deref(),
+        environment.base_url.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -94,11 +100,7 @@ pub fn resolve_key(
     non_empty_secret(explicit)
         .or_else(|| non_empty_secret(globals.anthropic_key.as_ref()))
         .or_else(|| non_empty_secret(globals.api_key.as_ref()))
-        .or_else(|| {
-            environment
-                .get(API_KEY_VARIABLE)
-                .map(|value| SecretString::from(value.clone()))
-        })
+        .or_else(|| environment.api_key.clone())
 }
 
 fn non_empty_secret(value: Option<&SecretString>) -> Option<SecretString> {

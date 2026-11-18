@@ -47,7 +47,7 @@ async fn anthropic_provider_credential_identity_isolation() {
     second.expected_key = second.api_key.clone();
     second
         .headers
-        .insert("x-oracle".to_owned(), "second".to_owned());
+        .insert("x-oracle".to_owned(), secrecy::SecretString::from("second"));
     case.call.anthropic_provider.inputs.push(second);
     let first = execute(&case.call.anthropic_provider).await.unwrap();
     let repeat = execute(&case.call.anthropic_provider).await.unwrap();
@@ -67,8 +67,23 @@ async fn anthropic_provider_secret_safe_failure() {
     let mut case: Calls = serde_saphyr::from_str(source).unwrap();
     case.call.anthropic_provider.inputs.truncate(1);
     case.call.anthropic_provider.inputs[0].failure = Some(503);
+    let input = &mut case.call.anthropic_provider.inputs[0];
+    input.headers.insert(
+        "Authorization".to_owned(),
+        secrecy::SecretString::from("Bearer sk-header-auth"),
+    );
+    input.headers.insert(
+        "x-api-key".to_owned(),
+        secrecy::SecretString::from("sk-header-key"),
+    );
+    input.environment.api_key = Some(secrecy::SecretString::from("sk-environment-key"));
+    let call = super::completion::CompletionCall::from(&*input);
+    let shown = format!("{call:?} {:?}", input.environment);
+    assert!(!shown.contains("sk-header-auth"));
+    assert!(!shown.contains("sk-header-key"));
+    assert!(!shown.contains("sk-environment-key"));
     let globals = super::base::Globals {
-        api_key: case.call.anthropic_provider.inputs[0].api_key.clone(),
+        api_key: input.api_key.clone(),
         api_base: None,
         anthropic_key: None,
     };
@@ -77,5 +92,8 @@ async fn anthropic_provider_secret_safe_failure() {
     let shown = format!("{result:?}");
     assert!(shown.contains("503"));
     assert!(!shown.contains("sk-oracle-explicit"));
+    assert!(!shown.contains("sk-header-auth"));
+    assert!(!shown.contains("sk-header-key"));
+    assert!(!shown.contains("sk-environment-key"));
     assert!(!result[0].post_call);
 }

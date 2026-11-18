@@ -45,10 +45,10 @@ def selection_failure(supplied: Input, client: HTTPHandler) -> Observation:
     MANAGER.get_provider_chat_config = Missing()
     try:
         SYNC_HANDLER.completion(**arguments)
-    except ValueError as error:
+    except ValueError:
         return {
             "result": {
-                "error": True, "status": None, "class": "ValueError", "message": str(error),
+                "error": True, "status": None,
             },
             "post_call": False, "post_matches": True, "request": None,
         }

@@ -22,7 +22,7 @@ pub struct CompletionCall<Client, Encoding> {
     pub model_response: betterlite_anthropic::response::wire::ResponseEnvelope,
     pub optional_params: IndexMap<String, Json>,
     pub litellm_params: IndexMap<String, Json>,
-    pub headers: BTreeMap<String, String>,
+    pub headers: BTreeMap<String, SecretString>,
     pub api_key: Option<SecretString>,
     pub api_base: Option<String>,
     pub custom_prompt_dict: BTreeMap<String, Json>,

@@ -32,9 +32,26 @@ pub fn selected_config(
     provider: &str,
     selection: Option<betterlite_context::chat_config_selection::tags::ChatConfigTag>,
 ) -> Result<betterlite_context::chat_config_selection::tags::ChatConfigTag, ConfigSelectionError> {
-    ProviderId::from_str(provider).map_err(|_invalid| ConfigSelectionError::InvalidProvider {
-        provider: provider.to_owned(),
+    let id = ProviderId::from_str(provider).map_err(|_invalid| {
+        ConfigSelectionError::InvalidProvider {
+            provider: provider.to_owned(),
+        }
     })?;
+    if matches!(
+        id,
+        ProviderId::Abliteration
+            | ProviderId::Llamagate
+            | ProviderId::Gmi
+            | ProviderId::Sarvam
+            | ProviderId::Aihubmix
+            | ProviderId::Crusoe
+            | ProviderId::Empiriolabs
+            | ProviderId::Veniceai
+    ) {
+        return Err(ConfigSelectionError::InvalidProvider {
+            provider: provider.to_owned(),
+        });
+    }
     selection.ok_or_else(|| ConfigSelectionError::NotFound {
         model: model.to_owned(),
         provider: provider.to_owned(),

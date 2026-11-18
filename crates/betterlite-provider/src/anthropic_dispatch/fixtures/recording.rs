@@ -82,7 +82,7 @@ impl From<(ResolvedCall<String, String>, &Input)> for Capture {
             model: call.model, provider: call.provider, api_base: call.api_base,
             model_response_id: call.model_response.id, timeout_ms: call.timeout.as_millis(),
             auth_matches: call.api_key.as_ref().map(|key| key.expose_secret()) == input.expected_key.as_ref().map(|key| key.expose_secret()),
-            messages: call.messages, headers: call.headers, optional_params: call.optional_params, litellm_params: call.litellm_params,
+            messages: call.messages, headers: call.headers.into_iter().map(|(name, value)| (name, value.expose_secret().to_owned())).collect(), optional_params: call.optional_params, litellm_params: call.litellm_params,
             custom_prompt_dict: match resolved.surface { Surface::Messages => Some(call.custom_prompt_dict), Surface::Legacy => None },
             stream: match resolved.surface { Surface::Messages => None, Surface::Legacy => Some(call.stream) },
             acompletion: call.acompletion, client: call.client, shared_session: call.shared_session,

@@ -5,10 +5,8 @@ use secrecy::ExposeSecret as _;
 use super::*;
 
 fn environment(pairs: &[(&str, &str)]) -> Environment {
-    pairs
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect()
+    let values: std::collections::BTreeMap<_, _> = pairs.iter().copied().collect();
+    serde_json::from_value(serde_json::to_value(values).unwrap()).unwrap()
 }
 
 #[test]
@@ -30,7 +28,7 @@ fn a_base_that_already_ends_with_the_suffix_keeps_one() {
         Surface::Messages,
         Some("https://explicit.test/v1/messages"),
         &Globals::default(),
-        &Environment::new(),
+        &Environment::default(),
         false,
     );
     assert_eq!(resolved.url, "https://explicit.test/v1/messages");
@@ -42,7 +40,7 @@ fn a_slash_ended_host_still_receives_the_suffix() {
         Surface::Legacy,
         Some("https://explicit.test/"),
         &Globals::default(),
-        &Environment::new(),
+        &Environment::default(),
         false,
     );
     assert_eq!(resolved.url, "https://explicit.test//v1/complete");
@@ -54,7 +52,7 @@ fn disabling_the_suffix_keeps_the_url_and_names_the_notice() {
         Surface::Legacy,
         Some("https://explicit.test"),
         &Globals::default(),
-        &Environment::new(),
+        &Environment::default(),
         true,
     );
     assert_eq!(resolved.url, "https://explicit.test");
@@ -75,7 +73,7 @@ fn disabling_suffix_preserves_the_default_endpoint(
         surface,
         None,
         &Globals::default(),
-        &Environment::new(),
+        &Environment::default(),
         true,
     );
     assert_eq!(resolved.url, expected);

@@ -10,7 +10,7 @@ use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::base::{Globals, Surface};
 use super::super::completion::{CompletionCall, CompletionSettings};
@@ -116,10 +116,11 @@ fn observation(
 fn headers(input: &Input) -> Result<HeaderMap, FixtureError> {
     let mut headers = HeaderMap::new();
     for (name, value) in &input.headers {
-        headers.insert(
-            HeaderName::try_from(name.as_str())?,
-            HeaderValue::try_from(value.as_str())?,
-        );
+        headers.insert(HeaderName::try_from(name.as_str())?, {
+            let mut header = HeaderValue::try_from(value.expose_secret())?;
+            header.set_sensitive(true);
+            header
+        });
     }
     Ok(headers)
 }
@@ -200,14 +201,6 @@ fn outcome_value(
 }
 
 fn failure_value(error: DispatchError<Failure>) -> Result<Json, FixtureError> {
-    if let DispatchError::Selection(selection) = &error {
-        return Ok(Json::Object(IndexMap::from([
-            ("error".to_owned(), Json::Bool(true)),
-            ("status".to_owned(), Json::Null),
-            ("class".to_owned(), Json::Text("ValueError".to_owned())),
-            ("message".to_owned(), Json::Text(selection.to_string())),
-        ])));
-    }
     let status = match error {
         DispatchError::Completion(Failure::Status(status)) => Some(status),
         DispatchError::Count(error) => Some(error.status_code()),

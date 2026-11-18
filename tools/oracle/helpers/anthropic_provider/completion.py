@@ -4,7 +4,7 @@ import httpx
 import litellm
 from litellm.exceptions import APIError
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
-from litellm.types.utils import ModelResponse
+from litellm.types.utils import LlmProviders, ModelResponse
 from openai import APIError as OpenAIError
 from pydantic import ConfigDict, JsonValue, TypeAdapter
 from typing_extensions import override
@@ -81,7 +81,11 @@ def complete(supplied: Input) -> Observation:
     recorder = Recorder(supplied)
     with httpx.Client(transport=NoNetwork()) as http:
         client = HTTPHandler(client=http)
-        if not supplied["config_present"] or supplied["provider"] == "not-a-provider":
+        try:
+            LlmProviders(supplied["provider"])
+        except ValueError:
+            return selection_failure(supplied, client)
+        if not supplied["config_present"]:
             return selection_failure(supplied, client)
         context = Context(
             supplied["acompletion"], supplied["api_base"], supplied["api_key"],

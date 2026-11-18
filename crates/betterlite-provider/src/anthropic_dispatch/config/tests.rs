@@ -64,3 +64,32 @@ fn the_shared_selection_is_preserved() {
         Ok(ChatConfigTag::AnthropicText)
     );
 }
+
+#[rstest::rstest]
+#[case::abliteration("abliteration")]
+#[case::llamagate("llamagate")]
+#[case::gmi("gmi")]
+#[case::sarvam("sarvam")]
+#[case::aihubmix("aihubmix")]
+#[case::crusoe("crusoe")]
+#[case::empiriolabs("empiriolabs")]
+#[case::veniceai("veniceai")]
+fn registry_only_provider_is_rejected_with_a_config(#[case] provider: &str) {
+    let selection =
+        Some(betterlite_context::chat_config_selection::tags::ChatConfigTag::JsonProvider);
+    assert_eq!(
+        selected_config("model", provider, selection),
+        Err(ConfigSelectionError::InvalidProvider {
+            provider: provider.to_owned()
+        })
+    );
+}
+
+#[test]
+fn pinned_provider_after_registry_entries_is_accepted() {
+    use betterlite_context::chat_config_selection::tags::ChatConfigTag;
+    assert_eq!(
+        selected_config("model", "neosantara", Some(ChatConfigTag::JsonProvider)),
+        Ok(ChatConfigTag::JsonProvider)
+    );
+}
