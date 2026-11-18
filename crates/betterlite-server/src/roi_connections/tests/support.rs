@@ -260,6 +260,7 @@ pub(crate) fn harness() -> Harness {
     Harness {
         wire: Wire::new(Vec::new()),
         repository: Arc::new(MemoryRepository::default()),
+        repository_present: true,
         catalog: Arc::new(Catalog::default()),
         master_key: None,
         stored: SETTINGS.to_owned(),
@@ -269,6 +270,7 @@ pub(crate) fn harness() -> Harness {
 pub(crate) struct Harness {
     pub(crate) wire: Wire,
     pub(crate) repository: Arc<MemoryRepository>,
+    pub(crate) repository_present: bool,
     pub(crate) catalog: Arc<Catalog>,
     pub(crate) master_key: Option<SecretString>,
     pub(crate) stored: String,
@@ -295,12 +297,17 @@ impl Harness {
         self
     }
 
+    pub(crate) fn without_repository(mut self) -> Self {
+        self.repository_present = false;
+        self
+    }
+
     pub(crate) fn state(&self) -> RoiConnectionsState<Wire> {
         self.repository.seed(&self.stored);
         let repository: Arc<dyn SettingsRepository> = self.repository.clone();
         let catalog: Arc<dyn RouterCatalog> = self.catalog.clone();
         RoiConnectionsState {
-            repository: Some(repository),
+            repository: self.repository_present.then_some(repository),
             catalog: Some(catalog),
             cipher: Arc::new(PlainCipher),
             master_key: self.master_key.clone(),

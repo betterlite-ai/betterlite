@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use axum::http::StatusCode;
+use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use rstest::rstest;
 
 use crate::roi_connections::gateway_key::MISSING_KEY;
@@ -10,6 +11,17 @@ use crate::roi_connections::tests::support::{Answer, admin, call, harness, post,
 
 fn models_ok() -> Answer {
     Answer::ok(r#"{"data":[{"id":"gpt-4o"}]}"#)
+}
+
+#[tokio::test]
+async fn missing_repository_is_a_500() {
+    let harness = harness().without_repository();
+    let reply = call(harness.app(), post(CONNECTIONS_TEST_PATH, Some(&admin()))).await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        reply.detail(),
+        CommonProxyErrors::DbNotConnectedError.as_str()
+    );
 }
 
 #[tokio::test]
