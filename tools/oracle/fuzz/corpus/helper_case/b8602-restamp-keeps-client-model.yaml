@@ -1,0 +1,15 @@
+kind: helper
+name: b8602-restamp-keeps-client-model
+call:
+  b8602:
+    function: restamp
+    restamps:
+      - kind: stream
+        body: {id: chatcmpl-seed, object: chat.completion.chunk, created: 1, model: provider/seed, choices: []}
+        requested_model: gpt-4o
+        request_data: {}
+        fallback_attempted: false
+        fallback_model: null
+        mismatch_logged: false
+env: {}
+compare: {ignore: []}

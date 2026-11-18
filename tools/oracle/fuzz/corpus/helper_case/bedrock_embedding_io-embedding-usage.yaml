@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock_embedding_io-embedding-usage-seed
+call:
+  bedrock_embedding_io:
+    function: embedding_usage
+    model: amazon.titan-embed-text-v1
+    provider: amazon
+    response_list:
+      - embedding: [0.5, 0.25]
+        inputTextTokenCount: 3
+env: {}
+compare: {ignore: []}
