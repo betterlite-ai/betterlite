@@ -27,6 +27,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "anthropic_stream_rewrite"
+path = "fuzz_targets/anthropic_stream_rewrite.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "key_header"
 path = "fuzz_targets/key_header.rs"
 test = false
