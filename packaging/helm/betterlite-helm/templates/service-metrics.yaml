@@ -1,0 +1,17 @@
+{{- if .Values.metricsServer.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "betterlite.fullname" . }}-metrics
+  labels:
+    {{- include "betterlite.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.metricsServer.port }}
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "betterlite.selectorLabels" . | nindent 4 }}
+{{- end }}
