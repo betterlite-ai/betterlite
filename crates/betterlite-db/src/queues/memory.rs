@@ -29,7 +29,7 @@ impl EnqueueObserver for NoEnqueueObserver {
 pub struct MemoryUpdateQueue<T> {
     sender: mpsc::Sender<T>,
     receiver: Mutex<mpsc::Receiver<T>>,
-    pub aggregation_threshold: i64,
+    aggregation_threshold: i64,
     flush_count: i64,
     observer: Arc<dyn EnqueueObserver>,
 }
@@ -44,23 +44,23 @@ impl<T: Send> MemoryUpdateQueue<T> {
         if capacity == 0 {
             return Err(MemoryQueueError::ZeroCapacity);
         }
-        if i64::try_from(capacity)
-            .is_ok_and(|queue_capacity| aggregation_threshold >= queue_capacity)
-        {
-            tracing::warn!(
-                aggregation_threshold,
-                capacity,
-                "Misconfigured queue thresholds: MAX_SIZE_IN_MEMORY_QUEUE ({aggregation_threshold}) >= LITELLM_ASYNCIO_QUEUE_MAXSIZE ({capacity}). The spend aggregation check will never trigger because the asyncio.Queue blocks at {capacity} items. Set MAX_SIZE_IN_MEMORY_QUEUE to a value less than LITELLM_ASYNCIO_QUEUE_MAXSIZE (recommended: 80% of it)."
-            );
-        }
         let (sender, receiver) = mpsc::channel(capacity);
-        Ok(Self {
+        let queue = Self {
             sender,
             receiver: Mutex::new(receiver),
             aggregation_threshold,
             flush_count,
             observer,
-        })
+        };
+        let stored_threshold = queue.aggregation_threshold;
+        if i64::try_from(capacity).is_ok_and(|queue_capacity| stored_threshold >= queue_capacity) {
+            tracing::warn!(
+                aggregation_threshold = stored_threshold,
+                capacity,
+                "Misconfigured queue thresholds: MAX_SIZE_IN_MEMORY_QUEUE ({stored_threshold}) >= LITELLM_ASYNCIO_QUEUE_MAXSIZE ({capacity}). The spend aggregation check will never trigger because the asyncio.Queue blocks at {capacity} items. Set MAX_SIZE_IN_MEMORY_QUEUE to a value less than LITELLM_ASYNCIO_QUEUE_MAXSIZE (recommended: 80% of it)."
+            );
+        }
+        Ok(queue)
     }
 
     // A cancelled add never admitted its record: reserve hands the permit over only once the queue has room.
@@ -85,18 +85,20 @@ impl<T: Send> MemoryUpdateQueue<T> {
 
     #[must_use]
     pub fn drain_updates(&self) -> Vec<T> {
-        let mut receiver = self.receiver.lock().unwrap_or_else(PoisonError::into_inner);
         let mut updates = Vec::new();
-        while !receiver.is_empty() {
-            // Circuit breaker: the source stops a pass at MAX_IN_MEMORY_QUEUE_FLUSH_COUNT, and a nonpositive value therefore drains nothing.
-            if i64::try_from(updates.len()).unwrap_or(i64::MAX) >= self.flush_count {
-                tracing::debug!("Max in memory queue flush count reached, stopping flush");
-                break;
+        {
+            let mut receiver = self.receiver.lock().unwrap_or_else(PoisonError::into_inner);
+            while !receiver.is_empty() {
+                // Circuit breaker: the source stops a pass at MAX_IN_MEMORY_QUEUE_FLUSH_COUNT, and a nonpositive value therefore drains nothing.
+                if i64::try_from(updates.len()).unwrap_or(i64::MAX) >= self.flush_count {
+                    tracing::debug!("Max in memory queue flush count reached, stopping flush");
+                    break;
+                }
+                let Ok(update) = receiver.try_recv() else {
+                    break;
+                };
+                updates.push(update);
             }
-            let Ok(update) = receiver.try_recv() else {
-                break;
-            };
-            updates.push(update);
         }
         updates
     }

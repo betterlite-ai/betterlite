@@ -261,11 +261,11 @@ struct FakeScript {
 }
 
 impl LockScript for FakeScript {
-    fn run<'a>(
-        &'a self,
-        _key: &'a str,
-        owner_json: &'a str,
-    ) -> BoxFuture<'a, Result<bool, LockCacheError>> {
+    fn run<'lease>(
+        &'lease self,
+        _key: &'lease str,
+        owner_json: &'lease str,
+    ) -> BoxFuture<'lease, Result<bool, LockCacheError>> {
         self.runs.fetch_add(1, Ordering::SeqCst);
         Box::pin(async move {
             let mut lease = self.store.lock().unwrap_or_else(PoisonError::into_inner);
@@ -631,8 +631,8 @@ async fn the_constructed_uuid_owns_every_acquire() {
         PodId::try_from(owner).unwrap(),
     );
     assert_eq!(owner_text(&manager), owner.to_string().as_str());
-    manager.acquire_lock("first", None, true).await;
-    manager.acquire_lock("second", None, true).await;
+    assert_eq!(manager.acquire_lock("first", None, true).await, Some(true));
+    assert_eq!(manager.acquire_lock("second", None, true).await, Some(true));
     assert_eq!(
         cache.stored_owners(),
         vec![owner.to_string(), owner.to_string()]

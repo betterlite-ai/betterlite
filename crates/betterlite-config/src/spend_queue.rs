@@ -70,10 +70,8 @@ fn read_setting<L>(lookup: &L, name: &str) -> Result<Option<i64>, SpendQueueErro
 where
     L: EnvironmentLookup,
 {
-    match lookup.lookup(name) {
-        Some(text) => decode_spend_queue_setting(name, &text),
-        None => decode_spend_queue_setting(name, ""),
-    }
+    let text = lookup.lookup(name).unwrap_or_default();
+    decode_spend_queue_setting(name, &text)
 }
 
 fn scaled_threshold(capacity: i64) -> Result<i64, SpendQueueError> {

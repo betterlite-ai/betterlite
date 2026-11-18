@@ -11,6 +11,7 @@ end
 "#;
 
 // PodLockManager.get_redis_lock_key: the lease key for one cron job.
+#[must_use]
 pub fn lease_key(cronjob_id: &str) -> String {
     let mut key = String::from("cronjob_lock:");
     key.push_str(cronjob_id);

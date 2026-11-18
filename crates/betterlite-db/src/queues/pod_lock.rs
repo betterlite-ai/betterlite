@@ -67,11 +67,11 @@ pub trait LockCache: Send + Sync {
 
 // async_register_script's handle: run receives the JSON text async_set_cache stored, so a Lua equality check compares like with like.
 pub trait LockScript: Send + Sync {
-    fn run<'a>(
-        &'a self,
-        key: &'a str,
-        owner_json: &'a str,
-    ) -> BoxFuture<'a, Result<bool, LockCacheError>>;
+    fn run<'lease>(
+        &'lease self,
+        key: &'lease str,
+        owner_json: &'lease str,
+    ) -> BoxFuture<'lease, Result<bool, LockCacheError>>;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

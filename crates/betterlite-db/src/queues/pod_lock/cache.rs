@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use betterlite_redis::cache_primitives::decode::{CachedValue, validate_lua_count};
@@ -68,33 +67,38 @@ where
 }
 
 impl LockCache for RedisLockCache {
-    #[rustfmt::skip]
-    fn get_owner(&self, key: &str) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
-        async move {
-            let value = with_cache_error("async_get_cache", self.cache.async_get_cache(key).await)?;
-            Ok(value.and_then(owner_bytes))
-        }
+    async fn get_owner(&self, key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
+        let value = with_cache_error("async_get_cache", self.cache.async_get_cache(key).await)?;
+        Ok(value.and_then(owner_bytes))
     }
 
-    // A live cache needs a running Redis: db tests fake at the LockCache seam, and the oracle fixture tests run this adapter against real Redis.
+    // A live cache needs a running Redis, which the db tests fake at the LockCache seam.
     #[cfg_attr(test, mutants::skip)]
-    #[rustfmt::skip]
-    fn set_owner_if_absent(&self, key: &str, owner: &str, ttl_seconds: i64) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
-        async move {
-            let ttl = ttl_seconds.to_f64().unwrap_or_default();
-            let stored = with_cache_error("async_set_cache", self.cache.values.async_set_cache(Some(key), owner, Some(ttl), true).await)?;
-            Ok(stored == Some(true))
-        }
+    async fn set_owner_if_absent(
+        &self,
+        key: &str,
+        owner: &str,
+        ttl_seconds: i64,
+    ) -> Result<bool, LockCacheError> {
+        let ttl = ttl_seconds.to_f64().unwrap_or_default();
+        let stored = with_cache_error(
+            "async_set_cache",
+            self.cache
+                .values
+                .async_set_cache(Some(key), owner, Some(ttl), true)
+                .await,
+        )?;
+        Ok(stored == Some(true))
     }
 
-    #[rustfmt::skip]
-    fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
-        async move {
-            with_cache_error("async_delete_cache", self.cache.admin.async_delete_cache(key).await)
-        }
+    async fn delete(&self, key: &str) -> Result<i64, LockCacheError> {
+        with_cache_error(
+            "async_delete_cache",
+            self.cache.admin.async_delete_cache(key).await,
+        )
     }
 
-    // The registered handle is only exercised by a script run, which needs the running Redis of the oracle fixture tests.
+    // Registering the handle needs a running Redis, which the db tests fake at the LockCache seam.
     #[cfg_attr(test, mutants::skip)]
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
         let script = self
@@ -117,11 +121,11 @@ struct RedisLockScript {
 impl LockScript for RedisLockScript {
     // The handle needs a running Redis, which the db tests fake at the LockCache seam.
     #[cfg_attr(test, mutants::skip)]
-    fn run<'a>(
-        &'a self,
-        key: &'a str,
-        owner_json: &'a str,
-    ) -> BoxFuture<'a, Result<bool, LockCacheError>> {
+    fn run<'lease>(
+        &'lease self,
+        key: &'lease str,
+        owner_json: &'lease str,
+    ) -> BoxFuture<'lease, Result<bool, LockCacheError>> {
         Box::pin(async move {
             let keys = [key.to_owned()];
             let args = [RedisScalar::Text(owner_json.to_owned())];
@@ -138,7 +142,19 @@ fn deleted_one(reply: Value) -> Result<bool, LockCacheError> {
         Value::Int(count) => Ok(count == 1),
         Value::BulkString(bytes) => Ok(validate_lua_count(&bytes)? == 1),
         Value::Nil => Ok(false),
-        _ => Err(LockCacheError::UnexpectedReply {
+        Value::Array(_)
+        | Value::SimpleString(_)
+        | Value::Okay
+        | Value::Map(_)
+        | Value::Attribute { .. }
+        | Value::Set(_)
+        | Value::Double(_)
+        | Value::Boolean(_)
+        | Value::VerbatimString { .. }
+        | Value::BigNumber(_)
+        | Value::Push { .. }
+        | Value::ServerError(_)
+        | _ => Err(LockCacheError::UnexpectedReply {
             operation: "run_script",
         }),
     }
