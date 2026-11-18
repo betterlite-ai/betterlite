@@ -78,7 +78,7 @@ pub(crate) fn response_failed_event(
     let usage_field = usage.map_or(String::new(), |value| format!(r#","usage":{value}"#));
     let error_field = error.map_or(String::new(), |value| format!(r#","error":{value}"#));
     decode(&format!(
-        r#"{{"type":"response.failed","sequence_number":2,"response":{{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"failed","output":[]{error}{usage}}}}}"#
+        r#"{{"type":"response.failed","sequence_number":2,"response":{{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","object":"response","status":"failed","output":[]{error_field}{usage_field}}}}}"#
     ))
 }
 

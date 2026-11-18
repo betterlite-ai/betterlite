@@ -1,6 +1,8 @@
 import asyncio
+import sys
 from collections.abc import Callable, Coroutine
 from concurrent.futures import Future, ThreadPoolExecutor
+from contextlib import redirect_stdout
 from datetime import datetime
 from typing import Literal, ParamSpec, TypedDict, TypeVar, cast
 
@@ -287,5 +289,7 @@ async def answer(operation: Operation, values: dict[str, JsonValue]) -> JsonValu
 
 
 def run(input_data: Input) -> JsonValue:
-    answers = [asyncio.run(answer(input_data["operation"], row)) for row in input_data["rows"]]
+    # LiteLLM prints a debug banner on an exception; keep stdout for the helper's answer
+    with redirect_stdout(sys.stderr):
+        answers = [asyncio.run(answer(input_data["operation"], row)) for row in input_data["rows"]]
     return {"rows": answers}

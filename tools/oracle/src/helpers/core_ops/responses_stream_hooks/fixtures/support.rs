@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio_util::task::TaskTracker;
 
-mod ports;
+use super::ports;
 
 #[derive(Clone, Deserialize)]
 #[expect(

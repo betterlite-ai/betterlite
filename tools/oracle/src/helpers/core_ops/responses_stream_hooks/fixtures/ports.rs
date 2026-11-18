@@ -18,7 +18,7 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
-use super::Probe;
+use super::support::Probe;
 
 impl Probe {
     fn record(&self, value: Value) {
@@ -159,7 +159,7 @@ impl ChunkDeploymentHook for Chunk {
             replacement => {
                 let mut event = call.chunk.clone();
                 if let Some(response) = nested_response_mut(&mut event) {
-                    response.id = replacement.to_owned();
+                    replacement.clone_into(&mut response.id);
                 }
                 Ok(Some(event))
             }

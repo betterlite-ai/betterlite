@@ -26,7 +26,7 @@ use indexmap::IndexMap;
 use serde_json::{Value, json};
 
 use super::Operation;
-use super::fixtures::{Probe, Row, context, state};
+use super::fixtures::support::{Probe, Row, context, state};
 
 struct Session<'context> {
     hooks: ResponsesStreamHooks<'context>,
@@ -53,9 +53,13 @@ pub(super) async fn run(operation: Operation, row: &Row) -> HelperResult {
     await_pending_logging(&mut session.callback).await;
     session.base.pending_tasks.close();
     session.base.pending_tasks.wait().await;
-    let records = probe.records.lock().unwrap_or_else(PoisonError::into_inner);
+    let records = probe
+        .records
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     Ok(
-        json!({"records": *records, "cached": session.base.completed_response_cached,
+        json!({"records": records, "cached": session.base.completed_response_cached,
         "logged": session.base.completed_response_logged,
         "failed": session.base.failure_handled, "extra": extra}),
     )
@@ -89,22 +93,7 @@ impl Session<'_> {
     }
 
     async fn failure(&mut self, probe: &Probe) -> Value {
-        if let Err(error) = maybe_raise_for_error_event(&self.hooks, &self.base, &probe.row.event) {
-            handle_failure(
-                &self.hooks,
-                &mut self.base,
-                &mut self.callback,
-                &error.exception,
-            )
-            .await;
-            handle_failure(
-                &self.hooks,
-                &mut self.base,
-                &mut self.callback,
-                &error.exception,
-            )
-            .await;
-        }
+        handle_raised_failure(&self.hooks, &mut self.base, &mut self.callback, probe).await;
         Value::Null
     }
 
@@ -171,6 +160,20 @@ impl Session<'_> {
         )
         .await;
         json!({"id": nested_response(&event).map(|response| &response.id), "ran": self.callback.post_streaming_hooks_ran})
+    }
+}
+
+async fn handle_raised_failure(
+    hooks: &ResponsesStreamHooks<'_>,
+    state: &mut ResponsesStreamBaseState,
+    callback: &mut ResponsesStreamHookState,
+    probe: &Probe,
+) {
+    let Err(error) = maybe_raise_for_error_event(hooks, state, &probe.row.event) else {
+        return;
+    };
+    for _attempt in 0..2 {
+        handle_failure(hooks, state, callback, &error.exception).await;
     }
 }
 

@@ -22,7 +22,7 @@ pub(crate) enum Operation {
 #[derive(Deserialize)]
 pub(crate) struct Input {
     operation: Operation,
-    rows: Vec<fixtures::Row>,
+    rows: Vec<fixtures::support::Row>,
 }
 
 pub(crate) struct Op;
