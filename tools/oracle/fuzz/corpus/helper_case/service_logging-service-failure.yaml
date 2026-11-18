@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "service-logging-service-failure-seed", "call": {"service_logging": {"op": "service_failure", "service": "postgres", "call_type": "db_execute", "duration": 1.5, "caller": null, "error": "asyncpg connection refused"}}, "env": {}, "compare": {"ignore": []}}

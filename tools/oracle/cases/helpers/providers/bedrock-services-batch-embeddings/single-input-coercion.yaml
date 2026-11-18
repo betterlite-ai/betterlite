@@ -1,0 +1,34 @@
+kind: helper
+name: single-input-coercion
+call:
+  bedrock_services_batch_embeddings:
+    function: coerce_input
+    model: m
+    input: hello
+calls:
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: ""
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: [hello]
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: [""]
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: null
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: other-model
+      input: spaced text
+env: {}
+compare:
+  ignore: []

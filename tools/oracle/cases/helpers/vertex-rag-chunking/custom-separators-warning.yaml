@@ -1,0 +1,10 @@
+kind: helper
+name: custom-separators-warning
+call:
+  vertex_rag_chunking:
+    cases:
+      - chunking_strategy: {chunk_size: 10, chunk_overlap: 2, separators: ["\n\n", ""]}
+      - chunking_strategy: {separators: []}
+      - chunking_strategy: {separators: null}
+env: {}
+compare: {ignore: []}

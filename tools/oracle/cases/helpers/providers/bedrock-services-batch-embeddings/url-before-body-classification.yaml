@@ -1,0 +1,28 @@
+kind: helper
+name: url-before-body-classification
+call:
+  bedrock_services_batch_embeddings:
+    function: classify_records
+    records:
+      - {url: /v1/embeddings, body: {messages: []}}
+      - {url: /v1/completions, body: {messages: []}}
+      - {url: /v1/responses, body: {messages: []}}
+      - {url: /v1/embeddings}
+      - {url: /v1/embeddings, body: x}
+      - {url: /embeddings, body: {input: x}}
+      - {url: "/v1/embeddings?beta=1", body: {input: x}}
+      - {url: " /v1/embeddings", body: {input: x}}
+      - {url: /v1/Embeddings, body: {input: x}}
+      - {url: 123, body: {input: x}}
+      - {url: [/v1/embeddings], body: {input: x}}
+calls:
+  - bedrock_services_batch_embeddings:
+      function: classify_records
+      records:
+        - {url: /completions, body: {messages: []}}
+        - {url: null, body: {messages: []}}
+        - {url: "", body: {prompt: p}}
+        - {url: /v1/responses, body: [1, 2]}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-services-batch-embeddings-map-embedding
+call:
+  bedrock_services_batch_embeddings:
+    function: map_embedding
+    model_cost:
+      "amazon.titan-embed-text-v2:0":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+    model: "amazon.titan-embed-text-v2:0"
+    body:
+      model: "amazon.titan-embed-text-v2:0"
+      input: hello
+      dimensions: 512
+      encoding_format: base64
+env: {}
+compare: {ignore: []}
