@@ -1,0 +1,18 @@
+task: B3102
+deviations:
+  - what: GatewayRequestSnapshot is a concrete BTreeMap<GatewayRequestKey, GatewayRequestCounts>, not the Mapping alias LiteLLM declares, and the key is an owned struct that derives Eq and Ord instead of a frozen dataclass.
+    why: Rust has no duck typing and no Mapping protocol; a BTreeMap keeps the drain, restore and upsert deterministic and gives build_gateway_requests_upsert its conflict-key row order for free.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/gateway_requests.py#L29
+  - what: A flush whose commit reached the database but whose acknowledgement was lost restores the drained counts, so the next flush increments rows that are already persisted; the metric can overcount by one interval's traffic.
+    why: This is LiteLLM's deliberate at-least-once trade, copied on purpose; exactly-once would need a dedup key the upsert could ignore on replay, and a gauge undercounting every database blip is worse than a rare overcount.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L76-L92
+  - what: The counters are i64 and plus and fold saturate at i64::MAX instead of growing without bound like a Python int.
+    why: The table's columns are BIGINT, so a value past the type's range cannot be persisted anyway; saturating keeps the arithmetic total and panic-free where Python would only fail later at the upsert.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/schema.prisma#L1351-L1352
+  - what: MAX_REDIS_BUFFER_DEQUEUE_COUNT is not read from the environment; GatewayRequestRedisBuffer takes dequeue_count from its constructor and its callers pass the 100 the constant holds.
+    why: Rule config-through-sections, and the clippy deny list rules out std::env reads outside the config crate; a deployment configures the scheduler wiring that builds the buffer, not the library type.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L395
+  - what: A dequeue count of zero is treated as one row per LPOP call. LiteLLM's _pop_all compares each batch against MAX_REDIS_BUFFER_DEQUEUE_COUNT, so a configured zero never sees a short batch and drains forever, even from an empty list.
+    why: A hang in the flush task takes the lease holder down with no error; flooring the batch at one ends the drain on the first short read and leaves the configured batch size alone for every value of one or more.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L186-L194
+kept_bugs: []
