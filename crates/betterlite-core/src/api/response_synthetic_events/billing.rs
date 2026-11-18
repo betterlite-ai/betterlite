@@ -22,7 +22,7 @@ pub fn usage_as_model(source: Option<UsageSource<'_>>) -> Option<ResponseApiUsag
         UsageSource::Model(usage) => Some(usage.clone()),
         UsageSource::Value(value) => serde_json::to_value(value)
             .ok()
-            .and_then(|value| serde_json::from_value(value).ok()),
+            .and_then(|converted| serde_json::from_value(converted).ok()),
     }
 }
 
@@ -36,14 +36,14 @@ pub fn billed_terminal_response<'a, E: UsageEstimate>(
     response: &'a ResponsesApiResponse,
     estimate: Option<&E>,
 ) -> BilledTerminal<'a> {
-    let Some(estimate) = estimate else {
+    let Some(estimator) = estimate else {
         return BilledTerminal::Same(response);
     };
     if response.usage.is_some() {
         return BilledTerminal::Same(response);
     }
     let mut copied = response.clone();
-    copied.usage = estimate.estimate();
+    copied.usage = estimator.estimate();
     BilledTerminal::Estimated(Box::new(copied))
 }
 
@@ -66,10 +66,10 @@ pub fn billed_terminal_object<E: UsageEstimate>(
     if present_usage {
         return Some(constructed);
     }
-    let Some(estimate) = estimate else {
+    let Some(estimator) = estimate else {
         return Some(constructed);
     };
-    let usage = estimate.estimate();
+    let usage = estimator.estimate();
     constructed.insert("usage".to_owned(), usage_json(usage.as_ref()));
     Some(constructed)
 }
@@ -92,7 +92,7 @@ fn filter_reasoning_nulls(constructed: &mut IndexMap<String, Json>) {
 
 fn usage_json(usage: Option<&ResponseApiUsage>) -> Json {
     usage
-        .and_then(|usage| serde_json::to_value(usage).ok())
+        .and_then(|reported| serde_json::to_value(reported).ok())
         .and_then(|value| serde_json::from_value(value).ok())
         .unwrap_or(Json::Null)
 }

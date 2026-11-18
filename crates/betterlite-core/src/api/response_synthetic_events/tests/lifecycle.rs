@@ -201,11 +201,11 @@ fn part_done_defaults_annotations_and_logprobs() {
         r#"{"type":"output_text","text":"hi","annotations":[],"#,
         r#""logprobs":[{"token":"hi","logprob":-0.5,"bytes":[104,105],"top_logprobs":[]}]}]}]"#
     );
-    let mut transformed = response(logprobs_output);
-    let items = build(&mut transformed, None, 5);
-    let part_done = event_of(&items, "response.content_part.done");
+    let mut logprobs_transformed = response(logprobs_output);
+    let logprobs_items = build(&mut logprobs_transformed, None, 5);
+    let logprobs_part_done = event_of(&logprobs_items, "response.content_part.done");
     assert_eq!(
-        at(part_done, &["part", "logprobs"]),
+        at(logprobs_part_done, &["part", "logprobs"]),
         &json(r#"[{"token":"hi","logprob":-0.5,"bytes":[104,105],"top_logprobs":[]}]"#)
     );
 }
@@ -236,9 +236,12 @@ fn chunks_split_by_unicode_characters() {
         deltas(&items, "response.output_text.delta"),
         ["a", "é", "😀", "b"]
     );
-    let mut transformed = response(&output);
-    let items = build(&mut transformed, None, 2);
-    assert_eq!(deltas(&items, "response.output_text.delta"), ["aé", "😀b"]);
+    let mut twice_transformed = response(&output);
+    let twice_items = build(&mut twice_transformed, None, 2);
+    assert_eq!(
+        deltas(&twice_items, "response.output_text.delta"),
+        ["aé", "😀b"]
+    );
 }
 
 #[test]
@@ -249,11 +252,11 @@ fn zero_chunk_size_raises_range_error() {
         build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 0).unwrap_err();
     assert!(matches!(error, SyntheticEventsError::ZeroChunkSize));
     assert_eq!(error.to_string(), "range() arg 3 must not be zero");
-    let output = r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"","status":"completed"}]"#;
-    let mut transformed = response(output);
-    let error =
-        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 0).unwrap_err();
-    assert!(matches!(error, SyntheticEventsError::ZeroChunkSize));
+    let call_output = r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"","status":"completed"}]"#;
+    let mut call_transformed = response(call_output);
+    let call_error =
+        build_synthetic_response_events(&mut call_transformed, None::<&FixedCost>, 0).unwrap_err();
+    assert!(matches!(call_error, SyntheticEventsError::ZeroChunkSize));
 }
 
 #[test]
@@ -273,13 +276,13 @@ fn negative_chunk_size_emits_no_deltas() {
         )),
         "abc"
     );
-    let output = r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"{}","status":"completed"}]"#;
-    let mut transformed = response(output);
-    let items = build(&mut transformed, None, -1);
-    assert!(events_of(&items, "response.function_call_arguments.delta").is_empty());
+    let call_output = r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"{}","status":"completed"}]"#;
+    let mut call_transformed = response(call_output);
+    let call_items = build(&mut call_transformed, None, -1);
+    assert!(events_of(&call_items, "response.function_call_arguments.delta").is_empty());
     assert_eq!(
         text(field(
-            event_of(&items, "response.function_call_arguments.done"),
+            event_of(&call_items, "response.function_call_arguments.done"),
             "arguments"
         )),
         "{}"
@@ -294,10 +297,10 @@ fn event_budget_charges_events_and_bytes_up_to_each_limit() {
         budget.charge(1, 0),
         Err(SyntheticEventsError::EventBudgetExceeded)
     ));
-    let mut budget = EventBudget::default();
-    budget.charge(0, MAX_SYNTHETIC_BYTES).unwrap();
+    let mut byte_budget = EventBudget::default();
+    byte_budget.charge(0, MAX_SYNTHETIC_BYTES).unwrap();
     assert!(matches!(
-        budget.charge(0, 1),
+        byte_budget.charge(0, 1),
         Err(SyntheticEventsError::EventBudgetExceeded)
     ));
 }

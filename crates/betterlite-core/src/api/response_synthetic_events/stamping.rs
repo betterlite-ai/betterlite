@@ -22,7 +22,7 @@ pub fn stamp_usage_cost<C: ResponsesCostCalculator>(
     response: &mut ResponsesApiResponse,
     calculator: Option<&C>,
 ) {
-    let Some(calculator) = calculator else {
+    let Some(cost_calculator) = calculator else {
         return;
     };
     if response
@@ -32,7 +32,7 @@ pub fn stamp_usage_cost<C: ResponsesCostCalculator>(
     {
         return;
     }
-    let answer = calculator.response_cost(&CostTarget::Model(response));
+    let answer = cost_calculator.response_cost(&CostTarget::Model(response));
     let Ok(Some(cost)) = answer else {
         return;
     };
@@ -48,7 +48,7 @@ pub fn stamp_object_usage_cost<C: ResponsesCostCalculator>(
     object: &mut IndexMap<String, Json>,
     calculator: Option<&C>,
 ) {
-    let Some(calculator) = calculator else {
+    let Some(cost_calculator) = calculator else {
         return;
     };
     let Some(usage_value) = object.get("usage") else {
@@ -66,15 +66,15 @@ pub fn stamp_object_usage_cost<C: ResponsesCostCalculator>(
     if usage.cost.is_some() {
         return;
     }
-    let answer = calculator.response_cost(&CostTarget::Object(object));
+    let answer = cost_calculator.response_cost(&CostTarget::Object(object));
     let Ok(Some(cost)) = answer else {
         return;
     };
     if cost <= Decimal::ZERO {
         return;
     }
-    if let Some(Json::Object(usage)) = object.get_mut("usage") {
-        usage.insert("cost".to_owned(), cost_value(cost));
+    if let Some(Json::Object(fields)) = object.get_mut("usage") {
+        fields.insert("cost".to_owned(), cost_value(cost));
     }
 }
 

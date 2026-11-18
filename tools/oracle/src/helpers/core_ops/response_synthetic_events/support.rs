@@ -74,7 +74,7 @@ fn build_report(
     outcome: Result<Vec<ResponsesAPIStreamingResponse>, SyntheticEventsError>,
     probe: Option<&CostProbe>,
 ) -> Value {
-    let calls = probe.map_or(0, |probe| probe.calls.get());
+    let calls = probe.map_or(0, |held| held.calls.get());
     let (raised, message, events) = match outcome {
         Ok(events) => (false, Value::Null, json!(events)),
         Err(error) => (true, json!(error.to_string()), Value::Null),
@@ -93,7 +93,7 @@ pub(super) fn terminal_answer(row: &Row) -> HelperResult {
 fn terminal_object_answer(row: &Row, estimate: Option<&FixedEstimate>) -> HelperResult {
     let object = serde_json::from_value(row.response.clone()).unwrap_or(Json::Null);
     let constructed = billed_terminal_object(&object, estimate);
-    let calls = estimate.map_or(0, |estimate| estimate.calls.get());
+    let calls = estimate.map_or(0, |held| held.calls.get());
     Ok(json!({"same": false, "response": constructed, "estimate_calls": calls}))
 }
 
@@ -105,7 +105,7 @@ fn terminal_model_answer(row: &Row, estimate: Option<&FixedEstimate>) -> HelperR
         BilledTerminal::Same(terminal) => (true, *terminal),
         BilledTerminal::Estimated(terminal) => (false, terminal.as_ref()),
     };
-    let calls = estimate.map_or(0, |estimate| estimate.calls.get());
+    let calls = estimate.map_or(0, |held| held.calls.get());
     Ok(json!({"same": same, "response": terminal, "estimate_calls": calls}))
 }
 
@@ -116,7 +116,7 @@ pub(super) fn stamp_answer(row: &Row) -> HelperResult {
         return Ok(json!({"response": null, "cost_calls": 0}));
     };
     stamp_object_usage_cost(&mut constructed, probe.as_ref());
-    let calls = probe.as_ref().map_or(0, |probe| probe.calls.get());
+    let calls = probe.as_ref().map_or(0, |held| held.calls.get());
     Ok(json!({"response": constructed, "cost_calls": calls}))
 }
 
@@ -174,8 +174,8 @@ pub(super) fn dump_answer(row: &Row) -> HelperResult {
 }
 
 fn estimate_probe(spec: Option<&EstimateSpec>) -> Option<FixedEstimate> {
-    let spec = spec?;
-    let answer = match spec {
+    let given = spec?;
+    let answer = match given {
         EstimateSpec::Value {
             input_tokens,
             output_tokens,

@@ -36,17 +36,17 @@ fn billed_typed_response_without_usage_copies_and_estimates() {
     }
     assert!(transformed.usage.is_none());
     assert_eq!(estimate.calls(), 1);
-    let estimate = FixedEstimate::empty();
+    let empty_estimate = FixedEstimate::empty();
     assert!(matches!(
-        billed_terminal_response(&transformed, Some(&estimate)),
+        billed_terminal_response(&transformed, Some(&empty_estimate)),
         BilledTerminal::Estimated(_)
     ));
-    let copied = match billed_terminal_response(&transformed, Some(&estimate)) {
+    let copied = match billed_terminal_response(&transformed, Some(&empty_estimate)) {
         BilledTerminal::Estimated(copied) => copied,
         BilledTerminal::Same(_) => panic!("estimator returns None, so usage stays null"),
     };
     assert!(copied.usage.is_none());
-    assert_eq!(estimate.calls(), 2);
+    assert_eq!(empty_estimate.calls(), 2);
 }
 
 #[test]
@@ -73,12 +73,12 @@ fn billed_dict_response_preserves_existing_usage() {
     );
     assert_eq!(estimate.calls(), 0);
     let empty_usage = json(r#"{"id":"r3","created_at":2,"output":[],"usage":{}}"#);
-    let built = billed_terminal_object(&empty_usage, Some(&estimate)).unwrap();
-    assert_eq!(built.get("usage"), Some(&json("{}")));
+    let empty_built = billed_terminal_object(&empty_usage, Some(&estimate)).unwrap();
+    assert_eq!(empty_built.get("usage"), Some(&json("{}")));
     assert_eq!(estimate.calls(), 0);
     let null_usage = json(r#"{"id":"r3","created_at":2,"output":[],"usage":null}"#);
-    let built = billed_terminal_object(&null_usage, Some(&estimate)).unwrap();
-    let inserted_usage = built.get("usage").expect("usage inserted");
+    let null_built = billed_terminal_object(&null_usage, Some(&estimate)).unwrap();
+    let inserted_usage = null_built.get("usage").expect("usage inserted");
     assert_eq!(integer(at(inserted_usage, &["total_tokens"])), 7);
     assert_eq!(estimate.calls(), 1);
 }
@@ -145,12 +145,12 @@ fn billed_dict_response_filters_null_reasoning_fields() {
             r#"[{"type":"reasoning","id":"rs_1","summary":[],"namespace":null}]"#
         ))
     );
-    let object = json(
+    let second_object = json(
         r#"{"id":"r8","created_at":6,"output":[{"type":"message","id":"m1","status":null,"content":null},{"type":"reasoning","id":"rs_2","summary":[],"status":"completed","content":[]}]}"#,
     );
-    let built = billed_terminal_object(&object, None::<&FixedEstimate>).unwrap();
+    let second_built = billed_terminal_object(&second_object, None::<&FixedEstimate>).unwrap();
     assert_eq!(
-        built.get("output"),
+        second_built.get("output"),
         Some(&json(
             r#"[{"type":"message","id":"m1","status":null,"content":null},{"type":"reasoning","id":"rs_2","summary":[],"status":"completed","content":[]}]"#
         ))

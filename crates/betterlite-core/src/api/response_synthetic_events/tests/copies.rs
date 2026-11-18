@@ -49,10 +49,10 @@ fn logging_copy_round_trips_models_and_detaches_usage() {
     let ResponsesAPIStreamingResponse::Known(original) = completed else {
         panic!("original stays known");
     };
-    let KnownResponseEvent::ResponseCompleted(original) = original.as_ref() else {
+    let KnownResponseEvent::ResponseCompleted(stored) = original.as_ref() else {
         panic!("original stays completed");
     };
-    assert!(original.response.usage.as_ref().unwrap().cost.is_none());
+    assert!(stored.response.usage.as_ref().unwrap().cost.is_none());
     assert_eq!(text(at(&before, &["response", "status"])), "completed");
     assert_eq!(
         at(&before, &["response", "usage", "cost"]),
@@ -122,10 +122,10 @@ fn logging_copy_fallback_detaches_the_nested_response() {
     let ResponsesAPIStreamingResponse::Known(original) = &event else {
         panic!("original stays known");
     };
-    let KnownResponseEvent::ResponseCompleted(original) = original.as_ref() else {
+    let KnownResponseEvent::ResponseCompleted(stored) = original.as_ref() else {
         panic!("original stays completed");
     };
-    assert!(original.response.usage.as_ref().unwrap().cost.is_none());
+    assert!(stored.response.usage.as_ref().unwrap().cost.is_none());
 }
 
 #[test]

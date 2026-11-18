@@ -19,10 +19,10 @@ pub(super) struct CostProbe {
 
 impl CostProbe {
     pub(super) fn new(spec: Option<&CostSpec>) -> Result<Option<Self>, Box<HelperError>> {
-        let Some(spec) = spec else {
+        let Some(given) = spec else {
             return Ok(None);
         };
-        let (answer, raises) = match spec {
+        let (answer, raises) = match given {
             CostSpec::Value { cost } => (
                 Some(Decimal::from_str(cost).map_err(|error| value_error(error.to_string()))?),
                 false,

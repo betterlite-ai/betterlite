@@ -6,8 +6,8 @@ use crate::api::responses_stream_primitives::python_text::value_text;
 pub fn has_content(value: &Json) -> bool {
     match value {
         Json::Null => false,
-        Json::Bool(value) => *value,
-        Json::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
+        Json::Bool(flag) => *flag,
+        Json::Number(number) => number.as_f64().is_none_or(|numeric| numeric != 0.0),
         Json::Text(text) => !text.is_empty(),
         Json::List(items) => !items.is_empty(),
         Json::Object(fields) => !fields.is_empty(),
@@ -25,7 +25,7 @@ pub fn json_array_or_empty(value: Option<&Json>) -> &[Json] {
 #[must_use]
 pub fn text_or_empty(value: Option<&Json>) -> String {
     match value {
-        Some(value) if has_content(value) => value_text(value),
+        Some(found) if has_content(found) => value_text(found),
         _ => String::new(),
     }
 }

@@ -21,13 +21,13 @@ fn function_call_arguments_chunk_and_finish() {
         )),
         r#"{"a":1}"#
     );
-    let output = r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"","status":"completed"}]"#;
-    let mut transformed = response(output);
-    let items = build(&mut transformed, None, 5);
-    assert!(events_of(&items, "response.function_call_arguments.delta").is_empty());
+    let empty_output = r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"","status":"completed"}]"#;
+    let mut empty_transformed = response(empty_output);
+    let empty_items = build(&mut empty_transformed, None, 5);
+    assert!(events_of(&empty_items, "response.function_call_arguments.delta").is_empty());
     assert_eq!(
         text(field(
-            event_of(&items, "response.function_call_arguments.done"),
+            event_of(&empty_items, "response.function_call_arguments.done"),
             "arguments"
         )),
         ""
@@ -195,14 +195,14 @@ fn completed_event_is_last_for_failed_and_incomplete_responses() {
         text(at(completed, &["response", "error", "code"])),
         "server_error"
     );
-    let output = format!("[{}]", message_with_text("msg_a", "hi"));
-    let mut transformed = parse::<ResponsesApiResponse>(&format!(
-        r#"{{"id":"resp_a","created_at":1700000000,"status":"incomplete","output":{output}}}"#
+    let message_output = format!("[{}]", message_with_text("msg_a", "hi"));
+    let mut message_transformed = parse::<ResponsesApiResponse>(&format!(
+        r#"{{"id":"resp_a","created_at":1700000000,"status":"incomplete","output":{message_output}}}"#
     ));
-    let items = build(&mut transformed, None, 1);
-    assert_eq!(kind(items.last().unwrap()), "response.completed");
+    let message_items = build(&mut message_transformed, None, 1);
+    assert_eq!(kind(message_items.last().unwrap()), "response.completed");
     assert_eq!(
-        text(at(items.last().unwrap(), &["response", "status"])),
+        text(at(message_items.last().unwrap(), &["response", "status"])),
         "incomplete"
     );
 }

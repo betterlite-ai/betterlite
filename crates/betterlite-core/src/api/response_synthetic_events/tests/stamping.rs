@@ -80,14 +80,14 @@ fn stamping_attaches_positive_costs() {
     assert_eq!(calculator.calls(), ["resp_a"]);
     let usage_json = to_json(usage);
     assert_eq!(number_text(field(&usage_json, "cost")), "0.25");
-    let mut transformed = response_with(
+    let mut whole_transformed = response_with(
         "[]",
         r#","usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}"#,
     );
-    let calculator = FixedCost::returning(Decimal::new(3, 0));
-    stamp_usage_cost(&mut transformed, Some(&calculator));
-    let usage = transformed.usage.as_ref().unwrap();
-    assert_eq!(number_text(field(&to_json(usage), "cost")), "3.0");
+    let whole_calculator = FixedCost::returning(Decimal::new(3, 0));
+    stamp_usage_cost(&mut whole_transformed, Some(&whole_calculator));
+    let whole_usage = whole_transformed.usage.as_ref().unwrap();
+    assert_eq!(number_text(field(&to_json(whole_usage), "cost")), "3.0");
 }
 
 #[rstest]
