@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -13,6 +15,7 @@ use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_models::decisions::Json;
 use http::Method;
 use http::header::HeaderMap;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -22,6 +25,7 @@ use super::transport::{AuthFailure, AuthPost, AuthResponse, AuthTransport, Poole
 use super::{
     AUTH_ENDPOINT, AUTH_TIMEOUT, AgentOpsCallback, AgentOpsConfig, DEFAULT_DEPLOYMENT_ENVIRONMENT,
     DEFAULT_SERVICE_NAME, ENDPOINT, RESOURCE_ENVIRONMENT, RESOURCE_SERVICE_NAME, SDK_NAME,
+    parse_token_response,
 };
 use crate::otel::callbacks::tests::json;
 use crate::otel::legacy_policy::config::{Exporter, OTLP_HTTP_EXPORTER};
@@ -423,6 +427,14 @@ fn agentops_callback_otel_config_leaves_both_signal_switches_off() {
     ]));
     assert!(!config.signals.enable_metrics);
     assert!(!config.signals.enable_events);
+}
+
+#[rstest]
+fn replays_the_agentops_token_response_corpus(
+    #[files("fuzz/corpus/agentops_token_response/*")] path: PathBuf,
+) {
+    let body = fs::read(&path).expect("the corpus file");
+    let _auth = parse_token_response(&body);
 }
 
 #[tokio::test]

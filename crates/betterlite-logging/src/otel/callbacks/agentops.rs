@@ -157,6 +157,18 @@ struct TokenResponse {
     project_id: Option<String>,
 }
 
+#[must_use]
+pub fn parse_token_response(body: &[u8]) -> Option<AgentOpsAuth> {
+    let payload: TokenResponse = serde_json::from_slice(body).ok()?;
+    Some(AgentOpsAuth {
+        token: payload
+            .token
+            .filter(|token| !token.is_empty())
+            .map(SecretString::from),
+        project_id: payload.project_id.filter(|project| !project.is_empty()),
+    })
+}
+
 // every failure means no Authorization header and no project id, exactly as LiteLLM's bare except leaves it
 async fn fetch_auth(
     transport: &dyn AuthTransport,
@@ -190,12 +202,5 @@ async fn fetch_auth(
         );
         return None;
     }
-    let payload: TokenResponse = serde_json::from_slice(&response.body).ok()?;
-    Some(AgentOpsAuth {
-        token: payload
-            .token
-            .filter(|token| !token.is_empty())
-            .map(SecretString::from),
-        project_id: payload.project_id.filter(|project| !project.is_empty()),
-    })
+    parse_token_response(&response.body)
 }
