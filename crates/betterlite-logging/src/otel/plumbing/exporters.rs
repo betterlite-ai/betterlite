@@ -153,7 +153,7 @@ where
 
 pub struct ExporterFactories {
     factories: BTreeMap<String, ExporterFactory>,
-    clients: HttpClients,
+    pub(crate) clients: HttpClients,
 }
 
 impl ExporterFactories {
