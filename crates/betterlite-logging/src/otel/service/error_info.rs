@@ -1,7 +1,3 @@
-use betterlite_models::call_helpers::expected_error::{ClientErrorFacts, is_expected_client_error};
-use betterlite_models::decisions::Json;
-use serde_json::Number;
-
 use crate::fields::payload::records::ErrorInformation;
 use crate::logging_metadata::error_info::ExceptionLogging;
 use crate::logging_metadata::exception::ExceptionFacts;
@@ -9,6 +5,7 @@ use crate::otel::legacy_policy::error_recording::RecordedException;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::v2_callback::span_error::ErrorInformationConfig;
+use crate::payload::compose::error_info::expected_client_error;
 
 // litellm.litellm_core_utils.litellm_logging.StandardLoggingPayloadSetup.get_error_information
 pub(super) fn logging_context<'config>(
@@ -22,23 +19,6 @@ pub(super) fn logging_context<'config>(
         redactor: config.redactor.as_deref(),
         normalizer: &config.normalizer,
     }
-}
-
-// the proxy's own 4xx is an expected client error; ExceptionFacts carries no HTTPException marker
-fn expected_client_error(exception: Option<&ExceptionFacts>) -> bool {
-    let Some(facts) = exception else {
-        return false;
-    };
-    is_expected_client_error(Some(&ClientErrorFacts {
-        code: facts.code.clone().map(Json::Text),
-        status_code: facts
-            .status_code
-            .map(|status| Json::Number(Number::from(status))),
-        llm_provider: facts.llm_provider.clone(),
-        category: facts.category.clone(),
-        http_exception: false,
-        base_llm_exception: false,
-    }))
 }
 
 // what span.record_exception reads off the exception object
