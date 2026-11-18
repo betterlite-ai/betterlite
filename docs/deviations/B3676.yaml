@@ -27,6 +27,9 @@ deviations:
   - what: A rewritten line comes out with its object keys in sorted order and each number in the spelling it had on the wire, because serde_json's map sorts and arbitrary precision keeps the literal; Python's json.dumps keeps insertion order and re-renders floats from their parsed value.
     why: JSON object order carries no meaning, the event is compared and consumed as data, and arbitrary precision is on for the whole workspace.
     link: https://docs.python.org/3/library/json.html#json.dumps
+  - what: The handler's delivers_ended_stream_rewrites and assembles_streamed_response class flags are not declared on a translation class here; delivery is a bool parameter of the entry point and every ended stream is assembled.
+    why: The translation adapter and the pipeline that read the flags belong to B3246 and B3680, so this task's plain function takes the delivery value its caller passes and always assembles the ended stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L59-L73
 kept_bugs:
   - what: A data line indented before `data:` still counts as a text_delta for the undeliverable check, and is never rewritten because the line writer requires the line to start with `data:` untrimmed.
     why: A working setup only ships unindented SSE frames, and the project keeps the two readers' disagreement exactly as LiteLLM has it.
