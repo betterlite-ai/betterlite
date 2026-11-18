@@ -36,7 +36,7 @@ pub(super) async fn before_snapshot() {
     harness.drain_flushes().await;
     callbacks.join_next().await.unwrap().unwrap();
     harness.drain_flushes().await;
-    assert_eq!(harness.store.amount(KEY), Some(Decimal::from(1026)));
+    assert_eq!(harness.store.amount(KEY), Some(Decimal::from(1026_i64)));
     assert_eq!(harness.store.calls(), 1);
     assert_eq!(harness.pending_len(), 0);
     assert!(!state.flush_scheduled.load(Ordering::Acquire));
@@ -125,7 +125,7 @@ pub(super) async fn after_final_check() {
     assert!(state.flush_scheduled.load(Ordering::Acquire));
     drop(gate);
     harness.drain_flushes().await;
-    assert_eq!(harness.store.amount(KEY), Some(Decimal::from(2049)));
+    assert_eq!(harness.store.amount(KEY), Some(Decimal::from(2049_i64)));
     assert_eq!(harness.pending_len(), 0);
 }
 
@@ -151,6 +151,51 @@ pub(super) async fn gate_timeout() {
         .increment_pipeline(&usage_batch(KEY, 1025))
         .unwrap();
     harness.drain_flushes().await;
-    assert_eq!(harness.store.amount(KEY), Some(Decimal::from(1025)));
+    assert_eq!(harness.store.amount(KEY), Some(Decimal::from(1025_i64)));
     assert_eq!(harness.counters.read(KEY), Some(2050));
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum FlushFailure {
+    Deadline,
+    Store,
+}
+
+// both failure modes discard the detached batches without changing callback results or replaying them
+pub(super) async fn flush_discards_callbacks(failure: FlushFailure) {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    sink.increment_pipeline(&usage_batch(KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS + 1);
+    fail_the_flush(&harness, failure).await;
+    assert_eq!(harness.pending_len(), 0);
+    harness.store.set_stalled(false);
+    harness.store.set_down(false);
+    assert!(!harness.counters.sync_with_redis().await);
+    assert_eq!(harness.store.amount(KEY), None);
+    assert_eq!(harness.counters.read(KEY), Some(2_050));
+}
+
+// the caller's deadline or the store's refusal ends the flush; only the store one reaches it twice
+async fn fail_the_flush(harness: &Harness, failure: FlushFailure) {
+    match failure {
+        FlushFailure::Deadline => {
+            yield_now().await;
+            advance(FLUSH_DEADLINE).await;
+        }
+        FlushFailure::Store => {
+            harness.store.set_down(true);
+            harness.store.release();
+        }
+    }
+    harness.drain_flushes().await;
+    if matches!(failure, FlushFailure::Store) {
+        assert_eq!(harness.store.calls(), 2);
+    }
 }

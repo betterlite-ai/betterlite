@@ -1,12 +1,13 @@
 use std::io;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use rust_decimal::Decimal;
-use tokio::task::yield_now;
+use tokio::task::{JoinSet, yield_now};
 use tokio::time::advance;
+use tracing::subscriber::with_default;
 
 use crate::router_observations::counter::{CounterError, CounterSink, Increment};
 use crate::routing_state::counter::RouterCounters;
@@ -21,8 +22,8 @@ use crate::routing_value_store::{
 };
 
 use super::support::{
-    Harness, TestClock, key_limit_error, local_store, oversized_key, route_key, settings,
-    usage_batch,
+    Harness, TestClock, fill_window, key_limit_error, local_store, oversized_key, route_key,
+    settings, usage_batch,
 };
 
 const TTL: Duration = Duration::from_secs(60);
@@ -61,13 +62,7 @@ pub(crate) async fn run(name: &str) {
 
 async fn queue_cap_is_1024() {
     let harness = Harness::with_store(settings(false, None));
-    for _step in 0..MAX_PENDING_DELTAS {
-        harness
-            .counters
-            .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
-            .await
-            .unwrap();
-    }
+    fill_window(&harness.counters, RPM_KEY, MAX_PENDING_DELTAS).await;
     assert_eq!(harness.pending_len(), 1024);
     // the caller that fills the queue flushes it, and its own delta rides that one push
     let overflow = harness
@@ -80,16 +75,14 @@ async fn queue_cap_is_1024() {
     assert_eq!(harness.pending_len(), 0);
     // the queue is empty now, so a sync has nothing to push
     assert!(!harness.counters.sync_with_redis().await);
+    overflow_with_a_down_store().await;
+}
 
-    // the same overflow with the store down loses the batch and the observation, and a later sync starts over
+// the same overflow with the store down loses the batch and the observation, and a later sync starts over
+async fn overflow_with_a_down_store() {
     let down = Harness::with_store(settings(false, None));
     down.store.set_down(true);
-    for _step in 0..MAX_PENDING_DELTAS {
-        down.counters
-            .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
-            .await
-            .unwrap();
-    }
+    fill_window(&down.counters, RPM_KEY, MAX_PENDING_DELTAS).await;
     let down_overflow = down
         .counters
         .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
@@ -128,7 +121,12 @@ async fn queue_cap_is_2048() {
     yield_now().await;
     assert_eq!(harness.store.calls(), 1);
     assert_eq!(harness.pending_len(), 0);
-    // the queue fills again behind the stalled flush up to its hard cap
+    past_the_cap(&harness, sink).await;
+}
+
+// the queue fills again behind the stalled flush up to its hard cap
+async fn past_the_cap(harness: &Harness, sink: &dyn CounterSink) {
+    let one = usage_batch(TPM_KEY, 1);
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
         .unwrap();
     for _step in 0..MAX_PENDING_DELTAS {
@@ -136,7 +134,7 @@ async fn queue_cap_is_2048() {
     }
     assert_eq!(harness.pending_len(), 2 * MAX_PENDING_DELTAS);
     // past the cap an observation is dropped, so the owner's staging stays bounded
-    assert_overflow_warning(&harness);
+    assert_overflow_warning(harness);
     assert_eq!(harness.pending_len(), 2 * MAX_PENDING_DELTAS);
     // the accepted batches reach storage once; the two overflow observations do not
     harness.store.set_stalled(false);
@@ -155,9 +153,12 @@ async fn queue_cap_is_2048() {
 struct WarningLog(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for WarningLog {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(bytes);
-        Ok(bytes.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -174,7 +175,7 @@ fn assert_overflow_warning(harness: &Harness) {
         .with_target(false)
         .with_writer(move || writer.clone())
         .finish();
-    tracing::subscriber::with_default(subscriber, || {
+    with_default(subscriber, || {
         harness
             .counters
             .increment_pipeline(&usage_batch(TPM_KEY, 1))
@@ -197,23 +198,31 @@ async fn sync_past_the_deadline_drops_queued_callbacks(periodic: bool) {
     let sink: &dyn CounterSink = harness.counters.as_ref();
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
         .unwrap();
-    let sync = if periodic {
+    let mut syncs = JoinSet::new();
+    if periodic {
         harness.counters.start();
-        None
     } else {
         let owner = Arc::clone(&harness.counters);
-        Some(tokio::spawn(async move { owner.sync_with_redis().await }))
-    };
+        let _task = syncs.spawn(async move { owner.sync_with_redis().await });
+    }
     yield_now().await;
     assert_eq!(harness.store.calls(), 1);
-    // the saturated callback schedules a successor while the sync holds the gate
+    drop_at_the_deadline(&harness, sink, &mut syncs).await;
+}
+
+// the saturated callback schedules a successor while the sync holds the gate
+async fn drop_at_the_deadline(
+    harness: &Harness,
+    sink: &dyn CounterSink,
+    syncs: &mut JoinSet<bool>,
+) {
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
         .unwrap();
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS + 1);
     yield_now().await;
     advance(FLUSH_DEADLINE).await;
-    if let Some(task) = sync {
-        assert!(!task.await.unwrap());
+    if let Some(joined) = syncs.join_next().await {
+        assert!(!joined.unwrap());
     }
     harness.counters.cleanup().await;
     assert_eq!(harness.pending_len(), 0);
@@ -269,21 +278,27 @@ async fn sync_merges_at_the_equality_boundary() {
     let clock = TestClock::new();
     let local = Arc::new(local_store(&clock));
     let store = Arc::new(DriftingStore {
-        value: Mutex::new(Decimal::from(5)),
+        value: Mutex::new(Decimal::from(5_i64)),
         local: Arc::clone(&local),
-        during_push: Mutex::new(Some(Decimal::from(7))),
+        during_push: Mutex::new(Some(Decimal::from(7_i64))),
     });
     let counters = RouterCounters::new(settings(false, None), Arc::clone(&local), Some(store));
     counters
-        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
+        .increment_window_value(RPM_KEY, Decimal::from(2_i64), TTL)
         .await
         .unwrap();
     // before 2, push stores 7 and local reaches 7 during it, so after equals redis and the merge writes 12
     assert!(counters.sync_with_redis().await);
     let stored = local.get(&route_key(RPM_KEY)).unwrap();
     match stored {
-        StoreRead::Value(RouteValue::Spend(value)) => assert_eq!(value, Decimal::from(12)),
-        other => panic!("expected the merged spend, got {other:?}"),
+        StoreRead::Value(RouteValue::Spend(value)) => assert_eq!(value, Decimal::from(12_i64)),
+        StoreRead::Value(
+            RouteValue::Counter(_)
+            | RouteValue::Pin(_)
+            | RouteValue::SchedulerTuple(_)
+            | RouteValue::Members(_),
+        )
+        | StoreRead::Missing => panic!("expected the merged spend, got {stored:?}"),
     }
 }
 
@@ -435,7 +450,7 @@ fn metadata_first_bucket_decides() {
     let null_model = channels(
         r#"{"litellm_metadata": {"model_info": null}, "metadata": {"model_info": {"id": "b"}}}"#,
     );
-    let name = deployment_channel(&null_model).map(|(name, _bucket)| name);
+    let name = deployment_channel(&null_model).map(|(channel, _bucket)| channel);
     assert_eq!(name, Some("litellm_metadata"));
     let empty_model = channels(
         r#"{"litellm_metadata": {"model_info": {}}, "metadata": {"model_info": {"id": "b"}}}"#,
@@ -478,7 +493,7 @@ fn local_counter_reads_only_whole_values() {
     let whole = route_key("whole");
     harness
         .local
-        .set(&whole, &RouteValue::Spend(Decimal::from(3)), None)
+        .set(&whole, &RouteValue::Spend(Decimal::from(3_i64)), None)
         .unwrap();
     assert_eq!(harness.counters.read("whole"), Some(3));
     let counted = route_key("counted");

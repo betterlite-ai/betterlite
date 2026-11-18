@@ -18,7 +18,8 @@ use crate::routing_state::error::RoutingStateError;
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_state_store::{BreakerClock, RedisSettings, Settings as RedisStoreSettings};
 use crate::routing_value_store::{
-    Clock, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreRead, StoreSettings,
+    Clock, MAX_KEY_BYTES, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreRead,
+    StoreSettings,
 };
 
 pub(crate) struct TestClock(Arc<AtomicU64>);
@@ -169,6 +170,7 @@ impl DeltaStore for FakeStore {
                 *entry
             });
         }
+        drop(values);
         if self.short_reply.load(Ordering::SeqCst) {
             return Ok(Vec::new());
         }
@@ -288,7 +290,7 @@ pub(crate) fn redis_settings(
 }
 
 pub(crate) fn oversized_key() -> String {
-    "k".repeat(crate::routing_value_store::MAX_KEY_BYTES.saturating_add(1))
+    "k".repeat(MAX_KEY_BYTES.saturating_add(1))
 }
 
 pub(crate) fn key_limit_error(error: &RoutingStateError) -> (usize, usize) {
@@ -296,6 +298,37 @@ pub(crate) fn key_limit_error(error: &RoutingStateError) -> (usize, usize) {
         RoutingStateError::Local {
             source: StoreError::KeyTooLong { bytes, limit },
         } => (*bytes, *limit),
-        other => panic!("expected a key length error, got {other:?}"),
+        RoutingStateError::Local { .. }
+        | RoutingStateError::Store { .. }
+        | RoutingStateError::NonFinite => panic!("expected a key length error, got {error:?}"),
     }
+}
+
+// a window increment per step, the way a caller fills the queue
+pub(crate) async fn fill_window<S>(counters: &RouterCounters<S>, key: &str, count: usize)
+where
+    S: DeltaStore + 'static,
+{
+    for _step in 0..count {
+        counters
+            .increment_window_value(key, Decimal::ONE, Duration::from_secs(60))
+            .await
+            .unwrap();
+    }
+}
+
+// the two entries one callback stages for its deployment, TPM and RPM
+pub(crate) fn two_entry_batch(tpm_key: &str, rpm_key: &str, ttl: Duration) -> [Increment; 2] {
+    [
+        Increment {
+            key: tpm_key.to_owned(),
+            value: 1,
+            ttl,
+        },
+        Increment {
+            key: rpm_key.to_owned(),
+            value: 1,
+            ttl,
+        },
+    ]
 }
