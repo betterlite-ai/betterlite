@@ -18,7 +18,7 @@ pub(super) enum Received {
 pub(super) struct FakeClient {
     pub(super) received: Mutex<VecDeque<Received>>,
     pub(super) sent: Mutex<Vec<String>>,
-    pub(super) send_error: Option<String>,
+    pub(super) send_error: Mutex<Option<ClientError<io::Error>>>,
 }
 
 impl FakeClient {
@@ -26,7 +26,7 @@ impl FakeClient {
         Self {
             received: Mutex::new(VecDeque::new()),
             sent: Mutex::new(Vec::new()),
-            send_error: None,
+            send_error: Mutex::new(None),
         }
     }
 
@@ -56,12 +56,7 @@ impl RealtimeClientWebSocket for FakeClient {
 
     async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
         self.sent.lock().unwrap().push(data);
-        self.send_error.as_ref().map_or(Ok(()), |message| {
-            Err(ClientError {
-                message: message.clone(),
-                source: None,
-            })
-        })
+        self.send_error.lock().unwrap().take().map_or(Ok(()), Err)
     }
 
     async fn close(&self, _code: u16, _reason: Option<String>) {}

@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use super::support::{self, SECRET};
 use crate::realtime_events::ack::AckError;
+use crate::realtime_events::client::ClientError;
 use crate::realtime_events::decode::json_dict;
 
 pub(super) async fn ack_session_update_order() {
@@ -111,7 +112,10 @@ async fn send_failure() {
     let (log, _guard) = support::capture();
     let mut setup = support::AckSetup::new();
     setup.trace_id = Some("trace".to_owned());
-    setup.client.send_error = Some(format!("socket {SECRET} closed"));
+    *setup.client.send_error.get_mut().unwrap() = Some(ClientError {
+        message: format!("socket {SECRET} closed"),
+        source: None,
+    });
     assert!(!setup.run().await.expect("forwarding ended"));
     assert_eq!(setup.client.sent().len(), 1);
     assert_eq!(setup.scope.session_committed, Json::Bool(true));
