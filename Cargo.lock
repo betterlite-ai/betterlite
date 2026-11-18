@@ -1706,6 +1706,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-redis-fixture",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -4177,6 +4178,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-redis-fixture"
+version = "0.1.0"
+dependencies = [
+ "redis",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "betterlite-redis-fuzz"
 version = "0.0.0"
 dependencies = [
@@ -4404,6 +4415,7 @@ name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "async-stream",
  "async-trait",
  "aws-config",
  "aws-credential-types",
