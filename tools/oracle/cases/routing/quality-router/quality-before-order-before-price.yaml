@@ -1,0 +1,73 @@
+kind: probe
+name: quality-router-quality-before-order-before-price
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [low, high]
+            - model_name: low
+              litellm_params: {model: openai/low}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1, keywords: [k], order: 1}
+            - model_name: high
+              litellm_params: {model: openai/high}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 3, keywords: [k], order: 9}
+        messages:
+          - role: user
+            content: k
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [pricier, cheaper]
+            - model_name: pricier
+              litellm_params: {model: openai/pricier}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [k], order: 1}
+                input_cost_per_token: 0.5
+            - model_name: cheaper
+              litellm_params: {model: openai/cheaper}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [k], order: 2}
+                input_cost_per_token: 0.1
+        messages:
+          - role: user
+            content: k
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [alpha-pricey, zeta-cheap]
+            - model_name: alpha-pricey
+              litellm_params: {model: openai/alpha-pricey}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [k]}
+                input_cost_per_token: 0.5
+            - model_name: zeta-cheap
+              litellm_params: {model: openai/zeta-cheap}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2, keywords: [k]}
+                input_cost_per_token: 0.1
+        messages:
+          - role: user
+            content: k

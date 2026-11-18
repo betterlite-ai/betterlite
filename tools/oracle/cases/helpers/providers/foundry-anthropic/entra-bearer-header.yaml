@@ -1,0 +1,23 @@
+kind: helper
+name: foundry-anthropic-entra-bearer-header
+call:
+  foundry_anthropic:
+    api_base: https://resource.services.ai.azure.com/anthropic/v1/messages
+    model: claude-sonnet-4-5
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      max_tokens: 16
+    litellm_params: {}
+    caller_headers:
+      anthropic-version: ""
+    api_key: null
+    azure_ad_token: entra-token-fixture
+    upstream_status: 200
+    upstream_headers: {}
+    upstream_body: '{"id":"msg_1","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":[{"type":"text","text":"hello"}],"stop_reason":"end_turn","usage":{"input_tokens":5,"output_tokens":3}}'
+    upstream_lines: []
+env:
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
+compare: {ignore: []}

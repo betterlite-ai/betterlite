@@ -1,0 +1,17 @@
+kind: helper
+name: duplicate-routes-coexist
+call:
+  b3808:
+    function: build_routes
+    route_templates: [prompt_injection]
+    custom_routes_file: |-
+      - route_name: prompt_injection
+        utterances: ["file copy"]
+        similarity_threshold: 0.4
+    custom_routes:
+      - route_name: prompt_injection
+        utterances: ["inline copy"]
+        similarity_threshold: 0.3
+    global_threshold: 0.6
+env: {}
+compare: {ignore: []}

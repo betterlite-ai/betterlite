@@ -1,0 +1,429 @@
+{
+  "kind": "helper",
+  "name": "legacy-default-base",
+  "call": {
+    "anthropic_provider": {
+      "inputs": [
+        {
+          "action": "legacy",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": null,
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "legacy",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://explicit.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": "https://global.test",
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {
+            "ANTHROPIC_API_BASE": "https://first.test",
+            "ANTHROPIC_BASE_URL": "https://second.test"
+          },
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "legacy",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": null,
+          "api_key": "sk-oracle-explicit",
+          "global_base": "https://global.test",
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {
+            "ANTHROPIC_API_BASE": "https://first.test"
+          },
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "legacy",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": null,
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {
+            "ANTHROPIC_API_BASE": "https://first.test",
+            "ANTHROPIC_BASE_URL": "https://second.test"
+          },
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "legacy",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": null,
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {
+            "ANTHROPIC_API_BASE": "",
+            "ANTHROPIC_BASE_URL": "https://second.test"
+          },
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "legacy",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "",
+          "api_key": "sk-oracle-explicit",
+          "global_base": "",
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {
+            "ANTHROPIC_API_BASE": "",
+            "ANTHROPIC_BASE_URL": ""
+          },
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        }
+      ],
+      "expected": [
+        {
+          "result": {
+            "model": "claude-3-haiku-20240307",
+            "messages": [
+              {
+                "role": "user",
+                "content": "hi"
+              }
+            ],
+            "headers": {},
+            "optional_params": {},
+            "litellm_params": {},
+            "acompletion": false,
+            "encoding": "cl100k_base",
+            "provider": "anthropic_text",
+            "api_base": "https://api.anthropic.com/v1/complete",
+            "auth_matches": true,
+            "custom_prompt_dict": null,
+            "stream": false,
+            "client": null,
+            "shared_session": null,
+            "config": null,
+            "model_response_id": "chatcmpl-input",
+            "timeout_ms": 5000
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        },
+        {
+          "result": {
+            "model": "claude-3-haiku-20240307",
+            "messages": [
+              {
+                "role": "user",
+                "content": "hi"
+              }
+            ],
+            "headers": {},
+            "optional_params": {},
+            "litellm_params": {},
+            "acompletion": false,
+            "encoding": "cl100k_base",
+            "provider": "anthropic_text",
+            "api_base": "https://explicit.test/v1/complete",
+            "auth_matches": true,
+            "custom_prompt_dict": null,
+            "stream": false,
+            "client": null,
+            "shared_session": null,
+            "config": null,
+            "model_response_id": "chatcmpl-input",
+            "timeout_ms": 5000
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        },
+        {
+          "result": {
+            "model": "claude-3-haiku-20240307",
+            "messages": [
+              {
+                "role": "user",
+                "content": "hi"
+              }
+            ],
+            "headers": {},
+            "optional_params": {},
+            "litellm_params": {},
+            "acompletion": false,
+            "encoding": "cl100k_base",
+            "provider": "anthropic_text",
+            "api_base": "https://global.test/v1/complete",
+            "auth_matches": true,
+            "custom_prompt_dict": null,
+            "stream": false,
+            "client": null,
+            "shared_session": null,
+            "config": null,
+            "model_response_id": "chatcmpl-input",
+            "timeout_ms": 5000
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        },
+        {
+          "result": {
+            "model": "claude-3-haiku-20240307",
+            "messages": [
+              {
+                "role": "user",
+                "content": "hi"
+              }
+            ],
+            "headers": {},
+            "optional_params": {},
+            "litellm_params": {},
+            "acompletion": false,
+            "encoding": "cl100k_base",
+            "provider": "anthropic_text",
+            "api_base": "https://first.test/v1/complete",
+            "auth_matches": true,
+            "custom_prompt_dict": null,
+            "stream": false,
+            "client": null,
+            "shared_session": null,
+            "config": null,
+            "model_response_id": "chatcmpl-input",
+            "timeout_ms": 5000
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        },
+        {
+          "result": {
+            "model": "claude-3-haiku-20240307",
+            "messages": [
+              {
+                "role": "user",
+                "content": "hi"
+              }
+            ],
+            "headers": {},
+            "optional_params": {},
+            "litellm_params": {},
+            "acompletion": false,
+            "encoding": "cl100k_base",
+            "provider": "anthropic_text",
+            "api_base": "https://second.test/v1/complete",
+            "auth_matches": true,
+            "custom_prompt_dict": null,
+            "stream": false,
+            "client": null,
+            "shared_session": null,
+            "config": null,
+            "model_response_id": "chatcmpl-input",
+            "timeout_ms": 5000
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        },
+        {
+          "result": {
+            "model": "claude-3-haiku-20240307",
+            "messages": [
+              {
+                "role": "user",
+                "content": "hi"
+              }
+            ],
+            "headers": {},
+            "optional_params": {},
+            "litellm_params": {},
+            "acompletion": false,
+            "encoding": "cl100k_base",
+            "provider": "anthropic_text",
+            "api_base": "https://api.anthropic.com/v1/complete",
+            "auth_matches": true,
+            "custom_prompt_dict": null,
+            "stream": false,
+            "client": null,
+            "shared_session": null,
+            "config": null,
+            "model_response_id": "chatcmpl-input",
+            "timeout_ms": 5000
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        }
+      ]
+    }
+  },
+  "env": {
+    "LITELLM_RUST": "false",
+    "LITELLM_LOCAL_MODEL_COST_MAP": "true"
+  },
+  "compare": {
+    "ignore": []
+  }
+}

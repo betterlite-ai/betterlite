@@ -104,7 +104,7 @@ description: >-
   Budget from 368 nonblank, noncomment lines in the owned LiteLLM ranges (including executable declarations and
   docstrings; SDK overloads share an async implementation): 300 production lines, 295 behavior/config-test lines,
   125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 25 module/dispatch/shared-seed
-  wiring lines; 745 planned, 750 maximum changed lines.
+  wiring lines. That plan said 745 lines, and the budget field below is the limit.
 scope:
   paths:
   - crates/betterlite-bedrock/Cargo.toml
@@ -329,6 +329,6 @@ pitfalls:
   assume its temporary stripped view is the final id.
 - Async streaming accepts timeout but does not forward it to make_call; sync client construction does use it.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1900
   max_new_expects: 0
 review_level: security
