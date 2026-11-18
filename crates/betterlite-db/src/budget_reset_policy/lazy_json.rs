@@ -9,11 +9,8 @@ impl<Value> fmt::Debug for LazyJson<'_, Value>
 where
     Value: Serialize + ?Sized,
 {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match to_string_pretty(self.0) {
-            Ok(text) => formatter.write_str(&text),
-            Err(_) => Err(fmt::Error),
-        }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        to_string_pretty(self.0).map_or(Err(fmt::Error), |text| f.write_str(&text))
     }
 }
 
