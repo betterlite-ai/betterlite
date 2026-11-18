@@ -115,7 +115,7 @@ impl<'deps> From<(&'deps Fixture, ChatConfigTag)> for CompletionSettings<'deps> 
 impl Fixture {
     pub(super) fn call(&self, scenario: &Scenario<'_>, base: String) -> Call {
         let mut optional_params = match scenario.surface {
-            Surface::Messages => serde_json::from_str(r#"{"tools":[{"name":"bad/name","input_schema":{"type":"object","properties":{}}}]}"#).unwrap(),
+            Surface::Messages => serde_json::from_str(r#"{"tools":[{"type":"custom","name":"bad/name","input_schema":{"type":"object","properties":{}}}]}"#).unwrap(),
             Surface::Legacy => IndexMap::new(),
         };
         optional_params
