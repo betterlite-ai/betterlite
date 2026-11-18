@@ -65,6 +65,24 @@ fn custom_tool_call_emits_only_item_events() {
 }
 
 #[test]
+fn unknown_item_with_summary_emits_only_item_events() {
+    let output =
+        r#"[{"type":"mystery","id":"m_1","summary":[{"type":"summary_text","text":"x"}]}]"#;
+    let mut transformed = response(output);
+    let items = build(&mut transformed, None, 5);
+    assert_eq!(
+        kinds(&items),
+        [
+            "response.created",
+            "response.in_progress",
+            "response.output_item.added",
+            "response.output_item.done",
+            "response.completed",
+        ]
+    );
+}
+
+#[test]
 fn reasoning_summaries_emit_done_events_with_sequence_numbers() {
     let output = concat!(
         r#"[{"type":"reasoning","id":"rs_1","summary":["#,

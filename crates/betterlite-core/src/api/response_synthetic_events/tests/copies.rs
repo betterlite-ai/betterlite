@@ -74,7 +74,7 @@ fn logging_copy_falls_back_when_validation_fails() {
     let ResponsesAPIStreamingResponse::Known(known) = &event else {
         panic!("the constructed event is known");
     };
-    assert!(super::super::copies::round_trip(known.as_ref()).is_none());
+    assert!(super::super::copies::round_trip(known.as_ref()).is_err());
     let LoggedCopy::Detached(mut copied) = logging_copy(LoggingEvent::Event(&event)) else {
         panic!("events are copied");
     };

@@ -23,7 +23,7 @@ pub fn logging_copy(event: LoggingEvent<'_>) -> LoggedCopy<'_> {
             )))
         }
         LoggingEvent::Event(ResponsesAPIStreamingResponse::Known(known)) => {
-            let copied = round_trip(known.as_ref()).unwrap_or_else(|| known.as_ref().clone());
+            let copied = round_trip(known.as_ref()).unwrap_or_else(|_error| known.as_ref().clone());
             LoggedCopy::Detached(Box::new(ResponsesAPIStreamingResponse::Known(Box::new(
                 copied,
             ))))
@@ -31,10 +31,10 @@ pub fn logging_copy(event: LoggingEvent<'_>) -> LoggedCopy<'_> {
     }
 }
 
-pub(super) fn round_trip<T>(event: &T) -> Option<T>
+pub(super) fn round_trip<T>(event: &T) -> Result<T, serde_json::Error>
 where
     T: Serialize + DeserializeOwned,
 {
-    let serialized = serde_json::to_value(event).ok()?;
-    serde_json::from_value(serialized).ok()
+    let serialized = serde_json::to_value(event)?;
+    serde_json::from_value(serialized)
 }
