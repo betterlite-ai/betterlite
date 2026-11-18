@@ -15,6 +15,9 @@ deviations:
   - what: A completed event whose response fails the typed record is returned with only the fields the event sent. LiteLLM builds it with ResponsesAPIResponse.model_construct, whose defaults render every unset optional field as null.
     why: The shared reply type carries the parsed fields as sent instead of inventing values for fields the provider left out. Tested by sse_keeps_a_payload_no_record_holds.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L214-L217
+  - what: A buffered provider reply larger than ApiLimits.max_json_bytes, 16 MiB by default, is rejected with a 502 before it is logged or parsed. LiteLLM logs the whole body and parses it without a bound.
+    why: A provider can grow the buffer with many individually small events, so the shared ApiLimits bounds the whole reply before any copy. Tested by a_body_over_the_total_boundary_is_rejected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/responses/transformation.py#L119-L132
 kept_bugs:
   - what: The first response.completed event ends the scan even when its response is not an object, so a later valid completed event is never read and the call fails at the provider status.
     why: The task pins the first-completed termination and the oracle case chatgpt-responses-first-completed compares it; a ChatGPT stream carries one completed event, so a working setup never reaches a later one.

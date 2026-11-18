@@ -1,7 +1,8 @@
 #![cfg(test)]
 
+mod bounds;
+
 use std::future::{Future, ready};
-use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_config::sections::chatgpt_headers::Settings as HeaderSettings;
@@ -37,8 +38,7 @@ use super::{
     ChatGptResponsesError, EnvironmentRequest, PROVIDER, ResponsesConfig,
     SUPPORTS_NATIVE_WEBSOCKET, transform_reply,
 };
-use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
-use crate::api::responses_sse_recovery::ResponsesSseRecoveryError;
+use crate::api::api_boundaries::ApiLimits;
 
 const NOW: i64 = 1_700_000_000;
 const BASE: &str = "BASE INSTRUCTIONS";
@@ -585,6 +585,32 @@ fn request_prunes_unlisted_keys() {
 }
 
 #[test]
+fn request_keeps_every_allowed_key() {
+    let options = request_options(
+        r#"{
+            "tools": [{"type": "function", "name": "lookup", "parameters": {"type": "object", "properties": {}}}],
+            "tool_choice": "auto",
+            "reasoning": {"effort": "low"},
+            "previous_response_id": "resp_prev",
+            "truncation": "auto",
+            "temperature": 0.5
+        }"#,
+    );
+    let request = transform_request(&options).expect("the request transforms");
+    assert_eq!(request.len(), 11);
+    assert!(!request.contains_key("temperature"));
+    for key in [
+        "tools",
+        "tool_choice",
+        "reasoning",
+        "previous_response_id",
+        "truncation",
+    ] {
+        assert_eq!(request.get(key), options.get(key), "{key} survives");
+    }
+}
+
+#[test]
 fn request_rejects_a_duplicate_body_key() {
     let error = transform_request(&request_options(r#"{"model":"other"}"#))
         .expect_err("model is filled in");
@@ -823,7 +849,7 @@ fn sse_falls_back_to_the_response_error_when_the_event_error_is_null() {
 
 #[rstest]
 #[case::integer("1700000005", 1_700_000_005)]
-#[case::text("1700000007", 1_700_000_007)]
+#[case::text("\"1700000007\"", 1_700_000_007)]
 #[case::truncated_float("1700000006.9", 1_700_000_006)]
 #[case::null("null", NOW)]
 #[case::not_a_number("\"soon\"", NOW)]
@@ -937,63 +963,4 @@ fn sse_handles_carriage_return_line_ends_and_unicode_separators() {
         .transform(200, &headers(SSE_TYPE), &body, &ApiLimits::default())
         .expect("the stream recovers");
     assert_eq!(typed(&reply).output_text(), "a\u{2028}b");
-}
-
-fn limits(max_event_bytes: usize, max_items: usize) -> ApiLimits {
-    ApiLimits {
-        max_json_bytes: 16 * 1024 * 1024,
-        max_event_bytes,
-        max_items,
-    }
-}
-
-#[test]
-fn sse_rejects_an_event_over_the_boundary() {
-    let body = vec![done()];
-    let error = expect_error(Fixture::new().transform(
-        200,
-        &headers(SSE_TYPE),
-        &body.join("\n"),
-        &limits(8, 64 * 1024),
-    ));
-    assert_eq!(error.http_status(), Some(502));
-    assert!(matches!(
-        error,
-        ChatGptResponsesError::Recovery(ResponsesSseRecoveryError::Limit(
-            ApiLimitError::EventTooLarge { .. }
-        ))
-    ));
-}
-
-#[test]
-fn sse_rejects_more_items_than_the_boundary() {
-    let body = vec![item(0, "zero"), item(1, "one"), done()];
-    let error = expect_error(Fixture::new().transform(
-        200,
-        &headers(SSE_TYPE),
-        &body.join("\n"),
-        &limits(1024 * 1024, 1),
-    ));
-    assert_eq!(error.http_status(), Some(400));
-    assert!(matches!(
-        error,
-        ChatGptResponsesError::Recovery(ResponsesSseRecoveryError::Limit(
-            ApiLimitError::TooManyItems { .. }
-        ))
-    ));
-}
-
-#[test]
-fn recovery_errors_without_a_status_stay_statusless() {
-    let bytes = from_utf8(b"\xff").expect_err("the bytes are not UTF-8");
-    let utf8_error = ChatGptResponsesError::Recovery {
-        source: ResponsesSseRecoveryError::Utf8(bytes),
-    };
-    assert_eq!(utf8_error.http_status(), None);
-    let encode = ChatGptResponsesError::Encode {
-        source: serde_json::from_str::<i32>("x").expect_err("the value is not an integer"),
-    };
-    assert_eq!(encode.http_status(), None);
-    let generic = ChatGptResponsesError::Transform(OpenAiError::MissingKey { key: "x" });
-    assert_eq!(generic.http_status(), None);
 }

@@ -62,6 +62,7 @@ class Recorded(BaseModel):
 
 class HiddenView(BaseModel):
     additional_headers: dict[str, JsonValue]
+    headers: dict[str, JsonValue]
 
 
 class Hidden(BaseModel):
@@ -71,17 +72,19 @@ class Hidden(BaseModel):
 
 @runtime_checkable
 class ResponsesConfig(Protocol):
-    def transform_responses_api_request(
+    def transform_responses_api_request(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         input_text: str,
-        response_api_optional_request_params: dict[str, JsonValue],
+        response_api_optional_request_params: dict[  # ast-grep-ignore: no-long-names
+            str, JsonValue
+        ],
         litellm_params: GenericLiteLLMParams,
         headers: dict[str, str],
         /,
     ) -> dict[str, JsonValue]: ...
 
-    def transform_response_api_response(
+    def transform_response_api_response(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         raw_response: httpx.Response,
@@ -161,7 +164,7 @@ def response_value(config: ResponsesConfig, input_value: Input) -> dict[str, Jso
     }
     return {
         "value": value,
-        "headers": {name: header_value for name, header_value in input_value["headers"].items()},
+        "headers": hidden.params.headers,
         "additional_headers": hidden.params.additional_headers,
         "post_call": post_call,
     }

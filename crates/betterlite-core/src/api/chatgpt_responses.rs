@@ -14,7 +14,7 @@ use betterlite_openai::chatgpt::headers::{
     PlatformEnvironment, get_chatgpt_default_headers, get_chatgpt_instructions,
 };
 use betterlite_openai::chatgpt::login::error::LoginError;
-use betterlite_openai::error::{OpenAiError, ProviderError, ProviderErrorParts};
+use betterlite_openai::error::OpenAiError;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::response_events::created_at::CreatedAtError;
 use betterlite_openai::response_events::{RawResponse, ResponsesReply, transform_response};
@@ -94,6 +94,8 @@ pub enum ChatGptResponsesError {
         #[source]
         source: ResponsesSseRecoveryError,
     },
+    #[error("the ChatGPT reply is {observed} bytes; the maximum is {limit}")]
+    ReplyTooLarge { observed: usize, limit: usize },
     #[error("the completed event's created_at cannot be converted into an integer timestamp")]
     CreatedAt(#[from] CreatedAtError),
     #[error("the completed event does not serialize: {source}")]
@@ -117,6 +119,7 @@ impl ChatGptResponsesError {
                 ResponsesSseRecoveryError::Limit(error) => Some(error.fields().status),
                 ResponsesSseRecoveryError::Utf8(_) => None,
             },
+            Self::ReplyTooLarge { .. } => Some(502),
             Self::CreatedAt(_) | Self::Encode { .. } => None,
         }
     }
@@ -206,6 +209,12 @@ pub fn transform_reply(
     env: &PrePostEnv<'_>,
     limits: &ApiLimits,
 ) -> Result<ResponsesReply, ChatGptResponsesError> {
+    if reply.text.len() > limits.max_json_bytes {
+        return Err(ChatGptResponsesError::ReplyTooLarge {
+            observed: reply.text.len(),
+            limit: limits.max_json_bytes,
+        });
+    }
     if !recovery::should_parse_as_sse(reply.headers, reply.text) {
         return Ok(transform_response(reply, now, state, env)?);
     }
@@ -227,10 +236,9 @@ pub fn transform_reply(
     );
     let recovered = recovery::extract_completed(reply.text, now, limits)?;
     let Some(response) = recovered.response else {
-        return Err(ChatGptResponsesError::Transform(missing_completion(
-            reply,
-            recovered.error_message,
-        )));
+        return Err(ChatGptResponsesError::Transform(
+            recovery::missing_completion(reply, recovered.error_message),
+        ));
     };
     Ok(ResponsesReply {
         response,
@@ -280,20 +288,4 @@ fn insert_encrypted_content(request: &mut Object) -> Result<(), ChatGptResponses
     }
     request.insert(String::from("include"), Json::List(include));
     Ok(())
-}
-
-// a missing completion is an OpenAIError at the status the provider answered with
-fn missing_completion(reply: &RawResponse<'_>, error_message: Option<String>) -> OpenAiError {
-    let text = error_message
-        .filter(|candidate| !candidate.is_empty())
-        .unwrap_or_else(|| reply.text.to_owned());
-    OpenAiError::Provider(Box::new(ProviderError::from(ProviderErrorParts {
-        status_code: reply.status,
-        message: text,
-        headers: None,
-        request: None,
-        response: None,
-        body: None,
-        status_code_is_synthesized: false,
-    })))
 }

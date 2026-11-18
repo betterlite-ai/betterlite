@@ -1,5 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+use betterlite_openai::error::{OpenAiError, ProviderError, ProviderErrorParts};
+use betterlite_openai::response_events::RawResponse;
 use betterlite_openai::response_events::ReplyBody;
 use betterlite_openai::response_events::created_at::convert_created_at;
 use indexmap::IndexMap;
@@ -162,4 +164,23 @@ fn error_message_of(parsed: &IndexMap<String, Json>) -> Option<String> {
         },
         value => Some(value_text(value)),
     }
+}
+
+// a missing completion is an OpenAIError at the status the provider answered with
+pub(super) fn missing_completion(
+    reply: &RawResponse<'_>,
+    error_message: Option<String>,
+) -> OpenAiError {
+    let text = error_message
+        .filter(|candidate| !candidate.is_empty())
+        .unwrap_or_else(|| reply.text.to_owned());
+    OpenAiError::Provider(Box::new(ProviderError::from(ProviderErrorParts {
+        status_code: reply.status,
+        message: text,
+        headers: None,
+        request: None,
+        response: None,
+        body: None,
+        status_code_is_synthesized: false,
+    })))
 }

@@ -13,6 +13,17 @@ call:
       include: [a]
       store: true
       stream: false
+      tools:
+        - type: function
+          name: lookup
+          parameters:
+            type: object
+            properties: {}
+      tool_choice: "auto"
+      reasoning:
+        effort: low
+      previous_response_id: resp_prev
+      truncation: "auto"
     body: ""
     status: 200
     headers: {}
