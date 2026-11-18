@@ -490,6 +490,7 @@ async fn a_pass_returns_false_without_a_router() {
         .await;
 
     assert!(!passed.unwrap());
+    assert!(alerts.catalog_source.calls.entries().is_empty());
     assert!(alerts.cache.writes.entries().is_empty());
 }
 
