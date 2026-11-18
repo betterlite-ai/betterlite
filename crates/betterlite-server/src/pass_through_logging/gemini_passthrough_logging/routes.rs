@@ -105,6 +105,7 @@ impl GeminiPassthroughLogger {
                 response: CostResponse::Video(&video),
                 model: &model,
                 custom_llm_provider: "gemini",
+                vertex_location: None,
                 call_type: CallType::CreateVideo,
             })
             .map_err(|source| GeminiPassthroughError::Cost {

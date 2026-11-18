@@ -21,6 +21,8 @@ pub struct CostRequest<'request> {
     pub response: CostResponse<'request>,
     pub model: &'request str,
     pub custom_llm_provider: &'request str,
+    // LiteLLM hands the Vertex cost service the region, whose price can differ from the default one.
+    pub vertex_location: Option<&'request str>,
     pub call_type: CallType,
 }
 
@@ -52,6 +54,7 @@ impl CompletionCost for FactoryCost<'_> {
                 response: CostResponse::Completion(&body),
                 model: request.model,
                 custom_llm_provider: request.custom_llm_provider.as_str(),
+                vertex_location: request.vertex_location,
                 call_type: CallType::Completion,
             })
             .ok()

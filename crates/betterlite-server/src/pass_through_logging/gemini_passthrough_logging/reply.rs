@@ -33,17 +33,29 @@ pub(crate) fn logged_response(
     if let Some(tier) = &response.service_tier {
         fields.insert("service_tier".to_owned(), Json::Text(tier.clone()));
     }
-    let metadata = response.metadata.clone().unwrap_or_default();
+    let metadata = response.metadata.as_ref();
     for (name, values) in [
-        ("vertex_ai_grounding_metadata", metadata.grounding_metadata),
+        (
+            "vertex_ai_grounding_metadata",
+            metadata.map(|metadata| &metadata.grounding_metadata),
+        ),
         (
             "vertex_ai_url_context_metadata",
-            metadata.url_context_metadata,
+            metadata.map(|metadata| &metadata.url_context_metadata),
         ),
-        ("vertex_ai_safety_results", metadata.safety_results),
-        ("vertex_ai_citation_metadata", metadata.citation_metadata),
+        (
+            "vertex_ai_safety_results",
+            metadata.map(|metadata| &metadata.safety_results),
+        ),
+        (
+            "vertex_ai_citation_metadata",
+            metadata.map(|metadata| &metadata.citation_metadata),
+        ),
     ] {
-        fields.insert(name.to_owned(), Json::List(values));
+        fields.insert(
+            name.to_owned(),
+            Json::List(values.cloned().unwrap_or_default()),
+        );
     }
     Ok(Json::Object(fields))
 }

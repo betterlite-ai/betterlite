@@ -28,7 +28,6 @@ use betterlite_streaming::streamed_response_assembly::{
 };
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message as CountMessage;
-use betterlite_vertex::gemini_candidates::choice::StreamChoice as ProjectedChoice;
 use betterlite_vertex::gemini_response_parts::projection::CallMode;
 use betterlite_vertex::gemini_stream::chunk::{Choice as StreamItem, StreamChunk};
 use betterlite_vertex::gemini_stream::error::StreamError;
@@ -52,11 +51,8 @@ pub(crate) enum CollectedStreamError {
         #[from]
         source: StreamEventError,
     },
-    #[error("the collected chunk could not be projected: {source}")]
-    Projection {
-        #[from]
-        source: serde_json::Error,
-    },
+    #[error("the collected chunk could not be projected: {0}")]
+    Projection(#[from] serde_json::Error),
     #[error("the collected chunks could not be assembled: {source}")]
     Assemble {
         #[from]

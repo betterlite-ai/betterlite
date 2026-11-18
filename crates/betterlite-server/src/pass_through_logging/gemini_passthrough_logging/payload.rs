@@ -16,7 +16,7 @@ pub(crate) fn create_gemini_response_logging_payload(
     cost: &dyn PassthroughCompletionCost,
     response: &mut Json,
     model: &str,
-    kwargs: PassThroughLoggingKwargs,
+    mut kwargs: PassThroughLoggingKwargs,
     logging_obj: &StreamLoggingObject,
     custom_llm_provider: &str,
 ) -> Result<PassThroughLoggingKwargs, GeminiPassthroughError> {
@@ -25,13 +25,13 @@ pub(crate) fn create_gemini_response_logging_payload(
             response: CostResponse::Completion(response),
             model,
             custom_llm_provider: "gemini",
+            vertex_location: None,
             call_type: CallType::Completion,
         })
         .map_err(|source| GeminiPassthroughError::Cost {
             model: model.to_owned(),
             source,
         })?;
-    let mut kwargs = kwargs;
     kwargs
         .entries
         .insert("response_cost".to_owned(), decimal_json(response_cost));
