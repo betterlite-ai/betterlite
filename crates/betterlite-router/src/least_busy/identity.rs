@@ -19,7 +19,7 @@ pub struct AttemptFacts<'facts> {
 impl<'facts> AttemptFacts<'facts> {
     // the success callback's event carries the request facts its request recorded
     #[must_use]
-    pub fn from_success(event: &SuccessEvent<'facts>) -> Self {
+    pub const fn from_success(event: &SuccessEvent<'facts>) -> Self {
         Self {
             model_group: event.request.model_group,
             deployment_id: event.request.deployment_id,
@@ -29,7 +29,7 @@ impl<'facts> AttemptFacts<'facts> {
 
     // the failure callback's event carries the attempt's model group and deployment directly
     #[must_use]
-    pub fn from_failure(event: &AsyncFailureEvent<'facts>) -> Self {
+    pub const fn from_failure(event: &AsyncFailureEvent<'facts>) -> Self {
         Self {
             model_group: event.model_group,
             deployment_id: event.deployment_id,

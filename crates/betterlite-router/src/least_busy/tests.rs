@@ -337,25 +337,6 @@ async fn clamp_after_reset() {
     }
 }
 
-async fn drop_releases_local() {
-    let server = FakeRedis::try_start().await.unwrap();
-    let shared = shared_store(&server, 100);
-    let service = service(local_store(&TestClock::default()), Some(shared));
-    let deployments = [deployment("a")];
-    let first = service
-        .pre_call(&facts(Some(GROUP), Some("a"), None))
-        .await
-        .unwrap();
-    let second = service
-        .pre_call(&facts(Some(GROUP), Some("a"), None))
-        .await
-        .unwrap();
-    drop(first.call.unwrap());
-    // one of two calls ends without an awaited release, so this worker drops to one while the shared tier keeps both
-    assert_counts(&service, &deployments, &[Some(2)], &[Some(1)]).await;
-    drop(second.call.unwrap());
-}
-
 async fn down_shared_warns() {
     let server = FakeRedis::try_start().await.unwrap();
     let shared = shared_store(&server, 100);
@@ -461,8 +442,8 @@ fn missing_counts_are_zero() {
 
 fn local_counts_length_rule() {
     assert_eq!(local_counts(None, 2), vec![0, 0]);
-    assert_eq!(local_counts(Some(&[Some(1)]), 2), vec![0, 0]);
-    assert_eq!(local_counts(Some(&[Some(1), None]), 2), vec![1, 0]);
+    assert_eq!(local_counts(Some(&[Some(1)][..]), 2), vec![0, 0]);
+    assert_eq!(local_counts(Some(&[Some(1), None][..]), 2), vec![1, 0]);
 }
 
 fn counter_value_rule() {
@@ -562,7 +543,14 @@ fn ttl_expiry() {
         local: local_store(&clock),
         shared: None,
     };
-    seed_local(&service.local, "a", 1);
+    service
+        .local
+        .increment(
+            &group_key("a"),
+            &RouteIncrement::Counter(1),
+            Some(IN_FLIGHT_COUNT_TTL_SECONDS),
+        )
+        .unwrap();
     let key = group_key("a");
     clock.at(601.0);
     assert_eq!(
@@ -582,7 +570,6 @@ async fn behavior(name: &str) -> bool {
         "spend_shared_falls_back" => spend_shared_falls_back().await,
         "increment_and_release" => increment_and_release().await,
         "clamp_after_reset" => clamp_after_reset().await,
-        "drop_releases_local" => drop_releases_local().await,
         "down_shared_warns" => down_shared_warns().await,
         "local_rejection_skips_shared" => local_rejection_skips_shared().await,
         "batch_retrieve_skips" => batch_retrieve_skips().await,
@@ -695,11 +682,17 @@ async fn cancel_drop() {
     let shared = shared_store(&server, 100);
     let service = service(local_store(&TestClock::default()), Some(shared));
     let deployments = [deployment("a")];
-    let started = service
+    let first = service
         .pre_call(&facts(Some(GROUP), Some("a"), None))
         .await
         .unwrap();
-    let call = started.call.unwrap();
+    let second = service
+        .pre_call(&facts(Some(GROUP), Some("a"), None))
+        .await
+        .unwrap();
+    drop(first.call.unwrap());
+    // one of two calls is cancelled, so this worker drops to one while the shared tier keeps both
+    assert_counts(&service, &deployments, &[Some(2)], &[Some(1)]).await;
     service
         .local
         .set(
@@ -708,15 +701,19 @@ async fn cancel_drop() {
             Some(IN_FLIGHT_COUNT_TTL_SECONDS),
         )
         .unwrap();
-    drop(call);
-    assert_counts(&service, &deployments, &[Some(1)], &[Some(0)]).await;
+    drop(second.call.unwrap());
+    // a counter reset from under the cancelled call is left at zero, not below it
+    assert_eq!(
+        service.local_count_values(&[group_key("a")]).unwrap(),
+        vec![Some(0)]
+    );
 }
 
 async fn pre_call_over_limit() {
     let service = service(local_store(&TestClock::default()), None);
     let group = "g".repeat(1009);
     let error = match service
-        .pre_call(&facts(Some(&group), Some("d"), None))
+        .pre_call(&facts(Some(group.as_str()), Some("d"), None))
         .await
     {
         Err(error) => error,
@@ -749,7 +746,6 @@ async fn boundary(name: &str) -> bool {
 #[case::spend_shared_falls_back("spend_shared_falls_back")]
 #[case::increment_and_release("increment_and_release")]
 #[case::clamp_after_reset("clamp_after_reset")]
-#[case::drop_releases_local("drop_releases_local")]
 #[case::down_shared_warns("down_shared_warns")]
 #[case::local_rejection_skips_shared("local_rejection_skips_shared")]
 #[case::batch_retrieve_skips("batch_retrieve_skips")]

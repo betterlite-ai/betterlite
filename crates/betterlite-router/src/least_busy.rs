@@ -81,7 +81,9 @@ impl LeastBusy {
         // the shared tuple is counts in key order, while a local read of another length is this worker holding nothing
         let counts = match source {
             CountsSource::Shared => as_counts(&values),
-            CountsSource::Local | CountsSource::Fallback => local_counts(Some(&values), keys.len()),
+            CountsSource::Local | CountsSource::Fallback => {
+                local_counts(Some(values.as_slice()), keys.len())
+            }
         };
         Ok(Selection {
             index: least_busy(deployments.len(), &counts),
@@ -123,13 +125,13 @@ impl LeastBusy {
         &self,
         keys: &[RouteKey],
     ) -> Result<Vec<Option<i64>>, LeastBusyError> {
-        self.local
+        let reads = self
+            .local
             .batch_get(keys)
-            .map_err(|source| LeastBusyError::Local { source })
-            .and_then(|reads| counter_values(keys, reads))
-            .map_err(|key| LeastBusyError::NotACount {
-                key: key.as_ref().to_owned(),
-            })
+            .map_err(|source| LeastBusyError::Local { source })?;
+        counter_values(keys, reads).map_err(|key| LeastBusyError::NotACount {
+            key: key.as_ref().to_owned(),
+        })
     }
 }
 

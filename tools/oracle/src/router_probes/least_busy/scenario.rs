@@ -31,7 +31,8 @@ struct Scenario {
 
 pub(super) async fn execute_scenario(input: &Input) -> Result<Output, OperationError> {
     let deployments = deployment_specs(input)?;
-    let keys = request_count_keys(&input.model_group, &deployments).map_err(request_failure)?;
+    let keys = request_count_keys(&input.model_group, &deployments)
+        .map_err(|error| request_failure(&error))?;
     let local = RoutingValueStore::new(local_settings(), Arc::new(|| 0.0))
         .map_err(|error| invalid(&error.to_string()))?;
     let (shared, server) = if input.shared {
@@ -84,7 +85,7 @@ async fn apply_step(step: &Step, scenario: &mut Scenario) -> Result<StepOutput, 
         Step::SelectSync => Ok(StepOutput::SelectSync {
             selected: choose(scenario).await?,
         }),
-        Step::Shared => shared_step(scenario).await,
+        Step::Shared => Ok(shared_step(scenario).await),
         Step::Down => Ok(switch_step(scenario, true)),
         Step::Up => Ok(switch_step(scenario, false)),
     }
@@ -97,7 +98,7 @@ async fn begin_call(
     call_type: Option<&str>,
 ) -> Result<StepOutput, OperationError> {
     let facts = AttemptFacts {
-        model_group: Some(&scenario.model_group),
+        model_group: Some(scenario.model_group.as_str()),
         deployment_id: Some(deployment),
         call_type,
     };
@@ -105,7 +106,7 @@ async fn begin_call(
         .service
         .pre_call(&facts)
         .await
-        .map_err(request_failure)?;
+        .map_err(|error| request_failure(&error))?;
     if let Some(call) = started.call {
         scenario.calls.insert(call_id, call);
     }
@@ -125,19 +126,19 @@ async fn choose(scenario: &Scenario) -> Result<Option<String>, OperationError> {
         .service
         .select(&scenario.model_group, &scenario.deployments)
         .await
-        .map_err(request_failure)?;
+        .map_err(|error| request_failure(&error))?;
     Ok(selection
         .index
         .and_then(|index| scenario.ids.get(index).cloned()))
 }
 
-async fn shared_step(scenario: &Scenario) -> Result<StepOutput, OperationError> {
+async fn shared_step(scenario: &Scenario) -> StepOutput {
     let (state, values) = match scenario.service.shared_counts(&scenario.keys).await {
         SharedCounts::Absent => (SharedState::Absent, Vec::new()),
         SharedCounts::Values(values) => (SharedState::Values, values),
         SharedCounts::Unreadable(_cause) => (SharedState::Unreadable, Vec::new()),
     };
-    Ok(StepOutput::Shared { state, values })
+    StepOutput::Shared { state, values }
 }
 
 fn switch_step(scenario: &Scenario, down: bool) -> StepOutput {
@@ -177,7 +178,7 @@ fn deployment_spec(model_group: &str, id: &str) -> Result<DeploymentSpec, Operat
     .map_err(|error| invalid(&error.to_string()))
 }
 
-fn local_settings() -> StoreSettings {
+const fn local_settings() -> StoreSettings {
     StoreSettings {
         max_size_in_memory: None,
         default_ttl_seconds: None,
@@ -211,7 +212,7 @@ fn shared_store(server: &FakeRedis) -> Result<RoutingStateStore, OperationError>
         .map_err(|error| invalid(&error.to_string()))
 }
 
-fn request_failure(error: LeastBusyError) -> OperationError {
+fn request_failure(error: &LeastBusyError) -> OperationError {
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
