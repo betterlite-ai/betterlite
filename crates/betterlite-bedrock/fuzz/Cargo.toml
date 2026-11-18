@@ -99,6 +99,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_other_embedding_jobs"
+path = "fuzz_targets/bedrock_other_embedding_jobs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sagemaker_stream"
 path = "fuzz_targets/sagemaker_stream.rs"
 test = false

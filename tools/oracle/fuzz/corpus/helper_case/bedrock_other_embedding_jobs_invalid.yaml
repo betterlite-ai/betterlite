@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-other-embedding-jobs-status-http-failure
+call:
+  bedrock_other_embedding_jobs:
+    function: status_http_failure
+    invocation_arn: arn:aws:bedrock:us-west-2:123456789012:async-invoke/job-1
+    region: us-west-2
+    endpoint: https://runtime.example
+    environment:
+      AWS_REGION: eu-west-1
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+    status: 500
+    body: boom
+env: {}
+compare: {ignore: []}
