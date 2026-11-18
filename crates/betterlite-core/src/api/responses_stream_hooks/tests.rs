@@ -65,7 +65,7 @@ fn terminal_cache_requires_completed_event_and_all_dependencies() {
         ..input
     }));
     assert!(!is_stream_cache_eligible(&CacheEligibility {
-        has_global_cache: false,
+        global_cache: false,
         ..input
     }));
 }
