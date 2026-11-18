@@ -186,8 +186,9 @@ async fn an_out_of_range_chunk_value_is_refused(
 #[tokio::test(start_paused = true)]
 async fn wait_polls_the_submitted_operation() {
     let capture = CaptureImport {
+        requests: Arc::new(Mutex::new(Vec::new())),
+        operations: Arc::new(Mutex::new(Vec::new())),
         completed_on_poll: true,
-        ..CaptureImport::default()
     };
     let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
     let handle = port

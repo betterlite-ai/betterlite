@@ -563,7 +563,8 @@ async fn a_slow_submission_leaves_the_wait_to_the_import_timeout() {
 async fn inputs_at_each_limit_are_stored() {
     let limits = StoreLimits {
         max_file_bytes: 5,
-        ..StoreLimits::default()
+        max_filename_bytes: MAX_FILENAME_BYTES,
+        max_content_type_bytes: MAX_CONTENT_TYPE_BYTES,
     };
     let (ingest, recorder) = provider(
         corpus_record(),
@@ -601,7 +602,8 @@ async fn inputs_at_each_limit_are_stored() {
 async fn an_oversized_file_is_refused_before_the_upload() {
     let limits = StoreLimits {
         max_file_bytes: 5,
-        ..StoreLimits::default()
+        max_filename_bytes: MAX_FILENAME_BYTES,
+        max_content_type_bytes: MAX_CONTENT_TYPE_BYTES,
     };
     let (ingest, recorder) = provider(
         corpus_record(),

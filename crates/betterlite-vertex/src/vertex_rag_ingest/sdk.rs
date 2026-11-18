@@ -6,9 +6,11 @@ use google_cloud_aiplatform_v1::model::rag_file_chunking_config::{
     ChunkingConfig, FixedLengthChunking,
 };
 use google_cloud_aiplatform_v1::model::{
-    GcsSource, ImportRagFilesConfig, ImportRagFilesOperationMetadata, ImportRagFilesResponse,
-    RagFileChunkingConfig, RagFileTransformationConfig,
+    GcsSource, ImportRagFilesConfig, ImportRagFilesResponse, RagFileChunkingConfig,
+    RagFileTransformationConfig,
 };
+// ast-grep-ignore: no-long-names
+use google_cloud_aiplatform_v1::model::ImportRagFilesOperationMetadata as ImportMetadata;
 use google_cloud_auth::credentials::Credentials;
 use google_cloud_gax::error::Error as GaxError;
 use google_cloud_gax::exponential_backoff::ExponentialBackoff;
@@ -69,7 +71,7 @@ impl VertexRagDataImport {
 
 type Submitted = (
     VertexRagDataService,
-    Operation<ImportRagFilesResponse, ImportRagFilesOperationMetadata>,
+    Operation<ImportRagFilesResponse, ImportMetadata>,
 );
 
 impl CorpusImport for VertexRagDataImport {
@@ -112,10 +114,9 @@ impl CorpusImport for VertexRagDataImport {
                 let poll_client = client.clone();
                 async move {
                     let polled = poll_client.get_operation().set_name(name).send().await?;
-                    Ok::<_, GaxError>(Operation::<
-                        ImportRagFilesResponse,
-                        ImportRagFilesOperationMetadata,
-                    >::new(polled))
+                    Ok::<_, GaxError>(Operation::<ImportRagFilesResponse, ImportMetadata>::new(
+                        polled,
+                    ))
                 }
             };
             let poller = new_poller(
