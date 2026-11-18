@@ -9,5 +9,8 @@ call:
       - model_name: alpha
         litellm_params: {model: openai/raw}
         model_info: {deprecation_date: {kind: date, value: "2026-05-10"}}
+      - model_name: week-year-overflow
+        litellm_params: {model: openai/raw}
+        model_info: {deprecation_date: "9999-W52-6"}
 env: {}
 compare: {ignore: []}

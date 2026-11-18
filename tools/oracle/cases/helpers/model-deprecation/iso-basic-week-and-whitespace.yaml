@@ -3,7 +3,8 @@ name: model-deprecation-iso-basic-week-and-whitespace
 call:
   model_deprecation:
     now: "2026-05-01T12:00:00Z"
-    model_cost: {}
+    model_cost:
+      openai/raw: {deprecation_date: "2026-05-10", litellm_provider: openai}
     deployments:
       - model_name: basic-calendar
         model_info: {deprecation_date: "20260102"}
@@ -17,5 +18,8 @@ call:
         model_info: {deprecation_date: "2026W01"}
       - model_name: padded
         model_info: {deprecation_date: " 20260201\t"}
+      - model_name: week-year-overflow
+        litellm_params: {model: openai/raw}
+        model_info: {deprecation_date: "9999-W52-6"}
 env: {}
 compare: {ignore: []}
