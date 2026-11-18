@@ -49,6 +49,20 @@ calls:
   - agentcore_search_reply:
       status: 200
       headers: [[content-type, text/event-stream]]
+      body: |-
+        data: {"error":{}}
+
+        data: {"result":{"structuredContent":[{"title":"later"}]}}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: |-
+        data: {"error":null}
+
+        data: {"result":{"structuredContent":[{"title":"later"}]}}
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
       body: "  data: {\"result\":{\"structuredContent\":[{\"title\":\"no\"}]}}"
 env: {}
 compare: {ignore: []}

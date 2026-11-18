@@ -10,5 +10,9 @@ calls:
       status: 200
       headers: [[content-type, application/json]]
       body: '{"result":{"content":[{"type":"text","text":"[{\"title\":\"only\",\"url\":\"\"}]"}]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '{"result":{"content":[{"type":"text","text":"[{\"title\":\"p\",\"text\":\"from text\",\"snippet\":\"from snippet\",\"publishedDate\":\"2024-01-01\",\"date\":\"2024-02-02\"}]"}]}}'
 env: {}
 compare: {ignore: []}
