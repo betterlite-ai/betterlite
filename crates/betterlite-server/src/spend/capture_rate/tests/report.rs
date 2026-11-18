@@ -2,8 +2,8 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::capture_rate::report::CheckResult;
 use secrecy::ExposeSecret as _;
 
+use super::super::credentials::SecretBillingCredentials;
 use super::super::{CaptureRateJob, CaptureRateJobError, run_check};
-use super::credentials::SecretBillingCredentials;
 use super::*;
 
 #[tokio::test]

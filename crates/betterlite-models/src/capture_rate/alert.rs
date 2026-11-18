@@ -4,6 +4,7 @@ use super::report::CheckResult;
 use super::settings::SpendCaptureProvider;
 
 // The source's _alert_message: the alert a check outcome warrants, or None when the rate is healthy.
+#[must_use]
 pub fn alert_message(result: &CheckResult) -> Option<String> {
     match result {
         CheckResult::CredentialMissing { provider, env_var } => Some(format!(

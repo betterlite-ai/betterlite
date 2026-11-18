@@ -25,7 +25,7 @@ impl Helper for Op {
 }
 
 #[derive(Debug, Deserialize)]
-struct Input {
+pub(crate) struct Input {
     cases: BTreeMap<String, Case>,
 }
 

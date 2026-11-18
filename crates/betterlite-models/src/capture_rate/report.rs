@@ -56,6 +56,7 @@ impl CheckResult {
     }
 
     // The gauge value: the rate, or None when the window produced no rate.
+    #[must_use]
     pub const fn published_rate(&self) -> Option<Decimal> {
         match self {
             Self::Report(report) => report.capture_rate,
