@@ -13,6 +13,7 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod handlers;
 mod tests;
+mod transports;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
