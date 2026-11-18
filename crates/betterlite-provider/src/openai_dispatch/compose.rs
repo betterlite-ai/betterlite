@@ -219,7 +219,7 @@ fn requested_encoding_format(composition: &Composition, call: &EmbeddingCall) ->
                 .map(encoding_text)
                 .map(str::to_owned)
         })
-        .or_else(|| composition.embedding_format.clone());
+        .or_else(|| composition.provider.embedding_format.clone());
     requested.filter(|format| format.trim().to_lowercase() != NONE_FORMAT)
 }
 

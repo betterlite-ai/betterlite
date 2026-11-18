@@ -4,7 +4,8 @@ use betterlite_secret_managers::secret_lookup::text_to_bool;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
-use crate::sections::{Section, settings::JsonValue};
+use crate::sections::Section;
+use crate::sections::settings::JsonValue;
 
 const ENABLE_PREVIEW_FEATURES_PATH: &str = "litellm_settings.enable_preview_features";
 pub const EXPERIMENTAL_HANDLER_ENV: &str = "EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER";
@@ -22,12 +23,16 @@ struct Global {
     enable_preview_features: JsonValue,
 }
 
-// two bytes on purpose: a pointer would spend Sections' spare bytes under clippy's large_futures
+// main.py's OpenAI dispatch reads these three settings; the two environment ones have no YAML owner
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Settings {
+pub struct ProviderValues {
     pub experimental_handler: bool,
     pub enable_preview_features: bool,
+    pub embedding_format: Option<String>,
 }
+
+// boxed so the loaded Config stays small enough for futures that hold it across an await
+pub type Settings = Box<ProviderValues>;
 
 impl Section for Raw {
     type Settings = Settings;
@@ -36,7 +41,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings {
+        Ok(Box::new(ProviderValues {
             // get_secret_bool defaults to unset, so any text but true or false leaves the handler off
             experimental_handler: lookup
                 .lookup(EXPERIMENTAL_HANDLER_ENV)
@@ -47,14 +52,11 @@ impl Section for Raw {
                 self.litellm_settings.enable_preview_features,
                 lookup,
             )?,
-        })
+            embedding_format: lookup
+                .lookup(EMBEDDING_FORMAT_ENV)
+                .filter(|value| !value.is_empty()),
+        }))
     }
-}
-
-// LITELLM_DEFAULT_EMBEDDING_ENCODING_FORMAT has no YAML owner, and a String cannot sit in Sections
-pub fn embedding_format(lookup: &dyn EnvironmentLookup) -> Option<String> {
-    let format = lookup.lookup(EMBEDDING_FORMAT_ENV);
-    format.filter(|value| !value.is_empty())
 }
 
 // litellm_settings.enable_preview_features is a module-level flag: litellm_settings only, no environment

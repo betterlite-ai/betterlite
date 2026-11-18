@@ -6,22 +6,17 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
-use super::{EMBEDDING_FORMAT_ENV, EXPERIMENTAL_HANDLER_ENV, embedding_format};
-
-fn lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
-    environment
-        .iter()
-        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-        .collect()
-}
+use super::{EMBEDDING_FORMAT_ENV, EXPERIMENTAL_HANDLER_ENV};
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, ConfigError> {
-    Ok(ConfigLoader {
-        lookup: lookup(environment),
-    }
-    .load(source)?
-    .sections
-    .openai_provider)
+    let lookup = environment
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    Ok(ConfigLoader { lookup }
+        .load(source)?
+        .sections
+        .openai_provider)
 }
 
 // Only a true spelling turns the handler on; any other value leaves it off.
@@ -44,6 +39,7 @@ fn check_experimental_flag() {
             "EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER={given}"
         );
         assert!(!loaded.enable_preview_features);
+        assert!(loaded.embedding_format.is_none());
     }
 }
 
@@ -86,13 +82,13 @@ fn check_preview_flag() {
 
 // The embedding format reads the environment variable, and an empty value counts as unset.
 fn check_embedding_format() {
-    assert!(embedding_format(&lookup(&[])).is_none());
-    let base64 = lookup(&[(EMBEDDING_FORMAT_ENV, "base64")]);
-    assert_eq!(embedding_format(&base64).as_deref(), Some("base64"));
-    let empty = lookup(&[(EMBEDDING_FORMAT_ENV, "")]);
-    assert!(embedding_format(&empty).is_none());
-    let sentinel = lookup(&[(EMBEDDING_FORMAT_ENV, "none")]);
-    assert_eq!(embedding_format(&sentinel).as_deref(), Some("none"));
+    assert!(load("", &[]).unwrap().embedding_format.is_none());
+    let loaded = load("", &[(EMBEDDING_FORMAT_ENV, "base64")]).unwrap();
+    assert_eq!(loaded.embedding_format.as_deref(), Some("base64"));
+    let none = load("", &[(EMBEDDING_FORMAT_ENV, "")]).unwrap();
+    assert!(none.embedding_format.is_none());
+    let sentinel = load("", &[(EMBEDDING_FORMAT_ENV, "none")]).unwrap();
+    assert_eq!(sentinel.embedding_format.as_deref(), Some("none"));
 }
 
 // A key the section does not read stays unsupported.

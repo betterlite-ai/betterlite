@@ -11,7 +11,7 @@ fn composition() -> Composition {
     let mut composition = support::composition();
     composition.env_api_key = Some(SecretString::from("sk-env"));
     composition.globals.organization = Some(String::from("org-global"));
-    composition.embedding_format = Some(String::from("base64"));
+    composition.provider.embedding_format = Some(String::from("base64"));
     composition
 }
 
@@ -81,7 +81,7 @@ pub(super) async fn check_body_and_reply() {
 pub(super) async fn check_configured_format() {
     let mut composition = support::composition();
     composition.globals.api_key = Some(SecretString::from("sk-global"));
-    composition.embedding_format = Some(String::from("base64"));
+    composition.provider.embedding_format = Some(String::from("base64"));
     let call = EmbeddingCall {
         model: String::from("text-embedding-3-small"),
         request: support::embedding_request(r#"{"input":["a","b"]}"#),
@@ -113,7 +113,7 @@ pub(super) async fn check_configured_format() {
 // An empty explicit format falls through to the request's own value, which wins over the configured default.
 pub(super) async fn check_format_falls_through() {
     let mut composition = support::composition();
-    composition.embedding_format = Some(String::from("float"));
+    composition.provider.embedding_format = Some(String::from("float"));
     let call = EmbeddingCall {
         model: String::from("text-embedding-3-small"),
         request: support::embedding_request(r#"{"input":"hello","encoding_format":"base64"}"#),
