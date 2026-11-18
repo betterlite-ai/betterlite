@@ -15,6 +15,9 @@ use tokio_util::task::TaskTracker;
 use super::KwargsParentSpanResolver;
 
 const PARENT_SPAN_KEY: &str = "litellm_parent_otel_span";
+const METADATA_TRACE: &str = "4bf92f3577b34da6a3ce929d0e0e4736";
+const PARAMS_TRACE: &str = "0af7651916cd43dd8448eb211c80319c";
+const TOP_LEVEL_TRACE: &str = "11111111111111111111111111111111";
 
 #[derive(Debug, thiserror::Error)]
 #[error("the sink refused the event")]
@@ -62,6 +65,58 @@ fn spanned(value: &str) -> Json {
     )]))
 }
 
+fn proxy_kwargs(metadata: Option<&str>, params: Option<&str>, top_level: Option<&str>) -> Json {
+    let mut kwargs = IndexMap::new();
+    if let Some(trace) = metadata {
+        kwargs.insert("metadata".to_owned(), spanned(trace));
+    }
+    if let Some(trace) = params {
+        kwargs.insert(
+            "litellm_params".to_owned(),
+            Json::Object(IndexMap::from([("metadata".to_owned(), spanned(trace))])),
+        );
+    }
+    if let Some(trace) = top_level {
+        kwargs.insert(PARENT_SPAN_KEY.to_owned(), traceparent(trace));
+    }
+    Json::Object(kwargs)
+}
+
+fn proxy_call(kwargs: &Json) -> DbMetricCall<'_> {
+    DbMetricCall {
+        function_name: "PROXY_batch_write",
+        parent_otel_span: Some(span(7)),
+        table_name: None,
+        second_positional: Some(kwargs),
+    }
+}
+
+fn resolved_traces(recorded: &[DbServiceEvent]) -> Vec<String> {
+    let mut resolved: Vec<String> = recorded
+        .iter()
+        .map(|event| {
+            event
+                .parent_otel_span
+                .as_ref()
+                .expect("the shared helper resolves a parent")
+                .trace_id()
+                .to_string()
+        })
+        .collect();
+    resolved.sort_unstable();
+    resolved
+}
+
+fn sorted_traces() -> Vec<String> {
+    let mut expected = vec![
+        METADATA_TRACE.to_owned(),
+        PARAMS_TRACE.to_owned(),
+        TOP_LEVEL_TRACE.to_owned(),
+    ];
+    expected.sort_unstable();
+    expected
+}
+
 async fn record_success(call: &DbMetricCall<'_>, sink: &Arc<RecordingSink>, tasks: &TaskTracker) {
     let resolver = KwargsParentSpanResolver;
     let clock = SystemWallClock;
@@ -80,55 +135,16 @@ async fn record_success(call: &DbMetricCall<'_>, sink: &Arc<RecordingSink>, task
 async fn proxy_span_uses_shared_resolver() {
     let tasks = TaskTracker::new();
     let sink = Arc::new(RecordingSink::default());
-    let metadata_trace = "4bf92f3577b34da6a3ce929d0e0e4736";
-    let params_trace = "0af7651916cd43dd8448eb211c80319c";
-    let top_level_trace = "11111111111111111111111111111111";
-    let both = Json::Object(IndexMap::from([
-        ("metadata".to_owned(), spanned(metadata_trace)),
-        (
-            "litellm_params".to_owned(),
-            Json::Object(IndexMap::from([(
-                "metadata".to_owned(),
-                spanned(params_trace),
-            )])),
-        ),
-        (PARENT_SPAN_KEY.to_owned(), traceparent(top_level_trace)),
-    ]));
-    let params_only = Json::Object(IndexMap::from([
-        (
-            "litellm_params".to_owned(),
-            Json::Object(IndexMap::from([(
-                "metadata".to_owned(),
-                spanned(params_trace),
-            )])),
-        ),
-        (PARENT_SPAN_KEY.to_owned(), traceparent(top_level_trace)),
-    ]));
-    let top_level_only = Json::Object(IndexMap::from([(
-        PARENT_SPAN_KEY.to_owned(),
-        traceparent(top_level_trace),
-    )]));
-    let from_metadata = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: Some(span(7)),
-        table_name: None,
-        second_positional: Some(&both),
-    };
-    let from_params = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: Some(span(7)),
-        table_name: None,
-        second_positional: Some(&params_only),
-    };
-    let from_top_level = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: Some(span(7)),
-        table_name: None,
-        second_positional: Some(&top_level_only),
-    };
-    record_success(&from_metadata, &sink, &tasks).await;
-    record_success(&from_params, &sink, &tasks).await;
-    record_success(&from_top_level, &sink, &tasks).await;
+    let both = proxy_kwargs(
+        Some(METADATA_TRACE),
+        Some(PARAMS_TRACE),
+        Some(TOP_LEVEL_TRACE),
+    );
+    let params_only = proxy_kwargs(None, Some(PARAMS_TRACE), Some(TOP_LEVEL_TRACE));
+    let top_level_only = proxy_kwargs(None, None, Some(TOP_LEVEL_TRACE));
+    record_success(&proxy_call(&both), &sink, &tasks).await;
+    record_success(&proxy_call(&params_only), &sink, &tasks).await;
+    record_success(&proxy_call(&top_level_only), &sink, &tasks).await;
     tasks.close();
     tasks.wait().await;
     let recorded = sink
@@ -137,39 +153,11 @@ async fn proxy_span_uses_shared_resolver() {
         .expect("the recording sink is not poisoned")
         .clone();
     assert_eq!(recorded.len(), 3);
-    let mut resolved: Vec<String> = recorded
-        .iter()
-        .map(|event| {
-            event
-                .parent_otel_span
-                .as_ref()
-                .expect("the shared helper resolves a parent")
-                .trace_id()
-                .to_string()
-        })
-        .collect();
-    let mut expected = vec![
-        metadata_trace.to_owned(),
-        params_trace.to_owned(),
-        top_level_trace.to_owned(),
-    ];
-    resolved.sort_unstable();
-    expected.sort_unstable();
-    assert_eq!(resolved, expected);
-    assert!(
-        recorded
-            .iter()
-            .all(|event| event.parent_otel_span != Some(span(7)))
-    );
-    assert!(
-        recorded
-            .iter()
-            .all(|event| event.service == DbService::BatchWriteToDb)
-    );
-    assert!(
-        recorded
-            .iter()
-            .all(|event| event.call_type == "PROXY_batch_write")
-    );
-    assert!(recorded.iter().all(|event| event.event_metadata.is_none()));
+    assert_eq!(resolved_traces(&recorded), sorted_traces());
+    assert!(recorded.iter().all(|event| {
+        event.parent_otel_span != Some(span(7))
+            && event.service == DbService::BatchWriteToDb
+            && event.call_type == "PROXY_batch_write"
+            && event.event_metadata.is_none()
+    }));
 }

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::ready;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -7,14 +8,15 @@ use std::time::Duration;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use opentelemetry::trace::SpanContext;
 use rstest::rstest;
 use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 
 use crate::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
 use crate::database_failures::metrics::{
-    DbEventMetadata, DbMetricCall, DbMetricContext, DbMetricError, DbService, SystemWallClock,
-    WallClock, log_db_metrics, safe_db_event_metadata,
+    DbEventMetadata, DbMetricCall, DbMetricContext, DbMetricError, DbService, DbServiceEvent,
+    SystemWallClock, WallClock, log_db_metrics, safe_db_event_metadata,
 };
 use crate::database_faults::ErrorType;
 
@@ -49,17 +51,7 @@ async fn ordinary_success_scheduled() {
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 1);
-    assert_eq!(recorded[0].service, DbService::Postgres);
-    assert_eq!(recorded[0].call_type, "query_raw");
-    assert_eq!(recorded[0].parent_otel_span, Some(span(1)));
-    assert!(recorded[0].duration_seconds >= 0.0);
-    assert!(recorded[0].start_time <= recorded[0].end_time);
-    assert_eq!(
-        recorded[0].event_metadata,
-        Some(DbEventMetadata {
-            table_name: "users".to_owned()
-        })
-    );
+    assert_query_success(&recorded[0]);
     assert!(failures(&sink).is_empty());
     assert!(
         resolver
@@ -90,35 +82,18 @@ async fn exact_keyword_parent_span() {
         table_name: None,
         second_positional: None,
     };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
-        &present,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
     let missing = DbMetricCall {
         function_name: "query_raw",
         parent_otel_span: None,
         table_name: None,
         second_positional: None,
     };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(2) },
-        &missing,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
+    run_named_call(&tasks, &sink, &resolver, &present).await;
+    run_named_call(&tasks, &sink, &resolver, &missing).await;
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 2);
-    assert_eq!(recorded[0].parent_otel_span, Some(span(2)));
-    assert_eq!(recorded[1].parent_otel_span, None);
+    assert_keyword_spans(&recorded);
     assert!(
         resolver
             .seen
@@ -210,47 +185,20 @@ async fn proxy_substring_case_sensitive() {
         span: Some(span(3)),
         seen: Mutex::new(Vec::new()),
     };
-    let kwargs = Json::Object(IndexMap::from([(
-        "parent_otel_span".to_owned(),
-        Json::Text("inner".to_owned()),
-    )]));
-    let lowercase = DbMetricCall {
-        function_name: "proxy_write",
-        parent_otel_span: Some(span(4)),
-        table_name: None,
-        second_positional: Some(&kwargs),
-    };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
-        &lowercase,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
-    let uppercase = DbMetricCall {
-        function_name: "PROXY_write",
-        parent_otel_span: Some(span(4)),
-        table_name: None,
-        second_positional: Some(&kwargs),
-    };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(2) },
-        &uppercase,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
+    let kwargs = parent_kwargs();
+    let lowercase = named_proxy_call("proxy_write", span(4), &kwargs);
+    let uppercase = named_proxy_call("PROXY_write", span(4), &kwargs);
+    run_named_call(&tasks, &sink, &resolver, &lowercase).await;
+    run_named_call(&tasks, &sink, &resolver, &uppercase).await;
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 2);
-    assert_eq!(recorded[0].service, DbService::Postgres);
-    assert_eq!(recorded[0].parent_otel_span, Some(span(4)));
-    assert_eq!(recorded[1].service, DbService::BatchWriteToDb);
-    assert_eq!(recorded[1].parent_otel_span, Some(span(3)));
+    assert!(recorded.iter().any(|event| {
+        event.service == DbService::Postgres && event.parent_otel_span == Some(span(4))
+    }));
+    assert!(recorded.iter().any(|event| {
+        event.service == DbService::BatchWriteToDb && event.parent_otel_span == Some(span(3))
+    }));
     assert_eq!(
         resolver
             .seen
@@ -273,47 +221,13 @@ async fn proxy_args_second_dictionary() {
         "user_api_key".to_owned(),
         Json::Text("sk-key".to_owned()),
     )]));
-    let present = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: None,
-        table_name: None,
-        second_positional: Some(&kwargs),
-    };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
-        &present,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
-    let absent = metric_call("PROXY_batch_write");
-    run_metric(
-        async { Ok::<i32, DbLookupError>(2) },
-        &absent,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
     let boolean = Json::Bool(true);
-    let not_a_dictionary = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: None,
-        table_name: None,
-        second_positional: Some(&boolean),
-    };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(3) },
-        &not_a_dictionary,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
+    let present = positional_call(Some(&kwargs));
+    let absent = positional_call(None);
+    let not_a_dictionary = positional_call(Some(&boolean));
+    run_named_call(&tasks, &sink, &resolver, &present).await;
+    run_named_call(&tasks, &sink, &resolver, &absent).await;
+    run_named_call(&tasks, &sink, &resolver, &not_a_dictionary).await;
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded.len(), 1);
@@ -336,10 +250,7 @@ async fn proxy_success_zero_duration() {
         span: Some(span(3)),
         seen: Mutex::new(Vec::new()),
     };
-    let kwargs = Json::Object(IndexMap::from([(
-        "parent_otel_span".to_owned(),
-        Json::Text("inner".to_owned()),
-    )]));
+    let kwargs = parent_kwargs();
     let call = DbMetricCall {
         function_name: "PROXY_batch_write",
         parent_otel_span: None,
@@ -430,12 +341,7 @@ async fn backward_clock_keeps_signed_duration() {
     let clock = RecordingWallClock::new(vec![start, end]);
     let call = metric_call("query_raw");
     let error = log_db_metrics(
-        async {
-            Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
-                ErrorType::Data,
-                "unique violation",
-            )))
-        },
+        ready(failed_data_write("unique violation")),
         &call,
         DbMetricContext {
             sink: Arc::clone(&sink),
@@ -465,10 +371,7 @@ async fn proxy_missing_span_drops_success() {
     let tasks = TaskTracker::new();
     let sink = Arc::new(RecordingSink::default());
     let resolver = RecordingResolver::default();
-    let kwargs = Json::Object(IndexMap::from([(
-        "parent_otel_span".to_owned(),
-        Json::Text("inner".to_owned()),
-    )]));
+    let kwargs = parent_kwargs();
     let call = DbMetricCall {
         function_name: "PROXY_batch_write",
         parent_otel_span: Some(span(7)),
@@ -509,20 +412,7 @@ async fn db_data_error_is_failure_metric() {
         table_name: Some(&table),
         second_positional: None,
     };
-    let error = run_metric(
-        async {
-            Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
-                ErrorType::Data,
-                "unique violation",
-            )))
-        },
-        &call,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect_err("the failed write is rethrown");
+    let error = run_data_error(&tasks, &sink, &resolver, &call, "unique violation").await;
     let DbMetricError::Lookup(DbLookupError::Database(db_error)) = &error else {
         panic!("the data error is carried, got {error:?}");
     };
@@ -700,25 +590,14 @@ async fn proxy_failure_still_db_service() {
         seen: Mutex::new(Vec::new()),
     };
     let table = Json::Text("users".to_owned());
-    let kwargs = Json::Object(IndexMap::from([(
-        "parent_otel_span".to_owned(),
-        Json::Text("inner".to_owned()),
-    )]));
+    let kwargs = parent_kwargs();
     let call = DbMetricCall {
         function_name: "PROXY_batch_write",
         parent_otel_span: Some(span(6)),
         table_name: Some(&table),
         second_positional: Some(&kwargs),
     };
-    let operation = async {
-        Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
-            ErrorType::Data,
-            "conflict",
-        )))
-    };
-    let error = run_metric(operation, &call, &sink, &resolver, &tasks)
-        .await
-        .expect_err("the database error is rethrown");
+    let error = run_data_error(&tasks, &sink, &resolver, &call, "conflict").await;
     assert!(matches!(
         error,
         DbMetricError::Lookup(DbLookupError::Database(_))
@@ -769,51 +648,21 @@ async fn sensitive_metadata_absent() {
     let sink = Arc::new(RecordingSink::default());
     let resolver = RecordingResolver::default();
     let table = Json::Text("users".to_owned());
-    let secrets = Json::Object(IndexMap::from([
-        ("api_key".to_owned(), Json::Text("sk-secret".to_owned())),
-        (
-            "request_body".to_owned(),
-            Json::Object(IndexMap::from([(
-                "messages".to_owned(),
-                Json::Text("hello".to_owned()),
-            )])),
-        ),
-    ]));
+    let secrets = secret_kwargs();
     let success = DbMetricCall {
         function_name: "query_raw",
         parent_otel_span: None,
         table_name: Some(&table),
         second_positional: Some(&secrets),
     };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
-        &success,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
+    run_named_call(&tasks, &sink, &resolver, &success).await;
     let failure = DbMetricCall {
         function_name: "query_raw",
         parent_otel_span: None,
         table_name: None,
         second_positional: Some(&secrets),
     };
-    run_metric(
-        async {
-            Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
-                ErrorType::Data,
-                "conflict",
-            )))
-        },
-        &failure,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect_err("the failed write is rethrown");
+    run_data_error(&tasks, &sink, &resolver, &failure, "conflict").await;
     drain(&tasks).await;
     let succeeded = successes(&sink);
     assert_eq!(
@@ -822,11 +671,125 @@ async fn sensitive_metadata_absent() {
             table_name: "users".to_owned()
         })
     );
-    let serialized =
-        serde_json::to_string(&succeeded[0].event_metadata).expect("the event metadata serializes");
+    assert_no_secrets(succeeded[0].event_metadata.as_ref());
+    let failed = failures(&sink);
+    assert_eq!(failed[0].event.event_metadata, None);
+}
+
+fn parent_kwargs() -> Json {
+    Json::Object(IndexMap::from([(
+        "parent_otel_span".to_owned(),
+        Json::Text("inner".to_owned()),
+    )]))
+}
+
+fn secret_kwargs() -> Json {
+    Json::Object(IndexMap::from([
+        ("api_key".to_owned(), Json::Text("sk-secret".to_owned())),
+        (
+            "request_body".to_owned(),
+            Json::Object(IndexMap::from([(
+                "messages".to_owned(),
+                Json::Text("hello".to_owned()),
+            )])),
+        ),
+    ]))
+}
+
+fn named_proxy_call<'call>(
+    name: &'call str,
+    parent: SpanContext,
+    kwargs: &'call Json,
+) -> DbMetricCall<'call> {
+    DbMetricCall {
+        function_name: name,
+        parent_otel_span: Some(parent),
+        table_name: None,
+        second_positional: Some(kwargs),
+    }
+}
+
+fn positional_call(second: Option<&Json>) -> DbMetricCall<'_> {
+    DbMetricCall {
+        function_name: "PROXY_batch_write",
+        parent_otel_span: None,
+        table_name: None,
+        second_positional: second,
+    }
+}
+
+fn failed_data_write(message: &str) -> Result<i32, DbLookupError> {
+    Err(DbLookupError::Database(database_error(
+        ErrorType::Data,
+        message,
+    )))
+}
+
+async fn run_named_call(
+    tasks: &TaskTracker,
+    sink: &Arc<RecordingSink>,
+    resolver: &RecordingResolver,
+    call: &DbMetricCall<'_>,
+) -> i32 {
+    run_metric(
+        async { Ok::<i32, DbLookupError>(1) },
+        call,
+        sink,
+        resolver,
+        tasks,
+    )
+    .await
+    .expect("the successful call returns")
+}
+
+async fn run_data_error(
+    tasks: &TaskTracker,
+    sink: &Arc<RecordingSink>,
+    resolver: &RecordingResolver,
+    call: &DbMetricCall<'_>,
+    message: &str,
+) -> DbMetricError<SinkFault> {
+    run_metric(
+        ready(failed_data_write(message)),
+        call,
+        sink,
+        resolver,
+        tasks,
+    )
+    .await
+    .expect_err("the failed write is rethrown")
+}
+
+fn assert_query_success(event: &DbServiceEvent) {
+    assert_eq!(event.service, DbService::Postgres);
+    assert_eq!(event.call_type, "query_raw");
+    assert_eq!(event.parent_otel_span, Some(span(1)));
+    assert!(event.duration_seconds >= 0.0);
+    assert!(event.start_time <= event.end_time);
+    assert_eq!(
+        event.event_metadata,
+        Some(DbEventMetadata {
+            table_name: "users".to_owned()
+        })
+    );
+}
+
+fn assert_no_secrets(metadata: Option<&DbEventMetadata>) {
+    let serialized = serde_json::to_string(&metadata).expect("the event metadata serializes");
     assert!(!serialized.contains("api_key"));
     assert!(!serialized.contains("sk-secret"));
     assert!(!serialized.contains("request_body"));
-    let failed = failures(&sink);
-    assert_eq!(failed[0].event.event_metadata, None);
+}
+
+fn assert_keyword_spans(recorded: &[DbServiceEvent]) {
+    assert!(
+        recorded
+            .iter()
+            .any(|event| event.parent_otel_span == Some(span(2)))
+    );
+    assert!(
+        recorded
+            .iter()
+            .any(|event| event.parent_otel_span.is_none())
+    );
 }

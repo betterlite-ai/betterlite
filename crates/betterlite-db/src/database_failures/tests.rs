@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Pending, pending};
+use std::future::{Future, Pending, pending};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
@@ -13,6 +13,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Builder;
 use tokio::sync::Notify;
+use tokio::sync::Semaphore;
 use tokio::sync::oneshot;
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{sleep, timeout};
@@ -554,6 +555,25 @@ struct Environment {
     url: Option<String>,
 }
 
+fn blocked_gate_lookup(
+    semaphore: Arc<Semaphore>,
+    pool: Pool,
+    acquired: Arc<AtomicBool>,
+    finished: Arc<AtomicBool>,
+) -> impl Future<Output = Result<(), DbLookupError>> + Send {
+    async move {
+        let _permit = semaphore.acquire_owned().await.expect("the gate is open");
+        acquired.store(true, Ordering::SeqCst);
+        let session = pool.get().await.expect("the fixture connects");
+        session
+            .query("SELECT pg_sleep(5)", &[])
+            .await
+            .expect("the sleep query answers");
+        finished.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn postgres_blocked_lookup_deadline() {
     let (fixture, pool) = postgres_pool().await;
@@ -566,24 +586,12 @@ async fn postgres_blocked_lookup_deadline() {
     let semaphore = gate.current().expect("a runtime is running");
     let acquired = Arc::new(AtomicBool::new(false));
     let finished = Arc::new(AtomicBool::new(false));
-    let lookup_semaphore = Arc::clone(&semaphore);
-    let lookup_pool = pool.clone();
-    let lookup_acquired = Arc::clone(&acquired);
-    let lookup_finished = Arc::clone(&finished);
-    let lookup = async move {
-        let _permit = lookup_semaphore
-            .acquire_owned()
-            .await
-            .expect("the gate is open");
-        lookup_acquired.store(true, Ordering::SeqCst);
-        let session = lookup_pool.get().await.expect("the fixture connects");
-        session
-            .query("SELECT pg_sleep(5)", &[])
-            .await
-            .expect("the sleep query answers");
-        lookup_finished.store(true, Ordering::SeqCst);
-        Ok::<_, DbLookupError>(())
-    };
+    let lookup = blocked_gate_lookup(
+        Arc::clone(&semaphore),
+        pool.clone(),
+        Arc::clone(&acquired),
+        Arc::clone(&finished),
+    );
     let lookup_request = request("user_api_key_cache", Some(0.5), 10.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
         .await
@@ -598,6 +606,20 @@ async fn postgres_blocked_lookup_deadline() {
     fixture.close_async().await.expect("the fixture closes");
 }
 
+async fn committed_write(pool: Pool) -> Result<i32, DbLookupError> {
+    let mut session = pool.get().await.expect("the fixture connects");
+    let transaction = session.transaction().await.expect("the transaction opens");
+    transaction
+        .execute(
+            r#"INSERT INTO "LiteLLM_DbLookupProbe" (id, note) VALUES ('probe', 'committed')"#,
+            &[],
+        )
+        .await
+        .expect("the probe row inserts");
+    transaction.commit().await.expect("the probe row commits");
+    Ok(1_i32)
+}
+
 #[tokio::test]
 async fn postgres_metric_failure_keeps_committed_write() {
     let (fixture, pool) = postgres_pool().await;
@@ -606,23 +628,15 @@ async fn postgres_metric_failure_keeps_committed_write() {
     sink.refuse_success.store(true, Ordering::SeqCst);
     let resolver = RecordingResolver::default();
     let call = metric_call("db_write");
-    let write_pool = pool.clone();
-    let operation = async move {
-        let mut session = write_pool.get().await.expect("the fixture connects");
-        let transaction = session.transaction().await.expect("the transaction opens");
-        transaction
-            .execute(
-                r#"INSERT INTO "LiteLLM_DbLookupProbe" (id, note) VALUES ('probe', 'committed')"#,
-                &[],
-            )
-            .await
-            .expect("the probe row inserts");
-        transaction.commit().await.expect("the probe row commits");
-        Ok::<_, DbLookupError>(1_i32)
-    };
-    let output = run_metric(operation, &call, &sink, &resolver, &tasks)
-        .await
-        .expect("the committed write stays a success");
+    let output = run_metric(
+        committed_write(pool.clone()),
+        &call,
+        &sink,
+        &resolver,
+        &tasks,
+    )
+    .await
+    .expect("the committed write stays a success");
     assert_eq!(output, 1);
     drain(&tasks).await;
     assert_eq!(successes(&sink).len(), 1);
