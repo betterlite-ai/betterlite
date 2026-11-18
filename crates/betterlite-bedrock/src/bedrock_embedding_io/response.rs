@@ -56,42 +56,43 @@ pub fn transform_response(
         && response_list.len() == 1
         && reply.contains_key("invocationArn")
     {
-        return async_reply(reply, model, provider);
+        return match async_response(reply, model, provider)? {
+            Some(response) => provider_embedding_reply(response),
+            None => Ok(EmbeddingReply {
+                object: RESPONSE_OBJECT,
+                data: vec![EmbeddingRecord {
+                    object: EMBEDDING_OBJECT.to_owned(),
+                    embedding: EmbeddingVector::Floats(Vec::new()),
+                    index: 0,
+                }],
+                model: model.to_owned(),
+                usage: EmbeddingUsage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                    prompt_tokens_details: None,
+                },
+                invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
+            }),
+        };
     }
     regular_reply(response_list, model, provider, batch_data)
 }
 
 // only a single reply that names the ARN enters the async branch; a null ARN is still an ARN
-fn async_reply(
+fn async_response(
     reply: &Object,
     model: &str,
     provider: BedrockEmbeddingProvider,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
+) -> Result<Option<ProviderResponse>, EmbeddingIoError> {
     match provider {
-        BedrockEmbeddingProvider::Twelvelabs => {
-            provider_embedding_reply(ProviderResponse::Marengo(
-                marengo::transform_async_response(&parse_one::<Params>(reply)?, model),
-            ))
-        }
-        BedrockEmbeddingProvider::Nova => provider_embedding_reply(ProviderResponse::Nova(
+        BedrockEmbeddingProvider::Twelvelabs => Ok(Some(ProviderResponse::Marengo(
+            marengo::transform_async_response(&parse_one::<Params>(reply)?, model),
+        ))),
+        BedrockEmbeddingProvider::Nova => Ok(Some(ProviderResponse::Nova(
             nova::transform_invoke_response(&parse_one::<Params>(reply)?, model),
-        )),
-        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => Ok(EmbeddingReply {
-            object: RESPONSE_OBJECT,
-            data: vec![EmbeddingRecord {
-                object: EMBEDDING_OBJECT.to_owned(),
-                embedding: EmbeddingVector::Floats(Vec::new()),
-                index: 0,
-            }],
-            model: model.to_owned(),
-            usage: EmbeddingUsage {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_tokens: 0,
-                prompt_tokens_details: None,
-            },
-            invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
-        }),
+        ))),
+        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => Ok(None),
     }
 }
 
