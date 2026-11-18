@@ -154,7 +154,14 @@ fn evaluate(call: &Call) -> Result<Value, Box<HelperError>> {
             let request = BulkDeleteUserRequest::from_value(&body).or_value_error()?;
             serde_json::to_value(request).or_value_error()
         }
-        Function::BulkNew => bulk_new_answer(&body),
+        Function::BulkNew => {
+            let request = BulkNewUserRequest::from_value(&body).or_value_error()?;
+            let mut users = Vec::with_capacity(request.users.len());
+            for item in &request.users {
+                users.push(NewUserItemView::from(&item.request));
+            }
+            serde_json::to_value(BulkNewView { users }).or_value_error()
+        }
         Function::UserUpdateResult => record_answer::<UserUpdateResult>(&body),
         Function::BulkUpdateResponse => record_answer::<BulkUpdateUserResponse>(&body),
         Function::UserDeleteResult => record_answer::<UserDeleteResult>(&body),
@@ -221,13 +228,4 @@ fn bulk_update_answer(body: &Value) -> Result<Value, Box<HelperError>> {
         user_updates,
     })
     .or_value_error()
-}
-
-fn bulk_new_answer(body: &Value) -> Result<Value, Box<HelperError>> {
-    let request = BulkNewUserRequest::from_value(body).or_value_error()?;
-    let mut users = Vec::with_capacity(request.users.len());
-    for item in &request.users {
-        users.push(NewUserItemView::from(&item.request));
-    }
-    serde_json::to_value(BulkNewView { users }).or_value_error()
 }
