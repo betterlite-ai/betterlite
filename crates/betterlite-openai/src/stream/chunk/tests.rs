@@ -72,6 +72,8 @@ fn stream_parses_reasoning_delta_fields() {
         serde_json::to_string(&chunk).unwrap(),
         r#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"group","choices":[{"index":0,"delta":{"reasoning_content":"thinking","thinking_blocks":[{"type":"thinking","thinking":"step","signature":"sig"},{"type":"redacted_thinking","data":"cipher"}]}}]}"#
     );
+    let unknown = br#"{"id":"c","object":"chat.completion.chunk","created":7,"model":"up","choices":[{"index":0,"delta":{"thinking_blocks":[{"type":"thinking","bogus":true}]}}]}"#;
+    Chunk::parse(unknown, "group", false).unwrap_err();
 }
 
 #[test]
