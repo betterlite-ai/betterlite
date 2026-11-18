@@ -153,6 +153,13 @@ class FakeDeprecated(DeprecatedTable):
         self.session = session
         self.use_writer = use_writer
 
+    # RoutingPrismaWrapper only routes a per-model accessor that also exposes find_many and create
+    async def find_many(self) -> list[DeprecatedRow]:
+        return []
+
+    async def create(self, data: DeprecatedFields) -> None:
+        del data
+
     @override
     async def find_first(self, where: dict[str, JsonValue]) -> DeprecatedRow | None:
         await self.session.record_query(
