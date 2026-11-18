@@ -395,4 +395,7 @@ fn native_jwt_filter_matches_the_compound_mapping() {
     assert!(listed.sql.contains("entry.\"is_active\" = $4"));
     assert!(listed.sql.ends_with("LIMIT $5"));
     assert_eq!(listed.parameters.len(), 5);
+    let membership = table.membership(KeyColumn::Id);
+    assert!(membership.contains("\"LiteLLM_JWTKeyMapping\""));
+    assert!(membership.contains("ANY($1::text[])"));
 }
