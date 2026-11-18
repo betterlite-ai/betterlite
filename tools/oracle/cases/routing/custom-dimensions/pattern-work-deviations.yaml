@@ -1,0 +1,36 @@
+kind: probe
+name: custom-dimensions-pattern-work-deviations
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: pattern_work
+        patterns: ['\N{LATIN SMALL LETTER A}', '\uD800', '[a&&b]']
+compare:
+  expected_difference:
+    - pointer: /output/custom_dimensions/results/0/work
+      reference: 2
+      rust: null
+      why: Python resolves a named character escape and scores it as one literal; betterlite refuses the construct instead of carrying a Unicode table.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+    - pointer: /output/custom_dimensions/results/0/message
+      reference: null
+      rust: contains an unsupported regex construct
+      why: Python resolves a named character escape and scores it as one literal; betterlite refuses the construct instead of carrying a Unicode table.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+    - pointer: /output/custom_dimensions/results/1/work
+      reference: 2
+      rust: null
+      why: Python accepts a lone surrogate escape in a pattern string; betterlite refuses a code point that is not a character.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+    - pointer: /output/custom_dimensions/results/1/message
+      reference: null
+      rust: contains an unsupported regex construct
+      why: Python accepts a lone surrogate escape in a pattern string; betterlite refuses a code point that is not a character.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+    - pointer: /warnings
+      reference: ['Possible set intersection at position 2', 'Possible set intersection at position 2']
+      rust: []
+      why: Python re.compile and sre_parse each warn about a class that could be a nested set; betterlite parses the class without warnings.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800

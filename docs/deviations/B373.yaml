@@ -1,0 +1,31 @@
+task: B373
+deviations:
+  - what: >-
+      A pattern that names a character with `\N{...}` is accepted by LiteLLM and scored as one
+      literal, while betterlite refuses it as an unsupported regex construct.
+    why: >-
+      Resolving a Unicode character name needs the full `unicodedata` name table, which the
+      maintained Rust parser does not carry, and a pattern is user-written configuration where a
+      refused construct names its limit instead of silently scoring a different work estimate.
+      The same pattern therefore fails validation with a message pointing at the pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+  - what: >-
+      A pattern written with a lone surrogate escape (`\uD800`, `\U0000D800`, or inside a class)
+      is accepted by LiteLLM and scored as one literal, while betterlite refuses it as an
+      unsupported regex construct.
+    why: >-
+      A Rust char cannot hold a surrogate code point, and a pattern string carrying one does not
+      match any character, so copying the accepted work estimate would validate a pattern whose
+      match behavior betterlite cannot reproduce. The refused construct names the pattern.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+  - what: >-
+      A class construct that Python considers a possible nested set or set operation (for
+      example `[a&&b]`) makes LiteLLM emit a FutureWarning from `re.compile` and again from
+      `sre_parse.parse`, while betterlite parses the same class silently.
+    why: >-
+      The warning is CPython's parser anticipating a future syntax change; it does not change the
+      accepted pattern or the work estimate, and betterlite does not have a warning channel a
+      config load can raise it through. The class keeps the same characters and the same work as
+      the reference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+kept_bugs: []

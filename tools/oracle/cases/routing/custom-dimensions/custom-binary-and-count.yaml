@@ -1,0 +1,101 @@
+kind: probe
+name: custom-dimensions-binary-and-count
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: binary
+        prompt: zeta
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: binary
+        prompt: alpha
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: binary
+        prompt: alpha beta gamma 42
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: binary
+        prompt: '42'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: match_count
+        prompt: alpha
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: match_count
+        prompt: alpha beta
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              keywords: [alpha, beta]
+              patterns: ['gamma', '[0-9]{2}']
+              scoring_mode: match_count
+        prompt: zeta
