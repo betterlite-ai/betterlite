@@ -149,7 +149,7 @@ class FakeStore(RedisCache):
         self.read_done.set()
         return {key: self.values.get(key) for key in key_list if key is not None}
 
-    # a write-through would reach for the network; no step opens a budget window, so nothing calls this
+    # the start-time write-through reaches this method; no step reads it from the store, so it stops at the memory tier
     @override
     async def async_set_cache(
         self, key: str, value: JsonValue, **_kwargs: JsonValue
