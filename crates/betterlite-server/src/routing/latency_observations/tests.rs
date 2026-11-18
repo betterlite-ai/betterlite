@@ -7,7 +7,15 @@ use super::latency_settings;
 
 #[test]
 fn absent_arguments_keep_the_declared_defaults() {
-    assert_eq!(latency_settings(&Args::default()), Settings::default());
+    assert_eq!(
+        latency_settings(&Args::default()),
+        Settings {
+            ttl_seconds: 3_600.0,
+            lowest_latency_buffer: 0.0,
+            max_latency_list_size: 10,
+            ttft_percentile: None,
+        }
+    );
 }
 
 #[test]
