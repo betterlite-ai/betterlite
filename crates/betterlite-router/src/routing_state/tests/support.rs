@@ -70,6 +70,7 @@ pub(crate) struct FakeStore {
     calls: AtomicUsize,
     down: AtomicBool,
     stale: AtomicBool,
+    short_reply: AtomicBool,
 }
 
 impl FakeStore {
@@ -80,6 +81,7 @@ impl FakeStore {
             calls: AtomicUsize::new(0),
             down: AtomicBool::new(false),
             stale: AtomicBool::new(false),
+            short_reply: AtomicBool::new(false),
         }
     }
 
@@ -97,6 +99,11 @@ impl FakeStore {
     // a reply that reports the value before the increment, as a concurrent reset would
     pub(crate) fn set_stale(&self, stale: bool) {
         self.stale.store(stale, Ordering::SeqCst);
+    }
+
+    // a pipeline that applies the push but reports no values back, as a truncated reply does
+    pub(crate) fn set_short_reply(&self, short: bool) {
+        self.short_reply.store(short, Ordering::SeqCst);
     }
 
     pub(crate) fn amount(&self, key: &str) -> Option<Decimal> {
@@ -144,6 +151,9 @@ impl DeltaStore for FakeStore {
             } else {
                 *entry
             });
+        }
+        if self.short_reply.load(Ordering::SeqCst) {
+            return Ok(Vec::new());
         }
         Ok(results)
     }

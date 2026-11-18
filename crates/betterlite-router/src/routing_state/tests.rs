@@ -59,6 +59,7 @@ fn runtime(paused: bool) -> Runtime {
     "failure_callback_increment_survives_the_merge",
     false
 )]
+#[case::sync_treats_a_missing_reply_as_zero("sync_treats_a_missing_reply_as_zero", false)]
 fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(behaviors::run(name));
 }

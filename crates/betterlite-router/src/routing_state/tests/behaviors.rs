@@ -37,6 +37,7 @@ pub(crate) async fn run(name: &str) {
         "success_and_failure_counters" => success_and_failure_counters(),
         "sync_merges_the_stored_value" => sync_merges_the_stored_value().await,
         "sync_keeps_a_value_redis_is_behind_on" => sync_keeps_a_value_redis_is_behind_on().await,
+        "sync_treats_a_missing_reply_as_zero" => sync_treats_a_missing_reply_as_zero().await,
         "failed_push_discards_its_batch" => failed_push_discards_its_batch().await,
         "periodic_sync_writes_on_the_interval" => periodic_sync_writes_on_the_interval().await,
         "no_periodic_task_without_batching" => no_periodic_task_without_batching().await,
@@ -221,6 +222,20 @@ async fn sync_keeps_a_value_redis_is_behind_on() {
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2)));
     assert_eq!(harness.local_amount(RPM_KEY), Some(Decimal::from(2)));
     assert_eq!(harness.counters.get_tracked_keys(), set(&[RPM_KEY]));
+}
+
+// a reply shorter than the pushed operations leaves those keys out, and their store value reads as zero
+async fn sync_treats_a_missing_reply_as_zero() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_short_reply(true);
+    harness
+        .counters
+        .increment_window_value(RPM_KEY, Decimal::from(2), TTL)
+        .await
+        .unwrap();
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2)));
+    assert_eq!(harness.local_amount(RPM_KEY), Some(Decimal::from(2)));
 }
 
 async fn failed_push_discards_its_batch() {
