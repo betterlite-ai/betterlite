@@ -192,17 +192,12 @@ fn validate_definition_names(names: &[&str]) -> Result<(), TierDefinitionsError>
 
 // the names that repeat a case-insensitive spelling, each listed once and sorted
 fn duplicate_names(names: &[&str]) -> Vec<String> {
+    let folded: Vec<String> = names.iter().map(|name| name.to_lowercase()).collect();
     let mut duplicated: Vec<String> = names
         .iter()
-        .filter(|name| {
-            let folded = name.to_lowercase();
-            names
-                .iter()
-                .filter(|other| other.to_lowercase() == folded)
-                .count()
-                > 1
-        })
-        .map(|name| (*name).to_owned())
+        .zip(&folded)
+        .filter(|(_, name)| folded.iter().filter(|other| *other == *name).count() > 1)
+        .map(|(name, _)| (*name).to_owned())
         .collect();
     duplicated.sort();
     duplicated.dedup();
