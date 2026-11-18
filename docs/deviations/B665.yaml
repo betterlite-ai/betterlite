@@ -1,0 +1,21 @@
+task: B665
+deviations:
+  - what: Malformed provider JSON warning previews and client receive failure traces omit raw content and credentials; skip, close and error behavior stay the same.
+    why: Repository redaction rules prohibit exposing realtime payloads or secrets through diagnostics, so both the 200-character preview and the forwarding-ended line pass through the B187 redactor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1294-L1309
+  - what: A provider message that is not a JSON object, an `event` value that is not an object, an event payload of the wrong type, or invalid UTF-8 comes back as a typed EventError that names the shape; LiteLLM lets AttributeError, TypeError, UnicodeDecodeError or pydantic ValidationError escape from the same inputs.
+    why: docs/compatibility.md makes a wrong-typed value an error that names what failed instead of a Python runtime exception, and Rust has no exception classes to carry the distinction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1323
+  - what: A client session.update whose session.modalities is not a list of strings fails with AckError::Modalities, where LiteLLM raises pydantic ValidationError from its list[str] | None adapter.
+    why: The same compatibility rule as above; the validated value is the client's field, so the error names it instead of carrying a Python exception class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L222-L224
+  - what: raise_provider_failure returns the mapped error for the bridge to raise, where LiteLLM raises it inside the function; the provider exception stays attached as the error's source.
+    why: Rust reports failure through return values, and the bridge that owns the stream is the only place that can raise it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L193-L198
+kept_bugs:
+  - what: A session.update whose session.modalities fails validation leaves the scope committed to the stream, so a second attempt on the same websocket is refused as already committed.
+    why: LiteLLM commits the scope before it validates or sends the ack, and the bridge's retry path is written against that ordering.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L217-L224
+  - what: A failing close of the SDK client is swallowed with no log line, where a successful close logs one.
+    why: LiteLLM wraps close in contextlib.suppress(Exception), and a working bridge relies on a close failure never reaching the client loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L152-L157
