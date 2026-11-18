@@ -121,45 +121,34 @@ def settings_answer() -> JsonValue:
     return answer
 
 
-def validate_answer(search: SearchConfig, call: ValidateCall) -> JsonValue:
-    headers = call.get("headers")
+def operation_answer(search: SearchConfig, call: Call) -> JsonValue:
+    value: JsonValue
     try:
-        validated = search.validate_environment(
-            {} if headers is None else headers,
-            call.get("api_key"),
-            call.get("api_base"),
-        )
+        if call["kind"] == "validate_environment":
+            headers = call.get("headers")
+            validated = search.validate_environment(
+                {} if headers is None else headers,
+                call.get("api_key"),
+                call.get("api_base"),
+            )
+            value = JSON.validate_python(validated)
+        elif call["kind"] == "complete_url":
+            value = search.get_complete_url(call.get("api_base"), {})
+        elif call["kind"] == "request":
+            params = call.get("optional_params")
+            body = search.transform_search_request(
+                call["query"], {} if params is None else params
+            )
+            value = JSON.validate_json(json.dumps(body))
+        elif call["kind"] == "settings":
+            value = settings_answer()
+        else:
+            response = httpx.Response(200, content=call["body"].encode())
+            parsed = search.transform_search_response(response, LoggingRecord())
+            value = JSON.validate_json(parsed.model_dump_json())
     except (TypeError, ValueError):
         return failure()
-    answer: dict[str, JsonValue] = {"ok": True, "value": JSON.validate_python(validated)}
-    return answer
-
-
-def url_answer(search: SearchConfig, call: UrlCall) -> JsonValue:
-    answer: dict[str, JsonValue] = {
-        "ok": True,
-        "value": search.get_complete_url(call.get("api_base"), {}),
-    }
-    return answer
-
-
-def request_answer(search: SearchConfig, call: RequestCall) -> JsonValue:
-    params = call.get("optional_params")
-    try:
-        body = search.transform_search_request(call["query"], {} if params is None else params)
-    except (TypeError, ValueError):
-        return failure()
-    answer: dict[str, JsonValue] = {"ok": True, "value": JSON.validate_json(json.dumps(body))}
-    return answer
-
-
-def reply_answer(search: SearchConfig, call: ReplyCall) -> JsonValue:
-    response = httpx.Response(200, content=call["body"].encode())
-    try:
-        parsed = search.transform_search_response(response, LoggingRecord())
-    except (TypeError, ValueError):
-        return failure()
-    answer: dict[str, JsonValue] = {"ok": True, "value": JSON.validate_json(parsed.model_dump_json())}
+    answer: dict[str, JsonValue] = {"ok": True, "value": value}
     return answer
 
 
@@ -169,14 +158,5 @@ def run(input_value: Input) -> JsonValue:
     search = config()
     answers: list[JsonValue] = []
     for call in input_value["calls"]:
-        if call["kind"] == "settings":
-            answers.append(settings_answer())
-        elif call["kind"] == "validate_environment":
-            answers.append(validate_answer(search, call))
-        elif call["kind"] == "complete_url":
-            answers.append(url_answer(search, call))
-        elif call["kind"] == "request":
-            answers.append(request_answer(search, call))
-        else:
-            answers.append(reply_answer(search, call))
+        answers.append(operation_answer(search, call))
     return answers
