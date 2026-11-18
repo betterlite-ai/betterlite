@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
 use crate::callback_logger::CallbackLogger;
+use crate::otel::config::ExporterOwner;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
 use crate::otel::logger_runtime::publish::{fan_out_provider, publish_global_v2_provider};
 use crate::otel::logger_runtime::select::{
@@ -15,7 +16,7 @@ use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders}
 
 use super::support::{
     FakeLogger, finished, fixture, fixture_excluding, fixture_sink, lock, operator_exporter,
-    placeholder, probe, register_callback, settings, tenant_destination,
+    owned_fixture_sink, placeholder, probe, register_callback, settings, tenant_destination,
 };
 
 #[test]
@@ -267,6 +268,33 @@ fn published_provider_delivers_to_a_tenant_destination() {
     assert_eq!(fixture.export_sinks.finished(), 1);
     assert_eq!(fixture.tenant_sinks.finished(), 1);
     assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn published_provider_keeps_an_overridden_backend_silent() {
+    let fixture = fixture();
+    fixture
+        .scope
+        .set_destinations(vec![tenant_destination("newrelic")]);
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![owned_fixture_sink(ExporterOwner::Newrelic)]),
+        Some("newrelic"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let received = Arc::new(Mutex::new(None));
+    let setter: &dyn Fn(&SdkTracerProvider) = &|provider: &SdkTracerProvider| {
+        *lock(&received) = Some(provider.clone());
+    };
+    publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
+    let provider = lock(&received).clone().expect("the setter saw a provider");
+    probe(&provider);
+    provider.force_flush().expect("flushed");
+    assert_eq!(fixture.export_sinks.finished(), 0);
+    assert_eq!(fixture.tenant_sinks.finished(), 1);
 }
 
 #[test]

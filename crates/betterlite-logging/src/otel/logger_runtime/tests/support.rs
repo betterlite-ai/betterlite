@@ -18,7 +18,7 @@ use opentelemetry_sdk::trace::{
 
 use crate::callback_logger::CallbackLogger;
 use crate::otel::config::destination::{DestinationFields, OtelDestination, SpanScope};
-use crate::otel::config::{CaptureMessageContent, ExporterSpec, Settings};
+use crate::otel::config::{CaptureMessageContent, ExporterOwner, ExporterSpec, Settings};
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::emitter::span_emission::MapperKind;
 use crate::otel::fan_out::attach::TenantFanOutRegistry;
@@ -382,6 +382,13 @@ pub(crate) fn placeholder() -> ExporterSpec {
 
 pub(crate) fn fixture_sink() -> ExporterSpec {
     spec("fixture_sink", None, None, false)
+}
+
+pub(crate) fn owned_fixture_sink(owner: ExporterOwner) -> ExporterSpec {
+    ExporterSpec {
+        owner: Some(owner),
+        ..fixture_sink()
+    }
 }
 
 pub(crate) fn gated() -> ExporterSpec {
