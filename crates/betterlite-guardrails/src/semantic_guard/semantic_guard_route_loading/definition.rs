@@ -1,0 +1,144 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use regex::Regex;
+use serde::Deserialize;
+use serde::de::IgnoredAny;
+
+mod from_value;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RouteDefinition {
+    pub route_name: String,
+    pub description: String,
+    pub utterances: Vec<String>,
+    pub similarity_threshold: Option<f64>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum DefinitionError {
+    #[error("the route definition is not a mapping")]
+    NotAMapping,
+    #[error("the route definition is missing the required field `{field}`")]
+    MissingField { field: &'static str },
+    #[error("the route definition field `{field}` must be {expected}")]
+    FieldType {
+        field: &'static str,
+        expected: &'static str,
+    },
+    #[error("the route definition has an unknown field `{field}`")]
+    UnknownField { field: String },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawDefinition {
+    route_name: Option<GuardrailValue>,
+    description: Option<GuardrailValue>,
+    utterances: Option<GuardrailValue>,
+    similarity_threshold: Option<GuardrailValue>,
+    // the three Route fields a loaded route never fills stay readable, as LiteLLM drops them from its route definitions
+    #[serde(rename = "function_schemas")]
+    _function_schemas: Option<IgnoredAny>,
+    #[serde(rename = "llm")]
+    _llm: Option<IgnoredAny>,
+    #[serde(rename = "metadata")]
+    _metadata: Option<IgnoredAny>,
+}
+
+// the same definition with its text fields read as raw scalars, whose shapes the typed parse already proves
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct RawDefinitionText {
+    route_name: Option<String>,
+    description: Option<String>,
+    utterances: Option<Vec<String>>,
+    #[serde(rename = "similarity_threshold")]
+    _similarity_threshold: Option<IgnoredAny>,
+    #[serde(rename = "function_schemas")]
+    _function_schemas: Option<IgnoredAny>,
+    #[serde(rename = "llm")]
+    _llm: Option<IgnoredAny>,
+    #[serde(rename = "metadata")]
+    _metadata: Option<IgnoredAny>,
+}
+
+impl RawDefinition {
+    // PyYAML leaves a plain scalar such as 1e3 or y a string where serde's inference sees a number or a boolean
+    #[must_use]
+    pub(super) fn with_pyyaml_scalars(
+        mut self,
+        text: Option<&RawDefinitionText>,
+        pattern: Option<&Regex>,
+    ) -> Self {
+        let Some(raw) = text else {
+            return self;
+        };
+        reclassify(&mut self.route_name, raw.route_name.as_deref(), pattern);
+        reclassify(&mut self.description, raw.description.as_deref(), pattern);
+        let (Some(GuardrailValue::Array(utterances)), Some(texts)) =
+            (self.utterances.as_mut(), raw.utterances.as_ref())
+        else {
+            return self;
+        };
+        if utterances.len() == texts.len() {
+            for (utterance, scalar) in utterances.iter_mut().zip(texts) {
+                reclassify_scalar(utterance, scalar, pattern);
+            }
+        }
+        self
+    }
+
+    pub(super) fn into_definition(self) -> Result<RouteDefinition, DefinitionError> {
+        let mut fields = BTreeMap::new();
+        let known = [
+            ("route_name", self.route_name),
+            ("description", self.description),
+            ("utterances", self.utterances),
+            ("similarity_threshold", self.similarity_threshold),
+        ];
+        for (name, value) in known {
+            if let Some(present) = value {
+                fields.insert(name.to_owned(), present);
+            }
+        }
+        // the file route and the inline route go through one validator, so a wrong type names the same field
+        RouteDefinition::from_value(&GuardrailValue::Object(fields))
+    }
+}
+
+fn reclassify(field: &mut Option<GuardrailValue>, text: Option<&str>, pattern: Option<&Regex>) {
+    let (Some(value), Some(scalar)) = (field.as_mut(), text) else {
+        return;
+    };
+    reclassify_scalar(value, scalar, pattern);
+}
+
+fn reclassify_scalar(value: &mut GuardrailValue, text: &str, pattern: Option<&Regex>) {
+    let inferred_non_text = matches!(
+        value,
+        GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+    );
+    if inferred_non_text && !pattern.is_none_or(|compiled| compiled.is_match(text)) {
+        *value = GuardrailValue::Text(text.to_owned());
+    }
+}
+
+// PyYAML 6.0.2's implicit resolvers for bool, float, int and null, in one pattern with its re.X spacing
+pub(super) const PYYAML_NON_TEXT_SCALAR: &str = r"(?x)^(?:
+    yes|Yes|YES|no|No|NO|true|True|TRUE|false|False|FALSE|on|On|ON|off|Off|OFF
+  | [-+]?(?:[0-9][0-9_]*)\.[0-9_]*(?:[eE][-+][0-9]+)?
+  | \.[0-9][0-9_]*(?:[eE][-+][0-9]+)?
+  | [-+]?[0-9][0-9_]*(?::[0-5]?[0-9])+\.[0-9_]*
+  | [-+]?\.(?:inf|Inf|INF)
+  | \.(?:nan|NaN|NAN)
+  | [-+]?0b[0-1_]+
+  | [-+]?0[0-7_]+
+  | [-+]?(?:0|[1-9][0-9_]*)
+  | [-+]?0x[0-9a-fA-F_]+
+  | [-+]?[1-9][0-9_]*(?::[0-5]?[0-9])+
+  | ~|null|Null|NULL|
+)$";
