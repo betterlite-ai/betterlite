@@ -5,6 +5,9 @@ use super::support::{CLAUDE_3_5, CLAUDE_4_5, Call, LLAMA, expected, field, remot
 const CALLER_OPTIONS: &str = r#"{
     "_output_config_normalized": false,
     "json_mode": true,
+    "skip_mcp_handler": true,
+    "mcp_handler_context": {"session": "s"},
+    "_skip_mcp_handler": false,
     "maxTokens": 256,
     "stopSequences": ["END"],
     "temperature": 0.5,
