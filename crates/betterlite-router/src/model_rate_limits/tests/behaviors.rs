@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use betterlite_models::decisions::Json;
 use serde_json::Number;
 
 use crate::model_rate_limits::error::RateLimitChannel;
@@ -253,7 +254,7 @@ async fn io_reservation_before_the_checks() {
         with_info(
             spec("gpt-4o", "a", "openai/gpt-4o"),
             "itpm",
-            betterlite_models::decisions::Json::Number(Number::from(10_i64)),
+            Json::Number(Number::from(10_i64)),
         ),
         "rpm",
         1,
@@ -272,10 +273,7 @@ async fn io_reservation_before_the_checks() {
         }]
     );
     assert_eq!(recorder.calls.lock().unwrap().refunds, 1);
-    assert_eq!(
-        body.get("reserved"),
-        Some(&betterlite_models::decisions::Json::Bool(true))
-    );
+    assert_eq!(body.get("reserved"), Some(&Json::Bool(true)));
 }
 
 async fn rejection_without_io_limits_refunds_nothing() {

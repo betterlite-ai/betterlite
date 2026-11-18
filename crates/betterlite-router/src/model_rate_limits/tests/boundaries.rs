@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 
 use betterlite_models::decisions::Json;
 use serde_json::Number;
@@ -37,9 +38,10 @@ const CASES: [(&str, fn()); 17] = [
     ("missing_remote_value_allows", || {
         super::runtime().block_on(missing_remote_value_allows());
     }),
-    ("non_numeric_limit_names_the_field", || {
-        non_numeric_limit_names_the_field();
-    }),
+    (
+        "non_numeric_limit_names_the_field",
+        non_numeric_limit_names_the_field,
+    ),
     ("top_level_limit_wins", || {
         super::runtime().block_on(top_level_limit_wins());
     }),
@@ -59,16 +61,17 @@ const CASES: [(&str, fn()); 17] = [
         super::runtime().block_on(breaker_open_keeps_local_below_limit());
     }),
     ("sync_facade_ignores_remote", sync_facade_ignores_remote),
-    ("coexist_warning_needs_both_limit_kinds", || {
-        coexist_warning_needs_both_limit_kinds();
-    }),
+    (
+        "coexist_warning_needs_both_limit_kinds",
+        coexist_warning_needs_both_limit_kinds,
+    ),
     (
         "error_constants_match_litellm",
         error_constants_match_litellm,
     ),
 ];
 
-fn model() -> &'static str {
+const fn model() -> &'static str {
     "openai/gpt-4o"
 }
 
@@ -123,10 +126,7 @@ async fn missing_remote_value_allows() {
         .async_pre_call_check(&deployment, &mut request())
         .await
         .unwrap();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        1
-    );
+    assert_eq!(cache.remote_reads.load(Ordering::SeqCst), 1);
 }
 
 fn non_numeric_limit_names_the_field() {
@@ -217,10 +217,7 @@ fn sync_facade_ignores_remote() {
     let check = service(Arc::clone(&cache), None);
     let deployment = with_param(spec("gpt-4o", "a", model()), "tpm", 5);
     check.pre_call_check(&deployment).unwrap();
-    assert_eq!(
-        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
-        0
-    );
+    assert_eq!(cache.remote_reads.load(Ordering::SeqCst), 0);
 }
 
 fn coexist_warning_needs_both_limit_kinds() {
@@ -233,7 +230,7 @@ fn coexist_warning_needs_both_limit_kinds() {
     assert!(!check.logs_coexist_warning(&io_only).unwrap());
     let tpm_only = with_param(spec("gpt-4o", "b", model()), "tpm", 5);
     assert!(!check.logs_coexist_warning(&tpm_only).unwrap());
-    let both = with_param(io_only.clone(), "tpm", 5);
+    let both = with_param(io_only, "tpm", 5);
     assert!(check.logs_coexist_warning(&both).unwrap());
     assert!(!check.logs_coexist_warning(&both).unwrap());
 }

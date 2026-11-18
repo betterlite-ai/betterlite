@@ -33,6 +33,7 @@ use betterlite_router::routing_value_store::{
 };
 use betterlite_tokenizer::reservation::RequestBody;
 use serde_json::Number;
+use tokio::runtime::Builder;
 
 use super::{ModelRateLimitStores, RoutingRateLimitCache, build};
 use crate::routing::prompt_affinity::PromptAffinityInputs;
@@ -104,7 +105,7 @@ fn build_requires_the_config_name() {
 #[test]
 fn the_local_tier_counts_in_the_store() {
     let local = local();
-    let cache = cache(Arc::clone(&local));
+    let cache = cache(local);
     assert_eq!(cache.increment_local("router:tpm", 2, 60), Some(2));
     assert_eq!(cache.increment_local("router:tpm", 3, 60), Some(5));
     assert_eq!(cache.local("router:tpm"), Some(5));
@@ -113,7 +114,7 @@ fn the_local_tier_counts_in_the_store() {
 
 #[test]
 fn an_absent_remote_keeps_the_local_count() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime builds");
@@ -136,7 +137,7 @@ fn an_absent_remote_keeps_the_local_count() {
 
 #[test]
 fn a_configured_remote_answers_reads() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime builds");
@@ -159,7 +160,7 @@ fn a_configured_remote_answers_reads() {
 
 #[test]
 fn the_remote_counter_wins_when_it_answers() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime builds");
@@ -213,7 +214,7 @@ fn limited_deployment() -> DeploymentSpec {
 // RedisCache.async_get_cache answers None when the connection fails, so the rpm increment still runs and rejects
 #[test]
 fn a_redis_outage_keeps_the_rpm_check() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime builds");
@@ -256,7 +257,7 @@ fn a_redis_outage_keeps_the_rpm_check() {
 // an open breaker is its own answer, so the service falls back to the in-memory count instead of skipping the check
 #[test]
 fn an_open_breaker_answers_reads_as_its_own_state() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime builds");
@@ -285,7 +286,7 @@ fn an_open_breaker_answers_reads_as_its_own_state() {
 // a value the counter check cannot use is a failed read, so the service lets the request through instead of rejecting
 #[test]
 fn a_non_counter_remote_value_reads_as_failed() {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("the test runtime builds");

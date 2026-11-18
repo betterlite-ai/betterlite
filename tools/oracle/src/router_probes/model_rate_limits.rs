@@ -206,7 +206,7 @@ async fn success_step(check: &ModelRateLimits, step: &Step) {
     check.async_log_success_event(&usage).await;
 }
 
-fn step_output(kind: StepKind) -> StepOutput {
+const fn step_output(kind: StepKind) -> StepOutput {
     StepOutput {
         kind,
         allowed: None,
