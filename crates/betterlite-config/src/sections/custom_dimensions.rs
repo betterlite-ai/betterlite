@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use self::pattern::{PatternProblem, pattern_work};
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number, resolve_string};
@@ -9,8 +10,6 @@ use crate::sections::Section;
 
 pub mod pattern;
 mod tests;
-
-use self::pattern::{PatternProblem, pattern_work};
 
 const PATH_ROOT: &str = "litellm_params.complexity_router_config.custom_dimensions";
 const MAX_NAME_CHARS: usize = 64;
@@ -41,6 +40,7 @@ pub struct RawRouterConfig {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct RawDimension {
     name: Option<String>,
     weight: Option<RawNumber>,
