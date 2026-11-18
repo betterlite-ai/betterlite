@@ -1,3 +1,4 @@
+from collections import Counter
 from typing import TypedDict
 
 from litellm.proxy.ui_crud_endpoints import latest_release_endpoints
@@ -14,10 +15,10 @@ class Output(TypedDict):
 
 
 def run(input_value: Input) -> Output:
-    counts = latest_release_endpoints.count_release_bullets(input_value["body"])
+    counted = Counter(latest_release_endpoints.count_release_bullets(input_value["body"]))
     output: Output = {
-        "new_features": counts.get("new_features", 0),
-        "bug_fixes": counts.get("bug_fixes", 0),
-        "other_updates": counts.get("other_updates", 0),
+        "new_features": counted["new_features"],
+        "bug_fixes": counted["bug_fixes"],
+        "other_updates": counted["other_updates"],
     }
     return output
