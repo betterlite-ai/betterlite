@@ -159,7 +159,7 @@ impl Rig {
             .unwrap_or_else(|| panic!("span {name} was not exported"))
     }
 
-    fn config() -> OpenTelemetryConfig {
+    const fn config() -> OpenTelemetryConfig {
         OpenTelemetryConfig {
             exporter: Exporter::InMemory,
             endpoint: None,
