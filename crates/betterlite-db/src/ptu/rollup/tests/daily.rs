@@ -88,12 +88,7 @@ async fn a_failed_charge_keeps_the_landed_rows_and_skips_the_prune() {
         &ended_info("team-1", "2026-02-15T00:00:00Z"),
     )
     .await;
-    stored::seed(
-        &client,
-        "('stale', 'team-1', '2026-03-01', '__ptu_flat_cost__', 'model-z', 'name-z', \
-          '', '', '', 0, 0, 0, now(), '2026-03-01 11:00:00', 3.5)",
-    )
-    .await;
+    stored::seed_sentinel(&client, DAY, "model-z", "3.5").await;
     stored::reject_writes(&client, "model", "model-a").await;
     let (logs, subscriber) = stored::capture_logs();
     let guard = set_default(subscriber);

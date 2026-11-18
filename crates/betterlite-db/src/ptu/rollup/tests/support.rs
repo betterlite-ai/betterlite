@@ -1,3 +1,4 @@
+use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, NaiveDate, Utc};
@@ -8,8 +9,9 @@ use uuid::Uuid;
 use rust_decimal::Decimal;
 
 // The store's own test support, reused rather than copied: fixtures, log capture, a recording sleeper and stored-model rows.
-#[path = "../../store/tests/support.rs"]
-mod stored;
+mod stored {
+    include!("../../store/tests/support.rs");
+}
 
 pub(crate) use stored::{
     Recorder, capture_logs, charge, close, database, insert_stored_model, names, write_for,
@@ -116,41 +118,51 @@ impl FakeLease {
 }
 
 impl LockCache for FakeLease {
-    async fn get_owner(&self, _key: &str) -> Result<Option<Vec<u8>>, LockCacheError> {
+    fn get_owner(
+        &self,
+        _key: &str,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
         if self.read_fails {
-            return Err(LockCacheError::UnexpectedReply {
+            return ready(Err(LockCacheError::UnexpectedReply {
                 operation: "get_owner",
-            });
+            }));
         }
-        Ok(self.owner.lock().unwrap().clone().map(String::into_bytes))
+        ready(Ok(self
+            .owner
+            .lock()
+            .unwrap()
+            .clone()
+            .map(String::into_bytes)))
     }
 
-    async fn set_owner_if_absent(
+    fn set_owner_if_absent(
         &self,
         key: &str,
         owner: &str,
         ttl_seconds: i64,
-    ) -> Result<bool, LockCacheError> {
+    ) -> impl Future<Output = Result<bool, LockCacheError>> + Send {
         if self.acquire_fails {
-            return Err(LockCacheError::UnexpectedReply {
+            return ready(Err(LockCacheError::UnexpectedReply {
                 operation: "set_owner_if_absent",
-            });
+            }));
         }
         self.keys.lock().unwrap().push(key.to_owned());
         self.ttls.lock().unwrap().push(ttl_seconds);
         let mut held = self.owner.lock().unwrap();
         if held.is_some() {
-            return Ok(false);
+            return ready(Ok(false));
         }
         *held = Some(owner.to_owned());
-        Ok(true)
+        drop(held);
+        ready(Ok(true))
     }
 
-    async fn delete(&self, _key: &str) -> Result<i64, LockCacheError> {
+    fn delete(&self, _key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         let removed = self.owner.lock().unwrap().take();
         let mut deletes = self.deletes.lock().unwrap();
         *deletes = deletes.saturating_add(1);
-        Ok(i64::from(removed.is_some()))
+        drop(deletes);
+        ready(Ok(i64::from(removed.is_some())))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
