@@ -4,6 +4,7 @@ import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.embedding.transformation import BaseEmbeddingConfig
+from litellm.llms.cohere.embed.v1_transformation import _SupportsEncode  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L20-L23
 from litellm.types.utils import EmbeddingResponse
 from pydantic import JsonValue, TypeAdapter
 
@@ -99,7 +100,7 @@ def cohere_request(input_value: dict[str, JsonValue]) -> JsonValue:
 
 
 # LiteLLM counts unbilled usage with litellm.encoding; counting characters matches the Rust helper
-class Encoding:
+class Encoding(_SupportsEncode):
     def encode(self, text: str, /) -> list[int]:
         return list(range(len(text)))
 
