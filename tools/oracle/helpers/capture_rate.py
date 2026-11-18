@@ -82,10 +82,6 @@ def computed(case: ReportFields) -> CaptureRateReport:
     )
 
 
-def report(case: ReportFields) -> ReportRecord:
-    return REPORT.validate_json(computed(case).model_dump_json())
-
-
 def report_json(record: ReportRecord) -> dict[str, JsonValue]:
     days: list[JsonValue] = []
     for day in record["days"]:
@@ -111,7 +107,7 @@ def report_json(record: ReportRecord) -> dict[str, JsonValue]:
 
 def answer(case: Call) -> JsonValue:
     if case["function"] == "report":
-        return {"report": report_json(report(case))}
+        return {"report": report_json(REPORT.validate_json(computed(case).model_dump_json()))}
     if case["function"] == "alert_report":
         return {"alert": alert_message(computed(case))}
     if case["function"] == "alert_credential_missing":
