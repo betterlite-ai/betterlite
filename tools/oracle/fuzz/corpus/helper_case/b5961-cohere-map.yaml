@@ -1,0 +1,6 @@
+kind: helper
+name: b5961-cohere-map
+call:
+  b5961: {"function": "cohere_map", "non_default": {"encoding_format": "base64", "input_type": "image"}, "optional_params": {}}
+env: {}
+compare: {ignore: []}

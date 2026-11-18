@@ -1,0 +1,6 @@
+kind: helper
+name: b5961-hf-reply
+call:
+  b5961: {"function": "hf_reply", "body": "[[0.5]]", "status": 200, "model": "endpoint", "request": {"inputs": ["a b"]}}
+env: {}
+compare: {ignore: []}
