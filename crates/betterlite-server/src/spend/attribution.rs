@@ -6,7 +6,6 @@ use betterlite_provider::identity::spend_proxy::{
     DeploymentIdentity, ProxySelection, deployment_provider,
 };
 
-/// Returns the provider when every matching deployment resolves to one unique provider.
 #[must_use]
 pub fn model_group_provider(
     model_group: &str,
@@ -34,7 +33,6 @@ pub fn model_group_provider(
     provider
 }
 
-/// A configured model group or team public name is exempt from model-name validation.
 #[must_use]
 pub fn configured_model_group(
     model_group: &str,
@@ -46,7 +44,6 @@ pub fn configured_model_group(
             || team_public_model_names.contains(model_group))
 }
 
-/// Validates a model-looking string unless it is a configured group or public team name.
 #[must_use]
 pub fn model_name_is_valid(
     model: &str,
