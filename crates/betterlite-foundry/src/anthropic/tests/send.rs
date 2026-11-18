@@ -9,7 +9,7 @@ use tokio::runtime::Builder;
 use crate::anthropic::handler::completion;
 
 use super::harness::{
-    Outcome, Setup, credentials_of, deps_of, fixture_config, keys_of, outcome_of, request_of,
+    Outcome, Setup, deps_of, fixture_config, outcome_of, request_of, signing_material,
 };
 use super::support::{
     FixtureTransport, RecordingLogger, Silent, logging_env, logging_state, redactor,
@@ -27,8 +27,7 @@ fn the_foundry_completion_completes_on_a_second_thread() {
     let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let logger = RecordingLogger::default();
-    let credentials = credentials_of(&setup);
-    let keys = keys_of(&setup);
+    let (credentials, keys) = signing_material(&setup);
     let request = request_of(&setup, &credentials, &keys);
     let clients = ChatClients {
         supplied: setup.supplied.then_some(SuppliedChatClient {

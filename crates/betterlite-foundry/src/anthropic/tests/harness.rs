@@ -185,8 +185,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
     let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let logger = RecordingLogger::default();
-    let credentials = credentials_of(setup);
-    let keys = keys_of(setup);
+    let (credentials, keys) = signing_material(setup);
     let request = request_of(setup, &credentials, &keys);
     let clients = ChatClients {
         supplied: setup.supplied.then_some(SuppliedChatClient {
@@ -248,35 +247,32 @@ pub(super) fn fixture_config(setup: &Setup) -> FixtureConfig {
     }
 }
 
-pub(super) fn credentials_of(setup: &Setup) -> DeploymentSettings {
+// The Azure deployment credentials and the caller's key shapes the request builder resolves auth from
+pub(super) fn signing_material(setup: &Setup) -> (DeploymentSettings, Keys) {
     let client_secret = setup.client_secret.map(SecretString::from);
-    let tenant_id = client_secret.as_ref().map(|_| "tenant".to_owned());
-    let client_id = client_secret.as_ref().map(|_| "client".to_owned());
-    DeploymentSettings {
-        azure_ad_token: setup.token.map(SecretString::from),
-        tenant_id,
-        client_id,
-        client_secret,
-        azure_scope: "https://cognitiveservices.azure.com/.default".to_owned(),
-        azure_username: None,
-        azure_password: None,
-    }
-}
-
-fn secret(text: &'static str) -> SecretString {
-    SecretString::from(text.to_owned())
-}
-
-pub(super) fn keys_of(setup: &Setup) -> Keys {
     let typed = match setup.key_shape {
         KeyShape::Typed(key) => key.map(secret),
         KeyShape::DictAbsent | KeyShape::DictNull => None,
     };
-    Keys {
+    let credentials = DeploymentSettings {
+        azure_ad_token: setup.token.map(SecretString::from),
+        tenant_id: client_secret.as_ref().map(|_| "tenant".to_owned()),
+        client_id: client_secret.as_ref().map(|_| "client".to_owned()),
+        client_secret,
+        azure_scope: "https://cognitiveservices.azure.com/.default".to_owned(),
+        azure_username: None,
+        azure_password: None,
+    };
+    let keys = Keys {
         argument: setup.argument_key.map(secret),
         configured: setup.configured_key.map(secret),
         params: typed,
-    }
+    };
+    (credentials, keys)
+}
+
+fn secret(text: &'static str) -> SecretString {
+    SecretString::from(text.to_owned())
 }
 
 pub(super) fn request_of<'setup>(
