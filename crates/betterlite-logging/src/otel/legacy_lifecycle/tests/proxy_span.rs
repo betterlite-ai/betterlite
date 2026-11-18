@@ -1,5 +1,4 @@
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
-use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Status};
 
 use crate::support::{
@@ -97,7 +96,7 @@ fn proxy_span_failure_closes_the_ambient_proxy_without_a_status_stamp() {
     let proxy = rig.parent(&lifecycle, PROXY);
     let kwargs = simple_kwargs("call-4");
     let context = attach(&proxy.context);
-    let guard = Context::attach(&context);
+    let guard = context.attach();
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("failure lifecycle");
@@ -138,7 +137,7 @@ fn proxy_span_success_closes_the_ambient_proxy_span() {
     let proxy = rig.parent(&lifecycle, PROXY);
     let kwargs = simple_kwargs("call-ambient-proxy");
     let context = attach(&proxy.context);
-    let guard = Context::attach(&context);
+    let guard = context.attach();
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");

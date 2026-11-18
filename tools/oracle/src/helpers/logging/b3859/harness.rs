@@ -19,6 +19,7 @@ use opentelemetry_sdk::trace::InMemorySpanExporter;
 
 use super::Input;
 
+#[derive(Debug)]
 struct NoServer;
 
 #[async_trait::async_trait]

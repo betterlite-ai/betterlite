@@ -35,8 +35,8 @@ use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
 use betterlite_logging::otel_provider_assembly::opentelemetry_legacy_provider::GlobalProviders;
 use betterlite_logging::otel_provider_assembly::proxy_registry::ProxyRegistry;
 
-pub(super) const START: f64 = 1704067200.0;
-pub(super) const END: f64 = 1704067201.5;
+pub(super) const START: f64 = 1_704_067_200.0;
+pub(super) const END: f64 = 1_704_067_201.5;
 pub(super) const PROXY: &str = "Received Proxy Server Request";
 
 #[derive(Debug)]

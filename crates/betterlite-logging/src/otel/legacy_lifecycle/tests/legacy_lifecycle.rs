@@ -4,7 +4,6 @@ use betterlite_logging::otel::legacy_lifecycle::lifecycle::LegacyLifecycleOption
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
 use betterlite_logging::otel::legacy_lifecycle::tracer::BaseDynamicOtel;
 use betterlite_logging::otel::v2_callback::live_span::RootSpans;
-use opentelemetry::Context;
 use opentelemetry::trace::SpanId;
 use opentelemetry::trace::{Span as _, Status};
 use std::sync::Arc;
@@ -118,7 +117,7 @@ fn legacy_lifecycle_success_with_an_ambient_parent_keeps_the_hierarchy_shallow()
     let parent = rig.parent(&lifecycle, "upstream");
     let kwargs = simple_kwargs("call-2");
     let context = attach(&parent.context);
-    let guard = Context::attach(&context);
+    let guard = context.attach();
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
@@ -147,7 +146,7 @@ fn legacy_lifecycle_creates_the_primary_span_when_the_request_span_flag_is_on() 
     let parent = rig.parent(&lifecycle, "upstream");
     let kwargs = simple_kwargs("call-3");
     let context = attach(&parent.context);
-    let guard = Context::attach(&context);
+    let guard = context.attach();
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
@@ -206,7 +205,7 @@ fn legacy_lifecycle_failure_with_an_ambient_parent_stamps_the_parent() {
     let parent = rig.parent(&lifecycle, "upstream");
     let kwargs = simple_kwargs("call-5");
     let context = attach(&parent.context);
-    let guard = Context::attach(&context);
+    let guard = context.attach();
     lifecycle
         .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("failure lifecycle");
@@ -481,7 +480,7 @@ fn legacy_lifecycle_ignores_parent_when_configured(#[case] failure: bool) {
     let mut kwargs = simple_kwargs("ignored-parent");
     carry_in(&mut kwargs, "metadata", &parent);
     let context = attach(&parent.context);
-    let guard = Context::attach(&context);
+    let guard = context.attach();
 
     if failure {
         lifecycle

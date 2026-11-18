@@ -1,10 +1,10 @@
+use betterlite_logging::otel::legacy_lifecycle::context::instant_from_ns;
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::{
     DEFAULT_HANDLER_CLASS_NAME, LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
-    instant_from_ns,
 };
 use betterlite_logging::otel::legacy_lifecycle::tracer::{DynamicOtel, TracerChoice};
 use betterlite_logging::otel::legacy_policy::capture::LoggingFlags;
@@ -110,7 +110,7 @@ impl Helper for Op {
             insert_carrier(&mut kwargs, live);
         }
         let ambient = ambient_context(input, parent.as_ref());
-        let guard = ambient.as_ref().map(Context::attach);
+        let guard = ambient.map(Context::attach);
         let choice = match input.function.as_str() {
             "tracer" => lifecycle.tracer_choice(&kwargs).or_value_error()?,
             "guardrails" => guardrails(&lifecycle, input).or_value_error()?,

@@ -15,8 +15,8 @@ fn entry() -> Value {
         "guardrail_name": "pii",
         "guardrail_mode": "pre_call",
         "guardrail_status": "guardrail_intervened",
-        "start_time": 1704067200.5,
-        "end_time": 1704067200.75,
+        "start_time": 1_704_067_200.5,
+        "end_time": 1_704_067_200.75,
         "masked_entity_count": {"EMAIL": 2},
         "guardrail_response": {"blocked": true, "reason": "pii"},
         "violation_categories": ["pii", "hate"],
@@ -82,7 +82,7 @@ fn guardrail_spans_dedupe_each_entry_and_keep_distinct_ones() {
     let other = json!({
         "guardrail_name": "toxicity",
         "guardrail_mode": "pre_call",
-        "start_time": 1704067200.5,
+        "start_time": 1_704_067_200.5,
         "violation_categories": []
     });
     with_guardrails(&mut kwargs, json!([entry(), other, entry()]));
@@ -111,12 +111,12 @@ fn guardrail_spans_record_the_execution_window() {
     let span = &guardrails(&rig)[0];
     assert_eq!(
         span.start_time,
-        instant(1704067200.5),
+        instant(1_704_067_200.5),
         "start comes from the entry, not the request"
     );
     assert_eq!(
         span.end_time,
-        instant(1704067200.75),
+        instant(1_704_067_200.75),
         "end comes from the entry, not the request"
     );
     assert_eq!(
@@ -250,8 +250,8 @@ fn guardrail_spans_skip_null_payload_attributes(#[case] key: &str) {
         json!([{
             "guardrail_name": "pii-null",
             "guardrail_mode": "pre_call",
-            "start_time": 1704067200.5,
-            "end_time": 1704067200.75,
+            "start_time": 1_704_067_200.5,
+            "end_time": 1_704_067_200.75,
             "masked_entity_count": null,
             "guardrail_response": null,
             "guardrail_usage": null,
