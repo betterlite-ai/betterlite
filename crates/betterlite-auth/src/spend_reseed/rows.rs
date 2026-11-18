@@ -10,14 +10,12 @@ use crate::budget_counter::CounterEntityType;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 pub struct SpendRow {
-    #[serde(default)]
     pub spend: Option<JsonData>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Deserialize)]
 pub struct WindowSpendRow {
     pub window_start: Timestamp,
-    #[serde(default)]
     pub spend: Option<JsonData>,
 }
 

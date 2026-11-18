@@ -1,4 +1,4 @@
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use betterlite_cache::backend::BackendError;
 use betterlite_cache::backend::memory::MemoryCacheOps;
@@ -26,7 +26,7 @@ pub enum ReseedCacheError {
     #[error(transparent)]
     Memory(#[from] BackendError),
     #[error("the spend {0} does not fit a float cache value")]
-    AmountOutOfRange(Decimal),
+    OutOfRange(Decimal),
 }
 
 impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
@@ -43,10 +43,8 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         let Some(redis) = redis_of(self) else {
             return Ok(None);
         };
-        Ok(redis
-            .async_get_cache(counter_key)
-            .await?
-            .and_then(redis_value))
+        let read = redis.async_get_cache(counter_key).await?;
+        Ok(read.map(StoredValue::Redis).and_then(stored_value))
     }
 
     async fn redis_set_nx(
@@ -57,9 +55,7 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         let Some(redis) = redis_of(self) else {
             return Ok(None);
         };
-        let amount = value
-            .to_f64()
-            .ok_or(ReseedCacheError::AmountOutOfRange(value))?;
+        let amount = cache_float(value)?;
         Ok(redis
             .values
             .async_set_cache(Some(counter_key), &amount, None, true)
@@ -71,13 +67,11 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         counter_key: &str,
     ) -> Result<Option<ReseedCacheValue>, ReseedCacheError> {
         let stored = self.in_memory_cache.get_cache(counter_key)?;
-        Ok(stored.and_then(memory_value))
+        Ok(stored.map(StoredValue::Memory).and_then(stored_value))
     }
 
     async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), ReseedCacheError> {
-        let amount = value
-            .to_f64()
-            .ok_or(ReseedCacheError::AmountOutOfRange(value))?;
+        let amount = cache_float(value)?;
         Ok(self
             .in_memory_cache
             .set_cache(counter_key, CacheValue::Float(amount), None)?)
@@ -88,9 +82,7 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
         counter_key: &str,
         increment: Decimal,
     ) -> Result<Option<Decimal>, ReseedCacheError> {
-        let amount = increment
-            .to_f64()
-            .ok_or(ReseedCacheError::AmountOutOfRange(increment))?;
+        let amount = cache_float(increment)?;
         let options = CacheOptions {
             ttl: None,
             local_only: true,
@@ -103,39 +95,44 @@ impl<Memory: MemoryCacheOps> ReseedCache for DualCache<Memory> {
     }
 }
 
-fn redis_of<Memory: MemoryCacheOps>(cache: &DualCache<Memory>) -> Option<Arc<RedisCache>> {
+fn redis_of<Memory>(cache: &DualCache<Memory>) -> Option<Arc<RedisCache>>
+where
+    Memory: MemoryCacheOps,
+{
     match cache.redis_cache.read() {
         Ok(guard) => guard.clone(),
         Err(poisoned) => poisoned.into_inner().clone(),
     }
 }
 
-pub(crate) fn redis_value(value: CachedValue) -> Option<ReseedCacheValue> {
+fn cache_float(value: Decimal) -> Result<f64, ReseedCacheError> {
+    value.to_f64().ok_or(ReseedCacheError::OutOfRange(value))
+}
+
+pub(crate) enum StoredValue {
+    Redis(CachedValue),
+    Memory(CacheValue),
+}
+
+// the two cache tiers store the same shapes; a Redis number keeps its exact text, a memory number is a float
+pub(crate) fn stored_value(value: StoredValue) -> Option<ReseedCacheValue> {
     match value {
-        CachedValue::Null => None,
-        CachedValue::Boolean(flag) => Some(ReseedCacheValue::Boolean(flag)),
-        CachedValue::Number(number) => Some(
+        StoredValue::Redis(CachedValue::Null) | StoredValue::Memory(CacheValue::Null) => None,
+        StoredValue::Redis(CachedValue::Boolean(flag))
+        | StoredValue::Memory(CacheValue::Boolean(flag)) => Some(ReseedCacheValue::Boolean(flag)),
+        StoredValue::Redis(CachedValue::Text(text))
+        | StoredValue::Memory(CacheValue::Text(text)) => Some(ReseedCacheValue::Text(text)),
+        StoredValue::Redis(CachedValue::Number(number)) => Some(
             amount_from_text(&number.to_string())
                 .map_or(ReseedCacheValue::Unreadable, ReseedCacheValue::Number),
         ),
-        CachedValue::Text(text) => Some(ReseedCacheValue::Text(text)),
-        CachedValue::Object(_) | CachedValue::Array(_) => Some(ReseedCacheValue::Unreadable),
-    }
-}
-
-pub(crate) fn memory_value(value: CacheValue) -> Option<ReseedCacheValue> {
-    match value {
-        CacheValue::Null => None,
-        CacheValue::Boolean(flag) => Some(ReseedCacheValue::Boolean(flag)),
-        CacheValue::Integer(count) => Some(ReseedCacheValue::Number(Decimal::from(count))),
-        CacheValue::Float(amount) => Some(
+        StoredValue::Memory(CacheValue::Integer(count)) => {
+            Some(ReseedCacheValue::Number(Decimal::from(count)))
+        }
+        StoredValue::Memory(CacheValue::Float(amount)) => Some(
             Decimal::from_f64(amount)
                 .map_or(ReseedCacheValue::Unreadable, ReseedCacheValue::Number),
         ),
-        CacheValue::Text(text) => Some(ReseedCacheValue::Text(text)),
-        CacheValue::Credential(_)
-        | CacheValue::Bytes(_)
-        | CacheValue::Array(_)
-        | CacheValue::Object(_) => Some(ReseedCacheValue::Unreadable),
+        _ => Some(ReseedCacheValue::Unreadable),
     }
 }

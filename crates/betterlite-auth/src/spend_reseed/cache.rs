@@ -3,6 +3,8 @@ use std::future::Future;
 
 use rust_decimal::Decimal;
 
+use crate::spend_counter_batch::batch::{CounterValue, SpendCounterBatchError};
+
 use super::values::ReseedCacheValue;
 
 pub mod dual;

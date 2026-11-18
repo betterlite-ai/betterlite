@@ -1,6 +1,8 @@
+use std::error::Error as StdError;
+use std::future::Future;
 use std::sync::Arc;
 
-use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest, bounded_db_lookup};
+use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest};
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LoopBoundSemaphore};
 use rust_decimal::Decimal;
 use thiserror::Error;
@@ -21,7 +23,7 @@ pub const END_USER_SPEND_LOOKUP: &str = "end_user_spend";
 pub const END_USER_COUNTER_PREFIX: &str = "spend:end_user:";
 
 #[derive(Debug, Error)]
-pub enum CoalescedError<CacheError: Error + 'static> {
+pub enum CoalescedError<CacheError: StdError + 'static> {
     #[error(transparent)]
     Cache(CacheError),
     #[error(transparent)]
@@ -56,28 +58,18 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
                 gated_primary(gate.as_ref(), rows.as_ref(), &key).await,
             )
         };
-        let Some(row) = bounded_row(
-            lookup,
-            self.lookup_request(SPEND_COUNTER_LOOKUP),
-            &self.tasks,
-            counter_key,
-        )
-        .await
-        else {
-            return Ok(None);
-        };
-        row.map(|stored| stored_amount(stored.spend.as_ref()))
-            .transpose()
+        self.bounded_amount(lookup, SPEND_COUNTER_LOOKUP, counter_key)
+            .await
     }
 
     pub async fn end_user_from_db(
         &self,
         counter_key: &str,
     ) -> Result<Option<Decimal>, SpendValueError> {
-        let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
+        let Some(user_id) = counter_key.strip_prefix(END_USER_COUNTER_PREFIX) else {
             return Ok(None);
         };
-        let Some(user_id) = counter_key.strip_prefix(END_USER_COUNTER_PREFIX) else {
+        let Some(rows) = self.rows.as_ref().map(Arc::clone) else {
             return Ok(None);
         };
         let owner = user_id.to_owned();
@@ -89,13 +81,24 @@ impl<Rows: SpendCounterRows> SpendCounterReseed<Rows> {
             };
             Ok::<_, DbLookupError>(answer)
         };
-        let Some(row) = bounded_row(
-            lookup,
-            self.lookup_request(END_USER_SPEND_LOOKUP),
-            &self.tasks,
-            counter_key,
-        )
-        .await
+        self.bounded_amount(lookup, END_USER_SPEND_LOOKUP, counter_key)
+            .await
+    }
+
+    async fn bounded_amount<Failure, Lookup>(
+        &self,
+        lookup: Lookup,
+        name: &str,
+        counter_key: &str,
+    ) -> Result<Option<Decimal>, SpendValueError>
+    where
+        Failure: StdError + Send + Sync + 'static,
+        Lookup: Future<Output = Result<LookupAnswer<SpendRow, Failure>, DbLookupError>>
+            + Send
+            + 'static,
+    {
+        let Some(row) =
+            bounded_row(lookup, self.lookup_request(name), &self.tasks, counter_key).await
         else {
             return Ok(None);
         };

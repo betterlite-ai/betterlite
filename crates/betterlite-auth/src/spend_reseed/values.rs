@@ -37,11 +37,7 @@ pub fn cache_amount(value: &ReseedCacheValue) -> Result<Decimal, SpendValueError
     match value {
         ReseedCacheValue::Number(amount) => Ok(*amount),
         ReseedCacheValue::Boolean(flag) => Ok(if *flag { Decimal::ONE } else { Decimal::ZERO }),
-        ReseedCacheValue::Text(text) => {
-            amount_from_text(text.trim()).ok_or_else(|| SpendValueError::OutOfRange {
-                text: text.to_owned(),
-            })
-        }
+        ReseedCacheValue::Text(text) => text_amount(text),
         ReseedCacheValue::Unreadable => Err(SpendValueError::NotNumeric {
             kind: "an unreadable cache value",
         }),
@@ -49,20 +45,20 @@ pub fn cache_amount(value: &ReseedCacheValue) -> Result<Decimal, SpendValueError
 }
 
 #[must_use]
+fn text_amount(text: &str) -> Result<Decimal, SpendValueError> {
+    amount_from_text(text.trim()).ok_or_else(|| SpendValueError::OutOfRange {
+        text: text.to_owned(),
+    })
+}
+
+#[must_use]
 fn json_amount(value: &JsonData) -> Result<Decimal, SpendValueError> {
     match value {
         JsonData::Null => Ok(Decimal::ZERO),
         JsonData::Bool(flag) => Ok(if *flag { Decimal::ONE } else { Decimal::ZERO }),
-        JsonData::Number(number) => {
-            let text = number.to_string();
-            amount_from_text(&text).ok_or(SpendValueError::OutOfRange { text })
-        }
+        JsonData::Number(number) => text_amount(&number.to_string()),
         JsonData::String(text) if text.is_empty() => Ok(Decimal::ZERO),
-        JsonData::String(text) => {
-            amount_from_text(text.trim()).ok_or_else(|| SpendValueError::OutOfRange {
-                text: text.to_owned(),
-            })
-        }
+        JsonData::String(text) => text_amount(text),
         JsonData::Array(items) if items.is_empty() => Ok(Decimal::ZERO),
         JsonData::Array(_) => Err(SpendValueError::NotNumeric { kind: "a list" }),
         JsonData::Object(entries) if entries.is_empty() => Ok(Decimal::ZERO),

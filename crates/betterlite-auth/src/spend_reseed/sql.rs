@@ -93,12 +93,9 @@ impl SpendCounterRows for SqlSpendCounterRows {
         entity_id: &str,
         window_duration: &str,
     ) -> Result<Option<WindowSpendRow>, SpendRowsError> {
-        json_row(
-            &self.store,
-            WINDOW_SPEND_SQL,
-            &[&entity.table_label(), &entity_id, &window_duration],
-        )
-        .await
+        let label = entity.table_label();
+        let parameters: [&(dyn ToSql + Sync); 3] = [&label, &entity_id, &window_duration];
+        json_row(&self.store, WINDOW_SPEND_SQL, &parameters).await
     }
 
     async fn window_log_rows(
@@ -129,7 +126,6 @@ impl SpendCounterRows for SqlSpendCounterRows {
 
 #[derive(Deserialize)]
 struct SpendSumRow {
-    #[serde(default)]
     spend: Option<JsonData>,
 }
 

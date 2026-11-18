@@ -6,16 +6,19 @@ use betterlite_db::database_failures::gate::LoopBoundSemaphore;
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
-use super::reseed::CoalescedError;
+use super::reseed::{CoalescedError, CoalescedError::Cache as cache_failure};
 use super::rows::{LookupAnswer, SpendCounterRows, SpendRow, SpendRowLookup};
 use super::values::cache_amount;
 use crate::spend_reseed::cache::{ActiveSpendBatch, ReseedCache};
 
-pub(super) async fn gated_primary<Rows: SpendCounterRows>(
+pub(super) async fn gated_primary<Rows>(
     gate: &LoopBoundSemaphore,
     rows: &Rows,
     counter_key: &str,
-) -> LookupAnswer<SpendRow, Rows::Error> {
+) -> LookupAnswer<SpendRow, Rows::Error>
+where
+    Rows: SpendCounterRows,
+{
     let _permit = match gate.current() {
         Some(semaphore) => semaphore.acquire_owned().await.ok(),
         None => None,
@@ -52,16 +55,16 @@ pub(super) fn primary_lookup(counter_key: &str) -> Option<SpendRowLookup<'_>> {
         .map(SpendRowLookup::Project)
 }
 
-pub(super) async fn bounded_row<Failure>(
-    lookup: impl Future<Output = Result<LookupAnswer<SpendRow, Failure>, DbLookupError>>
-    + Send
-    + 'static,
+pub(super) async fn bounded_row<Failure, Lookup>(
+    lookup: Lookup,
     request: LookupRequest<'_>,
     tasks: &TaskTracker,
     counter_key: &str,
 ) -> Option<Option<SpendRow>>
 where
     Failure: Error + Send + Sync + 'static,
+    Lookup:
+        Future<Output = Result<LookupAnswer<SpendRow, Failure>, DbLookupError>> + Send + 'static,
 {
     match bounded_db_lookup(lookup, request, tasks).await {
         Ok(LookupAnswer::Row(row)) => Some(row),
@@ -99,10 +102,7 @@ where
         }
     }
     if !clean_miss
-        && let Some(value) = cache
-            .memory_get(counter_key)
-            .await
-            .map_err(CoalescedError::Cache)?
+        && let Some(value) = cache.memory_get(counter_key).await.map_err(cache_failure)?
     {
         return Ok(Some(cache_amount(&value)?));
     }
@@ -120,28 +120,19 @@ where
     Cache: ReseedCache + ?Sized,
     Batch: ActiveSpendBatch + ?Sized,
 {
-    if cache.redis_configured() {
-        let mut current_value = db_spend;
-        if let Err(error) =
-            warm_redis(cache, batch, counter_key, db_spend, &mut current_value).await
-        {
-            tracing::error!(%error, counter_key, "SpendCounterReseed.coalesced: failed to warm the counter");
-            if require_cache_warm {
-                return Err(error);
-            }
-        }
-        return Ok(Some(current_value));
-    }
-    match warm_memory(cache, counter_key, db_spend).await {
-        Ok(seeded) => Ok(Some(seeded)),
-        Err(error) => {
-            tracing::error!(%error, counter_key, "SpendCounterReseed.coalesced: failed to warm the counter");
-            if require_cache_warm {
-                return Err(error);
-            }
-            Ok(Some(db_spend))
+    let mut current = db_spend;
+    let result = if cache.redis_configured() {
+        warm_redis(cache, batch, counter_key, db_spend, &mut current).await
+    } else {
+        warm_memory(cache, counter_key, db_spend, &mut current).await
+    };
+    if let Err(error) = result {
+        tracing::error!(%error, counter_key, "SpendCounterReseed.coalesced: failed to warm the counter");
+        if require_cache_warm {
+            return Err(error);
         }
     }
+    Ok(Some(current))
 }
 
 async fn warm_redis<Cache, Batch>(
@@ -158,22 +149,18 @@ where
     let seeded = cache
         .redis_set_nx(counter_key, db_spend)
         .await
-        .map_err(CoalescedError::Cache)?;
-    *current = match seeded {
-        Some(true) => db_spend,
-        Some(false) | None => match cache
-            .redis_get(counter_key)
-            .await
-            .map_err(CoalescedError::Cache)?
-        {
+        .map_err(cache_failure)?;
+    if seeded != Some(true) {
+        let stored = cache.redis_get(counter_key).await.map_err(cache_failure)?;
+        *current = match stored {
             Some(value) => cache_amount(&value)?,
             None => db_spend,
-        },
-    };
+        };
+    }
     cache
         .memory_set(counter_key, *current)
         .await
-        .map_err(CoalescedError::Cache)?;
+        .map_err(cache_failure)?;
     batch.record(counter_key, *current);
     Ok(())
 }
@@ -182,21 +169,19 @@ async fn warm_memory<Cache>(
     cache: &Cache,
     counter_key: &str,
     db_spend: Decimal,
-) -> Result<Decimal, CoalescedError<Cache::Error>>
+    current: &mut Decimal,
+) -> Result<(), CoalescedError<Cache::Error>>
 where
     Cache: ReseedCache + ?Sized,
 {
-    let cached = cache
-        .memory_get(counter_key)
-        .await
-        .map_err(CoalescedError::Cache)?;
-    let seeded = match cached {
+    let stored = cache.memory_get(counter_key).await.map_err(cache_failure)?;
+    let seeded = match stored {
         Some(value) => db_spend.max(cache_amount(&value)?),
         None => db_spend,
     };
-    cache
-        .memory_set(counter_key, seeded)
-        .await
-        .map_err(CoalescedError::Cache)?;
-    Ok(seeded)
+    if let Err(error) = cache.memory_set(counter_key, seeded).await {
+        return Err(cache_failure(error));
+    }
+    *current = seeded;
+    Ok(())
 }
