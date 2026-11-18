@@ -43,7 +43,7 @@ impl<T: Send> BoundedUpdateQueue<T> {
             tracing::warn!(
                 aggregation_threshold = stored_threshold,
                 capacity,
-                "Misconfigured queue thresholds: MAX_SIZE_IN_MEMORY_QUEUE ({stored_threshold}) >= LITELLM_ASYNCIO_QUEUE_MAXSIZE ({capacity}). The spend aggregation check will never trigger because the queue blocks at {capacity} items. Set MAX_SIZE_IN_MEMORY_QUEUE to a value less than LITELLM_ASYNCIO_QUEUE_MAXSIZE (recommended: 80% of it)."
+                "Misconfigured queue thresholds: MAX_SIZE_IN_MEMORY_QUEUE ({stored_threshold}) >= LITELLM_ASYNCIO_QUEUE_MAXSIZE ({capacity}). The spend aggregation check will never trigger because the asyncio.Queue blocks at {capacity} items. Set MAX_SIZE_IN_MEMORY_QUEUE to a value less than LITELLM_ASYNCIO_QUEUE_MAXSIZE (recommended: 80% of it)."
             );
         }
         Ok(queue)
