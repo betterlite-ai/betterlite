@@ -70,8 +70,10 @@ impl Section for Raw {
         } else {
             (settings.default_redis_ttl, TTL_PATH)
         };
-        let default_ttl =
-            resolve_number(ttl_number, ttl_path, lookup, parse_ttl)?.unwrap_or(DEFAULT_TTL);
+        let default_ttl = match resolve_number(ttl_number, ttl_path, lookup, parse_float)? {
+            Some(number) => cut_toward_zero(number, ttl_path)?,
+            None => DEFAULT_TTL,
+        };
         let redis_flush_size = if cache_switch {
             resolve_number(
                 settings.cache_params.redis_flush_size,
@@ -90,10 +92,8 @@ impl Section for Raw {
 }
 
 // Python's int() cuts toward zero; -0 formats as "-0" and parses back to 0, and inf and NaN fail here
-fn parse_ttl(text: &str, path: &str) -> Result<i64, ConfigError> {
-    let value = parse_float(text, path)?;
-    let truncated = format!("{:.0}", value.trunc());
-    truncated
+fn cut_toward_zero(value: f64, path: &str) -> Result<i64, ConfigError> {
+    format!("{:.0}", value.trunc())
         .parse::<i64>()
         .map_err(|source| ConfigError::InvalidInteger {
             path: path.to_owned(),
