@@ -191,17 +191,22 @@ fn a_failed_lookup_proceeds_and_reports_the_failure() {
     assert!(outcome.lookup_failed);
 }
 
+#[derive(Clone, Copy, Debug)]
+enum LimitExpectation {
+    Proceeds { lookup_failed: bool },
+    Rejects,
+}
+
 #[rstest]
-#[case::configured(UploadLimit::Configured(1.0), &["whisper"], 0x0010_0001, true, false)]
-#[case::failed(UploadLimit::Failed, &["whisper"], 0x0020_0000, false, true)]
-#[case::absent(UploadLimit::Absent, &["whisper"], 0x0020_0000, false, false)]
-#[case::unmatched(UploadLimit::Configured(1.0), &["other"], 0x0020_0000, false, false)]
+#[case::configured(UploadLimit::Configured(1.0), &["whisper"], 0x0010_0001, LimitExpectation::Rejects)]
+#[case::failed(UploadLimit::Failed, &["whisper"], 0x0020_0000, LimitExpectation::Proceeds { lookup_failed: true })]
+#[case::absent(UploadLimit::Absent, &["whisper"], 0x0020_0000, LimitExpectation::Proceeds { lookup_failed: false })]
+#[case::unmatched(UploadLimit::Configured(1.0), &["other"], 0x0020_0000, LimitExpectation::Proceeds { lookup_failed: false })]
 fn model_limit_handles_configured_failed_absent_and_unmatched_lookups(
     #[case] limit: UploadLimit,
     #[case] router_names: &[&str],
     #[case] bytes: u64,
-    #[case] expect_failure: bool,
-    #[case] expect_lookup_failure: bool,
+    #[case] expected: LimitExpectation,
 ) {
     let router = FixedRouter { limit };
     let mut data = request_with_model();
@@ -212,9 +217,12 @@ fn model_limit_handles_configured_failed_absent_and_unmatched_lookups(
         router: Some(&router),
         limits: &ApiLimits::default(),
     });
-    assert_eq!(result.is_err(), expect_failure);
-    if let Ok(outcome) = result {
-        assert_eq!(outcome.lookup_failed, expect_lookup_failure);
+    match (expected, result) {
+        (LimitExpectation::Rejects, Err(_error)) => {}
+        (LimitExpectation::Proceeds { lookup_failed }, Ok(outcome)) => {
+            assert_eq!(outcome.lookup_failed, lookup_failed);
+        }
+        _other => panic!("the size check returned an unexpected outcome"),
     }
 }
 
