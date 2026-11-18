@@ -1,0 +1,6 @@
+{
+  "include": ["../b4294.py"],
+  "typeCheckingMode": "strict",
+  "reportAny": "error",
+  "reportMissingTypeStubs": "none"
+}
