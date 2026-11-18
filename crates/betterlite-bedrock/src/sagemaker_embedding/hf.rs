@@ -64,8 +64,9 @@ pub enum HfReplyError {
 #[serde(untagged)]
 enum HfReplyBody {
     Embeddings(Vec<EmbeddingVector>),
-    Wrapped(HfWrappedReply),
+    // before the dict: an arbitrary_precision float arrives as a map the all-default dict would take
     Scalar(HfScalar),
+    Wrapped(HfWrappedReply),
 }
 
 #[derive(Debug, Deserialize)]

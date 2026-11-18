@@ -5,6 +5,7 @@ call:
 calls:
   - b5961: {"function": "hf_reply", "body": "\"text\"", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
   - b5961: {"function": "hf_reply", "body": "5", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
+  - b5961: {"function": "hf_reply", "body": "7.5", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
   - b5961: {"function": "hf_reply", "body": "null", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
   - b5961: {"function": "hf_reply", "body": "{\"x\": 1}", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
   - b5961: {"function": "hf_reply", "body": "{\"embedding\": 5}", "status": 200, "model": "endpoint", "request": {"inputs": ["a"]}}
