@@ -11,7 +11,7 @@ use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
-use crate::resource_repository::config::{ConfigError, ConfigRepository, ConfigUpdate};
+use crate::resource_repository::config::{ConfigRepository, ConfigUpdate, ConfigWrite};
 use crate::resource_repository::table::KeyFilter;
 use crate::search_tools::create::dump::safe_dumps;
 use crate::table_ops::{DEFAULT_ACQUIRE_TIMEOUT, DEFAULT_QUERY_TIMEOUT};
@@ -68,8 +68,6 @@ pub enum ReloadScheduleError {
     Database(#[from] DbError),
     #[error(transparent)]
     Table(#[from] TableError),
-    #[error(transparent)]
-    Config(#[from] ConfigError),
     #[error(transparent)]
     Parse(#[from] ParseScheduleError),
     #[error(transparent)]
@@ -140,9 +138,51 @@ async fn evict_reload_config(evictor: &dyn ConfigParamEvictor) -> Result<(), Rel
     Ok(())
 }
 
-fn encode_reload_interval(interval_hours: Option<u32>) -> Result<String, ReloadScheduleError> {
-    let config = IntervalConfig { interval_hours };
-    safe_dumps(&config).map_err(ReloadScheduleError::Encode)
+// LiteLLM's two admin writes differ in whether a missing row is created
+#[derive(Clone, Copy)]
+enum IntervalWrite {
+    Create(u32),
+    Clear,
+}
+
+// the caller evicts after this returns, so a failed write keeps the cached schedule
+async fn store_interval(
+    client: Option<PrismaClient<'_>>,
+    write: IntervalWrite,
+) -> Result<(), ReloadScheduleError> {
+    let interval_hours = match write {
+        IntervalWrite::Create(hours) => Some(hours),
+        IntervalWrite::Clear => None,
+    };
+    let param_value =
+        safe_dumps(&IntervalConfig { interval_hours }).map_err(ReloadScheduleError::Encode)?;
+    let repository = ConfigRepository::new(client, true);
+    match write {
+        IntervalWrite::Create(_) => {
+            repository
+                .table()?
+                .upsert(
+                    RELOAD_CONFIG_PARAM_NAME.to_owned(),
+                    ConfigWrite {
+                        param_name: RELOAD_CONFIG_PARAM_NAME.to_owned(),
+                        param_value: JsonData::String(param_value),
+                    },
+                )
+                .await?;
+        }
+        IntervalWrite::Clear => {
+            repository
+                .table()?
+                .update_many(
+                    ConfigUpdate {
+                        param_value: Some(JsonData::String(param_value)),
+                    },
+                    RELOAD_CONFIG_PARAM_NAME.to_owned(),
+                )
+                .await?;
+        }
+    }
+    Ok(())
 }
 
 pub async fn write_reload_interval(
@@ -150,10 +190,7 @@ pub async fn write_reload_interval(
     evictor: &dyn ConfigParamEvictor,
     interval_hours: u32,
 ) -> Result<(), ReloadScheduleError> {
-    let param_value = encode_reload_interval(Some(interval_hours))?;
-    ConfigRepository::new(client, true)
-        .set_param(RELOAD_CONFIG_PARAM_NAME, JsonData::String(param_value))
-        .await?;
+    store_interval(client, IntervalWrite::Create(interval_hours)).await?;
     evict_reload_config(evictor).await
 }
 
@@ -161,16 +198,7 @@ pub async fn clear_reload_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
 ) -> Result<(), ReloadScheduleError> {
-    let param_value = encode_reload_interval(None)?;
-    ConfigRepository::new(client, true)
-        .table()?
-        .update_many(
-            ConfigUpdate {
-                param_value: Some(JsonData::String(param_value)),
-            },
-            RELOAD_CONFIG_PARAM_NAME.to_owned(),
-        )
-        .await?;
+    store_interval(client, IntervalWrite::Clear).await?;
     evict_reload_config(evictor).await
 }
 
