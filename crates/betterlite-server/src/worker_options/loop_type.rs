@@ -10,6 +10,7 @@ pub enum SysPlatform {
 }
 
 impl SysPlatform {
+    #[must_use]
     pub const fn current() -> Self {
         if cfg!(windows) {
             Self::Win32
@@ -19,6 +20,7 @@ impl SysPlatform {
     }
 }
 
+#[must_use]
 pub const fn resolve_loop_type(platform: SysPlatform) -> Option<LoopType> {
     match platform {
         SysPlatform::Win32 | SysPlatform::Cygwin | SysPlatform::Cli => None,

@@ -57,6 +57,7 @@ pub fn resolve_uvicorn_settings(
     }
 }
 
+#[must_use]
 pub fn apply_max_requests_jitter(
     limit_max_requests: Option<i64>,
     jitter: Option<i64>,
