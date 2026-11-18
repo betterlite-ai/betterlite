@@ -1,0 +1,73 @@
+kind: probe
+name: classifier-verdict-llm-valid-tier
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: system_prompt, window: 0}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: system_prompt, window: 3, rubric: agentic}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: system_prompt, window: 0, rubric: business}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: system_prompt, window: 2, prompt: "Grade this request yourself.", rubric: chat}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: built_in_prompt
+        window: 2
+        rubric: legacy
+        prompt: "My rules: grade the work the request asks for."
+        examples: "a one-line greeting -> SIMPLE"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: built_in_prompt
+        window: 0
+        rubric: chat
+        examples: "a one-line greeting -> SIMPLE"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: calibration_examples, rubric: agentic}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: response_format}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: parse_reply, reply: {kind: text, content: '{"tier": "MEDIUM"}'}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: parse_reply
+        reply: {kind: text, content: "Here is the verdict:\n```json\n{\"tier\": \"COMPLEX\", \"confidence\": 0.8}\n```"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: parse_reply, reply: {kind: text, content: '{"tier": "SIMPLE"} and later {"tier": "REASONING"}'}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: logging_flag}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict: {function: logging_flag, request_kwargs: {turn_off_message_logging: true}}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      classifier_verdict:
+        function: logging_flag
+        request_kwargs: {metadata: {turn_off_message_logging: false}}
+compare: {ignore: []}
