@@ -69,11 +69,11 @@ impl Index {
             .map(|(name, keyword, entry)| (name, keyword, entry.quality_tier))
     }
 
-    pub(crate) fn model_for_tier(
-        &self,
+    pub(crate) fn model_for_tier<'a>(
+        &'a self,
         tier: i64,
-        default_model: Option<&str>,
-    ) -> Result<&str, QualityRouterError> {
+        default_model: Option<&'a str>,
+    ) -> Result<&'a str, QualityRouterError> {
         if let Some(model) = self.tiers.get(&tier) {
             return Ok(model);
         }
@@ -146,7 +146,7 @@ fn missing_models(
 ) -> Vec<String> {
     available
         .iter()
-        .filter(|model| !models.contains_key(*model))
+        .filter(|model| !models.contains_key(**model))
         .map(|model| (*model).to_owned())
         .collect()
 }

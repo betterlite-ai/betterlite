@@ -16,7 +16,7 @@ pub struct Config {
 impl Config {
     #[must_use]
     pub fn resolve(configured: Option<&section::RouterConfig>) -> Self {
-        let Some(configured) = configured else {
+        let Some(declared) = configured else {
             return Self {
                 available_models: Vec::new(),
                 default_model: None,
@@ -25,10 +25,10 @@ impl Config {
             };
         };
         Self {
-            available_models: configured.available_models.clone(),
-            default_model: configured.default_model.clone(),
-            complexity_to_quality: configured.complexity_to_quality.clone(),
-            ignored: configured.extras.keys().cloned().collect(),
+            available_models: declared.available_models.clone(),
+            default_model: declared.default_model.clone(),
+            complexity_to_quality: declared.complexity_to_quality.clone(),
+            ignored: declared.extras.keys().cloned().collect(),
         }
     }
 

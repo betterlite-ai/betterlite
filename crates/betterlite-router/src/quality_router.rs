@@ -74,10 +74,10 @@ impl QualityRouter {
         messages: Option<&'messages [Message]>,
         metadata: &mut Option<Json>,
     ) -> Result<Option<Route<'messages>>, QualityRouterError> {
-        let Some(messages) = messages.filter(|messages| !messages.is_empty()) else {
+        let Some(present) = messages.filter(|declared| !declared.is_empty()) else {
             return Ok(None);
         };
-        let text = RequestText::extract(messages)?;
+        let text = RequestText::extract(present)?;
         let Some(user_message) = text.user_message.as_deref() else {
             let Some(model) = self.config.default_model.as_deref() else {
                 return Err(QualityRouterError::NoUserMessage);
@@ -86,7 +86,7 @@ impl QualityRouter {
                 router_model_name: self.router_name.clone(),
                 routed_model: model.to_owned(),
             };
-            return Ok(Some(Self::finish(messages, model, decision, metadata)?));
+            return Ok(Some(Self::finish(present, model, decision, metadata)?));
         };
         if let Some((model, keyword, quality_tier)) = self.index.keyword_match(user_message) {
             let decision = Decision::Keyword {
@@ -95,10 +95,10 @@ impl QualityRouter {
                 matched_keyword: keyword.to_owned(),
                 quality_tier,
             };
-            return Ok(Some(Self::finish(messages, model, decision, metadata)?));
+            return Ok(Some(Self::finish(present, model, decision, metadata)?));
         }
         let (model, decision) = self.tier_route(&text, user_message)?;
-        Ok(Some(Self::finish(messages, &model, decision, metadata)?))
+        Ok(Some(Self::finish(present, &model, decision, metadata)?))
     }
 
     // the classifier and the tier index pick the model, with the decision the record and the stash read
@@ -121,7 +121,7 @@ impl QualityRouter {
             quality_tier,
             complexity_tier: outcome.tier.name().to_owned(),
             score: outcome.score,
-            signals: outcome.signals.clone(),
+            signals: outcome.signals,
         };
         Ok((model.to_owned(), decision))
     }

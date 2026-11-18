@@ -281,13 +281,13 @@ fn only_text_parts_of_a_content_list_carry_the_prompt() {
         .unwrap();
     assert_eq!(route.decision, keyword_decision("qr", "one", "code", 2));
     let blank = messages(r#"[{"role":"user","content":[{"type":"text","text":"  "}]}]"#);
-    let mut metadata = None;
-    let route = router
-        .pre_route(Some(&blank), &mut metadata)
+    let mut blank_metadata = None;
+    let blank_route = router
+        .pre_route(Some(&blank), &mut blank_metadata)
         .unwrap()
         .unwrap();
-    assert_eq!(route.model, "fb");
-    assert_eq!(route.decision, fallback_decision("qr", "fb"));
+    assert_eq!(blank_route.model, "fb");
+    assert_eq!(blank_route.decision, fallback_decision("qr", "fb"));
 }
 
 #[test]
