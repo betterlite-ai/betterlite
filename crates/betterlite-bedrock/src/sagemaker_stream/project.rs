@@ -87,10 +87,11 @@ pub fn project(
     text: &str,
 ) -> Result<Projection, SagemakerStreamError> {
     // a struct reads an array positionally, so the object map gates both shapes; partial text waits
+    let complete = serde_json::from_str::<ArgumentsJson>(text).is_ok();
     match serde_json::from_str::<IndexMap<String, ArgumentsJson>>(text) {
         Ok(_chunk) => {}
-        Err(source) if source.is_data() => return Err(SagemakerStreamError::Json(source)),
-        Err(_partial) => return Ok(Projection::Pending),
+        Err(_incomplete) if !complete => return Ok(Projection::Pending),
+        Err(source) => return Err(SagemakerStreamError::Json(source)),
     }
     if is_messages_api {
         return match serde_json::from_str::<ChatEvent>(text) {

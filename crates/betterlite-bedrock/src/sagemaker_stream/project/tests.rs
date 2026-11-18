@@ -154,6 +154,19 @@ fn a_partial_object_is_pending() {
     ));
 }
 
+// the map reader refuses a leading array before it reaches the end, so completeness comes from the value parse
+#[rstest]
+#[case::token(false, "[")]
+#[case::messages(true, "[")]
+#[case::partial_token(false, "[null, 0")]
+#[case::partial_messages(true, r#"[{"index": 0}"#)]
+fn a_truncated_array_is_pending(#[case] messages: bool, #[case] text: &str) {
+    assert!(matches!(
+        project(MODEL, messages, text),
+        Ok(Projection::Pending)
+    ));
+}
+
 // StreamingChoices.__init__ maps an alias through map_finish_reason before the chunk reaches a client
 #[test]
 fn an_alias_finish_reason_maps_to_stop() {

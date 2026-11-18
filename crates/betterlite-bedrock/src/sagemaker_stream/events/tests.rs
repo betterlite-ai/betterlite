@@ -586,6 +586,44 @@ fn a_positional_array_is_refused_in_both_policies(
     }
 }
 
+// json.loads raises on an array that has not closed yet, so the buffer waits and the end logs it once
+#[rstest]
+#[case::propagate(ErrorPolicy::Propagate)]
+#[case::skip(ErrorPolicy::Skip)]
+fn a_truncated_array_is_logged_and_yields_nothing(#[case] policy: ErrorPolicy) {
+    let (lines, guard) = capture();
+    let items = sync_items(vec![event(b"[")], false, policy);
+    drop(guard);
+
+    assert!(matches!(items.as_slice(), [Ok(None)]), "{items:?}");
+    assert!(
+        lines
+            .text()
+            .contains("ERROR Warning: Unparseable JSON data remained: ["),
+        "{}",
+        lines.text()
+    );
+}
+
+// an array completed by a later event reaches the object gate and is refused like a whole one
+#[rstest]
+#[case::propagate(ErrorPolicy::Propagate)]
+#[case::skip(ErrorPolicy::Skip)]
+fn an_array_completed_after_a_truncated_event_is_refused(#[case] policy: ErrorPolicy) {
+    let items = sync_items(vec![event(b"["), event(b"null, 0]")], false, policy);
+
+    match policy {
+        ErrorPolicy::Propagate => {
+            assert_eq!(items.len(), 1);
+            assert!(matches!(
+                items[0].as_ref().unwrap_err(),
+                SagemakerStreamError::Json(_)
+            ));
+        }
+        ErrorPolicy::Skip => assert!(items.is_empty(), "{items:?}"),
+    }
+}
+
 #[rstest]
 #[case::generic(false)]
 #[case::messages(true)]
