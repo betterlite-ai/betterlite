@@ -1,0 +1,10 @@
+kind: helper
+name: release-bullets-corpus-seed
+call:
+  release_bullets:
+    body: |
+      * feat: add a button
+      * @ann made their first contribution
+      * fix(scope)!: stop a crash
+env: {}
+compare: {ignore: []}
