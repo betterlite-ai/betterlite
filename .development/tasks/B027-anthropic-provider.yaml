@@ -31,8 +31,7 @@ description: >-
   and B196 encoding. It computes caller-or-global custom_prompt_dict but never forwards it to that call; no owned
   post_call or exception catch is added. anthropic_count_dispatch: Install B585 count_tokens and retain its model,
   system/tool/image translation and input_tokens result; use its configured transport and key policy rather than
-  invoking chat dispatch. anthropic_batch_file_dispatch: Install B586 batch create/retrieve/cancel/list/results
-  and B587/B588 upload/retrieve/list/delete/content operations through the closed operation enum. Preserve beta
+  invoking chat dispatch. anthropic_batch_file_dispatch: Install B587's batch retrieve and results and its create outcome (NotImplemented, crates/betterlite-anthropic/src/batches/config.rs L110-L116), and the B587/B588 file upload/retrieve/list/delete/content operations, through the closed operation enum. The enum has no batch cancel or list for Anthropic, since LiteLLM's batch router rejects both with a 400 before any provider code (litellm/batches/main.py L869-L883 and L1071-L1081); that rejection belongs to the batch API owner, not this task. Preserve beta
   headers, multipart boundaries, pagination and result streams from those leaves; public API routes remain B081
   and their file/batch family owners. messages_default_base: For messages choose explicit base, litellm.api_base,
   ANTHROPIC_API_BASE, ANTHROPIC_BASE_URL, then https://api.anthropic.com/v1/messages. Empty values fall through.
