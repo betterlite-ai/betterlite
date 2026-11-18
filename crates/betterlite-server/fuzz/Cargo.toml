@@ -298,3 +298,10 @@ path = "fuzz_targets/sse_frame.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "model_deprecation"
+path = "fuzz_targets/model_deprecation.rs"
+test = false
+doc = false
+bench = false

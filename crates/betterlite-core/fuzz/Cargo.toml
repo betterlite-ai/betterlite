@@ -422,3 +422,10 @@ path = "fuzz_targets/responses_stream_value.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "realtime_enforcement"
+path = "fuzz_targets/realtime_enforcement.rs"
+test = false
+doc = false
+bench = false

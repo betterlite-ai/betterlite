@@ -30,6 +30,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-sdk = { path = "../betterlite-sdk" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
@@ -60,6 +61,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait = "0.1.92"
+betterlite-error = { path = "../betterlite-error" }
 futures-util = { version = "0.3.34", default-features = false }
 mutants = "0.0.4"
 rstest = "=0.27.0"

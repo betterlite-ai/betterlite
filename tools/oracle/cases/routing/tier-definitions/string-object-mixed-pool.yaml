@@ -1,0 +1,50 @@
+kind: probe
+name: tier-definitions-string-object-mixed-pool
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_models:
+            SIMPLE: small-model
+            MEDIUM:
+              model_name: mid-model
+              litellm_params: {temperature: 0.2, max_tokens: 512}
+            COMPLEX:
+              - fast-a
+              - model_name: fast-b
+                litellm_params: {reasoning_effort: high}
+            REASONING: []
+        queries: [SIMPLE, REASONING]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_models:
+            SIMPLE:
+              - model_name: nested
+                litellm_params:
+                  extra_body: {mode: fast}
+                  stop: [END, STOP]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_models: {SIMPLE: [dup, dup]}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_models:
+            SIMPLE:
+              - model_name: dup
+                litellm_params: {temperature: 1}
+              - dup
+compare:
+  ignore:
+    - pointer: /message
+      why: each side words the validation failure differently

@@ -1,0 +1,50 @@
+kind: probe
+name: tier-definitions-non-reasoning-tier
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        queries: [non_reasoning, NON_REASONING, simple]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          non_reasoning_tier: true
+          tier_models: {NON_REASONING: mini, SIMPLE: small}
+        knobs: {classifier_type: llm}
+        queries: [non_reasoning, SIMPLE]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          non_reasoning_tier: true
+          tier_models: {NON_REASONING: mini}
+        knobs: {classifier_type: heuristic}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_models: {NON_REASONING: mini}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          non_reasoning_tier: true
+        knobs: {classifier_type: llm}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          non_reasoning_tier: true
+          tier_models: {NON_REASONING: []}
+        knobs: {classifier_type: llm}
+compare:
+  ignore:
+    - pointer: /message
+      why: each side words the validation failure differently
