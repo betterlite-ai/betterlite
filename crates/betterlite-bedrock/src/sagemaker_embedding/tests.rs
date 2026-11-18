@@ -1,11 +1,70 @@
 #![cfg(test)]
 
+use std::fs;
+use std::io;
+use std::path::Path;
+
+use betterlite_openai::cohere_embedding::TextEncoding;
+use betterlite_prompts::arguments::json::Object;
+use betterlite_tokenizer::engine::error::EngineError;
 use rstest::rstest;
 
+use crate::sagemaker_embedding::cohere::transform_response as cohere_reply;
+use crate::sagemaker_embedding::hf::transform_response as hf_reply;
 use crate::sagemaker_embedding::{
     EmbeddingConfig, VOYAGE_SUPPORTED_OPENAI_PARAMS, get_model_config, supported_openai_params,
     validate_environment,
 };
+
+struct Chars;
+
+impl TextEncoding for Chars {
+    fn count_tokens(&self, text: &str) -> Result<usize, EngineError> {
+        Ok(text.chars().count())
+    }
+}
+
+// the embedding fuzz target feeds every seed to both response readers
+fn check_embedding_seed(name: &str, bytes: &[u8]) {
+    let hf = hf_reply(bytes, 200, "meta-llama/Llama-2-7b", &Object::default());
+    let cohere = cohere_reply(
+        bytes,
+        "cohere.embed-english-v3",
+        None,
+        &Object::default(),
+        &Chars,
+    );
+    match name {
+        "hf-list" => assert_eq!(hf.unwrap().data.len(), 2, "{name}"),
+        "hf-dict" => assert_eq!(hf.unwrap().data.len(), 1, "{name}"),
+        "hf-unexpected-dict" => assert_eq!(hf.unwrap_err().status_code(), 500, "{name}"),
+        "cohere-reply" => assert_eq!(cohere.unwrap().usage.prompt_tokens, 3, "{name}"),
+        "truncated" | "empty" | "not-json" => {
+            assert!(hf.is_err(), "{name} fails the HF reader");
+            assert!(cohere.is_err(), "{name} fails the Cohere reader");
+        }
+        other => panic!("unexpected seed {other}"),
+    }
+}
+
+#[test]
+fn replays_the_sagemaker_embedding_reply_corpus() {
+    let corpus =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/sagemaker_embedding_reply");
+    let mut seen = 0_u32;
+    fs::read_dir(corpus)
+        .unwrap()
+        .try_for_each(|entry| {
+            let path = entry?.path();
+            let bytes = fs::read(&path)?;
+            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+            check_embedding_seed(&name, &bytes);
+            seen = seen.saturating_add(1);
+            Ok::<(), io::Error>(())
+        })
+        .unwrap();
+    assert!(seen >= 7, "expected committed seeds, found {seen}");
+}
 
 #[rstest]
 #[case::plain_hf("meta-llama/Llama-2-7b", EmbeddingConfig::HuggingFace)]
