@@ -27,10 +27,10 @@ use crate::routing::router_core::RouterServices;
 use super::{DualCachePins, PinCache, PromptAffinityInputs};
 
 fn configured(prompt_caching: bool, maximum_base64_length: i64) -> section::Settings {
-    section::Settings {
+    Box::new(section::PromptAffinitySettings {
         prompt_caching,
         maximum_base64_length,
-    }
+    })
 }
 
 fn pin(model_id: &str) -> Json {
