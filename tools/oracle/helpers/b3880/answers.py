@@ -163,10 +163,11 @@ def class_name_answer(input_value: Input) -> JsonValue:
 
 def rate_limit_answer(input_value: Input) -> JsonValue:
     exception = optional_exception(input_value["exception"])
-    labels: tuple[str | None, str | None] = RATE_LIMIT_LABELS.validate_python(
+    category, rate_limit_type = RATE_LIMIT_LABELS.validate_python(
         LOGGER._extract_rate_limit_labels(exception)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3413
     )
-    return JSON_ADAPTER.validate_python(list(labels))
+    labels: list[JsonValue] = [category, rate_limit_type]
+    return JSON_ADAPTER.validate_python(labels)
 
 
 def requested_model_answer(input_value: Input) -> JsonValue:
