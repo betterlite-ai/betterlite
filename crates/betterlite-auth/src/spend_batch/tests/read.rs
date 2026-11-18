@@ -300,7 +300,16 @@ async fn overlapping_fetches_never_strand_a_late_reader() {
             .expect("the late read succeeds"),
         Some(SpendCounterValue::Amount(decimal("2")))
     );
-    assert_eq!(server.mget_keys().len(), 2);
+    batch.bind(&keys(&["spend:key:c"]));
+    server.script_mget(Reply::Array(vec![Reply::Bulk("3".to_owned())]));
+    assert_eq!(
+        batch
+            .read("spend:key:c")
+            .await
+            .expect("the later fetch succeeds"),
+        Some(SpendCounterValue::Amount(decimal("3")))
+    );
+    assert_eq!(server.mget_keys().len(), 3);
 }
 
 #[tokio::test]
