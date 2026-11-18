@@ -6,6 +6,8 @@ use betterlite_core::api::request_body::{
     classify_media_type, form_body, is_opaque_audio_request, parse_binary_body, parse_json_bytes,
     parse_json_text,
 };
+use betterlite_core::api::request_form::values::PartValue;
+use std::collections::BTreeMap;
 use std::str;
 
 mod tests;
@@ -165,11 +167,9 @@ fn decode_form_body(
         .items
         .into_iter()
         .filter_map(|part| match part.value {
-            betterlite_core::api::request_form::values::PartValue::Text(text) => {
-                Some((part.name, text))
-            }
-            betterlite_core::api::request_form::values::PartValue::Upload(_upload) => None,
+            PartValue::Text(text) => Some((part.name, text)),
+            PartValue::Upload(_upload) => None,
         })
-        .collect::<std::collections::BTreeMap<_, _>>();
+        .collect::<BTreeMap<_, _>>();
     Ok(parsed_result(BodyKind::Form, form_body(&fields)?))
 }

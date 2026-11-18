@@ -3,6 +3,7 @@ use betterlite_core::api::request_form::values::{FormFields, FormValue, UploadFi
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Map, Number, Value};
+use std::str;
 
 pub(super) fn file_data_value(data: &FileData) -> HelperResult {
     let mut entries = Map::new();
@@ -77,7 +78,7 @@ fn upload_value(upload: &UploadFile) -> HelperResult {
 }
 
 fn utf8(bytes: &[u8]) -> Result<String, Box<HelperError>> {
-    std::str::from_utf8(bytes)
+    str::from_utf8(bytes)
         .map(str::to_owned)
         .map_err(|error| super::failure("UnicodeDecodeError", error.to_string()))
 }
