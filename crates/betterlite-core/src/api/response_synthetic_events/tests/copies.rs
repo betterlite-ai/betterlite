@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_openai::api::responses_event_records::event_types::ResponseEvent;
 use rstest::rstest;
 
 use super::*;
@@ -93,6 +94,38 @@ fn logging_copy_falls_back_when_validation_fails() {
             r#"{"type":"response.output_text.delta","item_id":"mutated","output_index":0,"content_index":0,"delta":5}"#
         )
     );
+}
+
+#[test]
+fn logging_copy_fallback_detaches_the_nested_response() {
+    let mut extra = Extra::new();
+    extra.insert("response".to_owned(), json("null"));
+    let event = ResponsesAPIStreamingResponse::Known(Box::new(
+        KnownResponseEvent::ResponseCompleted(ResponseEvent {
+            response: response_with(
+                "[]",
+                r#","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}"#,
+            ),
+            extra,
+        }),
+    ));
+    let LoggedCopy::Detached(mut copied) = logging_copy(LoggingEvent::Event(&event)) else {
+        panic!("a payload that fails validation still gets a copy");
+    };
+    let ResponsesAPIStreamingResponse::Known(known) = copied.as_mut() else {
+        panic!("known event stays known");
+    };
+    let KnownResponseEvent::ResponseCompleted(completed) = known.as_mut() else {
+        panic!("completed event stays completed");
+    };
+    completed.response.usage.as_mut().unwrap().cost = Some(Decimal::new(25, 2));
+    let ResponsesAPIStreamingResponse::Known(original) = &event else {
+        panic!("original stays known");
+    };
+    let KnownResponseEvent::ResponseCompleted(original) = original.as_ref() else {
+        panic!("original stays completed");
+    };
+    assert!(original.response.usage.as_ref().unwrap().cost.is_none());
 }
 
 #[test]

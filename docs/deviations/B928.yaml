@@ -6,4 +6,7 @@ deviations:
   - what: A response whose text, refusal, arguments or annotations would expand into more than 1000000 delta events or 256 MiB of event payloads raises an error instead of building the list.
     why: LiteLLM builds every delta, so a 64 KiB text with chunk_size 1 clones a 64 KiB item id per delta and exhausts memory; betterlite bounds the amplification instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1406-L1466
+  - what: The validation-failure fallback hands out a fully detached clone, so mutating a nested object through the copy never reaches the original event; LiteLLM shallow-copies the event and its nested response, which shares the usage object.
+    why: betterlite events are owned values, so a fallback copy cannot share a nested usage object the way Python's model_copy does, and the copy is strictly more detached.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1514-L1518
 kept_bugs: []

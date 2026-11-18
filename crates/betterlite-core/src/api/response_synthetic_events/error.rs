@@ -1,5 +1,4 @@
 use thiserror::Error;
-
 #[derive(Debug, Error)]
 pub enum SyntheticEventsError {
     #[error("range() arg 3 must not be zero")]
