@@ -161,6 +161,15 @@ async fn realtime_guardrail_block_sequence() {
     Json::Text(String::from("raised-denied")),
     "raised-denied"
 )]
+#[case::huge_unsigned_detail_error_is_truthy(
+    GuardrailViolation {
+        detail: Json::Object(IndexMap::from([("error".to_owned(), Json::Number(Number::from(u64::MAX)))])),
+        message: String::from("raised-denied"),
+    },
+    None,
+    Json::Number(Number::from(u64::MAX)),
+    "18446744073709551615"
+)]
 #[case::float_zero_detail_error_is_falsy(
     GuardrailViolation {
         detail: Json::Object(IndexMap::from([("error".to_owned(), Json::Number(Number::from_f64(0.0).expect("zero is finite")))])),
