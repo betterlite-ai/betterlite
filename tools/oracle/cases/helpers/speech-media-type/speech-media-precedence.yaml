@@ -1,0 +1,31 @@
+kind: helper
+name: helper-speech-media-precedence
+call:
+  speech_media_type:
+    resolve:
+      - {upstream: " AUDIO/FLAC; charset=x ", response_format: mp3}
+      - {upstream: "application/octet-stream", response_format: WAV}
+      - {upstream: "application/octet-stream", response_format: mpeg}
+      - {upstream: null, response_format: ogg}
+      - {upstream: "audio/custom", response_format: null}
+      - {upstream: "application/octet-stream", response_format: null}
+    sniff:
+      - {audio: [82, 73, 70, 70, 0, 0, 0, 0, 87, 65, 86, 69]}
+      - {audio: [102, 76, 97, 67]}
+      - {audio: [73, 68, 51, 0, 0]}
+      - {audio: [79, 103, 103, 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 79, 112, 117, 115, 72, 101, 97, 100]}
+      - {audio: [79, 103, 103, 83, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 79, 112, 117, 115, 72, 101, 97, 100]}
+      - {audio: [255, 241, 80]}
+      - {audio: [255, 241, 52]}
+      - {audio: [255, 241, 60]}
+      - {audio: [255, 251, 144]}
+      - {audio: [255, 235, 144]}
+      - {audio: [255, 249, 144]}
+      - {audio: [255, 251, 240]}
+      - {audio: [255, 251, 156]}
+      - {audio: [255]}
+      - {audio: []}
+      - {audio: [0, 241, 80]}
+      - {audio: [104, 101, 108, 108, 111]}
+env: {}
+compare: {ignore: []}
