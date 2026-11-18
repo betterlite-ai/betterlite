@@ -4393,6 +4393,7 @@ name = "betterlite-server"
 version = "0.1.0"
 dependencies = [
  "aho-corasick",
+ "async-stream",
  "async-trait",
  "aws-config",
  "aws-credential-types",
