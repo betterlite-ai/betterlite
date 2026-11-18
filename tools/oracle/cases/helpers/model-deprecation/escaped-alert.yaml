@@ -1,0 +1,18 @@
+kind: helper
+name: model-deprecation-escaped-alert
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: a & b <c> d
+        litellm_params: {model: openai/one}
+        model_info: {deprecation_date: "2026-04-01", litellm_provider: "p & <q> > r"}
+      - model_name: e < f
+        litellm_params: {model: openai/two}
+        model_info: {deprecation_date: "2026-05-10"}
+      - model_name: g > h
+        litellm_params: {model: openai/three}
+        model_info: {deprecation_date: "2026-09-01"}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: model-deprecation-unknown-provider-alert
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost: {}
+    deployments:
+      - model_name: absent-provider
+        model_info: {deprecation_date: "2026-05-10"}
+      - model_name: empty-provider
+        model_info: {deprecation_date: "2026-05-10", litellm_provider: ""}
+env: {}
+compare: {ignore: []}

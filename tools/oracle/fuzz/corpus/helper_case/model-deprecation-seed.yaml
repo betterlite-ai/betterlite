@@ -1,0 +1,13 @@
+kind: helper
+name: model-deprecation-seed
+call:
+  model_deprecation:
+    now: "2026-05-01T12:00:00Z"
+    model_cost:
+      openai/raw: {deprecation_date: "2026-05-10", litellm_provider: openai}
+    deployments:
+      - model_name: alpha
+        litellm_params: {model: openai/raw}
+        model_info: {deprecation_date: {kind: date, value: "2026-05-10"}}
+env: {}
+compare: {ignore: []}
