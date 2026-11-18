@@ -12,7 +12,6 @@ use super::Input;
 use super::fixture::FixtureFailure;
 use super::scenarios::{Run, client_kind, execute};
 
-// the exception LiteLLM raises for the same call, named the way Python names it
 pub(super) struct FailureShape {
     class: &'static str,
     status: Option<u16>,
@@ -42,7 +41,6 @@ impl FailureShape {
     }
 }
 
-// the case compares the exception LiteLLM raises, so the answer is that error, not a value
 fn failure_answer(run: &Run) -> HelperResult {
     match &run.failure {
         Some(failure) => Err(Box::new(HelperError {

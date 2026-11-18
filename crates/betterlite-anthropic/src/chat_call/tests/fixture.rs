@@ -258,15 +258,15 @@ impl FixtureConfig {
                 litellm_params: request.litellm_params.clone(),
                 headers: request.headers.values.clone(),
             });
-        match &self.transform_failure {
-            None => Ok(self.body.clone()),
-            Some(message) => {
+        self.transform_failure.as_ref().map_or_else(
+            || Ok(self.body.clone()),
+            |message| {
                 let error: ConfigError = Box::new(FixtureFailure {
                     message: message.clone(),
                 });
                 Err(error)
-            }
-        }
+            },
+        )
     }
 }
 

@@ -90,7 +90,7 @@ pub(super) struct ConverterState {
 
 pub(super) enum Outcome {
     Reply(Box<ResponseEnvelope>),
-    Embedding(Option<ResponseEnvelope>),
+    Embedding,
     Stream {
         model: String,
         provider: &'static str,
@@ -114,7 +114,7 @@ pub(super) struct Run {
 
 impl Run {
     pub(super) fn error(&self) -> &CallError {
-        &**self.outcome.as_ref().err().unwrap()
+        self.outcome.as_ref().err().unwrap()
     }
 
     pub(super) fn status(&self) -> Option<u16> {
@@ -277,7 +277,7 @@ fn outcome_of(
 ) -> Result<Outcome, Box<CallError>> {
     match result {
         Ok(ChatOutcome::Reply(envelope)) => Ok(Outcome::Reply(envelope)),
-        Ok(ChatOutcome::Embedding(reply)) => Ok(Outcome::Embedding(reply)),
+        Ok(ChatOutcome::Embedding) => Ok(Outcome::Embedding),
         Ok(ChatOutcome::Stream(wrapped)) => {
             let stream = *wrapped;
             let state = &stream.completion_stream.converter.state;

@@ -20,14 +20,12 @@ use super::transport::{BufferedReply, ChatTransport, ClientKind};
 use super::{CallStyle, ChatCall, ChatDeps, ChatOutcome, ChatResult};
 
 pub(super) mod streams;
-// The parts of the prepared request the reply projection reads back
 struct ReplyFacts<'call> {
     call: ChatCall<'call>,
     body: IndexMap<String, Json>,
     optional_params: IndexMap<String, Json>,
     options: Options,
 }
-// The buffered branch: keep the client LiteLLM's isinstance checks accept, POST the body, then fill in the reply
 pub(super) fn buffered<'call, Config, Client, Counter>(
     call: ChatCall<'call>,
     prepared: Prepared,
@@ -74,7 +72,6 @@ where
         }
     })
 }
-// The selected config fills in the reply from the raw answer plus the request LiteLLM reads back off the caller
 fn reply_outcome<Config, ClientFailure, Counter>(
     config: &Config,
     facts: ReplyFacts<'_>,

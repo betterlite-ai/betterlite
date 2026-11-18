@@ -328,6 +328,12 @@ fn assert_streamed(run: &Run) {
 }
 
 fn pre_stream_error() {
+    unauthenticated_pre_stream_error();
+    transform_pre_stream_error();
+    filter_pre_stream_error();
+}
+
+fn unauthenticated_pre_stream_error() {
     let unauthenticated = execute(&Setup {
         caller_key: None,
         ..Setup::chat()
@@ -337,7 +343,9 @@ fn pre_stream_error() {
     assert_eq!(unauthenticated.posts_pooled, 0);
     assert!(unauthenticated.transforms.is_empty());
     assert!(unauthenticated.calls.is_empty());
+}
 
+fn transform_pre_stream_error() {
     let unprepared = execute(&Setup {
         transform_failure: Some("the case's transform refuses"),
         ..Setup::chat()
@@ -347,7 +355,9 @@ fn pre_stream_error() {
     assert_eq!(unprepared.posts_supplied, 0);
     assert_eq!(unprepared.posts_pooled, 0);
     assert_eq!(unprepared.calls, ["sync".to_owned()]);
+}
 
+fn filter_pre_stream_error() {
     let unfiltered = execute(&Setup {
         style: CallStyle::Async,
         filter_failure: Some("the case's filter refuses"),
@@ -393,7 +403,7 @@ fn unsupported_embedding() {
     });
     assert!(matches!(
         run.outcome,
-        Ok(super::harness::Outcome::Embedding(None))
+        Ok(super::harness::Outcome::Embedding)
     ));
     assert_eq!(run.posts_supplied, 0);
     assert_eq!(run.posts_pooled, 0);

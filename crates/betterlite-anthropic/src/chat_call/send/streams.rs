@@ -18,7 +18,6 @@ use crate::headers::response::process_anthropic_headers;
 use crate::tool_names::REVERSE_MAP_KEY;
 use crate::usage::ReasoningTokenCounter;
 
-// The sent request the two stream branches share; the body already carries stream=True and pre_call saw it
 pub(crate) struct StreamFacts<'facts> {
     pub(crate) model: &'facts str,
     pub(crate) api_base: &'facts str,
@@ -30,7 +29,6 @@ pub(crate) struct StreamFacts<'facts> {
     pub(crate) optional_params: &'facts IndexMap<String, Json>,
     pub(crate) litellm_params: &'facts IndexMap<String, Json>,
 }
-// acompletion_stream_function accepts only an AsyncHTTPHandler, while make_sync_call takes any supplied client
 pub(crate) async fn open_stream<Client, Counter>(
     clients: ChatClients<'_, Client>,
     logger: &dyn StreamLogger,

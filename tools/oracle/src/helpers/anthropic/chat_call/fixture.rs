@@ -170,9 +170,10 @@ impl FixtureConfig {
         self.failure.as_ref().map_or_else(
             || Ok(self.body.clone()),
             |message| {
-                Err(Box::new(FixtureFailure {
+                let error: ConfigError = Box::new(FixtureFailure {
                     message: message.clone(),
-                }))
+                });
+                Err(error)
             },
         )
     }

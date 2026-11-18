@@ -12,6 +12,7 @@ use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 
 use crate::anthropic_http_stream::completion::ParameterError;
+use crate::anthropic_http_stream::transport::StreamTransport;
 use crate::headers::AnthropicHeaders;
 use crate::headers::environment::{
     EnvironmentRequest, HeaderLiteLlmParams, HeaderParams, validate_environment,
@@ -34,23 +35,22 @@ pub(super) struct Prepared {
     pub(super) options: Options,
 }
 struct Params {
-    optional_params: IndexMap<String, Json>,
-    transform_params: IndexMap<String, Json>,
+    optional: IndexMap<String, Json>,
+    transform: IndexMap<String, Json>,
     is_vertex_request: bool,
 }
+type PrepareResult<Client, Counter> = Result<
+    Prepared,
+    ChatCallError<
+        <Client as StreamTransport>::Failure,
+        <Counter as ReasoningTokenCounter>::Failure,
+    >,
+>;
+
 pub(super) fn prepare<'request, 'deps, Config, Client, Counter>(
     call: &'request ChatCall<'_>,
     deps: &'request mut ChatDeps<'deps, Config, Client, Counter>,
-) -> LocalBoxFuture<
-    'request,
-    Result<
-        Prepared,
-        ChatCallError<
-            <Client as crate::anthropic_http_stream::transport::StreamTransport>::Failure,
-            <Counter as ReasoningTokenCounter>::Failure,
-        >,
-    >,
->
+) -> LocalBoxFuture<'request, PrepareResult<Client, Counter>>
 where
     'deps: 'request,
     Config: ChatConfig,
@@ -62,11 +62,11 @@ where
         let stream = take_bool(&mut optional_params, "stream", false)?;
         let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
         let params = take_params(optional_params)?;
-        let validated = validated_headers(call, &params.optional_params, params.is_vertex_request)?;
+        let validated = validated_headers(call, &params.optional, params.is_vertex_request)?;
         let transform = TransformRequest {
             model: call.model,
             messages: &call.messages,
-            optional_params: &params.transform_params,
+            optional_params: &params.transform,
             litellm_params: &call.litellm_params,
             headers: &validated,
         };
@@ -89,12 +89,11 @@ where
         Ok(Prepared {
             body,
             header_map,
-            optional_params: params.optional_params,
+            optional_params: params.optional,
             options: Options { stream, json_mode },
         })
     })
 }
-// LiteLLM pops its own keys off a deep copy of optional_params, and the config's copy adds is_vertex_request
 fn take_params(mut popped: IndexMap<String, Json>) -> Result<Params, ParameterError> {
     let is_vertex_request = take_bool(&mut popped, "is_vertex_request", false)?;
     let _vertex_location = popped.shift_remove("vertex_count_tokens_location");
@@ -104,12 +103,11 @@ fn take_params(mut popped: IndexMap<String, Json>) -> Result<Params, ParameterEr
         Json::Bool(is_vertex_request),
     );
     Ok(Params {
-        optional_params: popped,
-        transform_params,
+        optional: popped,
+        transform: transform_params,
         is_vertex_request,
     })
 }
-// validate_environment reads the caller's headers, key and base into the headers the request carries
 fn validated_headers<ClientFailure, CounterFailure>(
     call: &ChatCall<'_>,
     optional_params: &IndexMap<String, Json>,
@@ -143,7 +141,6 @@ where
     )
     .map_err(ChatCallError::from)
 }
-// LiteLLM logs pre_api_call with the filtered headers and the body it is about to send
 fn log_pre_call<ClientFailure, CounterFailure>(
     call: &ChatCall<'_>,
     state: &mut LoggingState,
