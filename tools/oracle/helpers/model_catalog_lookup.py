@@ -4,12 +4,7 @@ from typing import Final, Literal, NotRequired, Protocol, TypedDict
 import litellm
 from litellm.router import Router
 from litellm.router_utils import pattern_match_deployments
-from litellm.types.router import (
-    Deployment,
-    DeploymentTypedDict,
-    RouterModelGroupAliasItem,
-    RoutingGroup,
-)
+from litellm.types.router import Deployment, RouterModelGroupAliasItem, RoutingGroup
 from pydantic import JsonValue, TypeAdapter
 
 LOOKUP_FUNCTIONS: Final = frozenset(
@@ -76,12 +71,6 @@ class RouterStorage(Protocol):
     model_list: list[StoredRow]
 
 
-class IncludePredicate(Protocol):
-    def should_include_deployment(
-        self, model_name: str, model: dict[str, JsonValue], team_id: str | None = None
-    ) -> bool: ...
-
-
 class FixedProvider:
     def __init__(self, provider: str | None) -> None:
         self.provider = provider
@@ -94,6 +83,7 @@ GROUPS: Final[TypeAdapter[list[RoutingGroup | dict[str, JsonValue]]]] = TypeAdap
     list[RoutingGroup | dict[str, JsonValue]]
 )
 VIEW: Final[TypeAdapter[DeploymentView]] = TypeAdapter(DeploymentView)
+LISTING: Final[TypeAdapter[list[DeploymentView] | None]] = TypeAdapter(list[DeploymentView] | None)
 
 
 def required(value: str | None, name: str) -> str:
@@ -123,13 +113,11 @@ def optional_row(value: Deployment | None) -> dict[str, JsonValue] | None:
     return row_view(VIEW.validate_json(value.model_dump_json()))
 
 
-def listing_rows(rows: list[DeploymentTypedDict] | None) -> list[JsonValue]:
-    if rows is None:
+def listing_rows(rows: object) -> list[JsonValue]:
+    listed = LISTING.validate_python(rows)
+    if listed is None:
         return []
-    projected: list[JsonValue] = []
-    for row in rows:
-        projected.append(row_view(VIEW.validate_json(json.dumps(row))))
-    return projected
+    return [row_view(view) for view in listed]
 
 
 def lookup_answer(router: Router, call: Input) -> JsonValue:
@@ -173,19 +161,20 @@ def listing_answer(router: Router, call: Input) -> JsonValue:
             names.extend(router.get_model_names(arguments.get("team_id")))
             return names
         case "get_model_list":
-            return listing_rows(
-                router.get_model_list(arguments.get("model_name"), arguments.get("team_id"))
+            listed: object = router.get_model_list(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12041-L12048
+                arguments.get("model_name"), arguments.get("team_id")
             )
+            return listing_rows(listed)
         case "get_model_list_from_model_alias":
-            return listing_rows(
-                router.get_model_list_from_model_alias(arguments.get("model_name"))
+            aliased: object = router.get_model_list_from_model_alias(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11851-L11857
+                arguments.get("model_name")
             )
+            return listing_rows(aliased)
         case "should_include_deployment":
             index = arguments.get("deployment_index")
             if index is None:
                 raise ValueError("arguments.deployment_index is required")
-            predicate: IncludePredicate = router
-            return predicate.should_include_deployment(
+            return router.should_include_deployment(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L11618
                 model_name=required(arguments.get("model_name"), "model_name"),
                 model=call["model_list"][index],
                 team_id=arguments.get("team_id"),
@@ -209,18 +198,18 @@ def run(input_value: Input) -> JsonValue:
     missing_ids = input_value.get("missing_ids")
     if missing_ids is not None:
         for index in missing_ids:
-            info = storage.model_list[index].get("model_info")
+            info = storage.model_list[index].get("model_info")  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1053
             if info is not None:
                 del info["id"]
     missing_info = input_value.get("missing_info")
     if missing_info is not None:
         for index in missing_info:
-            del storage.model_list[index]["model_info"]
-    provider = pattern_match_deployments.inferred_provider
-    pattern_match_deployments.inferred_provider = FixedProvider(input_value["inferred_provider"])
+            del storage.model_list[index]["model_info"]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1053
+    provider = pattern_match_deployments.inferred_provider  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L11
+    pattern_match_deployments.inferred_provider = FixedProvider(input_value["inferred_provider"])  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L11
     try:
         if input_value["function"] in LOOKUP_FUNCTIONS:
             return lookup_answer(router, input_value)
         return listing_answer(router, input_value)
     finally:
-        pattern_match_deployments.inferred_provider = provider
+        pattern_match_deployments.inferred_provider = provider  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L11
