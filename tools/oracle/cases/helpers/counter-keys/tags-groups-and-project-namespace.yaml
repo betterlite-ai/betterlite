@@ -1,0 +1,26 @@
+kind: helper
+name: tags-groups-and-project-namespace
+call:
+  counter_keys:
+    function: post_call_counter_keys
+    token: tok-1
+    team_id: team-1
+    user_id: user-1
+    org_id: org-1
+    end_user_id: end-1
+    project_id: proj-1
+    tags: [beta, "", alpha, beta]
+    model_access_groups: [group-b, "", group-a, group-b]
+calls:
+  - counter_keys:
+      function: post_call_counter_keys
+      token: null
+      team_id: null
+      user_id: null
+      org_id: null
+      end_user_id: null
+      project_id: proj-2
+      tags: [7, null, "", true]
+      model_access_groups: [3, null, ""]
+env: {}
+compare: {ignore: []}
