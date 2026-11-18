@@ -13,7 +13,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use betterlite_config::loader::ConfigLoader;
-use betterlite_http::health_probe::{HealthTransport, ReqwestHealth, TransportError};
+use betterlite_http::health_probe::{
+    HEALTH_TIMEOUT, HealthTransport, ReqwestHealth, TransportError,
+};
 use rstest::rstest;
 
 use super::{
@@ -113,7 +115,7 @@ fn health_command_writes_the_status_line_before_a_transport_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
-    let transport = ReqwestHealth::new().expect("the client builds");
+    let transport = ReqwestHealth::new(HEALTH_TIMEOUT).expect("the client builds");
     let mut writer = Vec::new();
 
     let error = health_command("127.0.0.1", port, &transport, &mut writer)

@@ -583,8 +583,11 @@ fn replays_aleph_lines(#[files("fuzz/corpus/aleph_lines/*")] path: PathBuf) {
 #[case::cut_multibyte_across_chunks(&[b"\xe2\x82".as_slice(), b"\xac\n".as_slice()], &["\u{20ac}"])]
 #[case::cut_sequence_never_finished(&[b"a\xe2\x82".as_slice()], &["a\u{fffd}"])]
 #[case::lone_cr_flushes_an_empty_line(&[b"\r".as_slice()], &[""])]
-#[case::unicode_separator(&[b"a\xe2\x80\xa8b\n".as_slice()], &["a", "b"])]
-fn line_decoder_follows_httpx(#[case] chunks: &[&[u8]], #[case] expected: &[&str]) {
+#[case::unicode_separators_stay_in_the_line(
+    &["a\u{85}b\u{2028}c\u{2029}d\n".as_bytes()],
+    &["a\u{85}b\u{2028}c\u{2029}d"]
+)]
+fn line_decoder_splits_on_sse_line_ends(#[case] chunks: &[&[u8]], #[case] expected: &[&str]) {
     let mut decoder = LineDecoder::new(usize::MAX);
     let mut lines = VecDeque::new();
     for chunk in chunks {
