@@ -18,18 +18,23 @@ use crate::headers::response::process_anthropic_headers;
 use crate::tool_names::REVERSE_MAP_KEY;
 use crate::usage::ReasoningTokenCounter;
 
-pub(crate) struct StreamFacts<'facts> {
-    pub(crate) model: &'facts str,
-    pub(crate) api_base: &'facts str,
-    pub(crate) messages: &'facts Json,
-    pub(crate) data: IndexMap<String, Json>,
-    pub(crate) headers: HeaderMap,
-    pub(crate) timeout: Duration,
-    pub(crate) json_mode: bool,
-    pub(crate) optional_params: &'facts IndexMap<String, Json>,
-    pub(crate) litellm_params: &'facts IndexMap<String, Json>,
+pub struct StreamFacts<'facts> {
+    pub model: &'facts str,
+    pub api_base: &'facts str,
+    pub messages: &'facts Json,
+    pub data: IndexMap<String, Json>,
+    pub headers: HeaderMap,
+    pub timeout: Duration,
+    pub json_mode: bool,
+    pub optional_params: &'facts IndexMap<String, Json>,
+    pub litellm_params: &'facts IndexMap<String, Json>,
+    // The sync wrapper stamps the provider its handler passes; the async helper always stamps anthropic
+    pub custom_llm_provider: &'static str,
+    // make_sync_call's optional arguments, and the async helper reads them from the params instead
+    pub speed: Option<String>,
+    pub tool_name_reverse_map: IndexMap<String, String>,
 }
-pub(crate) async fn open_stream<Client, Counter>(
+pub async fn open_stream<Client, Counter>(
     clients: ChatClients<'_, Client>,
     logger: &dyn StreamLogger,
     build: StreamBuild<'_, Counter>,
@@ -87,7 +92,6 @@ where
 {
     let model = facts.model.to_owned();
     let body = python_json::dumps_object(&facts.data);
-    let (speed, reverse) = stream_names(facts.optional_params, facts.litellm_params)?;
     let request = StreamCall {
         api_base: facts.api_base,
         headers: facts.headers,
@@ -95,8 +99,8 @@ where
         messages: facts.messages,
         timeout: facts.timeout,
         json_mode: facts.json_mode,
-        speed: speed.as_deref(),
-        tool_name_reverse_map: &reverse,
+        speed: facts.speed.as_deref(),
+        tool_name_reverse_map: &facts.tool_name_reverse_map,
     };
     let opened = StreamOpening {
         clients,
@@ -108,12 +112,12 @@ where
     Ok(WrappedStream {
         completion_stream: opened.completion_stream,
         model,
-        custom_llm_provider: "anthropic",
+        custom_llm_provider: facts.custom_llm_provider,
         response_headers: process_anthropic_headers(&opened.headers),
     })
 }
 // make_sync_call takes the speed and the reverse name map as arguments, so this branch types them before the call
-fn stream_names(
+pub(crate) fn stream_names(
     optional_params: &IndexMap<String, Json>,
     litellm_params: &IndexMap<String, Json>,
 ) -> Result<(Option<String>, IndexMap<String, String>), ParameterError> {

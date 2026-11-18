@@ -24,15 +24,12 @@ use super::error::ChatCallError;
 use super::transport::ChatTransport;
 use super::{CallStyle, ChatCall, ChatDeps};
 
-pub(super) struct Options {
-    pub(super) stream: bool,
-    pub(super) json_mode: bool,
-}
-pub(super) struct Prepared {
-    pub(super) body: IndexMap<String, Json>,
-    pub(super) header_map: HeaderMap,
-    pub(super) optional_params: IndexMap<String, Json>,
-    pub(super) options: Options,
+pub struct Prepared {
+    pub body: IndexMap<String, Json>,
+    pub header_map: HeaderMap,
+    pub optional_params: IndexMap<String, Json>,
+    pub stream: bool,
+    pub json_mode: bool,
 }
 struct Params {
     optional: IndexMap<String, Json>,
@@ -90,7 +87,8 @@ where
             body,
             header_map,
             optional_params: params.optional,
-            options: Options { stream, json_mode },
+            stream,
+            json_mode,
         })
     })
 }
