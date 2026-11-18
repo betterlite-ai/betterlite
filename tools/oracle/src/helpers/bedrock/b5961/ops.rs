@@ -9,13 +9,12 @@ use betterlite_http::error::HttpError;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
+use betterlite_openai::stream::chunk::{Chunk, Function};
+use betterlite_oracle_helper_api::{error::HelperError, helper::HelperResult};
 use betterlite_tokenizer::engine::error::EngineError;
 use bytes::BytesMut;
 use serde_json::{Value, json};
 use thiserror::Error;
-
-use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{
     CohereReply, CohereRequest, DecodeStream, Headers, HfReply, Input, ModelConfig,
@@ -140,44 +139,7 @@ fn decode_stream(case: &DecodeStream) -> HelperResult {
 
 fn chunk_view(chunk: &SagemakerChunk) -> Value {
     match chunk {
-        SagemakerChunk::Chat(chat) => json!({
-            "kind": "stream",
-            "id": chat.id,
-            "created": chat.created,
-            "model": chat.model,
-            "object": chat.object,
-            "system_fingerprint": chat.system_fingerprint,
-            "service_tier": chat.service_tier,
-            "usage": chat.usage.as_ref().map(|usage| json!({
-                "prompt_tokens": usage.prompt_tokens,
-                "completion_tokens": usage.completion_tokens,
-                "total_tokens": usage.total_tokens,
-            })),
-            "choices": chat.choices.iter().map(|choice| json!({
-                "index": choice.index,
-                "finish_reason": choice.finish_reason,
-                "content": choice.delta.content,
-                "role": choice.delta.role,
-                "refusal": choice.delta.refusal,
-                "function_call": choice.delta.function_call.as_ref().map(|function| json!({
-                    "name": function.name,
-                    "arguments": function.arguments,
-                })),
-                "tool_calls": choice.delta.tool_calls.as_ref().map(|calls| calls.iter().map(|call| json!({
-                    "index": call.index,
-                    "id": call.id,
-                    "type": call.kind,
-                    "function": call.function.as_ref().map(|function| json!({
-                        "name": function.name,
-                        "arguments": function.arguments,
-                    })),
-                })).collect::<Vec<_>>()),
-                "logprobs": choice.logprobs.as_ref().map(|logprobs| json!({
-                    "content": logprobs.content,
-                    "refusal": logprobs.refusal,
-                })),
-            })).collect::<Vec<_>>(),
-        }),
+        SagemakerChunk::Chat(chat) => chat_view(chat),
         SagemakerChunk::Token(token) => json!({
             "kind": "generic",
             "text": token.text,
@@ -187,6 +149,48 @@ fn chunk_view(chunk: &SagemakerChunk) -> Value {
             "index": token.index,
         }),
     }
+}
+
+fn chat_view(chat: &Chunk) -> Value {
+    json!({
+        "kind": "stream",
+        "id": chat.id,
+        "created": chat.created,
+        "model": chat.model,
+        "object": chat.object,
+        "system_fingerprint": chat.system_fingerprint,
+        "service_tier": chat.service_tier,
+        "usage": chat.usage.as_ref().map(|usage| json!({
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        })),
+        "choices": chat.choices.iter().map(|choice| json!({
+            "index": choice.index,
+            "finish_reason": choice.finish_reason,
+            "content": choice.delta.content,
+            "role": choice.delta.role,
+            "refusal": choice.delta.refusal,
+            "function_call": choice.delta.function_call.as_ref().map(function_view),
+            "tool_calls": choice.delta.tool_calls.as_ref().map(|calls| calls.iter().map(|call| json!({
+                "index": call.index,
+                "id": call.id,
+                "type": call.kind,
+                "function": call.function.as_ref().map(function_view),
+            })).collect::<Vec<_>>()),
+            "logprobs": choice.logprobs.as_ref().map(|logprobs| json!({
+                "content": logprobs.content,
+                "refusal": logprobs.refusal,
+            })),
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn function_view(function: &Function) -> Value {
+    json!({
+        "name": function.name,
+        "arguments": function.arguments,
+    })
 }
 
 // LiteLLM's usage path encodes every input text; the helper counts characters like a tokenizer of one id each
