@@ -2,25 +2,23 @@ import httpx
 from litellm.llms.azure.search.transformation import BingGroundingSearchConfig
 from pydantic import JsonValue
 
-from .inputs import (
+from .surface import (
+    ADAPTER,
+    JSON,
+    PROVIDER_ERROR,
     CapScenario,
+    ErrorRecord,
     HeaderInput,
     HeaderScenario,
+    HiddenCarrier,
     MaxResultsInput,
+    Minter,
     ReplyInput,
     ReplyScenario,
     RequestInput,
     RequestScenario,
     SettingsInput,
     UrlScenario,
-)
-from .surface import (
-    ADAPTER,
-    JSON,
-    PROVIDER_ERROR,
-    ErrorRecord,
-    HiddenCarrier,
-    Minter,
     apply_environment,
     logging_object,
 )

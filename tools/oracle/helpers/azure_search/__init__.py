@@ -1,6 +1,6 @@
+import litellm
 from pydantic import JsonValue
 
-from .inputs import Input, ReplyInput
 from .reports import (
     header_report,
     pair_report,
@@ -8,6 +8,9 @@ from .reports import (
     request_report,
     settings_report,
 )
+from .surface import Input, ReplyInput
+
+litellm.suppress_debug_info = True
 
 
 def reply_payload(input_value: Input) -> ReplyInput:
