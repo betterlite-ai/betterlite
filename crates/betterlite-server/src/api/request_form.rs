@@ -103,7 +103,6 @@ fn decode_urlencoded(bytes: &[u8], limits: &ApiLimits) -> Result<FormParts, Requ
     check_part_count(part_count, limits)?;
     let mut items = Vec::with_capacity(part_count);
     for (name, value) in form_urlencoded::parse(bytes) {
-        check_part_count(items.len() + 1, limits)?;
         items.push(FormPart {
             name: name.into_owned(),
             value: PartValue::Text(value.into_owned()),

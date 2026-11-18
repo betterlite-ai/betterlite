@@ -429,6 +429,12 @@ fn form_part_count_is_bounded() {
         decode_request_form(b"a=1&b=2", URLENCODED, &limits),
         Err(RequestFormError::TooManyParts)
     );
+    assert!(decode_request_form(b"a=1", URLENCODED, &limits).is_ok());
+    let body = format!("{}{}--b--\r\n", text_part("a", "1"), text_part("b", "2"));
+    assert_eq!(
+        decode_request_form(body.as_bytes(), MULTIPART, &limits),
+        Err(RequestFormError::TooManyParts)
+    );
 }
 
 fn whisper_request() -> JsonObject {
