@@ -25,9 +25,9 @@ const REDACTED: &str = "*****";
 
 pub(super) fn masked_credential(credential: &CredentialItem) -> CredentialView {
     CredentialView {
-        credential_name: credential.credential_name.clone(),
-        credential_values: masked_values(&credential.credential_values),
-        credential_info: credential.credential_info.clone(),
+        name: credential.credential_name.clone(),
+        values: masked_values(&credential.credential_values),
+        info: credential.credential_info.clone(),
     }
 }
 
@@ -62,22 +62,24 @@ fn is_sensitive(key: &str) -> bool {
 // mask_strings covers an array under a sensitive key, where every string is part of the secret
 fn mask_json(value: &JsonData, containers_left: usize, mask_strings: bool) -> JsonData {
     match value {
-        JsonData::Object(fields) => match containers_left.checked_sub(1) {
-            Some(left) => {
+        JsonData::Object(fields) => containers_left.checked_sub(1).map_or_else(
+            || JsonData::String(REDACTED.to_owned()),
+            |left| {
                 let nested = Payload(fields.clone());
                 JsonData::Object(mask_object(&nested, left).0)
-            }
-            None => JsonData::String(REDACTED.to_owned()),
-        },
-        JsonData::Array(items) => match containers_left.checked_sub(1) {
-            Some(left) => JsonData::Array(
-                items
-                    .iter()
-                    .map(|item| mask_json(item, left, mask_strings))
-                    .collect(),
-            ),
-            None => JsonData::String(REDACTED.to_owned()),
-        },
+            },
+        ),
+        JsonData::Array(items) => containers_left.checked_sub(1).map_or_else(
+            || JsonData::String(REDACTED.to_owned()),
+            |left| {
+                JsonData::Array(
+                    items
+                        .iter()
+                        .map(|item| mask_json(item, left, mask_strings))
+                        .collect(),
+                )
+            },
+        ),
         JsonData::String(text) if mask_strings => JsonData::String(mask_text(text)),
         JsonData::String(text) => JsonData::String(text.clone()),
         leaf @ (JsonData::Null | JsonData::Bool(_) | JsonData::Number(_)) => leaf.clone(),

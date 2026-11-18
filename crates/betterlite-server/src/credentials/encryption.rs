@@ -57,7 +57,7 @@ impl ValuesCodec<'_> {
     }
 
     fn leaf(&mut self, text: &str) -> JsonData {
-        if let Direction::Open = self.direction {
+        if matches!(self.direction, Direction::Open) {
             let stored = StoredValue::<()>::Text(SecretString::from(text.to_owned()));
             return match self
                 .cipher
@@ -106,10 +106,7 @@ pub fn encrypt_credential_values(
             credential_values: Payload(encrypted),
         },
     };
-    match codec.failure {
-        Some(error) => Err(error),
-        None => Ok(row),
-    }
+    codec.failure.map_or_else(|| Ok(row), Err)
 }
 
 #[must_use]

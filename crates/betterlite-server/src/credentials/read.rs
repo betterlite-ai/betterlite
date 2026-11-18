@@ -29,10 +29,13 @@ pub(super) async fn get_credential_by_name(
     State(state): State<CredentialState>,
     Path(credential_name): Path<String>,
 ) -> Result<Json<CredentialView>, CredentialError> {
-    match state.registry.find_credential(&credential_name) {
-        Some(credential) => Ok(Json(masked_credential(&credential))),
-        None => Err(CredentialError::CredentialNotFound { credential_name }),
-    }
+    state
+        .registry
+        .find_credential(&credential_name)
+        .map_or_else(
+            || Err(CredentialError::CredentialNotFound { credential_name }),
+            |credential| Ok(Json(masked_credential(&credential))),
+        )
 }
 
 pub(super) async fn get_credential_by_model(
@@ -44,11 +47,11 @@ pub(super) async fn get_credential_by_model(
         &model_id,
         CredentialError::RouterMissing,
     )?;
-    let credential_values = masked_values(&deployment.credential_values);
-    let credential_name = format!("{}-credential-{model_id}", deployment.model_name);
+    let values = masked_values(&deployment.credential_values);
+    let name = format!("{}-credential-{model_id}", deployment.model_name);
     Ok(Json(CredentialView {
-        credential_name,
-        credential_values,
-        credential_info: Payload(BTreeMap::new()),
+        name,
+        values,
+        info: Payload(BTreeMap::new()),
     }))
 }

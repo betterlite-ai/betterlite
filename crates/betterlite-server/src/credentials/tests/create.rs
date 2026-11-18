@@ -60,10 +60,10 @@ async fn create_lists_the_masked_credential_from_memory() {
     let listed: ListReply = reply.json();
     assert!(listed.success);
     assert_eq!(1, listed.credentials.len());
-    assert_eq!("openai", listed.credentials[0].credential_name);
+    assert_eq!("openai", listed.credentials[0].name);
     assert_eq!(
         payload(&[("api_key", text("sk****gh"))]),
-        listed.credentials[0].credential_values
+        listed.credentials[0].values
     );
 }
 
@@ -254,11 +254,14 @@ async fn create_from_a_model_without_a_router_is_a_500() {
     assert!(store.created().is_empty());
 }
 
+// one byte past the 2 MiB body limit axum applies to a Json extractor
+const LARGE_BODY: usize = 0x0020_0001;
+
 #[rstest]
 #[case::malformed_post(Method::POST, "/credentials", "{invalid".to_owned())]
-#[case::large_post(Method::POST, "/credentials", " ".repeat(2_097_153))]
+#[case::large_post(Method::POST, "/credentials", " ".repeat(LARGE_BODY))]
 #[case::malformed_patch(Method::PATCH, "/credentials/old", "{invalid".to_owned())]
-#[case::large_patch(Method::PATCH, "/credentials/old", " ".repeat(2_097_153))]
+#[case::large_patch(Method::PATCH, "/credentials/old", " ".repeat(LARGE_BODY))]
 #[tokio::test]
 async fn invalid_bodies_return_json_errors(
     #[case] method: Method,

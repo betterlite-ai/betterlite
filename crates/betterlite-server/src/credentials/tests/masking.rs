@@ -29,12 +29,9 @@ fn masking_keeps_the_name_and_info() {
         &[("team", text("ml"))],
         &[("api_key", text("sk-abcdefgh"))],
     ));
-    assert_eq!("openai", masked.credential_name);
-    assert_eq!(payload(&[("team", text("ml"))]), masked.credential_info);
-    assert_eq!(
-        payload(&[("api_key", text("sk****gh"))]),
-        masked.credential_values
-    );
+    assert_eq!("openai", masked.name);
+    assert_eq!(payload(&[("team", text("ml"))]), masked.info);
+    assert_eq!(payload(&[("api_key", text("sk****gh"))]), masked.values);
 }
 
 #[test]

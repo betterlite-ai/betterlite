@@ -34,7 +34,7 @@ async fn get_reads_memory_and_not_the_store() {
     assert_eq!(1, listed.credentials.len());
     assert_eq!(
         payload(&[("api_key", text("sk****ry"))]),
-        listed.credentials[0].credential_values
+        listed.credentials[0].values
     );
 }
 
@@ -62,21 +62,18 @@ async fn the_list_masks_each_credentials_values() {
     let listed: ListReply = reply.json();
     assert!(listed.success);
     assert_eq!(2, listed.credentials.len());
-    assert_eq!(
-        payload(&[("team", text("ml"))]),
-        listed.credentials[0].credential_info
-    );
+    assert_eq!(payload(&[("team", text("ml"))]), listed.credentials[0].info);
     assert_eq!(
         payload(&[
             ("api_key", text("sk****gh")),
             ("api_base", text("https://a")),
         ]),
-        listed.credentials[0].credential_values
+        listed.credentials[0].values
     );
-    assert_eq!("short", listed.credentials[1].credential_name);
+    assert_eq!("short", listed.credentials[1].name);
     assert_eq!(
         payload(&[("token", text("*****"))]),
-        listed.credentials[1].credential_values
+        listed.credentials[1].values
     );
 }
 
@@ -109,7 +106,7 @@ async fn the_list_masks_secrets_nested_under_plain_keys() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     let listed: ListReply = reply.json();
-    let values = &listed.credentials[0].credential_values.0;
+    let values = &listed.credentials[0].values.0;
     let JsonData::Object(config) = &values["vertex_config"] else {
         panic!("the object stays an object");
     };
@@ -142,7 +139,7 @@ async fn by_name_masks_strings_in_an_array_under_a_sensitive_key() {
     let item: ReplyCredential = reply.json();
     assert_eq!(
         payload(&[("api_key", JsonData::Array(vec![text("ab****gh")]))]),
-        item.credential_values
+        item.values
     );
 }
 
@@ -162,11 +159,8 @@ async fn by_name_masks_the_first_match() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     let item: ReplyCredential = reply.json();
-    assert_eq!("openai", item.credential_name);
-    assert_eq!(
-        payload(&[("api_key", text("sk****st"))]),
-        item.credential_values
-    );
+    assert_eq!("openai", item.name);
+    assert_eq!(payload(&[("api_key", text("sk****st"))]), item.values);
 }
 
 #[tokio::test]
@@ -207,11 +201,8 @@ async fn by_name_reads_a_name_with_slashes() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     let item: ReplyCredential = reply.json();
-    assert_eq!("azure/prod", item.credential_name);
-    assert_eq!(
-        payload(&[("api_key", text("sk****gh"))]),
-        item.credential_values
-    );
+    assert_eq!("azure/prod", item.name);
+    assert_eq!(payload(&[("api_key", text("sk****gh"))]), item.values);
 }
 
 #[tokio::test]
@@ -228,12 +219,9 @@ async fn by_model_names_the_deployment_credential_and_masks_the_values() {
     .await;
     assert_eq!(StatusCode::OK, reply.status);
     let item: ReplyCredential = reply.json();
-    assert_eq!("gpt-4o-credential-dep-1", item.credential_name);
-    assert_eq!(Payload::default(), item.credential_info);
-    assert_eq!(
-        payload(&[("api_key", text("sk****gh"))]),
-        item.credential_values
-    );
+    assert_eq!("gpt-4o-credential-dep-1", item.name);
+    assert_eq!(Payload::default(), item.info);
+    assert_eq!(payload(&[("api_key", text("sk****gh"))]), item.values);
 }
 
 #[tokio::test]

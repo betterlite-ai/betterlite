@@ -427,9 +427,12 @@ pub(crate) struct SuccessReply {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ReplyCredential {
-    pub(crate) credential_name: String,
-    pub(crate) credential_values: Payload,
-    pub(crate) credential_info: Payload,
+    #[serde(rename = "credential_name")]
+    pub(crate) name: String,
+    #[serde(rename = "credential_values")]
+    pub(crate) values: Payload,
+    #[serde(rename = "credential_info")]
+    pub(crate) info: Payload,
 }
 
 #[derive(Debug, Deserialize)]

@@ -43,15 +43,15 @@ impl CredentialRegistry {
             .collect();
         for credential in credentials {
             let name = credential.credential_name.clone();
-            if names.contains(&name) {
-                if let Some(slot) = entries
-                    .iter_mut()
-                    .find(|existing| existing.credential_name == name)
-                {
-                    *slot = credential;
-                }
-            } else {
+            if !names.contains(&name) {
                 entries.push(credential);
+                continue;
+            }
+            if let Some(slot) = entries
+                .iter_mut()
+                .find(|existing| existing.credential_name == name)
+            {
+                *slot = credential;
             }
         }
         drop(entries);
@@ -87,7 +87,7 @@ impl CredentialRegistry {
             .credential_info
             .0
             .extend(patch.credential_info.0.clone());
-        updated.credential_name = merged_name.to_owned();
+        merged_name.clone_into(&mut updated.credential_name);
         if merged_name != credential_name {
             entries.retain(|entry| entry.credential_name != credential_name);
         }
