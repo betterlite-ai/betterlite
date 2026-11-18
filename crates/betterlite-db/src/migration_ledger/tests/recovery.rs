@@ -27,7 +27,7 @@ fn completion_exact_checksum() {
 
 #[tokio::test]
 async fn completed_checksum_match() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let installed = migration(
             "20250101000000_installed",
@@ -57,7 +57,7 @@ async fn completed_checksum_match() {
 
 #[tokio::test]
 async fn completion_multiple_unfinished() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let pending = migration("20250102000000_pending", "CREATE TABLE pending (id int);");
         insert_failed(&database.pool, "row-first", &pending, FIXED_STARTED_AT).await;
@@ -79,7 +79,7 @@ async fn completion_multiple_unfinished() {
 
 #[tokio::test]
 async fn completion_guard_rowcount() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let pending = migration("20250103000000_guarded", "CREATE TABLE guarded (id int);");
         insert_confirmed(&database.pool, "row-guarded", &pending, false).await;
@@ -111,7 +111,7 @@ async fn completion_guard_rowcount() {
 
 #[tokio::test]
 async fn completion_single_unconfirmed_row() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let pending = migration(
             "20250104000000_unconfirmed",
@@ -146,7 +146,7 @@ async fn completion_single_unconfirmed_row() {
 
 #[tokio::test]
 async fn completion_updates_only_finished_at() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         let pending = migration(
             "20250111000000_confirming",

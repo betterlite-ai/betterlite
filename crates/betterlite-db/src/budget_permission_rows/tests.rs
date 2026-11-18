@@ -4,7 +4,8 @@ use super::{
     BudgetError, BudgetPermissionDecodeError, LiteLLMBudgetTable, LiteLLMObjectPermissionTable,
     OrganizationMembership, PermissionList, decode_budget_permission_rows,
 };
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use chrono::{DateTime, Utc};
 use clap::Parser;
 use rstest::rstest;
@@ -14,6 +15,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use std::fs;
 use std::path::PathBuf;
 use tokio::task::JoinSet;
+
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 
 #[derive(Parser)]
 struct Environment {
@@ -333,22 +336,20 @@ fn replays_the_budget_permission_rows_corpus(
 #[tokio::test]
 async fn postgres_budget_decimal_roundtrip() {
     let url = postgres_test_url();
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_name_generator(
+        url.as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
     let (client, connection) =
         tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
             .await
             .unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client
-        .batch_execute(include_str!(
-            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-        ))
-        .await
-        .unwrap();
     let row = budget(r#"{"max_budget":12.5}"#);
     client
         .execute(r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by) VALUES ('b', $1, 'test', 'test')"#, &[&row.max_budget.as_ref().unwrap().to_f64().unwrap()])
@@ -374,10 +375,15 @@ async fn postgres_budget_decimal_roundtrip() {
     fixture.close_async().await.unwrap();
 }
 
+const PERMISSION_ROWS: &str = r#"INSERT INTO "LiteLLM_ObjectPermissionTable" (object_permission_id, models) VALUES ('null', NULL), ('empty', ARRAY[]::TEXT[]);
+INSERT INTO "LiteLLM_ObjectPermissionTable" (object_permission_id) VALUES ('omitted');"#;
+
 #[tokio::test]
 async fn postgres_permission_null_vs_empty() {
     let url = postgres_test_url();
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let mut statements = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+    statements.push(PERMISSION_ROWS.to_owned());
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
         .unwrap();
@@ -387,10 +393,6 @@ async fn postgres_permission_null_vs_empty() {
             .unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client
-        .batch_execute(include_str!("permission_fixture.sql"))
-        .await
-        .unwrap();
     let rows = client
         .query(
             r#"SELECT row_to_json(permission)::TEXT FROM "LiteLLM_ObjectPermissionTable" permission ORDER BY object_permission_id"#,

@@ -1,0 +1,92 @@
+kind: helper
+name: budget_ceiling
+call:
+  key_delegation:
+    calls:
+      - check: budget
+        budget_limits: null
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: []
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: nan}]
+        delegation_ceiling: 10
+        caller: {role: proxy_admin, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: inf}]
+        delegation_ceiling: null
+        caller: {role: internal_user, is_session_token: true, is_ui_session_team_key: true}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: -inf}]
+        delegation_ceiling: null
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 5}]
+        delegation_ceiling: null
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 5}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: true, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 5}, {budget_duration: 7d, max_budget: 25}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: true, is_ui_session_team_key: false}
+        has_team: true
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 20}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 10}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 0}, {budget_duration: 7d, max_budget: -5}]
+        delegation_ceiling: 0
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 20}]
+        delegation_ceiling: 10
+        caller: {role: proxy_admin, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 20}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: true, is_ui_session_team_key: true}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 1000000}]
+        delegation_ceiling: nan
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 1000000}]
+        delegation_ceiling: inf
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 1000000}]
+        delegation_ceiling: -inf
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+      - check: budget
+        budget_limits: [{budget_duration: 1d, max_budget: 15}, {budget_duration: 7d, max_budget: 20}]
+        delegation_ceiling: 10
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+        has_team: false
+env: {}
+compare: {ignore: []}

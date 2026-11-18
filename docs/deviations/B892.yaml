@@ -1,0 +1,12 @@
+task: B892
+deviations:
+  - what: An allowed_routes entry that is a JSON list or object makes LiteLLM's safe-preset membership test raise TypeError from the frozenset lookup, a 500; betterlite reads that unhashable entry as not a safe preset and rejects the request with the same 403 detail.error. An entry that is a number, bool or null is hashable, so LiteLLM already rejects it and betterlite matches.
+    why: The route list is untyped JSON in both, and a caller's nested value must not crash the proxy; the 403 keeps LiteLLM's denial shape for an entry that is not a safe preset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L945-L950
+  - what: The same unhashable entry on either side of the route transition check makes LiteLLM build a frozenset and raise TypeError, a 500; betterlite reads the transition as unsafe and falls back to the raw-body permission check, which passes only for an admin or for an omitted falsey field.
+    why: The fallback is exactly where LiteLLM sends every other non-preset entry, so a nested value is denied like a custom route instead of failing the request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L977-L981
+  - what: A budget window compares with the ceiling as an exact decimal, so a decimal amount text that a binary float cannot represent exactly (0.10000000000000001 against a ceiling of 0.1, say) can be denied here where LiteLLM's float comparison reads both as 0.1 and passes. betterlite's amounts are the shared Decimal type in management_guards::amounts, where LiteLLM declares max_budget and the ceiling as floats.
+    why: Money is rust_decimal across this repository and no-float-money bans the float, and the difference only runs stricter, so it can never let a window past a ceiling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L1061
+kept_bugs: []

@@ -9,58 +9,12 @@ use betterlite_db_admin::command_shell::{
 };
 use betterlite_db_admin::commands::DbAdminError;
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::SPEND_BACKFILL_TABLES;
 use clap::Parser;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
 use tokio_postgres::{Client, Config, NoTls};
-
-const SCHEMA_SQL: &str = r#"CREATE TABLE "LiteLLM_BudgetTable" (
-    "budget_id" TEXT NOT NULL,
-    "budget_duration" TEXT,
-    CONSTRAINT "LiteLLM_BudgetTable_pkey" PRIMARY KEY ("budget_id")
-);
-CREATE TABLE "LiteLLM_VerificationToken" (
-    "token" TEXT NOT NULL,
-    "spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    "budget_duration" TEXT,
-    "budget_id" TEXT,
-    "total_spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    CONSTRAINT "LiteLLM_VerificationToken_pkey" PRIMARY KEY ("token")
-);
-CREATE TABLE "LiteLLM_DeletedVerificationToken" (
-    "id" TEXT NOT NULL,
-    "token" TEXT NOT NULL,
-    "spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    "budget_duration" TEXT,
-    "budget_id" TEXT,
-    "total_spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    CONSTRAINT "LiteLLM_DeletedVerificationToken_pkey" PRIMARY KEY ("id")
-);
-CREATE TABLE "LiteLLM_SpendLogs" (
-    "request_id" TEXT NOT NULL,
-    "api_key" TEXT NOT NULL DEFAULT '',
-    "spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    "total_tokens" INTEGER NOT NULL DEFAULT 0,
-    "startTime" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "LiteLLM_SpendLogs_pkey" PRIMARY KEY ("request_id")
-);
-CREATE TABLE "LiteLLM_SpendLogToolIndex" (
-    "request_id" TEXT NOT NULL,
-    "tool_name" TEXT NOT NULL,
-    "start_time" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "LiteLLM_SpendLogToolIndex_pkey" PRIMARY KEY ("request_id","tool_name")
-);
-CREATE TABLE "LiteLLM_DailyToolSpend" (
-    "date" TEXT NOT NULL,
-    "tool_name" TEXT NOT NULL,
-    "spend" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
-    "total_tokens" BIGINT NOT NULL DEFAULT 0,
-    "request_count" BIGINT NOT NULL DEFAULT 0,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updated_at" TIMESTAMP(3) NOT NULL,
-    CONSTRAINT "LiteLLM_DailyToolSpend_pkey" PRIMARY KEY ("date","tool_name")
-);"#;
 
 const SEED_SQL: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, api_key, spend, total_tokens, "startTime") VALUES ('request-one', 'key-one', 9.0, 10, '2026-07-01T00:00:00');
 INSERT INTO "LiteLLM_SpendLogToolIndex" (request_id, tool_name, start_time) VALUES ('request-one', 'tool-a', '2026-06-01T00:00:00');
@@ -84,20 +38,19 @@ impl Postgres {
         let url = Environment::parse_from(["spend-backfills-admin"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
-            .resolve()
-            .await
-            .expect("a test schema");
+        let fixture = PostgresFixture::provision_with_statements(
+            url.as_ref(),
+            vec![SPEND_BACKFILL_TABLES.to_owned()],
+        )
+        .resolve()
+        .await
+        .expect("a test database");
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .batch_execute(SCHEMA_SQL)
-            .await
-            .expect("the pinned tables");
         Self {
             fixture,
             client,
@@ -113,7 +66,10 @@ impl Postgres {
         } = self;
         drop(client);
         drop(tasks);
-        fixture.close_async().await.expect("the schema is dropped");
+        fixture
+            .close_async()
+            .await
+            .expect("the database is dropped");
     }
 }
 

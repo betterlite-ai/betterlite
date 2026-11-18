@@ -1,0 +1,63 @@
+kind: helper
+name: safe_preset_narrowing
+call:
+  key_delegation:
+    calls:
+      - check: transition
+        incoming: []
+        existing: []
+      - check: transition
+        incoming: [info_routes]
+        existing: []
+      - check: transition
+        incoming: [llm_api_routes, info_routes]
+        existing: []
+      - check: transition
+        incoming: []
+        existing: [info_routes]
+      - check: transition
+        incoming: [llm_api_routes]
+        existing: [info_routes]
+      - check: transition
+        incoming: [info_routes]
+        existing: [info_routes]
+      - check: transition
+        incoming: [info_routes, info_routes]
+        existing: [info_routes]
+      - check: transition
+        incoming: []
+        existing: [llm_api_routes]
+      - check: transition
+        incoming: [info_routes]
+        existing: [llm_api_routes]
+      - check: transition
+        incoming: []
+        existing: [management_routes]
+      - check: transition
+        incoming: [management_routes]
+        existing: [management_routes]
+      - check: transition
+        incoming: [info_routes]
+        existing: [info_routes, management_routes]
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [info_routes]}
+        existing_allowed_routes: [llm_api_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [llm_api_routes]}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [info_routes, info_routes]}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle}
+        existing_allowed_routes: [llm_api_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [llm_api_routes]}
+        existing_allowed_routes: []
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+env: {}
+compare: {ignore: []}

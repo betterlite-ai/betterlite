@@ -1,6 +1,5 @@
 pub mod autorouter;
 pub mod files;
-pub mod fixtures;
 pub mod mcp;
 pub mod skills;
 pub mod spend_logs;
