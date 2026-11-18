@@ -123,8 +123,8 @@ fn config(input: Option<&ConfigInput>) -> Result<section::Config, OperationError
     let buffer = match input.and_then(|config| config.buffer.as_deref()) {
         Some(text) => text
             .parse::<f64>()
-            .map_err(|_| OperationError::InvalidRequest {
-                message: format!("the buffer {text} is not a number"),
+            .map_err(|source| OperationError::InvalidRequest {
+                message: format!("the buffer {text} is not a number: {source}"),
             })?,
         None => section::DEFAULT_BUFFER,
     };
@@ -242,7 +242,7 @@ fn messages(texts: &[String]) -> Vec<ChatMessage> {
         .collect()
 }
 
-fn out_of_band(input: &Input) -> OutOfBand<'_> {
+const fn out_of_band(input: &Input) -> OutOfBand<'_> {
     OutOfBand {
         instructions: input.instructions.as_ref(),
         system: input.system.as_ref(),
