@@ -1,6 +1,9 @@
 use crate::support::carry_in;
 use crate::support::text_attribute;
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::LegacyLifecycleOptions;
+use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
+use betterlite_logging::otel::legacy_lifecycle::tracer::BaseDynamicOtel;
+use betterlite_logging::otel::v2_callback::live_span::RootSpans;
 use opentelemetry::Context;
 use opentelemetry::trace::SpanId;
 use opentelemetry::trace::{Span as _, Status};
@@ -51,7 +54,7 @@ fn legacy_lifecycle_success_without_a_parent_creates_the_primary_and_raw_spans()
     let lifecycle = rig.in_memory(None);
     let kwargs = simple_kwargs("call-1");
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     assert_eq!(rig.names(), vec!["litellm_request", "raw_gen_ai_request"]);
     let primary = rig.span("litellm_request");
@@ -83,7 +86,7 @@ fn legacy_lifecycle_raw_request_uses_the_generation_name() {
     );
 
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
 
     assert!(rig.names().contains(&"generation-name".to_owned()));
@@ -100,7 +103,7 @@ fn legacy_lifecycle_skips_the_raw_request_span_in_semconv_mode() {
     let kwargs = simple_kwargs("call-semconv");
 
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
 
     let names = rig.names();
@@ -117,7 +120,7 @@ fn legacy_lifecycle_success_with_an_ambient_parent_keeps_the_hierarchy_shallow()
     let context = attach(&parent.context);
     let guard = Context::attach(&context);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     drop(guard);
     assert_eq!(rig.names(), vec!["raw_gen_ai_request"]);
@@ -146,7 +149,7 @@ fn legacy_lifecycle_creates_the_primary_span_when_the_request_span_flag_is_on() 
     let context = attach(&parent.context);
     let guard = Context::attach(&context);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     drop(guard);
     assert_eq!(rig.names(), vec!["litellm_request", "raw_gen_ai_request"]);
@@ -160,7 +163,7 @@ fn legacy_lifecycle_failure_without_a_parent_creates_the_error_span() {
     let lifecycle = rig.in_memory(None);
     let kwargs = simple_kwargs("call-4");
     lifecycle
-        .handle_failure(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("failure lifecycle");
     let spans = rig.spans();
     assert_eq!(spans.len(), 1);
@@ -183,7 +186,7 @@ fn legacy_lifecycle_failure_records_the_exception_event() {
     lifecycle_call.exception = Some(&exception);
 
     lifecycle
-        .handle_failure(&lifecycle_call)
+        .handle(&lifecycle_call, LifecycleEvent::Failure)
         .expect("failure lifecycle");
 
     let span = rig.span("litellm_request");
@@ -205,7 +208,7 @@ fn legacy_lifecycle_failure_with_an_ambient_parent_stamps_the_parent() {
     let context = attach(&parent.context);
     let guard = Context::attach(&context);
     lifecycle
-        .handle_failure(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("failure lifecycle");
     drop(guard);
     assert!(rig.spans().is_empty(), "no new span is created");
@@ -227,10 +230,10 @@ fn legacy_lifecycle_success_events_dedupe_the_sync_and_async_fire() {
     let lifecycle = rig.in_memory(None);
     let kwargs = simple_kwargs("call-6");
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("first success");
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("duplicate success");
     assert_eq!(rig.names(), vec!["litellm_request", "raw_gen_ai_request"]);
 }
@@ -241,10 +244,10 @@ fn legacy_lifecycle_failure_events_dedupe_the_sync_and_async_fire() {
     let lifecycle = rig.in_memory(None);
     let kwargs = simple_kwargs("call-7");
     lifecycle
-        .handle_failure(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("first failure");
     lifecycle
-        .handle_failure(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("duplicate failure");
     assert_eq!(rig.names(), vec!["litellm_request"]);
 }
@@ -257,10 +260,10 @@ fn legacy_lifecycle_keeps_distinct_request_ids_independent() {
     let second = simple_kwargs("call-second");
 
     lifecycle
-        .handle_success(&call(&first))
+        .handle(&call(&first), LifecycleEvent::Success)
         .expect("first success");
     lifecycle
-        .handle_success(&call(&second))
+        .handle(&call(&second), LifecycleEvent::Success)
         .expect("second success");
 
     assert_eq!(
@@ -322,7 +325,13 @@ fn legacy_lifecycle_uses_the_clock_for_missing_span_times() {
         None,
         LegacyLifecycleOptions {
             clock: Box::new(FixedClock(clock_time)),
-            ..LegacyLifecycleOptions::default()
+            dynamic: Arc::new(BaseDynamicOtel),
+            live: Arc::new(RootSpans::default()),
+            metrics: None,
+            events: None,
+            failure_counters: Vec::new(),
+            handler_class_name: "OpenTelemetry".to_owned(),
+            use_request_span: false,
         },
     );
     let kwargs = simple_kwargs("call-missing-times");
@@ -331,7 +340,7 @@ fn legacy_lifecycle_uses_the_clock_for_missing_span_times() {
     lifecycle_call.end_time = SpanTime::Missing;
 
     lifecycle
-        .handle_success(&lifecycle_call)
+        .handle(&lifecycle_call, LifecycleEvent::Success)
         .expect("success lifecycle");
 
     let primary = rig.span("litellm_request");
@@ -351,14 +360,19 @@ fn legacy_lifecycle_reports_attribute_failures_to_callback_counter() {
         LegacyLifecycleOptions {
             clock: Box::new(FixedClock(instant(START))),
             failure_counters: vec![counter.clone()],
-            ..LegacyLifecycleOptions::default()
+            dynamic: Arc::new(BaseDynamicOtel),
+            live: Arc::new(RootSpans::default()),
+            metrics: None,
+            events: None,
+            handler_class_name: "OpenTelemetry".to_owned(),
+            use_request_span: false,
         },
     );
     let mut kwargs = simple_kwargs("call-missing-standard-log");
     kwargs.remove("standard_logging_object");
 
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("lifecycle handles attribute failure");
 
     assert_eq!(counter.0.load(Ordering::SeqCst), 1);
@@ -386,13 +400,18 @@ fn legacy_lifecycle_records_metrics_for_success() {
         LegacyLifecycleOptions {
             clock: Box::new(FixedClock(instant(START))),
             metrics: Some(recorder),
-            ..LegacyLifecycleOptions::default()
+            dynamic: Arc::new(BaseDynamicOtel),
+            live: Arc::new(RootSpans::default()),
+            events: None,
+            failure_counters: Vec::new(),
+            handler_class_name: "OpenTelemetry".to_owned(),
+            use_request_span: false,
         },
     );
     let kwargs = simple_kwargs("call-metrics");
 
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     provider.force_flush().expect("flush metrics");
     let metrics = exporter.get_finished_metrics().expect("metrics");
@@ -427,13 +446,18 @@ fn legacy_lifecycle_emits_semantic_logs_on_success() {
         LegacyLifecycleOptions {
             clock: Box::new(FixedClock(instant(START))),
             events: Some(events),
-            ..LegacyLifecycleOptions::default()
+            dynamic: Arc::new(BaseDynamicOtel),
+            live: Arc::new(RootSpans::default()),
+            metrics: None,
+            failure_counters: Vec::new(),
+            handler_class_name: "OpenTelemetry".to_owned(),
+            use_request_span: false,
         },
     );
     let kwargs = simple_kwargs("call-events");
 
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     provider.force_flush().expect("flush logs");
 
@@ -461,11 +485,11 @@ fn legacy_lifecycle_ignores_parent_when_configured(#[case] failure: bool) {
 
     if failure {
         lifecycle
-            .handle_failure(&call(&kwargs))
+            .handle(&call(&kwargs), LifecycleEvent::Failure)
             .expect("failure lifecycle");
     } else {
         lifecycle
-            .handle_success(&call(&kwargs))
+            .handle(&call(&kwargs), LifecycleEvent::Success)
             .expect("success lifecycle");
     }
     drop(guard);

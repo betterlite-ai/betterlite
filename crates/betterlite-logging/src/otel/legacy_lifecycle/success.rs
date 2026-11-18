@@ -11,10 +11,10 @@ use crate::otel::plumbing::context::parent_span::ParentSpan;
 use crate::otel::v2_callback::live_span::LiveSpan;
 use crate::otel::vocabulary::span_names::PROXY_REQUEST_SPAN_NAME;
 
-use super::context::resolve_guardrail_context;
+use super::context::RequestSpans;
 use super::error::LegacyLifecycleError;
 use super::lifecycle::{LegacyLifecycle, LifecycleCall, litellm_params};
-use super::{context, guardrail, proxy, recording, tracer};
+use super::{context, proxy, recording, tracer};
 
 pub const RAW_REQUEST_SPAN_NAME: &str = "raw_gen_ai_request";
 
@@ -94,17 +94,15 @@ pub(super) fn success_primary(
 pub(super) fn finish_success(
     lifecycle: &LegacyLifecycle,
     call: &LifecycleCall<'_>,
-    primary: Option<&LiveSpan>,
-    live_parent: Option<&LiveSpan>,
-    fallback: Option<&Context>,
+    spans: &RequestSpans,
 ) -> Result<(), LegacyLifecycleError> {
-    let guardrail_context = resolve_guardrail_context(primary, live_parent, fallback);
-    guardrail::create_guardrail_span(lifecycle, call.kwargs, &guardrail_context)?;
-    recording::record_metrics(lifecycle, call)?;
-    if let Some(span) = primary.or(live_parent) {
-        recording::emit_semantic_logs(lifecycle, call, &span.context)?;
-    }
-    if let Some(span) = live_parent {
+    let span_context = spans
+        .primary
+        .as_ref()
+        .or(spans.parent.as_ref())
+        .map(|span| &span.context);
+    recording::record_success(lifecycle, call, span_context)?;
+    if let Some(span) = &spans.parent {
         let recording = span.lock().is_recording();
         if context::name_of(span).as_deref() == Some(PROXY_REQUEST_SPAN_NAME) && recording {
             proxy::close_proxy_ok(lifecycle, span, call.end_time);

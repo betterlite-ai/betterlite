@@ -1,3 +1,4 @@
+use super::lifecycle::LifecycleEvent;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -82,15 +83,17 @@ impl LegacyOtelLogger {
                 message_logging: true,
             },
         };
-        let result = if failure {
-            self.lifecycle.handle_failure(&call)
+        let lifecycle_event = if failure {
+            LifecycleEvent::Failure
         } else {
-            self.lifecycle.handle_success(&call)
+            LifecycleEvent::Success
         };
-        result.map_err(|error| LoggerError::Delivery {
-            callback: self.callback_name.clone(),
-            message: error.to_string(),
-        })
+        self.lifecycle
+            .handle(&call, lifecycle_event)
+            .map_err(|error| LoggerError::Delivery {
+                callback: self.callback_name.clone(),
+                message: error.to_string(),
+            })
     }
 
     // LiteLLM hands its callbacks the request kwargs; the typed event carries the same fields

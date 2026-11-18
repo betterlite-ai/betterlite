@@ -11,16 +11,6 @@ use super::lifecycle::{LegacyLifecycle, LifecycleCall};
 use super::parent;
 use super::{context, recording};
 
-pub(super) fn proxy_span(
-    lifecycle: &LegacyLifecycle,
-    kwargs: &MetadataMap,
-    with_litellm_metadata: bool,
-) -> Option<LiveSpan> {
-    let carrier = parent::proxy_carrier(kwargs, with_litellm_metadata)?;
-    let context = span_context_from_value(carrier)?;
-    lifecycle.live.get(context.span_id())
-}
-
 pub(super) fn stamp_proxy_team(lifecycle: &LegacyLifecycle, kwargs: &MetadataMap) {
     if let Some(span) = recording_proxy_span(lifecycle, kwargs, false) {
         recording::write_team_attributes_from_log(&mut *span.lock(), kwargs);
@@ -38,7 +28,9 @@ pub(super) fn recording_proxy_span(
     kwargs: &MetadataMap,
     with_litellm_metadata: bool,
 ) -> Option<LiveSpan> {
-    let span = proxy_span(lifecycle, kwargs, with_litellm_metadata)?;
+    let carrier = parent::proxy_carrier(kwargs, with_litellm_metadata)?;
+    let context = span_context_from_value(carrier)?;
+    let span = lifecycle.live.get(context.span_id())?;
     if context::name_of(&span).as_deref() != Some(PROXY_REQUEST_SPAN_NAME)
         || !span.lock().is_recording()
     {

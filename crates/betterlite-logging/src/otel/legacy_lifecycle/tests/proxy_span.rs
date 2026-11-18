@@ -1,3 +1,4 @@
+use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
 use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Status};
 
@@ -14,7 +15,7 @@ fn proxy_span_success_close_stamps_status_200_and_ok() {
     let mut kwargs = simple_kwargs("call-1");
     carry_in(&mut kwargs, "metadata", &proxy);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = rig.span(PROXY);
     assert_eq!(span.status, Status::Ok);
@@ -38,7 +39,7 @@ fn proxy_span_success_leaves_external_parent_spans_open() {
     let mut kwargs = simple_kwargs("call-2");
     carry_in(&mut kwargs, "metadata", &parent);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     assert!(
         !rig.names().iter().any(|name| name == "upstream"),
@@ -57,7 +58,7 @@ fn proxy_span_success_does_not_close_an_ended_proxy_again() {
     carry_in(&mut kwargs, "metadata", &proxy);
 
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
 
     let span = rig.span(PROXY);
@@ -75,7 +76,7 @@ fn proxy_span_team_attributes_are_stamped_before_the_close() {
     carry_in(&mut kwargs, "metadata", &proxy);
     with_team(&mut kwargs);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = rig.span(PROXY);
     assert_eq!(
@@ -98,7 +99,7 @@ fn proxy_span_failure_closes_the_ambient_proxy_without_a_status_stamp() {
     let context = attach(&proxy.context);
     let guard = Context::attach(&context);
     lifecycle
-        .handle_failure(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("failure lifecycle");
     drop(guard);
     let span = rig.span(PROXY);
@@ -114,13 +115,13 @@ fn proxy_span_success_dedupe_skip_still_closes_the_proxy() {
     let proxy = rig.parent(&lifecycle, PROXY);
     let first = simple_kwargs("call-5");
     lifecycle
-        .handle_success(&call(&first))
+        .handle(&call(&first), LifecycleEvent::Success)
         .expect("first success");
     assert!(proxy.lock().is_recording(), "no carrier closes nothing");
     let mut second = first.clone();
     carry_in(&mut second, "metadata", &proxy);
     lifecycle
-        .handle_success(&call(&second))
+        .handle(&call(&second), LifecycleEvent::Success)
         .expect("duplicate success");
     let span = rig.span(PROXY);
     assert_eq!(span.status, Status::Ok);
@@ -139,7 +140,7 @@ fn proxy_span_success_closes_the_ambient_proxy_span() {
     let context = attach(&proxy.context);
     let guard = Context::attach(&context);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     drop(guard);
     let span = rig.span(PROXY);
@@ -160,7 +161,7 @@ fn proxy_span_team_attributes_read_only_the_provider_bucket() {
     carry_in(&mut kwargs, "litellm_metadata", &proxy);
     with_team(&mut kwargs);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = rig.span(PROXY);
     assert_eq!(span.status, Status::Ok);
@@ -191,7 +192,9 @@ fn proxy_span_null_carrier_uses_the_proxy_bucket() {
         OtelModelValue::Null(()),
     );
 
-    lifecycle.handle_success(&call(&kwargs)).expect("success");
+    lifecycle
+        .handle(&call(&kwargs), LifecycleEvent::Success)
+        .expect("success");
 
     assert!(!proxy.lock().is_recording());
     let span = rig.span(PROXY);

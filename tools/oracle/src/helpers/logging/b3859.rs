@@ -1,3 +1,4 @@
+use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -187,14 +188,18 @@ fn lifecycle_call(
     kwargs: &MetadataMap,
 ) -> Result<TracerChoice, String> {
     let call = call_of(input, kwargs);
-    let handle = if input.event == "failure" {
-        LegacyLifecycle::handle_failure
+    let event = if input.event == "failure" {
+        LifecycleEvent::Failure
     } else {
-        LegacyLifecycle::handle_success
+        LifecycleEvent::Success
     };
-    handle(lifecycle, &call).map_err(|error| error.to_string())?;
+    lifecycle
+        .handle(&call, event)
+        .map_err(|error| error.to_string())?;
     if input.repeat {
-        handle(lifecycle, &call).map_err(|error| error.to_string())?;
+        lifecycle
+            .handle(&call, event)
+            .map_err(|error| error.to_string())?;
     }
     lifecycle
         .tracer_choice(kwargs)
@@ -219,7 +224,7 @@ fn guardrails(lifecycle: &LegacyLifecycle, input: &Input) -> Result<TracerChoice
         OtelModelValue::Object(metadata.clone()),
     );
     lifecycle
-        .handle_success(&call_of(input, &kwargs))
+        .handle(&call_of(input, &kwargs), LifecycleEvent::Success)
         .map_err(|error| error.to_string())?;
     lifecycle
         .emit_request_guardrails(&input.request_data, None)

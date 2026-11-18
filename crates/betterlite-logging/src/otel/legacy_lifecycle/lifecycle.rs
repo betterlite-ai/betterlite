@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::UNIX_EPOCH;
 
 use opentelemetry::Context;
-use opentelemetry::trace::{Span as _, TraceContextExt as _};
+use opentelemetry::trace::TraceContextExt as _;
 use opentelemetry_sdk::trace::SdkTracer;
 
 use crate::exporter_options::failure_counter::CallbackFailureCounter;
@@ -13,7 +13,7 @@ use crate::otel::legacy_policy::capture::{CapturePolicy, LoggingFlags};
 use crate::otel::legacy_policy::config::OpenTelemetryConfig;
 use crate::otel::legacy_policy::dedupe::ScopeValue;
 use crate::otel::legacy_policy::error_recording::RecordedException;
-use crate::otel::legacy_policy::span_time::{SpanTime, to_ns};
+use crate::otel::legacy_policy::span_time::SpanTime;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::plumbing::events::{Clock, SystemClock};
@@ -25,7 +25,6 @@ use super::error::LegacyLifecycleError;
 use super::state::{RequestDedupe, request_key};
 use super::tracer::{BaseDynamicOtel, DynamicOtel, TracerChoice};
 use super::{context, failure, guardrail, proxy, success};
-use crate::otel::vocabulary::span_names::PROXY_REQUEST_SPAN_NAME;
 
 pub const DEFAULT_CALLBACK_NAME: &str = "opentelemetry";
 pub const DEFAULT_HANDLER_CLASS_NAME: &str = "OpenTelemetry";
@@ -45,6 +44,12 @@ pub fn litellm_params(kwargs: &MetadataMap) -> Option<&MetadataMap> {
     kwargs
         .get("litellm_params")
         .and_then(OtelModelValue::as_object)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LifecycleEvent {
+    Success,
+    Failure,
 }
 
 pub struct LegacyLifecycleOptions {
@@ -90,40 +95,39 @@ pub struct LegacyLifecycle {
 }
 
 impl LegacyLifecycle {
-    pub fn handle_failure(&self, call: &LifecycleCall<'_>) -> Result<(), LegacyLifecycleError> {
-        // unlike the success path there is no proxy side effect to preserve on the skip path
+    pub fn handle(
+        &self,
+        call: &LifecycleCall<'_>,
+        event: LifecycleEvent,
+    ) -> Result<(), LegacyLifecycleError> {
+        let scope = match event {
+            LifecycleEvent::Success => "success",
+            LifecycleEvent::Failure => "failure",
+        };
         if !self.dedupe.emit_once(
             request_key(call.kwargs).as_deref(),
-            &[ScopeValue::Text("failure".to_owned())],
+            &[ScopeValue::Text(scope.to_owned())],
         ) {
+            // a repeated success still closes its proxy; a repeated failure has no side effect
+            if event == LifecycleEvent::Success {
+                proxy::end_proxy_from_kwargs(self, call);
+            }
             return Ok(());
         }
-        let parent = context::parent(self, call.kwargs)?;
-        let live_parent = parent
-            .span
-            .as_ref()
-            .and_then(|context| self.live.get(context.span_id()));
-        let capture_mode = self.capture_policy.resolve(call.flags);
-        let parent_context = parent.context.clone().unwrap_or_default();
-        let primary = failure::failure_primary(self, call, &parent, &parent_context, capture_mode)?;
+        let spans = context::request_spans(self, call, event)?;
         let guardrail_context = resolve_guardrail_context(
-            primary.as_ref(),
-            live_parent.as_ref(),
-            parent.context.as_ref(),
+            spans.primary.as_ref(),
+            spans.parent.as_ref(),
+            spans.fallback.as_ref(),
         );
         guardrail::create_guardrail_span(self, call.kwargs, &guardrail_context)?;
-        // only the active span is parent_otel_span here; a metadata carrier answers None upstream
-        if let Some(span) = &live_parent
-            && context::name_of(span).as_deref() == Some(PROXY_REQUEST_SPAN_NAME)
-        {
-            // no is_recording guard here: the failure hook ends the already ended span again
-            span.lock()
-                .end_with_timestamp(context::instant_from_ns(to_ns(
-                    call.end_time,
-                    self.now_ns(),
-                )));
+        match event {
+            LifecycleEvent::Success => success::finish_success(self, call, &spans),
+            LifecycleEvent::Failure => {
+                failure::close_proxy(self, call, spans.parent.as_ref());
+                Ok(())
+            }
         }
-        Ok(())
     }
 
     pub fn emit_request_guardrails(
@@ -209,31 +213,5 @@ impl LegacyLifecycle {
             .map_or(0, |duration| {
                 i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX)
             })
-    }
-
-    pub fn handle_success(&self, call: &LifecycleCall<'_>) -> Result<(), LegacyLifecycleError> {
-        // the sync and async callbacks both fire for a stream, and the skip path still closes the proxy span
-        if !self.dedupe.emit_once(
-            request_key(call.kwargs).as_deref(),
-            &[ScopeValue::Text("success".to_owned())],
-        ) {
-            proxy::end_proxy_from_kwargs(self, call);
-            return Ok(());
-        }
-        let parent = context::parent(self, call.kwargs)?;
-        let live_parent = parent
-            .span
-            .as_ref()
-            .and_then(|context| self.live.get(context.span_id()));
-        let capture_mode = self.capture_policy.resolve(call.flags);
-        let parent_context = parent.context.clone().unwrap_or_default();
-        let primary = success::success_primary(self, call, &parent, &parent_context, capture_mode)?;
-        success::finish_success(
-            self,
-            call,
-            primary.as_ref(),
-            live_parent.as_ref(),
-            parent.context.as_ref(),
-        )
     }
 }

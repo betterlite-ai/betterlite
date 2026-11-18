@@ -1,5 +1,7 @@
 use super::error::LegacyLifecycleError;
-use super::lifecycle::{DEFAULT_CALLBACK_NAME, LegacyLifecycle, LifecycleCall, litellm_params};
+use super::lifecycle::{
+    DEFAULT_CALLBACK_NAME, LegacyLifecycle, LifecycleCall, LifecycleEvent, litellm_params,
+};
 use crate::exporter_options::failure_counter::{CallbackFailureCounter, handle_callback_failure};
 use crate::otel::legacy_policy::semconv_attrs::{
     gen_ai_operation_name, semconv_latest_experimental,
@@ -102,4 +104,37 @@ pub(super) fn start_primary_span(
         builder = builder.with_kind(SpanKind::Client);
     }
     LiveSpan::from(tracer.build_with_context(builder, context))
+}
+
+pub(super) struct RequestSpans {
+    pub(super) primary: Option<LiveSpan>,
+    pub(super) parent: Option<LiveSpan>,
+    pub(super) fallback: Option<Context>,
+}
+
+pub(super) fn request_spans(
+    lifecycle: &LegacyLifecycle,
+    call: &LifecycleCall<'_>,
+    event: LifecycleEvent,
+) -> Result<RequestSpans, LegacyLifecycleError> {
+    let parent = parent(lifecycle, call.kwargs)?;
+    let live_parent = parent
+        .span
+        .as_ref()
+        .and_then(|span| lifecycle.live.get(span.span_id()));
+    let capture = lifecycle.capture_policy.resolve(call.flags);
+    let parent_context = parent.context.clone().unwrap_or_default();
+    let primary = match event {
+        LifecycleEvent::Success => {
+            super::success::success_primary(lifecycle, call, &parent, &parent_context, capture)?
+        }
+        LifecycleEvent::Failure => {
+            super::failure::failure_primary(lifecycle, call, &parent, &parent_context, capture)?
+        }
+    };
+    Ok(RequestSpans {
+        primary,
+        parent: live_parent,
+        fallback: parent.context,
+    })
 }

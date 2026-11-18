@@ -51,19 +51,29 @@ where
     }
 }
 
-pub(super) fn record_metrics(
+pub(super) fn record_success(
     lifecycle: &LegacyLifecycle,
     call: &LifecycleCall<'_>,
+    span_context: Option<&SpanContext>,
 ) -> Result<(), LegacyLifecycleError> {
-    let Some(recorder) = &lifecycle.metrics else {
-        return Ok(());
-    };
-    recorder.record_metrics(&MetricCall {
-        kwargs: call.kwargs,
-        response: call.response,
-        start_time: metric_seconds(lifecycle, call.start_time),
-        end_time: metric_seconds(lifecycle, call.end_time),
-    })?;
+    if let Some(recorder) = &lifecycle.metrics {
+        recorder.record_metrics(&MetricCall {
+            kwargs: call.kwargs,
+            response: call.response,
+            start_time: metric_seconds(lifecycle, call.start_time),
+            end_time: metric_seconds(lifecycle, call.end_time),
+        })?;
+    }
+    if let Some(events) = &lifecycle.events
+        && let Some(resolved_context) = span_context
+    {
+        events.emit_semantic_logs(&EventCall {
+            kwargs: call.kwargs,
+            response: call.response,
+            span_context: resolved_context,
+            capture_mode: lifecycle.capture_policy.resolve(call.flags),
+        })?;
+    }
     Ok(())
 }
 
@@ -81,21 +91,4 @@ pub(super) fn metric_seconds(lifecycle: &LegacyLifecycle, time: SpanTime) -> Dec
             ))
             .unwrap_or_default(),
     }
-}
-
-pub(super) fn emit_semantic_logs(
-    lifecycle: &LegacyLifecycle,
-    call: &LifecycleCall<'_>,
-    span_context: &SpanContext,
-) -> Result<(), LegacyLifecycleError> {
-    let Some(events) = &lifecycle.events else {
-        return Ok(());
-    };
-    events.emit_semantic_logs(&EventCall {
-        kwargs: call.kwargs,
-        response: call.response,
-        span_context,
-        capture_mode: lifecycle.capture_policy.resolve(call.flags),
-    })?;
-    Ok(())
 }

@@ -1,4 +1,5 @@
 use crate::support::instant;
+use betterlite_logging::otel::legacy_lifecycle::lifecycle::LifecycleEvent;
 use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
@@ -50,7 +51,7 @@ fn guardrail_spans_are_named_and_stamped_with_their_identity() {
     let mut kwargs = simple_kwargs("call-1");
     with_guardrails(&mut kwargs, json!([entry()]));
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let spans = guardrails(&rig);
     assert_eq!(spans.len(), 1);
@@ -86,7 +87,7 @@ fn guardrail_spans_dedupe_each_entry_and_keep_distinct_ones() {
     });
     with_guardrails(&mut kwargs, json!([entry(), other, entry()]));
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let spans = guardrails(&rig);
     assert_eq!(spans.len(), 2, "one span per real guardrail invocation");
@@ -105,7 +106,7 @@ fn guardrail_spans_record_the_execution_window() {
     let mut kwargs = simple_kwargs("call-3");
     with_guardrails(&mut kwargs, json!([entry()]));
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = &guardrails(&rig)[0];
     assert_eq!(
@@ -133,7 +134,7 @@ fn guardrail_spans_serialize_the_payload_attributes() {
     let mut kwargs = simple_kwargs("call-4");
     with_guardrails(&mut kwargs, json!([entry()]));
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = &guardrails(&rig)[0];
     let masked: Value =
@@ -167,7 +168,7 @@ fn guardrail_spans_carry_the_team_attributes() {
     with_guardrails(&mut kwargs, json!([entry()]));
     with_team(&mut kwargs);
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = &guardrails(&rig)[0];
     assert_eq!(
@@ -187,7 +188,7 @@ fn guardrail_spans_from_request_data_share_the_lifecycle_dedupe_state() {
     let mut kwargs = simple_kwargs("call-6");
     with_guardrails(&mut kwargs, json!([entry()]));
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let request_data: MetadataMap = serde_json::from_value(json!({
         "metadata": {
@@ -211,7 +212,7 @@ fn guardrail_spans_are_skipped_without_guardrail_information() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     lifecycle
-        .handle_success(&call(&simple_kwargs("call-7")))
+        .handle(&call(&simple_kwargs("call-7")), LifecycleEvent::Success)
         .expect("success lifecycle");
     assert!(guardrails(&rig).is_empty());
 }
@@ -258,7 +259,7 @@ fn guardrail_spans_skip_null_payload_attributes(#[case] key: &str) {
         }]),
     );
     lifecycle
-        .handle_success(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Success)
         .expect("success lifecycle");
     let span = &guardrails(&rig)[0];
     assert_eq!(attribute(span, key), None);
@@ -272,7 +273,7 @@ fn guardrail_spans_on_failure_are_children_of_the_error_span() {
     with_guardrails(&mut kwargs, json!([entry()]));
 
     lifecycle
-        .handle_failure(&call(&kwargs))
+        .handle(&call(&kwargs), LifecycleEvent::Failure)
         .expect("failure lifecycle");
 
     let primary = rig.span("litellm_request");

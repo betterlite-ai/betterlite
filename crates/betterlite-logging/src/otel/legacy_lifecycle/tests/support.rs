@@ -3,6 +3,7 @@ use betterlite_logging::otel::legacy_lifecycle::context::instant_from_ns;
 use betterlite_logging::otel::legacy_policy::config::Exporter;
 use betterlite_logging::otel::legacy_policy::config::Signals;
 use betterlite_logging::otel::legacy_policy::span_time::to_ns;
+use betterlite_logging::otel::plumbing::events::SystemClock;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -93,7 +94,12 @@ impl Rig {
             LegacyLifecycleOptions {
                 dynamic: dynamic.unwrap_or_else(|| Arc::new(BaseDynamic)),
                 use_request_span,
-                ..LegacyLifecycleOptions::default()
+                live: Arc::new(RootSpans::default()),
+                metrics: None,
+                events: None,
+                failure_counters: Vec::new(),
+                handler_class_name: "OpenTelemetry".to_owned(),
+                clock: Box::new(SystemClock),
             },
         )
     }
