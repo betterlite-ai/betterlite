@@ -1,4 +1,3 @@
-// LiteLLM's speech_to_completion_bridge: /v1/audio/speech served through the chat completions pipeline
 pub mod arguments;
 pub mod error;
 pub mod response;
@@ -58,16 +57,9 @@ pub trait SpeechCompletions {
     ) -> impl Future<Output = Result<SpeechCompletionOutput, Self::Error>> + Send;
 }
 
-// LiteLLM's SpeechToCompletionBridgeHandler; the constructor composes the completion service instead of a module singleton
+// LiteLLM's SpeechToCompletionBridgeHandler, composed with the completion service instead of a module singleton
 pub struct SpeechToCompletionBridge<Completions> {
-    completions: Completions,
-}
-
-impl<Completions> SpeechToCompletionBridge<Completions> {
-    #[must_use]
-    pub const fn new(completions: Completions) -> Self {
-        Self { completions }
-    }
+    pub completions: Completions,
 }
 
 impl<Completions> SpeechToCompletionBridge<Completions>

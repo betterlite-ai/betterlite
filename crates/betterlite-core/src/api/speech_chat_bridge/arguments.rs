@@ -41,12 +41,13 @@ impl<'call> SpeechBridgeArguments<'call> {
     where
         Source: Error + 'static,
     {
-        let model = argument_text("model", self.model)?;
-        let custom_llm_provider = argument_text("custom_llm_provider", self.custom_llm_provider)?;
-        let input = argument_text("input", self.input)?;
-        let optional_params = argument_object("optional_params", self.optional_params)?;
-        let litellm_params = argument_object("litellm_params", self.litellm_params)?;
-        let headers = argument_object("headers", self.headers)?;
+        let model = required("model", self.model, text_of)?;
+        let custom_llm_provider =
+            required("custom_llm_provider", self.custom_llm_provider, text_of)?;
+        let input = required("input", self.input, text_of)?;
+        let optional_params = required("optional_params", self.optional_params, object_of)?;
+        let litellm_params = required("litellm_params", self.litellm_params, object_of)?;
+        let headers = required("headers", self.headers, object_of)?;
         let logging = logging.ok_or(SpeechBridgeError::Required {
             name: "logging_obj",
         })?;
@@ -63,35 +64,31 @@ impl<'call> SpeechBridgeArguments<'call> {
     }
 }
 
-const fn argument_text<'value, Source>(
+fn required<'value, Source, T>(
     name: &'static str,
     value: Option<&'value Json>,
-) -> Result<&'value str, SpeechBridgeError<Source>>
+    read: fn(&'value Json) -> Option<T>,
+) -> Result<T, SpeechBridgeError<Source>>
 where
     Source: Error + 'static,
 {
-    match value {
-        Some(Json::Text(text)) => Ok(text),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(SpeechBridgeError::Required { name })
-        }
+    match value.and_then(read) {
+        Some(found) => Ok(found),
+        None => Err(SpeechBridgeError::Required { name }),
     }
 }
 
-const fn argument_object<'value, Source>(
-    name: &'static str,
-    value: Option<&'value Json>,
-) -> Result<&'value IndexMap<String, Json>, SpeechBridgeError<Source>>
-where
-    Source: Error + 'static,
-{
+const fn text_of(value: &Json) -> Option<&str> {
     match value {
-        Some(Json::Object(object)) => Ok(object),
-        None
-        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(SpeechBridgeError::Required { name })
-        }
+        Json::Text(text) => Some(text),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+    }
+}
+
+const fn object_of(value: &Json) -> Option<&IndexMap<String, Json>> {
+    match value {
+        Json::Object(object) => Some(object),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 

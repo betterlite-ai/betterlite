@@ -204,7 +204,7 @@ fn completed(
     arguments: SpeechBridgeArguments<'_>,
 ) -> (SpeechBinaryResponse, Vec<IndexMap<String, Json>>) {
     let (completions, calls) = recording(scripted);
-    let bridge = SpeechToCompletionBridge::new(completions);
+    let bridge = SpeechToCompletionBridge { completions };
     let mut logging = logging_state();
     let answer = runtime()
         .block_on(bridge.speech(arguments, Some(&mut logging)))
@@ -217,7 +217,7 @@ fn transform_failure(
     arguments: SpeechBridgeArguments<'_>,
 ) -> SpeechTransformError {
     let (completions, _) = recording(scripted);
-    let bridge = SpeechToCompletionBridge::new(completions);
+    let bridge = SpeechToCompletionBridge { completions };
     let mut logging = logging_state();
     let error = runtime()
         .block_on(bridge.speech(arguments, Some(&mut logging)))
@@ -239,7 +239,7 @@ fn without_logging(arguments: SpeechBridgeArguments<'_>) -> String {
 
 fn reject(arguments: SpeechBridgeArguments<'_>, logging: Option<&mut LoggingState>) -> String {
     let (completions, calls) = recording(Scripted::Unmapped { type_name: "dict" });
-    let bridge = SpeechToCompletionBridge::new(completions);
+    let bridge = SpeechToCompletionBridge { completions };
     let error = runtime()
         .block_on(bridge.speech(arguments, logging))
         .expect_err("a rejected bridge call");
@@ -689,7 +689,7 @@ fn response_cost_keeps_only_python_floats() {
 #[test]
 fn completion_failure_surfaces() {
     let (completions, _) = recording(Scripted::Failure);
-    let bridge = SpeechToCompletionBridge::new(completions);
+    let bridge = SpeechToCompletionBridge { completions };
     let mut logging = logging_state();
     let error = runtime()
         .block_on(bridge.speech(Call::valid().arguments(), Some(&mut logging)))
