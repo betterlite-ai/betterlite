@@ -167,19 +167,18 @@ pub(super) struct Run {
 pub(super) async fn run_scenario(input: &ScenarioInput) -> Result<ScenarioOutput, ScenarioError> {
     let windows = windows(input)?;
     let clock: Clock = Arc::new(|| 0.0_f64);
-    let memory = LocalTtlCache::with_clock(
+    let memory = Arc::new(Mutex::new(LocalTtlCache::with_clock(
         Some(MEMORY_CAPACITY),
         Some(MEMORY_DEFAULT_TTL_SECONDS),
         None,
         MEMORY_ITEM_KIB,
         Arc::clone(&clock),
-    )?;
+    )?));
     let store = ProbeStore::default();
     let cache = Arc::new(DualWindowCache {
-        memory: Arc::new(Mutex::new(memory)),
+        memory: Arc::clone(&memory),
         redis: Some(store.clone()),
     });
-    let memory = Arc::clone(&cache.memory);
     let state = Arc::new(RoutingBudgetState {
         increments: BudgetIncrement {
             cache,
@@ -230,14 +229,10 @@ fn windows(input: &ScenarioInput) -> Result<BudgetWindows, ScenarioError> {
 
 fn section(input: &ScenarioInput) -> Result<config::Settings, ScenarioError> {
     let mut deployments = Vec::with_capacity(input.deployments.len());
-    for deployment in &input.deployments {
+    for limits in &input.deployments {
         deployments.push(config::DeploymentBudgetConfig {
-            max_budget: deployment
-                .max_budget
-                .as_deref()
-                .map(money_text)
-                .transpose()?,
-            budget_duration: deployment.budget_duration.clone(),
+            max_budget: limits.max_budget.as_deref().map(money_text).transpose()?,
+            budget_duration: limits.budget_duration.clone(),
         });
     }
     let provider_budget_config = input

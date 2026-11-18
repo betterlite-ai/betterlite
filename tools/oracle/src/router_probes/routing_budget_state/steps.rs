@@ -119,7 +119,7 @@ fn observed(index: usize, step: &ScenarioStep, spend: Option<Decimal>) -> Observ
     Observation {
         kind: step.kind,
         step: index,
-        value: spend.map(|spend| spend.normalize().to_string()),
+        value: spend.map(|amount| amount.normalize().to_string()),
     }
 }
 
