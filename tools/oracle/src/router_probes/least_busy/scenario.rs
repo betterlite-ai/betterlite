@@ -33,7 +33,7 @@ pub(super) async fn execute_scenario(input: &Input) -> Result<Output, OperationE
     let deployments = deployment_specs(input)?;
     let keys = request_count_keys(&input.model_group, &deployments)
         .map_err(|error| request_failure(&error))?;
-    let local = RoutingValueStore::new(local_settings(), Arc::new(|| 0.0))
+    let local = RoutingValueStore::new(local_settings(), Arc::new(|| 0.0_f64))
         .map_err(|error| invalid(&error.to_string()))?;
     let (shared, server) = if input.shared {
         let server = FakeRedis::try_start()
@@ -102,9 +102,7 @@ async fn begin_call(
         deployment_id: Some(deployment),
         call_type,
     };
-    let started = scenario
-        .service
-        .pre_call(&facts)
+    let started = Box::pin(scenario.service.pre_call(&facts))
         .await
         .map_err(|error| request_failure(&error))?;
     if let Some(call) = started.call {
@@ -117,23 +115,25 @@ async fn finish_call(scenario: &mut Scenario, call_id: u32) -> Result<(), Operat
     let Some(call) = scenario.calls.remove(&call_id) else {
         return Err(invalid(&format!("call {call_id} was never started")));
     };
-    let _released = call.release().await;
+    let _released = Box::pin(call.release()).await;
     Ok(())
 }
 
 async fn choose(scenario: &Scenario) -> Result<Option<String>, OperationError> {
-    let selection = scenario
-        .service
-        .select(&scenario.model_group, &scenario.deployments)
-        .await
-        .map_err(|error| request_failure(&error))?;
+    let selection = Box::pin(
+        scenario
+            .service
+            .select(&scenario.model_group, &scenario.deployments),
+    )
+    .await
+    .map_err(|error| request_failure(&error))?;
     Ok(selection
         .index
         .and_then(|index| scenario.ids.get(index).cloned()))
 }
 
 async fn shared_step(scenario: &Scenario) -> StepOutput {
-    let (state, values) = match scenario.service.shared_counts(&scenario.keys).await {
+    let (state, values) = match Box::pin(scenario.service.shared_counts(&scenario.keys)).await {
         SharedCounts::Absent => (SharedState::Absent, Vec::new()),
         SharedCounts::Values(values) => (SharedState::Values, values),
         SharedCounts::Unreadable(_cause) => (SharedState::Unreadable, Vec::new()),
