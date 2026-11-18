@@ -1,10 +1,11 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_cache::dual_cache::DualCache;
 use tokio::task::yield_now;
 use tokio::time::timeout;
 
+use crate::auth_pubsub::clock::{BackoffClock, TokioClock};
 use crate::auth_pubsub::message::{Invalidation, encode};
 use crate::auth_pubsub::subscriber::{
     BACKOFF_INITIAL, BACKOFF_MAX, CacheInvalidationSubscriber, POLL_TIMEOUT,
@@ -427,4 +428,16 @@ fn nonfinite_counter_dropped() {
     );
     assert_eq!(stored(&*fixture.ordinary, key), Some(2.0_f64));
     assert_eq!(captured, [warning(key, None)]);
+}
+
+#[test]
+fn tokio_clock_sleeps() {
+    let runtime = runtime();
+    let clock = TokioClock;
+    let started = Instant::now();
+    runtime.block_on(clock.sleep(Duration::from_millis(40)));
+    assert!(
+        started.elapsed() >= Duration::from_millis(20),
+        "the tokio clock really waits"
+    );
 }

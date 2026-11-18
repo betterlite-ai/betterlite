@@ -16,6 +16,13 @@ fn nested_extra(brackets: usize) -> Vec<u8> {
     format!("{prefix}{brackets}}}").into_bytes()
 }
 
+fn nested_objects(levels: usize) -> Vec<u8> {
+    let prefix = "{\"cache_key\":\"k\",\"extra\":";
+    let open = "{\"a\":".repeat(levels);
+    let close = "}".repeat(levels);
+    format!("{prefix}{open}null{close}}}").into_bytes()
+}
+
 fn delete(cache_key: &str) -> Invalidation {
     Invalidation {
         cache_key: cache_key.to_owned(),
@@ -73,6 +80,16 @@ fn json_omits_nulls() {
 }
 
 #[test]
+fn escape_control_characters_in_keys() {
+    let slash = "\\";
+    let key = "key with space\u{1}";
+    assert_eq!(
+        encode(&delete(key)),
+        format!("{{\"cache_key\":\"key with space{slash}u0001\"}}")
+    );
+}
+
+#[test]
 fn utf8_replacement() {
     let invalid_in_key = parsed(b"{\"cache_key\":\"menu\xff\"}");
     let expected = Invalidation {
@@ -99,6 +116,19 @@ fn utf8_replacement() {
             new_value: None,
             ttl: None,
         })
+    );
+}
+
+#[test]
+fn json_escapes_and_surrogates() {
+    let slash = "\\";
+    let wire = format!(
+        "{}{slash}u00e9 C{slash}u00C9 p{slash}ud83d{slash}ude00\"}}",
+        r#"{"cache_key":"q\" b\\ s\/ b\b f\f n\n r\r t\t c"#
+    );
+    assert_eq!(
+        parsed(wire.as_bytes()),
+        Some(delete("q\" b\\ s/ b\x08 f\x0c n\n r\r t\t cé CÉ p😀"))
     );
 }
 
@@ -137,6 +167,8 @@ fn extra_and_duplicate_fields() {
             ttl: Some(5.0_f64),
         })
     );
+    let spaced = br#"{"cache_key":"key with space","extra":1}"#;
+    assert_eq!(parsed(spaced), Some(delete("key with space")));
 }
 
 fn same_number(left: Option<f64>, right: Option<f64>) -> bool {
@@ -229,6 +261,14 @@ fn malformed_message() {
         decode_invalidation(br#"{"cache_key":"unterminated}"#),
         Err(DecodeError::Syntax)
     );
+    assert_eq!(
+        decode_invalidation(br#"{"cache_key":"k","new_value":1.}"#),
+        Err(DecodeError::Syntax)
+    );
+    assert_eq!(
+        decode_invalidation(b"{\"cache_key\":\"a\x01b\"}"),
+        Err(DecodeError::Syntax)
+    );
 }
 
 #[test]
@@ -271,4 +311,13 @@ fn message_depth_limit() {
     );
     let shallow = nested_extra(1);
     assert_eq!(parsed(&shallow), Some(delete("k")));
+    let objects_at_limit = nested_objects(MAX_MESSAGE_DEPTH.saturating_sub(1));
+    assert_eq!(parsed(&objects_at_limit), Some(delete("k")));
+    let objects_over = nested_objects(MAX_MESSAGE_DEPTH);
+    assert_eq!(
+        decode_invalidation(&objects_over),
+        Err(DecodeError::TooDeep {
+            limit: MAX_MESSAGE_DEPTH,
+        })
+    );
 }
