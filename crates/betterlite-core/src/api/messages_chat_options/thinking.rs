@@ -120,23 +120,6 @@ fn summary_object(effort: &str, summary: &Json) -> Json {
     Json::Object(wrapped)
 }
 
-fn is_bedrock_arn(model: &str) -> bool {
-    let lowered = model.to_lowercase();
-    lowered.contains("arn:") && lowered.contains(":bedrock:")
-}
-
-fn is_claude_target(model: &str) -> bool {
-    let lowered = model.to_lowercase();
-    lowered.contains("anthropic") || lowered.contains("claude") || is_bedrock_arn(model)
-}
-
-fn is_bedrock_target(model: &str) -> bool {
-    BEDROCK_PREFIXES
-        .iter()
-        .any(|prefix| model.starts_with(prefix))
-        || is_bedrock_arn(model)
-}
-
 fn forward_bedrock_output_config(output_config: Option<&Json>, kwargs: &mut Object) {
     let Some(fields) = output_config.and_then(Json::as_object) else {
         return;
@@ -170,26 +153,6 @@ fn wrapped_effort(
 }
 
 // A Claude target keeps thinking verbatim; Bedrock carries the tier as output_config, another provider only when it declares reasoning_effort.
-fn translate_claude_thinking(
-    thinking: &Json,
-    output_config: Option<&Json>,
-    context: &OptionsContext<'_>,
-    kwargs: &mut Object,
-) -> Result<(), OptionsError> {
-    kwargs.insert(THINKING.to_owned(), thinking.clone());
-    if is_bedrock_target(context.model) {
-        forward_bedrock_output_config(output_config, kwargs);
-        return Ok(());
-    }
-    if !declares(context, REASONING_EFFORT) {
-        return Ok(());
-    }
-    if let Some(effort) = adaptive_effort(thinking, output_config)? {
-        kwargs.insert(REASONING_EFFORT.to_owned(), Json::Text(effort.to_owned()));
-    }
-    Ok(())
-}
-
 pub fn translate_thinking(
     request: &Object,
     kwargs: &mut Object,
@@ -199,11 +162,29 @@ pub fn translate_thinking(
         return Ok(());
     };
     let output_config = request.get(OUTPUT_CONFIG);
-    if is_claude_target(context.model) {
-        return translate_claude_thinking(thinking, output_config, context, kwargs);
+    let lowered = context.model.to_lowercase();
+    let bedrock_arn = lowered.contains("arn:") && lowered.contains(":bedrock:");
+    let claude = lowered.contains("anthropic") || lowered.contains("claude") || bedrock_arn;
+    if !claude {
+        if let Some(effort) = wrapped_effort(thinking, output_config, context)? {
+            kwargs.insert(REASONING_EFFORT.to_owned(), effort);
+        }
+        return Ok(());
     }
-    if let Some(effort) = wrapped_effort(thinking, output_config, context)? {
-        kwargs.insert(REASONING_EFFORT.to_owned(), effort);
+    kwargs.insert(THINKING.to_owned(), thinking.clone());
+    let bedrock = BEDROCK_PREFIXES
+        .iter()
+        .any(|prefix| context.model.starts_with(prefix))
+        || bedrock_arn;
+    if bedrock {
+        forward_bedrock_output_config(output_config, kwargs);
+        return Ok(());
+    }
+    if !declares(context, REASONING_EFFORT) {
+        return Ok(());
+    }
+    if let Some(effort) = adaptive_effort(thinking, output_config)? {
+        kwargs.insert(REASONING_EFFORT.to_owned(), Json::Text(effort.to_owned()));
     }
     Ok(())
 }
