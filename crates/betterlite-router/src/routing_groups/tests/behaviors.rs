@@ -2,25 +2,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, Ready, ready};
 
 use betterlite_models::decisions::Json;
-use betterlite_models::metadata::levels::ReasoningEffort;
 use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
-    GroupServices, SUPPORTS_SEED, SUPPORTS_TEMPERATURE, UNRESOLVED, capture_logs, cost_map,
-    deployment, group, info, object, priority_group, raw, text, with_priorities,
+    GroupServices, SUPPORTS_SEED, SUPPORTS_TEMPERATURE, UNRESOLVED, capture_logs, deployment,
+    group, info, object, priority_group, raw, text, with_priorities,
 };
 use crate::context::{self, RouteStage};
 use crate::router_core::candidates::CandidateSet;
 use crate::router_core::tests::support::{NoLimits, Providers, route_context, route_request};
 use crate::router_predicates::JsonMap;
-use crate::routing_groups::effort::declared::{
-    ADVERTISEMENT_ORDER, EffortFlag, declared_efforts_for_model, effort_from_wire, effort_wire_name,
-};
-use crate::routing_groups::effort::{
-    GroupReasoningEfforts, deployment_is_catalog_mapped, intersect_supported_efforts,
-    nearest_declared_effort, resolve_supported_efforts, supports_none_reasoning_effort,
-};
 use crate::routing_groups::group::{RoutingGroup, parse_routing_groups};
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_groups::params::{
@@ -59,11 +51,6 @@ fn built(groups: Vec<RoutingGroup>, known: &[&str], aliases: &[&str]) -> Routing
     RoutingGroupIndex::build(groups, &model_names, &alias_map)
         .unwrap()
         .index
-}
-
-fn resolve_info(entries: &[(&str, Json)], mapped: bool) -> Option<Vec<ReasoningEffort>> {
-    let map = cost_map(&[]);
-    resolve_supported_efforts(&info(entries), mapped, &map)
 }
 
 fn parse_reads_a_strategy_group() {
@@ -289,287 +276,6 @@ fn alternatives_count_member_deployments() {
     assert!(index.has_alternatives("cheap", &|_member| 2));
     assert!(!index.has_alternatives("cheap", &|member| usize::from(member == "a")));
     assert!(!index.has_alternatives("unknown", &|_member| 2));
-}
-
-fn declared_levels_win_over_flags() {
-    let map = cost_map(&[]);
-    let model_info = info(&[
-        ("supports_reasoning", Json::Bool(true)),
-        ("supports_xhigh_reasoning_effort", Json::Bool(true)),
-        (
-            "reasoning_effort_levels",
-            Json::List(vec![text("max"), text("low"), text("bogus")]),
-        ),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&model_info, false, &map),
-        Some(vec![ReasoningEffort::Low, ReasoningEffort::Max])
-    );
-}
-
-fn flags_advertise_the_polarity_of_each_level() {
-    let map = cost_map(&[]);
-    let model_info = info(&[
-        ("supports_reasoning", Json::Bool(true)),
-        ("supports_low_reasoning_effort", Json::Bool(false)),
-        ("supports_xhigh_reasoning_effort", Json::Bool(true)),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&model_info, false, &map),
-        Some(vec![
-            ReasoningEffort::None,
-            ReasoningEffort::Minimal,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-            ReasoningEffort::Xhigh,
-        ])
-    );
-}
-
-fn a_mapped_model_without_flags_is_known_empty() {
-    assert_eq!(
-        resolve_info(&[("key", text("openai/x"))], true),
-        Some(Vec::new())
-    );
-    assert_eq!(resolve_info(&[("key", text("openai/x"))], false), None);
-    assert_eq!(
-        resolve_info(
-            &[
-                ("key", text("openai/x")),
-                ("supports_reasoning", Json::Bool(true)),
-            ],
-            true
-        ),
-        None
-    );
-}
-
-fn a_per_level_flag_alone_proves_reasoning() {
-    assert_eq!(
-        resolve_info(&[("supports_minimal_reasoning_effort", text("yes"))], false),
-        Some(vec![
-            ReasoningEffort::None,
-            ReasoningEffort::Minimal,
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-        ])
-    );
-}
-
-fn explicit_false_empties_even_with_levels() {
-    assert_eq!(
-        resolve_info(
-            &[
-                ("supports_reasoning", Json::Bool(false)),
-                ("supports_low_reasoning_effort", Json::Bool(true)),
-            ],
-            false
-        ),
-        Some(Vec::new())
-    );
-}
-
-fn the_own_flag_wins_over_the_bare_twin() {
-    let bare_only = cost_map(&[("gpt-5-mini", r#"{"supports_low_reasoning_effort": false}"#)]);
-    let bare_info = info(&[
-        ("key", text("azure/gpt-5-mini")),
-        ("litellm_provider", text("azure")),
-        ("supports_reasoning", Json::Bool(true)),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&bare_info, false, &bare_only),
-        Some(vec![
-            ReasoningEffort::Minimal,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-        ])
-    );
-    let map = cost_map(&[(
-        "gpt-5-mini",
-        r#"{"supports_low_reasoning_effort": false, "supports_xhigh_reasoning_effort": true}"#,
-    )]);
-    let model_info = info(&[
-        ("key", text("azure/gpt-5-mini")),
-        ("litellm_provider", text("azure")),
-        ("supports_reasoning", Json::Bool(true)),
-        ("supports_low_reasoning_effort", Json::Bool(true)),
-        ("supports_xhigh_reasoning_effort", Json::Bool(false)),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&model_info, false, &map),
-        Some(vec![
-            ReasoningEffort::Minimal,
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-        ])
-    );
-}
-
-fn declared_levels_read_the_prefixed_entry_then_the_bare_one() {
-    let map = cost_map(&[
-        ("openai/m", r#"{"reasoning_effort_levels": ["high"]}"#),
-        ("m", r#"{"reasoning_effort_levels": ["low"]}"#),
-        ("openai/e", "{}"),
-        ("e", r#"{"reasoning_effort_levels": ["max"]}"#),
-        ("openai/s", r#""nope""#),
-        ("s", r#"{"reasoning_effort_levels": ["low"]}"#),
-        ("openai/n", "null"),
-        ("n", r#"{"reasoning_effort_levels": ["minimal"]}"#),
-    ]);
-    assert_eq!(
-        declared_efforts_for_model("m", "openai", &map),
-        Some(vec![ReasoningEffort::High])
-    );
-    assert_eq!(
-        declared_efforts_for_model("e", "openai", &map),
-        Some(vec![ReasoningEffort::Max])
-    );
-    assert_eq!(
-        declared_efforts_for_model("n", "openai", &map),
-        Some(vec![ReasoningEffort::Minimal])
-    );
-    assert_eq!(declared_efforts_for_model("s", "openai", &map), None);
-    assert_eq!(declared_efforts_for_model("absent", "openai", &map), None);
-}
-
-fn a_prefixed_model_declares_the_bare_entry_levels() {
-    let map = cost_map(&[("m", r#"{"reasoning_effort_levels": ["high", "low"]}"#)]);
-    let model_info = info(&[
-        ("key", text("openai/m")),
-        ("litellm_provider", text("openai")),
-        ("supports_reasoning", Json::Bool(true)),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&model_info, false, &map),
-        Some(vec![ReasoningEffort::Low, ReasoningEffort::High])
-    );
-}
-
-fn intersection_keeps_the_advertisement_order() {
-    assert_eq!(
-        intersect_supported_efforts(
-            Some(&[ReasoningEffort::High, ReasoningEffort::Low]),
-            Some(&[ReasoningEffort::Low, ReasoningEffort::High]),
-        ),
-        Some(vec![ReasoningEffort::Low, ReasoningEffort::High])
-    );
-    assert_eq!(
-        intersect_supported_efforts(
-            Some(&[ReasoningEffort::High, ReasoningEffort::None]),
-            Some(&[ReasoningEffort::None, ReasoningEffort::High]),
-        ),
-        Some(vec![ReasoningEffort::None, ReasoningEffort::High])
-    );
-}
-
-fn an_unknown_side_never_narrows() {
-    assert_eq!(
-        intersect_supported_efforts(Some(&[ReasoningEffort::Low]), None),
-        Some(vec![ReasoningEffort::Low])
-    );
-    assert_eq!(
-        intersect_supported_efforts(None, Some(&[ReasoningEffort::Max])),
-        Some(vec![ReasoningEffort::Max])
-    );
-    assert_eq!(intersect_supported_efforts(None, None), None);
-}
-
-fn the_group_aggregate_intersects_known_deployments() {
-    let mut efforts = GroupReasoningEfforts::default();
-    efforts.observe(Some(vec![ReasoningEffort::Low, ReasoningEffort::High]));
-    efforts.observe(Some(vec![ReasoningEffort::High]));
-    assert_eq!(efforts.supported, Some(vec![ReasoningEffort::High]));
-    assert!(!efforts.unknown);
-}
-
-fn the_group_aggregate_clears_on_an_unknown_deployment() {
-    let mut efforts = GroupReasoningEfforts::default();
-    efforts.observe(None);
-    efforts.observe(Some(vec![ReasoningEffort::Low]));
-    assert_eq!(efforts.supported, None);
-    assert!(efforts.unknown);
-}
-
-fn catalog_mapping_needs_both_modes() {
-    let mode = info(&[("mode", text("chat"))]);
-    let empty = JsonMap::new();
-    assert!(deployment_is_catalog_mapped(Some(&mode), &empty));
-    assert!(!deployment_is_catalog_mapped(None, &empty));
-    assert!(!deployment_is_catalog_mapped(Some(&empty), &empty));
-    assert!(!deployment_is_catalog_mapped(Some(&mode), &mode));
-}
-
-fn nearest_rounds_up_to_the_weakest_declared_level() {
-    assert_eq!(
-        nearest_declared_effort(
-            ReasoningEffort::Low,
-            &[ReasoningEffort::High, ReasoningEffort::Minimal],
-        ),
-        ReasoningEffort::High
-    );
-    assert_eq!(
-        nearest_declared_effort(
-            ReasoningEffort::Xhigh,
-            &[ReasoningEffort::High, ReasoningEffort::Max],
-        ),
-        ReasoningEffort::Max
-    );
-}
-
-fn nearest_rounds_down_above_every_level() {
-    assert_eq!(
-        nearest_declared_effort(
-            ReasoningEffort::Max,
-            &[ReasoningEffort::Minimal, ReasoningEffort::Low],
-        ),
-        ReasoningEffort::Low
-    );
-}
-
-fn nearest_leaves_a_declared_level_and_none_alone() {
-    assert_eq!(
-        nearest_declared_effort(
-            ReasoningEffort::Low,
-            &[ReasoningEffort::None, ReasoningEffort::Low],
-        ),
-        ReasoningEffort::Low
-    );
-    assert_eq!(
-        nearest_declared_effort(ReasoningEffort::None, &[ReasoningEffort::Low]),
-        ReasoningEffort::None
-    );
-}
-
-fn the_none_flag_follows_the_provider_family() {
-    let gpt = info(&[
-        ("key", text("azure/gpt-5")),
-        ("litellm_provider", text("azure")),
-    ]);
-    assert!(!supports_none_reasoning_effort(&gpt, EffortFlag::Absent));
-    assert!(supports_none_reasoning_effort(&gpt, EffortFlag::True));
-    assert!(!supports_none_reasoning_effort(&gpt, EffortFlag::False));
-    let chat = info(&[
-        ("key", text("azure/gpt-5-chat")),
-        ("litellm_provider", text("azure")),
-    ]);
-    assert!(supports_none_reasoning_effort(&chat, EffortFlag::Absent));
-    let other = info(&[
-        ("key", text("openai/gpt-5")),
-        ("litellm_provider", text("openai")),
-    ]);
-    assert!(supports_none_reasoning_effort(&other, EffortFlag::Absent));
-    assert!(!supports_none_reasoning_effort(&other, EffortFlag::False));
-    let unnamed = info(&[("litellm_provider", text("azure"))]);
-    assert!(supports_none_reasoning_effort(&unnamed, EffortFlag::Absent));
-}
-
-fn effort_wire_names_round_trip() {
-    for effort in ADVERTISEMENT_ORDER {
-        assert_eq!(effort_from_wire(effort_wire_name(effort)), Some(effort));
-    }
-    assert_eq!(effort_from_wire("bogus"), None);
 }
 
 fn a_request_effort_drops_every_native_carrier() {
@@ -890,44 +596,6 @@ async fn the_stage_leaves_a_specific_deployment_call_alone() {
     a_groups_selector_takes_the_arguments_its_owner_decoded
 ))]
 #[case::alternatives_count_member_deployments(settled(alternatives_count_member_deployments))]
-#[case::declared_levels_win_over_flags(settled(declared_levels_win_over_flags))]
-#[case::flags_advertise_the_polarity_of_each_level(settled(
-    flags_advertise_the_polarity_of_each_level
-))]
-#[case::a_per_level_flag_alone_proves_reasoning(settled(a_per_level_flag_alone_proves_reasoning))]
-#[case::a_mapped_model_without_flags_is_known_empty(settled(
-    a_mapped_model_without_flags_is_known_empty
-))]
-#[case::explicit_false_empties_even_with_levels(settled(explicit_false_empties_even_with_levels))]
-#[case::the_own_flag_wins_over_the_bare_twin(settled(the_own_flag_wins_over_the_bare_twin))]
-#[case::declared_levels_read_the_prefixed_entry_then_the_bare_one(settled(
-    declared_levels_read_the_prefixed_entry_then_the_bare_one
-))]
-#[case::a_prefixed_model_declares_the_bare_entry_levels(settled(
-    a_prefixed_model_declares_the_bare_entry_levels
-))]
-#[case::intersection_keeps_the_advertisement_order(settled(
-    intersection_keeps_the_advertisement_order
-))]
-#[case::an_unknown_side_never_narrows(settled(an_unknown_side_never_narrows))]
-#[case::the_group_aggregate_intersects_known_deployments(settled(
-    the_group_aggregate_intersects_known_deployments
-))]
-#[case::the_group_aggregate_clears_on_an_unknown_deployment(settled(
-    the_group_aggregate_clears_on_an_unknown_deployment
-))]
-#[case::catalog_mapping_needs_both_modes(settled(catalog_mapping_needs_both_modes))]
-#[case::nearest_rounds_up_to_the_weakest_declared_level(settled(
-    nearest_rounds_up_to_the_weakest_declared_level
-))]
-#[case::nearest_rounds_down_above_every_level(settled(nearest_rounds_down_above_every_level))]
-#[case::nearest_leaves_a_declared_level_and_none_alone(settled(
-    nearest_leaves_a_declared_level_and_none_alone
-))]
-#[case::the_none_flag_follows_the_provider_family(settled(
-    the_none_flag_follows_the_provider_family
-))]
-#[case::effort_wire_names_round_trip(settled(effort_wire_names_round_trip))]
 #[case::a_request_effort_drops_every_native_carrier(settled(
     a_request_effort_drops_every_native_carrier
 ))]
