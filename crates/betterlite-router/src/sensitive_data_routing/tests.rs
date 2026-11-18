@@ -4,20 +4,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_config::sections::sensitive_data_routing::Settings;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde_json::json;
 
 use super::error::SensitiveRoutingError;
 use super::identity::PrincipalIdentity;
 use super::ports::SensitiveRoutingCache;
-use super::{SensitiveDataRoutingHandler, cache_key, resolve_tenant};
+use super::{SensitiveDataRoutingHandler, resolve_tenant};
 
 #[derive(Clone, Debug, thiserror::Error)]
 #[error("redis is unavailable")]
 struct FakeError;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum CacheCall {
     RedisGet(String),
     RedisTtl(String),
@@ -132,23 +131,15 @@ fn redis_miss(memory: Option<&str>) -> FakeState {
 }
 
 fn redis_get_failure(memory: &str) -> FakeState {
-    state(
-        true,
-        Some(Err(FakeError)),
-        None,
-        None,
-        Some(memory.to_owned()),
-    )
+    let mut failed = redis_miss(Some(memory));
+    failed.redis_get = Some(Err(FakeError));
+    failed
 }
 
-fn redis_ttl_failure(memory: &str) -> FakeState {
-    state(
-        true,
-        Some(Ok(Some("gpt-4o-sensitive".to_owned()))),
-        Some(Err(FakeError)),
-        None,
-        Some(memory.to_owned()),
-    )
+fn redis_ttl_failure(model: &str) -> FakeState {
+    let mut failed = redis_hit(model, None);
+    failed.redis_ttl = Some(Err(FakeError));
+    failed
 }
 
 const fn redis_set_outcome(outcome: Result<(), FakeError>) -> FakeState {
@@ -166,8 +157,13 @@ fn handler(
     let cache = FakeCache {
         shared: Arc::clone(&shared),
     };
-    let settings = Settings { ttl_seconds };
-    (SensitiveDataRoutingHandler::new(cache, settings), shared)
+    (
+        SensitiveDataRoutingHandler {
+            internal_usage_cache: cache,
+            ttl_seconds,
+        },
+        shared,
+    )
 }
 
 fn calls(shared: &Arc<Mutex<FakeState>>) -> Vec<CacheCall> {
@@ -202,14 +198,6 @@ const fn claims<'identity>(
         team_id,
         org_id,
     }
-}
-
-#[test]
-fn cache_key_layout_matches_litellm() {
-    assert_eq!(
-        cache_key("session-1", "key-hash"),
-        "{sensitive_route:key-hash:session-1}:model"
-    );
 }
 
 #[test]
@@ -274,14 +262,6 @@ fn tenant_ignores_an_empty_api_key() {
         org_id: None,
     };
     assert_eq!(resolve_tenant(principal), "user:user-1");
-}
-
-#[test]
-fn handler_takes_its_ttl_from_the_config_settings() {
-    let shared = Arc::new(Mutex::new(FakeState::default()));
-    let cache = FakeCache { shared };
-    let handler = SensitiveDataRoutingHandler::new(cache, Settings::default());
-    assert_eq!(handler.ttl_seconds, 3600);
 }
 
 #[tokio::test]
@@ -372,8 +352,8 @@ async fn falls_back_to_memory_when_the_redis_read_fails() {
 }
 
 #[tokio::test]
-async fn falls_back_to_memory_when_the_redis_ttl_read_fails() {
-    let (handler, shared) = handler(redis_ttl_failure("gpt-4o-cheap"), 900);
+async fn uses_the_configured_ttl_when_the_redis_ttl_read_fails() {
+    let (handler, shared) = handler(redis_ttl_failure("gpt-4o-sensitive"), 900);
     let mut data = request(Some("gpt-4o"));
 
     handler
@@ -381,14 +361,18 @@ async fn falls_back_to_memory_when_the_redis_ttl_read_fails() {
         .await
         .unwrap();
 
-    assert_eq!(data.get("model"), Some(&json!("gpt-4o-cheap")));
+    assert_eq!(data.get("model"), Some(&json!("gpt-4o-sensitive")));
     let key = "{sensitive_route:hashed-key:session-1}:model".to_owned();
     assert_eq!(
         calls(&shared),
         vec![
             CacheCall::RedisGet(key.clone()),
             CacheCall::RedisTtl(key.clone()),
-            CacheCall::MemoryGet(key),
+            CacheCall::MemorySet {
+                key,
+                value: "gpt-4o-sensitive".to_owned(),
+                ttl: Duration::from_secs(900),
+            },
         ]
     );
 }

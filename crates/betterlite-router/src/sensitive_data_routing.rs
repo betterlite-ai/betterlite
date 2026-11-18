@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use betterlite_config::sections::sensitive_data_routing::Settings;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 
@@ -14,6 +13,7 @@ use self::error::SensitiveRoutingError;
 use self::identity::PrincipalIdentity;
 use self::ports::SensitiveRoutingCache;
 
+// _make_cache_key's "{sensitive_route:<tenant>:<session_id>}:model"; the read and the write build it alike
 const CACHE_PREFIX: &str = "sensitive_route:";
 const MODEL_FIELD: &str = "model";
 const METADATA_FIELD: &str = "metadata";
@@ -22,19 +22,11 @@ const ORIGINAL_MODEL_FIELD: &str = "sensitive_data_routing_original_model";
 
 pub struct SensitiveDataRoutingHandler<C: SensitiveRoutingCache> {
     pub internal_usage_cache: C,
+    // __init__: LITELLM_SENSITIVE_ROUTING_TTL, default 3600, arrives through the config section
     pub ttl_seconds: u64,
 }
 
 impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
-    // __init__: LITELLM_SENSITIVE_ROUTING_TTL, default 3600, arrives through the config section
-    #[must_use]
-    pub const fn new(internal_usage_cache: C, settings: Settings) -> Self {
-        Self {
-            internal_usage_cache,
-            ttl_seconds: settings.ttl_seconds,
-        }
-    }
-
     // async_pre_call_hook: an existing override replaces the requested model before the call
     pub async fn async_pre_call_hook(
         &self,
@@ -42,10 +34,10 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
         session_id: Option<&str>,
         principal: PrincipalIdentity<'_>,
     ) -> Result<(), SensitiveRoutingError> {
-        let Some(session_id) = session_id else {
+        let Some(session) = session_id else {
             return Ok(());
         };
-        let Some(routed_model) = self.routed_model(session_id, principal).await else {
+        let Some(routed_model) = self.routed_model(session, principal).await else {
             return Ok(());
         };
         let original_model = data.get(MODEL_FIELD).cloned();
@@ -53,7 +45,7 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
             return Ok(());
         }
         tracing::info!(
-            session_id,
+            session_id = session,
             original_model = ?original_model,
             routed_model = %routed_model,
             "SensitiveDataRoutingHandler: Applying session routing override"
@@ -80,7 +72,8 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
         session_id: &str,
         principal: PrincipalIdentity<'_>,
     ) -> Option<String> {
-        let cache_key = cache_key(session_id, &resolve_tenant(principal));
+        let tenant = resolve_tenant(principal);
+        let cache_key = format!("{{{CACHE_PREFIX}{tenant}:{session_id}}}:model");
         if let Some(routed_model) = self.redis_routed_model(&cache_key).await {
             return Some(routed_model);
         }
@@ -112,13 +105,22 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
         Some(routed_model)
     }
 
-    // a Redis hit and the ttl to copy it to the local tier with; a failed ttl read sends the read local
+    // a Redis hit and the ttl to copy it to the local tier with
     async fn redis_hit(&self, cache_key: &str) -> Result<Option<(String, Duration)>, C::Error> {
         let Some(routed_model) = self.internal_usage_cache.redis_get(cache_key).await? else {
             return Ok(None);
         };
-        // redis_cache.async_get_ttl(key): None inherits the configured ttl, as LiteLLM's fallback does
-        let remaining = self.internal_usage_cache.redis_ttl(cache_key).await?;
+        // redis_cache.async_get_ttl(key) answers None for a key without ttl and for every failure
+        let remaining = match self.internal_usage_cache.redis_ttl(cache_key).await {
+            Ok(remaining) => remaining,
+            Err(error) => {
+                tracing::debug!(
+                    error = %error,
+                    "SensitiveDataRoutingHandler: Redis TTL read failed"
+                );
+                None
+            }
+        };
         let ttl = remaining.unwrap_or_else(|| Duration::from_secs(self.ttl_seconds));
         Ok(Some((routed_model, ttl)))
     }
@@ -131,7 +133,8 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
         principal: PrincipalIdentity<'_>,
         guardrail_name: Option<&str>,
     ) {
-        let cache_key = cache_key(session_id, &resolve_tenant(principal));
+        let tenant = resolve_tenant(principal);
+        let cache_key = format!("{{{CACHE_PREFIX}{tenant}:{session_id}}}:model");
         tracing::info!(
             session_id,
             model,
@@ -170,19 +173,14 @@ fn resolve_tenant(principal: PrincipalIdentity<'_>) -> String {
         ("org", principal.org_id),
     ];
     let mut scope = Vec::new();
-    for (label, value) in claims {
-        let Some(value) = value.filter(|value| !value.is_empty()) else {
+    for (label, claim) in claims {
+        let Some(claim_value) = claim.filter(|text| !text.is_empty()) else {
             continue;
         };
-        scope.push(format!("{label}:{value}"));
+        scope.push(format!("{label}:{claim_value}"));
     }
     if scope.is_empty() {
         return "default".to_owned();
     }
     scope.join("|")
-}
-
-fn cache_key(session_id: &str, tenant: &str) -> String {
-    // _make_cache_key: LiteLLM's braces and colons keep the Redis and local tiers on one key
-    format!("{{{CACHE_PREFIX}{tenant}:{session_id}}}:model")
 }
