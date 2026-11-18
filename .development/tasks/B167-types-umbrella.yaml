@@ -19,6 +19,7 @@ description: >-
   `betterlite.types`, and checks that every public name in the first exists in the second.
 scope:
   paths:
+  - "crates/betterlite-python/tests/test_types_umbrella.py"
   - crates/betterlite-python/python/betterlite/types/llms/openai/__init__.py
   - crates/betterlite-python/python/betterlite/types/llms/bedrock/__init__.py
   - crates/betterlite-python/python/betterlite/types/llms/anthropic/__init__.py
