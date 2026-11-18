@@ -1,0 +1,27 @@
+task: B304
+deviations:
+  - what: The pending delta queue holds at most 1024 operations. A caller that fills it flushes the queue within a one second deadline, and if the store is still unavailable that caller's observation is dropped with a warning. LiteLLM appends to an unbounded list.
+    why: An unbounded queue in a long-running proxy grows without bound while the store is unreachable, and the deadline keeps one request from waiting on the store indefinitely. The bound adds no retry of its own; a batch the store fails is discarded exactly as LiteLLM discards it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L78-L119
+  - what: The set of keys a sync reads back from the store is capped at 1024. Once it is full, a new key is not tracked and its in-memory value is not refreshed from the store. LiteLLM's in_memory_keys_to_update has no cap in the code; its comment says 1000 and every window key is added.
+    why: A window key is unique per minute, so the set grows for the life of the process. A key that misses the set keeps working through the local value and the batched delta; only the read-back merge skips it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L168-L169
+  - what: "retire() is async: it waits out an in-flight sync, stops the periodic task and awaits the push of the queued deltas before it returns. LiteLLM's retire() cancels the task, schedules the push with loop.create_task and returns at once, so the push runs later on the event loop."
+    why: Rust has no task that outlives the runtime that owns it, so a fire-and-forget push could be dropped when the router shuts down. The pushed values are the same; only the moment the caller sees retire return differs, and the oracle case's await of a loop turn sees the value on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L47-L55
+  - what: A DEFAULT_REDIS_SYNC_INTERVAL below zero is a config load error that names the variable. LiteLLM reads the value with int() and accepts a negative number, and asyncio.sleep with a negative delay returns at once, so its sync runs back to back.
+    why: The interval is a Duration in betterlite, which cannot be negative. The shared env parser rejects a value the field's type cannot hold and names the variable, so a typo like -1 stops the load instead of turning the timer into a spin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L91
+  - what: A counted-token value outside the signed 64-bit range is read as absent by get_counted_usage_tokens. Python's int is unbounded and returns it.
+    why: The value is a token count that betterlite carries as i64 everywhere else; supporting arbitrary-precision integers would add a bignum dependency for a number far beyond any request's token count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/router_callbacks/track_deployment_metrics.py#L32-L42
+  - what: A pipeline of usage counter increments, the token counters the success callback writes, updates memory at once and reaches the store on the owner's next sync. LiteLLM's cache.async_increment_cache_pipeline writes both caches immediately and then copies each store reply back into memory.
+    why: The sink B397 calls is synchronous and cannot await the store; the owner's queue already carries deltas to the same keys, so the increment rides that batch and lands within one sync interval. The local fast path is current on both sides; only the moment another instance's store read sees the increment differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8194-L8200
+kept_bugs:
+  - what: A flush whose pipeline raises discards the whole queued batch, so those increments never reach the store. Betterlite logs a warning and discards the batch the same way instead of replaying it.
+    why: Replaying after a partial pipeline failure can double-count an increment, and LiteLLM's discard is what a working multi-instance setup has always had; the oracle case failed-flush-warns-and-discards pins it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L164-L166
+  - what: A sync with an empty queue returns before it reads store values back into memory, so the read-back merge only runs on a tick that pushed at least one delta. Betterlite's sync returns false there as well.
+    why: The early return sits in the function LiteLLM runs every interval and this task could not show a setup that depends on it either way, so it is copied with the oracle case failed-flush-warns-and-discards covering the empty-queue tick.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L221-L223
