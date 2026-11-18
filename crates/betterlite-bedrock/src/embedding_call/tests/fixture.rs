@@ -207,14 +207,17 @@ impl FixtureClient {
 }
 
 impl EmbeddingTransport for FixtureClient {
-    async fn post(&self, request: EmbeddingRequest) -> Result<EmbeddingReply, TransferError> {
+    fn post(
+        &self,
+        request: EmbeddingRequest,
+    ) -> impl Future<Output = Result<EmbeddingReply, TransferError>> + Send {
         self.seen.push(Recorded {
             url: request.url.clone(),
             headers: request.headers.into_iter().collect(),
             body: request.body,
             deadline: None,
         });
-        self.reply(&request.url)
+        ready(self.reply(&request.url))
     }
 }
 
@@ -224,27 +227,30 @@ impl LegacyEmbeddingTransport for FixtureClient {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.seen.push(recorded(request));
-        let answer = match self.answer() {
-            Reply::Answer {
-                status,
-                headers,
-                body,
-            } => Ok(UpstreamResponse {
-                status,
-                headers: headers
-                    .into_iter()
-                    .filter_map(|(name, value)| {
-                        Some((
-                            http::HeaderName::try_from(name).ok()?,
-                            http::HeaderValue::try_from(value).ok()?,
-                        ))
-                    })
-                    .collect(),
-                body: body.into_bytes(),
-            }),
-            Reply::Timeout | Reply::Failed => Err(TransportError::Closed),
-        };
-        ready(answer)
+        ready(upstream(self.answer()))
+    }
+}
+
+fn upstream(answer: Reply) -> Result<UpstreamResponse, TransportError> {
+    match answer {
+        Reply::Answer {
+            status,
+            headers,
+            body,
+        } => Ok(UpstreamResponse {
+            status,
+            headers: headers
+                .into_iter()
+                .filter_map(|(name, value)| {
+                    Some((
+                        http::HeaderName::try_from(name).ok()?,
+                        http::HeaderValue::try_from(value).ok()?,
+                    ))
+                })
+                .collect(),
+            body: body.into_bytes(),
+        }),
+        Reply::Timeout | Reply::Failed => Err(TransportError::Closed),
     }
 }
 
