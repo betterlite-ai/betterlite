@@ -1,0 +1,23 @@
+kind: helper
+name: combined-key-read-corpus-seed
+call:
+  combined_key_read:
+    now: "2023-11-14T22:13:20+00:00"
+    step_millis: 0
+    token: sk-seed
+    query_type: find_unique
+    check_deprecated: true
+    use_writer: false
+    rows:
+      - data:
+          token: sk-seed
+          user_id: u1
+          models: []
+          spend: 0
+          team_models: null
+          team_blocked: null
+          team_members_with_roles: null
+    deprecated: []
+    reconnects: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,44 @@
+kind: helper
+name: combined-key-read-writer-and-cached-plan
+call:
+  combined_key_read:
+    now: "2023-11-14T22:13:20+00:00"
+    step_millis: 0
+    token: sk-plan
+    query_type: find_unique
+    check_deprecated: true
+    use_writer: false
+    rows:
+      - error: {type: raw_query, message: "ERROR: cached plan must not change result type"}
+      - data:
+          token: sk-plan
+          user_id: u1
+          models: []
+          spend: 0
+          team_models: []
+          team_blocked: false
+          team_members_with_roles: null
+    deprecated: []
+    reconnects: [true]
+calls:
+  - combined_key_read:
+      now: "2023-11-14T22:13:20+00:00"
+      step_millis: 0
+      token: sk-plan
+      query_type: find_unique
+      check_deprecated: true
+      use_writer: true
+      rows:
+        - error: {type: raw_query, message: "ERROR: cached plan must not change result type"}
+        - data:
+            token: sk-plan
+            user_id: u1
+            models: []
+            spend: 0
+            team_models: []
+            team_blocked: false
+            team_members_with_roles: null
+      deprecated: []
+      reconnects: []
+env: {}
+compare: {ignore: []}
