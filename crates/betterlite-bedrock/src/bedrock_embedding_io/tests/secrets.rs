@@ -108,8 +108,7 @@ fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
     let variables = environment(&[]);
     let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
     let loaded = runtime.block_on(async {
-        let lookup = crate::bedrock_embedding_io::credentials::load_credentials(
-            crate::bedrock_embedding_io::credentials::CredentialRequest {
+        let lookup = load_credentials(CredentialRequest {
                 optional_params: &mut parameters,
                 environment: &variables,
                 bearer_token: None,
