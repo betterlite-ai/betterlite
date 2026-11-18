@@ -24,6 +24,9 @@ deviations:
   - what: A healthy deployment without model_info.id makes the selection fail with a typed error naming its pool index; LiteLLM lets the KeyError or ValidationError from _request_count_keys escape the call.
     why: The pool order is known at the call site, so the error names the deployment instead of a dict lookup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L68-L72
+  - what: An empty deployment pool answers no deployment before either tier is read, where LiteLLM still issues the shared batch read and logs a warning when it fails.
+    why: _least_busy returns none for an empty pool anyway, and reading counters for no deployment tells the caller nothing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L153-L166
 kept_bugs:
   - what: A local counter driven below zero is written back as zero, hiding any other call still in flight under that deployment.
     why: LiteLLM's _increment does exactly that, and the local tier the oracle compares keeps the same result. The ownership guard prevents it in betterlite's own traffic, so the clamp only shows on a counter someone else reset.
