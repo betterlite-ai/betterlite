@@ -76,10 +76,10 @@ impl ApiserpentParams {
             if name == "num" && max_results_present(optional_params) {
                 continue;
             }
-            if optional_params
-                .get(name)
-                .is_none_or(serde_json::Value::is_null)
-            {
+            let Some(value) = optional_params.get(name) else {
+                continue;
+            };
+            if value.is_null() {
                 continue;
             }
             match name {
@@ -160,15 +160,19 @@ fn text(optional_params: &Object, name: &'static str) -> Result<String, Apiserpe
 }
 
 fn number(optional_params: &Object, name: &'static str) -> Result<i64, ApiserpentSearchError> {
-    optional_params
+    let value = optional_params
         .get(name)
-        .and_then(serde_json::Value::as_i64)
+        .ok_or(ApiserpentSearchError::OptionType { field: name })?;
+    value
+        .as_i64()
         .ok_or(ApiserpentSearchError::OptionType { field: name })
 }
 
 fn boolean(optional_params: &Object, name: &'static str) -> Result<bool, ApiserpentSearchError> {
-    optional_params
+    let value = optional_params
         .get(name)
-        .and_then(serde_json::Value::as_bool)
+        .ok_or(ApiserpentSearchError::OptionType { field: name })?;
+    value
+        .as_bool()
         .ok_or(ApiserpentSearchError::OptionType { field: name })
 }
