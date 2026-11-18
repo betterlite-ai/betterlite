@@ -2,6 +2,7 @@ pub mod default_encoding;
 pub mod error;
 pub mod messages;
 pub mod request;
+pub mod runtime;
 pub mod settings;
 mod tests;
 pub mod text;
