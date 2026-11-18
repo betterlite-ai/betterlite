@@ -1,0 +1,36 @@
+task: B919
+deviations:
+- what: Every annotation kind a message content part carries is forwarded to the chat record, where LiteLLM's Message model only accepts url_citation and raises a ValidationError for file_citation, file_path or any other kind on both the typed and the raw path.
+  why: The task requires B1136 annotations retained without citation filtering, and dropping the citation kinds other providers send would lose data a caller asked for.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1401
+- what: A raw output item whose content is null yields no choice and one whose content is not an array fails with a typed field error naming content, where LiteLLM iterates the null and raises TypeError and iterates a string character by character.
+  why: A null takes the declared default and a wrong type is an error that names the field, as docs/compatibility.md requires; iterating a string silently turns one item into many.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L338-L340
+- what: A raw output_text part whose annotations are not an array fails with a typed field error naming annotations, where LiteLLM raises TypeError inside its annotation converter.
+  why: The field names the value the caller got wrong instead of failing inside a helper, and a null annotation list takes the declared default on both sides.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1288-L1308
+- what: A raw output_text part whose text is a truthy non-string fails with a typed field error naming text, where LiteLLM passes the value to Message and pydantic raises a ValidationError.
+  why: Both reject the item, and naming the field gives the provider payload's mistake to the caller instead of a model validation error.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L341-L347
+- what: A response body that is not a JSON object is rejected when the Responses body is decoded, with the seam's decode error, instead of raising ValueError "Unexpected response type" from this conversion.
+  why: The conversion takes a decoded ResponsesApiResponse, so the type check is structural and the error belongs to the decoder that reads provider bytes; the oracle helper raises the same ValueError LiteLLM raises so the case still compares.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L907-L908
+- what: An incomplete_details reason other than max_output_tokens or content_filter rejects the whole response at the decode seam, where LiteLLM accepts any string and maps an unknown reason to finish_reason length.
+  why: The decoded IncompleteReason is a closed enum in the shared Responses types, so an unknown value cannot reach this conversion; the closed set is the workspace rule and the decode seam owns it.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L200-L213
+- what: additional_headers that is not a JSON object on either the raw response or the existing hidden params fails with a typed HiddenHeaders error, where LiteLLM unpacks the non-mapping and raises TypeError.
+  why: Both refuse the merge, and the typed error names the field that is wrong instead of failing inside dict unpacking.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L966-L972
+- what: A recovered output item that is not a JSON object is left out of the response's output, where LiteLLM stores it in the mutated raw_response.output and ignores it during conversion.
+  why: The typed output holds objects only, and the converted choices are the same because LiteLLM's converter skips such a value too.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L777-L783
+kept_bugs:
+- what: Typed function calls all carry tool_calls index 0 in their converted chunk even when several are accumulated, while apply_patch and raw tool calls number them sequentially.
+  why: The converter hardcodes index 0 and B912's converter preserves that, and the task pins this behavior.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/transformation.py#L2364
+- what: A raw message item keeps only its first output_text content part and drops every later part, while a typed message emits one choice per part.
+  why: The raw callback returns at the first output_text part, the task pins it, and a working setup only sees the difference for raw items LiteLLM never builds itself.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L338-L353
+- what: A raw reasoning item is ignored on the normal path, so its summary never reaches a text choice, while the incomplete fallback collects it.
+  why: The raw callback discards reasoning items and the task pins the normal-path behavior, so a working setup's raw reasoning keeps being dropped.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L332-L334
