@@ -17,7 +17,7 @@ use super::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
 use super::dispatch::{QueryType, TableName, UpdateSelector, UpdateTarget};
 use super::hash::{hash_token, hash_token_if_needed};
 use super::json_text::{FAILED_TO_SERIALIZE_JSON, JsonEncoder, SerdeJsonEncoder, jsonify_object};
-use super::retry::{MAX_TIME, MAX_TRIES, SystemWriteClock, WriteClock, retry_wait};
+use super::retry::{MAX_TIME, MAX_TRIES, SystemWriteClock, WriteClock as _, retry_wait};
 use super::{KeyUserWriteError, sql};
 
 #[test]
@@ -73,7 +73,7 @@ fn nested_object() -> JsonData {
     JsonData::Object(BTreeMap::from([
         (
             String::from("a"),
-            JsonData::Number(serde_json::Number::from(1)),
+            JsonData::Number(serde_json::Number::from(1_i32)),
         ),
         (String::from("b"), JsonData::String(String::from("x"))),
     ]))
@@ -109,7 +109,7 @@ fn json_non_dict_values_untouched() {
         (String::from("flag"), JsonData::Bool(true)),
         (
             String::from("number"),
-            JsonData::Number(serde_json::Number::from(7)),
+            JsonData::Number(serde_json::Number::from(7_i32)),
         ),
     ]);
     let converted = jsonify_object(&input, &SerdeJsonEncoder);
@@ -118,7 +118,7 @@ fn json_non_dict_values_untouched() {
     assert_eq!(converted.get("flag"), Some(&JsonData::Bool(true)));
     assert_eq!(
         converted.get("number"),
-        Some(&JsonData::Number(serde_json::Number::from(7)))
+        Some(&JsonData::Number(serde_json::Number::from(7_i32)))
     );
 }
 
@@ -289,15 +289,15 @@ fn non_numeric_update_rejected() {
         UserColumn::Spend,
         UserColumnOp::Increment(TokenValue::Text(String::from("x"))),
     )]));
-    let mut statement = sql::Statement::default();
-    let error = sql::insert_user(
-        &mut statement,
+    let mut text_statement = sql::Statement::default();
+    let text_error = sql::insert_user(
+        &mut text_statement,
         &create_user_row(),
         sql::UserConflict::Upsert(&text_operand),
     )
     .unwrap_err();
     assert!(matches!(
-        error,
+        text_error,
         KeyUserWriteError::NonNumericUpdate { column: "spend" }
     ));
 }

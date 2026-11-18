@@ -1,8 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::Future;
+use std::error::Error;
+use std::future::{Future, pending};
 use std::io::{Result as IoResult, Write};
+use std::mem;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -119,6 +121,7 @@ impl WriteClock for StepClock {
         let mut calls = lock(&self.calls);
         let index = *calls;
         *calls = calls.saturating_add(1);
+        drop(calls);
         self.base
             .checked_add(self.step.saturating_mul(index))
             .unwrap_or(self.base)
@@ -176,7 +179,7 @@ pub(crate) struct RecordingSink {
 impl RecordingSink {
     pub(crate) fn events(&self) -> Vec<RecordedFailure> {
         let mut events = lock(&self.events);
-        std::mem::take(&mut *events)
+        mem::take(&mut *events)
     }
 }
 
@@ -194,9 +197,14 @@ impl FailureSink for RecordingSink {
                 KeyUserWriteError::Database {
                     source: DbError::SqlState { code, .. },
                 } => Some(code.clone()),
-                _ => None,
+                KeyUserWriteError::Database { .. }
+                | KeyUserWriteError::Row(_)
+                | KeyUserWriteError::Encode { .. }
+                | KeyUserWriteError::MissingField { .. }
+                | KeyUserWriteError::NonNumericUpdate { .. }
+                | KeyUserWriteError::OrganizationMissing { .. } => None,
             },
-            source: std::error::Error::source(event.error).map(ToString::to_string),
+            source: Error::source(event.error).map(ToString::to_string),
         });
         Box::pin(async {})
     }
@@ -212,7 +220,7 @@ pub(crate) enum SinkBehaviour {
 impl SinkBehaviour {
     fn future(self) -> FailureFuture<'static> {
         match self {
-            Self::Stall => Box::pin(std::future::pending()),
+            Self::Stall => Box::pin(pending()),
             Self::Panic => Box::pin(async { panic!("broken failure sink") }),
             Self::PanicBeforeReturning => panic!("broken failure sink"),
         }

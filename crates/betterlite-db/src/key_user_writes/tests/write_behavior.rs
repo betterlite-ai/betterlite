@@ -7,6 +7,7 @@ use std::time::Duration;
 use deadpool_postgres::Client;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::Instant;
 use tracing::subscriber::set_default;
 
 use super::postgres::{row_count, service, user_column_text};
@@ -282,7 +283,7 @@ async fn stalled_failure_sink_is_bounded_by_the_deadline() {
         behaviour: SinkBehaviour::Stall,
     };
     let error = KeyUserWriteError::MissingField { field: "user_id" };
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
     report_failure(
         &sink,
         FailureEvent {
@@ -294,7 +295,7 @@ async fn stalled_failure_sink_is_bounded_by_the_deadline() {
     )
     .await;
     assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
-    assert!(tokio::time::Instant::now().duration_since(started) >= FAILURE_REPORT_DEADLINE);
+    assert!(Instant::now().duration_since(started) >= FAILURE_REPORT_DEADLINE);
 }
 
 #[tokio::test]
@@ -416,7 +417,7 @@ async fn key_update_overrides_data_token_with_lookup() {
     assert!(
         data.token
             .as_ref()
-            .is_some_and(|token| token.expose_secret() == &stored)
+            .is_some_and(|token| token.expose_secret() == stored)
     );
     assert_eq!(
         row_count(&client, "LiteLLM_VerificationToken", "token", &stored).await,
