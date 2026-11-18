@@ -1,0 +1,6 @@
+task: B928
+deviations:
+  - what: A bool usage cost is not read as a number, so stamping leaves the usage object untouched; Python validates True as 1.0 and keeps it as the existing cost.
+    why: betterlite's usage wire takes a number, a total_cost mapping or null, which is the declared cost type; docs/compatibility.md does not copy Python's bool-as-number coercion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1355-L1366
+kept_bugs: []
