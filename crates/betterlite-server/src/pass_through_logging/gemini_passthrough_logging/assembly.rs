@@ -17,7 +17,7 @@ use betterlite_streaming::stream_usage_assembly::wire::Usage as WireUsage;
 use betterlite_streaming::streamed_response_assembly::cost::{
     CostError, CostInput, StreamCostCalculator,
 };
-use betterlite_streaming::streamed_response_assembly::records::{Choice, Chunk};
+use betterlite_streaming::streamed_response_assembly::records::{Choice, Chunk, TextField};
 use betterlite_streaming::streamed_response_assembly::{
     AssemblyError, Request, stream_chunk_builder,
 };
@@ -98,7 +98,10 @@ fn gemini_chunk(chunk: StreamChunk) -> Result<Chunk, CollectedStreamError> {
             )?,
             StreamItem::EmptyDelta { index } => Choice {
                 index: Some(index),
-                ..Choice::default()
+                finish_reason: None,
+                logprobs: None,
+                delta: None,
+                text: TextField::Absent,
             },
         });
     }

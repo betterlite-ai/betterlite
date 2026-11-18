@@ -22,7 +22,7 @@ use betterlite_server::pass_through_logging::gemini_passthrough_logging::{
     GeminiPassthroughInput, GeminiPassthroughLogger,
 };
 use betterlite_server::pass_through_logging::vertex_stream_collection::VertexStreamCollector;
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -116,8 +116,16 @@ impl Helper for Op {
         let call = collected_call(input, &logging_obj, &passthrough)?;
         let outcome = match input.operation {
             Operation::GeminiHandler => gemini_handler(input, &cost, &logging_obj),
-            Operation::GeminiChunks => gemini_chunks(&call, &cost),
-            Operation::VertexChunks => vertex_chunks(&call, &cost),
+            Operation::GeminiChunks => {
+                let call_cost = Arc::clone(&cost);
+                let logger = GeminiPassthroughLogger::new(call_cost);
+                chunks_outcome(&logger, &call)
+            }
+            Operation::VertexChunks => {
+                let call_cost = Arc::clone(&cost);
+                let collector = VertexStreamCollector::new(call_cost);
+                chunks_outcome(&collector, &call)
+            }
         };
         outcome.map_or_else(
             |_error| Ok(json!({ "failed": true })),
@@ -131,21 +139,19 @@ fn collected_call<'input>(
     logging_obj: &'input StreamLoggingObject,
     passthrough: &'input PassThroughEndpointLogging,
 ) -> Result<CollectedChunksCall<'input>, Box<HelperError>> {
+    let start_time = DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?;
+    let end_time = DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?;
     Ok(CollectedChunksCall {
         logging_obj,
         passthrough,
         url_route: &input.url_route,
         request_body: None,
         endpoint_type: EndpointType::Gemini,
-        start_time: start_time()?,
-        end_time: start_time()?,
+        start_time,
+        end_time,
         lines: &input.lines,
         model: input.model.as_deref(),
     })
-}
-
-fn start_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
-    DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()
 }
 
 fn gemini_handler(
@@ -158,6 +164,8 @@ fn gemini_handler(
     let request_body = input.request_body.as_ref().unwrap_or(&empty);
     let headers = http::HeaderMap::new();
     let call_cost = Arc::clone(cost);
+    let start_time = DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?;
+    let end_time = DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?;
     GeminiPassthroughLogger::new(call_cost)
         .gemini_passthrough_handler(GeminiPassthroughInput {
             logging_obj,
@@ -165,29 +173,18 @@ fn gemini_handler(
             response_headers: &headers,
             response_body: &bytes,
             request_body,
-            start_time: start_time()?,
-            end_time: start_time()?,
+            start_time,
+            end_time,
             kwargs: PassThroughLoggingKwargs::default(),
         })
         .map_err(|error| view::helper_error("HandlerError", &error.to_string()))
 }
 
-fn gemini_chunks(
+fn chunks_outcome(
+    handler: &dyn CollectedChunksHandler,
     call: &CollectedChunksCall<'_>,
-    cost: &Arc<RecordingCost>,
 ) -> Result<HandlerOutcome, Box<HelperError>> {
-    let call_cost = Arc::clone(cost);
-    GeminiPassthroughLogger::new(call_cost)
-        .handle(call)
-        .map_err(|error| view::helper_error("HandlerError", &error.to_string()))
-}
-
-fn vertex_chunks(
-    call: &CollectedChunksCall<'_>,
-    cost: &Arc<RecordingCost>,
-) -> Result<HandlerOutcome, Box<HelperError>> {
-    let call_cost = Arc::clone(cost);
-    VertexStreamCollector::new(call_cost)
+    handler
         .handle(call)
         .map_err(|error| view::helper_error("HandlerError", &error.to_string()))
 }
