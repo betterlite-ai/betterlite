@@ -12,8 +12,11 @@ description: >-
   early client cancellation. Do not invent a successful completion on disconnect. Stream chunks
   are never accumulated in the logging response. Native state-machine tests use controlled iterators.
   B171 file_stream_projection helper cases cover only pure hidden metadata and credential projection.
-  B2401 file_stream_logging HTTP cases wrap a real B173 mock-response stream directly, exercising
-  this class without depending on B1030 or a proxy handler. No new decoder is required.
+  SdkHttpCall::FileStreamLogging cases wrap a real B173 mock-response stream directly, exercising
+  this class without depending on B1030 or a proxy handler. The variant is on main as a placeholder:
+  build its Call (implementing call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/file_stream_logging.rs
+  and FileStreamLoggingRequest in tools/oracle/sdk_http/file_stream_logging.py, with no edit to the
+  shared sdk_http files. No new decoder is required.
   Owned class plus two pure methods have 230 nonblank, non-comment lines; budget 230
   implementation, 160 tests, 100 fixtures, 110 adapters and 30 wiring lines, totaling 630.
 scope:
@@ -26,9 +29,8 @@ scope:
   - tools/oracle/helpers/file_stream_projection/**
   - tools/oracle/fuzz/corpus/helper_case/file_stream_projection-*
   - tools/oracle/cases/helpers/file-stream-projection/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_stream_logging.rs
+  - tools/oracle/src/sdk_http/file_stream_logging/**
   - tools/oracle/sdk_http/file_stream_logging.py
   - tools/oracle/fuzz/corpus/sdk_http_case/file-stream-logging-*
   - tools/oracle/cases/sdk-http/file-stream-logging/**
@@ -88,7 +90,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_stream_logging::tests::/) - test(/replays_/)'
   - id: python-adapters
     why: pure projection or real-stream adapter is missing
-    run: test -f tools/oracle/helpers/file_stream_projection.py && test -f tools/oracle/sdk_http/file_stream_logging.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/file_stream_projection.py && ! grep -q not_built tools/oracle/sdk_http/file_stream_logging.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: case-seeds
     why: one of the two typed operations lacks a new seed or replay
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_stream_projection-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-stream-logging-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

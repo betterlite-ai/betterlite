@@ -220,6 +220,7 @@ fn a_missing_environment_reference_names_the_variable_and_path() {
             assert_eq!(path, "litellm_settings.inception_key");
         }
         ConfigError::Environment { .. }
+        | ConfigError::CustomDimensions(_)
         | ConfigError::Yaml { .. }
         | ConfigError::Unsupported { .. }
         | ConfigError::InvalidFloat { .. }

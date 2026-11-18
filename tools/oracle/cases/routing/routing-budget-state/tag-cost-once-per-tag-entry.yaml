@@ -1,0 +1,17 @@
+kind: probe
+name: tag-cost-once-per-tag-entry
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_budget_state:
+        provider_budget_config: {}
+        tag_budget_config:
+          team-a: {max_budget: "5", budget_duration: 1h}
+        steps:
+          - {kind: success, tags: [team-a, team-a], cost: "0.25"}
+          - {kind: memory, key: "tag_spend:team-a:1h"}
+          - {kind: sync}
+          - {kind: redis, key: "tag_spend:team-a:1h"}
+          - {kind: memory, key: "tag_spend:team-a:1h"}
+compare: {ignore: []}

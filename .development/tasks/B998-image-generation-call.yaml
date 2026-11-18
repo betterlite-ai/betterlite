@@ -28,8 +28,11 @@ description: >-
   task from SDK preparation. B044 owns custom handler
   execution; this function selects the last matching map entry and the matching sync/async client kind.
 
-  Use B2401 sdk_http cases, never HelperCall, and B011 exception projection without inventing proxy error
-  fields. Load the settings above in betterlite-config::api::image_generation_call::tests::loads_settings,
+  Use sdk_http cases through SdkHttpCall::ImageGenerationCall, never HelperCall, and B011 exception
+  projection without inventing proxy error fields. The variant is already on main as a placeholder:
+  replace the Call and Outcome aliases in tools/oracle/src/sdk_http/image_generation_call.rs (Call
+  implements call_kind::CallKind) and fill ImageGenerationCallRequest in
+  tools/oracle/sdk_http/image_generation_call.py; the shared sdk_http files and dispatch.py are not this task's. Load the settings above in betterlite-config::api::image_generation_call::tests::loads_settings,
   including unset, each fallback tier and empty-string fallthrough. Reuse the config YAML parser/corpus.
   Count 336 owned nonblank/non-comment lines, excluding 38 overload lines; budget 315 implementation,
   170 tests, 150 HTTP fixtures, 75 adapters, 50 config/corpus and 30 wiring lines, 790 total.
@@ -38,9 +41,8 @@ scope:
   - crates/betterlite-core/src/api/image_generation_call.rs
   - crates/betterlite-core/src/api/image_generation_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/image_generation_call.rs
+  - tools/oracle/src/sdk_http/image_generation_call/**
   - tools/oracle/sdk_http/image_generation_call.py
   - tools/oracle/cases/sdk-http/image-generation-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*
@@ -109,7 +111,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_generation_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Provider comparisons must use the SDK HTTP driver with a typed operation adapter.
-    run: test -f tools/oracle/sdk_http/image_generation_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/image_generation_call.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: New settings and SDK operation tags must have parser seeds.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-generation-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'
