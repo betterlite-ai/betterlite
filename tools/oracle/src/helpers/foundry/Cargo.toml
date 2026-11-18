@@ -16,11 +16,13 @@ betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-foundry = { path = "../../../../../crates/betterlite-foundry" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 chrono.workspace = true
@@ -35,6 +37,7 @@ serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_valu
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+uuid = { version = "1.28.0", default-features = false }
 
 [dev-dependencies]
 serde-saphyr = "2.0.0"
