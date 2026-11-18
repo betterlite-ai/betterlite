@@ -2,7 +2,7 @@ use tokio::time::sleep;
 
 #[tokio::test]
 async fn coordinator_lock_contention() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let holder = connection(&database.pool).await;
         holder.batch_execute("BEGIN").await.unwrap();
         assert!(xact_probe(&holder, MIGRATION_LOCK_KEY).await);
@@ -26,7 +26,7 @@ async fn coordinator_lock_contention() {
 
 #[tokio::test]
 async fn lock_timeout_deadline() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let holder = connection(&database.pool).await;
         holder.batch_execute("BEGIN").await.unwrap();
         assert!(xact_probe(&holder, MIGRATION_LOCK_KEY).await);
@@ -59,7 +59,7 @@ async fn lock_timeout_deadline() {
 
 #[tokio::test]
 async fn prisma_xact_lock_contention() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let coordinator = acquired_coordinator(&database.pool, Duration::from_millis(300)).await;
         let jitter = DrawingJitter(0);
         let holder = connection(&database.pool).await;
@@ -82,7 +82,7 @@ async fn prisma_xact_lock_contention() {
 
 #[tokio::test]
 async fn connection_check_before_commit() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(10)).await;
         coordinator
             .client
@@ -108,7 +108,7 @@ async fn connection_check_before_commit() {
 
 #[tokio::test]
 async fn lock_connection_error() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let doomed = connection(&database.pool).await;
         let pid: i32 = doomed
             .query_one("SELECT pg_backend_pid()", &[])
@@ -143,7 +143,7 @@ async fn lock_connection_error() {
 
 #[tokio::test]
 async fn held_lock_unlock_on_error() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let worker = connection(&database.pool).await;
         let outcome: Result<(), HeldLockError<BodyError>> =
             held_migration_lock(&worker, |acquired| async move {
@@ -164,7 +164,7 @@ async fn held_lock_unlock_on_error() {
 
 #[tokio::test]
 async fn held_lock_false() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let holder = connection(&database.pool).await;
         assert!(session_probe(&holder, MIGRATION_LOCK_KEY).await);
         let worker = connection(&database.pool).await;

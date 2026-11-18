@@ -9,6 +9,7 @@ use betterlite_db::daily_activity_contracts::{
     DailyActivityProxyReads, KeyMetadataRow, SpendLogsWindow,
 };
 use betterlite_db::key_attribution::history::recovery::SpendLogHistory;
+use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore as Store;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
@@ -26,16 +27,6 @@ pub(crate) const DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcde
 
 pub(crate) const OTHER_DIGEST: &str =
     "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
-
-const MIGRATIONS: &str = concat!(
-    include_str!("../../../../../betterlite-db/migrations/20250326162113_baseline/migration.sql"),
-    include_str!(
-        "../../../../../betterlite-db/migrations/20250326171002_add_daily_user_table/migration.sql"
-    ),
-    include_str!(
-        "../../../../../betterlite-db/migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"
-    ),
-);
 
 #[derive(Parser)]
 struct Environment {
@@ -111,15 +102,13 @@ pub(crate) async fn database() -> Database {
     let url = Environment::parse_from(["daily-activity-recovery-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let statements = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(3).build().unwrap();
-    let client = pool.get().await.unwrap();
-    client.batch_execute(MIGRATIONS).await.unwrap();
-    drop(client);
     Database {
         fixture,
         store: Store { pool: Some(pool) },

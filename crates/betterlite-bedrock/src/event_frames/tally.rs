@@ -94,7 +94,7 @@ fn repr_text(value: Option<&String>) -> String {
     out
 }
 
-fn repr_bytes(bytes: &[u8]) -> String {
+pub(crate) fn repr_bytes(bytes: &[u8]) -> String {
     let quote = if bytes.contains(&b'\'') && !bytes.contains(&b'"') {
         b'"'
     } else {
