@@ -127,11 +127,11 @@ class FakePubSub(PubSub):
     @override
     def get_message(
         self, ignore_subscribe_messages: bool = False, timeout: float | None = 0.0
-    ) -> Coroutine[None, None, dict[str, JsonValue] | None]:
+    ) -> Coroutine[None, None, dict[str, str | bytes] | None]:
         del ignore_subscribe_messages
         return self._poll(timeout)
 
-    async def _poll(self, interval: float | None) -> dict[str, JsonValue] | None:
+    async def _poll(self, interval: float | None) -> dict[str, str | bytes] | None:
         seconds = 0.0 if interval is None else interval
         self.journal.events.append(f"poll:{int(seconds * 1000)}")
         if not self.steps:
