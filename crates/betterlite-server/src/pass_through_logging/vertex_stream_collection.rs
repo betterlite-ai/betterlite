@@ -24,14 +24,7 @@ use super::gemini_passthrough_logging::relay::{relay_kwargs, relay_logging, writ
 const VERTEX_LOCATION: &str = "vertex_location";
 
 pub struct VertexStreamCollector {
-    cost: Arc<dyn PassthroughCompletionCost>,
-}
-
-impl VertexStreamCollector {
-    #[must_use]
-    pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
-        Self { cost }
-    }
+    pub cost: Arc<dyn PassthroughCompletionCost>,
 }
 
 impl CollectedChunksHandler for VertexStreamCollector {

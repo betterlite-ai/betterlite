@@ -74,12 +74,5 @@ impl From<assembly::CollectedStreamError> for GeminiPassthroughError {
 }
 
 pub struct GeminiPassthroughLogger {
-    cost: Arc<dyn PassthroughCompletionCost>,
-}
-
-impl GeminiPassthroughLogger {
-    #[must_use]
-    pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
-        Self { cost }
-    }
+    pub cost: Arc<dyn PassthroughCompletionCost>,
 }

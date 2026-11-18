@@ -76,7 +76,7 @@ pub(crate) fn gemini_input(fixture: &Fixture) -> GeminiPassthroughInput<'_> {
 }
 
 pub(crate) fn logger(cost: Arc<FakeCost>) -> GeminiPassthroughLogger {
-    GeminiPassthroughLogger::new(cost)
+    GeminiPassthroughLogger { cost }
 }
 
 pub(crate) fn timestamp() -> DateTime<FixedOffset> {

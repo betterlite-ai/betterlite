@@ -110,7 +110,7 @@ fn build_raw_predict_without_usable_lines_returns_no_response() {
 fn chunks_store_the_location_before_the_response_work() {
     let fixture = collected(VERTEX_PREDICT_ROUTE, &[CHUNK], None);
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(cost);
+    let collector = VertexStreamCollector { cost };
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let outcome = collector
         .handle(&fixture.call())
@@ -128,7 +128,9 @@ fn chunks_store_the_location_before_the_response_work() {
 fn chunks_vertex_host_uses_the_vertex_ai_provider() {
     let fixture = collected(VERTEX_GENERATE_ROUTE, &[CHUNK], None);
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = VertexStreamCollector {
+        cost: Arc::clone(&cost),
+    };
     let outcome = collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -165,7 +167,9 @@ fn chunks_vertex_host_uses_the_vertex_ai_provider() {
 fn chunks_gemini_host_uses_the_gemini_provider() {
     let fixture = collected(GEMINI_GENERATE_ROUTE, &[CHUNK], None);
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = VertexStreamCollector {
+        cost: Arc::clone(&cost),
+    };
     collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -189,7 +193,9 @@ fn chunks_use_the_given_model_when_the_stream_names_none() {
         Some("given-model"),
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = VertexStreamCollector {
+        cost: Arc::clone(&cost),
+    };
     let outcome = collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -210,7 +216,7 @@ fn chunks_empty_model_falls_back_to_the_url_model() {
         Some(""),
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(cost);
+    let collector = VertexStreamCollector { cost };
     let outcome = collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
@@ -223,7 +229,7 @@ fn chunks_empty_model_falls_back_to_the_url_model() {
 fn chunks_raw_predict_without_usable_lines_returns_the_error_text() {
     let fixture = collected(VERTEX_STREAM_RAW_ROUTE, &["not json"], None);
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(cost);
+    let collector = VertexStreamCollector { cost };
     let (logs, _guard) = capture_logs(tracing::Level::ERROR);
     let outcome = collector
         .handle(&fixture.call())
@@ -241,7 +247,9 @@ fn chunks_raw_predict_builds_and_prices_the_events() {
         None,
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let collector = VertexStreamCollector::new(Arc::clone(&cost));
+    let collector = VertexStreamCollector {
+        cost: Arc::clone(&cost),
+    };
     let outcome = collector
         .handle(&fixture.call())
         .expect("the events build a response");
