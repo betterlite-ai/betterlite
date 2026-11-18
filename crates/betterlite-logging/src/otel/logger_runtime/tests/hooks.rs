@@ -5,24 +5,20 @@ use std::sync::{Arc, Mutex};
 use opentelemetry::Value;
 use opentelemetry::baggage::BaggageExt as _;
 use opentelemetry::trace::Status;
-use opentelemetry_sdk::trace::InMemorySpanExporter;
 
-use crate::otel::logger_runtime::hooks::{
-    RegisteredHooks, RuntimeHooks, phase_span, seed_request_identity,
-};
+use crate::otel::logger_runtime::hooks::{RegisteredHooks, phase_span, seed_request_identity};
 use crate::otel::model::baggage::TEAM_ID;
 use crate::otel::model::metadata::wire::payload::Auth;
 use crate::otel::model::payloads::error::SpanError;
 use crate::otel::plumbing::context::context_slots::RequestTraceContext;
 use crate::otel::v2_callback::identity::IdentitySeed;
-use crate::otel::v2_callback::registry::V2Registry;
 use crate::otel::vocabulary::constants::attribute_keys::{error as error_keys, exception_event};
 
-use super::support::{attribute, fixture_with_hooks, lock, register_callback, settings};
+use super::support::{attribute, fixture, lock, register_callback, settings};
 
 #[test]
 fn absent_hooks_noop() {
-    let fixture = fixture_with_hooks(None);
+    let fixture = fixture();
     let trace = RequestTraceContext::default();
     let calls = Arc::new(Mutex::new(0));
     let result = phase_span(&fixture.runtime, "phase", &trace, |span| {
@@ -45,15 +41,13 @@ fn absent_hooks_noop() {
 
 #[test]
 fn seed_identity_delegates_to_the_hook() {
-    let registry = Arc::new(V2Registry::default());
-    let sink = InMemorySpanExporter::default();
+    let mut fixture = fixture();
     let mut config = settings(vec![]);
     config.baggage_promoted_keys = vec![TEAM_ID.to_owned()];
-    register_callback(&registry, config, "registered", &sink);
-    let hooks: Arc<dyn RuntimeHooks> = Arc::new(RegisteredHooks {
-        registry: Arc::clone(&registry),
-    });
-    let fixture = fixture_with_hooks(Some(hooks));
+    register_callback(&fixture, config, "registered");
+    fixture.runtime.hooks = Some(Arc::new(RegisteredHooks {
+        registry: Arc::clone(&fixture.registered),
+    }));
     let auth = Auth {
         team_id: Some("team-1".to_owned()),
         team_alias: None,
@@ -81,13 +75,11 @@ fn seed_identity_delegates_to_the_hook() {
 
 #[test]
 fn phase_error_propagates() {
-    let registry = Arc::new(V2Registry::default());
-    let sink = InMemorySpanExporter::default();
-    register_callback(&registry, settings(vec![]), "registered", &sink);
-    let hooks: Arc<dyn RuntimeHooks> = Arc::new(RegisteredHooks {
-        registry: Arc::clone(&registry),
-    });
-    let fixture = fixture_with_hooks(Some(hooks));
+    let mut fixture = fixture();
+    register_callback(&fixture, settings(vec![]), "registered");
+    fixture.runtime.hooks = Some(Arc::new(RegisteredHooks {
+        registry: Arc::clone(&fixture.registered),
+    }));
     let trace = RequestTraceContext::default();
     let error = SpanError {
         error_type: Some("Boom".to_owned()),
@@ -102,7 +94,7 @@ fn phase_error_propagates() {
         Err::<u8, SpanError>(error.clone())
     });
     assert_eq!(result, Err(error));
-    let spans = sink.get_finished_spans().expect("exported spans");
+    let spans = fixture.export_sinks.spans();
     assert_eq!(spans.len(), 1);
     let data = &spans[0];
     assert_eq!(data.name.as_ref(), "phase");

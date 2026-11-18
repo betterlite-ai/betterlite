@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
-use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+use opentelemetry_sdk::trace::SdkTracerProvider;
 
 use crate::callback_logger::CallbackLogger;
 use crate::otel::logger_runtime::factory::build_otel_v2_logger;
@@ -14,15 +14,14 @@ use crate::otel::logger_runtime::select::{
 use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders};
 
 use super::support::{
-    FakeLogger, finished, fixture, fixture_excluding, lock, operator_exporter, placeholder, probe,
-    register_callback, settings,
+    FakeLogger, finished, fixture, fixture_excluding, fixture_sink, lock, operator_exporter,
+    placeholder, probe, register_callback, settings, tenant_destination,
 };
 
 #[test]
 fn registered_first() {
     let fixture = fixture();
-    let sink = InMemorySpanExporter::default();
-    let registered = register_callback(&fixture.registered, settings(vec![]), "registered", &sink);
+    let registered = register_callback(&fixture, settings(vec![]), "registered");
     let other = build_otel_v2_logger(
         &fixture.runtime,
         settings(vec![]),
@@ -186,7 +185,7 @@ fn attach_before_publish() {
     };
     let logger = build_otel_v2_logger(
         &fixture.runtime,
-        settings(vec![]),
+        settings(vec![fixture_sink()]),
         Some("published"),
         InjectedProviders::default(),
         ConstructorSettings::default(),
@@ -197,8 +196,10 @@ fn attach_before_publish() {
         publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
     assert_eq!(*lock(&attached), Some(true));
     let seen = lock(&received).clone().expect("the setter saw a provider");
-    assert_eq!(fixture.constructor.sink_index(&seen), Some(0));
-    assert_eq!(fixture.constructor.sink_index(&published.provider), Some(0));
+    probe(&seen);
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    probe(&published.provider);
+    assert_eq!(fixture.export_sinks.finished(), 2);
     assert_eq!(finished(&fixture.sdk_sink), 0);
 }
 
@@ -207,7 +208,7 @@ fn remembered_provider_beats_global() {
     let fixture = fixture();
     let logger = build_otel_v2_logger(
         &fixture.runtime,
-        settings(vec![]),
+        settings(vec![fixture_sink()]),
         Some("catalog"),
         InjectedProviders::default(),
         ConstructorSettings::default(),
@@ -222,21 +223,64 @@ fn remembered_provider_beats_global() {
     .expect("published");
     let provider = fan_out_provider(&fixture.runtime);
     assert!(provider.registry().fan_out.is_some());
-    assert_eq!(fixture.constructor.sink_index(&provider.provider), Some(0));
     probe(&provider.provider);
+    assert_eq!(fixture.export_sinks.finished(), 1);
     assert_eq!(finished(&fixture.sdk_sink), 0);
-    assert_eq!(fixture.constructor.sink_index(&published.provider), Some(0));
+    probe(&published.provider);
+    assert_eq!(fixture.export_sinks.finished(), 2);
 }
 
 #[test]
 fn registered_fallback_attaches() {
     let fixture = fixture();
-    let sink = InMemorySpanExporter::default();
-    register_callback(&fixture.registered, settings(vec![]), "registered", &sink);
+    register_callback(&fixture, settings(vec![]), "registered");
     let provider = fan_out_provider(&fixture.runtime);
     assert!(provider.registry().fan_out.is_some());
     probe(&provider.provider);
-    assert_eq!(finished(&sink), 1);
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn published_provider_delivers_to_a_tenant_destination() {
+    let fixture = fixture();
+    fixture
+        .scope
+        .set_destinations(vec![tenant_destination("catalog")]);
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![fixture_sink()]),
+        Some("catalog"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let received = Arc::new(Mutex::new(None));
+    let setter: &dyn Fn(&SdkTracerProvider) = &|provider: &SdkTracerProvider| {
+        *lock(&received) = Some(provider.clone());
+    };
+    publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
+    let provider = lock(&received).clone().expect("the setter saw a provider");
+    probe(&provider);
+    provider.force_flush().expect("flushed");
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(fixture.tenant_sinks.finished(), 1);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn registered_provider_delivers_to_a_tenant_destination() {
+    let fixture = fixture();
+    fixture
+        .scope
+        .set_destinations(vec![tenant_destination("registered")]);
+    register_callback(&fixture, settings(vec![]), "registered");
+    let provider = fan_out_provider(&fixture.runtime);
+    probe(&provider.provider);
+    provider.provider.force_flush().expect("flushed");
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(fixture.tenant_sinks.finished(), 1);
     assert_eq!(finished(&fixture.sdk_sink), 0);
 }
 

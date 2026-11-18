@@ -36,15 +36,21 @@ use crate::otel::mappers::genai::GenAIMapper;
 use crate::otel::mappers::utils::tool_attr_budget;
 use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::plumbing::context::context_slots::RequestTraceContext;
-use crate::otel::plumbing::exporters::{ExporterFactories, HttpClients};
+use crate::otel::plumbing::exporters::{
+    ExportResult, ExporterFactories, ExporterFactory, HttpClients,
+};
 use crate::otel::plumbing::providers::ProviderState;
 use crate::otel::plumbing::routing::cache::{TenantSources, TenantTracerCache};
+use crate::otel::plumbing::sinks::SpanSink;
 use crate::otel::v2_callback::callback::{
     CallbackParts, EmitterParts, MetricSettings, ProviderBuild, ProviderSources, V2Callback,
 };
 use crate::otel::v2_callback::error::CallbackError;
 use crate::otel::v2_callback::registry::V2Registry;
 use crate::otel::v2_callback::span_error::ErrorInformationConfig;
+use crate::otel_provider_assembly::tracer_provider_assembly::{
+    AssemblyOptions, build_fan_out_tracer_provider,
+};
 
 pub(crate) fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
     match value.lock() {
@@ -70,12 +76,44 @@ impl HttpClient for NoClient {
     }
 }
 
-#[derive(Debug)]
-pub(crate) struct FixedScope;
+#[derive(Debug, Default)]
+pub(crate) struct FixedScope {
+    scope: Mutex<RequestOtelScope>,
+}
+
+impl FixedScope {
+    pub(crate) fn set_destinations(&self, destinations: Vec<OtelDestination>) {
+        lock(&self.scope).destinations = destinations;
+    }
+}
 
 impl RequestScopeSource for FixedScope {
     fn scope(&self) -> RequestOtelScope {
-        RequestOtelScope::default()
+        lock(&self.scope).clone()
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct SinkRecorder {
+    sinks: Mutex<Vec<InMemorySpanExporter>>,
+}
+
+impl SinkRecorder {
+    fn exporter(&self) -> InMemorySpanExporter {
+        let sink = InMemorySpanExporter::default();
+        lock(&self.sinks).push(sink.clone());
+        sink
+    }
+
+    pub(crate) fn finished(&self) -> usize {
+        lock(&self.sinks).iter().map(finished).sum()
+    }
+
+    pub(crate) fn spans(&self) -> Vec<SpanData> {
+        lock(&self.sinks)
+            .iter()
+            .flat_map(|sink| sink.get_finished_spans().unwrap_or_default())
+            .collect()
     }
 }
 
@@ -152,7 +190,6 @@ pub(crate) struct BuildRecord {
 #[derive(Default)]
 pub(crate) struct RecordingConstructor {
     records: Mutex<Vec<BuildRecord>>,
-    sinks: Mutex<Vec<InMemorySpanExporter>>,
     failure: Mutex<Option<CallbackError>>,
 }
 
@@ -163,21 +200,6 @@ impl RecordingConstructor {
 
     pub(crate) fn fail_with(&self, error: CallbackError) {
         *lock(&self.failure) = Some(error);
-    }
-
-    // which build's exporter a provider writes to, so a test can tell two providers apart
-    pub(crate) fn sink_index(&self, provider: &SdkTracerProvider) -> Option<usize> {
-        let before = self.counts();
-        probe(provider);
-        let after = self.counts();
-        after
-            .iter()
-            .zip(before.iter())
-            .position(|(now, was)| now > was)
-    }
-
-    fn counts(&self) -> Vec<usize> {
-        lock(&self.sinks).iter().map(finished).collect()
     }
 }
 
@@ -198,9 +220,11 @@ impl V2LoggerConstructor for RecordingConstructor {
         if let Some(source) = failure {
             return Err(LoggerRuntimeError::Constructor { source });
         }
-        let sink = InMemorySpanExporter::default();
-        let provider = provider_exporting(&sink);
-        lock(&self.sinks).push(sink);
+        let provider = request
+            .providers
+            .tracer_provider
+            .cloned()
+            .expect("the factory injects a provider");
         Ok(BuiltLogger {
             callback: Arc::new(FakeLogger { name }),
             provider,
@@ -230,6 +254,9 @@ pub(crate) struct Fixture {
     pub(crate) trace: Arc<FixedTrace>,
     pub(crate) environment: Arc<TestEnvironment>,
     pub(crate) assembler: Arc<dyn StreamOutputAssembler>,
+    pub(crate) scope: Arc<FixedScope>,
+    pub(crate) export_sinks: Arc<SinkRecorder>,
+    pub(crate) tenant_sinks: Arc<SinkRecorder>,
 }
 
 pub(crate) fn fixture() -> Fixture {
@@ -242,10 +269,6 @@ pub(crate) fn fixture_excluding(configured: Option<Vec<String>>) -> Fixture {
 
 pub(crate) fn fixture_disabled() -> Fixture {
     build_fixture(None, false, None)
-}
-
-pub(crate) fn fixture_with_hooks(hooks: Option<Arc<dyn RuntimeHooks>>) -> Fixture {
-    build_fixture(None, true, hooks)
 }
 
 pub(crate) fn fixture_with_base(base: Settings) -> Fixture {
@@ -281,6 +304,9 @@ fn build_fixture_on(
     let constructor_port: Arc<dyn V2LoggerConstructor> = Arc::clone(&constructor);
     let trace_source: Arc<dyn RequestTraceSource> = Arc::clone(&trace);
     let environment_lookup: Arc<dyn EnvironmentLookup + Send + Sync> = Arc::clone(&environment);
+    let (factories, export_sinks, tenant_sinks) = fixture_factories();
+    let scope = Arc::new(FixedScope::default());
+    let scope_source: Arc<dyn RequestScopeSource> = Arc::clone(&scope);
     let runtime = LoggerRuntime {
         registered: Arc::clone(&registered),
         loggers: Mutex::new(Vec::new()),
@@ -289,8 +315,8 @@ fn build_fixture_on(
         base,
         environment: environment_lookup,
         trace: trace_source,
-        factories: factories(),
-        scope: Arc::new(FixedScope),
+        factories,
+        scope: scope_source,
         assembler: Arc::clone(&assembler),
         hooks,
         configured_exclusions,
@@ -307,6 +333,9 @@ fn build_fixture_on(
         trace,
         environment,
         assembler,
+        scope,
+        export_sinks,
+        tenant_sinks,
     }
 }
 
@@ -351,6 +380,10 @@ pub(crate) fn placeholder() -> ExporterSpec {
     spec("console", None, None, false)
 }
 
+pub(crate) fn fixture_sink() -> ExporterSpec {
+    spec("fixture_sink", None, None, false)
+}
+
 pub(crate) fn gated() -> ExporterSpec {
     spec("console", None, None, true)
 }
@@ -375,6 +408,17 @@ pub(crate) fn destination(callback_name: &str) -> OtelDestination {
     })
 }
 
+pub(crate) fn tenant_destination(callback_name: &str) -> OtelDestination {
+    OtelDestination::from(DestinationFields {
+        endpoint: "https://collector.example/v1/traces".to_owned(),
+        headers: BTreeMap::new(),
+        resource_attributes: BTreeMap::new(),
+        callback_name: Some(callback_name.to_owned()),
+        protocol: Some("tenant_sink".to_owned()),
+        span_scope: SpanScope::Full,
+    })
+}
+
 pub(crate) fn provider_exporting(sink: &InMemorySpanExporter) -> SdkTracerProvider {
     SdkTracerProvider::builder()
         .with_span_processor(SimpleSpanProcessor::new(sink.clone()))
@@ -392,6 +436,28 @@ pub(crate) fn finished(sink: &InMemorySpanExporter) -> usize {
 
 pub(crate) fn factories() -> Arc<ExporterFactories> {
     Arc::new(ExporterFactories::new(clients(), BTreeMap::new()))
+}
+
+fn fixture_factories() -> (Arc<ExporterFactories>, Arc<SinkRecorder>, Arc<SinkRecorder>) {
+    let export_sinks = Arc::new(SinkRecorder::default());
+    let tenant_sinks = Arc::new(SinkRecorder::default());
+    let custom = BTreeMap::from([
+        ("fixture_sink".to_owned(), custom_factory(&export_sinks)),
+        ("tenant_sink".to_owned(), custom_factory(&tenant_sinks)),
+    ]);
+    (
+        Arc::new(ExporterFactories::new(clients(), custom)),
+        export_sinks,
+        tenant_sinks,
+    )
+}
+
+fn custom_factory(recorder: &Arc<SinkRecorder>) -> ExporterFactory {
+    let recorder = Arc::clone(recorder);
+    let factory = move |_spec: &ExporterSpec| -> ExportResult<SpanSink> {
+        Ok(SpanSink::InMemory(recorder.exporter()))
+    };
+    Arc::new(factory)
 }
 
 fn clients() -> HttpClients {
@@ -413,26 +479,37 @@ impl CallbackSettingsView for NoSettings {
 
 // B3853's callback registered the way the proxy's first V2 construction does
 pub(crate) fn register_callback(
-    registry: &Arc<V2Registry>,
+    fixture: &Fixture,
     config: Settings,
     name: &str,
-    sink: &InMemorySpanExporter,
 ) -> Arc<V2Callback> {
-    let parts = callback_parts(config, name, sink);
-    V2Callback::new(parts, registry).expect("registered callback")
+    let parts = callback_parts(fixture, config, name);
+    V2Callback::new(parts, &fixture.registered).expect("registered callback")
 }
 
-fn callback_parts(config: Settings, name: &str, sink: &InMemorySpanExporter) -> CallbackParts {
-    let factories = factories();
-    let scope: Arc<dyn RequestScopeSource> = Arc::new(FixedScope);
+fn callback_parts(fixture: &Fixture, config: Settings, name: &str) -> CallbackParts {
+    let factories = Arc::clone(&fixture.runtime.factories);
+    let scope = Arc::clone(&fixture.runtime.scope);
     let tenant_cache = tenants(&config, name, &factories, &scope);
+    let provider = build_fan_out_tracer_provider(
+        &config,
+        Arc::clone(&factories),
+        &scope,
+        AssemblyOptions {
+            exporter: Some(SpanSink::InMemory(fixture.export_sinks.exporter())),
+            tenant_overrides: true,
+            ..AssemblyOptions::default()
+        },
+        config.excluded_services.clone(),
+    )
+    .expect("the registered provider builds");
     CallbackParts {
         callback_name: Some(name.to_owned()),
         config,
         raw_config: otel_settings::Settings::default(),
         tenants: tenant_cache,
         trace: Arc::new(FixedTrace::default()),
-        providers: provider_sources(provider_exporting(sink)),
+        providers: provider_sources(provider),
         build: ProviderBuild {
             factories,
             scope_source: scope,
