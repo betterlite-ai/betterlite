@@ -279,6 +279,27 @@ async fn a_real_cache_with_redis_arms_one_read_per_partition() {
 }
 
 #[tokio::test]
+async fn the_real_cache_reads_the_cached_values_without_an_armed_read() {
+    let cache = local_cache();
+    cache
+        .async_set(
+            Some("user-1"),
+            &json_from("5"),
+            WriteOptions {
+                ttl: None,
+                local_only: true,
+                refresh_ttl: false,
+            },
+        )
+        .await
+        .expect("the memory fixture is seeded");
+    let keys = vec!["user-1".to_owned()];
+    let values = read_cache_values(&keys, None, &cache).await;
+    assert_eq!(values.len(), 1);
+    assert_eq!(values.get("user-1"), Some(&json_from("5")));
+}
+
+#[tokio::test]
 async fn the_real_armed_read_resolves_the_cached_values() {
     let cache = unreachable_cache().await;
     let keys = vec!["user-1".to_owned()];
