@@ -8,17 +8,15 @@ use indexmap::IndexMap;
 use super::exception::LabelException;
 use super::text_field;
 
-// request_data as the client-side failure path reads it before a deployment is resolved.
 #[derive(Clone, Copy)]
-pub struct ProviderRequestData<'a> {
-    pub litellm_params: Option<&'a IndexMap<String, Json>>,
-    pub standard_logging: Option<&'a IndexMap<String, Json>>,
-    pub model: Option<&'a str>,
+pub struct ProviderRequestData<'request> {
+    pub litellm_params: Option<&'request IndexMap<String, Json>>,
+    pub standard_logging: Option<&'request IndexMap<String, Json>>,
+    pub model: Option<&'request str>,
 }
 
-// LiteLLM's _extract_api_provider_from_request_data: a resolved provider, then a recovered one, then the model's own.
 #[must_use]
-pub fn extract_api_provider_from_request_data(
+pub fn api_provider_from_request_data(
     request: &ProviderRequestData<'_>,
     context: &ResolutionContext<'_>,
 ) -> Option<String> {
@@ -47,15 +45,17 @@ pub fn extract_api_provider_from_request_data(
 }
 
 // litellm_params.custom_llm_provider and its standard_logging_object twin: a falsy value falls through.
-fn declared_provider<'a>(fields: Option<&'a IndexMap<String, Json>>, key: &str) -> Option<&'a str> {
+fn declared_provider<'fields>(
+    fields: Option<&'fields IndexMap<String, Json>>,
+    key: &str,
+) -> Option<&'fields str> {
     fields
-        .and_then(|fields| text_field(fields, key))
+        .and_then(|declared| text_field(declared, key))
         .filter(|value| !value.is_empty())
 }
 
-// LiteLLM's _extract_api_provider_from_exception: only a RateLimitError names a provider, and the proxy placeholder stays unlabeled.
 #[must_use]
-pub fn extract_api_provider_from_exception(exception: &LabelException) -> Option<String> {
+pub fn api_provider_from_exception(exception: &LabelException) -> Option<String> {
     if !matches!(exception.class, Class::RateLimitError) {
         return None;
     }

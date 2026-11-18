@@ -13,10 +13,8 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
 // LiteLLM's one bucket for a requested model no router vouches for.
-// ast-grep-ignore: no-long-names
-pub const UNRECOGNIZED_REQUESTED_MODEL_LABEL: &str = "other";
+pub const UNRECOGNIZED_MODEL_LABEL: &str = "other";
 
-// The router view _bounded_requested_model_label asks before a name keeps its own label value; the server supplies it over its catalog.
 pub trait RequestedModelCatalog {
     fn is_recognized_model(&self, model: &str) -> bool;
     fn is_team_public_model(&self, model: &str) -> bool;

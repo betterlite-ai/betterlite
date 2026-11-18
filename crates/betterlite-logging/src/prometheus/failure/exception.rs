@@ -3,7 +3,7 @@ use betterlite_error::rate_limit::ProxyRateLimitError;
 
 use crate::logging_metadata::exception::{ExceptionFacts, semantic_class};
 
-// The exception facts the failure labels read, shaped the way LiteLLM's getattr calls read them.
+// status_code and code stay strings: LiteLLM reads them off the exception object, not off the wire type.
 #[derive(Clone, Default)]
 pub struct LabelException {
     pub class_name: String,
@@ -37,6 +37,7 @@ impl LabelException {
     #[must_use]
     pub fn from_proxy_rate_limit(facts: &ExceptionFacts) -> Self {
         Self {
+            class: Class::RateLimitError,
             legacy_class_name: Some(ProxyRateLimitError::PROMETHEUS_EXCEPTION_CLASS.to_owned()),
             ..Self::from_facts(facts)
         }

@@ -1,7 +1,6 @@
 use super::exception::LabelException;
 use super::status_code::extract_status_code;
 
-// LiteLLM's _is_invalid_api_key_request: a 401, or a message an auth check raised before it became a ProxyException.
 const AUTH_ERROR_PATTERNS: [&str; 5] = [
     "virtual key expected",
     "expected to start with 'sk-'",
@@ -18,10 +17,10 @@ pub fn is_invalid_api_key_request(
     if status_code == Some(401) {
         return true;
     }
-    let Some(exception) = exception else {
+    let Some(failure) = exception else {
         return false;
     };
-    let message = exception
+    let message = failure
         .message
         .as_deref()
         .unwrap_or_default()
@@ -32,8 +31,8 @@ pub fn is_invalid_api_key_request(
         .any(|pattern| message.contains(pattern))
 }
 
-// LiteLLM's _should_skip_metrics_for_invalid_key: the composed filter callbacks ask before they emit anything.
 #[must_use]
+// ast-grep-ignore: no-long-names - B8561 calls this filter by the LiteLLM name
 pub fn should_skip_metrics_for_invalid_key(
     enum_status_code: Option<&str>,
     exception: Option<&LabelException>,
@@ -46,7 +45,7 @@ pub fn should_skip_metrics_for_invalid_key(
     }
     tracing::debug!(
         status_code = ?status_code,
-        exception = ?checked.map(|exception| exception.class_name.as_str()),
+        exception = ?checked.map(|failure| failure.class_name.as_str()),
         "Skipping Prometheus metrics for invalid API key request"
     );
     true

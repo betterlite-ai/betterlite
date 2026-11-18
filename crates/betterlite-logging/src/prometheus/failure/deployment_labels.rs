@@ -4,7 +4,6 @@ use serde::Serialize;
 
 use super::text_field;
 
-// The seven deployment failure labels, each with the metadata key its getter reads.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum LabelKey {
     ApiKeyAlias,
@@ -32,12 +31,11 @@ impl LabelKey {
 
 // standard_logging_payload.metadata: LiteLLM accepts a dict or an object with the same seven attributes.
 #[derive(Clone, Copy)]
-pub enum PayloadMetadata<'a> {
-    Mapping(&'a IndexMap<String, Json>),
-    Record(&'a PayloadMetadataRecord),
+pub enum PayloadMetadata<'metadata> {
+    Mapping(&'metadata IndexMap<String, Json>),
+    Record(&'metadata PayloadMetadataRecord),
 }
 
-// The metadata attributes _safe_get reads when the payload carries an object instead of a dict.
 #[derive(Clone, Debug, Default)]
 pub struct PayloadMetadataRecord {
     pub user_api_key_alias: Option<String>,
@@ -73,7 +71,7 @@ impl PayloadMetadataRecord {
     }
 }
 
-// The subset of litellm.proxy._types.UserAPIKeyAuth the getters read; api_key holds the hashed key, so it is named for that.
+// litellm.proxy._types.UserAPIKeyAuth.api_key holds the hashed key, so this field is named hashed_key.
 #[derive(Clone, Debug, Default)]
 pub struct UserApiKeyFacts {
     pub key_alias: Option<String>,
@@ -84,15 +82,13 @@ pub struct UserApiKeyFacts {
     pub key_hash: Option<String>,
 }
 
-// request_kwargs as the deployment failure label getters read it, with user_api_key_auth already resolved off the params metadata.
 #[derive(Clone, Copy)]
-pub struct DeploymentFailureSources<'a> {
-    pub payload_metadata: Option<PayloadMetadata<'a>>,
-    pub litellm_params_metadata: Option<&'a IndexMap<String, Json>>,
-    pub user_api_key_auth: Option<&'a UserApiKeyFacts>,
+pub struct DeploymentFailureSources<'sources> {
+    pub payload_metadata: Option<PayloadMetadata<'sources>>,
+    pub litellm_params_metadata: Option<&'sources IndexMap<String, Json>>,
+    pub user_api_key_auth: Option<&'sources UserApiKeyFacts>,
 }
 
-// The seven label values set_llm_deployment_failure_metrics emits, None when no source holds one.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct DeploymentFailureLabels {
     pub api_key_alias: Option<String>,
@@ -104,9 +100,8 @@ pub struct DeploymentFailureLabels {
     pub user_agent: Option<String>,
 }
 
-// LiteLLM's _extract_deployment_failure_label_values: every label walks its own metadata, params and auth cascade.
 #[must_use]
-pub fn extract_deployment_failure_label_values(
+pub fn deployment_failure_labels(
     sources: &DeploymentFailureSources<'_>,
 ) -> DeploymentFailureLabels {
     let auth = sources.user_api_key_auth;
@@ -114,25 +109,25 @@ pub fn extract_deployment_failure_label_values(
         api_key_alias: merged(
             sources,
             LabelKey::ApiKeyAlias,
-            auth.and_then(|auth| auth.key_alias.as_deref()),
+            auth.and_then(|facts| facts.key_alias.as_deref()),
         )
         .map(str::to_owned),
         user_email: merged(
             sources,
             LabelKey::UserEmail,
-            auth.and_then(|auth| auth.user_email.as_deref()),
+            auth.and_then(|facts| facts.user_email.as_deref()),
         )
         .map(str::to_owned),
         team: merged(
             sources,
             LabelKey::TeamId,
-            auth.and_then(|auth| auth.team_id.as_deref()),
+            auth.and_then(|facts| facts.team_id.as_deref()),
         )
         .map(str::to_owned),
         team_alias: merged(
             sources,
             LabelKey::TeamAlias,
-            auth.and_then(|auth| auth.team_alias.as_deref()),
+            auth.and_then(|facts| facts.team_alias.as_deref()),
         )
         .map(str::to_owned),
         hashed_api_key: merged(
@@ -154,7 +149,7 @@ fn hashed_from_auth(auth: &UserApiKeyFacts) -> Option<&str> {
         .or(auth.key_hash.as_deref())
 }
 
-// A getter's cascade: payload metadata, then litellm_params metadata, then the auth attribute, each ending the search when present.
+// Each getter ends at the first source that is not None, so an empty payload value still stops the cascade.
 fn merged<'s>(
     sources: &'s DeploymentFailureSources<'_>,
     key: LabelKey,

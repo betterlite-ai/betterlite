@@ -2,7 +2,6 @@ use betterlite_error::normalize::class::Class;
 
 use super::exception::LabelException;
 
-// LiteLLM's _get_exception_class_name: the legacy marker wins, BudgetExceededError stays plain, and otherwise the provider prefixes the class name.
 #[must_use]
 pub fn exception_class_name(exception: &LabelException) -> String {
     if let Some(legacy) = exception
@@ -15,11 +14,11 @@ pub fn exception_class_name(exception: &LabelException) -> String {
     if matches!(exception.class, Class::BudgetExceededError) {
         return String::from("BudgetExceededError");
     }
-    let provider = exception
+    let provider_name = exception
         .llm_provider
         .as_deref()
         .filter(|provider| !provider.is_empty());
-    let Some(provider) = provider else {
+    let Some(provider) = provider_name else {
         return exception.class_name.clone();
     };
     let first_end = provider
