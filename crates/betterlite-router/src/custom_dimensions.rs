@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::custom_dimensions as section;
 
-use self::ClassifierType::{Heuristic, HeuristicFirst, Hybrid};
 use crate::complexity_scoring::dimensions::{CustomDimension, ScoringMode};
 
 mod tests;
@@ -18,36 +17,6 @@ const BUILT_IN_DIMENSIONS: [&str; 7] = [
     "multiStepPatterns",
     "questionComplexity",
 ];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClassifierType {
-    Heuristic,
-    HeuristicV2,
-    Llm,
-    Capability,
-    LlmV2,
-    Custom,
-    HeuristicFirst,
-    Hybrid,
-    Jev,
-}
-
-impl ClassifierType {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "heuristic" => Some(Self::Heuristic),
-            "heuristic_v2" => Some(Self::HeuristicV2),
-            "llm" => Some(Self::Llm),
-            "capability" => Some(Self::Capability),
-            "llm_v2" => Some(Self::LlmV2),
-            "custom" => Some(Self::Custom),
-            "heuristic_first" => Some(Self::HeuristicFirst),
-            "hybrid" => Some(Self::Hybrid),
-            "jev" => Some(Self::Jev),
-            _ => None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum DimensionsError {
@@ -90,14 +59,26 @@ pub fn validate(
             limit: MAX_CUSTOM_DIMENSIONS,
         });
     }
-    let classifier_type =
-        ClassifierType::parse(classifier).ok_or_else(|| DimensionsError::ClassifierType {
+    if !matches!(
+        classifier,
+        "heuristic"
+            | "heuristic_v2"
+            | "llm"
+            | "capability"
+            | "llm_v2"
+            | "custom"
+            | "heuristic_first"
+            | "hybrid"
+            | "jev"
+    ) {
+        return Err(DimensionsError::ClassifierType {
             value: classifier.to_owned(),
-        })?;
+        });
+    }
     if checked.is_empty() {
         return Ok(Validated::default());
     }
-    if !matches!(classifier_type, Heuristic | HeuristicFirst | Hybrid) {
+    if !matches!(classifier, "heuristic" | "heuristic_first" | "hybrid") {
         return Err(DimensionsError::Classifier);
     }
     validate_names(&checked, dimension_weights)?;
