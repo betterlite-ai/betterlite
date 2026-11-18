@@ -154,12 +154,11 @@ fn accepts_a_threshold_inside_its_range(#[case] threshold: &str) {
 #[case::above_the_maximum(181)]
 fn rejects_a_lookback_outside_its_range(#[case] days: i64) {
     let env = environment(&[]);
-    let source = format!("{PRESENT}    lookback_days: {days}\n");
-    let error = load(&source, &env).unwrap_err();
-    assert!(matches!(
-        error,
-        CaptureRateSettingsError::LookbackOutOfRange { lookback_days } if lookback_days == days
-    ));
+    let error = load(&format!("{PRESENT}    lookback_days: {days}\n"), &env).unwrap_err();
+    let CaptureRateSettingsError::LookbackOutOfRange { lookback_days } = &error else {
+        panic!("expected a lookback range error, got {error:?}");
+    };
+    assert_eq!(*lookback_days, days);
     assert!(
         error
             .to_string()
