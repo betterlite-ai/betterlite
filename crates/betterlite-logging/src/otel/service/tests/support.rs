@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use opentelemetry::Context;
 use opentelemetry::propagation::TextMapPropagator as _;
-use opentelemetry::trace::Tracer as _;
+use opentelemetry::trace::{TraceContextExt as _, Tracer as _};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::propagation::TraceContextPropagator;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};

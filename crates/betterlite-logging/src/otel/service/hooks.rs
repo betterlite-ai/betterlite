@@ -1,5 +1,5 @@
 use betterlite_config::loader::EnvironmentLookup;
-use opentelemetry::trace::{Span as _, SpanKind, Status, Tracer as _};
+use opentelemetry::trace::{Span as _, SpanKind, Status, TraceContextExt as _, Tracer as _};
 use opentelemetry::{Context, KeyValue};
 use opentelemetry_sdk::trace::Span as SdkSpan;
 
