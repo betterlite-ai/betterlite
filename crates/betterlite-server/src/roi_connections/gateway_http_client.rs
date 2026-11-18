@@ -60,7 +60,7 @@ impl<T: Transport> GatewayHttpClient<T> {
             .send(request)
             .await
             .map_err(GatewayError::Transport)?;
-        if response.status >= 400 {
+        if !(200..300).contains(&response.status) {
             return Err(GatewayError::Status {
                 status: response.status,
             });

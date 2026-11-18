@@ -33,11 +33,11 @@ async fn gateway_http_client_posts_the_bearer_credential() {
 }
 
 #[tokio::test]
-async fn gateway_http_client_returns_a_redirect_answer() {
+async fn gateway_http_client_reports_a_redirect_status() {
     let wire = Wire::new(vec![
         Answer::status(302).with_header("location", "/elsewhere"),
     ]);
-    let response = gateway(&wire)
+    let error = gateway(&wire)
         .request(
             Method::GET,
             "/v1/models",
@@ -45,8 +45,9 @@ async fn gateway_http_client_returns_a_redirect_answer() {
             RequestBody::Empty,
         )
         .await
-        .expect("redirect answer");
-    assert_eq!(response.status, 302);
+        .err()
+        .expect("gateway failure");
+    assert!(matches!(error, GatewayError::Status { status: 302 }));
     assert_eq!(wire.seen().len(), 1);
 }
 
