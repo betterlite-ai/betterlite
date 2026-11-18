@@ -5,7 +5,6 @@ use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
-use betterlite_redact::secret::Redactor;
 use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -13,7 +12,7 @@ use serde_json::Number;
 use tokio::runtime::Builder;
 
 use crate::chat_call::transport::{ClientKind, SuppliedChatClient};
-use crate::chat_call::{ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call};
+use crate::chat_call::{CallStyle, ChatCall, ChatClients, ChatDeps, ChatOutcome, chat_call};
 use crate::credentials::AnthropicSettings;
 use crate::response::wire::ResponseEnvelope;
 
@@ -21,11 +20,12 @@ use super::fixture::{
     API_BASE, CALLER_KEY, CallError, FixtureConfig, FixtureCounter, FixtureFailure, FixtureIds,
     FixtureReply, FixtureTransport, MODEL, NOW, Recorded, RecordingLogger, Silent,
     StreamLoggerCall, TIMEOUT, Trip, logging_env, logging_state, messages, redactor,
+    settings_with_key,
 };
 
 #[derive(Clone)]
 pub(super) struct Setup {
-    pub(super) acompletion: bool,
+    pub(super) style: CallStyle,
     pub(super) supplied_kind: ClientKind,
     pub(super) supplied: bool,
     pub(super) body: IndexMap<String, Json>,
@@ -41,10 +41,11 @@ pub(super) struct Setup {
     pub(super) filter_failure: Option<&'static str>,
 }
 
-impl Default for Setup {
-    fn default() -> Self {
+impl Setup {
+    // The setup a chat-call test starts from; each case names only the fields it changes
+    pub(super) fn chat() -> Self {
         Self {
-            acompletion: false,
+            style: CallStyle::Sync,
             supplied_kind: ClientKind::Async,
             supplied: true,
             body: body(),
@@ -93,12 +94,12 @@ pub(super) enum Outcome {
         model: String,
         provider: &'static str,
         headers: IndexMap<String, String>,
-        options: ConverterState,
+        options: Box<ConverterState>,
     },
 }
 
 pub(super) struct Run {
-    pub(super) outcome: Result<Outcome, CallError>,
+    pub(super) outcome: Result<Outcome, Box<CallError>>,
     pub(super) posts_supplied: usize,
     pub(super) posts_pooled: usize,
     pub(super) posted_bodies: Vec<IndexMap<String, Json>>,
@@ -111,14 +112,12 @@ pub(super) struct Run {
 
 impl Run {
     pub(super) fn error(&self) -> &CallError {
-        self.outcome.as_ref().err().unwrap()
+        &**self.outcome.as_ref().err().unwrap()
     }
 
     pub(super) fn status(&self) -> Option<u16> {
-        self.outcome
-            .as_ref()
-            .err()
-            .and_then(|error| error.status_code())
+        let error = self.outcome.as_ref().err()?;
+        error.status_code()
     }
 
     pub(super) fn reply(&self) -> &ResponseEnvelope {
@@ -145,7 +144,7 @@ impl Run {
         else {
             panic!("the call did not stream");
         };
-        (model.as_str(), *provider, headers, options)
+        (model.as_str(), *provider, headers, options.as_ref())
     }
 
     pub(super) fn detail(&self, path: &[&str]) -> Option<&Json> {
@@ -166,20 +165,20 @@ impl Run {
     }
 }
 
-pub(super) fn execute(setup: Setup) -> Run {
-    let redactor: Redactor = redactor();
+pub(super) fn execute(setup: &Setup) -> Run {
+    let redactor = redactor();
     let sink = Silent;
     let mut state = logging_state(&redactor);
     let env = logging_env(&redactor, &sink);
-    let config = fixture_config(&setup);
+    let config = fixture_config(setup);
     let supplied = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let logger = RecordingLogger::default();
-    let settings = settings_of(&setup);
+    let settings = settings_of(setup);
     let caller_key = setup
         .caller_key
         .map(|key| SecretString::from(key.to_owned()));
-    let call = call_of(&setup, caller_key.as_ref(), &settings);
+    let call = call_of(setup, caller_key.as_ref(), &settings);
     let clients = ChatClients {
         supplied: setup.supplied.then_some(SuppliedChatClient {
             kind: setup.supplied_kind,
@@ -217,11 +216,11 @@ fn fixture_config(setup: &Setup) -> FixtureConfig {
 }
 
 fn settings_of(setup: &Setup) -> AnthropicSettings {
-    let mut settings = AnthropicSettings::default();
-    settings.api_key = setup
-        .settings_key
-        .map(|key| SecretString::from(key.to_owned()));
-    settings
+    settings_with_key(
+        setup
+            .settings_key
+            .map(|key| SecretString::from(key.to_owned())),
+    )
 }
 
 fn call_of<'setup>(
@@ -240,7 +239,7 @@ fn call_of<'setup>(
         api_key,
         settings,
         timeout: TIMEOUT,
-        acompletion: setup.acompletion,
+        style: setup.style,
         effort_used: false,
         now: NOW,
         disable_add_prefix_to_prompt: false,
@@ -270,7 +269,7 @@ fn deps_of<'deps>(
 
 fn outcome_of(
     result: Result<ChatOutcome<FixtureFailure, FixtureCounter>, CallError>,
-) -> Result<Outcome, CallError> {
+) -> Result<Outcome, Box<CallError>> {
     match result {
         Ok(ChatOutcome::Reply(envelope)) => Ok(Outcome::Reply(envelope)),
         Ok(ChatOutcome::Stream(wrapped)) => {
@@ -285,10 +284,10 @@ fn outcome_of(
                 model: stream.model,
                 provider: stream.custom_llm_provider,
                 headers: stream.response_headers,
-                options,
+                options: Box::new(options),
             })
         }
-        Err(error) => Err(error),
+        Err(error) => Err(Box::new(error)),
     }
 }
 

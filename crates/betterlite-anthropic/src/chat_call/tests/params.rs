@@ -34,9 +34,10 @@ fn featured_options() -> IndexMap<String, Json> {
 
 #[test]
 fn chat_call_header_features() {
-    let mut setup = Setup::default();
-    setup.optional_params = featured_options();
-    let run = execute(setup);
+    let run = execute(&Setup {
+        optional_params: featured_options(),
+        ..Setup::chat()
+    });
     let beta = run.transforms[0]
         .headers
         .get("anthropic-beta")
@@ -49,12 +50,15 @@ fn chat_call_header_features() {
 #[test]
 fn chat_call_custom_base_bearer() {
     // a custom base, a key without the sk-ant- prefix and the opt-in send a bearer header instead
-    let mut bearer_setup = Setup::default();
-    bearer_setup.api_base = CUSTOM_BASE;
-    bearer_setup.caller_key = Some(CUSTOM_KEY);
-    bearer_setup.litellm_params =
-        IndexMap::from([("use_bearer_for_custom_base".to_owned(), Json::Bool(true))]);
-    let bearer = execute(bearer_setup);
+    let bearer = execute(&Setup {
+        api_base: CUSTOM_BASE,
+        caller_key: Some(CUSTOM_KEY),
+        litellm_params: IndexMap::from([(
+            "use_bearer_for_custom_base".to_owned(),
+            Json::Bool(true),
+        )]),
+        ..Setup::chat()
+    });
     assert_eq!(
         bearer.transforms[0]
             .headers
@@ -65,10 +69,11 @@ fn chat_call_custom_base_bearer() {
     assert!(!bearer.transforms[0].headers.contains_key("x-api-key"));
 
     // without the opt-in the same base keeps the api-key header
-    let mut keyed_setup = Setup::default();
-    keyed_setup.api_base = CUSTOM_BASE;
-    keyed_setup.caller_key = Some(CUSTOM_KEY);
-    let keyed = execute(keyed_setup);
+    let keyed = execute(&Setup {
+        api_base: CUSTOM_BASE,
+        caller_key: Some(CUSTOM_KEY),
+        ..Setup::chat()
+    });
     assert_eq!(
         keyed.transforms[0]
             .headers

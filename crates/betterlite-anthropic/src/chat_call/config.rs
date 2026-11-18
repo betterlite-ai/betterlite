@@ -10,7 +10,6 @@ use crate::response::{Logging, RawResponse, ResponseRequest};
 use crate::usage::ReasoningTokenCounter;
 
 use super::error::ConfigError;
-
 // What LiteLLM hands the selected provider config: the copied messages, transform_params and the validated headers
 pub struct TransformRequest<'request> {
     pub model: &'request str,
@@ -19,33 +18,28 @@ pub struct TransformRequest<'request> {
     pub litellm_params: &'request IndexMap<String, Json>,
     pub headers: &'request AnthropicHeaders,
 }
-
 // The response-side mirror: the reply being filled in, the wire answer it comes from and the caller's request
 pub struct TransformResponse<'response, 'raw, 'request> {
     pub envelope: &'response mut ResponseEnvelope,
     pub raw: &'response RawResponse<'raw>,
     pub request: &'response ResponseRequest<'request>,
 }
-
 // The part of the selected provider chat config this slice calls; B027 supplies the implementation
 pub trait ChatConfig: Sync {
     fn transform_request(
         &self,
         request: &TransformRequest<'_>,
     ) -> Result<IndexMap<String, Json>, ConfigError>;
-
     fn async_transform_request(
         &self,
         request: &TransformRequest<'_>,
     ) -> impl Future<Output = Result<IndexMap<String, Json>, ConfigError>> + Send;
-
     fn filter_request_betas(
         &self,
         provider: &str,
         headers: &mut IndexMap<String, String>,
         body: &mut IndexMap<String, Json>,
     ) -> Result<(), ConfigError>;
-
     fn transform_response<Counter>(
         &self,
         response: TransformResponse<'_, '_, '_>,

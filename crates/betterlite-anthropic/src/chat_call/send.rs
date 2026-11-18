@@ -4,6 +4,7 @@ use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_logging::python_json;
 use betterlite_models::decisions::Json;
+use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use url::Url;
 
@@ -16,10 +17,9 @@ use super::config::{ChatConfig, TransformResponse};
 use super::error::ChatCallError;
 use super::prepare::{Options, Prepared};
 use super::transport::{BufferedReply, ChatTransport, ClientKind};
-use super::{ChatCall, ChatDeps, ChatOutcome};
+use super::{CallStyle, ChatCall, ChatDeps, ChatOutcome, ChatResult};
 
 pub(super) mod streams;
-
 // The parts of the prepared request the reply projection reads back
 struct ReplyFacts<'call> {
     call: ChatCall<'call>,
@@ -27,51 +27,53 @@ struct ReplyFacts<'call> {
     optional_params: IndexMap<String, Json>,
     options: Options,
 }
-
 // The buffered branch: keep the client LiteLLM's isinstance checks accept, POST the body, then fill in the reply
-pub(super) async fn buffered<Config, Client, Counter>(
-    call: ChatCall<'_>,
+pub(super) fn buffered<'call, Config, Client, Counter>(
+    call: ChatCall<'call>,
     prepared: Prepared,
-    deps: ChatDeps<'_, Config, Client, Counter>,
-) -> Result<ChatOutcome<Client::Failure, Counter>, ChatCallError<Client::Failure, Counter::Failure>>
+    deps: ChatDeps<'call, Config, Client, Counter>,
+) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
 where
     Config: ChatConfig,
     Client: ChatTransport,
     Counter: ReasoningTokenCounter,
 {
-    let counter = deps.counter;
-    // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
-    let client = match deps.clients.supplied.as_ref() {
-        Some(supplied) if call.acompletion || supplied.kind == ClientKind::Sync => {
-            supplied.transport
+    Box::pin(async move {
+        let counter = deps.counter;
+        // async takes any supplied client; sync keeps only an HTTPHandler and otherwise opens its own
+        let client = match deps.clients.supplied.as_ref() {
+            Some(supplied)
+                if call.style == CallStyle::Async || supplied.kind == ClientKind::Sync =>
+            {
+                supplied.transport
+            }
+            _ => deps.clients.pooled,
+        };
+        let reply = client
+            .post_buffered(StreamPost {
+                url: Url::parse(call.api_base)?,
+                headers: prepared.header_map,
+                body: python_json::dumps_object(&prepared.body).into_bytes(),
+                stream: false,
+                deadline: call.timeout,
+            })
+            .await;
+        let logging = Logging {
+            state: &mut *deps.state,
+            env: deps.env,
+        };
+        let facts = ReplyFacts {
+            call,
+            body: prepared.body,
+            optional_params: prepared.optional_params,
+            options: prepared.options,
+        };
+        match reply {
+            Ok(answer) => reply_outcome(deps.config, facts, answer, logging, &counter),
+            Err(failure) => Err(buffered_failure(failure, &facts.call, &facts.body, logging)),
         }
-        _ => deps.clients.pooled,
-    };
-    let reply = client
-        .post_buffered(StreamPost {
-            url: Url::parse(call.api_base)?,
-            headers: prepared.header_map,
-            body: python_json::dumps_object(&prepared.body).into_bytes(),
-            stream: false,
-            deadline: call.timeout,
-        })
-        .await;
-    let logging = Logging {
-        state: &mut *deps.state,
-        env: deps.env,
-    };
-    let facts = ReplyFacts {
-        call,
-        body: prepared.body,
-        optional_params: prepared.optional_params,
-        options: prepared.options,
-    };
-    match reply {
-        Ok(reply) => reply_outcome(deps.config, facts, reply, logging, &counter),
-        Err(failure) => Err(buffered_failure(failure, &facts.call, &facts.body, logging)),
-    }
+    })
 }
-
 // The selected config fills in the reply from the raw answer plus the request LiteLLM reads back off the caller
 fn reply_outcome<Config, ClientFailure, Counter>(
     config: &Config,
@@ -115,7 +117,6 @@ where
     )?;
     Ok(ChatOutcome::Reply(Box::new(envelope)))
 }
-
 // Both buffered paths raise the transport failure as AnthropicError; only the async path logs it first
 fn buffered_failure<ClientFailure, CounterFailure>(
     failure: PostFailure<ClientFailure>,
@@ -130,11 +131,11 @@ where
     let Logging { state, env } = logging;
     let (status_code, message, headers) = match failure {
         PostFailure::Status(status) => {
-            let status = *status;
+            let details = *status;
             (
-                status.status_code,
-                text_of(status.body),
-                status.exception_headers.or(status.response_headers),
+                details.status_code,
+                text_of(details.body),
+                details.exception_headers.or(details.response_headers),
             )
         }
         // getattr(e, "status_code", 500): a plain transport failure, a timeout included, carries no status
@@ -142,7 +143,7 @@ where
             (500, source.to_string(), None)
         }
     };
-    if call.acompletion {
+    if call.style == CallStyle::Async {
         post_call(
             state,
             &PostCall {
@@ -166,7 +167,6 @@ where
         headers,
     }
 }
-
 // httpx decodes the body with replacement characters; a body that is not text at all still needs a message
 fn text_of(body: Vec<u8>) -> String {
     String::from_utf8(body)

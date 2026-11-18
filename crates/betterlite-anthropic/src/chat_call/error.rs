@@ -12,7 +12,6 @@ use crate::response::error::ResponseError;
 
 // The selected provider config's own failures; the config decides their type, this leaf only passes them on
 pub type ConfigError = Box<dyn StdError + Send + Sync>;
-
 #[derive(Debug, Error)]
 pub enum ChatCallError<ClientFailure, CounterFailure>
 where
@@ -52,7 +51,6 @@ where
     #[error("a request header value is not valid")]
     HeaderValue(#[from] InvalidHeaderValue),
 }
-
 impl<ClientFailure, CounterFailure> ChatCallError<ClientFailure, CounterFailure>
 where
     ClientFailure: StdError + Send + Sync + 'static,
@@ -60,7 +58,7 @@ where
 {
     // The status LiteLLM puts on the exception it raises from this call, as far as the error carries one
     #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> Option<u16> {
         match self {
             Self::Headers(source) => source.status_code(),
             Self::Prepare { .. } | Self::Filter { .. } | Self::PreCall(_) => None,

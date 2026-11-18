@@ -1,8 +1,9 @@
 use std::convert::Infallible;
 use std::future::{Future, ready};
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_config::sections::anthropic_credentials::DEFAULT_API_BASE;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -18,6 +19,7 @@ use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::HeaderMap;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -30,6 +32,7 @@ use crate::chat_call::ChatCallError;
 use crate::chat_call::config::{ChatConfig, TransformRequest, TransformResponse};
 use crate::chat_call::error::ConfigError;
 use crate::chat_call::transport::{BufferedReply, ChatTransport};
+use crate::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use crate::response::error::ResponseError;
 use crate::response::{Logging as ResponseLogging, transform_response};
 use crate::stream_decode::TransportChunk;
@@ -173,39 +176,42 @@ impl FixtureTransport {
 impl StreamTransport for FixtureTransport {
     type Failure = FixtureFailure;
 
-    async fn post(
+    fn post(
         &self,
         post: StreamPost,
-    ) -> Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>> {
+    ) -> impl Future<Output = Result<StreamReply<FixtureFailure>, PostFailure<FixtureFailure>>> + Send
+    {
         self.record(post);
         if let Some(failure) = self.failure() {
-            return Err(failure);
+            return ready(Err(failure));
         }
         let lines: Vec<String> = self.reply.lines.clone();
         let decoded: LineChunks<FixtureFailure> =
             stream::iter(lines.into_iter().map(|line| Ok(TransportChunk::Text(line)))).boxed();
-        Ok(StreamReply {
+        ready(Ok(StreamReply {
             status_code: self.reply.status_code,
             headers: self.reply.headers.clone(),
             lines: decoded,
-        })
+        }))
     }
 }
 
 impl ChatTransport for FixtureTransport {
-    async fn post_buffered(
+    fn post_buffered(
         &self,
         post: StreamPost,
-    ) -> Result<BufferedReply, PostFailure<FixtureFailure>> {
+    ) -> impl Future<Output = Result<BufferedReply, PostFailure<FixtureFailure>>> + Send {
         self.record(post);
-        match self.failure() {
-            Some(failure) => Err(failure),
-            None => Ok(BufferedReply {
-                status_code: self.reply.status_code,
-                headers: self.reply.headers.clone(),
-                body: self.reply.body.clone(),
-            }),
-        }
+        ready(self.failure().map_or_else(
+            || {
+                Ok(BufferedReply {
+                    status_code: self.reply.status_code,
+                    headers: self.reply.headers.clone(),
+                    body: self.reply.body.clone(),
+                })
+            },
+            Err,
+        ))
     }
 }
 
@@ -231,20 +237,28 @@ impl FixtureConfig {
         request: &TransformRequest<'_>,
         mode: &str,
     ) -> Result<IndexMap<String, Json>, ConfigError> {
-        self.calls.lock().unwrap().push(mode.to_owned());
-        self.transforms.lock().unwrap().push(Recorded {
-            model: request.model.to_owned(),
-            messages: request.messages.to_vec(),
-            optional_params: request.optional_params.clone(),
-            litellm_params: request.litellm_params.clone(),
-            headers: request.headers.values.clone(),
-        });
-        match &self.transform_failure {
-            Some(message) => Err(Box::new(FixtureFailure {
-                message: message.clone(),
-            })),
-            None => Ok(self.body.clone()),
-        }
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(mode.to_owned());
+        self.transforms
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Recorded {
+                model: request.model.to_owned(),
+                messages: request.messages.to_vec(),
+                optional_params: request.optional_params.clone(),
+                litellm_params: request.litellm_params.clone(),
+                headers: request.headers.values.clone(),
+            });
+        self.transform_failure.as_ref().map_or_else(
+            || Ok(self.body.clone()),
+            |message| {
+                Err(Box::new(FixtureFailure {
+                    message: message.clone(),
+                }))
+            },
+        )
     }
 }
 
@@ -272,7 +286,7 @@ impl ChatConfig for FixtureConfig {
     ) -> Result<(), ConfigError> {
         self.calls
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .push(format!("filter:{provider}"));
         if let Some(message) = &self.filter_failure {
             return Err(Box::new(FixtureFailure {
@@ -387,6 +401,16 @@ pub(super) fn logging_env<'env>(redactor: &'env Redactor, sink: &'env Silent) ->
 
 pub(super) fn redactor() -> Redactor {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap()
+}
+
+pub(super) fn settings_with_key(api_key: Option<SecretString>) -> AnthropicSettings {
+    AnthropicSettings {
+        api_key,
+        auth_token: None,
+        api_base: DEFAULT_API_BASE.to_owned(),
+        use_bearer_for_custom_base: false,
+        anthropic_version: ANTHROPIC_VERSION.to_owned(),
+    }
 }
 
 pub(super) fn messages() -> Vec<Json> {

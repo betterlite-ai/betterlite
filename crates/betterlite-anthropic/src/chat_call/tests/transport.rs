@@ -94,7 +94,10 @@ async fn chat_call_buffered_transport_status() {
         .await
         .expect("the transport owner drains");
     join(&mut tasks).await;
+}
 
+#[tokio::test]
+async fn chat_call_buffered_transport_answer() {
     // a 2xx reply is the buffered answer itself
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = local_url(&listener);

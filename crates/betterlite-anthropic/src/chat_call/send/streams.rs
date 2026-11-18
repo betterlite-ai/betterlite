@@ -30,7 +30,6 @@ pub(crate) struct StreamFacts<'facts> {
     pub(crate) optional_params: &'facts IndexMap<String, Json>,
     pub(crate) litellm_params: &'facts IndexMap<String, Json>,
 }
-
 // acompletion_stream_function accepts only an AsyncHTTPHandler, while make_sync_call takes any supplied client
 pub(crate) async fn open_stream<Client, Counter>(
     clients: ChatClients<'_, Client>,
@@ -62,7 +61,6 @@ where
         acompletion_stream_function(wrapping, CompletionStream::from(facts), build).await?;
     Ok(ChatOutcome::Stream(Box::new(wrapped)))
 }
-
 // The async helper sends the request its own struct carries through the module-level async client
 impl<'facts> From<StreamFacts<'facts>> for CompletionStream<'facts> {
     fn from(facts: StreamFacts<'facts>) -> Self {
@@ -79,7 +77,6 @@ impl<'facts> From<StreamFacts<'facts>> for CompletionStream<'facts> {
         }
     }
 }
-
 // make_sync_call sends the encoded body and wraps the opened stream with the provider name and its headers
 async fn send_sync<Client, Counter>(
     clients: StreamClients<'_, Client>,
@@ -117,7 +114,6 @@ where
         response_headers: process_anthropic_headers(&opened.headers),
     })
 }
-
 // make_sync_call takes the speed and the reverse name map as arguments, so this branch types them before the call
 fn stream_names(
     optional_params: &IndexMap<String, Json>,
@@ -134,9 +130,11 @@ fn stream_names(
             .iter()
             .map(|(sanitized, original)| match original {
                 Json::Text(text) => Ok((sanitized.clone(), text.clone())),
-                _ => Err(ParameterError {
-                    field: REVERSE_MAP_KEY,
-                }),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    Err(ParameterError {
+                        field: REVERSE_MAP_KEY,
+                    })
+                }
             })
             .collect::<Result<_, _>>()?,
         Some(_) => {

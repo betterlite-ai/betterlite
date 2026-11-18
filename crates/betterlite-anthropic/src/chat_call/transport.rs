@@ -13,25 +13,21 @@ pub enum ClientKind {
     Sync,
     Async,
 }
-
 pub struct SuppliedChatClient<'clients, Client> {
     pub kind: ClientKind,
     pub transport: &'clients Client,
 }
-
 pub struct BufferedReply {
     pub status_code: u16,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
 }
-
 pub trait ChatTransport: StreamTransport {
     fn post_buffered(
         &self,
         post: StreamPost,
     ) -> impl Future<Output = Result<BufferedReply, PostFailure<Self::Failure>>> + Send;
 }
-
 impl ChatTransport for ProxiedClient {
     async fn post_buffered(
         &self,
@@ -49,22 +45,22 @@ impl ChatTransport for ProxiedClient {
             .await
             // the buffered handler wraps every send failure, timeout included, in AnthropicError(status_code=500)
             .map_err(|source| PostFailure::Unknown(StreamFailure::Transport(source)))?;
-        let reply = reply
+        let response = reply
             .buffered(self.limits.body_bytes)
             .await
             .map_err(|source| PostFailure::Unknown(StreamFailure::Transport(source)))?;
-        if !(200..300).contains(&reply.status) {
+        if !(200..300).contains(&response.status) {
             return Err(PostFailure::Status(Box::new(StatusFailure {
-                status_code: reply.status,
-                body: reply.body,
+                status_code: response.status,
+                body: response.body,
                 exception_headers: None,
-                response_headers: Some(reply.headers),
+                response_headers: Some(response.headers),
             })));
         }
         Ok(BufferedReply {
-            status_code: reply.status,
-            headers: reply.headers,
-            body: reply.body,
+            status_code: response.status,
+            headers: response.headers,
+            body: response.body,
         })
     }
 }

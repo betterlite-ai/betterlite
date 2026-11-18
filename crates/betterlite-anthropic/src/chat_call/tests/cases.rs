@@ -4,6 +4,7 @@ use http::header::HeaderValue;
 use indexmap::IndexMap;
 use rstest::rstest;
 
+use crate::chat_call::CallStyle;
 use crate::chat_call::EMBEDDING_REPLY;
 use crate::chat_call::error::ChatCallError;
 use crate::chat_call::transport::ClientKind;
@@ -24,13 +25,13 @@ enum Scenario {
 }
 
 #[rstest]
-#[case::case_1_messages_post_request(Scenario::MessagesPostRequest)]
-#[case::case_2_buffered_success(Scenario::BufferedSuccess)]
-#[case::case_3_stream_request(Scenario::StreamRequest)]
-#[case::case_4_pre_stream_error(Scenario::PreStreamError)]
-#[case::case_5_native_error_body(Scenario::NativeErrorBody)]
-#[case::case_6_unsupported_embedding(Scenario::UnsupportedEmbedding)]
-#[case::case_7_chat_failure_projection(Scenario::ChatFailureProjection)]
+#[case::messages_post_request(Scenario::MessagesPostRequest)]
+#[case::buffered_success(Scenario::BufferedSuccess)]
+#[case::stream_request(Scenario::StreamRequest)]
+#[case::pre_stream_error(Scenario::PreStreamError)]
+#[case::native_error_body(Scenario::NativeErrorBody)]
+#[case::unsupported_embedding(Scenario::UnsupportedEmbedding)]
+#[case::chat_failure_projection(Scenario::ChatFailureProjection)]
 fn chat_call_cases(#[case] scenario: Scenario) {
     match scenario {
         Scenario::MessagesPostRequest => messages_post_request(),
@@ -83,19 +84,21 @@ fn object_of(value: &Json) -> &IndexMap<String, Json> {
 }
 
 fn messages_post_request() {
-    let mut asynchronous_setup = Setup::default();
-    asynchronous_setup.acompletion = true;
-    asynchronous_setup.optional_params = popped_options();
-    let asynchronous = execute(asynchronous_setup);
+    let asynchronous = execute(&Setup {
+        style: CallStyle::Async,
+        optional_params: popped_options(),
+        ..Setup::chat()
+    });
     assert_eq!(asynchronous.posts_supplied, 1);
     assert_eq!(asynchronous.posts_pooled, 0);
     assert_posted(&asynchronous);
     assert_prepared(&asynchronous, "async");
 
     // the sync branch keeps only an HTTPHandler client, so an async one falls back to the pooled client
-    let mut synchronous_setup = Setup::default();
-    synchronous_setup.optional_params = popped_options();
-    let synchronous = execute(synchronous_setup);
+    let synchronous = execute(&Setup {
+        optional_params: popped_options(),
+        ..Setup::chat()
+    });
     assert_eq!(synchronous.posts_supplied, 0);
     assert_eq!(synchronous.posts_pooled, 1);
     assert_posted(&synchronous);
@@ -166,26 +169,29 @@ fn assert_buffered_logged(run: &Run) {
 }
 
 fn buffered_success() {
-    let mut asynchronous_setup = Setup::default();
-    asynchronous_setup.acompletion = true;
-    asynchronous_setup.optional_params = speed_options();
-    let asynchronous = execute(asynchronous_setup);
+    let asynchronous = execute(&Setup {
+        style: CallStyle::Async,
+        optional_params: speed_options(),
+        ..Setup::chat()
+    });
     assert_eq!(asynchronous.posts_supplied, 1);
     assert_reply(&asynchronous);
     assert_buffered_logged(&asynchronous);
 
-    let mut synchronous_setup = Setup::default();
-    synchronous_setup.optional_params = speed_options();
-    let synchronous = execute(synchronous_setup);
+    let synchronous = execute(&Setup {
+        optional_params: speed_options(),
+        ..Setup::chat()
+    });
     assert_eq!(synchronous.posts_pooled, 1);
     assert_reply(&synchronous);
     assert_buffered_logged(&synchronous);
 
     // a supplied sync client is the one a sync buffered call keeps
-    let mut kept_setup = Setup::default();
-    kept_setup.supplied_kind = ClientKind::Sync;
-    kept_setup.optional_params = speed_options();
-    let kept = execute(kept_setup);
+    let kept = execute(&Setup {
+        supplied_kind: ClientKind::Sync,
+        optional_params: speed_options(),
+        ..Setup::chat()
+    });
     assert_eq!(kept.posts_supplied, 1);
     assert_eq!(kept.posts_pooled, 0);
     assert_reply(&kept);
@@ -210,22 +216,23 @@ fn tool_name_map() -> IndexMap<String, Json> {
 fn stream_setup() -> Setup {
     let mut headers = HeaderMap::new();
     headers.insert("request-id", HeaderValue::from_static("stream-1"));
-    let mut setup = Setup::default();
-    setup.supplied_kind = ClientKind::Sync;
-    setup.optional_params = stream_options();
-    setup.litellm_params = tool_name_map();
-    setup.reply = FixtureReply {
-        headers,
-        ..FixtureReply::text("hello")
-    };
-    setup
+    Setup {
+        supplied_kind: ClientKind::Sync,
+        optional_params: stream_options(),
+        litellm_params: tool_name_map(),
+        reply: FixtureReply {
+            headers,
+            ..FixtureReply::text("hello")
+        },
+        ..Setup::chat()
+    }
 }
 
 fn stream_request() {
     let setup = stream_setup();
     // the async stream accepts only an AsyncHTTPHandler, so this sync client is not used
-    let asynchronous = execute(Setup {
-        acompletion: true,
+    let asynchronous = execute(&Setup {
+        style: CallStyle::Async,
         ..setup.clone()
     });
     assert_eq!(asynchronous.posts_supplied, 0);
@@ -235,7 +242,7 @@ fn stream_request() {
     assert_eq!(asynchronous.logger_calls[0].original_response, "lines");
 
     // make_sync_call takes any supplied client
-    let synchronous = execute(setup);
+    let synchronous = execute(&setup);
     assert_eq!(synchronous.posts_supplied, 1);
     assert_eq!(synchronous.posts_pooled, 0);
     assert_streamed(&synchronous);
@@ -280,32 +287,35 @@ fn assert_streamed(run: &Run) {
 
 fn pre_stream_error() {
     // validation runs before any config or transport work
-    let mut unauthenticated_setup = Setup::default();
-    unauthenticated_setup.caller_key = None;
-    let unauthenticated = execute(unauthenticated_setup);
+    let unauthenticated = execute(&Setup {
+        caller_key: None,
+        ..Setup::chat()
+    });
     assert_eq!(unauthenticated.status(), Some(401));
-    assert_eq!(
-        unauthenticated.posts_supplied + unauthenticated.posts_pooled,
-        0
-    );
+    assert_eq!(unauthenticated.posts_supplied, 0);
+    assert_eq!(unauthenticated.posts_pooled, 0);
     assert!(unauthenticated.transforms.is_empty());
     assert!(unauthenticated.calls.is_empty());
 
-    let mut unprepared_setup = Setup::default();
-    unprepared_setup.transform_failure = Some("the case's transform refuses");
-    let unprepared = execute(unprepared_setup);
+    let unprepared = execute(&Setup {
+        transform_failure: Some("the case's transform refuses"),
+        ..Setup::chat()
+    });
     assert_eq!(unprepared.status(), None);
     assert!(format!("{}", unprepared.error()).contains("the case's transform refuses"));
-    assert_eq!(unprepared.posts_supplied + unprepared.posts_pooled, 0);
+    assert_eq!(unprepared.posts_supplied, 0);
+    assert_eq!(unprepared.posts_pooled, 0);
     assert_eq!(unprepared.calls, ["sync".to_owned()]);
 
-    let mut unfiltered_setup = Setup::default();
-    unfiltered_setup.acompletion = true;
-    unfiltered_setup.filter_failure = Some("the case's filter refuses");
-    let unfiltered = execute(unfiltered_setup);
+    let unfiltered = execute(&Setup {
+        style: CallStyle::Async,
+        filter_failure: Some("the case's filter refuses"),
+        ..Setup::chat()
+    });
     assert_eq!(unfiltered.status(), None);
     assert!(format!("{}", unfiltered.error()).contains("the case's filter refuses"));
-    assert_eq!(unfiltered.posts_supplied + unfiltered.posts_pooled, 0);
+    assert_eq!(unfiltered.posts_supplied, 0);
+    assert_eq!(unfiltered.posts_pooled, 0);
     assert_eq!(
         unfiltered.calls,
         ["async".to_owned(), "filter:anthropic".to_owned()]
@@ -318,11 +328,12 @@ fn error_body() -> &'static str {
 
 fn native_error_body() {
     let body = error_body();
-    for acompletion in [true, false] {
-        let mut setup = Setup::default();
-        setup.acompletion = acompletion;
-        setup.reply = FixtureReply::raw(200, HeaderMap::new(), body);
-        let run = execute(setup);
+    for style in [CallStyle::Async, CallStyle::Sync] {
+        let run = execute(&Setup {
+            style,
+            reply: FixtureReply::raw(200, HeaderMap::new(), body),
+            ..Setup::chat()
+        });
         // an error body at HTTP 200 is the upstream's own error, not a decode failure
         assert_eq!(run.status(), Some(200));
         assert!(format!("{}", run.error()).contains("slow down"));
@@ -339,25 +350,27 @@ fn unsupported_embedding() {
     assert!(reply.is_none());
 }
 
-fn failed_call(acompletion: bool) -> Run {
-    let mut setup = Setup::default();
-    setup.acompletion = acompletion;
-    setup.trip = Trip::Unknown("boom");
-    execute(setup)
+fn failed_call(style: CallStyle) -> Run {
+    execute(&Setup {
+        style,
+        trip: Trip::Unknown("boom"),
+        ..Setup::chat()
+    })
 }
 
 fn status_call(status_code: u16, body: &[u8], exception_headers: bool) -> Run {
     let mut headers = HeaderMap::new();
     headers.insert("x-request-id", HeaderValue::from_static("req-1"));
-    let mut setup = Setup::default();
-    setup.acompletion = true;
-    setup.trip = Trip::Status {
-        status_code,
-        headers,
-        body: body.to_vec(),
-        exception_headers,
-    };
-    execute(setup)
+    execute(&Setup {
+        style: CallStyle::Async,
+        trip: Trip::Status {
+            status_code,
+            headers,
+            body: body.to_vec(),
+            exception_headers,
+        },
+        ..Setup::chat()
+    })
 }
 
 fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
@@ -384,7 +397,7 @@ fn chat_failure_projection() {
 }
 
 fn asynchronous_failure() {
-    let asynchronous = failed_call(true);
+    let asynchronous = failed_call(CallStyle::Async);
     assert_eq!(asynchronous.status(), Some(500));
     assert!(format!("{}", asynchronous.error()).contains("boom"));
     assert_eq!(
@@ -405,7 +418,7 @@ fn asynchronous_failure() {
 
 fn synchronous_failure() {
     // the sync path raises the same status but never logs the failure, so its details stay the pre_call record
-    let synchronous = failed_call(false);
+    let synchronous = failed_call(CallStyle::Sync);
     assert_eq!(synchronous.status(), Some(500));
     assert_eq!(
         synchronous.detail(&["log_event_type"]),
@@ -429,10 +442,11 @@ fn synchronous_failure() {
 
 fn transport_failures() {
     // a deadline with no response is a bare transport error here, so it takes the 500 path
-    let mut timed_setup = Setup::default();
-    timed_setup.acompletion = true;
-    timed_setup.trip = Trip::Timed;
-    let timed = execute(timed_setup);
+    let timed = execute(&Setup {
+        style: CallStyle::Async,
+        trip: Trip::Timed,
+        ..Setup::chat()
+    });
     assert_eq!(timed.status(), Some(500));
     assert!(format!("{}", timed.error()).contains("timed out after 1.5 seconds"));
 
@@ -448,11 +462,13 @@ fn transport_failures() {
     assert_anthropic_error(&guarded, 529, "overloaded");
 
     // a base that is not a URL fails while the request is addressed, before anything is sent
-    let mut unaddressed_setup = Setup::default();
-    unaddressed_setup.acompletion = true;
-    unaddressed_setup.api_base = "not a url";
-    let unaddressed = execute(unaddressed_setup);
+    let unaddressed = execute(&Setup {
+        style: CallStyle::Async,
+        api_base: "not a url",
+        ..Setup::chat()
+    });
     assert_eq!(unaddressed.status(), Some(500));
     assert!(format!("{}", unaddressed.error()).contains("the api_base is not a URL"));
-    assert_eq!(unaddressed.posts_supplied + unaddressed.posts_pooled, 0);
+    assert_eq!(unaddressed.posts_supplied, 0);
+    assert_eq!(unaddressed.posts_pooled, 0);
 }

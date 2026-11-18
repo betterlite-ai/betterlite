@@ -6,6 +6,7 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_prompts::arguments::json::Json as PromptJson;
+use futures_util::future::LocalBoxFuture;
 use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
@@ -20,86 +21,102 @@ use crate::usage::ReasoningTokenCounter;
 use super::config::{ChatConfig, TransformRequest};
 use super::error::ChatCallError;
 use super::transport::ChatTransport;
-use super::{ChatCall, ChatDeps};
+use super::{CallStyle, ChatCall, ChatDeps, ChatResult};
 
 pub(super) struct Options {
     pub(super) stream: bool,
     pub(super) json_mode: bool,
 }
-
 pub(super) struct Prepared {
     pub(super) body: IndexMap<String, Json>,
     pub(super) header_map: HeaderMap,
     pub(super) optional_params: IndexMap<String, Json>,
     pub(super) options: Options,
 }
-
-pub(super) async fn prepare<Config, Client, Counter>(
-    call: &ChatCall<'_>,
-    deps: &mut ChatDeps<'_, Config, Client, Counter>,
-) -> Result<Prepared, ChatCallError<Client::Failure, Counter::Failure>>
+struct Params {
+    optional_params: IndexMap<String, Json>,
+    transform_params: IndexMap<String, Json>,
+    is_vertex_request: bool,
+}
+pub(super) fn prepare<'a, 'deps, Config, Client, Counter>(
+    call: &'a ChatCall<'_>,
+    deps: &'a mut ChatDeps<'deps, Config, Client, Counter>,
+) -> LocalBoxFuture<'a, ChatResult<Client, Counter>>
 where
+    'deps: 'a,
     Config: ChatConfig,
     Client: ChatTransport,
     Counter: ReasoningTokenCounter,
 {
-    // LiteLLM deep-copies optional_params before popping, so the caller's map is never the one transformed
-    let mut optional_params = call.optional_params.clone();
-    let stream = take_bool(&mut optional_params, "stream", false)?;
-    let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
-    let is_vertex_request = take_bool(&mut optional_params, "is_vertex_request", false)?;
-    let _vertex_location = optional_params.shift_remove("vertex_count_tokens_location");
-    let header_options = header_params(&optional_params, is_vertex_request)?;
-    let validated = validated_headers(call, &header_options)?;
-
-    // transform_params adds is_vertex_request for the config, while the reply projection keeps the popped params
-    let mut transform_params = optional_params.clone();
+    Box::pin(async move {
+        let mut optional_params = call.optional_params.clone();
+        let stream = take_bool(&mut optional_params, "stream", false)?;
+        let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
+        let params = take_params(optional_params)?;
+        let validated = validated_headers(call, &params.optional_params, params.is_vertex_request)?;
+        let transform = TransformRequest {
+            model: call.model,
+            messages: &call.messages,
+            optional_params: &params.transform_params,
+            litellm_params: &call.litellm_params,
+            headers: &validated,
+        };
+        let transformed = if call.style == CallStyle::Async {
+            deps.config.async_transform_request(&transform).await
+        } else {
+            deps.config.transform_request(&transform)
+        };
+        let mut body = transformed.map_err(|source| ChatCallError::Prepare { source })?;
+        let mut headers = validated.values;
+        deps.config
+            .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
+            .map_err(|source| ChatCallError::Filter { source })?;
+        // LiteLLM sets data["stream"] after filtering, and its stored pre_call body shares that dict and shows the key
+        if stream {
+            body.insert("stream".to_owned(), Json::Bool(true));
+        }
+        let header_map = header_map(&headers)?;
+        log_pre_call(call, &mut *deps.state, deps.env, &body, &headers)?;
+        Ok(Prepared {
+            body,
+            header_map,
+            optional_params: params.optional_params,
+            options: Options { stream, json_mode },
+        })
+    })
+}
+// LiteLLM pops its own keys off a deep copy of optional_params, and the config's copy adds is_vertex_request
+fn take_params(mut popped: IndexMap<String, Json>) -> Result<Params, ParameterError> {
+    let is_vertex_request = take_bool(&mut popped, "is_vertex_request", false)?;
+    let _vertex_location = popped.shift_remove("vertex_count_tokens_location");
+    let mut transform_params = popped.clone();
     transform_params.insert(
         "is_vertex_request".to_owned(),
         Json::Bool(is_vertex_request),
     );
-    let transform = TransformRequest {
-        model: call.model,
-        messages: &call.messages,
-        optional_params: &transform_params,
-        litellm_params: &call.litellm_params,
-        headers: &validated,
-    };
-    let body = if call.acompletion {
-        deps.config.async_transform_request(&transform).await
-    } else {
-        deps.config.transform_request(&transform)
-    };
-    let mut body = body.map_err(|source| ChatCallError::Prepare { source })?;
-
-    let mut headers = validated.values;
-    deps.config
-        .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
-        .map_err(|source| ChatCallError::Filter { source })?;
-    // LiteLLM sets data["stream"] after filtering, and its stored pre_call body shares that dict and shows the key
-    if stream {
-        body.insert("stream".to_owned(), Json::Bool(true));
-    }
-    let header_map = header_map(&headers)?;
-    log_pre_call(call, &mut *deps.state, deps.env, &body, &headers)?;
-
-    Ok(Prepared {
-        body,
-        header_map,
-        optional_params,
-        options: Options { stream, json_mode },
+    Ok(Params {
+        optional_params: popped,
+        transform_params,
+        is_vertex_request,
     })
 }
-
 // validate_environment reads the caller's headers, key and base into the headers the request carries
 fn validated_headers<ClientFailure, CounterFailure>(
     call: &ChatCall<'_>,
-    header_options: &HeaderParams,
+    optional_params: &IndexMap<String, Json>,
+    is_vertex_request: bool,
 ) -> Result<AnthropicHeaders, ChatCallError<ClientFailure, CounterFailure>>
 where
     ClientFailure: StdError + Send + Sync + 'static,
     CounterFailure: StdError + Send + Sync + 'static,
 {
+    let header_options = HeaderParams {
+        tools: option_list(optional_params, "tools")?,
+        mcp_servers: option_list(optional_params, "mcp_servers")?,
+        thinking: non_null(optional_params, "thinking").map(prompt_json),
+        is_vertex_request,
+        container: non_null(optional_params, "container").cloned(),
+    };
     let messages: Vec<PromptJson> = call.messages.iter().map(prompt_json).collect();
     let litellm_params = lite_llm_params(&call.litellm_params)?;
     validate_environment(
@@ -110,14 +127,13 @@ where
             api_base: Some(call.api_base),
             litellm_params: &litellm_params,
             messages: &messages,
-            optional_params: header_options,
+            optional_params: &header_options,
             effort_used: call.effort_used,
         },
         call.settings,
     )
     .map_err(ChatCallError::from)
 }
-
 // LiteLLM logs pre_api_call with the filtered headers and the body it is about to send
 fn log_pre_call<ClientFailure, CounterFailure>(
     call: &ChatCall<'_>,
@@ -148,7 +164,6 @@ where
     )?;
     Ok(())
 }
-
 fn take_bool(
     options: &mut IndexMap<String, Json>,
     field: &'static str,
@@ -160,20 +175,6 @@ fn take_bool(
         Some(_) => Err(ParameterError { field }),
     }
 }
-
-fn header_params(
-    options: &IndexMap<String, Json>,
-    is_vertex_request: bool,
-) -> Result<HeaderParams, ParameterError> {
-    Ok(HeaderParams {
-        tools: option_list(options, "tools")?,
-        mcp_servers: option_list(options, "mcp_servers")?,
-        thinking: non_null(options, "thinking").map(prompt_json),
-        is_vertex_request,
-        container: non_null(options, "container").cloned(),
-    })
-}
-
 fn option_list(
     options: &IndexMap<String, Json>,
     field: &'static str,
@@ -184,7 +185,6 @@ fn option_list(
         Some(_) => Err(ParameterError { field }),
     }
 }
-
 fn non_null<'options>(
     options: &'options IndexMap<String, Json>,
     field: &str,
@@ -193,7 +193,6 @@ fn non_null<'options>(
         .get(field)
         .filter(|value| !matches!(value, Json::Null))
 }
-
 fn lite_llm_params(params: &IndexMap<String, Json>) -> Result<HeaderLiteLlmParams, ParameterError> {
     let api_base = match params.get("api_base") {
         None | Some(Json::Null) => None,
@@ -216,7 +215,6 @@ fn lite_llm_params(params: &IndexMap<String, Json>) -> Result<HeaderLiteLlmParam
         use_bearer_for_custom_base,
     })
 }
-
 // LiteLLM passes the same values to the header checks and to the request transform, which keeps them as sent
 fn prompt_json(value: &Json) -> PromptJson {
     match value {
@@ -233,14 +231,12 @@ fn prompt_json(value: &Json) -> PromptJson {
         ),
     }
 }
-
 fn headers_args(headers: &IndexMap<String, String>) -> IndexMap<String, Json> {
     headers
         .iter()
         .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
         .collect()
 }
-
 fn header_map<ClientFailure, CounterFailure>(
     headers: &IndexMap<String, String>,
 ) -> Result<HeaderMap, ChatCallError<ClientFailure, CounterFailure>>
