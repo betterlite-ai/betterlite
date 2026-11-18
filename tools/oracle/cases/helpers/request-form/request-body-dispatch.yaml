@@ -1,0 +1,14 @@
+kind: helper
+name: request-body-dispatch
+call:
+  request_form:
+    operation: request_body_dispatch
+    method: POST
+    content_type: application/x-www-form-urlencoded
+    body: x=1
+    fields:
+      - [x, "1"]
+    uploads: []
+    annotations: {}
+    prefix: "litellm_metadata["
+    file_size: null

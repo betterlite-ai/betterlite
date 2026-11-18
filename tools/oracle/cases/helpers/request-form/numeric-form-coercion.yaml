@@ -1,0 +1,18 @@
+kind: helper
+name: numeric-form-coercion
+call:
+  request_form:
+    operation: numeric_form_coercion
+    prefix: "litellm_metadata["
+    file_size: null
+    method: POST
+    content_type: ""
+    body: "{}"
+    annotations:
+      count: int
+      ratio: float
+    fields:
+      - [count, " 7 "]
+      - [ratio, nan]
+      - [other, "9"]
+    uploads: []

@@ -160,6 +160,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "request_form"
+path = "fuzz_targets/request_form.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_event_stream"
 path = "fuzz_targets/bedrock_event_stream.rs"
 test = false

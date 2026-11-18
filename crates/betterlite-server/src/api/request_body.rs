@@ -82,7 +82,7 @@ pub fn read_request_body(
         });
     }
     match classify_media_type(content_type) {
-        MediaTypeKind::Form => decode_form_body(input),
+        MediaTypeKind::Form => decode_form_body(input, limits),
         MediaTypeKind::Binary => {
             limits.check(ApiBoundariesInput::Json(JsonBoundary {
                 known_bytes: input.body.len(),
@@ -149,9 +149,39 @@ fn parsed_result(branch: BodyKind, body: JsonObject) -> RequestBodyResult {
     }
 }
 
-fn decode_form_body(input: &RequestBodyInput) -> Result<RequestBodyResult, RequestBodyError> {
-    let Some(fields) = input.form_fields.as_ref() else {
-        return Err(RequestBodyError::UndecodedForm);
-    };
-    Ok(parsed_result(BodyKind::Form, form_body(fields)?))
+fn decode_form_body(
+    input: &RequestBodyInput,
+    limits: &ApiLimits,
+) -> Result<RequestBodyResult, RequestBodyError> {
+    if let Some(fields) = input.form_fields.as_ref() {
+        return Ok(parsed_result(BodyKind::Form, form_body(fields)?));
+    }
+    let content_type = input.headers.get("content-type").map_or("", String::as_str);
+    let parts =
+        super::request_form::decode_request_form(&input.body, content_type.as_bytes(), limits)
+            .map_err(|_error| RequestBodyError::UndecodedForm)?;
+    let fields = betterlite_core::api::request_form::values::get_form_data(&parts)
+        .map_err(|_error| RequestBodyError::UndecodedForm)?;
+    let parsed = fields
+        .into_iter()
+        .filter_map(|(name, value)| match value {
+            betterlite_core::api::request_form::values::FormValue::Text(text) => {
+                Some((name, serde_json::Value::String(text)))
+            }
+            betterlite_core::api::request_form::values::FormValue::List(values) => {
+                let values = values
+                    .into_iter()
+                    .map(|value| match value {
+                        betterlite_core::api::request_form::values::FormValue::Text(text) => {
+                            Some(serde_json::Value::String(text))
+                        }
+                        _other => None,
+                    })
+                    .collect::<Option<Vec<_>>>();
+                values.map(|values| (name, serde_json::Value::Array(values)))
+            }
+            _other => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    Ok(parsed_result(BodyKind::Form, parsed))
 }

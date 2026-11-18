@@ -1,0 +1,13 @@
+kind: helper
+name: upload-size-unset
+call:
+  request_form:
+    operation: upload_size_unset
+    file_size: 1048576
+    fields: []
+    uploads: []
+    annotations: {}
+    prefix: "litellm_metadata["
+    method: POST
+    content_type: ""
+    body: "{}"

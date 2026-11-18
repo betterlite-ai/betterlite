@@ -1,0 +1,11 @@
+request_form:
+  operation: form_data
+  annotations: {}
+  prefix: "litellm_metadata["
+  file_size: null
+  method: POST
+  content_type: ""
+  body: "{}"
+  fields:
+    - [model, x]
+  uploads: []

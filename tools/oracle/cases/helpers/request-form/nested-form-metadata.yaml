@@ -1,0 +1,15 @@
+kind: helper
+name: nested-form-metadata
+call:
+  request_form:
+    operation: nested_form_metadata
+    annotations: {}
+    prefix: "litellm_metadata["
+    file_size: null
+    method: POST
+    content_type: ""
+    body: "{}"
+    fields:
+      - [litellm_metadata[a][b], value]
+      - [litellm_metadata[team], alpha]
+    uploads: []

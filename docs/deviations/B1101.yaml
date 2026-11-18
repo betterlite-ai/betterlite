@@ -1,0 +1,9 @@
+task: B1101
+deviations:
+  - what: >-
+      Configured model_list[].litellm_params.max_file_size_mb applies to every transcription caller. Oversize uploads
+      return 400 bad_request with param=file and code=400; when unset, betterlite caps uploads at the configured API
+      body limit and returns 413 invalid_request_error with param=file and code=request_too_large.
+    why: The premium-only rejection is removed, and bounded request inputs require a finite default cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L390-L450
+kept_bugs: []

@@ -1,0 +1,15 @@
+kind: helper
+name: array-form-preserves-order
+call:
+  request_form:
+    operation: form_data
+    annotations: {}
+    prefix: "litellm_metadata["
+    file_size: null
+    method: POST
+    content_type: ""
+    body: "{}"
+    fields:
+      - [timestamp_granularities[], word]
+      - [timestamp_granularities[], segment]
+    uploads: []
