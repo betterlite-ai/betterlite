@@ -41,8 +41,8 @@ pub fn extract_nested_form_metadata(
             warnings.push(warning(MetadataWarningKind::UploadSkipped, key));
             continue;
         }
-        let path = key.replace(prefix, "");
-        let path = path.trim_end_matches(']');
+        let unprefixed = key.replace(prefix, "");
+        let path = unprefixed.trim_end_matches(']');
         let first = path.split("][").next().unwrap_or_default();
         if first.is_empty() {
             warnings.push(warning(MetadataWarningKind::EmptyPath, key));

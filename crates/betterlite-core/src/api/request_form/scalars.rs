@@ -70,7 +70,7 @@ fn without_underscores(text: &str) -> Option<String> {
     let mut characters = text.chars().peekable();
     while let Some(character) = characters.next() {
         if character == '_' {
-            let next_digit = characters.peek().is_some_and(|next| next.is_ascii_digit());
+            let next_digit = characters.peek().is_some_and(char::is_ascii_digit);
             if !previous_digit || !next_digit {
                 return None;
             }
@@ -84,8 +84,8 @@ fn without_underscores(text: &str) -> Option<String> {
 }
 
 fn canonical_integer(text: &str) -> Option<String> {
-    let (negative, digits) = split_sign(text);
-    let digits = without_underscores(digits)?;
+    let (negative, separated) = split_sign(text);
+    let digits = without_underscores(separated)?;
     if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }

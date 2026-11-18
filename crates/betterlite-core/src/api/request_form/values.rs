@@ -36,7 +36,7 @@ impl NonFinite {
 pub enum FormValue {
     Text(String),
     Upload(UploadFile),
-    List(Vec<FormValue>),
+    List(Vec<Self>),
     Number(Number),
     Other(Json),
     NonFinite(NonFinite),

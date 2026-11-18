@@ -19,8 +19,8 @@ pub enum FormAnnotation {
     Int,
     Float,
     NoneType,
-    Union(Vec<FormAnnotation>),
-    Qualified(Qualifier, Box<FormAnnotation>),
+    Union(Vec<Self>),
+    Qualified(Qualifier, Box<Self>),
     Other,
 }
 
@@ -53,7 +53,7 @@ pub fn numeric_form_type(annotation: &FormAnnotation) -> Option<NumericType> {
     scalar_type(first)
 }
 
-fn scalar_type(annotation: &FormAnnotation) -> Option<NumericType> {
+const fn scalar_type(annotation: &FormAnnotation) -> Option<NumericType> {
     match annotation {
         FormAnnotation::Int => Some(NumericType::Int),
         FormAnnotation::Float => Some(NumericType::Float),

@@ -54,7 +54,7 @@ fn a_missing_size_records_zero() {
     .unwrap();
     assert!(outcome.proceeded);
     assert!(!outcome.lookup_failed);
-    assert_eq!(size_mb_of(&data), Some(0.0));
+    assert_eq!(size_mb_of(&data), Some(0.0_f64));
 }
 
 #[test]
@@ -62,13 +62,13 @@ fn one_mebibyte_records_one() {
     let mut data = request_with_model();
     check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(1_048_576),
+        file_size: Some(0x0010_0000),
         router_names: &names(&[]),
         router: None,
         limits: &ApiLimits::default(),
     })
     .unwrap();
-    assert_eq!(size_mb_of(&data), Some(1.0));
+    assert_eq!(size_mb_of(&data), Some(1.0_f64));
 }
 
 #[test]
@@ -79,21 +79,24 @@ fn existing_metadata_survives() {
     data.insert("metadata".to_owned(), Json::Object(metadata));
     check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(1_048_576),
+        file_size: Some(0x0010_0000),
         router_names: &names(&[]),
         router: None,
         limits: &ApiLimits::default(),
     })
     .unwrap();
-    let Some(Json::Object(metadata)) = data.get("metadata") else {
+    let Some(Json::Object(recorded_metadata)) = data.get("metadata") else {
         panic!("metadata should stay an object");
     };
-    assert_eq!(metadata.get("team"), Some(&json_text("t")));
+    assert_eq!(recorded_metadata.get("team"), Some(&json_text("t")));
     assert_eq!(
-        metadata.keys().map(String::as_str).collect::<Vec<_>>(),
+        recorded_metadata
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
         vec!["team", "file_size_in_mb"]
     );
-    assert_eq!(size_mb_of(&data), Some(1.0));
+    assert_eq!(size_mb_of(&data), Some(1.0_f64));
 }
 
 #[test]
@@ -104,7 +107,7 @@ fn a_router_name_match_applies_the_configured_limit() {
     };
     let error = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(1_048_577),
+        file_size: Some(0x0010_0001),
         router_names: &names(&["whisper"]),
         router: Some(&router),
         limits: &ApiLimits::default(),
@@ -126,7 +129,7 @@ fn a_configured_limit_allows_an_equal_size() {
     };
     let outcome = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(1_048_576),
+        file_size: Some(0x0010_0000),
         router_names: &names(&["whisper"]),
         router: Some(&router),
         limits: &ApiLimits::default(),
@@ -143,7 +146,7 @@ fn a_model_outside_the_router_names_skips_the_limit() {
     };
     let outcome = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(2_097_152),
+        file_size: Some(0x0020_0000),
         router_names: &names(&["other"]),
         router: Some(&router),
         limits: &ApiLimits::default(),
@@ -161,7 +164,7 @@ fn an_absent_deployment_skips_the_limit() {
     };
     let outcome = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(2_097_152),
+        file_size: Some(0x0020_0000),
         router_names: &names(&["whisper"]),
         router: Some(&router),
         limits: &ApiLimits::default(),
@@ -178,7 +181,7 @@ fn a_failed_lookup_proceeds_and_reports_the_failure() {
     };
     let outcome = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(2_097_152),
+        file_size: Some(0x0020_0000),
         router_names: &names(&["whisper"]),
         router: Some(&router),
         limits: &ApiLimits::default(),
@@ -189,10 +192,10 @@ fn a_failed_lookup_proceeds_and_reports_the_failure() {
 }
 
 #[rstest]
-#[case::configured(UploadLimit::Configured(1.0), &["whisper"], 1_048_577, true, false)]
-#[case::failed(UploadLimit::Failed, &["whisper"], 2_097_152, false, true)]
-#[case::absent(UploadLimit::Absent, &["whisper"], 2_097_152, false, false)]
-#[case::unmatched(UploadLimit::Configured(1.0), &["other"], 2_097_152, false, false)]
+#[case::configured(UploadLimit::Configured(1.0), &["whisper"], 0x0010_0001, true, false)]
+#[case::failed(UploadLimit::Failed, &["whisper"], 0x0020_0000, false, true)]
+#[case::absent(UploadLimit::Absent, &["whisper"], 0x0020_0000, false, false)]
+#[case::unmatched(UploadLimit::Configured(1.0), &["other"], 0x0020_0000, false, false)]
 fn model_limit_handles_configured_failed_absent_and_unmatched_lookups(
     #[case] limit: UploadLimit,
     #[case] router_names: &[&str],
@@ -220,7 +223,7 @@ fn an_unset_limit_caps_at_the_api_limit() {
     let mut data = request_with_model();
     let outcome = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(16_777_216),
+        file_size: Some(0x0100_0000),
         router_names: &names(&[]),
         router: None,
         limits: &ApiLimits::default(),
@@ -229,7 +232,7 @@ fn an_unset_limit_caps_at_the_api_limit() {
     assert!(outcome.proceeded);
     let error = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(16_777_217),
+        file_size: Some(0x0100_0001),
         router_names: &names(&[]),
         router: None,
         limits: &ApiLimits::default(),
@@ -242,13 +245,13 @@ fn an_unset_limit_caps_at_the_api_limit() {
 fn a_smaller_api_limit_caps_earlier() {
     let mut data = request_with_model();
     let limits = ApiLimits {
-        max_json_bytes: 1_048_576,
+        max_json_bytes: 0x0010_0000,
         max_event_bytes: 1024 * 1024,
         max_items: 64 * 1024,
     };
     let error = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut data,
-        file_size: Some(1_048_577),
+        file_size: Some(0x0010_0001),
         router_names: &names(&[]),
         router: None,
         limits: &limits,
@@ -314,9 +317,14 @@ fn the_file_size_errors_carry_their_wire_fields() {
         size_mb: 17.0,
         cap_mb: 16.0,
     };
-    let facts = capped.facts();
+    let cap_facts = capped.facts();
     assert_eq!(
-        (facts.status, facts.error_type, facts.param, facts.code),
+        (
+            cap_facts.status,
+            cap_facts.error_type,
+            cap_facts.param,
+            cap_facts.code
+        ),
         (413, "invalid_request_error", "file", "request_too_large")
     );
     let missing = UploadSizeError::MissingModel.facts();

@@ -27,7 +27,7 @@ fn metadata_value(tree: &MetadataTree) -> HelperResult {
     let mut entries = Map::new();
     for (key, value) in tree {
         let projected = match value {
-            MetadataValue::Leaf(value) => form_value(value)?,
+            MetadataValue::Leaf(leaf) => form_value(leaf)?,
             MetadataValue::Object(child) => metadata_value(child)?,
         };
         entries.insert(key.clone(), projected);

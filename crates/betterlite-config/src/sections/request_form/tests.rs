@@ -26,12 +26,12 @@ fn loads_settings() {
     let configured =
         load("model_list:\n  - model_name: a\n    litellm_params:\n      max_file_size_mb: 1\n")
             .unwrap();
-    assert_eq!(configured.deployments[0], Some(1.0));
+    assert_eq!(configured.deployments[0], Some(1.0_f64));
 
     let fractional =
         load("model_list:\n  - model_name: a\n    litellm_params:\n      max_file_size_mb: 0.5\n")
             .unwrap();
-    assert_eq!(fractional.deployments[0], Some(0.5));
+    assert_eq!(fractional.deployments[0], Some(0.5_f64));
 }
 
 #[test]
@@ -39,7 +39,7 @@ fn the_configured_key_is_not_reported_as_unsupported() {
     let result =
         load("model_list:\n  - model_name: a\n    litellm_params:\n      max_file_size_mb: 1\n");
     assert!(!matches!(&result, Err(ConfigError::Unsupported { .. })));
-    assert!(result.is_ok());
+    result.unwrap();
 }
 
 #[test]

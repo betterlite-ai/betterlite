@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::ops::Div as _;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -104,7 +105,7 @@ pub fn check_file_size_under_limit(
         .unwrap_or(0)
         .to_f64()
         .ok_or(UploadSizeError::Unrepresentable)?
-        / MEBIBYTE;
+        .div(MEBIBYTE);
     record_size(&mut *request_data, size_mb)?;
     let (configured, lookup_failed) = model_limit(router, router_names, &*request_data)?;
     enforce(size_mb, configured, limits)?;
@@ -131,7 +132,7 @@ fn model_limit(
     router_names: &BTreeSet<String>,
     request_data: &JsonObject,
 ) -> Result<(Option<f64>, bool), UploadSizeError> {
-    let Some(router) = router else {
+    let Some(lookup) = router else {
         return Ok((None, false));
     };
     let Some(Json::Text(model)) = request_data.get(MODEL_FIELD) else {
@@ -140,7 +141,7 @@ fn model_limit(
     if !router_names.contains(model) {
         return Ok((None, false));
     }
-    match router.upload_limit_mebibytes(model) {
+    match lookup.upload_limit_mebibytes(model) {
         UploadLimit::Absent => Ok((None, false)),
         UploadLimit::Configured(limit) => Ok((Some(limit), false)),
         UploadLimit::Failed => {
@@ -173,5 +174,8 @@ fn cap_mebibytes(limits: &ApiLimits) -> Result<f64, UploadSizeError> {
         .max_json_bytes
         .to_u64()
         .ok_or(UploadSizeError::Unrepresentable)?;
-    Ok(cap.to_f64().ok_or(UploadSizeError::Unrepresentable)? / MEBIBYTE)
+    Ok(cap
+        .to_f64()
+        .ok_or(UploadSizeError::Unrepresentable)?
+        .div(MEBIBYTE))
 }

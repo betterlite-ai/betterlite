@@ -75,12 +75,12 @@ pub fn decode_request_form(
             known_bytes: content_type.len(),
         }))
         .map_err(|_error| RequestFormError::BodyTooLarge)?;
-    let content_type =
+    let header_text =
         std::str::from_utf8(content_type).map_err(|_error| RequestFormError::ContentType)?;
-    let media_type = content_type.split(';').next().unwrap_or(content_type);
+    let media_type = header_text.split(';').next().unwrap_or(header_text);
     match media_type.trim().to_ascii_lowercase().as_str() {
         "application/x-www-form-urlencoded" => decode_urlencoded(bytes, limits),
-        "multipart/form-data" => decode_multipart(bytes, content_type, limits),
+        "multipart/form-data" => decode_multipart(bytes, header_text, limits),
         _other => Err(RequestFormError::ContentType),
     }
 }

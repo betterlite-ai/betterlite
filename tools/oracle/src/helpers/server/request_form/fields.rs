@@ -24,7 +24,11 @@ pub(super) fn form_data(input: &Input) -> HelperResult {
 }
 
 pub(super) fn numeric(input: &Input) -> HelperResult {
-    let fields = numeric_fields(input)?;
+    let fields = input
+        .fields
+        .iter()
+        .map(|(name, value)| (name.clone(), numeric_value(value)))
+        .collect();
     let annotations = annotations_of(&input.annotations)?;
     let numeric = numeric_form_fields(&annotations);
     let coerced = coerce_numeric_form_fields(&fields, &numeric);
@@ -34,12 +38,12 @@ pub(super) fn numeric(input: &Input) -> HelperResult {
 pub(super) fn direct_fields(input: &Input) -> Result<FormFields, Box<HelperError>> {
     let mut fields = FormFields::new();
     for part in &input.parts {
-        let part = form_part(part)?;
-        let value = match part.value {
+        let decoded = form_part(part)?;
+        let value = match decoded.value {
             PartValue::Text(text) => FormValue::Text(text),
             PartValue::Upload(upload) => FormValue::Upload(upload),
         };
-        fields.insert(part.name, value);
+        fields.insert(decoded.name, value);
     }
     Ok(fields)
 }
@@ -82,14 +86,6 @@ fn upload_file(
         content: bytes,
         size: Some(size),
     })
-}
-
-fn numeric_fields(input: &Input) -> Result<FormFields, Box<HelperError>> {
-    let mut fields = FormFields::new();
-    for (name, value) in &input.fields {
-        fields.insert(name.clone(), numeric_value(value));
-    }
-    Ok(fields)
 }
 
 fn numeric_value(value: &Json) -> FormValue {

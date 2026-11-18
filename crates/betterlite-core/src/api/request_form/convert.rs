@@ -34,7 +34,10 @@ pub fn convert_uploads_to_file_data(fields: &FormFields) -> Result<FileData, Con
         let converted = match value {
             FormValue::List(items) => convert_list(name, items)?,
             FormValue::Upload(upload) => FileDataValue::Files(vec![file_tuple(upload)]),
-            _other => FileDataValue::Unchanged(value.clone()),
+            FormValue::Text(_)
+            | FormValue::Number(_)
+            | FormValue::Other(_)
+            | FormValue::NonFinite(_) => FileDataValue::Unchanged(value.clone()),
         };
         data.insert(name.clone(), converted);
     }

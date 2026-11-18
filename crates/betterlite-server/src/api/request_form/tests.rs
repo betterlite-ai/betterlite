@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::DecodedJson;
@@ -39,8 +38,9 @@ fn upload_part(name: &str, filename: &str, content: &str) -> String {
 }
 
 fn decode_multipart_parts(body: String) -> FormFields {
-    let body = format!("{body}--b--\r\n");
-    let parts = decode_request_form(body.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
+    let terminated = format!("{body}--b--\r\n");
+    let parts =
+        decode_request_form(terminated.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
     get_form_data(&parts).unwrap()
 }
 
@@ -63,8 +63,8 @@ fn repeated_plain_last_wins() {
         Some(&FormValue::Text("last".to_owned()))
     );
 
-    let fields = decode_multipart_parts(upload_part("a", "a.txt", "abc"));
-    let data = convert_uploads_to_file_data(&fields).unwrap();
+    let uploads = decode_multipart_parts(upload_part("a", "a.txt", "abc"));
+    let data = convert_uploads_to_file_data(&uploads).unwrap();
     assert_eq!(
         data.get("a"),
         Some(&FileDataValue::Files(vec![FileTuple {
@@ -91,13 +91,13 @@ fn a_mixed_list_is_decided_by_its_first_entry() {
         ])))
     );
 
-    let fields = decode_multipart_parts(format!(
+    let upload_first = decode_multipart_parts(format!(
         "{}{}",
         upload_part("files[]", "a.txt", "a"),
         text_part("files[]", "plain")
     ));
     assert_eq!(
-        convert_uploads_to_file_data(&fields).unwrap_err(),
+        convert_uploads_to_file_data(&upload_first).unwrap_err(),
         ConvertError::MissingRead {
             name: "files".to_owned(),
             index: 1,
@@ -168,7 +168,7 @@ fn numeric_form_coercion() {
     let coerced = coerce_numeric_form_fields(&fields, &numeric);
     assert_eq!(
         coerced.get("count"),
-        Some(&FormValue::Number(serde_json::Number::from(7)))
+        Some(&FormValue::Number(serde_json::Number::from(7_i64)))
     );
     assert_eq!(
         coerced.get("ratio"),
@@ -182,7 +182,7 @@ fn numeric_form_coercion() {
     );
     assert_eq!(
         coerced.get("optional"),
-        Some(&FormValue::Number(serde_json::Number::from(3)))
+        Some(&FormValue::Number(serde_json::Number::from(3_i64)))
     );
     assert_eq!(
         coerced.get("flag"),
@@ -215,19 +215,20 @@ fn nested_form_metadata() {
     );
     assert!(!metadata.contains_key("other"));
 
-    let fields = decode_multipart_parts(format!(
+    let conflicting = decode_multipart_parts(format!(
         "{}{}{}",
         text_part("litellm_metadata[a]", "leaf"),
         text_part("litellm_metadata[a][b]", "deep"),
         upload_part("litellm_metadata[file]", "a.txt", "abc")
     ));
-    let (metadata, warnings) = extract_nested_form_metadata(&fields, "litellm_metadata[");
+    let (conflict_metadata, conflict_warnings) =
+        extract_nested_form_metadata(&conflicting, "litellm_metadata[");
     assert_eq!(
-        metadata.get("a"),
+        conflict_metadata.get("a"),
         Some(&MetadataValue::Leaf(FormValue::Text("leaf".to_owned())))
     );
     assert_eq!(
-        warnings,
+        conflict_warnings,
         vec![
             MetadataWarning {
                 kind: MetadataWarningKind::ParentNotObject,
@@ -270,7 +271,7 @@ fn size_mb_of(data: &JsonObject) -> Option<f64> {
 
 #[rstest]
 #[case::absent_size(None, 0.0)]
-#[case::one_mebibyte(Some(1_048_576), 1.0)]
+#[case::one_mebibyte(Some(0x0010_0000), 1.0)]
 fn upload_size_unset(#[case] size: Option<u64>, #[case] expected_mb: f64) {
     let mut request_data = JsonObject::new();
     request_data.insert("model".to_owned(), Json::Text("whisper".to_owned()));
@@ -287,17 +288,20 @@ fn upload_size_unset(#[case] size: Option<u64>, #[case] expected_mb: f64) {
     .unwrap();
     assert!(outcome.proceeded);
     assert_eq!(size_mb_of(&request_data), Some(expected_mb));
-    let Some(Json::Object(metadata)) = request_data.get("metadata") else {
+    let Some(Json::Object(recorded_metadata)) = request_data.get("metadata") else {
         panic!("metadata should stay an object");
     };
-    assert_eq!(metadata.get("team"), Some(&Json::Text("t".to_owned())));
+    assert_eq!(
+        recorded_metadata.get("team"),
+        Some(&Json::Text("t".to_owned()))
+    );
 }
 
 #[rstest]
-#[case::router_absent(&[], UploadLimit::Configured(1.0), 2_097_152, false)]
-#[case::model_outside_names(&["other"], UploadLimit::Configured(1.0), 2_097_152, false)]
-#[case::deployment_absent(&["whisper"], UploadLimit::Absent, 2_097_152, false)]
-#[case::lookup_failed(&["whisper"], UploadLimit::Failed, 2_097_152, true)]
+#[case::router_absent(&[], UploadLimit::Configured(1.0), 0x0020_0000, false)]
+#[case::model_outside_names(&["other"], UploadLimit::Configured(1.0), 0x0020_0000, false)]
+#[case::deployment_absent(&["whisper"], UploadLimit::Absent, 0x0020_0000, false)]
+#[case::lookup_failed(&["whisper"], UploadLimit::Failed, 0x0020_0000, true)]
 fn upload_size_skips_a_missing_model_limit(
     #[case] router_names: &[&str],
     #[case] limit: UploadLimit,
@@ -365,9 +369,10 @@ fn request_body_dispatch() {
     assert_eq!(urlencoded.get("x"), Some(&FormValue::Text("1".to_owned())));
 
     let boundary = "multipart/form-data; boundary=test";
-    let body = b"--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n";
+    let multipart_body =
+        b"--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n";
     let RequestFormBody::Form(multipart) =
-        get_request_body("POST", boundary, body, &limits).unwrap()
+        get_request_body("POST", boundary, multipart_body, &limits).unwrap()
     else {
         panic!("a multipart body should parse as form fields");
     };
@@ -378,7 +383,7 @@ fn request_body_dispatch() {
         route_path: "/v1/chat/completions".to_owned(),
         headers: BTreeMap::from([("content-type".to_owned(), boundary.to_owned())]),
         query_params: BTreeMap::new(),
-        body: body.to_vec(),
+        body: multipart_body.to_vec(),
         client_requested_model: None,
         cached_body: None,
         form_fields: None,
@@ -386,10 +391,7 @@ fn request_body_dispatch() {
     let result =
         super::super::request_body::read_request_body(&input, &Settings::default(), &limits)
             .unwrap();
-    assert_eq!(
-        result.body.get("x"),
-        Some(&serde_json::Value::String("1".to_owned()))
-    );
+    assert_eq!(result.body.get("x"), Some(&serde_json::json!("1")));
 }
 
 #[test]
@@ -397,9 +399,7 @@ fn multipart_boundary_variants_are_checked() {
     let limits = ApiLimits::default();
     let quoted =
         b"--quoted\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\ny\r\n--quoted--\r\n";
-    assert!(
-        decode_request_form(quoted, b"multipart/form-data; boundary=\"quoted\"", &limits).is_ok()
-    );
+    decode_request_form(quoted, b"multipart/form-data; boundary=\"quoted\"", &limits).unwrap();
     assert_eq!(
         decode_request_form(quoted, b"multipart/form-data", &limits),
         Err(RequestFormError::ContentType)
@@ -429,7 +429,7 @@ fn form_part_count_is_bounded() {
         decode_request_form(b"a=1&b=2", URLENCODED, &limits),
         Err(RequestFormError::TooManyParts)
     );
-    assert!(decode_request_form(b"a=1", URLENCODED, &limits).is_ok());
+    decode_request_form(b"a=1", URLENCODED, &limits).unwrap();
     let body = format!("{}{}--b--\r\n", text_part("a", "1"), text_part("b", "2"));
     assert_eq!(
         decode_request_form(body.as_bytes(), MULTIPART, &limits),
@@ -444,11 +444,11 @@ fn whisper_request() -> JsonObject {
 }
 
 #[rstest]
-#[case::within_a_byte(Some(1.0), 1_048_575, None)]
-#[case::at_the_limit(Some(1.0), 1_048_576, None)]
-#[case::one_byte_over(Some(1.0), 1_048_577, Some((400, "bad_request", "file", "400")))]
-#[case::at_the_cap(None, 16_777_216, None)]
-#[case::above_the_cap(None, 16_777_217, Some((413, "invalid_request_error", "file", "request_too_large")))]
+#[case::within_a_byte(Some(1.0_f64), 0x000f_ffff, None)]
+#[case::at_the_limit(Some(1.0_f64), 0x0010_0000, None)]
+#[case::one_byte_over(Some(1.0_f64), 0x0010_0001, Some((400, "bad_request", "file", "400")))]
+#[case::at_the_cap(None, 0x0100_0000, None)]
+#[case::above_the_cap(None, 0x0100_0001, Some((413, "invalid_request_error", "file", "request_too_large")))]
 fn compatibility_deviations(
     #[case] configured_limit: Option<f64>,
     #[case] bytes: u64,
@@ -498,7 +498,7 @@ fn loaded_limit_reaches_file_size_checking() {
     let mut request_data = whisper_request();
     let error = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut request_data,
-        file_size: Some(1_048_577),
+        file_size: Some(0x0010_0001),
         router_names: &BTreeSet::from(["whisper".to_owned()]),
         router: Some(&router),
         limits: &ApiLimits::default(),
@@ -509,16 +509,22 @@ fn loaded_limit_reaches_file_size_checking() {
 
 const BOUNDARY_MISMATCH: &str = "multipart-mismatch";
 
-#[rstest]
-fn replays_corpus(#[files("fuzz/corpus/request_form/*")] path: PathBuf) {
-    let seed = std::fs::read(&path).unwrap();
-    let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
-    let (header, body) = seed[2..].split_at(header_len);
-    let result = decode_request_form(body, header, &ApiLimits::default());
-    if Path::new(&path).file_stem().and_then(|stem| stem.to_str()) == Some(BOUNDARY_MISMATCH) {
-        assert_eq!(result, Err(RequestFormError::InvalidBody));
-    } else {
-        assert!(result.is_ok());
+#[test]
+fn replays_corpus() {
+    let corpus = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/request_form");
+    let paths: Vec<_> = std::fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    for entry in paths {
+        let path = entry.unwrap().path();
+        let seed = std::fs::read(&path).unwrap();
+        let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
+        let (header, body) = seed[2..].split_at(header_len);
+        let result = decode_request_form(body, header, &ApiLimits::default());
+        if path.file_stem().and_then(|stem| stem.to_str()) == Some(BOUNDARY_MISMATCH) {
+            assert_eq!(result, Err(RequestFormError::InvalidBody));
+        } else {
+            result.unwrap();
+        }
     }
 }
 

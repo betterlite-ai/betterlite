@@ -8,7 +8,7 @@ pub(super) fn file_data_value(data: &FileData) -> HelperResult {
     let mut entries = Map::new();
     for (name, value) in data {
         let projected = match value {
-            FileDataValue::Unchanged(value) => form_value(value)?,
+            FileDataValue::Unchanged(unchanged) => form_value(unchanged)?,
             FileDataValue::Files(files) => Value::Array(
                 files
                     .iter()
@@ -33,7 +33,7 @@ pub(super) fn form_value(value: &FormValue) -> HelperResult {
     Ok(match value {
         FormValue::Text(text) => Value::String(text.clone()),
         FormValue::Number(number) => Value::Number(number.clone()),
-        FormValue::NonFinite(value) => Value::String(value.token().to_owned()),
+        FormValue::NonFinite(non_finite) => Value::String(non_finite.token().to_owned()),
         FormValue::List(items) => Value::Array(
             items
                 .iter()

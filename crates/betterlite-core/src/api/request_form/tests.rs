@@ -13,7 +13,7 @@ use crate::api::request_form::convert::{
     ConvertError, FileDataValue, FileTuple, convert_uploads_to_file_data,
 };
 use crate::api::request_form::metadata::{
-    MetadataTree, MetadataValue, MetadataWarning, MetadataWarningKind, extract_nested_form_metadata,
+    MetadataValue, MetadataWarning, MetadataWarningKind, extract_nested_form_metadata,
 };
 use crate::api::request_form::scalars::{scalar_float, scalar_int};
 use crate::api::request_form::values::{
@@ -312,7 +312,7 @@ fn numeric_coercion_parses_only_the_listed_fields() {
     let coerced = coerce_numeric_form_fields(&source, &numeric);
     assert_eq!(
         coerced.get("count"),
-        Some(&FormValue::Number(Number::from(7)))
+        Some(&FormValue::Number(Number::from(7_i64)))
     );
     assert_eq!(
         coerced.get("ratio"),
@@ -517,8 +517,8 @@ fn object<const N: usize>(entries: [(&str, MetadataValue); N]) -> MetadataValue 
     )
 }
 
-fn metadata_of(entries: &[(&str, &str)]) -> MetadataTree {
-    extract_nested_form_metadata(&texts(entries), "litellm_metadata[").0
+fn metadata_of(entries: &[(&str, &str)]) -> MetadataValue {
+    MetadataValue::Object(extract_nested_form_metadata(&texts(entries), "litellm_metadata[").0)
 }
 
 fn warnings_of(entries: &[(&str, &str)]) -> Vec<MetadataWarning> {
@@ -658,7 +658,7 @@ fn metadata_depth_is_bounded(#[case] depth: usize, #[case] rejected: bool) {
 
 #[test]
 fn an_empty_path_warns_and_drops() {
-    assert!(metadata_of(&[("litellm_metadata[]", "v")]).is_empty());
+    assert_eq!(metadata_of(&[("litellm_metadata[]", "v")]), object([]));
     assert_eq!(
         warnings_of(&[("litellm_metadata[]", "v")]),
         vec![MetadataWarning {
@@ -684,14 +684,20 @@ fn an_upload_value_is_skipped_with_a_warning() {
 
 #[test]
 fn other_keys_are_ignored() {
-    assert!(metadata_of(&[("team", "t"), ("litellm_metadata_other[a]", "v")]).is_empty());
+    assert_eq!(
+        metadata_of(&[("team", "t"), ("litellm_metadata_other[a]", "v")]),
+        object([])
+    );
 }
 
 #[test]
 fn an_explicit_prefix_is_used() {
     let (metadata, warnings) =
         extract_nested_form_metadata(&texts(&[("metadata[team]", "t")]), "metadata[");
-    assert_eq!(metadata, object([("team", leaf("t"))]));
+    assert_eq!(
+        MetadataValue::Object(metadata),
+        object([("team", leaf("t"))])
+    );
     assert!(warnings.is_empty());
 }
 
@@ -711,7 +717,7 @@ fn an_intermediate_list_is_a_leaf() {
     )]);
     let (metadata, _warnings) = extract_nested_form_metadata(&source, "litellm_metadata[");
     assert_eq!(
-        metadata,
+        MetadataValue::Object(metadata),
         object([(
             "a",
             MetadataValue::Leaf(FormValue::List(vec![FormValue::Text("x".to_owned())]))
