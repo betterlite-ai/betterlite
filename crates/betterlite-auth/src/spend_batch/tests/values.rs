@@ -1,110 +1,90 @@
-use std::collections::BTreeMap;
-use std::str::FromStr as _;
+use std::sync::Arc;
 
-use betterlite_redis::cache_primitives::decode::CachedValue;
-use serde_json::Number;
+use rstest::rstest;
 
-use crate::spend_batch::value::{CounterMapError, decimal_map};
+use crate::spend_batch::batch::{SpendCounterBatch, SpendCounterValue};
 
-use super::support::decimal;
+use super::support::{DebugEvents, FakeRedis, Reply, allow_cache, decimal, keys};
 
-const PRECISION_KEY: &str = "$serde_json::private::Number";
-
-fn number(text: &str) -> CachedValue {
-    CachedValue::Number(Number::from_str(text).expect("a fixture number parses"))
+async fn open_batch(server: &FakeRedis) -> Arc<SpendCounterBatch> {
+    SpendCounterBatch::new(allow_cache(server).await)
 }
 
-fn precision(text: &str) -> CachedValue {
-    CachedValue::Object(BTreeMap::from([(
-        PRECISION_KEY.to_owned(),
-        CachedValue::Text(text.to_owned()),
-    )]))
+async fn read(batch: &Arc<SpendCounterBatch>, counter_key: &str) -> Option<SpendCounterValue> {
+    batch.read(counter_key).await.expect("the read succeeds")
 }
 
-#[test]
-fn decodes_every_counter_shape() {
-    let values = BTreeMap::from([
-        ("bool-false".to_owned(), Some(CachedValue::Boolean(false))),
-        ("bool-true".to_owned(), Some(CachedValue::Boolean(true))),
-        ("missing".to_owned(), Some(CachedValue::Null)),
-        ("number".to_owned(), Some(number("2.5"))),
-        ("precision".to_owned(), Some(precision("9.99"))),
-        (
-            "text".to_owned(),
-            Some(CachedValue::Text("1.25".to_owned())),
-        ),
-    ]);
-    assert_eq!(
-        decimal_map(&values),
-        Ok(BTreeMap::from([
-            ("bool-false".to_owned(), Some(decimal("0"))),
-            ("bool-true".to_owned(), Some(decimal("1"))),
-            ("missing".to_owned(), None),
-            ("number".to_owned(), Some(decimal("2.5"))),
-            ("precision".to_owned(), Some(decimal("9.99"))),
-            ("text".to_owned(), Some(decimal("1.25"))),
-        ]))
-    );
-}
-
-#[test]
-fn array_value_rejects_the_whole_map() {
-    let values = BTreeMap::from([
-        ("good".to_owned(), Some(number("3"))),
-        ("bad".to_owned(), Some(CachedValue::Array(Vec::new()))),
-    ]);
-    assert!(matches!(
-        decimal_map(&values),
-        Err(CounterMapError::WrongShape)
-    ));
-}
-
-#[test]
-fn precision_object_must_hold_exactly_the_number_text() {
-    let extra = CachedValue::Object(BTreeMap::from([
-        (PRECISION_KEY.to_owned(), CachedValue::Text("1".to_owned())),
-        ("other".to_owned(), CachedValue::Text("2".to_owned())),
+#[tokio::test]
+async fn decodes_every_counter_shape_from_one_mget() {
+    let server = FakeRedis::start().await;
+    let batch = open_batch(&server).await;
+    batch.bind(&keys(&[
+        "spend:key:false",
+        "spend:key:null",
+        "spend:key:number",
+        "spend:key:precision",
+        "spend:key:scientific",
+        "spend:key:text",
+        "spend:key:true",
     ]));
-    let foreign = CachedValue::Object(BTreeMap::from([(
-        "other".to_owned(),
-        CachedValue::Text("1".to_owned()),
-    )]));
-    let empty = CachedValue::Object(BTreeMap::new());
-    let not_text = CachedValue::Object(BTreeMap::from([(
-        PRECISION_KEY.to_owned(),
-        CachedValue::Boolean(true),
-    )]));
-    for value in [extra, foreign, empty, not_text] {
-        let values = BTreeMap::from([("bad".to_owned(), Some(value))]);
-        assert!(matches!(
-            decimal_map(&values),
-            Err(CounterMapError::WrongShape)
-        ));
-    }
-}
-
-#[test]
-fn non_decimal_text_names_the_value() {
-    for text in ["not-a-number", "NaN", "1e40"] {
-        let values = BTreeMap::from([("bad".to_owned(), Some(CachedValue::Text(text.to_owned())))]);
-        match decimal_map(&values) {
-            Err(CounterMapError::NotDecimal { text: named }) => assert_eq!(named, text),
-            other => panic!("{text} must not decode: {other:?}"),
-        }
-    }
-}
-
-#[test]
-fn scientific_text_decodes_like_the_budget_decoder() {
-    let values = BTreeMap::from([(
-        "amount".to_owned(),
-        Some(CachedValue::Text("1.5e2".to_owned())),
-    )]);
+    server.script_mget(Reply::Array(vec![
+        Reply::Bulk("false".to_owned()),
+        Reply::Bulk("null".to_owned()),
+        Reply::Bulk("2.5".to_owned()),
+        Reply::Bulk("{\"$serde_json::private::Number\":\"9.99\"}".to_owned()),
+        Reply::Bulk("1.5e2".to_owned()),
+        Reply::Bulk("\"1.25\"".to_owned()),
+        Reply::Bulk("true".to_owned()),
+    ]));
     assert_eq!(
-        decimal_map(&values),
-        Ok(BTreeMap::from([(
-            "amount".to_owned(),
-            Some(decimal("150"))
-        )]))
+        read(&batch, "spend:key:false").await,
+        Some(SpendCounterValue::Amount(decimal("0")))
     );
+    assert_eq!(
+        read(&batch, "spend:key:null").await,
+        Some(SpendCounterValue::Missing)
+    );
+    assert_eq!(
+        read(&batch, "spend:key:number").await,
+        Some(SpendCounterValue::Amount(decimal("2.5")))
+    );
+    assert_eq!(
+        read(&batch, "spend:key:precision").await,
+        Some(SpendCounterValue::Amount(decimal("9.99")))
+    );
+    assert_eq!(
+        read(&batch, "spend:key:scientific").await,
+        Some(SpendCounterValue::Amount(decimal("150")))
+    );
+    assert_eq!(
+        read(&batch, "spend:key:text").await,
+        Some(SpendCounterValue::Amount(decimal("1.25")))
+    );
+    assert_eq!(
+        read(&batch, "spend:key:true").await,
+        Some(SpendCounterValue::Amount(decimal("1")))
+    );
+    assert_eq!(server.mget_keys().len(), 1);
+}
+
+#[rstest]
+#[case::not_a_number("\"not-a-number\"")]
+#[case::not_finite("\"nan\"")]
+#[case::past_decimal_range("\"1e400\"")]
+#[case::beyond_decimal_max("1e300")]
+#[case::foreign_object("{\"other\":1}")]
+#[tokio::test]
+async fn a_value_the_decoder_rejects_drops_the_whole_map(#[case] payload: &str) {
+    let server = FakeRedis::start().await;
+    let events = DebugEvents::capture();
+    let batch = open_batch(&server).await;
+    batch.bind(&keys(&["spend:key:a", "spend:key:b"]));
+    server.script_mget(Reply::Array(vec![
+        Reply::Bulk("2".to_owned()),
+        Reply::Bulk(payload.to_owned()),
+    ]));
+    assert_eq!(read(&batch, "spend:key:a").await, None);
+    assert_eq!(read(&batch, "spend:key:b").await, None);
+    assert_eq!(server.mget_keys().len(), 1);
+    assert!(events.count() >= 1);
 }

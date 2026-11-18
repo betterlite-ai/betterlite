@@ -1,19 +1,19 @@
 use betterlite_db::budget_permission_rows::JsonData;
 
 use crate::spend_batch::keys::{
-    CounterEntities, PostCallCounters, admission_counter_keys, entity_counter_keys,
+    CounterId, EntityCounterIds, PostCallCounterKeys, admission_counter_keys, entity_counter_keys,
     post_call_counter_keys,
 };
 
 use super::support::{keys, user_auth};
 
-const ALL_IDS: CounterEntities<'static> = CounterEntities {
-    key_token: Some("sk-1"),
-    team: Some("team-1"),
-    user: Some("user-1"),
-    end_user: Some("end-1"),
-    org: Some("org-1"),
-    project: Some("proj-1"),
+const ALL_IDS: EntityCounterIds<'static> = EntityCounterIds {
+    token: CounterId::Text("sk-1"),
+    team_id: CounterId::Text("team-1"),
+    user_id: CounterId::Text("user-1"),
+    org_id: CounterId::Text("org-1"),
+    project_id: CounterId::Text("proj-1"),
+    end_user_id: CounterId::Text("end-1"),
 };
 
 #[test]
@@ -34,13 +34,13 @@ fn entity_keys_cover_every_counter_family() {
 
 #[test]
 fn empty_ids_still_name_their_counters() {
-    let entities = CounterEntities {
-        key_token: Some(""),
-        team: Some(""),
-        user: Some(""),
-        end_user: Some(""),
-        org: Some(""),
-        project: Some(""),
+    let entities = EntityCounterIds {
+        token: CounterId::Text(""),
+        team_id: CounterId::Text(""),
+        user_id: CounterId::Text(""),
+        org_id: CounterId::Text(""),
+        project_id: CounterId::Text(""),
+        end_user_id: CounterId::Text(""),
     };
     assert_eq!(
         entity_counter_keys(&entities),
@@ -58,26 +58,37 @@ fn empty_ids_still_name_their_counters() {
 
 #[test]
 fn team_member_counter_needs_both_team_and_user() {
-    let team_only = CounterEntities {
-        team: Some("team-1"),
-        ..CounterEntities::default()
+    let team_only = EntityCounterIds {
+        token: CounterId::Unusable,
+        team_id: CounterId::Text("team-1"),
+        user_id: CounterId::Unusable,
+        org_id: CounterId::Unusable,
+        project_id: CounterId::Unusable,
+        end_user_id: CounterId::Unusable,
     };
     assert_eq!(
         entity_counter_keys(&team_only),
         keys(&["spend:team:team-1"])
     );
-    let user_only = CounterEntities {
-        user: Some("user-1"),
-        ..CounterEntities::default()
+    let user_only = EntityCounterIds {
+        token: CounterId::Unusable,
+        team_id: CounterId::Unusable,
+        user_id: CounterId::Text("user-1"),
+        org_id: CounterId::Unusable,
+        project_id: CounterId::Unusable,
+        end_user_id: CounterId::Unusable,
     };
     assert_eq!(
         entity_counter_keys(&user_only),
         keys(&["spend:user:user-1"])
     );
-    let both = CounterEntities {
-        team: Some("team-1"),
-        user: Some("user-1"),
-        ..CounterEntities::default()
+    let both = EntityCounterIds {
+        token: CounterId::Unusable,
+        team_id: CounterId::Text("team-1"),
+        user_id: CounterId::Text("user-1"),
+        org_id: CounterId::Unusable,
+        project_id: CounterId::Unusable,
+        end_user_id: CounterId::Unusable,
     };
     assert_eq!(
         entity_counter_keys(&both),
@@ -107,13 +118,17 @@ fn post_call_filters_and_deduplicates_tags_and_groups() {
         JsonData::String("group-b".to_owned()),
         JsonData::Number(serde_json::Number::from(3)),
     ];
-    let counters = PostCallCounters {
-        entities: CounterEntities {
-            project: Some("proj-1"),
-            ..CounterEntities::default()
+    let counters = PostCallCounterKeys {
+        entity: EntityCounterIds {
+            project_id: CounterId::Text("proj-1"),
+            token: CounterId::Unusable,
+            team_id: CounterId::Unusable,
+            user_id: CounterId::Unusable,
+            org_id: CounterId::Unusable,
+            end_user_id: CounterId::Unusable,
         },
         tags: &tags,
-        access_groups: &access_groups,
+        model_access_groups: &access_groups,
     };
     assert_eq!(
         post_call_counter_keys(&counters),

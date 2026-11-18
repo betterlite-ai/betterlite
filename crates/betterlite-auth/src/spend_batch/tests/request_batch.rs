@@ -33,11 +33,17 @@ async fn the_flush_hook_puts_counters_on_the_request_pipeline() {
             ]
         );
         assert_eq!(
-            context.read_spend_counter("spend:key:a").await,
+            context
+                .read_spend_counter("spend:key:a")
+                .await
+                .expect("the read succeeds"),
             Some(SpendCounterValue::Amount(decimal("2")))
         );
         assert_eq!(
-            context.read_spend_counter("spend:key:b").await,
+            context
+                .read_spend_counter("spend:key:b")
+                .await
+                .expect("the read succeeds"),
             Some(SpendCounterValue::Amount(decimal("3")))
         );
         assert_eq!(server.mget_keys().len(), 2);
@@ -54,7 +60,10 @@ async fn a_read_drives_its_own_flush() {
         let _scope = context.enter(Some(&cache), &keys(&["spend:key:a"]));
         server.script_mget(Reply::Array(vec![Reply::Bulk("5".to_owned())]));
         assert_eq!(
-            context.read_spend_counter("spend:key:a").await,
+            context
+                .read_spend_counter("spend:key:a")
+                .await
+                .expect("the read succeeds"),
             Some(SpendCounterValue::Amount(decimal("5")))
         );
         assert_eq!(server.mget_keys(), [vec!["spend:key:a".to_owned()]]);
@@ -77,7 +86,13 @@ async fn a_closed_batch_adds_nothing_to_the_pipeline() {
             .await
             .expect("the prefetch read");
         assert_eq!(server.mget_keys(), [vec!["auth:key".to_owned()]]);
-        assert_eq!(context.read_spend_counter("spend:key:a").await, None);
+        assert_eq!(
+            context
+                .read_spend_counter("spend:key:a")
+                .await
+                .expect("the read succeeds"),
+            None
+        );
     })
     .await;
 }
@@ -94,8 +109,20 @@ async fn a_failed_request_result_falls_back_without_a_new_mget() {
         server.script_mget(Reply::Error("ERR mget failed".to_owned()));
         let failed = request.mget(&["auth:key".to_owned()]).await;
         assert!(failed.is_err(), "the pipeline reports the failure");
-        assert_eq!(context.read_spend_counter("spend:key:a").await, None);
-        assert_eq!(context.read_spend_counter("spend:key:a").await, None);
+        assert_eq!(
+            context
+                .read_spend_counter("spend:key:a")
+                .await
+                .expect("the read succeeds"),
+            None
+        );
+        assert_eq!(
+            context
+                .read_spend_counter("spend:key:a")
+                .await
+                .expect("the read succeeds"),
+            None
+        );
         assert_eq!(server.mget_keys().len(), 2);
     })
     .await;
@@ -116,7 +143,10 @@ async fn a_late_bind_joins_the_next_flush() {
             .await
             .expect("the first prefetch read");
         assert_eq!(
-            context.read_spend_counter("spend:key:a").await,
+            context
+                .read_spend_counter("spend:key:a")
+                .await
+                .expect("the read succeeds"),
             Some(SpendCounterValue::Amount(decimal("2")))
         );
         context.bind_spend_counter_keys(&keys(&["spend:key:b"]));
@@ -127,7 +157,10 @@ async fn a_late_bind_joins_the_next_flush() {
             .await
             .expect("the second prefetch read");
         assert_eq!(
-            context.read_spend_counter("spend:key:b").await,
+            context
+                .read_spend_counter("spend:key:b")
+                .await
+                .expect("the read succeeds"),
             Some(SpendCounterValue::Amount(decimal("4")))
         );
         assert_eq!(
