@@ -265,6 +265,17 @@ fn a_missing_required_incoming_field_is_reported() {
 }
 
 #[test]
+fn a_missing_required_incoming_counter_is_reported() {
+    let second = update("k", without_field(daily_row("1.0"), "prompt_tokens"));
+    assert!(matches!(
+        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        Err(SpendQueueError::MissingField {
+            field: "prompt_tokens"
+        })
+    ));
+}
+
+#[test]
 fn a_missing_required_existing_field_is_reported() {
     let first = update("k", without_field(daily_row("1.0"), "prompt_tokens"));
     assert!(matches!(
@@ -272,6 +283,15 @@ fn a_missing_required_existing_field_is_reported() {
         Err(SpendQueueError::MissingField {
             field: "prompt_tokens"
         })
+    ));
+}
+
+#[test]
+fn a_missing_required_existing_money_field_is_reported() {
+    let first = update("k", without_field(daily_row("1.0"), "spend"));
+    assert!(matches!(
+        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        Err(SpendQueueError::MissingField { field: "spend" })
     ));
 }
 
@@ -285,6 +305,48 @@ fn a_null_required_incoming_value_is_reported() {
         aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::InvalidAddition { field: "spend" })
     ));
+}
+
+#[test]
+fn a_null_required_incoming_counter_is_reported() {
+    let second = update(
+        "k",
+        with_field(daily_row("1.0"), "prompt_tokens", SpendColumnValue::Null),
+    );
+    assert!(matches!(
+        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        Err(SpendQueueError::InvalidAddition {
+            field: "prompt_tokens"
+        })
+    ));
+}
+
+#[test]
+fn a_null_optional_metric_adds_zero() {
+    let second = update(
+        "k",
+        with_field(
+            with_field(
+                daily_row("1.0"),
+                "cache_read_input_tokens",
+                SpendColumnValue::Null,
+            ),
+            "compression_savings_spend",
+            SpendColumnValue::Null,
+        ),
+    );
+    let aggregated =
+        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second])
+            .unwrap();
+    let row = aggregated.get("k").unwrap();
+    assert_eq!(
+        row.get("cache_read_input_tokens"),
+        Some(&SpendColumnValue::Int(0))
+    );
+    assert_eq!(
+        row.get("compression_savings_spend"),
+        Some(&SpendColumnValue::Int(0))
+    );
 }
 
 #[test]
