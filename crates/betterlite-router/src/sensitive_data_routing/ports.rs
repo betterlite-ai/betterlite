@@ -14,7 +14,7 @@ pub trait SensitiveRoutingCache: Send + Sync {
     // redis_cache.async_get_cache; Err is the exception that sends the read to the in-memory tier
     async fn redis_get(&self, key: &str) -> Result<Option<String>, Self::Error>;
 
-    // redis_cache.async_get_ttl; None inherits the full ttl that was configured
+    // redis_cache.async_get_ttl; None, or the Err it logs and swallows, inherits the configured ttl
     async fn redis_ttl(&self, key: &str) -> Result<Option<Duration>, Self::Error>;
 
     // redis_cache.async_set_cache; Err only logs a warning, because the local set always follows
