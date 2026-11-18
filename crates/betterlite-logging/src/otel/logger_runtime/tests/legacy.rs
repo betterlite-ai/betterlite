@@ -85,7 +85,7 @@ fn legacy_parent_start_time(#[case] start_time: SpanTime, #[case] expected_secon
     );
     assert_eq!(data.span_kind, SpanKind::Server);
     assert_eq!(data.name.as_ref(), PROXY_REQUEST_SPAN_NAME);
-    assert!(!data.parent_span_id.is_valid());
+    assert_eq!(data.parent_span_id, SpanId::INVALID);
 }
 
 #[test]

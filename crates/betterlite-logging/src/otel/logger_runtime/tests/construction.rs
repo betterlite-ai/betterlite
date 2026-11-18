@@ -7,7 +7,6 @@ use betterlite_config::sections::provider_url_destination::pattern::AllowedDesti
 use chrono::FixedOffset;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
-use crate::callback_logger::CallbackLogger;
 use crate::otel::config::Settings;
 use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::langfuse_root::{RootSpanSink, RootSpanSource};

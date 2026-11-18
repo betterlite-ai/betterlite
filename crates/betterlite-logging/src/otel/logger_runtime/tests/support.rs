@@ -434,7 +434,7 @@ pub(crate) fn provider_exporting(sink: &InMemorySpanExporter) -> SdkTracerProvid
 }
 
 pub(crate) fn probe(provider: &SdkTracerProvider) {
-    let span = provider.tracer("logger_runtime_probe").start("probe");
+    let mut span = provider.tracer("logger_runtime_probe").start("probe");
     span.end();
 }
 

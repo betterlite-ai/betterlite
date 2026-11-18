@@ -99,7 +99,7 @@ fn phase_error_propagates() {
             current.span().span_context().span_id(),
             phase.span.context.span_id()
         );
-        let child = callback.tracer_provider.tracer("phase-test").start("child");
+        let mut child = callback.tracer_provider.tracer("phase-test").start("child");
         child.end();
         Err::<u8, SpanError>(error.clone())
     });
