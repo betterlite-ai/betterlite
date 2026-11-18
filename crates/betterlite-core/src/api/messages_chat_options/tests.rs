@@ -554,6 +554,20 @@ fn claude_thinking_carriers_carry_the_declared_effort() {
 }
 
 #[test]
+fn claude_thinking_carriers_ignore_other_arn_services() {
+    let request = r#"{"thinking": {"type": "adaptive"}, "output_config": {"effort": "high"}}"#;
+    let (kwargs, probes) = thinking_kwargs(
+        request,
+        "arn:aws:sagemaker:us-east-1:123:endpoint/my-bedrock-endpoint",
+        Some("bedrock"),
+        None,
+        false,
+    );
+    assert_eq!(kwargs, object(r#"{"reasoning_effort": "high"}"#));
+    assert_eq!(probes, 0);
+}
+
+#[test]
 fn claude_thinking_carriers_need_a_declaring_provider() {
     let thinking = r#"{"type": "adaptive", "display": "updates"}"#;
     let config = r#"{"effort": "high"}"#;
