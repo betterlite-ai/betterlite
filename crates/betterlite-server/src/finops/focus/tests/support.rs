@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::future::{Future, ready};
+use std::future::{Future, pending, ready};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -12,6 +12,8 @@ use betterlite_logging::finops::metering::clock::UtcClock;
 use betterlite_logging::focus_records::destinations::FocusTimeWindow;
 use chrono::{DateTime, Utc};
 use futures_util::future::BoxFuture;
+use tokio::sync::Notify;
+use tokio_util::task::TaskTracker;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::DefaultGuard;
 use tracing::{Event, Level, Subscriber};
@@ -80,6 +82,7 @@ pub(super) struct Recorder {
     pub(super) calls: Arc<Mutex<Vec<ExportCall>>>,
     pub(super) settings: Arc<Mutex<Vec<RecordedSettings>>>,
     pub(super) fail: bool,
+    pub(super) gate: Option<Arc<Notify>>,
 }
 
 impl Recorder {
@@ -88,7 +91,15 @@ impl Recorder {
             calls: Arc::new(Mutex::new(Vec::new())),
             settings: Arc::new(Mutex::new(Vec::new())),
             fail,
+            gate: None,
         }
+    }
+
+    // an export that signals the gate and never finishes, so a test can cancel the job while it waits
+    pub(super) fn paused(fail: bool, gate: Arc<Notify>) -> Self {
+        let mut recorder = Self::new(fail);
+        recorder.gate = Some(gate);
+        recorder
     }
 
     pub(super) fn factory(&self) -> RecordingFactory {
@@ -145,6 +156,15 @@ impl RecordingExporter {
     fn record(&self, call: ExportCall) {
         self.recorder.calls.lock().unwrap().push(call);
     }
+
+    // without a gate the export finishes at once; with one it tells the test and never finishes
+    fn finish(&self) -> BoxFuture<'_, Result<(), TestError>> {
+        let Some(gate) = self.recorder.gate.as_ref() else {
+            return Box::pin(ready(self.outcome()));
+        };
+        gate.notify_one();
+        Box::pin(pending())
+    }
 }
 
 impl FocusExporter for RecordingExporter {
@@ -152,7 +172,7 @@ impl FocusExporter for RecordingExporter {
 
     fn export_all(&self, limit: Option<i64>) -> impl Future<Output = Result<(), TestError>> + Send {
         self.record(ExportCall::All { limit });
-        ready(self.outcome())
+        self.finish()
     }
 
     fn export_window(
@@ -166,7 +186,7 @@ impl FocusExporter for RecordingExporter {
             frequency: window.frequency.clone(),
             limit,
         });
-        ready(self.outcome())
+        self.finish()
     }
 }
 
@@ -215,6 +235,7 @@ where
         factory,
         clock: Arc::new(FixedClock { now: at(FIXED_NOW) }),
         pod_lock,
+        tasks: TaskTracker::new(),
     };
     FocusLogger::new(environment, params, deps).expect("the logger builds")
 }

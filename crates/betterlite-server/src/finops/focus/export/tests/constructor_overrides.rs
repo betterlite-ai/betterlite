@@ -30,7 +30,7 @@ async fn parameters_override_the_environment() {
     assert_eq!(logger.export_format, "csv");
     assert_eq!(logger.frequency, "daily");
     assert_eq!(logger.cron_offset_minute, 17);
-    assert_eq!(logger.interval_seconds, Some(42));
+    assert_eq!(logger.interval_seconds, 42);
     assert_eq!(logger.prefix, "Chosen");
     logger.export_usage_data(None, None, None).await.unwrap();
     let settings = recorder.settings();
@@ -52,5 +52,5 @@ fn a_parameter_wins_over_an_unreadable_interval() {
         recorder.factory(),
         None,
     );
-    assert_eq!(logger.interval_seconds, Some(30));
+    assert_eq!(logger.interval_seconds, 30);
 }

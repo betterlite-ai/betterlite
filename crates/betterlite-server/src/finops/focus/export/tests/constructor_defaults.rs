@@ -17,7 +17,7 @@ fn an_empty_environment_gives_the_documented_defaults_without_building_the_engin
     assert_eq!(logger.export_format, "parquet");
     assert_eq!(logger.frequency, "hourly");
     assert_eq!(logger.cron_offset_minute, 5);
-    assert_eq!(logger.interval_seconds, None);
+    assert_eq!(logger.interval_seconds, 60);
     assert_eq!(logger.prefix, "focus_exports");
     assert!(recorder.settings().is_empty());
 }

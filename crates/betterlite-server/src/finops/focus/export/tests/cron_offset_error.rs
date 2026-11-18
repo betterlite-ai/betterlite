@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use rstest::rstest;
+use tokio_util::task::TaskTracker;
 
 use crate::finops::focus::error::FocusError;
 use crate::finops::focus::export::{FocusLogger, FocusLoggerDeps};
@@ -18,6 +19,7 @@ fn an_unreadable_cron_offset_fails_construction() {
             factory: recorder.factory(),
             clock: Arc::new(FixedClock { now: at(FIXED_NOW) }),
             pod_lock: None,
+            tasks: TaskTracker::new(),
         },
     ) else {
         panic!("an unreadable offset must fail construction");
@@ -41,6 +43,7 @@ fn a_parameter_does_not_rescue_an_unreadable_environment_offset() {
             factory: recorder.factory(),
             clock: Arc::new(FixedClock { now: at(FIXED_NOW) }),
             pod_lock: None,
+            tasks: TaskTracker::new(),
         },
     ) else {
         panic!("the environment is read before the parameter");
