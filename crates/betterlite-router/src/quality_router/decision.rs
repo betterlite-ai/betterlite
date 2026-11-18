@@ -81,52 +81,60 @@ struct Facts<'decision> {
 
 impl Decision {
     fn facts(&self) -> Facts<'_> {
+        let (router_model_name, routed_model, routed_by) = self.route();
+        let (matched_keyword, quality_tier, complexity_tier) = self.tier_facts();
+        let (score, signals) = self.score_facts();
+        Facts {
+            router_model_name,
+            routed_model,
+            routed_by,
+            matched_keyword,
+            quality_tier,
+            complexity_tier,
+            score,
+            signals,
+        }
+    }
+
+    fn route(&self) -> (&str, &str, RoutedBy) {
         match self {
             Self::Keyword {
                 router_model_name,
                 routed_model,
-                matched_keyword,
-                quality_tier,
-            } => Facts {
-                router_model_name,
-                routed_model,
-                routed_by: RoutedBy::Keyword,
-                matched_keyword: Some(matched_keyword),
-                quality_tier: Some(*quality_tier),
-                complexity_tier: None,
-                score: None,
-                signals: None,
-            },
+                ..
+            } => (router_model_name, routed_model, RoutedBy::Keyword),
             Self::QualityTier {
                 router_model_name,
                 routed_model,
-                quality_tier,
-                complexity_tier,
-                score,
-                signals,
-            } => Facts {
-                router_model_name,
-                routed_model,
-                routed_by: RoutedBy::QualityTier,
-                matched_keyword: None,
-                quality_tier: Some(*quality_tier),
-                complexity_tier: Some(complexity_tier),
-                score: Some(*score),
-                signals: Some(signals),
-            },
+                ..
+            } => (router_model_name, routed_model, RoutedBy::QualityTier),
             Self::DefaultFallback {
                 router_model_name,
                 routed_model,
-            } => Facts {
-                router_model_name,
-                routed_model,
-                routed_by: RoutedBy::DefaultFallback,
-                matched_keyword: None,
-                quality_tier: None,
-                complexity_tier: None,
-                score: None,
-                signals: None,
-            },
+            } => (router_model_name, routed_model, RoutedBy::DefaultFallback),
+        }
+    }
+
+    fn tier_facts(&self) -> (Option<&str>, Option<i64>, Option<&str>) {
+        match self {
+            Self::Keyword {
+                matched_keyword,
+                quality_tier,
+                ..
+            } => (Some(matched_keyword), Some(*quality_tier), None),
+            Self::QualityTier {
+                quality_tier,
+                complexity_tier,
+                ..
+            } => (None, Some(*quality_tier), Some(complexity_tier)),
+            Self::DefaultFallback { .. } => (None, None, None),
+        }
+    }
+
+    fn score_facts(&self) -> (Option<f64>, Option<&[String]>) {
+        match self {
+            Self::QualityTier { score, signals, .. } => (Some(*score), Some(signals)),
+            Self::Keyword { .. } | Self::DefaultFallback { .. } => (None, None),
         }
     }
 
