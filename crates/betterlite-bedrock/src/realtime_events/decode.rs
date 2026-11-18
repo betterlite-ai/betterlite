@@ -3,7 +3,6 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::error::Category;
 use serde_json::value::RawValue;
 
 use super::error::EventError;
@@ -55,17 +54,14 @@ enum Branch<'a> {
 // A syntax error is the one parse failure LiteLLM answers with a warning, so it comes back as a decoded value
 pub fn decode_realtime_native_event(bytes: &[u8]) -> Result<DecodedEvent, EventError> {
     let text = std::str::from_utf8(bytes).map_err(|source| EventError::Utf8 { source })?;
+    // The whole message must parse before its shape is judged, so an unterminated array is a syntax warning
+    let syntax: Result<&RawValue, serde_json::Error> = serde_json::from_str(text);
+    if syntax.is_err() {
+        let preview = text.chars().take(PREVIEW_CHARS).collect();
+        return Ok(DecodedEvent::InvalidJson { preview });
+    }
     let parsed: Result<EventFields<'_>, serde_json::Error> = serde_json::from_str(text);
-    let fields = match parsed {
-        Ok(fields) => fields,
-        Err(source) if matches!(source.classify(), Category::Data) => {
-            return Err(EventError::NotAnObject { source });
-        }
-        Err(_) => {
-            let preview = text.chars().take(PREVIEW_CHARS).collect();
-            return Ok(DecodedEvent::InvalidJson { preview });
-        }
-    };
+    let fields = parsed.map_err(|source| EventError::NotAnObject { source })?;
     let Some(event) = fields.get("event").copied() else {
         return Ok(DecodedEvent::Event(NativeEvent::Unknown));
     };
@@ -127,11 +123,16 @@ fn branch<'a>(event: &EventFields<'a>) -> Option<Branch<'a>> {
 }
 
 fn speech_or_end<'a>(event: &EventFields<'a>) -> Option<Branch<'a>> {
-    if event.contains_key("userSpeechStart") {
-        return Some(Branch::UserSpeechStart);
-    }
-    if event.contains_key("userSpeechEnd") {
-        return Some(Branch::UserSpeechEnd);
+    let speech = event
+        .contains_key("userSpeechStart")
+        .then_some(Branch::UserSpeechStart)
+        .or_else(|| {
+            event
+                .contains_key("userSpeechEnd")
+                .then_some(Branch::UserSpeechEnd)
+        });
+    if speech.is_some() {
+        return speech;
     }
     if let Some(raw) = event.get("usageEvent").copied() {
         return Some(Branch::UsageEvent(raw));
@@ -145,42 +146,70 @@ fn speech_or_end<'a>(event: &EventFields<'a>) -> Option<Branch<'a>> {
     None
 }
 
+// A payload is always a JSON object; serde would read an array into the declared struct as positional fields
+pub(super) fn require_object(text: &str, field: &'static str) -> Result<(), EventError> {
+    if text.trim_start().starts_with('{') {
+        return Ok(());
+    }
+    Err(EventError::Payload {
+        field,
+        source: <serde_json::Error as serde::de::Error>::custom(
+            "the event payload is not a JSON object",
+        ),
+    })
+}
+
 fn payload(branch: Branch<'_>) -> Result<NativeEvent, EventError> {
     match branch {
         Branch::SessionStart => Ok(NativeEvent::SessionStart),
-        Branch::ContentStart(raw) => serde_json::from_str(raw.get())
-            .map(|event| NativeEvent::ContentStart(Box::new(event)))
-            .map_err(|source| EventError::Payload {
-                field: "contentStart",
-                source,
-            }),
-        Branch::TextOutput(raw) => serde_json::from_str(raw.get())
-            .map(NativeEvent::TextOutput)
-            .map_err(|source| EventError::Payload {
-                field: "textOutput",
-                source,
-            }),
-        Branch::AudioOutput(raw) => serde_json::from_str(raw.get())
-            .map(NativeEvent::AudioOutput)
-            .map_err(|source| EventError::Payload {
-                field: "audioOutput",
-                source,
-            }),
+        Branch::ContentStart(raw) => {
+            require_object(raw.get(), "contentStart")?;
+            serde_json::from_str(raw.get())
+                .map(|event| NativeEvent::ContentStart(Box::new(event)))
+                .map_err(|source| EventError::Payload {
+                    field: "contentStart",
+                    source,
+                })
+        }
+        Branch::TextOutput(raw) => {
+            require_object(raw.get(), "textOutput")?;
+            serde_json::from_str(raw.get())
+                .map(NativeEvent::TextOutput)
+                .map_err(|source| EventError::Payload {
+                    field: "textOutput",
+                    source,
+                })
+        }
+        Branch::AudioOutput(raw) => {
+            require_object(raw.get(), "audioOutput")?;
+            serde_json::from_str(raw.get())
+                .map(NativeEvent::AudioOutput)
+                .map_err(|source| EventError::Payload {
+                    field: "audioOutput",
+                    source,
+                })
+        }
         Branch::ContentEnd(raw) => Ok(NativeEvent::ContentEnd(raw.get().to_owned())),
         Branch::UserSpeechStart => Ok(NativeEvent::UserSpeechStart),
         Branch::UserSpeechEnd => Ok(NativeEvent::UserSpeechEnd),
-        Branch::UsageEvent(raw) => serde_json::from_str(raw.get())
-            .map(NativeEvent::UsageEvent)
-            .map_err(|source| EventError::Payload {
-                field: "usageEvent",
-                source,
-            }),
-        Branch::ToolUse(raw) => serde_json::from_str(raw.get())
-            .map(|tool_use: ToolUse| NativeEvent::ToolUse(Box::new(ToolUseEvent { tool_use })))
-            .map_err(|source| EventError::Payload {
-                field: "toolUse",
-                source,
-            }),
+        Branch::UsageEvent(raw) => {
+            require_object(raw.get(), "usageEvent")?;
+            serde_json::from_str(raw.get())
+                .map(NativeEvent::UsageEvent)
+                .map_err(|source| EventError::Payload {
+                    field: "usageEvent",
+                    source,
+                })
+        }
+        Branch::ToolUse(raw) => {
+            require_object(raw.get(), "toolUse")?;
+            serde_json::from_str(raw.get())
+                .map(|tool_use: ToolUse| NativeEvent::ToolUse(Box::new(ToolUseEvent { tool_use })))
+                .map_err(|source| EventError::Payload {
+                    field: "toolUse",
+                    source,
+                })
+        }
         Branch::PromptEnd => Ok(NativeEvent::PromptEnd),
     }
 }

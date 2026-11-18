@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use super::decode::NativeEvent;
+use super::decode::{NativeEvent, require_object};
 use super::dispatch::{RealtimeEvents, TransformState};
 use super::error::EventError;
 use crate::realtime_completion::content_end::content_end_events;
@@ -105,11 +105,11 @@ impl RealtimeEvents<'_> {
         audio: &AudioOutput,
     ) -> Result<Vec<Json>, EventError> {
         let current = state.output_ids();
-        let mut output = NovaRealtimeOutput {
+        let Some(delta) = NovaRealtimeOutput {
             session: &mut *self.session,
             ids: self.ids,
-        };
-        let Some(delta) = output.transform_audio_output_event(audio, &current) else {
+        }
+        .transform_audio_output_event(audio, &current) else {
             return Ok(Vec::new());
         };
         let json = event_json(&delta)?;
@@ -160,12 +160,14 @@ impl RealtimeEvents<'_> {
         let mut response_state = state.response_state();
         let done = content_end_events(&mut response_state, self.ids);
         let mut events = events_json(&done)?;
+        require_object(raw, "contentEnd")?;
         let end: BedrockContentEnd =
             serde_json::from_str(raw).map_err(|source| EventError::Payload {
                 field: "contentEnd",
                 source,
             })?;
-        if response_state.delta_chunks.is_none() {
+        // A content end that closed a response resets its accumulator; one without ids leaves it as it came
+        if response_state.output_item_id.is_some() && response_state.response_id.is_some() {
             state.delta_chunks = None;
         }
         if end.stop_reason.as_deref() == Some("END_TURN") {

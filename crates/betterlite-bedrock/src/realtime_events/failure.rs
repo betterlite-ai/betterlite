@@ -23,6 +23,8 @@ const BEDROCK_STREAM_ERROR_STATUS: [(&str, u16); 12] = [
 pub struct ProviderFailure {
     pub class_name: String,
     pub message: String,
+    #[source]
+    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
 // The mapped error keeps the provider exception as its cause; an unknown one goes up as it arrived

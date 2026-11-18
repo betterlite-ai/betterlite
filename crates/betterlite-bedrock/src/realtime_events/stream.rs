@@ -6,6 +6,8 @@ use thiserror::Error;
 #[error("{message}")]
 pub struct StreamError {
     pub message: String,
+    #[source]
+    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
 }
 
 // The SDK protocols in handler.py; the native transport implements these and forwards the raw event JSON

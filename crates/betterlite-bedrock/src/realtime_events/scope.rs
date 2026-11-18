@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub const PENDING_SESSION_UPDATE_KEY: &str = "litellm.bedrock_realtime.pending_session_update";
@@ -9,7 +10,8 @@ const COMMITTED_MESSAGE: &str =
     "Bedrock realtime session already committed to a provider stream; it cannot be replayed";
 
 // The ASGI scope outlives one bridge attempt, so an attempted replay reads what the failed attempt left behind
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
 pub struct EventScope {
     pub pending_session_update: Json,
     pub session_committed: Json,
