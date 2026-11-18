@@ -97,14 +97,13 @@ fn organic_list(raw: &RawValue) -> Result<Vec<SearchResult>, ApiserpentSearchErr
     let text = raw.get().trim_ascii();
     match text.as_bytes().first().copied() {
         Some(b'[') => decode_results(text),
-        Some(b'{') if is_empty_object(text) => Ok(Vec::new()),
+        Some(b'{') => match serde_json::from_str::<Object>(text) {
+            Ok(fields) if fields.is_empty() => Ok(Vec::new()),
+            _ => Err(ApiserpentSearchError::OrganicShape),
+        },
         Some(b'"') if text == "\"\"" => Ok(Vec::new()),
         _ => Err(ApiserpentSearchError::OrganicShape),
     }
-}
-
-fn is_empty_object(text: &str) -> bool {
-    serde_json::from_str::<Object>(text).is_ok_and(|fields| fields.is_empty())
 }
 
 fn project(result: ApiserpentResult) -> SearchResult {

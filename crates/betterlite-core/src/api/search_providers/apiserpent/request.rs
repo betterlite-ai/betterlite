@@ -5,18 +5,14 @@ use super::params::ApiserpentParams;
 use super::{ApiserpentBody, ApiserpentSearchError};
 use crate::api::responses_input_content::is_truthy;
 
-const DEEP_PARAM: &str = "deep";
+pub(super) const DEEP_PARAM: &str = "deep";
 const DOMAIN_FILTER: &str = "search_domain_filter";
-
-pub(super) fn is_deep(optional_params: &Object) -> bool {
-    is_truthy(optional_params.get(DEEP_PARAM))
-}
 
 pub(super) fn build(
     query: &SearchQuery,
     optional_params: &Object,
 ) -> Result<ApiserpentBody, ApiserpentSearchError> {
-    let deep = is_deep(optional_params);
+    let deep = is_truthy(optional_params.get(DEEP_PARAM));
     let params = ApiserpentParams::from_optional(optional_params, deep)?;
     let joined = join_query(query);
     let text = match domain_clauses(optional_params)? {

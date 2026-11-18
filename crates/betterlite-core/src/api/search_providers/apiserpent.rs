@@ -13,6 +13,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::api::responses_input_content::is_truthy;
+
 use super::google_pse::wire::{self, SearchParam, WireError};
 
 mod params;
@@ -160,7 +162,7 @@ impl SearchProvider for ApiserpentSearchConfig {
             .filter(|base| !base.is_empty())
             .unwrap_or(&self.api_base)
             .trim_end_matches('/');
-        let path = if request::is_deep(optional_params) {
+        let path = if is_truthy(optional_params.get(request::DEEP_PARAM)) {
             DEEP_SEARCH_PATH
         } else {
             QUICK_SEARCH_PATH

@@ -425,7 +425,10 @@ fn apiserpent_request_joins_a_list_query() {
 #[case::null_max_results(r#"{"max_results": null, "num": 4}"#, 4)]
 fn apiserpent_request_clamps_max_results(#[case] options_json: &str, #[case] expected_num: i64) {
     let record = request_body("\"q\"", options_json);
-    assert_eq!(param(&record, "num"), Json::Number(expected_num.into()));
+    assert_eq!(
+        param(&record, "num"),
+        Json::Number(serde_json::Number::from(expected_num))
+    );
 }
 
 #[rstest]
@@ -435,15 +438,24 @@ fn apiserpent_request_clamps_max_results(#[case] options_json: &str, #[case] exp
 #[case::null_num(r#"{"num": null}"#, 10)]
 fn apiserpent_request_keeps_an_explicit_num(#[case] options_json: &str, #[case] expected_num: i64) {
     let record = request_body("\"q\"", options_json);
-    assert_eq!(param(&record, "num"), Json::Number(expected_num.into()));
+    assert_eq!(
+        param(&record, "num"),
+        Json::Number(serde_json::Number::from(expected_num))
+    );
 }
 
 #[test]
 fn apiserpent_request_lets_max_results_win_over_an_explicit_num() {
     let quick = request_body("\"q\"", r#"{"max_results": 5, "num": 3}"#);
-    assert_eq!(param(&quick, "num"), Json::Number(5_i64.into()));
+    assert_eq!(
+        param(&quick, "num"),
+        Json::Number(serde_json::Number::from(5_i64))
+    );
     let deep = request_body("\"q\"", r#"{"deep": true, "max_results": 20, "num": 3}"#);
-    assert_eq!(param(&deep, "num"), Json::Number(20_i64.into()));
+    assert_eq!(
+        param(&deep, "num"),
+        Json::Number(serde_json::Number::from(20_i64))
+    );
 }
 
 #[rstest]
@@ -469,7 +481,10 @@ fn apiserpent_request_accepts_or_skips_pages(
 ) {
     let record = request_body("\"q\"", options_json);
     match expected_pages {
-        Some(pages) => assert_eq!(param(&record, "pages"), Json::Number(pages.into())),
+        Some(pages) => assert_eq!(
+            param(&record, "pages"),
+            Json::Number(serde_json::Number::from(pages))
+        ),
         None => assert!(!params_of(&record).contains_key("pages")),
     }
 }
