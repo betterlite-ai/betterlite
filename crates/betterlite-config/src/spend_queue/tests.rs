@@ -150,6 +150,6 @@ fn replays_the_spend_queue_setting_corpus(
         FLUSH_COUNT_ENV,
         DEFAULT_LOCK_TTL_ENV,
     ] {
-        let _decoded = decode_spend_queue_setting(name, text);
+        drop(decode_spend_queue_setting(name, text));
     }
 }

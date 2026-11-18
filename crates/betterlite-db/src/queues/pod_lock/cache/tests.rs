@@ -35,7 +35,7 @@ fn preserves_cache_failures_without_logging_the_cause(#[case] outcome: Result<u8
 #[test]
 fn preserves_successful_cache_results() {
     assert_eq!(
-        with_cache_error::<_, RedisCacheError>("lease", Ok(7)).unwrap(),
+        with_cache_error::<u8, RedisCacheError>("lease", Ok(7)).unwrap(),
         7
     );
 }

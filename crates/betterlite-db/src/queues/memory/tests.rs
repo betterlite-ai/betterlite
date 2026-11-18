@@ -20,7 +20,7 @@ impl EnqueueObserver for RecordingObserver {
 
 #[tokio::test]
 async fn adds_updates_in_fifo_order_and_drains_them() {
-    let queue = MemoryUpdateQueue::new(4, 3, 10, Arc::new(NoEnqueueObserver)).unwrap();
+    let queue = MemoryUpdateQueue::<i32>::new(4, 3, 10, Arc::new(NoEnqueueObserver)).unwrap();
     queue.add_update(1).await.unwrap();
     queue.add_update(2).await.unwrap();
     queue.add_update(3).await.unwrap();
@@ -30,7 +30,7 @@ async fn adds_updates_in_fifo_order_and_drains_them() {
 
 #[tokio::test]
 async fn drains_at_most_the_flush_count_per_pass() {
-    let queue = MemoryUpdateQueue::new(8, 4, 2, Arc::new(NoEnqueueObserver)).unwrap();
+    let queue = MemoryUpdateQueue::<i32>::new(8, 4, 2, Arc::new(NoEnqueueObserver)).unwrap();
     queue.add_update(0).await.unwrap();
     queue.add_update(1).await.unwrap();
     queue.add_update(2).await.unwrap();
@@ -86,7 +86,7 @@ async fn add_update_waits_for_capacity_and_a_cancelled_add_admits_nothing() {
 
 #[tokio::test]
 async fn a_closed_queue_keeps_its_admitted_records_and_refuses_new_ones() {
-    let queue = MemoryUpdateQueue::new(2, 0, 10, Arc::new(NoEnqueueObserver)).unwrap();
+    let queue = MemoryUpdateQueue::<i32>::new(2, 0, 10, Arc::new(NoEnqueueObserver)).unwrap();
     queue.add_update(7).await.unwrap();
     queue.close();
     assert!(matches!(

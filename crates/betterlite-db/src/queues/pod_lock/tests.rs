@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
 use std::future::{Future, pending, ready};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -185,14 +187,15 @@ impl LockCache for FakeCache {
             Ok(owner) => Ok(owner.clone()),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "get_owner" }),
         };
+        let replacement = self
+            .takeover
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         if matches!(&outcome, Ok(Some(_)))
-            && let Some(replacement) = self
-                .takeover
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .take()
+            && let Some(next_owner) = replacement
         {
-            self.store.lock().unwrap_or_else(PoisonError::into_inner).lease = Some(replacement);
+            self.store.lock().unwrap_or_else(PoisonError::into_inner).lease = Some(next_owner);
         }
         ready(outcome)
     }
@@ -674,19 +677,27 @@ fn call_types_carry_the_service_logger_names() {
 
 #[test]
 fn keys_keep_colons_and_unicode_in_the_job_name() {
-    assert_eq!(lease_key("spend:reset-é"), "cronjob_lock:spend:reset-é");
+    let unicode_job = format!("spend:reset-{}", char::from(0xe9));
+    assert_eq!(
+        lease_key(&unicode_job),
+        format!("cronjob_lock:{unicode_job}")
+    );
     assert_eq!(lease_key(""), "cronjob_lock:");
 }
 
 #[test]
 fn decodes_utf8_owner_bytes_and_refuses_the_rest() {
     assert_eq!(decode_pod_owner(b"d3ad").unwrap(), "d3ad");
-    assert_eq!(decode_pod_owner("é".as_bytes()).unwrap(), "é");
+    let unicode_owner = char::from(0xe9).to_string();
+    assert_eq!(
+        decode_pod_owner(unicode_owner.as_bytes()).unwrap(),
+        unicode_owner
+    );
     assert!(decode_pod_owner(&[0xff, 0xfe]).is_err());
 }
 
 #[rstest]
-fn replays_the_pod_owner_corpus(#[files("fuzz/corpus/pod_owner/*")] path: std::path::PathBuf) {
-    let bytes = std::fs::read(path).unwrap();
-    let _owner = decode_pod_owner(&bytes);
+fn replays_the_pod_owner_corpus(#[files("fuzz/corpus/pod_owner/*")] path: PathBuf) {
+    let bytes = fs::read(path).unwrap();
+    drop(decode_pod_owner(&bytes));
 }

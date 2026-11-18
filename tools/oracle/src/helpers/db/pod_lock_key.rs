@@ -1,7 +1,8 @@
 use betterlite_db::queues::pod_lock::owner::lease_key;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde::Deserialize;
 
-#[derive(Debug, serde::Deserialize)]
+#[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     cronjob_id: String,
