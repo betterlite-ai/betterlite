@@ -68,16 +68,16 @@ impl Helper for Op {
 
 fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::EntityTransactions(entity) => match aggregate_db_transactions(&entity.updates) {
-            Ok(transactions) => serde_json::to_value(transactions).map_err(failure),
-            // A cost sum betterlite cannot represent is reported as invalid, where the source would carry an infinity.
-            Err(_) => Ok(serde_json::json!({ "invalid": true })),
-        },
-        Step::Daily(daily) => match aggregate_daily_rows(&daily.updates) {
-            Ok(aggregated) => serde_json::to_value(aggregated).map_err(failure),
-            // The source raises where a payload cannot be added, and Python reports that step as invalid.
-            Err(_) => Ok(serde_json::json!({ "invalid": true })),
-        },
+        // A cost sum betterlite cannot represent is reported as invalid, where the source would carry an infinity.
+        Step::EntityTransactions(entity) => aggregate_db_transactions(&entity.updates).map_or_else(
+            |_| Ok(serde_json::json!({ "invalid": true })),
+            |transactions| serde_json::to_value(transactions).map_err(failure),
+        ),
+        // The source raises where a payload cannot be added, and Python reports that step as invalid.
+        Step::Daily(daily) => aggregate_daily_rows(&daily.updates).map_or_else(
+            |_| Ok(serde_json::json!({ "invalid": true })),
+            |aggregated| serde_json::to_value(aggregated).map_err(failure),
+        ),
     }
 }
 
