@@ -202,7 +202,7 @@ async fn write_transactional_updates_users_in_the_user_table() {
         .batch_execute("INSERT INTO \"LiteLLM_UserTable\" (user_id, spend) VALUES ('u1', 10);")
         .await
         .unwrap();
-    let writes = vec![write("u1", Some(past()), Decimal::from(10))];
+    let writes = vec![write("u1", Some(past().and_utc()), Decimal::from(10))];
     write_resets(
         &store,
         IdentityPhase::Users,

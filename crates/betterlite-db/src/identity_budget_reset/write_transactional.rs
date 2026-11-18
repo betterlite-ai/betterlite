@@ -50,10 +50,10 @@ async fn commit_resets(
         },
     )
     .await;
-    outcome.map_err(|error| write_fault(&error))
+    outcome.map_err(write_fault)
 }
 
-fn queue_resets(phase: IdentityPhase, unit: &mut SpendResetUnitOfWork, writes: &[ResetWrite]) {
+fn queue_resets(phase: IdentityPhase, unit: &SpendResetUnitOfWork, writes: &[ResetWrite]) {
     for write in writes {
         match phase {
             IdentityPhase::Keys => unit.keys.queue_spend_reset(

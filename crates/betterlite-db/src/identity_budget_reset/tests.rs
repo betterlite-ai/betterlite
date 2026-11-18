@@ -71,24 +71,24 @@ fn faults_read_marks_a_statement_error_as_other() {
 fn faults_write_retries_only_a_missing_connection() {
     let missing =
         UnitOfWorkError::<Infallible>::Commit(CommitError::Statement(NativeError::NoDbConnected));
-    assert_eq!(write_fault(&missing).error_type, ErrorType::Connect);
+    assert_eq!(write_fault(missing).error_type, ErrorType::Connect);
     let statement =
         UnitOfWorkError::<Infallible>::Commit(CommitError::Statement(NativeError::CreateNull));
-    assert_eq!(write_fault(&statement).error_type, ErrorType::Other);
+    assert_eq!(write_fault(statement).error_type, ErrorType::Other);
 }
 
 #[test]
 fn faults_write_marks_a_rejected_commit_as_other() {
     let rejected =
         UnitOfWorkError::<Infallible>::Commit(CommitError::Rejected(NativeError::CreateNull));
-    assert_eq!(write_fault(&rejected).error_type, ErrorType::Other);
+    assert_eq!(write_fault(rejected).error_type, ErrorType::Other);
 }
 
 #[test]
 fn faults_write_marks_an_unknown_outcome_as_a_read_timeout() {
     let unknown =
         UnitOfWorkError::<Infallible>::Commit(CommitError::OutcomeUnknown(NativeError::CreateNull));
-    assert_eq!(write_fault(&unknown).error_type, ErrorType::ReadTimeout);
+    assert_eq!(write_fault(unknown).error_type, ErrorType::ReadTimeout);
 }
 
 #[test]
@@ -96,7 +96,7 @@ fn faults_write_names_the_missing_reset_target() {
     let missing = UnitOfWorkError::<Infallible>::Commit(CommitError::MissingResetTarget {
         table: "LiteLLM_UserTable",
     });
-    let fault = write_fault(&missing);
+    let fault = write_fault(missing);
     assert_eq!(fault.error_type, ErrorType::Other);
     assert_eq!(
         fault.message,

@@ -33,10 +33,10 @@ pub(crate) fn read_fault(error: &NativeError<Infallible>) -> Fault {
     fault(kind, describe(error))
 }
 
-pub(crate) fn write_fault(error: &UnitOfWorkError<Infallible>) -> Fault {
+pub(crate) fn write_fault(error: UnitOfWorkError<Infallible>) -> Fault {
     match error {
-        UnitOfWorkError::Body(never) => match *never {},
-        UnitOfWorkError::Commit(commit) => commit_fault(commit),
+        UnitOfWorkError::Body(never) => match never {},
+        UnitOfWorkError::Commit(commit) => commit_fault(&commit),
     }
 }
 
@@ -66,7 +66,7 @@ fn statement_fault(source: &NativeError<Infallible>) -> Fault {
     fault(kind, describe(source))
 }
 
-fn fault(kind: ErrorType, message: String) -> Fault {
+const fn fault(kind: ErrorType, message: String) -> Fault {
     Fault {
         error_type: kind,
         message,
