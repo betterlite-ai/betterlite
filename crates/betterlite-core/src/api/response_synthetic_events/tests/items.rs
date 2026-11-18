@@ -135,12 +135,38 @@ fn reasoning_summaries_emit_done_events_with_sequence_numbers() {
 fn many_empty_summaries_with_a_huge_item_id_exceed_the_event_budget() {
     let item_id = "i".repeat(64 * 1024);
     // 2500 empty summaries pass the byte limit at two id copies each, so the done charge counts
-    let summaries = vec![r#"{"type":"summary_text","text":""}"#; 2_500].join(",");
+    let summaries = [r#"{"type":"summary_text","text":""}"#; 2_500].join(",");
     let output = format!(r#"[{{"type":"reasoning","id":"{item_id}","summary":[{summaries}]}}]"#);
     let mut transformed = response(&output);
     let error =
         build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
     assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+}
+
+#[test]
+fn many_empty_function_calls_with_a_huge_response_id_exceed_the_event_budget() {
+    // every call falls back to the 1 MiB response id and clones it into its done event
+    let call = r#"{"type":"function_call","id":"","call_id":"call_1","name":"f","arguments":"","status":"completed"}"#;
+    let calls = [call; 300].join(",");
+    let mut transformed = response(&format!("[{calls}]"));
+    transformed.id = "r".repeat(1024 * 1024);
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+}
+
+#[test]
+fn oversized_output_is_rejected_before_it_is_copied() {
+    // the item payload charge rejects this output before any serializer clones it
+    let input = "x".repeat(90 * 1024 * 1024);
+    let output = format!(
+        r#"[{{"type":"custom_tool_call","id":"ct_1","call_id":"call_1","name":"g","input":"{input}","status":"completed"}}]"#
+    );
+    let mut transformed = response(&output);
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+    assert_eq!(transformed.output.len(), 1);
 }
 
 #[test]

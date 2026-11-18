@@ -6,6 +6,7 @@ use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
 use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApiResponse};
+use std::mem;
 
 use super::chunks::{EventBudget, payload_bytes};
 use super::error::SyntheticEventsError;
@@ -30,34 +31,37 @@ pub(super) struct BuildContext {
     pub(super) budget: EventBudget,
 }
 
-pub(super) struct ItemContext<'a> {
-    pub(super) item_id: &'a str,
+pub(super) struct ItemContext<'item> {
+    pub(super) item_id: &'item str,
     pub(super) output_index: i64,
 }
 
-pub(super) struct PartContext<'a> {
-    pub(super) item_id: &'a str,
+pub(super) struct PartContext<'part> {
+    pub(super) item_id: &'part str,
     pub(super) output_index: i64,
     pub(super) content_index: i64,
 }
 
 // ast-grep-ignore: no-long-names
-pub fn build_synthetic_response_events<C: ResponsesCostCalculator>(
+pub fn build_synthetic_response_events<C>(
     transformed: &mut ResponsesApiResponse,
     calculator: Option<&C>,
     chunk_size: i64,
-) -> Result<Vec<ResponsesAPIStreamingResponse>, SyntheticEventsError> {
+) -> Result<Vec<ResponsesAPIStreamingResponse>, SyntheticEventsError>
+where
+    C: ResponsesCostCalculator,
+{
     stamping::stamp_usage_cost(transformed, calculator);
     let mut build = BuildContext {
         chunk_size,
         sequence_number: 0,
         budget: EventBudget::default(),
     };
-    let outside = payload_bytes(&transformed.output);
-    let envelope = payload_bytes::<ResponsesApiResponse>(transformed).saturating_sub(outside);
+    // take the output out first: serializing the response would clone it through its field adapter
+    let output = mem::take(&mut transformed.output);
+    let envelope = payload_bytes::<ResponsesApiResponse>(transformed);
     build.budget.charge(3, envelope.saturating_mul(3))?;
     let mut events = Vec::new();
-    let output = std::mem::take(&mut transformed.output);
     let mut in_progress = transformed.clone();
     in_progress.status = Some("in_progress".to_owned());
     transformed.output = output;

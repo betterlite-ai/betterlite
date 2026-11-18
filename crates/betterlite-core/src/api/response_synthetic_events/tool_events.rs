@@ -16,7 +16,7 @@ pub(super) fn function_call_events(
     payload: &Extra,
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
-    let copied = payload_bytes(&payload.get("arguments"));
+    let copied = payload_bytes(&payload.get("arguments")).saturating_add(context.item_id.len());
     build.budget.charge(1, copied)?;
     let arguments = text_or_empty(payload.get("arguments"));
     let chunk_size = build.chunk_size;
