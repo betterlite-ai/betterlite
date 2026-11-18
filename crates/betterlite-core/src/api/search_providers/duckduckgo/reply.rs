@@ -71,17 +71,20 @@ pub fn decode_duckduckgo_search(
         if limit_reached(results.len(), limit) {
             break;
         }
-        if topic.get().trim_ascii_start().first() != Some(&b'{') {
+        if topic.get().trim_ascii_start().as_bytes().first() != Some(&b'{') {
             continue;
         }
         let mut entry: RelatedTopic = parse_entry(topic.get().as_bytes())?;
-        if let Some(result) = direct_topic(&mut entry)? {
-            results.push(result);
-        } else if let Some(nested) = &entry.topics {
-            let Some(raw) = nested else {
-                return Err(DuckDuckGoSearchError::ReplyNull { field: "Topics" });
-            };
-            append_nested(raw, limit, &mut results)?;
+        match direct_topic(&mut entry)? {
+            Some(result) => results.push(result),
+            None => {
+                if let Some(nested) = &entry.topics {
+                    let Some(raw) = nested else {
+                        return Err(DuckDuckGoSearchError::ReplyNull { field: "Topics" });
+                    };
+                    append_nested(raw, limit, &mut results)?;
+                }
+            }
         }
     }
     Ok(SearchResponse {
