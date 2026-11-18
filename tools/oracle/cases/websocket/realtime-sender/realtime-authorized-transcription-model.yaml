@@ -1,0 +1,56 @@
+kind: helper
+name: realtime-authorized-transcription-model
+call:
+  realtime_sender_websocket:
+    model: gpt-4o-transcribe
+    force_transcription_model: gpt-4o-transcribe
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    provider: null
+    guardrails: []
+    backend_failures: []
+    client_failures: []
+    operations:
+      - kind: send
+        text: '{"type": "session.update", "session": {"type": "transcription", "input_audio_transcription": {"model": "forbidden", "language": "en"}, "credentials": {"mode": "api-key"}}}'
+      - kind: send
+        text: '{"type": "transcription_session.update", "session": {"audio": {"input": {"transcription": {"model": "other", "language": "de"}, "format": {"type": "audio/pcm"}}}}}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"input_audio_transcription": {"model": "gpt-4o-transcribe"}}}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"input_audio_transcription": {}}}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"audio": {"input": {}}}}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"input_audio_transcription": "not-an-object", "audio": {"input": {"transcription": ["x"]}}}}'
+      - kind: send
+        text: '{"type": "response.create", "session": {"input_audio_transcription": {"model": "forbidden"}}}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"model": "client-model"}}'
+      - kind: send
+        text: not json
+      - kind: send
+        text: '[1, 2]'
+      - kind: send
+        text: '{"type": "session.update", "session": {"audio": {"input": {"transcription": {"model": "gpt-4o-transcribe", "language": "fr"}}}}}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"audio": {"input": {"transcription": {}}}}}'
+calls:
+  - realtime_sender_websocket:
+      model: gpt-4o-transcribe
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {"type": "transcription", "input_audio_transcription": {"model": "forbidden", "language": "en"}}}'
+        - kind: send
+          text: '{"type": "session.update", "session": {"audio": {"input": {"transcription": {"model": "other"}}}}}'
+        - kind: send
+          text: '{"type": "session.update", "session": {"input_audio_transcription": {}}}'
+env: {}
+compare: {ignore: []}

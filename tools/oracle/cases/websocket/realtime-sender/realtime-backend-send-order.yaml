@@ -1,0 +1,120 @@
+kind: helper
+name: realtime-backend-send-order
+call:
+  realtime_sender_websocket:
+    model: openai/gpt-4o-realtime-preview
+    force_transcription_model: null
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    provider:
+      requires_session_configuration: true
+      setup:
+        - {type: setup, session: {model: scripted}}
+      content:
+        - {type: realtimeInput, text: hello}
+      transforms:
+        - [{kind: text, text: '{"type": "setup", "session": {"model": "scripted"}}'}]
+        - [{kind: text, text: '{"type": "realtimeInput", "text": "hello"}'}]
+        - [{kind: binary, text: '{"type": "realtimeInput", "text": "bytes"}'}]
+        - [{kind: text, text: '{"type": "setup", "session": {"model": "followup"}}'}]
+        - [{kind: text, text: '{"type": "other", "value": 1}'}]
+        - [{kind: text, text: '{"value": 2, "setup": null}'}]
+      fail_transform: false
+    guardrails: []
+    backend_failures: []
+    client_failures: []
+    operations:
+      - kind: send
+        text: '{"type": "session.update", "session": {"model": "scripted"}}'
+      - kind: send
+        text: '{"type": "realtimeInput", "text": "hello"}'
+      - kind: send
+        text: '{"type": "realtimeInput", "text": "bytes"}'
+      - kind: send
+        text: '{"type": "session.update", "session": {"model": "followup"}}'
+      - kind: send
+        text: '{"type": "other", "value": 1}'
+      - kind: send
+        text: '{"value": 2, "setup": null}'
+calls:
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {}}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup: []
+        content: []
+        transforms:
+          - []
+          - [{kind: text, text: 'not json'}]
+        fail_transform: false
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {}}'
+        - kind: send
+          text: '{"type": "anything"}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup:
+          - {type: setup, session: {model: a}}
+        content:
+          - {type: realtimeInput, text: b}
+        transforms:
+          - [{kind: text, text: '{"type": "setup", "session": {"model": "a"}}'}]
+          - [{kind: binary, text: '{"type": "realtimeInput", "text": "b"}'}]
+          - [{kind: binary, text: '{"type": "realtimeInput", "text": "c"}'}]
+          - [{kind: text, text: '{"type": "setup", "session": {"model": "a"}}'}]
+        fail_transform: false
+      guardrails: []
+      backend_failures: [0, 1]
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {"model": "a"}}'
+        - kind: send
+          text: '{"type": "realtimeInput", "text": "b"}'
+        - kind: send
+          text: '{"type": "realtimeInput", "text": "c"}'
+        - kind: send
+          text: '{"type": "session.update", "session": {"model": "a"}}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider:
+        requires_session_configuration: true
+        setup: []
+        content: []
+        transforms: []
+        fail_transform: true
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: send
+          text: '{"type": "session.update", "session": {}}'
+env: {}
+compare: {ignore: []}
