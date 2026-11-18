@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_other_embedding_call-signing-auth-isolation-seed
+call:
+  bedrock_other_embedding_call:
+    function: signing_auth_isolation
+    model: amazon.titan-embed-text-v1
+    input: [one, two]
+    now: 1700000000
+env: {}
+compare: {ignore: []}

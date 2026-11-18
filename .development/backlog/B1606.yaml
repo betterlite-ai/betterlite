@@ -1,14 +1,14 @@
 id: B1606
 milestone: M4 keys, spend and management
 title: Persist discovered tools and refresh effective tool policies
-status: todo
+status: done
 depends_on: [B171, B715, B725, B726, B860, B1605]
 file: tasks/B1606-tool-policy-store.yaml
 covers:
   - "litellm/proxy/db/tool_registry_writer.py"
 parent: B070
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2416

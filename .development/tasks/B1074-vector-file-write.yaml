@@ -12,7 +12,10 @@ description: >-
   the store id,call id (default null) and non-null GenericLiteLLMParams. Preserve context in async calls;
   only boolean true aupdate/adelete selects async. timeout=null/0 uses REQUEST_TIMEOUT, default 6000,
   through betterlite-config. B2482 owns the actual HTTP send and B011 maps public SDK exceptions.
-  Add B2401 VectorFileWrite with update/delete and both modes. Tests belong in api::vector_file_write;
+  SdkHttpCall::VectorFileWrite covers update/delete in both modes. Main holds it as a placeholder, so
+  build its Call (implementing call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/vector_file_write.rs
+  and VectorFileWriteRequest in tools/oracle/sdk_http/vector_file_write.py, without editing the shared
+  sdk_http files. Tests belong in api::vector_file_write;
   the config loader has loads_write_timeout in that module. The owned functions have 206 nonblank/
   non-comment lines; allow 205 code, 145 tests, 90 adapters, 90 fixtures, 55 config/corpus/wiring, 585
   total under 630. Decode through the existing B1071/B2401 boundaries.
@@ -23,9 +26,8 @@ scope:
   - crates/betterlite-config/src/api/vector_file_write.rs
   - crates/betterlite-config/src/api/vector_file_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_file_write.rs
+  - tools/oracle/src/sdk_http/vector_file_write/**
   - tools/oracle/sdk_http/vector_file_write.py
   - tools/oracle/cases/sdk-http/vector-file-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-*
@@ -83,7 +85,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_write::tests::loads_write_timeout($|::)/)'
   - id: python-adapter
     why: the file mutation comparison cannot capture real public SDK HTTP
-    run: test -f tools/oracle/sdk_http/vector_file_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_file_write.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: new mutation/config inputs bypass corpus replay
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
