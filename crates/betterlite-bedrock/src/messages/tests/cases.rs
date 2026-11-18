@@ -6,11 +6,12 @@ use indexmap::{IndexMap, IndexSet};
 use secrecy::SecretString;
 
 use crate::bedrock_settings::ErrorHeaders;
-use crate::invoke_primitives::url::InvokeEnvironment;
+use crate::invoke_primitives::url::{InvokeEnvironment, InvokeModelUrl};
 use crate::messages::config::MessagesConfig;
 use crate::messages::tests::support::{
     EFFORT_TIER_INFO, Fixture, Keys, Session, Signing, body_json, call, capture_logs, chunk_frame,
-    contract, declared, error_frame, header, js, kept_warnings, obj, sign, stream_all,
+    close_after_first, contract, declared, error_frame, header, js, kept_warnings, obj, sign,
+    stream_all,
 };
 use crate::messages::transport::{
     MessagesEndpoint, get_error_class, messages_complete_url, validate_messages_environment,
@@ -48,6 +49,13 @@ const DROP_WARNING: &str = "Dropping adaptive `thinking`/`output_config.effort` 
 
 const ORDER_PARAMS: &str = r#"{"max_tokens":256,"tools":[{"name":"geo","input_schema":{"type":"object"},"eager_input_streaming":true,"custom":{"defer_loading":true}}],"safeguards":[],"mcp_servers":[{"type":"url","url":"https://example.test/mcp"}]}"#;
 const ORDER_BODY: &str = r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":256,"tools":[{"name":"geo","input_schema":{"type":"object"},"defer_loading":true}],"safeguards":[],"anthropic_version":"bedrock-2023-05-31","anthropic_beta":["dangerous-tool-use-2026-09-03","fine-grained-tool-streaming-2025-05-14"]}"#;
+
+const WEB_SEARCH_PARAMS: &str =
+    r#"{"max_tokens":256,"tools":[{"type":"web_search_20250305","name":"web_search"}]}"#;
+const MID_SYSTEM_MESSAGES: &str = r#"[{"role":"user","content":"hi"},{"role":"system","content":"be nice"},{"role":"user","content":"ok"}]"#;
+const MID_SYSTEM_PARAMS: &str = r#"{"max_tokens":64}"#;
+const STRUCTURED_PARAMS: &str = r#"{"max_tokens":256,"output_config":{"format":{"type":"json_schema","schema":{"type":"object","properties":{"a":{"type":"string"}}}}}}"#;
+const CLEAR_THINKING_PARAMS: &str = r#"{"max_tokens":1024,"thinking":{"type":"enabled","budget_tokens":1024},"context_management":{"edits":[{"type":"clear_thinking_20251015"}]}}"#;
 
 const EVENT_START: &str = r#"{"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "content": [], "model": "claude", "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 11, "output_tokens": 1, "cache_read_input_tokens": 4}}}"#;
 const EVENT_CONTENT: &str = r#"{"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "hello"}}"#;
@@ -94,6 +102,13 @@ fn metadata_params() -> MetadataParams {
 }
 
 pub(crate) fn messages_invoke_url() {
+    let merged = merged_environment();
+    let url = stream_url();
+    signed_stream_request(&merged, &url);
+    proxy_variant();
+}
+
+fn merged_environment() -> IndexMap<String, String> {
     let mut input: IndexMap<String, String> = IndexMap::new();
     input.insert("x-custom".to_owned(), "keep".to_owned());
     input.insert(
@@ -114,7 +129,10 @@ pub(crate) fn messages_invoke_url() {
         Some(METADATA_HEADER)
     );
     assert_eq!(merged.len(), 2);
+    merged
+}
 
+fn stream_url() -> InvokeModelUrl {
     let url = messages_complete_url(MessagesEndpoint {
         api_base: None,
         model: MODEL_SONNET,
@@ -129,11 +147,14 @@ pub(crate) fn messages_invoke_url() {
     })
     .expect("the stream url builds");
     assert_eq!(url.endpoint_url, STREAM_URL);
+    url
+}
 
+fn signed_stream_request(merged: &IndexMap<String, String>, url: &InvokeModelUrl) {
     let signed = sign(
         Signing {
             model: MODEL_SONNET,
-            headers: &merged,
+            headers: merged,
             request_data: &contract(REQUEST_BODY),
             api_base: &url.endpoint_url,
             api_key: None,
@@ -164,24 +185,31 @@ pub(crate) fn messages_invoke_url() {
     assert_eq!(header(&signed.headers, "x-custom"), Some("keep"));
     assert_eq!(signed.headers.len(), 5);
     assert_eq!(signed.body, REQUEST_BODY.as_bytes());
-
-    proxy_variant();
 }
 
 fn proxy_variant() {
     let api_key = SecretString::from("fixture-api-key");
+    let merged = proxy_environment(&api_key);
+    let url = proxy_url();
+    proxy_signed_request(&merged, &url, &api_key);
+}
+
+fn proxy_environment(api_key: &SecretString) -> IndexMap<String, String> {
     let empty: IndexMap<String, String> = IndexMap::new();
     let (merged, api_base) = validate_messages_environment(
         &empty,
         &MetadataParams::new(),
         None,
         Some(INVOKE_BASE),
-        Some(&api_key),
+        Some(api_key),
     )
     .expect("the environment passes the base through");
     assert!(merged.is_empty());
     assert_eq!(api_base.as_deref(), Some(INVOKE_BASE));
+    merged
+}
 
+fn proxy_url() -> InvokeModelUrl {
     let url = messages_complete_url(MessagesEndpoint {
         api_base: Some(INVOKE_BASE),
         model: MODEL_SONNET,
@@ -196,14 +224,21 @@ fn proxy_variant() {
     })
     .expect("the proxy url builds");
     assert_eq!(url.endpoint_url, INVOKE_URL);
+    url
+}
 
+fn proxy_signed_request(
+    merged: &IndexMap<String, String>,
+    url: &InvokeModelUrl,
+    api_key: &SecretString,
+) {
     let signed = sign(
         Signing {
             model: MODEL_SONNET,
-            headers: &merged,
+            headers: merged,
             request_data: &contract("{}"),
             api_base: &url.endpoint_url,
-            api_key: Some(&api_key),
+            api_key: Some(api_key),
             configured_bearer: None,
         },
         &Keys {
@@ -271,6 +306,34 @@ pub(crate) fn adaptive_display_updates() {
     assert_eq!(body_json(&first), js(ADAPTIVE_BODY));
     assert_eq!(body_json(&second), js(THINKING_BODY));
     assert_eq!(kept_warnings(&logs), Vec::<String>::new());
+    clear_thinking(&mut session);
+}
+
+// The clear_thinking edit makes the Bedrock config inject adaptive thinking before the strip pass.
+fn clear_thinking(session: &mut Session<'_>) {
+    let (_guard, logs) = capture_logs();
+    let body = session
+        .transform(
+            &call(
+                "fixture-adaptive",
+                USER_MESSAGES,
+                CLEAR_THINKING_PARAMS,
+                "{}",
+            ),
+            false,
+        )
+        .expect("the clear-thinking request transforms");
+    assert!(matches!(
+        body.get("thinking"),
+        Some(Json::Object(fields))
+            if matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "adaptive")
+    ));
+    assert!(!body.contains_key("output_config"));
+    assert!(
+        kept_warnings(&logs)
+            .iter()
+            .any(|message| message.contains("stripping unsupported `output_config`"))
+    );
 }
 
 pub(crate) fn unsupported_output_config_warn_drop() {
@@ -331,6 +394,55 @@ pub(crate) fn normalization_order() {
     .expect("the normalization request transforms");
     assert_eq!(body_json(&body), js(ORDER_BODY));
     assert_eq!(kept_warnings(&logs), Vec::<String>::new());
+    structured_output();
+    mid_conversation_system();
+}
+
+fn structured_output() {
+    let (_guard, logs) = capture_logs();
+    let unsupported = declared(
+        &call("fixture-plain", USER_MESSAGES, STRUCTURED_PARAMS, "{}"),
+        false,
+    )
+    .expect("the unsupported structured request transforms");
+    assert!(!unsupported.contains_key("output_config"));
+    assert!(
+        kept_warnings(&logs)
+            .iter()
+            .any(|message| message.contains("does not advertise"))
+    );
+    let supported = declared(
+        &call("fixture-structured", USER_MESSAGES, STRUCTURED_PARAMS, "{}"),
+        false,
+    )
+    .expect("the supported structured request transforms");
+    let Some(Json::Object(output_config)) = supported.get("output_config") else {
+        panic!("the supported model keeps output_config");
+    };
+    assert!(output_config.contains_key("format"));
+}
+
+fn mid_conversation_system() {
+    assert!(!kept_system_turn("fixture-plain"));
+    assert!(kept_system_turn("fixture-mid-system"));
+}
+
+fn kept_system_turn(model: &str) -> bool {
+    let body = declared(
+        &call(model, MID_SYSTEM_MESSAGES, MID_SYSTEM_PARAMS, "{}"),
+        false,
+    )
+    .expect("the mid-conversation request transforms");
+    let Some(Json::List(messages)) = body.get("messages") else {
+        panic!("the body carries messages");
+    };
+    messages.iter().skip(1).any(|message| {
+        matches!(
+            message,
+            Json::Object(fields)
+                if matches!(fields.get("role"), Some(Json::Text(role)) if role == "system")
+        )
+    })
 }
 
 pub(crate) fn error_header_projection() {
@@ -352,6 +464,12 @@ pub(crate) fn error_header_projection() {
             panic!("the supplied headers project as HTTP pairs");
         }
     }
+    let rejected = declared(
+        &call("fixture-plain", USER_MESSAGES, WEB_SEARCH_PARAMS, "{}"),
+        false,
+    )
+    .expect_err("the web search tool is rejected");
+    assert_eq!(rejected.status_code(), Some(400));
 }
 
 pub(crate) fn messages_constructor() {
@@ -395,6 +513,37 @@ pub(crate) fn message_start_event() {
         String::from_utf8(emitted[1].clone()).expect("SSE text"),
         SSE_STOP
     );
+    unfinished_stream();
+    closed_stream();
+}
+
+// A body cut before message_stop still yields the buffered delta when the iterator finishes.
+fn unfinished_stream() {
+    let mut frame = Vec::new();
+    frame.extend(chunk_frame(EVENT_START));
+    frame.extend(chunk_frame(EVENT_DELTA));
+    let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
+    assert!(failure.is_none());
+    assert_eq!(emitted.len(), 2);
+    assert_eq!(
+        String::from_utf8(emitted[0].clone()).expect("SSE text"),
+        SSE_START
+    );
+    assert!(
+        String::from_utf8(emitted[1].clone())
+            .expect("SSE text")
+            .starts_with("event: message_delta\n")
+    );
+}
+
+fn closed_stream() {
+    let mut frame = Vec::new();
+    frame.extend(chunk_frame(EVENT_START));
+    frame.extend(chunk_frame(EVENT_STOP));
+    let closure = close_after_first(vec![frame]);
+    assert_eq!(closure.first, Some(SSE_START.as_bytes().to_vec()));
+    assert!(closure.closed);
+    assert_eq!(closure.after, Ok(None));
 }
 
 pub(crate) fn native_error_event() {

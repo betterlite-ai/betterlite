@@ -74,16 +74,21 @@ const NORMALIZERS: NameNormalizers = NameNormalizers {
     mantle_region_split: split_region_prefix,
 };
 
-// The same cost map the oracle cases send, so both sides resolve the same capabilities.
+// The same cost map the oracle cases send, so both sides resolve the same capabilities, plus the
+// models the capability assertions need: a supported flag and an explicit absence.
 pub(super) const MODEL_COST: &str = r#"{
-  "bedrock/fixture-plain": {"litellm_provider": "bedrock", "mode": "chat"},
-  "fixture-plain": {"litellm_provider": "bedrock", "mode": "chat"},
+  "bedrock/fixture-plain": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": false},
+  "fixture-plain": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": false},
   "bedrock/fixture-tool-search": {"litellm_provider": "bedrock", "supports_tool_search": true},
   "fixture-tool-search": {"litellm_provider": "bedrock", "supports_tool_search": true},
   "bedrock/fixture-adaptive": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
   "fixture-adaptive": {"litellm_provider": "bedrock", "supports_adaptive_thinking": true},
   "bedrock/fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"},
-  "fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"}
+  "fixture-effort-tier": {"litellm_provider": "bedrock", "supports_xhigh_reasoning_effort": true, "bedrock_output_config_effort_ceiling": "high"},
+  "bedrock/fixture-mid-system": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": true},
+  "fixture-mid-system": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": true},
+  "bedrock/fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true},
+  "fixture-structured": {"litellm_provider": "bedrock", "mode": "chat", "supports_native_structured_output": true}
 }"#;
 
 pub(super) const EFFORT_TIER_INFO: &str =
@@ -421,6 +426,37 @@ pub(super) fn stream_all(
             }
         }
         (emitted, failure)
+    })
+}
+
+pub(super) struct Closure {
+    pub(super) first: Option<Vec<u8>>,
+    pub(super) closed: bool,
+    pub(super) after: Result<Option<Vec<u8>>, MessagesStreamError>,
+}
+
+// bedrock_sse_wrapper's finally closes the stream: nothing queued may reach the client afterwards.
+pub(super) fn close_after_first(pieces: Vec<Vec<u8>>) -> Closure {
+    let redactor = Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds"));
+    let mut stream = messages_sse_stream(
+        MessagesStreamRequest {
+            response_headers: None,
+            redactor,
+        },
+        chunks(pieces),
+    );
+    let runtime = Builder::new_current_thread()
+        .build()
+        .expect("the test runtime builds");
+    runtime.block_on(async {
+        let first = stream.next_chunk().await.expect("the first chunk");
+        let closed = matches!(stream.aclose().await, Some(Ok(())));
+        let after = stream.next_chunk().await;
+        Closure {
+            first,
+            closed,
+            after,
+        }
     })
 }
 
