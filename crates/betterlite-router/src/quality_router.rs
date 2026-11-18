@@ -82,13 +82,31 @@ impl QualityRouter {
             let Some(model) = self.config.default_model.as_deref() else {
                 return Err(QualityRouterError::NoUserMessage);
             };
-            let decision = Decision::default_fallback(&self.router_name, model);
-            return Ok(Some(Self::finish(messages, model, decision, metadata)));
+            let decision = Decision::DefaultFallback {
+                router_model_name: self.router_name.clone(),
+                routed_model: model.to_owned(),
+            };
+            return Ok(Some(Self::finish(messages, model, decision, metadata)?));
         };
         if let Some((model, keyword, quality_tier)) = self.index.keyword_match(user_message) {
-            let decision = Decision::keyword(&self.router_name, model, keyword, quality_tier);
-            return Ok(Some(Self::finish(messages, model, decision, metadata)));
+            let decision = Decision::Keyword {
+                router_model_name: self.router_name.clone(),
+                routed_model: model.to_owned(),
+                matched_keyword: keyword.to_owned(),
+                quality_tier,
+            };
+            return Ok(Some(Self::finish(messages, model, decision, metadata)?));
         }
+        let (model, decision) = self.tier_route(&text, user_message)?;
+        Ok(Some(Self::finish(messages, &model, decision, metadata)?))
+    }
+
+    // the classifier and the tier index pick the model, with the decision the record and the stash read
+    fn tier_route(
+        &self,
+        text: &RequestText,
+        user_message: &str,
+    ) -> Result<(String, Decision), QualityRouterError> {
         let outcome = self.scorer.score_and_classify(&PromptInput {
             prompt: user_message,
             system_prompt: text.system_prompt.as_deref(),
@@ -97,8 +115,15 @@ impl QualityRouter {
         let model = self
             .index
             .model_for_tier(quality_tier, self.config.default_model.as_deref())?;
-        let decision = Decision::quality(&self.router_name, model, quality_tier, &outcome);
-        Ok(Some(Self::finish(messages, model, decision, metadata)))
+        let decision = Decision::QualityTier {
+            router_model_name: self.router_name.clone(),
+            routed_model: model.to_owned(),
+            quality_tier,
+            complexity_tier: outcome.tier.name().to_owned(),
+            score: outcome.score,
+            signals: outcome.signals.clone(),
+        };
+        Ok((model.to_owned(), decision))
     }
 
     fn finish<'messages>(
@@ -106,14 +131,14 @@ impl QualityRouter {
         model: &str,
         decision: Decision,
         metadata: &mut Option<Json>,
-    ) -> Route<'messages> {
-        if let Some(document) = decision.stash_document() {
+    ) -> Result<Route<'messages>, QualityRouterError> {
+        if let Some(document) = decision.stash_document()? {
             decision::stash(metadata, document);
         }
-        Route {
+        Ok(Route {
             model: model.to_owned(),
             messages,
             decision,
-        }
+        })
     }
 }

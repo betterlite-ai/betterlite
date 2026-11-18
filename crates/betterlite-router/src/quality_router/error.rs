@@ -18,6 +18,11 @@ pub enum QualityRouterError {
     PartTextNotString { role: String, part: usize },
     #[error("the quality routing decision score is not finite")]
     NonFiniteScore,
+    #[error("the routing decision is not JSON: {source}")]
+    Wire {
+        #[from]
+        source: serde_json::Error,
+    },
     #[error(transparent)]
     Scoring(#[from] ScoringError),
 }

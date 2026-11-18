@@ -1,12 +1,12 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde_json::Number;
-
-use crate::complexity_scoring::classify::ClassificationOutcome;
+use serde::Serialize;
 
 use super::error::QualityRouterError;
 
 pub(crate) const DECISION_KEY: &str = "quality_router_decision";
+
+const ROUTER_TYPE: &str = "quality";
 
 // StandardLoggingRoutingDecision for the two routed paths; the default fallback carries no tier facts
 #[derive(Debug, Clone, PartialEq)]
@@ -31,216 +31,149 @@ pub enum Decision {
     },
 }
 
+// the record a StandardLoggingRoutingDecision dumps; absent facts stay out of it, as the TypedDict does
+#[derive(Serialize)]
+struct RoutingRecord<'decision> {
+    router_model_name: &'decision str,
+    router_type: &'static str,
+    routed_model: &'decision str,
+    cause: RoutedBy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    matched_keyword: Option<&'decision str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tier: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    score: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    signals: Option<&'decision [String]>,
+}
+
+// the decision stash the header helper lifts into x-litellm-quality-router-*; nulls are written as null
+#[derive(Serialize)]
+struct DecisionDocument<'decision> {
+    router_model_name: &'decision str,
+    routed_model: &'decision str,
+    routed_via: RoutedBy,
+    matched_keyword: Option<&'decision str>,
+    quality_tier: i64,
+    complexity_tier: Option<&'decision str>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum RoutedBy {
+    Keyword,
+    QualityTier,
+    DefaultFallback,
+}
+
+// the fields both wire types read from a decision; a fact the cause does not carry stays None
+struct Facts<'decision> {
+    router_model_name: &'decision str,
+    routed_model: &'decision str,
+    routed_by: RoutedBy,
+    matched_keyword: Option<&'decision str>,
+    quality_tier: Option<i64>,
+    complexity_tier: Option<&'decision str>,
+    score: Option<f64>,
+    signals: Option<&'decision [String]>,
+}
+
 impl Decision {
-    #[must_use]
-    pub fn keyword(
-        router_model_name: &str,
-        routed_model: &str,
-        matched_keyword: &str,
-        quality_tier: i64,
-    ) -> Self {
-        Self::Keyword {
-            router_model_name: router_model_name.to_owned(),
-            routed_model: routed_model.to_owned(),
-            matched_keyword: matched_keyword.to_owned(),
-            quality_tier,
-        }
-    }
-
-    #[must_use]
-    pub fn quality(
-        router_model_name: &str,
-        routed_model: &str,
-        quality_tier: i64,
-        outcome: &ClassificationOutcome,
-    ) -> Self {
-        Self::QualityTier {
-            router_model_name: router_model_name.to_owned(),
-            routed_model: routed_model.to_owned(),
-            quality_tier,
-            complexity_tier: outcome.tier.name().to_owned(),
-            score: outcome.score,
-            signals: outcome.signals.clone(),
-        }
-    }
-
-    #[must_use]
-    pub fn default_fallback(router_model_name: &str, routed_model: &str) -> Self {
-        Self::DefaultFallback {
-            router_model_name: router_model_name.to_owned(),
-            routed_model: routed_model.to_owned(),
+    fn facts(&self) -> Facts<'_> {
+        match self {
+            Self::Keyword {
+                router_model_name,
+                routed_model,
+                matched_keyword,
+                quality_tier,
+            } => Facts {
+                router_model_name,
+                routed_model,
+                routed_by: RoutedBy::Keyword,
+                matched_keyword: Some(matched_keyword),
+                quality_tier: Some(*quality_tier),
+                complexity_tier: None,
+                score: None,
+                signals: None,
+            },
+            Self::QualityTier {
+                router_model_name,
+                routed_model,
+                quality_tier,
+                complexity_tier,
+                score,
+                signals,
+            } => Facts {
+                router_model_name,
+                routed_model,
+                routed_by: RoutedBy::QualityTier,
+                matched_keyword: None,
+                quality_tier: Some(*quality_tier),
+                complexity_tier: Some(complexity_tier),
+                score: Some(*score),
+                signals: Some(signals),
+            },
+            Self::DefaultFallback {
+                router_model_name,
+                routed_model,
+            } => Facts {
+                router_model_name,
+                routed_model,
+                routed_by: RoutedBy::DefaultFallback,
+                matched_keyword: None,
+                quality_tier: None,
+                complexity_tier: None,
+                score: None,
+                signals: None,
+            },
         }
     }
 
     pub fn record(&self) -> Result<Json, QualityRouterError> {
-        let record = match self {
-            Self::Keyword {
-                router_model_name,
-                routed_model,
-                matched_keyword,
-                quality_tier,
-            } => keyword_record(
-                router_model_name,
-                routed_model,
-                matched_keyword,
-                *quality_tier,
-            ),
-            Self::QualityTier {
-                router_model_name,
-                routed_model,
-                quality_tier,
-                score,
-                signals,
-                ..
-            } => quality_record(
-                router_model_name,
-                routed_model,
-                *quality_tier,
-                *score,
-                signals,
-            )?,
-            Self::DefaultFallback {
-                router_model_name,
-                routed_model,
-            } => record_base(router_model_name, routed_model, "default_fallback"),
-        };
-        Ok(Json::Object(record))
+        let facts = self.facts();
+        if let Some(score) = facts.score
+            && !score.is_finite()
+        {
+            return Err(QualityRouterError::NonFiniteScore);
+        }
+        wire(&RoutingRecord {
+            router_model_name: facts.router_model_name,
+            router_type: ROUTER_TYPE,
+            routed_model: facts.routed_model,
+            cause: facts.routed_by,
+            matched_keyword: facts.matched_keyword,
+            tier: facts.quality_tier.map(|tier| tier.to_string()),
+            score: facts.score,
+            signals: facts.signals,
+        })
     }
 
-    // the metadata the header helper lifts into x-litellm-quality-router-*; the default fallback stashes none
-    pub fn stash_document(&self) -> Option<Json> {
-        let document = match self {
-            Self::Keyword {
-                router_model_name,
-                routed_model,
-                matched_keyword,
-                quality_tier,
-            } => keyword_document(
-                router_model_name,
-                routed_model,
-                matched_keyword,
-                *quality_tier,
-            ),
-            Self::QualityTier {
-                router_model_name,
-                routed_model,
-                quality_tier,
-                complexity_tier,
-                ..
-            } => quality_document(
-                router_model_name,
-                routed_model,
-                *quality_tier,
-                complexity_tier,
-            ),
-            Self::DefaultFallback { .. } => return None,
+    // only the two routed paths carry a quality tier, and the default fallback stashes nothing
+    pub fn stash_document(&self) -> Result<Option<Json>, QualityRouterError> {
+        let facts = self.facts();
+        let Some(quality_tier) = facts.quality_tier else {
+            return Ok(None);
         };
-        Some(Json::Object(document))
+        wire(&DecisionDocument {
+            router_model_name: facts.router_model_name,
+            routed_model: facts.routed_model,
+            routed_via: facts.routed_by,
+            matched_keyword: facts.matched_keyword,
+            quality_tier,
+            complexity_tier: facts.complexity_tier,
+        })
+        .map(Some)
     }
 }
 
-fn keyword_record(
-    router_model_name: &str,
-    routed_model: &str,
-    matched_keyword: &str,
-    quality_tier: i64,
-) -> IndexMap<String, Json> {
-    let mut record = record_base(router_model_name, routed_model, "keyword");
-    record.insert(
-        "matched_keyword".to_owned(),
-        Json::Text(matched_keyword.to_owned()),
-    );
-    record.insert("tier".to_owned(), Json::Text(quality_tier.to_string()));
-    record
-}
-
-fn quality_record(
-    router_model_name: &str,
-    routed_model: &str,
-    quality_tier: i64,
-    score: f64,
-    signals: &[String],
-) -> Result<IndexMap<String, Json>, QualityRouterError> {
-    let mut record = record_base(router_model_name, routed_model, "quality_tier");
-    record.insert("tier".to_owned(), Json::Text(quality_tier.to_string()));
-    let number = Number::from_f64(score).ok_or(QualityRouterError::NonFiniteScore)?;
-    record.insert("score".to_owned(), Json::Number(number));
-    record.insert(
-        "signals".to_owned(),
-        Json::List(signals.iter().cloned().map(Json::Text).collect()),
-    );
-    Ok(record)
-}
-
-fn record_base(router_model_name: &str, routed_model: &str, cause: &str) -> IndexMap<String, Json> {
-    let mut record = IndexMap::new();
-    record.insert(
-        "router_model_name".to_owned(),
-        Json::Text(router_model_name.to_owned()),
-    );
-    record.insert("router_type".to_owned(), Json::Text("quality".to_owned()));
-    record.insert(
-        "routed_model".to_owned(),
-        Json::Text(routed_model.to_owned()),
-    );
-    record.insert("cause".to_owned(), Json::Text(cause.to_owned()));
-    record
-}
-
-fn keyword_document(
-    router_model_name: &str,
-    routed_model: &str,
-    matched_keyword: &str,
-    quality_tier: i64,
-) -> IndexMap<String, Json> {
-    let mut document = document_base(router_model_name, routed_model);
-    document.insert("routed_via".to_owned(), Json::Text("keyword".to_owned()));
-    document.insert(
-        "matched_keyword".to_owned(),
-        Json::Text(matched_keyword.to_owned()),
-    );
-    document.insert(
-        "quality_tier".to_owned(),
-        Json::Number(Number::from(quality_tier)),
-    );
-    document.insert("complexity_tier".to_owned(), Json::Null);
-    document
-}
-
-fn quality_document(
-    router_model_name: &str,
-    routed_model: &str,
-    quality_tier: i64,
-    complexity_tier: &str,
-) -> IndexMap<String, Json> {
-    let mut document = document_base(router_model_name, routed_model);
-    document.insert(
-        "routed_via".to_owned(),
-        Json::Text("quality_tier".to_owned()),
-    );
-    document.insert("matched_keyword".to_owned(), Json::Null);
-    document.insert(
-        "quality_tier".to_owned(),
-        Json::Number(Number::from(quality_tier)),
-    );
-    document.insert(
-        "complexity_tier".to_owned(),
-        Json::Text(complexity_tier.to_owned()),
-    );
-    document
-}
-
-fn document_base(router_model_name: &str, routed_model: &str) -> IndexMap<String, Json> {
-    let mut document = IndexMap::new();
-    document.insert(
-        "router_model_name".to_owned(),
-        Json::Text(router_model_name.to_owned()),
-    );
-    document.insert(
-        "routed_model".to_owned(),
-        Json::Text(routed_model.to_owned()),
-    );
-    document
+// the wire types stop at the passthrough document: serde's field order is kept by reading the text back
+fn wire<T>(value: &T) -> Result<Json, QualityRouterError>
+where
+    T: Serialize + ?Sized,
+{
+    let text = serde_json::to_string(value)?;
+    Ok(serde_json::from_str(&text)?)
 }
 
 // an absent metadata is created and an existing object takes the new decision; any other value is left alone

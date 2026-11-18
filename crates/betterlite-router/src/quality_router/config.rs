@@ -4,15 +4,7 @@ use betterlite_config::sections::quality_router as section;
 
 use super::error::QualityRouterError;
 
-// DEFAULT_COMPLEXITY_TO_QUALITY: the pinned mapping a file replaces by declaring its own table
-const DEFAULT_COMPLEXITY_TO_QUALITY: [(&str, i64); 4] = [
-    ("SIMPLE", 1),
-    ("MEDIUM", 2),
-    ("COMPLEX", 3),
-    ("REASONING", 4),
-];
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub available_models: Vec<String>,
     pub default_model: Option<String>,
@@ -26,18 +18,16 @@ impl Config {
     pub fn resolve(configured: Option<&section::RouterConfig>) -> Self {
         let Some(configured) = configured else {
             return Self {
-                complexity_to_quality: default_table(),
-                ..Self::default()
+                available_models: Vec::new(),
+                default_model: None,
+                complexity_to_quality: section::default_complexity_to_quality(),
+                ignored: Vec::new(),
             };
         };
-        let complexity_to_quality = configured
-            .complexity_to_quality
-            .clone()
-            .unwrap_or_else(default_table);
         Self {
             available_models: configured.available_models.clone(),
             default_model: configured.default_model.clone(),
-            complexity_to_quality,
+            complexity_to_quality: configured.complexity_to_quality.clone(),
             ignored: configured.extras.keys().cloned().collect(),
         }
     }
@@ -50,11 +40,4 @@ impl Config {
                 tier: complexity_name.to_owned(),
             })
     }
-}
-
-fn default_table() -> BTreeMap<String, i64> {
-    DEFAULT_COMPLEXITY_TO_QUALITY
-        .into_iter()
-        .map(|(tier, quality)| (tier.to_owned(), quality))
-        .collect()
 }
