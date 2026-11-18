@@ -1,0 +1,35 @@
+kind: websocket
+name: realtime-guardrails-block-sequence
+path: /v1/realtime
+headers: {openai-beta: realtime=v1}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+frames:
+  - direction: client_to_provider
+    action: send
+    text: '{"type": "session.update", "session": {"model": "gpt-4o-realtime-preview", "audio": {"input": {"transcription": {"model": "gpt-4o-transcribe"}}, "output": {"voice": "alloy"}}}}'
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "session.created", "session": {"id": "sess-guardrail"}}'
+  - direction: client_to_provider
+    action: send
+    text: '{"type": "input_audio_buffer.append", "audio": "AAECAw=="}'
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "conversation.item.input_audio_transcription.completed", "item_id": "item-i-1", "transcript": "hello"}'
+  - direction: client_to_provider
+    action: expect
+    text: '{"type": "conversation.item.create", "item": {"id": "item-pre-block", "type": "function_call_output", "call_id": "call-1", "output": "tool-safe"}}'
+  - direction: client_to_provider
+    action: expect
+    text: '{"type": "response.cancel"}'
+  - direction: provider_to_client
+    action: expect
+    text: '{"type": "error", "error": {"type": "guardrail_violation", "message": "denied", "code": "content_policy_violation"}}'
+  - direction: client_to_provider
+    action: expect
+    text: '{"type": "conversation.item.create", "item": {"id": "item-guardrail", "type": "message", "role": "user", "content": [{"type": "input_text", "text": "Say exactly the following message to the user, word for word, do not add anything else: denied"}]}}'
+  - direction: client_to_provider
+    action: expect
+    text: '{"type": "response.create"}'

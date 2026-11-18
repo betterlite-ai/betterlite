@@ -1,0 +1,23 @@
+kind: helper
+name: missing-days-zero-bill-and-above-one
+call:
+  capture_rate:
+    cases:
+      missing_days_fill_zero:
+        function: report
+        provider: openai
+        start_date: "2026-11-10"
+        end_date: "2026-11-12"
+        threshold: 0.9
+        captured_by_day: {"2026-11-10": 2.0}
+        billed_by_day: {"2026-11-10": 1.0, "2026-11-12": 4.0}
+      zero_bill_window:
+        function: report
+        provider: openai
+        start_date: "2026-11-13"
+        end_date: "2026-11-13"
+        threshold: 0.9
+        captured_by_day: {"2026-11-13": 5.0}
+        billed_by_day: {}
+env: {}
+compare: {ignore: []}

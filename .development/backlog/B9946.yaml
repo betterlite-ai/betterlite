@@ -1,0 +1,13 @@
+id: B9946
+milestone: R2 bug fixes
+title: The chat, completions and embeddings routes pick deployments from the proxy router
+status: todo
+depends_on: [B8610, B8611, B9947]
+file: tasks/B9946-routes-pick-from-router.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

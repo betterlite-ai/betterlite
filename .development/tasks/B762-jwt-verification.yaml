@@ -63,9 +63,13 @@ description: >-
   (L1337-L1338; 2 source lines).
 
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): JWT_AUDIENCE=None;
+  Pinned settings read by this component: JWT_AUDIENCE=None;
   JWT_ISSUER=None; litellm_jwtauth.oidc_userinfo_endpoint=None; litellm_jwtauth.oidc_userinfo_cache_ttl=300;
-  litellm_jwtauth.issuers=None.
+  litellm_jwtauth.issuers=None. The three litellm_jwtauth keys are LiteLLM_JWTAuth fields, and B869's
+  jwt_settings section (config.sections.jwt_settings) parses and validates that whole object, JWTIssuerConfig's
+  audience rule included; read them typed from there, pick the issuer config with B869's get_issuer_config, and
+  never parse them again. JWT_AUDIENCE and JWT_ISSUER are environment variables (handle_jwt.py L1085-L1086),
+  not part of that object, so this task's own jwt_verification section reads those two and nothing else.
 
 
   Add the jwt_verification operation under B856 Management::jwt. Python calls only the owned MIT helper
@@ -75,10 +79,9 @@ description: >-
   seed to B171 helper_case, which already owns this decoder.
 
 
-  Write betterlite-config::jwt_verification::tests::global_scope_absent_vs_empty,
-  issuer_audience_required_unless_explicitly_disabled, userinfo_default_300_and_endpoint_none,
-  issuer_mapping_defaults_and_validation and no_issuer_algorithm_setting.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
+  Write betterlite-config::jwt_verification::tests::global_scope_absent_vs_empty for JWT_AUDIENCE and
+  JWT_ISSUER; the issuer, audience and userinfo values are B869's to test.
+  It must call the production B002 config loader, set every listed key/env binding, assert the resulting
   typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
   grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
   actual nested key and an env-resolution case; no new config parser or fuzz workspace.
@@ -99,7 +102,7 @@ description: >-
 
 
   Sizing: 266 production, 280 table-driven tests, 75 helper adapters, 50 wiring, 65 decoder/fuzz and
-  60 config lines, 796 within an 800-line gate. Only the repository fixture/corpus/lock
+  25 config lines, 761 within an 800-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -216,8 +219,8 @@ dod:
       - oracle
       - helper-python
       - helper-case-corpus
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
+  - text: JWT_AUDIENCE and JWT_ISSUER load through the production config boundary, and an empty value stays apart
+      from an absent one.
     proof:
       - config-tests
       - config-corpus

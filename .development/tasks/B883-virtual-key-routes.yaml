@@ -43,8 +43,10 @@ description: >-
   _require_auth_pass_through_access tries the metadata grant before those explicit JWT paths, then raises
   the protected-pass-through 403.
 
-  Pinned settings read by this component (resolve once in betterlite-config, pass typed values): litellm_jwtauth.team_allowed_routes=['openai_routes',
-  'info_routes', 'mcp_routes', '/v1/messages', '/v1/messages/count_tokens'].
+  Pinned settings read by this component: litellm_jwtauth.team_allowed_routes=['openai_routes',
+  'info_routes', 'mcp_routes', '/v1/messages', '/v1/messages/count_tokens']. It is a LiteLLM_JWTAuth field, and B869's
+  jwt_settings section (config.sections.jwt_settings) parses and validates that whole object; read the typed value
+  from there. This task adds no config section and parses the key nowhere else.
 
 
   Add the virtual_key_routes operation under B856 Management::auth. Python calls only the owned MIT helper
@@ -68,13 +70,9 @@ description: >-
   scoped user; do not label every non-admin forbidden when the source permits team/org administrators.
 
 
-  Write betterlite-config::virtual_key_routes::tests::loads_team_routes, default_team_routes,
-  empty_team_routes and malformed_team_routes. Missing uses the five-route default; [] is accepted;
-  null, a scalar or a non-string item fails the list[str] settings validation instead of falling back.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B869's section tests own the loading, default and invalid values of this setting (a missing key uses the five-route
+  default and [] is accepted; null, a scalar or a non-string item fails), so this task writes no config tests and no
+  config_yaml seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -88,8 +86,8 @@ description: >-
 
 
   Sizing: 173 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
-  173 production, 265 behavior tests, 80 helper adapters, 65 route/manifests/wiring and 60 config lines,
-  643 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
+  173 production, 265 behavior tests, 80 helper adapters and 65 route/manifests/wiring lines,
+  583 changed lines estimated within a 700-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
 
@@ -121,12 +119,8 @@ scope:
     - crates/betterlite-server/src/state/virtual_key_routes.rs
     - crates/betterlite-server/src/state/virtual_key_routes/**
     - tools/oracle/cases/auth/virtual-key-routes/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*
     - crates/betterlite-server/src/auth/virtual_key_routes.rs
     - crates/betterlite-server/src/auth/virtual_key_routes/**
-    - crates/betterlite-config/src/sections/virtual_key_routes.rs
-    - crates/betterlite-config/src/sections/virtual_key_routes/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L72-L91
@@ -176,11 +170,6 @@ dod:
     proof:
       - oracle
       - behavior-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -204,15 +193,6 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-*")"
         && grep -rlq "virtual_key_routes" tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-* &&
         cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::virtual_key_routes::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*")"
-        && grep -rlq "team_allowed_routes" crates/betterlite-config/fuzz/corpus/config_yaml/virtual-key-routes-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::virtual_key_routes::tests::/)

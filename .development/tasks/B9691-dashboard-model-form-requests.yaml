@@ -22,7 +22,8 @@ description: >-
   enabled and that submitting with a team sends model_info.team_id.
 
   Add-model requests. The form loads provider metadata from GET /public/providers/fields (no
-  auth, B3190, mounted by B8676 and B8681), credentials from GET /credentials (B1601),
+  auth, B3190, mounted by B8676 and B8681), credentials from GET /credentials (B1601's handler,
+  mounted by B9987),
   guardrail and tag lists (B9735's cases), and model access groups through GET
   /models?include_model_access_groups=True&only_model_access_groups=True, the capitalized
   strings modelAvailableCall(token,"","",false,null,true,true) sends with
@@ -70,7 +71,7 @@ description: >-
   failing and a passing validation, a test_routing call against saved and unsaved configs, the
   create, both edit bodies, a delete and the member-managed edit by a team member.
 
-  Use B860's Postgres fixture with B5076's bootstrap, store_model_in_db true and mock upstream
+  Use B860's Postgres fixture with B9942's bootstrap, store_model_in_db true and mock upstream
   deployments for every tier model so no case reaches a provider. Compare status, error
   type/param/code and the stable bodies the forms read. Coverage audit: no on-disk case sends
   any of these bodies; the owners' planned cases (B1215 create-minimal, B379 and B349 config
@@ -153,7 +154,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/ui/litellm-dashboard/src/components/add_model/AddModelForm.tsx#L336-L381
 out_of_scope:
   - B9090 retains every unpatched function under add_model, edit_auto_router and AutoRouters; B9091 builds them and B146 drives the forms in the browser.
-  - B1215, B835, B838, B840, B349, B379, B3190, B3192, B1601, B4446, B007, B004 and B006 own the handlers; B8676 and B8681 own the public mounts.
+  - B1215, B835, B838, B840, B349, B379, B3190, B3192, B1601, B4446, B007, B004 and B006 own the handlers; B8676 and B8681 own the public mounts and B9987 mounts B1601's credential routes.
   - The deployed table, detail and credential tab are B9690's; router settings and fallbacks are B9692's.
 pitfalls:
   - A form with two model mappings sends two POST /model/new requests; a case that sends one body proves nothing about the second.
