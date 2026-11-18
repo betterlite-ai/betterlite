@@ -47,9 +47,9 @@ fn a_non_list_rule_value_is_refused_with_its_path() {
 #[test]
 fn an_unknown_block_key_is_unsupported() {
     let error = settings("fallback_generalizations:\n  extra: 1\n").unwrap_err();
+    // serde_ignored marks the Option-wrapped block with ? on its way to the unknown key
     assert_eq!(
         error,
-        // serde_ignored marks the Option-wrapped block with ? on its way to the unknown key
         r#"unsupported config keys: ["fallback_generalizations.?.extra"]"#
     );
 }
