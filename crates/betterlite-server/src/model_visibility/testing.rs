@@ -37,9 +37,9 @@ type Provider = Box<dyn Fn(&str) -> Option<String>>;
 // A Router as the model listing filters see it: the model list with its indices and the model_group_alias map.
 pub struct Snapshot {
     pub catalog: DeploymentCatalog,
-    aliases: AliasMap,
-    groups: RoutingGroupIndex,
-    provider: Provider,
+    pub aliases: AliasMap,
+    pub groups: RoutingGroupIndex,
+    pub provider: Provider,
 }
 
 impl Snapshot {

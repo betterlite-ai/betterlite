@@ -17,33 +17,29 @@ use super::snapshot::{declared_rows, snapshot};
 
 pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
     match input.function {
-        Function::UndiscoverableModelNames => undiscoverable(input),
-        Function::DiscoverableRows => discoverable(input),
+        Function::UndiscoverableModelNames => {
+            let fixture = snapshot(input)?;
+            let router = fixture.as_ref().map(Snapshot::lookup);
+            let hidden = undiscoverable_model_names(
+                &input.arguments.model_names,
+                router.as_ref(),
+                &user(input.arguments.user_role.as_deref())?,
+                input.arguments.team_id.as_deref(),
+            )
+            .map_err(FixtureError::from)?;
+            Ok(json!({ "hidden": hidden }))
+        }
+        Function::DiscoverableRows => {
+            let fixture = Snapshot::build(&declared_rows(input), &input.model_group_alias)?;
+            let kept = discoverable_rows(
+                &fixture.catalog.models,
+                &user(input.arguments.user_role.as_deref())?,
+            );
+            let names: Vec<&str> = kept.iter().map(|row| row.model_name.as_str()).collect();
+            Ok(json!({ "rows": names }))
+        }
         Function::HiddenUnhealthyModelNames => healthy(input),
     }
-}
-
-fn undiscoverable(input: &Input) -> Result<Value, Failure> {
-    let fixture = snapshot(input)?;
-    let router = fixture.as_ref().map(Snapshot::lookup);
-    let hidden = undiscoverable_model_names(
-        &input.arguments.model_names,
-        router.as_ref(),
-        &user(input.arguments.user_role.as_deref())?,
-        input.arguments.team_id.as_deref(),
-    )
-    .map_err(FixtureError::from)?;
-    Ok(json!({ "hidden": hidden }))
-}
-
-fn discoverable(input: &Input) -> Result<Value, Failure> {
-    let fixture = Snapshot::build(&declared_rows(input), &input.model_group_alias)?;
-    let kept = discoverable_rows(
-        &fixture.catalog.models,
-        &user(input.arguments.user_role.as_deref())?,
-    );
-    let names: Vec<&str> = kept.iter().map(|row| row.model_name.as_str()).collect();
-    Ok(json!({ "rows": names }))
 }
 
 fn healthy(input: &Input) -> Result<Value, Failure> {

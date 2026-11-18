@@ -20,7 +20,7 @@ fn object(entries: Vec<(&str, Json)>) -> JsonObject {
 #[test]
 fn builds_the_declared_rows_aliases_and_provider() {
     let params = object(vec![("model", text("openai/gpt-4o"))]);
-    let identified = object(vec![("id", text("a"))]);
+    let identified = Json::Object(object(vec![("id", text("a"))]));
     let missing = Json::Null;
     let declared = [
         Row {
@@ -49,11 +49,11 @@ fn builds_the_declared_rows_aliases_and_provider() {
     assert_eq!(resolved[0].model_name, "alias");
     assert_eq!(resolved[0].model_info.get("id"), Some(&text("a")));
     assert_eq!(
-        lookup.inferred_provider("gpt-4o"),
+        (lookup.inferred_provider)("gpt-4o"),
         Some("openai".to_owned())
     );
     assert_eq!(
-        lookup.inferred_provider("wat/other"),
+        (lookup.inferred_provider)("wat/other"),
         Some("None".to_owned())
     );
 }
@@ -61,7 +61,7 @@ fn builds_the_declared_rows_aliases_and_provider() {
 #[test]
 fn unbacked_pattern_fails_a_listing_that_matches_it() {
     let params = object(vec![("model", text("openai/gpt-4o"))]);
-    let identified = object(vec![("id", text("a"))]);
+    let identified = Json::Object(object(vec![("id", text("a"))]));
     let declared = [Row {
         model_name: "visible",
         litellm_params: &params,
