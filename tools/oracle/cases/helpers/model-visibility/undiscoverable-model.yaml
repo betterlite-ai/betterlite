@@ -1,0 +1,46 @@
+kind: helper
+name: model-visibility-undiscoverable-model
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: b
+          discoverable: false
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: c
+          discoverable: false
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: d
+      - model_name: visible
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: e
+      - model_name: marked
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: f
+          discoverable: true
+    model_group_alias: {}
+    arguments:
+      model_names: [hidden, mixed, visible, marked, missing]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}

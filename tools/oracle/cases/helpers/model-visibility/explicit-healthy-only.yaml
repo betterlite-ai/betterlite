@@ -1,0 +1,32 @@
+kind: helper
+name: model-visibility-explicit-healthy-only
+call:
+  model_visibility:
+    function: hidden_unhealthy_model_names
+    model_list: []
+    model_group_alias: {}
+    arguments:
+      healthy_only: true
+      health:
+        unhealthy_names: [hidden]
+calls:
+  - model_visibility:
+      function: hidden_unhealthy_model_names
+      model_list: []
+      model_group_alias: {}
+      arguments:
+        healthy_only: false
+        model_list_healthy_only: true
+        health:
+          unhealthy_names: [hidden]
+  - model_visibility:
+      function: hidden_unhealthy_model_names
+      model_list: []
+      model_group_alias: {}
+      arguments:
+        healthy_only: false
+        model_list_healthy_only: false
+        health:
+          unhealthy_names: [hidden]
+env: {}
+compare: {ignore: []}

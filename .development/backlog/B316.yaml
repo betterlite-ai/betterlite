@@ -1,14 +1,14 @@
 id: B316
 milestone: M2 routing
 title: Cost-based routing with model price overrides
-status: todo
+status: done
 depends_on: [B016, B013, B304, B301, B002]
 file: tasks/B316-cost-routing.yaml
 covers:
   - "litellm/router_strategy/lowest_cost.py"
 parent: B019
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2427

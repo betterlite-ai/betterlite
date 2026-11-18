@@ -22,6 +22,7 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 netrc-rs = "0.1.2"
 percent-encoding.workspace = true
 regex.workspace = true
+regex-syntax = "0.8.11"
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
@@ -40,6 +41,7 @@ thiserror.workspace = true
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tracing.workspace = true
 unicode-general-category = "1.1.0"
+unicode-ident = "1.0.27"
 unicode_titlecase = "2.5.0"
 url = "2.5.8"
 uuid.workspace = true

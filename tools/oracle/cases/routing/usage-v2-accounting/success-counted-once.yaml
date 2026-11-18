@@ -1,0 +1,97 @@
+kind: probe
+name: usage-v2-accounting-success-counted-once
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/usage_v2_accounting/steps/2
+      reference:
+        kind: store
+        step: 2
+        value: "14"
+      rust:
+        kind: store
+        step: 2
+        value: "0"
+      why: >-
+        async_log_success_event calls async_increment_cache_post_call, which writes the tpm increment
+        through to redis on the spot; betterlite queues it with the other routing deltas, so the shared
+        counter reaches the same total at the next sync step.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L325-L330
+    - pointer: /output/usage_v2_accounting/steps/4
+      reference:
+        kind: store
+        step: 4
+        value: "21"
+      rust:
+        kind: store
+        step: 4
+        value: "0"
+      why: >-
+        log_success_event calls increment_cache, which writes the in-memory and the redis cache at
+        once; betterlite stages the same token count in its batched queue, so the callback is counted
+        in memory immediately and in the shared counter at the next sync.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L285
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      usage_v2_accounting:
+        ttl_seconds: 60
+        steps:
+          - kind: success
+            now_millis: 0
+            call_type: acompletion
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - kind: success
+            now_millis: 0
+            call_type: acompletion
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o-mini:tpm:00-00"}
+          - kind: success
+            now_millis: 0
+            sync: true
+            call_type: completion
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o-mini:tpm:00-00"}
+          - {kind: sync, now_millis: 0}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o-mini:tpm:00-00"}
+          - kind: success
+            now_millis: 0
+            call_type: retrieve_batch
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - kind: success
+            now_millis: 0
+            sync: true
+            call_type: aretrieve_batch
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - kind: success
+            now_millis: 0
+            call_type: acompletion
+            standard_logging_object:
+              {model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - kind: success
+            now_millis: 0
+            sync: true
+            call_type: completion
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, total_tokens: 7}
+          - kind: success
+            now_millis: 0
+            sync: true
+            call_type: completion
+            standard_logging_object:
+              {model_group: gpt, model_id: dep-a, total_tokens: 7}
+          - {kind: store, now_millis: 0, key: "dep-a:openai/gpt-4o-mini:tpm:00-00"}
+          - kind: success
+            now_millis: 60000
+            call_type: acompletion
+            standard_logging_object:
+              {model_group: gpt, model: openai/gpt-4o-mini, model_id: dep-a, total_tokens: 7}
+          - {kind: sync, now_millis: 60000}
+          - {kind: store, now_millis: 60000, key: "dep-a:openai/gpt-4o-mini:tpm:00-00"}
+          - {kind: store, now_millis: 60000, key: "dep-a:openai/gpt-4o-mini:tpm:00-01"}

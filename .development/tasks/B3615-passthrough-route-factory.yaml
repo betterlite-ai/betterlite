@@ -16,8 +16,9 @@ description: >-
   pre_call_hook on the logging object. Route the request: if api_key in data, call
   litellm.aadapter_completion directly; elif model recognized or has default deployment or
   matches deployment_names, use llm_router.aadapter_completion (specific_deployment=True for
-  deployment_names); elif user_model is set, call litellm.aadapter_completion; else raise
-  ProxyModelNotFoundError. Extract hidden_params (model_id, cache_key, api_base, response_cost).
+  deployment_names); elif user_model is set, call litellm.aadapter_completion; else return B9964's
+  ProxyModelNotFoundError (betterlite_error::proxy_model_not_found) with route "completion", the data's model
+  ("" when absent) and the retry flag false (pass_through_endpoints.py L300-L303). Extract hidden_params (model_id, cache_key, api_base, response_cost).
   Schedule an async update_request_status to success. Get custom headers via
   ProxyBaseLLMRequestProcessing.get_custom_headers. Return the response. On exception, call
   post_call_failure_hook and raise ProxyException with litellm_call_id headers.

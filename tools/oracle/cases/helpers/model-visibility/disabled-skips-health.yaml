@@ -1,0 +1,16 @@
+kind: helper
+name: model-visibility-disabled-skips-health
+call:
+  model_visibility:
+    function: hidden_unhealthy_model_names
+    model_list: []
+    model_group_alias: {}
+    arguments:
+      healthy_only: true
+      model_list_healthy_only: true
+      with_router: false
+      health:
+        unhealthy_names: [hidden]
+        fails: true
+env: {}
+compare: {ignore: []}
