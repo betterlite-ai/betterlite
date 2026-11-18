@@ -156,6 +156,15 @@ fn data_value(entries: Vec<(&str, JsonValue)>) -> RetrievalData {
         .collect()
 }
 
+#[test]
+fn bucket_mut_persists_the_created_bucket_in_response_data() {
+    let mut data = data_value(Vec::new());
+    let bucket = bucket::bucket_mut(&mut data, bucket::METADATA).expect("metadata bucket");
+    bucket.insert("created".to_owned(), text("yes"));
+
+    assert_eq!(bucket_of(&data).get("created"), Some(&text("yes")));
+}
+
 fn bucket_named<'a>(data: &'a RetrievalData, name: &str) -> &'a BTreeMap<String, JsonValue> {
     match data.get(name) {
         Some(JsonValue::Object(bucket)) => bucket,
