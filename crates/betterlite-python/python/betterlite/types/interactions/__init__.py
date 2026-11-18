@@ -1,4 +1,5 @@
 from betterlite.types.interactions.content import (
+    Annotation,
     AudioContent,
     CodeExecutionCallContent,
     CodeExecutionResultContent,
@@ -9,20 +10,24 @@ from betterlite.types.interactions.content import (
     FunctionResultContent,
     GoogleSearchCallContent,
     GoogleSearchResultContent,
+    ImageContent,
     McpServerToolCallContent,
     McpServerToolResultContent,
+    TextContent,
     ThoughtContent,
     UrlContextCallContent,
     UrlContextResultContent,
     VideoContent,
 )
-from betterlite.types.interactions.deltas import Annotation, ContentDelta, ImageContent, TextContent
+from betterlite.types.interactions.deltas import ContentDelta
 from betterlite.types.interactions.enums import ResponseModality
+from betterlite.types.interactions.enums import (
+    Status3 as InteractionStatus,
+)
 from betterlite.types.interactions.events import (
     ContentStart,
     ContentStop,
     ErrorEvent,
-    Interaction,
     InteractionCompleted,
     InteractionCreated,
     InteractionEvent,
@@ -37,7 +42,7 @@ from betterlite.types.interactions.interaction import (
     CreateAgentInteractionParams,
     CreateModelInteractionParams,
     GenerationConfig,
-    Status3 as InteractionStatus,
+    Interaction,
     Turn,
 )
 from betterlite.types.interactions.litellm_responses import (

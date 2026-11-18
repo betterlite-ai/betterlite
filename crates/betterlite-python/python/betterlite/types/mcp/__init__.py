@@ -1,3 +1,4 @@
+from betterlite.types.llms.base import HiddenParams
 from betterlite.types.mcp.credentials import MCP_ADMIN_CONFIG_CREDENTIAL_KEYS, MCPCredentials
 from betterlite.types.mcp.enums import (
     DEFAULT_SUBJECT_TOKEN_TYPE,
@@ -17,7 +18,6 @@ from betterlite.types.mcp.headers import (
     without_header,
 )
 from betterlite.types.mcp.hooks import (
-    HiddenParams,
     MCPDuringCallRequestObject,
     MCPDuringCallResponseObject,
     MCPGatewaySession,

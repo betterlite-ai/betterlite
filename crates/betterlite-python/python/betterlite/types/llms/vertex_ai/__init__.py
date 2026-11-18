@@ -13,10 +13,7 @@ from betterlite.types.llms.vertex_ai.cached_content import (
     CachedContent,
     CachedContentListAllResponseBody,
     CachedContentRequestBody,
-    GenerationConfig,
     RequestBody,
-    ToolConfig,
-    Tools,
     VertexAICachedContentResponseObject,
 )
 from betterlite.types.llms.vertex_ai.content import (
@@ -56,6 +53,7 @@ from betterlite.types.llms.vertex_ai.embeddings import (
 from betterlite.types.llms.vertex_ai.generation import (
     GeminiImageConfig,
     GeminiThinkingConfig,
+    GenerationConfig,
     PrebuiltVoiceConfig,
     SpeechConfig,
     VoiceConfig,
@@ -85,13 +83,14 @@ from betterlite.types.llms.vertex_ai.response import (
     SearchEntryPoint,
     UrlContextMetadata,
     UrlMetadata,
-    UsageMetadata,
 )
 from betterlite.types.llms.vertex_ai.safety import SafetSettingsConfig
 from betterlite.types.llms.vertex_ai.schema import FunctionDeclaration, Schema
 from betterlite.types.llms.vertex_ai.tools import (
     FunctionCallingConfig,
     Retrieval,
+    ToolConfig,
+    Tools,
     VertexAISearch,
     VertexToolName,
 )
@@ -102,7 +101,11 @@ from betterlite.types.llms.vertex_ai.tuning import (
     ResponseSupervisedTuningSpec,
     ResponseTuningJob,
 )
-from betterlite.types.llms.vertex_ai.usage import PromptTokensDetails, TokenCountDetailsResponse
+from betterlite.types.llms.vertex_ai.usage import (
+    PromptTokensDetails,
+    TokenCountDetailsResponse,
+    UsageMetadata,
+)
 from betterlite.types.llms.vertex_ai.video import (
     VertexVideoGenerationInstance,
     VertexVideoGenerationParameters,

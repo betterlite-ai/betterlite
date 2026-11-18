@@ -1,10 +1,10 @@
 from betterlite.types.proxy.policy_engine.pipeline_types import (
+    GuardrailPipeline,
     PipelineExecutionResult,
     PipelineStep,
     PipelineStepResult,
 )
 from betterlite.types.proxy.policy_engine.policy_types import (
-    GuardrailPipeline,
     Policy,
     PolicyAttachment,
     PolicyCondition,

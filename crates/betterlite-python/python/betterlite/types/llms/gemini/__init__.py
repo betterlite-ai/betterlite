@@ -9,9 +9,9 @@ from betterlite.types.llms.gemini.gemini import (
     GeminiCreateFilesResponseObject,
     GeminiFilesSource,
     GeminiFilesState,
-    GeminiGenerateVideoResponse,
     GeminiGeneratedImage,
     GeminiGeneratedVideoSample,
+    GeminiGenerateVideoResponse,
     GeminiImageGenerationInstance,
     GeminiImageGenerationParameters,
     GeminiImageGenerationPrediction,
@@ -24,6 +24,8 @@ from betterlite.types.llms.gemini.gemini import (
     GeminiVideoGenerationParameters,
     GeminiVideoGenerationRequest,
     GeminiVideoUri,
+)
+from betterlite.types.llms.gemini.vertex_ai_types import (
     GenerationConfig,
     HttpxBlobType,
     HttpxContentType,

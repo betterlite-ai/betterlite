@@ -2,36 +2,37 @@ from betterlite.types.llms.bedrock.converse.citations import (
     CitationGeneratedContentBlock,
     CitationLocationBlock,
     CitationReferenceBlock,
+    CitationsContentBlock,
     CitationSearchResultLocationBlock,
     CitationWebLocationBlock,
 )
 from betterlite.types.llms.bedrock.converse.content import (
     BedrockConverseGptReasoningEffortBlock,
+    BedrockConverseReasoningContentBlock,
     BedrockConverseReasoningContentBlockDelta,
     BedrockConverseReasoningTextBlock,
+    CachePointBlock,
+    DocumentBlock,
+    GuardrailConverseContentBlock,
     GuardrailConverseTextBlock,
+    ImageBlock,
     SearchResultBlock,
     SourceBlock,
+    SystemContentBlock,
+    ToolResultBlock,
     ToolResultContentBlock,
+    ToolUseBlock,
+    VideoBlock,
 )
 from betterlite.types.llms.bedrock.converse.messages import (
-    BedrockConverseReasoningContentBlock,
     CacheDetailBlock,
-    CachePointBlock,
-    CitationsContentBlock,
     ContentBlock,
     ConverseMetricsBlock,
     ConverseResponseBlock,
     ConverseResponseOutputBlock,
     ConverseTokenUsageBlock,
-    DocumentBlock,
-    GuardrailConverseContentBlock,
-    ImageBlock,
     MessageBlock,
     ServiceTierBlock,
-    ToolResultBlock,
-    ToolUseBlock,
-    VideoBlock,
 )
 from betterlite.types.llms.bedrock.converse.request import (
     BedrockInvokeNovaRequest,
@@ -44,8 +45,6 @@ from betterlite.types.llms.bedrock.converse.request import (
     OutputFormatStructure,
     PerformanceConfigBlock,
     RequestObject,
-    SystemContentBlock,
-    ToolConfigBlock,
 )
 from betterlite.types.llms.bedrock.converse.server_sent_event import ServerSentEvent
 from betterlite.types.llms.bedrock.converse.stream_events import (
@@ -63,6 +62,7 @@ from betterlite.types.llms.bedrock.converse.tools import (
     SystemToolBlock,
     ToolBlock,
     ToolChoiceValuesBlock,
+    ToolConfigBlock,
     ToolInputSchemaBlock,
     ToolJsonSchemaBlock,
     ToolSpecBlock,
@@ -82,9 +82,12 @@ from betterlite.types.llms.bedrock.invoke.batches import (
     BedrockTag,
 )
 from betterlite.types.llms.bedrock.invoke.embeddings import (
+    AmazonTitanG1EmbeddingRequest,
     AmazonTitanG1EmbeddingResponse,
     AmazonTitanMultimodalEmbeddingConfig,
+    AmazonTitanMultimodalEmbeddingRequest,
     AmazonTitanMultimodalEmbeddingResponse,
+    AmazonTitanV2EmbeddingRequest,
     AmazonTitanV2EmbeddingResponse,
     AmazonTitanV2EmbeddingsByType,
     CohereEmbeddingRequest,
@@ -141,9 +144,6 @@ from betterlite.types.llms.bedrock.invoke.marengo import (
     TwelveLabsS3OutputDataConfig,
 )
 from betterlite.types.llms.bedrock.invoke.nova_embeddings import (
-    AmazonTitanG1EmbeddingRequest,
-    AmazonTitanMultimodalEmbeddingRequest,
-    AmazonTitanV2EmbeddingRequest,
     NovaAsyncInvokeRequest,
     NovaAudioParams,
     NovaAudioParamsWithSegmentation,
