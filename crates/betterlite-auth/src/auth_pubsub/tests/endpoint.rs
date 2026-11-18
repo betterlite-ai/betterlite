@@ -89,3 +89,14 @@ fn redis_auth_pubsub_publish_reports_connection_failure() {
         "an unreachable redis fails the publish as a connection error"
     );
 }
+
+#[test]
+fn redis_auth_pubsub_subscribe_reports_connection_failure() {
+    let runtime = runtime();
+    let pubsub = redis_pubsub(runtime.block_on(dead_cache(None)));
+    let outcome = runtime.block_on(pubsub.subscribe());
+    assert!(
+        matches!(outcome, Err(TransportError::Connection { .. })),
+        "an unreachable redis fails the subscribe as a connection error"
+    );
+}
