@@ -11,7 +11,8 @@ use crate::postgres_store::errors::DbError;
 use crate::postgres_store::repository::Repository;
 use crate::postgres_store::rows::KeyColumn;
 use crate::resource_rows::ResourceRowsError;
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use deadpool_postgres::{Client, GenericClient, Manager, Pool};
 use rstest::rstest;
@@ -158,23 +159,19 @@ impl Database {
         let url = Environment::parse_from(["user-repository-tests"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
-            .resolve()
-            .await
-            .unwrap();
+        let fixture = PostgresFixture::provision_with_name_generator(
+            url.as_ref(),
+            &FixtureSeed::default(),
+            &mut RandomDatabaseName,
+        )
+        .resolve()
+        .await
+        .unwrap();
         let config: tokio_postgres::Config = fixture.options.url.expose_secret().parse().unwrap();
         let pool = Pool::builder(Manager::new(config, NoTls))
             .max_size(4)
             .build()
             .unwrap();
-        let client = pool.get().await.unwrap();
-        client
-            .batch_execute(include_str!(
-                "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-            ))
-            .await
-            .unwrap();
-        drop(client);
         Self { fixture, pool }
     }
 

@@ -1,0 +1,19 @@
+id: test-schemas-from-templates
+language: rust
+severity: error
+message: a test database gets its schema from PostgresFixture::provision_with_statements, built once per server, not by replaying SQL in each test
+files:
+  - "**/tests.rs"
+  - "**/tests/**/*.rs"
+  - "**/fixtures.rs"
+ignores:
+  - tools/postgres-fixture/**
+  # LiteLLM's pinned catalogs: each holds the bytes of the migrations it pins, read by the tests that apply them
+  - crates/betterlite-db/src/schema_*/fixtures.rs
+  - .development/**
+rule:
+  any:
+    - kind: macro_invocation
+      regex: '^include_(str|bytes)!\s*\(\s*"[^"]*\.sql"\s*\)$'
+    - kind: string_literal
+      regex: '(?i)DROP SCHEMA (IF EXISTS )?public'

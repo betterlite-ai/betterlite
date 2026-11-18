@@ -1,0 +1,9 @@
+task: B618
+deviations:
+- what: A tools entry that is not an object becomes a typed ToolSearchToolsError::NotObject with status 400 instead of escaping as LiteLLM's AttributeError.
+  why: LiteLLM calls tool.get("type") on every entry, so a malformed list dies inside the request build as a 500; the malformed request is answered with the 400 it deserves.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L342-L365
+- what: A request whose messages hold more than 256 remote document URLs fails with MediaError::TooManyRemoteUrls (400) before anything is fetched, repeated URLs included.
+  why: LiteLLM's _convert_document_url_sources_to_base64 downloads every URL it finds with no ceiling, so one request can make the gateway fetch without end; the async media path already carries the same 256 ceiling.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L303-L340
+kept_bugs: []

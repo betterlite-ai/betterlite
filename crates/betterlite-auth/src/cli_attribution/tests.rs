@@ -8,10 +8,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::migration_ledger::baseline::catalog_statements;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::schema_baseline;
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
@@ -487,13 +487,12 @@ async fn database() -> (PostgresFixture, PostgresStore) {
     let url = Environment::parse_from(["cli-attribution-tests"])
         .url
         .map(SecretString::from);
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        url.as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
-    let fixture = task.resolve().await.expect("the database fixture");
+    let statements =
+        catalog_statements(&[schema_baseline::MIGRATION_CATALOG]).expect("the migration text");
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .expect("the database fixture");
     let pool = Pool::builder(Manager::new(
         fixture
             .options
@@ -507,18 +506,6 @@ async fn database() -> (PostgresFixture, PostgresStore) {
     .build()
     .expect("the database pool");
     let postgres = PostgresStore { pool: Some(pool) };
-    let client = postgres.session().await.expect("the database connection");
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .expect("the empty public schema");
-    for migration in schema_baseline::MIGRATION_CATALOG.files {
-        let sql = str::from_utf8(migration.bytes).expect("the migration text");
-        client
-            .batch_execute(sql)
-            .await
-            .expect("the schema migration");
-    }
     (fixture, postgres)
 }
 

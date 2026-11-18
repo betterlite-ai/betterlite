@@ -13,7 +13,8 @@ use crate::budget_permission_rows::{
     LiteLLMBudgetTable, LiteLLMObjectPermissionTable, PermissionList,
 };
 use crate::identity_rows::Payload;
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -733,22 +734,20 @@ async fn connect_seeded_resource_rows() -> (
     PostgresFixture,
 ) {
     let url = postgres_test_url();
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_name_generator(
+        url.as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
     let (client, connection) =
         tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls)
             .await
             .unwrap();
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    client
-        .batch_execute(include_str!(
-            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-        ))
-        .await
-        .unwrap();
     seed_resource_rows(&client).await;
     (client, tasks, fixture)
 }

@@ -1,0 +1,7 @@
+kind: helper
+name: google-identity-verified-seed
+call:
+  google_identity:
+    userinfo: {sub: '42', email: ann@example.com, email_verified: true}
+env: {}
+compare: {ignore: []}

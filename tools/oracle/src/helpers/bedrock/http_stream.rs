@@ -1,11 +1,27 @@
+use tokio::runtime::Builder;
+
+use self::run::execute;
+use self::support::failure;
+use self::types::Input;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+mod fixture;
+mod run;
+mod support;
+mod tests;
+mod types;
+mod views;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("bedrock_http_stream")
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(failure)?;
+        execute(input, &runtime)
     }
 }

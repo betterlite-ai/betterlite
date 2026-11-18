@@ -1,0 +1,22 @@
+kind: helper
+name: customer_budget_conflict
+call:
+  b8411:
+    calls:
+      - {function: customer, body: {user_id: u, max_budget: 5, budget_id: b}}
+      - {function: customer, body: {user_id: u, max_budget: 0, budget_id: b}}
+      - {function: customer, body: {user_id: u, max_budget: -1, budget_id: b}}
+      - {function: customer, body: {user_id: u, max_budget: null, budget_id: b}}
+      - {function: customer, body: {user_id: u, max_budget: null, budget_id: null}}
+      - {function: customer, body: {user_id: u, max_budget: 5}}
+      - {function: customer, body: {user_id: u, budget_id: b}}
+      - {function: customer, body: {user_id: u}}
+      - {function: customer, body: {user_id: u, alias: a, blocked: true, spend: 1.5, allowed_model_region: eu, default_model: gpt-4o}}
+      - {function: customer, body: {user_id: u, allowed_model_region: us}}
+      - {function: customer, body: {user_id: u, soft_budget: 2.5, tpd_limit: 7, tpm_limit: 10, rpm_limit: 5, max_parallel_requests: 2, budget_duration: 1d}}
+      - {function: customer, body: {user_id: u, max_budget: 5, budget_duration: 1d, budget_reset_at: "2024-06-01T00:00:00Z"}}
+      - {function: customer, body: {user_id: u, allowed_model_region: mars}}
+      - {function: customer, body: {max_budget: 5}}
+      - {function: customer, body: {user_id: null, max_budget: 5}}
+env: {}
+compare: {ignore: []}

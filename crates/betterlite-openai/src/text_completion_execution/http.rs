@@ -1,17 +1,21 @@
+use std::fmt::Display;
 use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use futures_util::{StreamExt as _, TryStreamExt as _};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use url::Url;
 
+use crate::speech::result::read_error_body;
 use crate::text_completion_transport::sdk::{
     ClientConstructor, ClientKind, RawCompletion, SdkArguments, SdkError, TextCompletionSdk,
+    status_error,
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
@@ -147,35 +151,82 @@ impl TextCompletionSdk for HttpCompletionSdk {
         data: &Map<String, Value>,
     ) -> impl Future<Output = Result<RawCompletion, SdkError>> + Send {
         let prepared = self.prepare(data);
+        // the SDK's create(stream=True) hands back its chunk iterator instead of a buffered model
+        let streamed = matches!(data.get("stream"), Some(Value::Bool(true)));
         let client = self.client.clone();
         let facts = Arc::clone(&self.facts);
         let deadline = self.timeout;
         async move {
             let Prepared { url, headers, body } = prepared?;
-            let started = Instant::now();
-            let response = client
-                .send_buffered(OutboundRequest {
-                    method: Method::POST,
-                    url,
-                    query: Vec::new(),
-                    headers,
-                    body: RequestBody::Json(body),
-                    deadline,
-                })
-                .await
-                .map_err(|source| SdkError::Other {
-                    message: source.to_string(),
-                })?;
-            let elapsed = started.elapsed();
-            *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
-                headers: response.headers.clone(),
-                elapsed,
-            });
-            Ok(RawCompletion::Buffered {
-                status: response.status,
-                headers: response.headers,
-                body: response.body,
-            })
+            let request = OutboundRequest {
+                method: Method::POST,
+                url,
+                query: Vec::new(),
+                headers,
+                body: RequestBody::Json(body),
+                deadline,
+            };
+            if streamed {
+                streamed_completion(&client, request, &facts).await
+            } else {
+                buffered_completion(&client, request, &facts).await
+            }
         }
+    }
+}
+
+// The SDK's chunk iterator: the response headers are recorded before the bytes stream in.
+async fn streamed_completion(
+    client: &ProxiedClient,
+    request: OutboundRequest,
+    facts: &Mutex<Option<UpstreamFacts>>,
+) -> Result<RawCompletion, SdkError> {
+    let started = Instant::now();
+    let response = client.send(request).await.map_err(sdk_other)?;
+    let elapsed = started.elapsed();
+    let status = response.response.status().as_u16();
+    let headers = response.response.headers().clone();
+    record_facts(facts, &headers, elapsed);
+    if status >= 400 {
+        // the SDK reads a failed response before it raises, so its exception keeps the provider's error object
+        let body = read_error_body(response.body_stream()).await;
+        return Err(status_error(status, headers, &body));
+    }
+    let body = response.body_stream().map_err(sdk_other).boxed();
+    Ok(RawCompletion::Stream {
+        status,
+        headers,
+        body,
+    })
+}
+
+async fn buffered_completion(
+    client: &ProxiedClient,
+    request: OutboundRequest,
+    facts: &Mutex<Option<UpstreamFacts>>,
+) -> Result<RawCompletion, SdkError> {
+    let started = Instant::now();
+    let response = client.send_buffered(request).await.map_err(sdk_other)?;
+    record_facts(facts, &response.headers, started.elapsed());
+    Ok(RawCompletion::Buffered {
+        status: response.status,
+        headers: response.headers,
+        body: response.body,
+    })
+}
+
+fn record_facts(facts: &Mutex<Option<UpstreamFacts>>, headers: &HeaderMap, elapsed: Duration) {
+    *facts.lock().unwrap_or_else(PoisonError::into_inner) = Some(UpstreamFacts {
+        headers: headers.clone(),
+        elapsed,
+    });
+}
+
+fn sdk_other<E>(source: E) -> SdkError
+where
+    E: Display,
+{
+    SdkError::Other {
+        message: source.to_string(),
     }
 }
