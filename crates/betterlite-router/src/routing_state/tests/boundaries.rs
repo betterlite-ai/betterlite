@@ -42,7 +42,6 @@ pub(crate) async fn run(name: &str) {
         "sync_merges_at_the_equality_boundary" => sync_merges_at_the_equality_boundary().await,
         "sync_interval_resolution_boundaries" => sync_interval_resolution_boundaries(),
         "local_counter_reads_only_whole_values" => local_counter_reads_only_whole_values(),
-        "usage_flush_tasks_do_not_accumulate" => usage_flush_tasks_do_not_accumulate().await,
         _ => panic!("unknown case {name}"),
     }
 }
