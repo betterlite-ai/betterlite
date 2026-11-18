@@ -1,0 +1,40 @@
+kind: helper
+name: bedrock-legacy-models-legacy-config-projection
+call:
+  bedrock_legacy_models:
+    projection:
+      family: ai21
+      attributes:
+        __marked__: dunder
+        _method: {kind: function}
+        plain: 5
+        text: value
+        nothing: null
+        _private: kept
+        _abc_value: abc
+        function: {kind: function}
+        builtin: {kind: builtin}
+        class_method: {kind: class_method}
+        static_method: {kind: static_method}
+        descriptor: {kind: descriptor}
+        _abc_impl: {kind: abc_data}
+calls:
+  - bedrock_legacy_models:
+      projection:
+        family: anthropic
+        attributes:
+          __marked__: dunder
+          _method: {kind: function}
+          plain: 5
+          text: value
+          nothing: null
+          _private: kept
+          _abc_value: abc
+          function: {kind: function}
+          builtin: {kind: builtin}
+          class_method: {kind: class_method}
+          static_method: {kind: static_method}
+          descriptor: {kind: descriptor}
+          _abc_impl: {kind: abc_data}
+env: {}
+compare: {ignore: []}

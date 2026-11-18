@@ -1,0 +1,81 @@
+kind: helper
+name: route_escalation_denied
+call:
+  key_delegation:
+    calls:
+      - check: routes
+        allowed_routes: null
+        was_provided: false
+        allow_safe_presets: false
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: []
+        was_provided: false
+        allow_safe_presets: false
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: null
+        was_provided: true
+        allow_safe_presets: false
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: []
+        was_provided: true
+        allow_safe_presets: false
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [management_routes]
+        was_provided: true
+        allow_safe_presets: false
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [management_routes]
+        was_provided: true
+        allow_safe_presets: false
+        caller: {role: proxy_admin, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [info_routes]
+        was_provided: false
+        allow_safe_presets: true
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [llm_api_routes, info_routes, llm_api_routes]
+        was_provided: false
+        allow_safe_presets: true
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [llm_api_routes, management_routes]
+        was_provided: false
+        allow_safe_presets: true
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes
+        allowed_routes: [info_routes]
+        was_provided: false
+        allow_safe_presets: false
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [info_routes]}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: null}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: []}
+        existing_allowed_routes: [info_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [info_routes]}
+        existing_allowed_routes: [management_routes]
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: routes_update
+        body: {key: sk-oracle, allowed_routes: [info_routes]}
+        existing_allowed_routes: [management_routes]
+        caller: {role: proxy_admin, is_session_token: false, is_ui_session_team_key: false}
+env: {}
+compare: {ignore: []}

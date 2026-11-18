@@ -29,10 +29,10 @@ pub(crate) async fn database() -> Database {
     let url = Environment::parse_from(["database-reencryption-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), Vec::new())
         .resolve()
         .await
-        .expect("the fixture provisions a schema");
+        .expect("the fixture provisions a database");
     let configuration = fixture
         .options
         .url

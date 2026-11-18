@@ -83,21 +83,16 @@ async fn seeded() -> (PostgresFixture, PostgresStore) {
     let configured = Environment::parse_from(["mcp-table-access-database"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(configured.as_ref())
-        .resolve()
-        .await
-        .expect("the fixture provisions a schema");
+    let fixture =
+        PostgresFixture::provision_with_statements(configured.as_ref(), vec![STORAGE.to_owned()])
+            .resolve()
+            .await
+            .expect("the fixture provisions a database");
     let config: Config = fixture.options.url.expose_secret().parse().unwrap();
     let pool = Pool::builder(Manager::new(config, NoTls))
         .max_size(4)
         .build()
         .unwrap();
-    pool.get()
-        .await
-        .unwrap()
-        .batch_execute(STORAGE)
-        .await
-        .expect("the test table exists");
     let store = PostgresStore { pool: Some(pool) };
     (fixture, store)
 }

@@ -1,5 +1,6 @@
 use std::time::{Duration, Instant};
 
+use betterlite_postgres_fixture::sql::BASELINE;
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::time::sleep;
@@ -10,25 +11,23 @@ use super::MigrationDriftCheck;
 use super::ahead::{hostile_names, shown, warn_if_db_ahead_of_head};
 use super::comparison::{SchemaCheck, check_schema, evaluate, summary};
 use super::fixtures::{
-    CapturedLogs, PUBLIC_SCHEMA, READ_TIMEOUT, TestDatabase, apply_compiled, apply_pinned, capture,
-    read_contract, reset_public, with_databases, with_schema,
+    CapturedLogs, PUBLIC_SCHEMA, READ_TIMEOUT, TestDatabase, capture, read_contract,
+    with_databases, with_schema,
 };
 use super::guard::{LensGuardError, raise_if_lens_rename_pending, spend_logs_is_partitioned};
 use super::index_repair::{
     INDEX_REPAIR_LOCK_KEY, InvalidIndex, index_repair, invalid_litellm_indexes,
     repair_invalid_indexes, repair_under_migration_lock,
 };
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::migration_ledger::environment::prisma_schema_param;
+use crate::migration_ledger::fixtures::LEDGER_DDL;
 use crate::migration_ledger::lock::MIGRATION_LOCK_KEY;
 use crate::schema_agent_identity::MIGRATION_CATALOG as B709;
 use crate::schema_contract::catalog::Attribute;
 use crate::schema_contract::comparison::{Change, Comparison};
+use crate::schema_contract::history::litellm_statements;
 use crate::schema_contract::{Fact, ObjectKind, SchemaContract};
-
-const LEDGER_DDL: &str = "CREATE TABLE _prisma_migrations (id varchar(36) PRIMARY KEY NOT NULL, \
-    checksum varchar(64) NOT NULL, finished_at timestamptz, migration_name varchar(255) NOT NULL, \
-    logs text, rolled_back_at timestamptz, started_at timestamptz NOT NULL DEFAULT now(), \
-    applied_steps_count integer NOT NULL DEFAULT 0)";
 
 fn b709_names() -> Vec<String> {
     B709.files

@@ -1,0 +1,12 @@
+kind: helper
+name: sso-mappings-single-quoted-role-dictionary
+call:
+  sso_mapping_input:
+    environment:
+      GENERIC_ROLE_MAPPINGS_ROLES: "{'proxy_admin': ['admins', 'ops'], 'internal_user_viewer': [\"users\"]}"
+      GENERIC_ROLE_MAPPINGS_GROUP_CLAIM: groups
+      GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE: internal_user
+    calls:
+      - function: role_mappings
+env: {}
+compare: {ignore: []}

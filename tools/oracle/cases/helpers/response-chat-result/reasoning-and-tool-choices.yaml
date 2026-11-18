@@ -1,0 +1,211 @@
+kind: helper
+name: response-chat-result-reasoning-and-tool-choices
+call:
+  response_chat_result:
+    model: caller-model
+    response:
+      id: resp_a
+      created_at: 1700000000
+      status: completed
+      output:
+        - type: reasoning
+          id: rs_1
+          encrypted_content: enc-typed
+          summary:
+            - {type: summary_text, text: one}
+            - {type: summary_text, text: two}
+        - type: message
+          id: msg_1
+          role: assistant
+          status: completed
+          content:
+            - {type: output_text, text: a, annotations: []}
+            - {type: output_text, text: b, annotations: []}
+    caller_extra: {}
+    caller_hidden_params: {}
+    raw_hidden_params: {}
+    recorded: null
+calls:
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: reasoning
+            id: rs_1
+            summary:
+              - {type: summary_text, text: one}
+          - type: reasoning
+            id: rs_2
+            summary:
+              - {type: summary_text, text: two}
+          - type: message
+            id: msg_1
+            role: assistant
+            status: completed
+            content:
+              - {type: output_text, text: a, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: reasoning
+            summary:
+              - {text: raw}
+          - type: message
+            role: assistant
+            content:
+              - {type: output_text, text: a, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: function_call
+            id: fc_1
+            call_id: c1
+            name: f
+            arguments: "{}"
+            provider_specific_fields: {trace: typed}
+          - type: function_call
+            id: fc_2
+            call_id: c2
+            name: g
+            arguments: "{}"
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: function_call
+            id: fc_1
+            name: f
+            arguments: "{}"
+            provider_specific_fields: {trace: raw}
+          - type: function_call
+            id: fc_2
+            name: g
+            arguments: "{}"
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: custom_tool_call
+            id: ctc_1
+            name: g
+            input: raw
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: apply_patch_call
+            id: apc_1
+            call_id: call_ap
+            status: completed
+            operation:
+              type: create_file
+              diff: "+a"
+              path: a
+          - type: apply_patch_call
+            id: apc_2
+            call_id: call_ap2
+            status: completed
+            operation:
+              type: update_file
+              diff: "+b"
+              path: b
+          - type: apply_patch_call
+            id: apc_3
+            call_id: call_ap3
+            status: completed
+            operation:
+              type: delete_file
+              path: c
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: reasoning
+            id: rs_1
+            summary:
+              - {type: summary_text, text: why}
+          - type: function_call
+            id: fc_1
+            call_id: c1
+            name: f
+            arguments: "{}"
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: reasoning
+            id: rs_1
+            summary:
+              - {type: summary_text, text: why}
+          - type: message
+            id: msg_1
+            role: assistant
+            status: completed
+            content:
+              - {type: output_text, text: a, annotations: []}
+          - type: function_call
+            id: fc_1
+            call_id: c1
+            name: f
+            arguments: "{}"
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+env: {}
+compare:
+  ignore: []

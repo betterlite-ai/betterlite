@@ -471,7 +471,7 @@ pub(super) async fn postgres_fixture() -> PostgresFixture {
     let configured = Environment::parse_from(["database-refresh-tests"])
         .url
         .map(SecretString::from);
-    PostgresFixture::provision_schema(configured.as_ref())
+    PostgresFixture::provision_with_statements(configured.as_ref(), Vec::new())
         .resolve()
         .await
         .expect("a Postgres fixture")

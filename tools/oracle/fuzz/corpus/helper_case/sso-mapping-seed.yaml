@@ -1,0 +1,20 @@
+kind: helper
+name: sso-mapping-corpus-seed
+call:
+  sso_mapping_input:
+    environment:
+      GENERIC_CLIENT_SECRET: secret
+      GENERIC_AUTHORIZATION_ENDPOINT: https://idp.example.com/authorize
+      GENERIC_TOKEN_ENDPOINT: https://idp.example.com/token
+      GENERIC_USERINFO_ENDPOINT: https://idp.example.com/userinfo
+      GENERIC_INCLUDE_CLIENT_ID: "false"
+      GENERIC_ROLE_MAPPINGS_ROLES: "{'proxy_admin': ['admins'], 'internal_user': ['users']}"
+      GENERIC_ROLE_MAPPINGS_GROUP_CLAIM: groups
+      GENERIC_ROLE_MAPPINGS_DEFAULT_ROLE: internal_user
+      GENERIC_SSO_HEADERS: "X-Team=eng,X-Env=prod"
+    calls:
+      - function: role_mappings
+      - function: headers
+      - function: env_vars
+env: {}
+compare: {ignore: []}

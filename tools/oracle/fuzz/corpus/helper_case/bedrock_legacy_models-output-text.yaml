@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-legacy-models-output-text-seed
+call:
+  bedrock_legacy_models:
+    output_text:
+      response:
+        outputs:
+          - text: hello
+            stop_reason: end_turn
+env: {}
+compare: {ignore: []}

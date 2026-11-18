@@ -2,11 +2,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
 use std::future::{Future, ready};
 use std::io;
-use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use betterlite_redis::config_sync::table_actions::TableActions;
 use betterlite_redis::redis_cache::RedisCache;
@@ -29,13 +27,9 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::database_replica::availability::Availability;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
-use crate::{
-    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
-    schema_identity_history, schema_managed_resources, schema_policy_resources,
-    schema_routing_state,
-};
 
 use super::super::repository::{PrismaClient, TableError};
 
@@ -51,15 +45,14 @@ fn test_url() -> Option<SecretString> {
         .map(SecretString::from)
 }
 
-// Each test owns a database: pg_constraint guards span the whole database, not one schema.
 async fn provision() -> PostgresFixture {
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
+    PostgresFixture::provision_with_statements(
         test_url().as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
-    task.resolve().await.unwrap()
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+    )
+    .resolve()
+    .await
+    .unwrap()
 }
 
 pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
@@ -67,31 +60,6 @@ pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
     let manager = Manager::new(config, NoTls);
     let pool = Pool::builder(manager).max_size(2).build().unwrap();
     PostgresStore { pool: Some(pool) }
-}
-
-async fn migrate(store: &PostgresStore) {
-    let client = store.session().await.unwrap();
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .unwrap();
-    for catalog in [
-        schema_baseline::MIGRATION_CATALOG,
-        schema_daily_usage::MIGRATION_CATALOG,
-        schema_managed_resources::MIGRATION_CATALOG,
-        schema_identity_history::MIGRATION_CATALOG,
-        schema_policy_resources::MIGRATION_CATALOG,
-        schema_routing_state::MIGRATION_CATALOG,
-        schema_budget_windows::MIGRATION_CATALOG,
-        schema_agent_identity::MIGRATION_CATALOG,
-    ] {
-        for migration in catalog.files {
-            client
-                .batch_execute(from_utf8(migration.bytes).unwrap())
-                .await
-                .unwrap();
-        }
-    }
 }
 
 pub(crate) struct Case {
@@ -103,35 +71,26 @@ pub(crate) struct Case {
 
 impl Case {
     pub(crate) async fn new() -> Self {
-        Self::assemble(provision().await, None).await
+        Self::assemble(provision().await, None)
     }
 
     pub(crate) async fn split() -> Self {
-        Self::assemble(provision().await, Some(provision().await)).await
+        Self::assemble(provision().await, Some(provision().await))
     }
 
-    async fn assemble(
-        writer_fixture: PostgresFixture,
-        reader_fixture: Option<PostgresFixture>,
-    ) -> Self {
+    fn assemble(writer_fixture: PostgresFixture, reader_fixture: Option<PostgresFixture>) -> Self {
         let writer = store(&writer_fixture);
         let reader = reader_fixture
             .as_ref()
             .map_or_else(|| store(&writer_fixture), store);
-        let separate_reader = reader_fixture.is_some();
         let mut fixtures = vec![writer_fixture];
         fixtures.extend(reader_fixture);
-        let case = Self {
+        Self {
             fixtures,
             writer,
             reader,
             availability: Availability::default(),
-        };
-        migrate(&case.writer).await;
-        if separate_reader {
-            migrate(&case.reader).await;
         }
-        case
     }
 
     pub(crate) const fn client(&self) -> PrismaClient<'_> {

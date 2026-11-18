@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-legacy-models-projection-seed
+call:
+  bedrock_legacy_models:
+    projection:
+      family: anthropic
+      attributes:
+        plain: 5
+        nothing: null
+        _abc_value: abc
+        descriptor: {kind: descriptor}
+        _abc_impl: {kind: abc_data}
+env: {}
+compare: {ignore: []}
