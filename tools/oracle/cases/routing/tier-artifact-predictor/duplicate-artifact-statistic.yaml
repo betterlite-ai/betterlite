@@ -1,0 +1,28 @@
+kind: probe
+name: duplicate-artifact-statistic
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: parse_artifact
+        artifact_bytes:
+          kind: text
+          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":1,"observations":2},{"tier":3,"successes":1,"observations":2},{"tier":4,"successes":1,"observations":2}]}'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: parse_artifact
+        artifact_bytes:
+          kind: text
+          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":2,"observations":6},{"tier":3,"successes":1,"observations":2},{"tier":4,"successes":3,"observations":6}],"domain_statistics":[{"tier":1,"successes":1,"observations":2,"request_type":"general"},{"tier":1,"successes":1,"observations":2,"request_type":"general"}]}'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: parse_artifact
+        artifact_bytes:
+          kind: text
+          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":2,"observations":6},{"tier":3,"successes":1,"observations":2},{"tier":4,"successes":3,"observations":6}],"cohort_statistics":[{"tier":2,"successes":1,"observations":2,"cohort":"general|short|code=0|math=0|mc=0|intl=0"},{"tier":2,"successes":1,"observations":2,"cohort":"general|short|code=0|math=0|mc=0|intl=0"}]}'
+compare: {ignore: []}

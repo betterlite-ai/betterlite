@@ -1,0 +1,18 @@
+task: B2206
+deviations:
+  - what: The async service timing hook runs inline before the wrapper is returned, where LiteLLM schedules it with asyncio.create_task and returns first.
+    why: betterlite has no detached task queue at this seam, and the hook receives the same ServiceTypes.LITELLM call type, duration and window the scheduled task would; running it inline keeps a hook failure visible at the call instead of losing it in a background task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L363-L372
+  - what: The service timing hook is not handed the parent OTEL span that LiteLLM extracts from logging_obj.model_call_details before the call.
+    why: In betterlite the timing hook is supplied by the call layer, which resolves the request's parent span itself through ParentSpan in betterlite-logging; the composition's timing port carries the measurements the decorator takes, so the span is not re-derived from model_call_details JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L336-L337
+  - what: The duration and the llm_api_duration_ms window come from one pair of clock readings, where LiteLLM reads datetime.now() and time.time() separately at each end.
+    why: betterlite's stream clock returns one StreamInstant carrying the whole seconds and the fractional timestamp, so the float duration and the recorded datetimes cannot disagree by the microseconds between two Python readings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L332-L344
+  - what: The chunker caps the effective stream_chunk_size at 1 MiB, where LiteLLM passes the caller's value straight to aiter_bytes and iter_bytes.
+    why: A stream_chunk_size near 10^18 bytes makes LiteLLM's httpx iterator hold the whole provider body in memory before it yields a chunk, so a caller can turn one stream into an out-of-memory crash; betterlite yields the same bytes in the same order and never buffers more than 1 MiB per stream, which no working setup can depend on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L245-L246
+kept_bugs:
+  - what: A failure while recording llm_api_duration_ms is logged as a warning and swallowed, and the wrapper is still returned to the caller.
+    why: LiteLLM wraps _set_duration_in_model_call_details in except Exception, so a working setup relies on the stream being produced even when the duration cannot be stored; betterlite logs the same warning and continues to the service hook.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_utils.py#L282-L309
