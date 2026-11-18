@@ -39,27 +39,32 @@ impl ProvisionTask {
     }
 }
 
+pub(super) enum Contents {
+    Seed(Box<FixtureSeed>),
+    Statements(Vec<String>),
+}
+
 pub(super) async fn provision_inner(
     configured_url: Option<SecretString>,
-    seed: FixtureSeed,
+    contents: Contents,
     resource: Resource,
 ) -> Result<PostgresFixture, FixtureError> {
-    seed.validate()?;
+    let statements = match &contents {
+        Contents::Seed(seed) => {
+            seed.validate()?;
+            seed_sql::schema_statements(seed).await?
+        }
+        Contents::Statements(statements) => statements.clone(),
+    };
     let admin = configured_options(configured_url.as_ref())?.with_database("postgres")?;
-    let quoted = quote_identifier(resource.name());
-    match resource {
-        Resource::Database(_) => {
-            let statements = seed_sql::schema_statements(&seed).await?;
-            let source = quote_identifier(&template(&admin, &statements).await?);
-            let statement = format!("CREATE DATABASE {quoted} TEMPLATE {source}");
-            let fixture = create_resource(&admin, resource, &statement).await?;
-            fill_resource(fixture, Work::Seed(&seed)).await
-        }
-        Resource::Schema(_) => {
-            let statement = format!("CREATE DATABASE {quoted}");
-            let fixture = create_resource(&admin, resource, &statement).await?;
-            let schema = [format!("CREATE SCHEMA {quoted}")];
-            fill_resource(fixture, Work::Statements(&schema)).await
-        }
+    let source = quote_identifier(&template(&admin, &statements).await?);
+    let statement = format!(
+        "CREATE DATABASE {} TEMPLATE {source}",
+        quote_identifier(&resource.0)
+    );
+    let fixture = create_resource(&admin, resource, &statement).await?;
+    match contents {
+        Contents::Seed(seed) => fill_resource(fixture, Work::Seed(&seed)).await,
+        Contents::Statements(_) => Ok(fixture),
     }
 }

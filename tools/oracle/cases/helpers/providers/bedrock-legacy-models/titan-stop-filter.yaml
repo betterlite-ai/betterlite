@@ -1,0 +1,68 @@
+kind: helper
+name: bedrock-legacy-models-titan-stop-filter
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: titan
+          non_default:
+            max_tokens: 5
+            max_completion_tokens: 9
+            top_p: 0.5
+            stream: true
+            temperature: 0.2
+          optional: {}
+          model: amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: false
+        - family: titan
+          non_default: {max_completion_tokens: 9, max_tokens: 5}
+          optional: {}
+          model: amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: false
+        - family: titan
+          non_default:
+            stop: ["|", x, "User:", "|\n", "User:\n", "||", "", "user:", "User:\n\n"]
+          optional: {stopSequences: prior}
+          model: amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: true
+        - family: titan
+          non_default: {stop: END}
+          optional: {stopSequences: prior}
+          model: amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: true
+        - family: titan
+          non_default: {stop: null}
+          optional: {stopSequences: prior}
+          model: amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: true
+        - family: titan
+          non_default: {stop: END}
+          optional: {stopSequences: prior}
+          model: amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: false
+        - family: titan
+          non_default: {stop: END}
+          optional: {stopSequences: prior}
+          model: titan-text-express-v1
+          drop_params: false
+          global_drop_params: true
+        - family: titan
+          non_default: {stop: END}
+          optional: {stopSequences: prior}
+          model: Amazon.titan-text-express-v1
+          drop_params: false
+          global_drop_params: true
+        - family: titan
+          non_default: {stop: END}
+          optional: {stopSequences: prior}
+          model: amazon.titan-text-express-v1
+          drop_params: true
+          global_drop_params: false
+env: {}
+compare: {ignore: []}

@@ -53,6 +53,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "oauth_provider_document"
+path = "fuzz_targets/oauth_provider_document.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "resource_hint"
 path = "fuzz_targets/resource_hint.rs"
 test = false

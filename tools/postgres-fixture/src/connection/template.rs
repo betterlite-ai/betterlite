@@ -54,7 +54,7 @@ async fn publish(
     let unpublished = RandomDatabaseName.next_name();
     let quoted = quote_identifier(&unpublished);
     let statement = format!("CREATE DATABASE {quoted}");
-    let fixture = create_resource(admin, Resource::Database(unpublished), &statement).await?;
+    let fixture = create_resource(admin, Resource(unpublished), &statement).await?;
     let built = fill_resource(fixture, Work::Statements(statements)).await?;
     let target = quote_identifier(name);
     let rename = format!(

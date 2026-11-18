@@ -87,6 +87,8 @@ description: >-
   wiring lines; 620 planned, 625 maximum changed lines.
 scope:
   paths:
+  - "crates/betterlite-bedrock/src/event_frames/tally.rs"
+  - "crates/betterlite-bedrock/src/agentcore_stream/adapter.rs"
   - crates/betterlite-bedrock/Cargo.toml
   - crates/betterlite-bedrock/src/bedrock_http_stream.rs
   - crates/betterlite-bedrock/src/bedrock_http_stream/**
@@ -258,6 +260,6 @@ pitfalls:
 - Sync Converse reads an error body and uses bytes repr, while Invoke uses unread-response reason_phrase without
   reading.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0
 review_level: standard

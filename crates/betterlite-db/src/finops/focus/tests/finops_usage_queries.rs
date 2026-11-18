@@ -10,34 +10,9 @@ use tokio_postgres::types::ToSql;
 
 use crate::budget_permission_rows::JsonData;
 use crate::finops::focus::{FocusUsageError, UsageRow, get_usage_data, usage_query};
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::errors::DbError;
 use crate::postgres_store::session::PostgresStore;
-
-const MIGRATIONS: &str = concat!(
-    include_str!("../../../../migrations/20250326162113_baseline/migration.sql"),
-    include_str!("../../../../migrations/20250326171002_add_daily_user_table/migration.sql"),
-    include_str!(
-        "../../../../migrations/20250327180120_add_api_requests_to_daily_user_table/migration.sql"
-    ),
-    include_str!(
-        "../../../../migrations/20250331215456_track_success_and_failed_requests_daily_agg_table/migration.sql"
-    ),
-    include_str!(
-        "../../../../migrations/20250415151647_add_cache_read_write_tokens_daily_spend_transactions/migration.sql"
-    ),
-    include_str!("../../../../migrations/20250415191926_add_daily_team_table/migration.sql"),
-    include_str!("../../../../migrations/20250416115320_add_tag_table_to_db/migration.sql"),
-    include_str!(
-        "../../../../migrations/20250509141545_use_big_int_for_daily_spend_tables/migration.sql"
-    ),
-    include_str!("../../../../migrations/20250526154401_allow_null_entity_id/migration.sql"),
-    include_str!(
-        "../../../../migrations/20250707230009_add_mcp_namespaced_tool_name/migration.sql"
-    ),
-    include_str!(
-        "../../../../migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"
-    ),
-);
 
 const EXPECTED_SQL: &str = r#"SELECT dus.id, dus.date, dus.user_id, dus.api_key, dus.model,
     dus.model_group, dus.custom_llm_provider, dus.prompt_tokens, dus.completion_tokens,
@@ -262,7 +237,7 @@ async fn insert_full_graph(store: &PostgresStore) {
 
 async fn database() -> (PostgresFixture, PostgresStore) {
     use clap::Parser as _;
-    use secrecy::{ExposeSecret as _, SecretString};
+    use secrecy::SecretString;
 
     #[derive(clap::Parser)]
     struct Environment {
@@ -273,29 +248,20 @@ async fn database() -> (PostgresFixture, PostgresStore) {
     let url = Environment::parse_from(["finops-focus-usage-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
-    // options.config re-encodes the schema option's leading space as '+', which Postgres rejects
-    let mut config: tokio_postgres::Config = fixture
-        .options
-        .url
-        .expose_secret()
-        .parse()
-        .expect("the fixture URL parses");
+    let fixture = PostgresFixture::provision_with_statements(
+        url.as_ref(),
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+    )
+    .resolve()
+    .await
+    .unwrap();
+    let mut config = fixture.options.config.clone();
     let current = config.get_options().unwrap_or_default().to_owned();
     config.options(format!("{current} -ctimezone=UTC"));
     let manager = deadpool_postgres::Manager::new(config, tokio_postgres::NoTls);
     let pool = deadpool_postgres::Pool::builder(manager)
         .max_size(3)
         .build()
-        .unwrap();
-    pool.get()
-        .await
-        .unwrap()
-        .batch_execute(MIGRATIONS)
-        .await
         .unwrap();
     (fixture, PostgresStore { pool: Some(pool) })
 }
