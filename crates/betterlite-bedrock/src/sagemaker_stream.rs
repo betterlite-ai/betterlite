@@ -55,9 +55,10 @@ impl<Chunks> SagemakerEvents<Chunks> {
         self.done = true;
     }
 
-    fn exhausted(&mut self) {
+    fn exhausted(&mut self) -> Option<EventItem> {
         self.done = true;
         self.state.finish(&mut self.pending);
+        self.pending.pop_front()
     }
 }
 
@@ -78,7 +79,7 @@ where
             match self.chunks.next() {
                 Some(Ok(bytes)) => self.accept(&bytes),
                 Some(Err(source)) => self.source_failed(source),
-                None => self.exhausted(),
+                None => return self.exhausted(),
             }
         }
     }
@@ -103,7 +104,7 @@ where
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Ok(bytes))) => this.accept(&bytes),
                 Poll::Ready(Some(Err(source))) => this.source_failed(source),
-                Poll::Ready(None) => this.exhausted(),
+                Poll::Ready(None) => return Poll::Ready(this.exhausted()),
             }
         }
     }
