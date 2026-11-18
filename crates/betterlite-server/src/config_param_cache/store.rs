@@ -4,6 +4,7 @@ use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_db::database_replica::client::DatabaseClient;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::table_ops::access::TablePoolAccess;
+use betterlite_db::table_ops::generic::ConfigFilter;
 use betterlite_db::table_ops::rows::ConfigParamRow;
 use betterlite_db::table_ops::{ConfigParamInvalidator, InvalidateFuture, TableOps, TableOpsError};
 
@@ -47,7 +48,9 @@ where
         &self,
         param_name: &str,
     ) -> Result<Option<ConfigParamRow>, TableOpsError<Self::ClientError>> {
-        self.operations.generic_config(param_name).await
+        self.operations
+            .generic_row(ConfigFilter::ParamName(param_name))
+            .await
     }
 
     async fn find_params(

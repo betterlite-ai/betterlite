@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::table_ops::TableOpsError;
 use betterlite_db::table_ops::rows::ConfigParamRow;
@@ -140,6 +141,10 @@ impl Harness {
     pub(super) fn advance(&self, seconds: u32) {
         self.now.fetch_add(seconds, Ordering::SeqCst);
     }
+}
+
+pub(super) fn json(text: &str) -> JsonData {
+    serde_json::from_str(text).expect("the JSON parses")
 }
 
 pub(super) fn config_row(name: &str, value: &str) -> ConfigParamRow {

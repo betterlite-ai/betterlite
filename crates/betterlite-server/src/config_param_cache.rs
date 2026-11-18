@@ -226,30 +226,31 @@ where
     Ok(())
 }
 
+// the row is cached as its JSON text, the same way the user row and the miss marker are stored
 fn pack_row<ClientError>(row: &ConfigParamRow) -> Result<Json, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
 {
-    let wire =
-        serde_json::to_value(row).map_err(|source| ConfigParamCacheError::Decode { source })?;
-    serde_json::from_value(wire).map_err(|source| ConfigParamCacheError::Decode { source })
+    match serde_json::to_string(row) {
+        Ok(text) => Ok(Json::Text(text)),
+        Err(source) => Err(ConfigParamCacheError::Decode { source }),
+    }
 }
 
+// the miss marker is the only text entry that is not a row
 fn unpack_row<ClientError>(
     cached: &Json,
 ) -> Result<Option<ConfigParamRow>, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
 {
-    match cached {
-        Json::Object(_) => {
-            let wire = serde_json::to_value(cached)
-                .map_err(|source| ConfigParamCacheError::Decode { source })?;
-            let row = serde_json::from_value(wire)
-                .map_err(|source| ConfigParamCacheError::Decode { source })?;
-            Ok(Some(row))
-        }
-        // the only other entry the cache holds is the miss marker, and a marker reads as a miss
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Ok(None),
+    let Json::Text(text) = cached else {
+        return Ok(None);
+    };
+    if text == MISS_MARKER {
+        return Ok(None);
     }
+    serde_json::from_str(text)
+        .map(Some)
+        .map_err(|source| ConfigParamCacheError::Decode { source })
 }
