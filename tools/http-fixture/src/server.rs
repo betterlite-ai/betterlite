@@ -11,7 +11,7 @@ pub const READ_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[expect(
     clippy::partial_pub_fields,
-    reason = "the tests reach the bound address as a field, and a getter for it is a one-line function the hooks refuse; the listener and the request handle stay private"
+    reason = "the listener and the join handle stay private while the address is public, and a getter for the address is a one-line function the hooks refuse"
 )]
 pub struct Serving {
     pub address: SocketAddr,

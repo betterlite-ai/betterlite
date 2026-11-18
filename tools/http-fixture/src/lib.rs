@@ -1,6 +1,6 @@
 #![expect(
     clippy::disallowed_methods,
-    reason = "the fixture runs on plain threads with no async runtime: the server thread sleeps out its pause and one test waits past the old accept deadline"
+    reason = "the fixture's server thread runs outside any async runtime, so the clippy.toml reason does not apply: it sleeps out the pause, and one test waits past the old accept deadline"
 )]
 
 pub mod error;
