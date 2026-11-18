@@ -11,8 +11,8 @@ use super::error::{ErrorSource, TextCompletionError};
 use super::sdk::{ByteStream, SdkError};
 use crate::stream::SseParser;
 
-// clippy::pub_use is denied and no expect may be added, so the re-export reaches only this crate's callers
-pub(crate) use betterlite_streaming::provider_chunk_decode::wrapper::StreamSetup;
+// clippy::pub_use is denied and no expect may be added, so an alias keeps the moved type nameable here
+pub type StreamSetup = betterlite_streaming::provider_chunk_decode::wrapper::StreamSetup;
 
 // The OpenAI SDK stops after the [DONE] event, so later payloads are never shaped
 pub type CompletionStream =
