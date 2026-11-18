@@ -290,11 +290,9 @@ call:
             tools:
               - type: mcp
                 server_label: srv
-                allowed_tools: {read_only: null, tool_names: null, extra_null: null}
+                allowed_tools: {read_only: true, tool_names: [read]}
                 require_approval:
-                  always: {read_only: null, tool_names: null, extra_null: null}
-                  never: null
-                  extra_null: null
+                  always: {read_only: false, tool_names: [write]}
                 authorization: null
                 headers: null
                 server_url: null
