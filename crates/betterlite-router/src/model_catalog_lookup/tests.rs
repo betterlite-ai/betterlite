@@ -1,13 +1,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_config::sections::deployment_catalog::GroupAlias;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use indexmap::IndexMap;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
 use crate::deployment_catalog::scope::litellm_model;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::deployment_identity::stable_id::generate_model_id;
-use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
+use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget, from_config};
 use crate::model_catalog_lookup::cache::{CacheSlot, CatalogCaches, Invalidation};
 use crate::model_catalog_lookup::error::LookupError;
 use crate::model_catalog_lookup::index::{deployment_ids, rebuild_ids, rebuild_names};
@@ -267,6 +269,20 @@ fn team_public_name() {
 }
 
 #[test]
+fn named_team_ids() {
+    let snapshot = Snapshot::new(&[
+        named("gpt-4o", "g", "openai/gpt-4o"),
+        team_named("gpt-4o", "t", "t1", "team-gpt"),
+    ]);
+    let lookup = snapshot.lookup();
+    assert_eq!(
+        lookup.get_model_ids(Some("gpt-4o"), false),
+        vec![text("g"), text("t")]
+    );
+    assert_eq!(lookup.get_model_ids(Some("gpt-4o"), true), vec![text("g")]);
+}
+
+#[test]
 fn unknown_id() {
     let snapshot = Snapshot::new(&[named("gpt-4o", "a", "openai/gpt-4o")]);
     let lookup = snapshot.lookup();
@@ -356,6 +372,24 @@ fn alias_model_list() {
             .get_model_list_from_model_alias(Some("missing"))
             .unwrap()
             .is_empty()
+    );
+}
+
+#[test]
+fn alias_from_config() {
+    let aliases = IndexMap::from([(
+        "sonnet".to_owned(),
+        GroupAlias {
+            model: "gpt-4o".to_owned(),
+            hidden: true,
+        },
+    )]);
+    assert_eq!(
+        from_config(&aliases).get("sonnet"),
+        Some(&AliasTarget::Item {
+            model: Some(text("gpt-4o")),
+            hidden: Some(Json::Bool(true)),
+        })
     );
 }
 
@@ -699,6 +733,39 @@ fn candidate_routes() {
     );
 }
 
+// An item alias resolves through its model field, and a blank one falls back to the request name.
+#[test]
+fn candidate_item_alias() {
+    let snapshot = Snapshot::new(&[named("gpt-4o", "a", "openai/gpt-4o")])
+        .with_alias(
+            "sonnet",
+            AliasTarget::Item {
+                model: Some(text("gpt-4o")),
+                hidden: None,
+            },
+        )
+        .with_alias(
+            "blank",
+            AliasTarget::Item {
+                model: Some(text("")),
+                hidden: Some(Json::Bool(false)),
+            },
+        );
+    let lookup = snapshot.lookup();
+    assert_eq!(
+        lookup
+            .get_candidate_model_ids_for_route("sonnet", None)
+            .unwrap(),
+        BTreeSet::from(["a".to_owned()])
+    );
+    assert!(
+        lookup
+            .get_candidate_model_ids_for_route("blank", None)
+            .unwrap()
+            .is_empty()
+    );
+}
+
 #[test]
 fn candidate_route_fallbacks() {
     let snapshot = Snapshot::new(&[
@@ -724,6 +791,13 @@ fn candidate_route_fallbacks() {
             .get_candidate_model_ids_for_route("weird", None)
             .unwrap()
             .is_empty()
+    );
+    // A team with no owned row of this name falls through to the patterns, it does not stop the route.
+    assert_eq!(
+        lookup
+            .get_candidate_model_ids_for_route("openai/gpt-4o", Some("t1"))
+            .unwrap(),
+        BTreeSet::from(["w".to_owned()])
     );
 }
 
