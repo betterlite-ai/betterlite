@@ -7,9 +7,9 @@ use super::reseed::SpendCounterReseed;
 use super::rows::{SpendCounterRows, WindowEntity};
 use super::values::{SpendValueError, aggregate_amount, stored_amount};
 
-pub struct WindowQuery<'a> {
-    pub entity_type: &'a CounterEntityType,
-    pub entity_id: &'a str,
+pub struct WindowQuery<'entity> {
+    pub entity_type: &'entity CounterEntityType,
+    pub entity_id: &'entity str,
     pub start: Timestamp,
 }
 
