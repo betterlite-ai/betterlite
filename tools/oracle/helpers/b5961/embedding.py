@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Final, override
 
 import httpx
 import litellm
@@ -101,6 +101,7 @@ def cohere_request(input_value: dict[str, JsonValue]) -> JsonValue:
 
 # LiteLLM counts unbilled usage with litellm.encoding; counting characters matches the Rust helper
 class Encoding(_SupportsEncode):
+    @override
     def encode(self, text: str, /) -> list[int]:
         return list(range(len(text)))
 
