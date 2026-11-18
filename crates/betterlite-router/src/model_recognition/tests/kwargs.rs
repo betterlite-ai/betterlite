@@ -35,6 +35,10 @@ fn callback_kwargs(source: &str) -> CallbackKwargs {
     r#"{"litellm_params":{"litellm_metadata":{"model_group":"new"}}}"#,
     None
 )]
+#[case::keys_the_projection_does_not_model_are_ignored(
+    r#"{"stream":true,"litellm_params":{"model":"openai/gpt-4o","metadata":{"model_group":"gpt-4","user":"u"}}}"#,
+    Some("gpt-4")
+)]
 fn model_group_reads_the_selected_metadata_bucket(
     #[case] source: &str,
     #[case] expected: Option<&str>,
