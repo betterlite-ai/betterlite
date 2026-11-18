@@ -156,25 +156,33 @@ pub(super) async fn load_stored(
     Ok(stored)
 }
 
+pub(super) fn open_settings(stored: &StoredSettings, cipher: &dyn SettingsCipher) -> ROISettings {
+    ROISettings {
+        github_api_url: stored.github_api_url.clone(),
+        github_token: cipher.open(&stored.github_token),
+        estimator_key: cipher.open(&stored.estimator_key),
+        repos: stored.repos.clone(),
+        estimator_model: stored.estimator_model.clone(),
+        estimator_prompt: stored.estimator_prompt.clone(),
+        backfill_days: stored.backfill_days,
+        update_interval_minutes: stored.update_interval_minutes,
+        identity_map: stored.identity_map.clone(),
+    }
+}
+
+pub(super) fn validate_settings(settings: ROISettings) -> Result<ROISettings, RoiSettingsError> {
+    settings
+        .validate()
+        .map_err(|source| RoiSettingsError::StoredSettings(StoredSettingsError::Validate(source)))
+}
+
 pub(super) async fn load_settings(
     repository: &dyn SettingsRepository,
     cipher: &dyn SettingsCipher,
 ) -> Result<ROISettings, RoiSettingsError> {
     let stored = load_stored(repository).await?;
-    let settings = ROISettings {
-        github_api_url: stored.github_api_url,
-        github_token: cipher.open(&stored.github_token),
-        estimator_key: cipher.open(&stored.estimator_key),
-        repos: stored.repos,
-        estimator_model: stored.estimator_model,
-        estimator_prompt: stored.estimator_prompt,
-        backfill_days: stored.backfill_days,
-        update_interval_minutes: stored.update_interval_minutes,
-        identity_map: stored.identity_map,
-    };
-    settings
-        .validate()
-        .map_err(|source| RoiSettingsError::StoredSettings(StoredSettingsError::Validate(source)))
+    let settings = open_settings(&stored, cipher);
+    validate_settings(settings)
 }
 
 pub(super) async fn save_settings(

@@ -63,6 +63,14 @@ deviations:
       text. The status, type, param "None" and the four field names match LiteLLM's
       service_unavailable_proxy_exception, and the message is betterlite's own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L383-L390
+  - what: >-
+      The PUT reads the stored settings row once and derives the decrypted view from that same
+      read, where LiteLLM reads the row twice through _load_stored_settings and _load_settings.
+    why: >-
+      A concurrent PUT that lands between LiteLLM's two reads can pair the stored GitHub token with
+      a github_api_url the token was never saved for, which sends the token to another origin. One
+      read keeps the token with its URL (rules.yaml owned-behavior-is-built).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L342-L343
 kept_bugs:
   - what: >-
       A stored settings object with a key outside _StoredSettings loads, and the next PUT writes the
@@ -74,9 +82,9 @@ kept_bugs:
       a working setup has today.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L52-L62
   - what: >-
-      The explicit null github_api_url check runs after both settings loads, so a null URL request
-      against stored settings that do not load returns 500 "Stored ROI Calculator settings are
-      invalid." instead of 422.
+      The explicit null github_api_url check runs after the stored settings load and validation, so
+      a null URL request against stored settings that do not load returns 500 "Stored ROI
+      Calculator settings are invalid." instead of 422.
     why: >-
       The order in LiteLLM is stored, current, then the null check, and only a damaged database
       reaches the 500. put_null_url pins the 422 over loadable settings and

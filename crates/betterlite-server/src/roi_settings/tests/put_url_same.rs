@@ -7,7 +7,10 @@ use betterlite_roi::settings::ROISettingsResponse;
 use indexmap::IndexMap;
 use rstest::rstest;
 
+use crate::roi_settings::repository::SettingsRepository;
+use crate::roi_settings::store::DEFAULT_GITHUB_API_URL;
 use crate::roi_settings::support::MemoryRepository;
+use crate::roi_settings::support::ShiftingRepository;
 use crate::roi_settings::support::admin_caller;
 use crate::roi_settings::support::call;
 use crate::roi_settings::support::catalog;
@@ -48,6 +51,29 @@ async fn put_url_same_preserves_the_stored_ciphertext(
     let response: ROISettingsResponse = reply.json();
     assert!(response.has_github_token);
     let saved = memory.stored().expect("saved settings");
+    assert_eq!(saved.github_token, token);
+}
+
+#[tokio::test]
+async fn put_url_same_reads_the_settings_row_once() {
+    let token = sealed("ghp-kept");
+    let mut stored = stored_settings();
+    stored.github_token = token.clone();
+    let memory = MemoryRepository::default();
+    memory.seed_settings(&stored);
+    let shifting = Arc::new(ShiftingRepository::counting(memory));
+    let repository: Arc<dyn SettingsRepository> = shifting.clone();
+    let app = settings_app(Some(repository), Some(catalog(Vec::new())));
+    let reply = call(
+        app,
+        put_request(Some(&admin_caller()), r#"{"backfill_days":10}"#),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(shifting.reads(), 1);
+    let saved = shifting.saved().expect("saved settings");
+    assert_eq!(saved.github_api_url, DEFAULT_GITHUB_API_URL);
+    assert_eq!(saved.backfill_days, 10);
     assert_eq!(saved.github_token, token);
 }
 

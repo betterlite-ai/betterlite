@@ -4,6 +4,8 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 
 use async_trait::async_trait;
 use axum::Router;
@@ -181,6 +183,51 @@ impl SettingsRepository for MemoryRepository {
             .expect("repository lock")
             .insert(name.to_owned(), value);
         Ok(())
+    }
+}
+
+const SHIFTED_URL: &str = "https://github.example.com";
+
+pub(crate) struct ShiftingRepository {
+    memory: MemoryRepository,
+    reads: AtomicUsize,
+}
+
+impl ShiftingRepository {
+    pub(crate) fn counting(memory: MemoryRepository) -> Self {
+        Self {
+            memory,
+            reads: AtomicUsize::new(0),
+        }
+    }
+
+    pub(crate) fn reads(&self) -> usize {
+        self.reads.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn saved(&self) -> Option<StoredSettings> {
+        self.memory.stored()
+    }
+
+    fn shift_url(&self) {
+        let mut stored = self.memory.stored().expect("the seeded settings");
+        stored.github_api_url = SHIFTED_URL.to_owned();
+        self.memory.seed_settings(&stored);
+    }
+}
+
+// A second read returns a github_api_url a concurrent PUT could have moved to
+#[async_trait]
+impl SettingsRepository for ShiftingRepository {
+    async fn param(&self, name: &str) -> Result<Option<JsonData>, ConfigError> {
+        if self.reads.fetch_add(1, Ordering::SeqCst) > 0 {
+            self.shift_url();
+        }
+        self.memory.param(name).await
+    }
+
+    async fn set_param(&self, name: &str, value: JsonData) -> Result<(), ConfigError> {
+        self.memory.set_param(name, value).await
     }
 }
 

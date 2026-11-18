@@ -26,7 +26,9 @@ use super::state::RoiSettingsState;
 use super::store::StoredSettings;
 use super::store::load_settings;
 use super::store::load_stored;
+use super::store::open_settings;
 use super::store::save_settings;
+use super::store::validate_settings;
 
 #[must_use]
 pub fn router(state: RoiSettingsState) -> Router {
@@ -67,7 +69,7 @@ async fn update_settings(
         return Err(RoiSettingsError::Request(issues));
     }
     let stored = load_stored(repository).await?;
-    let current = load_settings(repository, &state.cipher).await?;
+    let current = validate_settings(open_settings(&stored, &state.cipher))?;
     if presence.github_api_url == Some(None) {
         return Err(RoiSettingsError::NullUrl);
     }
