@@ -54,6 +54,23 @@ fn values_above_the_u32_range_are_read() {
 }
 
 #[test]
+fn u64_max_is_used_as_given() {
+    let parsed = settings(&[(TTL_ENV_VAR, "18446744073709551615")]).unwrap();
+    assert_eq!(parsed.ttl_seconds, u64::MAX);
+}
+
+#[test]
+fn values_above_u64_max_are_a_load_error_naming_the_variable() {
+    let error = settings(&[(TTL_ENV_VAR, "18446744073709551616")]).unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::Environment {
+            source: EnvError::Number { name },
+        } if name == TTL_ENV_VAR
+    ));
+}
+
+#[test]
 fn another_variable_is_not_mistaken_for_the_ttl() {
     let parsed = settings(&[("SENSITIVE_ROUTING_TTL", "12")]).unwrap();
     assert_eq!(parsed.ttl_seconds, DEFAULT_TTL_SECONDS);
