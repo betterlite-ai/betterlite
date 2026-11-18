@@ -1,0 +1,3 @@
+general_settings:
+  spend_capture_rate_check:
+    threshold: os.environ/SPEND_CAPTURE_THRESHOLD

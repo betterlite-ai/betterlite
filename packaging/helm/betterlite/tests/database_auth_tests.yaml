@@ -1,0 +1,111 @@
+suite: test database connection and token auth env vars
+templates: [gateway/deployment.yaml, gateway/configmap.yaml, backend/deployment.yaml, ui/deployment.yaml, migrations-job.yaml]
+values: [./values/required.yaml]
+tests:
+  - it: writer uses a password by default and sets no token toggle
+    template: gateway/deployment.yaml
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD, valueFrom: { secretKeyRef: { name: litellm-writer-secret, key: password } } }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: IAM_TOKEN_DB_AUTH }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: AZURE_POSTGRESQL_AUTH }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_SSLMODE }, any: true }
+  - it: writer connection pieces, the master key and DISABLE_SCHEMA_UPDATE reach the gateway, the backend and the Job
+    templates: [gateway/deployment.yaml, backend/deployment.yaml, migrations-job.yaml]
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_MASTER_KEY, valueFrom: { secretKeyRef: { name: litellm-master-key-secret, key: master-key } } }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST, value: postgres.example.com }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PORT, value: "5432" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_USER, valueFrom: { secretKeyRef: { name: litellm-writer-secret, key: username } } }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_NAME, value: litellm }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DISABLE_SCHEMA_UPDATE, value: "true" }, any: true }
+  - it: writer under IAM auth emits IAM_TOKEN_DB_AUTH and omits DATABASE_PASSWORD
+    templates: [gateway/deployment.yaml, backend/deployment.yaml, migrations-job.yaml]
+    set:
+      database.writer.useIAMAuth: true
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: IAM_TOKEN_DB_AUTH, value: "true" }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: AZURE_POSTGRESQL_AUTH }, any: true }
+  - it: writer under Entra auth emits AZURE_POSTGRESQL_AUTH and omits DATABASE_PASSWORD
+    templates: [gateway/deployment.yaml, backend/deployment.yaml, migrations-job.yaml]
+    set:
+      database.writer.useAzureEntraAuth: true
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: AZURE_POSTGRESQL_AUTH, value: "true" }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: IAM_TOKEN_DB_AUTH }, any: true }
+  - it: writer sslMode and sslRootCert reach the gateway, the collector sidecar and the Job
+    set:
+      gateway.collector.enabled: true
+      database.writer.useIAMAuth: true
+      database.writer.sslMode: verify-full
+      database.writer.sslRootCert: /etc/ssl/certs/ca-certificates.crt
+    asserts:
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_SSLMODE, value: verify-full }, any: true }, template: gateway/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_SSLROOTCERT, value: /etc/ssl/certs/ca-certificates.crt }, any: true }, template: gateway/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[1].env', content: { name: DATABASE_SSLMODE, value: verify-full }, any: true }, template: gateway/deployment.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_SSLMODE, value: verify-full }, any: true }, template: migrations-job.yaml }
+      - { contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_SSLROOTCERT, value: /etc/ssl/certs/ca-certificates.crt }, any: true }, template: migrations-job.yaml }
+  - it: writer rejects both token sources at once
+    template: gateway/deployment.yaml
+    set:
+      database.writer.useIAMAuth: true
+      database.writer.useAzureEntraAuth: true
+    asserts:
+      - failedTemplate: { errorMessage: "database.writer.useIAMAuth and database.writer.useAzureEntraAuth are mutually exclusive: the database password can only come from one token source" }
+  - it: reader host renders the read replica variables in the gateway, the backend and the Job
+    templates: [gateway/deployment.yaml, backend/deployment.yaml, migrations-job.yaml]
+    set:
+      database.reader.host: reader.example.com
+      database.reader.dbname: litellm
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST_READ_REPLICA, value: reader.example.com }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PORT_READ_REPLICA, value: "5432" }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_NAME_READ_REPLICA, value: litellm }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_USER_READ_REPLICA, valueFrom: { secretKeyRef: { name: litellm-reader-secret, key: username } } }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD_READ_REPLICA, valueFrom: { secretKeyRef: { name: litellm-reader-secret, key: password } } }, any: true }
+  - it: a reader without a host renders no read replica variables
+    template: gateway/deployment.yaml
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST_READ_REPLICA }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD_READ_REPLICA }, any: true }
+  - it: reader IAM auth without writer IAM auth is rejected
+    template: gateway/deployment.yaml
+    set:
+      database.reader.host: reader.example.com
+      database.reader.dbname: litellm
+      database.reader.useIAMAuth: true
+    asserts:
+      - failedTemplate: { errorMessage: "database.reader.useIAMAuth requires database.writer.useIAMAuth: true (the proxy gates IAM URL minting on IAM_TOKEN_DB_AUTH, which is only set by the writer)" }
+  - it: reader Entra auth without writer Entra auth is rejected
+    template: gateway/deployment.yaml
+    set:
+      database.reader.host: reader.example.com
+      database.reader.dbname: litellm
+      database.reader.useAzureEntraAuth: true
+    asserts:
+      - failedTemplate: { errorMessage: "database.reader.useAzureEntraAuth requires database.writer.useAzureEntraAuth: true (the proxy gates Entra URL minting on AZURE_POSTGRESQL_AUTH, which is only set by the writer)" }
+  - it: reader under Entra auth omits DATABASE_PASSWORD_READ_REPLICA
+    template: gateway/deployment.yaml
+    set:
+      database.writer.useAzureEntraAuth: true
+      database.reader.host: reader.example.com
+      database.reader.dbname: litellm
+      database.reader.useAzureEntraAuth: true
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_HOST_READ_REPLICA, value: reader.example.com }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_USER_READ_REPLICA, valueFrom: { secretKeyRef: { name: litellm-reader-secret, key: username } } }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_PASSWORD_READ_REPLICA }, any: true }
+  - it: the ui reads only its log level and backend url, never the database or master key
+    template: ui/deployment.yaml
+    set: { ui.logLevel: DEBUG, ui.backendUrl: 'https://ai.example.com' }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_LOG, value: DEBUG }, any: true }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_BACKEND_URL, value: 'https://ai.example.com' }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_MASTER_KEY }, any: true }
+  - it: fails without a master key secret name
+    template: gateway/deployment.yaml
+    set:
+      masterKey.secretName: null
+    asserts:
+      - failedTemplate: { errorMessage: "masterKey.secretName is required (the chart no longer accepts an inline master key)" }

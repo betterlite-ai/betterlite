@@ -26,7 +26,7 @@ description: 'Implement AffinityKey and AffinityPin, caller-key hashing, model-m
   instead of separate ports. Bound the affinity outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
   path).
-  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B324, B334 and B335 call this service.'
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B324 and B334 call this service, and B335 reaches it through B334.'
 scope:
   paths:
   - crates/betterlite-router/src/affinity_claims.rs
