@@ -1,0 +1,12 @@
+[
+  {
+    "role": "system",
+    "content": "x-anthropic-billing-header: cc_version=2.0.0; cc_entrypoint=cli"
+  },
+  {"role": "system", "content": "answer in one line"},
+  {
+    "role": "system",
+    "content": [{"type": "text", "text": "x-anthropic-billing-header: block metadata"}]
+  },
+  {"role": "user", "content": "hi"}
+]

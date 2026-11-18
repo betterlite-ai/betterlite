@@ -1,0 +1,14 @@
+model_list:
+  - model_name: custom-tier-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        tier_definitions:
+          - name: ECO
+            description: relay and reformat asks
+          - name: DEEP
+            description: multi-step reasoning asks
+        tier_models:
+          ECO: gpt-4o-mini
+          DEEP: [gpt-4o, claude-sonnet-4-20250514]
+        non_reasoning_tier: false

@@ -1,0 +1,12 @@
+task: B3009
+deviations:
+  - what: A reset phase failure is handed to the injected PhaseFailureSink inside report_phase_failure, where LiteLLM schedules async_service_failure_hook on a detached asyncio task and returns at once.
+    why: betterlite bans detached tasks because they outlive shutdown and lose their errors; the sink is the service-logging hook from B012, and it owns whether delivery is queued or awaited, so a reset run cannot return while its failure event is stranded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1024
+  - what: A phase whose end_time precedes its start_time reports a duration of 0 seconds, where LiteLLM passes end_time - start_time, a negative number, into the failure hook.
+    why: betterlite-logging's seconds_between already reads a backwards clock as 0, and a negative elapsed time would miscount the service metrics the hook records; phase_failure_backwards_clock_records_no_duration proves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1027
+  - what: Rollover reads spend and max_budget as Decimals, so there is no non-finite branch; LiteLLM's _rollover_cap returns None for a NaN or infinite max_budget and the reset carries nothing, where a non-finite or out-of-range value has no Decimal to reach the arithmetic with, and an overflow in spend - cap carries 0.
+    why: betterlite keeps money out of floats from the moment a row is read, and Decimal has no NaN or infinity to compare against; the checked arithmetic turns an impossible difference into no carry instead of a wrapped one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L134
+kept_bugs: []

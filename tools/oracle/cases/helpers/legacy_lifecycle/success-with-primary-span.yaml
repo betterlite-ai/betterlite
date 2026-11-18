@@ -1,0 +1,28 @@
+kind: "helper"
+name: "success-with-primary-span"
+call:
+  b3859:
+    event: "success"
+    function: "log"
+    start_time: 1704067200.0
+    end_time: 1704067201.5
+    kwargs:
+      model: "gpt-4o"
+      messages:
+        - role: "user"
+          content: "hello"
+      call_type: "completion"
+      optional_params: {}
+      litellm_params:
+        custom_llm_provider: "openai"
+        metadata:
+          litellm_call_id: "call-1"
+      standard_logging_object:
+        id: "chatcmpl-1"
+        call_type: "completion"
+        status: "success"
+        metadata:
+          litellm_call_id: "call-1"
+env: {}
+compare:
+  ignore: []
