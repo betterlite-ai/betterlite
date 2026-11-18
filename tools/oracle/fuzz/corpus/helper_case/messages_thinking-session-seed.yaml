@@ -1,0 +1,9 @@
+kind: helper
+name: messages-thinking-session-seed
+call:
+  messages_thinking:
+    calls:
+      - function: session_cache_key
+        user_id: "{\"session_id\":\"session_a\",\"user_id\":\"person\"}"
+env: {}
+compare: {ignore: []}

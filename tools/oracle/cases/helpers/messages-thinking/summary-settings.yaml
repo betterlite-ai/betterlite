@@ -1,0 +1,34 @@
+kind: helper
+name: summary-settings
+call:
+  messages_thinking:
+    calls:
+      - function: auto_summary
+        global_value: null
+        environment: null
+      - function: auto_summary
+        global_value: null
+        environment: "true"
+      - function: auto_summary
+        global_value: null
+        environment: "TRUE"
+      - function: auto_summary
+        global_value: null
+        environment: "1"
+      - function: auto_summary
+        global_value: null
+        environment: "yes"
+      - function: auto_summary
+        global_value: null
+        environment: " true "
+      - function: auto_summary
+        global_value: true
+        environment: "false"
+      - function: auto_summary
+        global_value: false
+        environment: "TRUE"
+      - function: auto_summary
+        global_value: true
+        environment: null
+env: {}
+compare: {ignore: []}

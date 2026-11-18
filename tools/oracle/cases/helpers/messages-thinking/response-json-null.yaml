@@ -1,0 +1,11 @@
+kind: helper
+name: response-json-null
+call:
+  messages_thinking:
+    calls:
+      - function: response
+        model: alias
+        status: 200
+        body: "null"
+env: {}
+compare: {ignore: []}

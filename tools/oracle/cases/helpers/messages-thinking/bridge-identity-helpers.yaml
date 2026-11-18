@@ -1,0 +1,33 @@
+kind: helper
+name: bridge-identity-helpers
+call:
+  messages_thinking:
+    calls:
+      - function: local_model_name
+        model: openai/gpt-4o
+        custom_llm_provider: openai
+      - function: local_model_name
+        model: vendor/openai/gpt-4o
+        custom_llm_provider: openai
+      - function: local_model_name
+        model: openai/openai/gpt
+        custom_llm_provider: openai
+      - function: local_model_name
+        model: gpt-4o
+        custom_llm_provider: openai
+      - function: local_model_name
+        model: openai/gpt-4o
+        custom_llm_provider: null
+      - function: local_model_name
+        model: openai/gpt-4o
+        custom_llm_provider: 7
+      - function: logging_object
+        litellm_logging_obj: supplied
+      - function: logging_object
+        litellm_logging_obj: null
+      - function: logging_object
+        litellm_logging_obj: absent
+      - function: logging_object
+        litellm_logging_obj: lookalike
+env: {}
+compare: {ignore: []}
