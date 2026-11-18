@@ -35,7 +35,9 @@ description: >-
   Mistral,Polly and non-Gemini Vertex use their source fallback config tags. Unmapped providers leave response=None
   and raise the source generic Exception. All provider-config implementations remain with their named owners.
 
-  Add speech_call to B2401's SDK HTTP driver. Load every named setting/env fallback in config tests and seeds;
+  SdkHttpCall::SpeechCall is already on main as a placeholder; this task replaces the Call and Outcome
+  aliases in tools/oracle/src/sdk_http/speech_call.rs (Call implements call_kind::CallKind) and fills
+  SpeechCallRequest in tools/oracle/sdk_http/speech_call.py, and the shared sdk_http files stay as they are. Load every named setting/env fallback in config tests and seeds;
   no environment reads in core. Count 416 nonblank/non-comment source lines, heavily repeated call arguments;
   a typed dispatch record keeps implementation to 300 lines. Budget 180 tests,150 fixtures,80 adapters,60 config/
   corpus and 30 wiring in addition, 800 total. Do not split the Azure call or any other function by line count.
@@ -44,9 +46,8 @@ scope:
   - crates/betterlite-core/src/api/speech_call.rs
   - crates/betterlite-core/src/api/speech_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/speech_call.rs
+  - tools/oracle/src/sdk_http/speech_call/**
   - tools/oracle/sdk_http/speech_call.py
   - tools/oracle/cases/sdk-http/speech-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-call-*
@@ -118,7 +119,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::speech_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Normal SDK speech calls must execute through the HTTP capture driver.
-    run: test -f tools/oracle/sdk_http/speech_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/speech_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: Speech controls and SDK invocation need new parser seeds.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/speech-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

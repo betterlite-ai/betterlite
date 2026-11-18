@@ -16,7 +16,11 @@ description: >-
   EOF or [DONE] without a terminal event ends as completed. The source never polls cancellation
   state: a cached cancelled status can be overwritten by the eventual terminal result.
 
-  Use SdkHttpCall::ResponsesPollStream in B2401 for the provider-reaching background worker.
+  Use SdkHttpCall::ResponsesPollStream for the provider-reaching background worker. Main already
+  registers it as a placeholder: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/responses_poll_stream.rs (Call implements call_kind::CallKind) and fill
+  ResponsesPollStreamRequest in tools/oracle/sdk_http/responses_poll_stream.py, keeping any Redis capture
+  fixture inside those files; the shared sdk_http files stay as they are.
   Python calls background_streaming_task (not a route handler) with real ProxyBaseLLMRequestProcessing,
   prepared request/auth context and a capture Redis fixture; its provider base is the mock.
   Native calls the production worker. Only clock, admission outcome and cache are controlled;
@@ -39,9 +43,8 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/responses_poll_stream.rs
   - crates/betterlite-core/fuzz/corpus/responses_poll_stream/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_poll_stream.rs
+  - tools/oracle/src/sdk_http/responses_poll_stream/**
   - tools/oracle/sdk_http/responses_poll_stream.py
   - tools/oracle/cases/sdk-http/responses-poll-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-poll-stream-*
@@ -124,7 +127,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_poll_stream::tests::poll_frame_literal_selection($|::)/)'
   - id: python-sdk
     why: the background HTTP adapter replaces the real processor with a scripted response
-    run: test -f tools/oracle/sdk_http/responses_poll_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_poll_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: python-helper
     why: pure frame parity lacks its independent Python selector/parser
     run: test -f tools/oracle/helpers/responses_poll_frame.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

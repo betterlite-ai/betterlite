@@ -14,8 +14,11 @@ description: >-
   litellm_call_id (null by default), plus update's id/name/filtered params or delete's id alone.
   Neither operation changes the proxy registry.
 
-  Add SdkHttpCall::VectorStoreWrite to B2401, with public SDK calls against the mock in Python and
-  production execution in Rust. Implement the named tests below in api::vector_store_write::tests,
+  SdkHttpCall::VectorStoreWrite is already on main as a placeholder; fill it with public SDK calls
+  against the mock in VectorStoreWriteRequest of tools/oracle/sdk_http/vector_store_write.py and
+  production execution in tools/oracle/src/sdk_http/vector_store_write.rs, whose Call implements
+  call_kind::CallKind and whose Outcome is the value of SdkResult::VectorStoreWrite. The shared sdk_http
+  files and dispatch.py are not this task's. Implement the named tests below in api::vector_store_write::tests,
   and loads_request_timeout in betterlite-config. Reuse the SDK-case and config YAML decoders; these
   wrappers introduce no byte parser. The four functions contain 247 nonblank/non-comment lines.
   Budget 245 implementation, 155 tests, 90 adapters, 90 fixtures and 50 config/corpus/wiring lines,
@@ -27,9 +30,8 @@ scope:
   - crates/betterlite-config/src/api/vector_store_write.rs
   - crates/betterlite-config/src/api/vector_store_write/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-write-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_store_write.rs
+  - tools/oracle/src/sdk_http/vector_store_write/**
   - tools/oracle/sdk_http/vector_store_write.py
   - tools/oracle/cases/sdk-http/vector-store-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-write-*
@@ -95,7 +97,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-write-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: sdk-python
     why: the provider comparison lacks its independent public SDK adapter
-    run: test -f tools/oracle/sdk_http/vector_store_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/vector_store_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the SDK HTTP decoder has no write-operation seeds
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

@@ -22,7 +22,10 @@ description: >-
   each in litellm.callbacks order. The server's SDK callback list (B9821) supplies them on the gateway through B9825,
   and B9823 implements both for websearch_interception.
 
-  Add only SdkHttpCall::MessagesNativeExecute through B2401. Python runs the real @client entry with typed test
+  The only SDK HTTP kind here is SdkHttpCall::MessagesNativeExecute, a placeholder already on main: replace
+  the Call and Outcome aliases in tools/oracle/src/sdk_http/messages_native_execute.rs (Call implements
+  call_kind::CallKind) and fill MessagesNativeExecuteRequest in tools/oracle/sdk_http/messages_native_execute.py;
+  the shared sdk_http files already list it. Python runs the real @client entry with typed test
   callbacks and the pinned final handler; native composition uses the continuation with B961/B2430/B962 and
   B009's real mock-provider transport for the Anthropic fixture. Assert HTTP and ordered hook effects; short
   circuits assert zero LLM requests. Parsed messages require no new decoder. Own219 nonblank/non-comment
@@ -32,9 +35,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/messages_native_execute.rs
   - crates/betterlite-core/src/api/messages_native_execute/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/messages_native_execute.rs
+  - tools/oracle/src/sdk_http/messages_native_execute/**
   - tools/oracle/sdk_http/messages_native_execute.py
   - tools/oracle/cases/sdk-http/messages-native-execute/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-native-execute-*
@@ -114,7 +116,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_native_execute::/)'
   - id: python-adapter
     why: native-entry provider parity lacks a checked independent SDK driver
-    run: test -f tools/oracle/sdk_http/messages_native_execute.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/messages_native_execute.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpus
     why: sdk_http does not recognize Messages entry-pipeline scenarios
     run: grep -qE '^[[:space:]]+messages_native_execute:' tools/oracle/fuzz/corpus/sdk_http_case/messages-native-execute-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

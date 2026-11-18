@@ -22,8 +22,10 @@ description: >-
   preserves context, invokes sync preparation once and awaits a coroutine result only when returned. B011 maps
   failures with the source model/provider and locals. B159 owns public Python import behavior.
 
-  Exercise the SDK through B2401 HTTP, using B512 for OpenAI and injected configured operations for downstream
-  adapters. No route is added and no raw image decoder is duplicated. Test REQUEST_TIMEOUT in the production
+  Exercise the SDK through SdkHttpCall::ImageEditCall, using B512 for OpenAI and injected configured operations
+  for downstream adapters. Main holds the variant as a placeholder: build its Call (implementing
+  call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/image_edit_call.rs and ImageEditCallRequest
+  in tools/oracle/sdk_http/image_edit_call.py, leaving the shared sdk_http files alone. No route is added and no raw image decoder is duplicated. Test REQUEST_TIMEOUT in the production
   config loader. Ownership is 305 nonblank/non-comment lines, including lazy accessors; budget 270 implementation,
   160 tests, 125 fixtures, 80 adapters, 45 config/corpus and 40 wiring lines, 720 total.
 scope:
@@ -31,9 +33,8 @@ scope:
   - crates/betterlite-core/src/api/image_edit_call.rs
   - crates/betterlite-core/src/api/image_edit_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/image_edit_call.rs
+  - tools/oracle/src/sdk_http/image_edit_call/**
   - tools/oracle/sdk_http/image_edit_call.py
   - tools/oracle/cases/sdk-http/image-edit-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-edit-call-*
@@ -93,7 +94,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_edit_call::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Edit parity requires a real SDK HTTP adapter.
-    run: test -f tools/oracle/sdk_http/image_edit_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/image_edit_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: The edit SDK tag and timeout settings need newly added parser inputs.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-edit-call-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

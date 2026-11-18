@@ -15,7 +15,10 @@ description: >-
   async shared_session. timeout is forwarded exactly in both modes. No stream or agentic loop
   is started by compact. B934 owns public SDK preparation above this service.
 
-  Extend B2401 with SdkHttpCall::ResponsesCompactTransport. Run the actual Python handler against
+  SdkHttpCall::ResponsesCompactTransport is on main as a placeholder: replace the Call and Outcome aliases
+  in tools/oracle/src/sdk_http/responses_compact_transport.rs (Call implements call_kind::CallKind) and
+  fill CompactTransportRequest, under that name, in tools/oracle/sdk_http/responses_compact_transport.py,
+  leaving the shared sdk_http files and dispatch.py alone. Run the actual Python handler against
   the mock; use OpenAI config for HTTP and typed signing-interface tests for empty/signed bytes.
   Shared resource decoding and fuzzing remain B509. The two handlers and body selector contain
   175 nonblank/non-comment lines. Estimate 190 implementation, 115 tests, 80 fixtures, 85 adapters
@@ -25,9 +28,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_compact_http.rs
   - crates/betterlite-core/src/api/responses_compact_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_compact_transport.rs
+  - tools/oracle/src/sdk_http/responses_compact_transport/**
   - tools/oracle/sdk_http/responses_compact_transport.py
   - tools/oracle/cases/sdk-http/responses-compact-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-transport-*
@@ -89,7 +91,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_http::tests::compact_client_timeout($|::)/)'
   - id: python-adapter
     why: compact parity omits the actual HTTP handler
-    run: test -f tools/oracle/sdk_http/responses_compact_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_compact_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: compact transport is absent from the SDK input corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

@@ -27,6 +27,13 @@ description: >-
   and embedding_model_params=None. The hook skips positive _agentic_loop_depth values
   and waits for _has_retrieval_tool to return false.
 
+  Provider comparisons run through SdkHttpCall::CompressionInterception, a placeholder already
+  on main: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/compression_interception.rs (Call implements call_kind::CallKind,
+  Outcome is the value of SdkResult::CompressionInterception) and fill
+  CompressionInterceptionRequest in tools/oracle/sdk_http/compression_interception.py, with no
+  edit to the shared sdk_http files or dispatch.py.
+
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -36,9 +43,8 @@ scope:
   - Cargo.toml
   - Cargo.lock
   - tools/oracle/Cargo.toml
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/compression_interception.rs
+  - tools/oracle/src/sdk_http/compression_interception/**
   - tools/oracle/sdk_http/compression_interception.py
   - tools/oracle/cases/sdk-http/compression-interception/**
   - tools/oracle/fuzz/corpus/sdk_http_case/compression-interception-*
@@ -140,7 +146,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::compression_interception_state::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Provider comparisons must use the SDK HTTP driver with a typed operation adapter.
-    run: test -f tools/oracle/sdk_http/compression_interception.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/compression_interception.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: New settings and SDK operation tags must have parser seeds.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/compression-interception-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/compression-interception-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

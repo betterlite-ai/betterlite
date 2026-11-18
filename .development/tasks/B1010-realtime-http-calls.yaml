@@ -18,9 +18,11 @@ description: >-
   B002 loads litellm_settings.api_base,api_key,openai_key and OPENAI_API_KEY, all None/unset by default.
   Reuse B198 REQUEST_TIMEOUT=6000 seconds; timeout=None or 0 selects that value. Named
   loads_realtime_http_settings tests invoke the real loader for defaults, overrides and invalid types,
-  with new config_yaml seeds. B2456 owns SDP UTF-8 parsing and B1004 record decoding. Register
-  sdk_http.realtime_http_calls through B2401 and compare each operation's real provider request and raw
-  response. Own 208 nonblank/non-comment lines; budget 165 orchestration,140 tests,120 fixtures,
+  with new config_yaml seeds. B2456 owns SDP UTF-8 parsing and B1004 record decoding. SdkHttpCall::RealtimeHttpCalls
+  is already on main as a placeholder; build it in tools/oracle/src/sdk_http/realtime_http_calls.rs
+  (a Call implementing call_kind::CallKind, plus the Outcome of SdkResult::RealtimeHttpCalls) and in
+  RealtimeHttpCallsRequest of tools/oracle/sdk_http/realtime_http_calls.py, leaving the shared sdk_http files
+  alone, and compare each operation's real provider request and raw response. Own 208 nonblank/non-comment lines; budget 165 orchestration,140 tests,120 fixtures,
   90 adapters,65 config tests/seeds and 30 wiring =610 lines.
 scope:
   paths:
@@ -29,9 +31,8 @@ scope:
   - crates/betterlite-config/src/api/realtime_http_calls.rs
   - crates/betterlite-config/src/api/realtime_http_calls/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/realtime_http_calls.rs
+  - tools/oracle/src/sdk_http/realtime_http_calls/**
   - tools/oracle/sdk_http/realtime_http_calls.py
   - tools/oracle/cases/sdk-http/realtime-http-calls/**
   - tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-calls-*
@@ -97,7 +98,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/realtime-http-calls-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: sdk-python
     why: Provider-facing SDK calls must run through B2401 instead of helper adapters.
-    run: test -f tools/oracle/sdk_http/realtime_http_calls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/realtime_http_calls.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The realtime_http_calls tag needs an added SDK decoder seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/realtime-http-calls-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

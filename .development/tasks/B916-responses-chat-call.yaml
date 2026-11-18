@@ -7,7 +7,10 @@ description: >-
   on the async path when previous_response_id is truthy. Preserve that sync/async difference
   in the native entry modes; sharing internal code must not introduce a sync history lookup.
 
-  Add SdkHttpCall::ResponsesChatCall to B2401. Its Python adapter invokes the actual pinned
+  SdkHttpCall::ResponsesChatCall is on main as a placeholder: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/responses_chat_call.rs (Call implements call_kind::CallKind, Outcome is the
+  value of SdkResult::ResponsesChatCall) and fill ResponsesChatCallRequest in
+  tools/oracle/sdk_http/responses_chat_call.py; the shared sdk_http files stay untouched. Its Python adapter invokes the actual pinned
   handler against the mock provider with custom_llm_provider=openai, not a fabricated
   completion result. Capture the POST, the returned Responses object or complete event
   sequence, and SDK failures. Use local unit seams only for impossible executor return types
@@ -18,9 +21,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/responses_chat_call.rs
   - crates/betterlite-core/src/api/responses_chat_call/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_chat_call.rs
+  - tools/oracle/src/sdk_http/responses_chat_call/**
   - tools/oracle/sdk_http/responses_chat_call.py
   - tools/oracle/cases/sdk-http/responses-chat-call/**
   - tools/oracle/helpers/b916.py
@@ -79,7 +81,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_chat_call::/)'
   - id: sdk-adapter
     why: the Responses chat operation lacks real captured provider traffic
-    run: test -f tools/oracle/sdk_http/responses_chat_call.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/responses-chat-call)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_chat_call.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/responses-chat-call)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/responses-chat-call/chat-request-precedence.yaml
 - tools/oracle/cases/sdk-http/responses-chat-call/hoisted-tools-reach-provider.yaml

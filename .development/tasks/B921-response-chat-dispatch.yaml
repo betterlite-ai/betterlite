@@ -9,8 +9,11 @@ description: >-
   Use typed constructor inputs for response/config objects; validation still reports the
   same missing/wrong-type fields at the SDK boundary. This layer decodes no bytes.
 
-  Extend B2401 with response_chat_dispatch and capture both sync and async requests to
-  the mock provider. Nonstreaming calls that receive a stream must actually consume that
+  SdkHttpCall::ResponseChatDispatch captures both sync and async requests to the mock provider.
+  It is already on main as a placeholder: build its Call (implementing call_kind::CallKind) and
+  Outcome in tools/oracle/src/sdk_http/response_chat_dispatch.rs and ResponseChatDispatchRequest in
+  tools/oracle/sdk_http/response_chat_dispatch.py, without editing the shared sdk_http files or
+  dispatch.py. Nonstreaming calls that receive a stream must actually consume that
   HTTP stream. Unit tests may inject completed/cached result variants to cover dispatch
   branches, but provider execution cases must not stub responses()/aresponses(). The
   handler contains 330 nonblank/non-comment lines. Budget 310 implementation, 180 tests,
@@ -19,9 +22,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/response_chat_dispatch.rs
   - crates/betterlite-core/src/api/response_chat_dispatch/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/response_chat_dispatch.rs
+  - tools/oracle/src/sdk_http/response_chat_dispatch/**
   - tools/oracle/sdk_http/response_chat_dispatch.py
   - tools/oracle/cases/sdk-http/response-chat-dispatch/**
   - tools/oracle/helpers/b921.py
@@ -93,7 +95,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::response_chat_dispatch::/)'
   - id: dispatch-adapter
     why: the bridge lacks independently captured SDK provider requests
-    run: test -f tools/oracle/sdk_http/response_chat_dispatch.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/response-chat-dispatch)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/response_chat_dispatch.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/response-chat-dispatch)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/response-chat-dispatch/bridge-input-validation.yaml
 - tools/oracle/cases/sdk-http/response-chat-dispatch/prefixed-provider-execution.yaml

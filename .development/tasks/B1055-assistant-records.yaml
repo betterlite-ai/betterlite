@@ -4,8 +4,11 @@ description: >-
   Build complete create_assistants/acreate_assistants in core::api::assistant_records. The name records
   is historical: this task executes provider I/O through B519 OpenAI and B686 Azure definition methods.
   Use B010 GenericLiteLLMParams, B176 get_litellm_params, B174 provider resolution, B011 async exception
-  mapping and B2487 loaded resource settings/timeout capability. B2401 AssistantCreate cases make actual
-  SDK calls to the mock. No dependency on get/delete SDK operations is needed.
+  mapping and B2487 loaded resource settings/timeout capability. SdkHttpCall::AssistantCreate cases make
+  actual SDK calls to the mock. The variant is already registered on main as a placeholder; replace the
+  Call and Outcome aliases in tools/oracle/src/sdk_http/assistant_create.rs (Call implements
+  call_kind::CallKind) and fill AssistantCreateRequest in tools/oracle/sdk_http/assistant_create.py, with
+  no edit to the shared sdk_http files or dispatch.py. No dependency on get/delete SDK operations is needed.
 
   Provider/model are required; name,description,instructions,tools,tool_resources,metadata,temperature,
   top_p,response_format,client,api_key,api_base,api_version default null. Drop only null request fields.
@@ -17,9 +20,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/assistant_records.rs
   - crates/betterlite-core/src/api/assistant_records/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/assistant_create.rs
+  - tools/oracle/src/sdk_http/assistant_create/**
   - tools/oracle/sdk_http/assistant_create.py
   - tools/oracle/cases/sdk-http/assistant-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-create-*
@@ -74,7 +76,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_records::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: creation is not compared through independent SDK HTTP
-    run: test -f tools/oracle/sdk_http/assistant_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/assistant_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: no new assistant-create seed reaches B2401's case decoder
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-create-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

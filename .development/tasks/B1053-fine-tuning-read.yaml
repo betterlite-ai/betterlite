@@ -4,8 +4,10 @@ description: >-
   Implement the complete alist/list/aretrieve/retrieve_fine_tuning_job functions in core::api::fine_tuning_read.
   B518 and B542 own OpenAI/Azure clients and wire conversion; B2487 supplies loaded resource settings and
   timeout capability, B010 GenericLiteLLMParams and B011 the decorated retrieve-call boundary. List has
-  no @client decorator. Use B2401 FineTuningRead with actual SDK HTTP for both modes, preserving context
-  and awaiting only coroutine results. No registry/file credential resolver is called by these functions.
+  no @client decorator. Use SdkHttpCall::FineTuningRead with actual SDK HTTP for both modes, preserving
+  context and awaiting only coroutine results. The variant is a placeholder on main: build its Call
+  (implementing call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/fine_tuning_read.rs and
+  FineTuningReadRequest in tools/oracle/sdk_http/fine_tuning_read.py, leaving the shared sdk_http files alone. No registry/file credential resolver is called by these functions.
 
   List after/limit default null, despite a docstring saying 20; retrieve requires fine_tuning_job_id.
   Provider defaults openai and extra_headers/extra_body default null. All are accepted for openai/azure
@@ -17,9 +19,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/fine_tuning_read.rs
   - crates/betterlite-core/src/api/fine_tuning_read/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/fine_tuning_read.rs
+  - tools/oracle/src/sdk_http/fine_tuning_read/**
   - tools/oracle/sdk_http/fine_tuning_read.py
   - tools/oracle/cases/sdk-http/fine-tuning-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/fine-tuning-read-*
@@ -77,7 +78,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::fine_tuning_read::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: read cases only compare prepared inputs instead of SDK HTTP results
-    run: test -f tools/oracle/sdk_http/fine_tuning_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/fine_tuning_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: no newly added SDK read case exercises the case decoder
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/fine-tuning-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

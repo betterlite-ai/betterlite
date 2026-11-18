@@ -11,18 +11,19 @@ description: >-
   Keep buffered and streamed content separate through the transport boundary. Buffered calls
   intentionally omit the per-call timeout at GET; streaming passes it explicitly or selects
   the client default. Decoder ownership stays with transport and the concrete provider; this
-  service forwards bytes and typed headers. Add SDK HTTP operation file_http_content in B2401,
-  including binary bodies, compressed bodies and interrupted streams, with independently
-  captured network requests. Tests live under api::file_http_content::tests. The complete
+  service forwards bytes and typed headers. SdkHttpCall::FileHttpContent covers
+  binary bodies, compressed bodies and interrupted streams, with independently captured network
+  requests. It is a placeholder on main: build its Call (implementing call_kind::CallKind) and Outcome in
+  tools/oracle/src/sdk_http/file_http_content.rs and FileHttpContentRequest in
+  tools/oracle/sdk_http/file_http_content.py, with the shared sdk_http files and dispatch.py left alone. Tests live under api::file_http_content::tests. The complete
   386-417 and 5007-5197 ranges contain 200 nonblank, non-comment lines; allocate 205
   implementation, 150 tests, 120 cases, 90 adapters and 35 wiring lines, totaling 600.
 scope:
   paths:
   - crates/betterlite-core/src/api/file_http_content.rs
   - crates/betterlite-core/src/api/file_http_content/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_http_content.rs
+  - tools/oracle/src/sdk_http/file_http_content/**
   - tools/oracle/sdk_http/file_http_content.py
   - tools/oracle/cases/sdk-http/file-http-content/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-http-content-*
@@ -74,7 +75,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_http_content::tests::/) - test(/replays_/)'
   - id: sdk-python
     why: byte-stream SDK adapter is missing or untyped
-    run: test -f tools/oracle/sdk_http/file_http_content.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/file_http_content.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-seeds
     why: the binary SDK input has no new corpus seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-http-content-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

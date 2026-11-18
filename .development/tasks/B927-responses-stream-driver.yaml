@@ -8,7 +8,10 @@ description: >-
   and cached streams receive B1138 records. Do not retain the old tail fragment of
   _process_chunk here: B925 owns that function whole.
 
-  Add B2401 operation responses_stream_driver with live_sync,live_async,fake,cached modes.
+  SdkHttpCall::ResponsesStreamDriver has live_sync,live_async,fake,cached modes. Main holds it as a
+  placeholder, so replace the Call and Outcome aliases in tools/oracle/src/sdk_http/responses_stream_driver.rs
+  (Call implements call_kind::CallKind) and fill ResponsesStreamDriverRequest in
+  tools/oracle/sdk_http/responses_stream_driver.py; the shared sdk_http files already list it.
   Live modes open a real prepared POST to the mock provider and pass its response body
   into the native/pinned iterator; they must not call a later Responses SDK orchestration
   task. Fake mode captures one JSON provider response,cached mode expects zero requests.
@@ -19,9 +22,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/responses_stream_driver.rs
   - crates/betterlite-core/src/api/responses_stream_driver/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_stream_driver.rs
+  - tools/oracle/src/sdk_http/responses_stream_driver/**
   - tools/oracle/sdk_http/responses_stream_driver.py
   - tools/oracle/cases/sdk-http/responses-stream-driver/**
   - tools/oracle/helpers/b927.py
@@ -96,7 +98,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_stream_driver::/)'
   - id: stream-driver-adapter
     why: live stream behavior is not exercised against independently captured HTTP
-    run: test -f tools/oracle/sdk_http/responses_stream_driver.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/responses-stream-driver)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_stream_driver.py && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/sdk-http/responses-stream-driver)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
 oracle_cases:
 - tools/oracle/cases/sdk-http/responses-stream-driver/live-sse-delivery.yaml
 - tools/oracle/cases/sdk-http/responses-stream-driver/early-stream-end.yaml

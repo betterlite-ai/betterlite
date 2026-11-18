@@ -16,8 +16,11 @@ description: >-
   affects provider HTTP. timeout=null or 0 selects REQUEST_TIMEOUT before B2416; that transport
   intentionally omits the timeout on GET. Do not fix that omission in this SDK task.
 
-  Add SdkHttpCall::ResponsesLifecycleRead to B2401, testing both public modes against the same
-  mock protocol. Python uses actual SDK calls; native calls the production service. The
+  SdkHttpCall::ResponsesLifecycleRead tests both public modes against the same mock protocol. Its
+  placeholder is on main: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/responses_lifecycle_read.rs (Call implements call_kind::CallKind) and fill
+  ResponsesLifecycleReadRequest in tools/oracle/sdk_http/responses_lifecycle_read.py, with no edit to the
+  shared sdk_http files or dispatch.py. Python uses actual SDK calls; native calls the production service. The
   api::responses_lifecycle_call::tests module also checks logging and context. Source ownership
   totals 255 nonblank/non-comment lines. Budget 225 implementation, 140 tests, 100 fixtures,
   90 adapters and 30 wiring, 585 total under 620. No parser is introduced above B509 and B2401.
@@ -26,9 +29,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_lifecycle_call.rs
   - crates/betterlite-core/src/api/responses_lifecycle_call/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_lifecycle_read.rs
+  - tools/oracle/src/sdk_http/responses_lifecycle_read/**
   - tools/oracle/sdk_http/responses_lifecycle_read.py
   - tools/oracle/cases/sdk-http/responses-lifecycle-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-read-*
@@ -97,7 +99,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_call::tests::read_provider_errors($|::)/)'
   - id: python-adapter
     why: read SDK parity lacks an independent pinned implementation
-    run: test -f tools/oracle/sdk_http/responses_lifecycle_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_lifecycle_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the read SDK variant has no new decoder seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

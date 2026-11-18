@@ -11,8 +11,10 @@ description: >-
   The only new byte decoder is decode_file_upload_location(response_bytes, location, key),
   bounded by B1087 and fuzzed in betterlite-core. Header lookup uses the transport's header
   type. Provider-generated upload URLs go through the existing configured HTTP boundary;
-  this does not introduce client-selected URL downloads. Register B2401 SDK HTTP operation
-  file_http_upload, whose Python adapter invokes the real generic handler and provider config
+  this does not introduce client-selected URL downloads. SdkHttpCall::FileHttpUpload is
+  on main as a placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/file_http_upload.rs
+  (Call implements call_kind::CallKind) and fill FileHttpUploadRequest in tools/oracle/sdk_http/file_http_upload.py,
+  without touching the shared sdk_http files. Its Python adapter invokes the real generic handler and provider config
   against the mock. Do not replace network effects with helper output. Native tests are in
   api::file_http_upload::tests. Count the 354-372 and 3404-3847 spans without overlap;
   387 nonblank, non-comment source lines become 285 implementation, 180 tests,
@@ -25,9 +27,8 @@ scope:
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/file_upload_location.rs
   - crates/betterlite-core/fuzz/corpus/file_upload_location/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_http_upload.rs
+  - tools/oracle/src/sdk_http/file_http_upload/**
   - tools/oracle/sdk_http/file_http_upload.py
   - tools/oracle/cases/sdk-http/file-http-upload/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-http-upload-*
@@ -93,7 +94,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_http_upload::tests::/) - test(/replays_/)'
   - id: sdk-python
     why: independent network adapter is missing or untyped
-    run: test -f tools/oracle/sdk_http/file_http_upload.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/file_http_upload.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-seeds
     why: upload operation has no new SDK protocol seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-http-upload-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

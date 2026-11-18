@@ -15,8 +15,11 @@ description: >-
   This wrapper passes timeout even though B2481's final GET omits it. kwargs containing extra_query,
   after or limit do not become content pagination.
 
-  Add B2401 VectorFileRead SDK operations for retrieve/content, with a real provider mock and pinned public
-  SDK calls. Native api::vector_file_read tests inspect logs and prepared handler arguments; config loader
+  SdkHttpCall::VectorFileRead carries the retrieve/content SDK operations, with a real provider mock and
+  pinned public SDK calls. Its placeholder is on main: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/vector_file_read.rs (Call implements call_kind::CallKind) and fill
+  VectorFileReadRequest in tools/oracle/sdk_http/vector_file_read.py; the shared sdk_http files and
+  dispatch.py stay untouched. Native api::vector_file_read tests inspect logs and prepared handler arguments; config loader
   tests have the same module name. The four functions contain 194 nonblank/non-comment lines. Budget
   195 implementation, 145 tests, 90 adapters, 90 fixtures, 50 config/corpus/wiring, 570 total within 610.
   There is no new parser or gateway route in this task.
@@ -27,9 +30,8 @@ scope:
   - crates/betterlite-config/src/api/vector_file_read.rs
   - crates/betterlite-config/src/api/vector_file_read/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-read-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_file_read.rs
+  - tools/oracle/src/sdk_http/vector_file_read/**
   - tools/oracle/sdk_http/vector_file_read.py
   - tools/oracle/cases/sdk-http/vector-file-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-read-*
@@ -86,7 +88,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_file_read::tests::loads_read_timeout($|::)/)'
   - id: python-adapter
     why: retrieval is represented by a helper result instead of captured SDK HTTP
-    run: test -f tools/oracle/sdk_http/vector_file_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/vector_file_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: new read SDK/config inputs lack parser replay
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-read-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)' && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'

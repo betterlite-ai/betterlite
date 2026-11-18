@@ -9,17 +9,20 @@ description: >-
   (url,request_params). Log and GET that result. No read send passes its accepted timeout argument.
 
   Invoke B2402 _handle_error only around the GET, then call the corresponding B527 response transform
-  outside the catch. Use B1071 wire records and B249 logging. Add VectorFileReadTransport to B2401 for
-  actual handler HTTP comparisons, plus native client/log/error-boundary tests. These four whole functions
+  outside the catch. Use B1071 wire records and B249 logging. SdkHttpCall::VectorFileReadTransport
+  carries the actual handler HTTP comparisons, next to native client/log/error-boundary tests. The variant
+  is on main as a placeholder: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/vector_file_read_transport.rs (Call implements call_kind::CallKind) and fill
+  VectorFileReadTransportRequest in tools/oracle/sdk_http/vector_file_read_transport.py, leaving the
+  shared sdk_http files alone. These four whole functions
   have 232 nonblank/non-comment lines. Estimate 220 implementation, 145 tests, 85 adapters, 85 fixtures,
   35 wiring/corpus lines, 570 total within 610. No new wire parser or proxy route belongs here.
 scope:
   paths:
   - crates/betterlite-core/src/api/vector_file_http_read.rs
   - crates/betterlite-core/src/api/vector_file_http_read/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_file_read_transport.rs
+  - tools/oracle/src/sdk_http/vector_file_read_transport/**
   - tools/oracle/sdk_http/vector_file_read_transport.py
   - tools/oracle/cases/sdk-http/vector-file-read-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-read-transport-*
@@ -70,7 +73,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_http_read::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: the attached-file GET comparison does not call pinned handlers
-    run: test -f tools/oracle/sdk_http/vector_file_read_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/vector_file_read_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: retrieval transport's operation tag lacks new decoder coverage
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-read-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

@@ -16,8 +16,11 @@ description: >-
   model_call_details.litellm_params.metadata when litellm_params is a dictionary, otherwise {}.
   Store litellm_params overlays id,query,provider and request metadata in search kwargs.
 
-  Add B2401 VectorRetrievalContext to run the actual hook and search SDK against the mock, projecting
-  returned model/messages/non_default_params, logging details and ordered diagnostics. Pure helpers are
+  SdkHttpCall::VectorRetrievalContext runs the actual hook and search SDK against the mock, projecting
+  returned model/messages/non_default_params, logging details and ordered diagnostics. It is on main as a
+  placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/vector_retrieval_context.rs
+  (Call implements call_kind::CallKind) and fill VectorRetrievalContextRequest in
+  tools/oracle/sdk_http/vector_retrieval_context.py; the shared sdk_http files already list it. Pure helpers are
   tested in B2483, not reimplemented here. Named native tests in api::vector_retrieval_context use injected
   runtime/guardrail seams and real search execution. The remaining methods/records have 242 nonblank/
   non-comment lines. Budget 245 execution, 190 tests, 110 adapters, 150 fixtures and 45 wiring/corpus,
@@ -26,9 +29,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/vector_retrieval_context.rs
   - crates/betterlite-core/src/api/vector_retrieval_context/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_retrieval_context.rs
+  - tools/oracle/src/sdk_http/vector_retrieval_context/**
   - tools/oracle/sdk_http/vector_retrieval_context.py
   - tools/oracle/cases/sdk-http/vector-retrieval-context/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-retrieval-context-*
@@ -104,7 +106,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_retrieval_context::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: retrieval search effects are represented by helper fixtures instead of actual HTTP
-    run: test -f tools/oracle/sdk_http/vector_retrieval_context.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/vector_retrieval_context.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: retrieval's typed SDK call lacks added replay inputs
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-retrieval-context-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

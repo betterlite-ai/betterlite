@@ -31,8 +31,11 @@ description: >-
   wins, else a recognized audio response-format extension, else audio/mpeg. Byte sniffing recognizes RIFF/WAVE,
   fLaC,OggS (OpusHead within first 64 bytes),ID3 and guarded ADTS/MPEG frame signatures; it does not decode audio.
   Expose decode_chat_audio_base64 and sniff_speech_audio(bytes,limits) at actual boundaries and fuzz/replay both,
-  with the first fuzz byte choosing base64 text or audio header input. Register B2401 speech_chat_bridge for
-  provider HTTP and B171 speech_media_type only for pure MIME/sniff cases. Ownership is 295 nonblank/non-comment
+  with the first fuzz byte choosing base64 text or audio header input. Provider HTTP goes through
+  SdkHttpCall::SpeechChatBridge, a placeholder already on main: replace the Call and Outcome aliases in
+  tools/oracle/src/sdk_http/speech_chat_bridge.rs (Call implements call_kind::CallKind) and fill
+  SpeechChatBridgeRequest in tools/oracle/sdk_http/speech_chat_bridge.py; the shared sdk_http files and
+  dispatch.py already list it. B171 speech_media_type covers only pure MIME/sniff cases. Ownership is 295 nonblank/non-comment
   method lines plus the referenced option allowlist; budget 270 implementation,160 tests,125 fixtures,120 adapters,65 fuzz and 40 wiring,
   780 lines. No bridge-only streaming or cancellation behavior is invented.
 scope:
@@ -44,9 +47,8 @@ scope:
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs
   - crates/betterlite-openai/fuzz/corpus/speech_audio/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/speech_chat_bridge.rs
+  - tools/oracle/src/sdk_http/speech_chat_bridge/**
   - tools/oracle/sdk_http/speech_chat_bridge.py
   - tools/oracle/cases/sdk-http/speech-chat-bridge/**
   - tools/oracle/fuzz/corpus/sdk_http_case/speech-chat-bridge-*
@@ -111,7 +113,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core -p betterlite-openai --no-tests=fail -E 'test(/^api::speech_chat_bridge::/) - test(/::replays_corpus$/)'
   - id: adapters
     why: Provider calls need the SDK HTTP adapter; only MIME transforms use helper dispatch.
-    run: test -f tools/oracle/sdk_http/speech_chat_bridge.py && test -f tools/oracle/helpers/speech_media_type.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/speech_chat_bridge.py && test -f tools/oracle/helpers/speech_media_type.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: parser-corpus
     why: Audio signature/base64 decoding must use bounded production functions under fuzz and replay.
     run: test -f crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs && grep -qF decode_chat_audio_base64 crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs && grep -qF sniff_speech_audio crates/betterlite-openai/fuzz/fuzz_targets/speech_audio.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/speech_audio)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^api::speech_chat_bridge::tests::replays_corpus$/)'

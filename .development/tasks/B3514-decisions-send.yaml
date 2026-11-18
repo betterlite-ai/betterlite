@@ -15,13 +15,14 @@ description: >-
 
   Tests live in crates/betterlite-core/src/api/decisions_send/tests.rs and use a mock server and a test provider config. Include the full path through B3511's TypeSafe config for the SystemOne case. For the OpenAI-format case and the cost header, use a fake config where the real one is not in this crate's reach.
 
+  The SDK cases run through SdkHttpCall::DecisionsSend, which main already registers as a placeholder. Replace the Call and Outcome aliases in tools/oracle/src/sdk_http/decisions_send.rs with a Call that implements call_kind::CallKind and the Outcome that SdkResult::DecisionsSend carries, and fill DecisionsSendRequest in tools/oracle/sdk_http/decisions_send.py; the shared sdk_http files and dispatch.py stay as they are.
+
 scope:
   paths:
     - crates/betterlite-core/src/api/decisions_send.rs
     - crates/betterlite-core/src/api/decisions_send/**
-    - tools/oracle/src/sdk_http.rs
-    - tools/oracle/src/sdk_http/**
-    - tools/oracle/sdk_http/dispatch.py
+    - tools/oracle/src/sdk_http/decisions_send.rs
+    - tools/oracle/src/sdk_http/decisions_send/**
     - tools/oracle/sdk_http/decisions_send.py
     - tools/oracle/cases/sdk-http/decisions-send/**
     - tools/oracle/fuzz/corpus/sdk_http_case/decisions-send-*
@@ -97,7 +98,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::decisions_send::tests::error_mapping/)'
     - id: sdk-python
       why: the real-handler HTTP adapter is missing or untyped
-      run: test -f tools/oracle/sdk_http/decisions_send.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+      run: ! grep -q not_built tools/oracle/sdk_http/decisions_send.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
     - id: sdk-corpus
       why: no new decisions_send call reaches the SDK HTTP parser
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/decisions-send-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

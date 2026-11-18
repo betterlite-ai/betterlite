@@ -15,7 +15,10 @@ description: >-
   Exception attribution defaults to openai when unresolved. Keep this SDK behavior separate from B159's
   event-loop facade. There is no proxy variation route at the pin.
 
-  Use B2401 SDK HTTP captures; OpenAI tests reach the actual multipart provider, while native injected-operation
+  Use SDK HTTP captures through SdkHttpCall::ImageVariations, which main already registers as a placeholder:
+  give tools/oracle/src/sdk_http/image_variations.rs a Call implementing call_kind::CallKind and the Outcome
+  that SdkResult::ImageVariations carries, and fill ImageVariationsRequest in tools/oracle/sdk_http/image_variations.py,
+  without touching the shared sdk_http files. OpenAI tests reach the actual multipart provider, while native injected-operation
   tests cover Topaz selection and timeout without importing its downstream implementation. Count 117 nonblank/
   non-comment lines, including decorators; budget 125 implementation, 115 tests, 95 cases, 75 adapters and
   40 config/corpus/wiring lines, 450 total. Existing transport and SDK decoders handle bytes.
@@ -24,9 +27,8 @@ scope:
   - crates/betterlite-core/src/api/image_variations.rs
   - crates/betterlite-core/src/api/image_variations/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/image_variations.rs
+  - tools/oracle/src/sdk_http/image_variations/**
   - tools/oracle/sdk_http/image_variations.py
   - tools/oracle/cases/sdk-http/image-variations/**
   - tools/oracle/fuzz/corpus/sdk_http_case/image-variations-*
@@ -81,7 +83,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::image_variations::tests::loads_settings($|::)/)'
   - id: sdk-python
     why: Variation comparison must call the SDK against mock HTTP.
-    run: test -f tools/oracle/sdk_http/image_variations.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/image_variations.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpora
     why: Timeout settings and the variation operation require parser inputs on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/image-variations-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/image-variations-*)" && cargo nextest run --locked -p betterlite-oracle -p betterlite-config --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/) | test(replays_the_config_yaml_corpus)'

@@ -17,7 +17,10 @@ description: >-
   converted text rather than text_format. Await a returned coroutine once, leave iterators intact
   and reject a null final response with the exact source error below.
 
-  Add SdkHttpCall::ResponsesAsyncCreate to B2401. The pinned adapter calls litellm.aresponses with
+  SdkHttpCall::ResponsesAsyncCreate is registered on main as a placeholder; fill
+  tools/oracle/src/sdk_http/responses_async_create.rs (a Call implementing call_kind::CallKind and the
+  Outcome of SdkResult::ResponsesAsyncCreate) and ResponsesAsyncCreateRequest in
+  tools/oracle/sdk_http/responses_async_create.py, leaving the shared sdk_http files alone. The pinned adapter calls litellm.aresponses with
   no replacement SDK functions and its real HTTP base set to the mock. Native invokes this service.
   Prompt hooks are scripted dependency outcomes and provider responses still cross HTTP. B1078
   owns native/chat execution and B927 stream parsing; this wrapper adds no decoder. The complete
@@ -28,9 +31,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_create_call.rs
   - crates/betterlite-core/src/api/responses_create_call/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_async_create.rs
+  - tools/oracle/src/sdk_http/responses_async_create/**
   - tools/oracle/sdk_http/responses_async_create.py
   - tools/oracle/cases/sdk-http/responses-async-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-async-create-*
@@ -100,7 +102,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_call::tests::async_create_failure_attribution($|::)/)'
   - id: python-adapter
     why: async create comparison calls a helper instead of the decorated HTTP SDK
-    run: test -f tools/oracle/sdk_http/responses_async_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_async_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: async create has no newly added SDK input seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-async-create-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

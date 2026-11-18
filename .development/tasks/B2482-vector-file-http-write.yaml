@@ -11,16 +11,18 @@ description: >-
   and calls the provider transformation before logging and POSTing JSON. Delete transforms the two ids
   to URL/query, logs the query and DELETEs without a body. Both sends pass timeout even when null, in
   both modes. Response transforms happen after the send catch; only send failures use _handle_error.
-  Add VectorFileWriteTransport SDK HTTP cases, never helper cases that fake provider writes. The four
+  SdkHttpCall::VectorFileWriteTransport gets SDK HTTP cases, never helper cases that fake provider
+  writes. Main holds it as a placeholder: build its Call (implementing call_kind::CallKind) and Outcome in
+  tools/oracle/src/sdk_http/vector_file_write_transport.rs and FileWriteTransportRequest, under that name,
+  in tools/oracle/sdk_http/vector_file_write_transport.py, without editing the shared sdk_http files. The four
   functions contain 242 nonblank/non-comment lines; allocate 240 implementation, 145 tests, 90 adapters,
   100 fixtures and 35 corpus/wiring lines, 610 within 650. Wire JSON decoding stays in B1071/B527.
 scope:
   paths:
   - crates/betterlite-core/src/api/vector_file_http_write.rs
   - crates/betterlite-core/src/api/vector_file_http_write/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_file_write_transport.rs
+  - tools/oracle/src/sdk_http/vector_file_write_transport/**
   - tools/oracle/sdk_http/vector_file_write_transport.py
   - tools/oracle/cases/sdk-http/vector-file-write-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-transport-*
@@ -72,7 +74,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::vector_file_http_write::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: attachment writes do not execute an independent pinned HTTP handler
-    run: test -f tools/oracle/sdk_http/vector_file_write_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/vector_file_write_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the attachment write tag cannot be decoded by the SDK oracle
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-file-write-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

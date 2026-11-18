@@ -16,7 +16,11 @@ description: >-
   callbacks, never in upstream JSON. Async transforms asynchronously and does not rerun the sync
   pre-hook. Streamed calls return an iterator before nonstream response/agentic processing.
 
-  Add SdkHttpCall::ResponsesCreateTransport under B2401 with real pinned handlers and mock HTTP.
+  SdkHttpCall::ResponsesCreateTransport runs real pinned handlers against mock HTTP. Its placeholder is
+  on main: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/responses_create_transport.rs
+  (Call implements call_kind::CallKind) and fill CreateTransportRequest, under that name, in
+  tools/oracle/sdk_http/responses_create_transport.py; the shared sdk_http files and dispatch.py are not
+  this task's.
   Native tests cover signing/pre-hook and clock-independent effects; iterator decoding/fuzzing
   stays B927/B2413/B508. The four whole functions contain 404 nonblank/non-comment lines, much of
   it duplicated sync/async signatures. One shared native sender estimates 320 implementation,
@@ -26,9 +30,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_create_http.rs
   - crates/betterlite-core/src/api/responses_create_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_create_transport.rs
+  - tools/oracle/src/sdk_http/responses_create_transport/**
   - tools/oracle/sdk_http/responses_create_transport.py
   - tools/oracle/cases/sdk-http/responses-create-transport/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-create-transport-*
@@ -112,7 +115,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_create_http::tests::create_transport_failure($|::)/)'
   - id: python-adapter
     why: create transport parity bypasses a real HTTP request
-    run: test -f tools/oracle/sdk_http/responses_create_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_create_transport.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the new transport variant has no decoder input
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-create-transport-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

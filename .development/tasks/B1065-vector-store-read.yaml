@@ -2,8 +2,11 @@ id: B1065
 title: Vector-store SDK retrieve and list
 description: >-
   Implement complete retrieve/aretrieve/list/alist in core::api::vector_store_read. B174 resolves provider
-  names, B010 selects config, B2485 performs the HTTP read, B247 logs and B011 maps failures. Register VectorStoreRead in
-  B2401, with real SDK calls against OpenAI mock HTTP. Retrieve requires vector_store_id. List defaults
+  names, B010 selects config, B2485 performs the HTTP read, B247 logs and B011 maps failures. SdkHttpCall::VectorStoreRead
+  makes real SDK calls against OpenAI mock HTTP. Main already registers it as a placeholder: build its
+  Call (implementing call_kind::CallKind) and Outcome in tools/oracle/src/sdk_http/vector_store_read.rs and
+  VectorStoreReadRequest in tools/oracle/sdk_http/vector_store_read.py, with the shared sdk_http files
+  and dispatch.py left alone. Retrieve requires vector_store_id. List defaults
   after/before=null,limit=20,order=desc; extras, timeout and provider default null. Only null provider uses
   openai. A slash invokes get_llm_provider and passes its api_type into provider config selection.
   No registry lookup happens here. REQUEST_TIMEOUT is the existing B002 float setting (6000 seconds);
@@ -20,9 +23,8 @@ scope:
   - crates/betterlite-config/src/api/vector_store_read.rs
   - crates/betterlite-config/src/api/vector_store_read/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_store_read.rs
+  - tools/oracle/src/sdk_http/vector_store_read/**
   - tools/oracle/sdk_http/vector_store_read.py
   - tools/oracle/cases/sdk-http/vector-store-read/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-read-*
@@ -78,7 +80,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-read-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
   - id: python-adapter
     why: the read comparison lacks an independently executed SDK path
-    run: test -f tools/oracle/sdk_http/vector_store_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/vector_store_read.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: no new read-case seed exercises the tagged operation
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/vector-store-read-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

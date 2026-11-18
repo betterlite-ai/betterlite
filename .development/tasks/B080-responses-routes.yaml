@@ -27,8 +27,12 @@ description: >-
   LiteLLM's rust_bridge accelerator is excluded by litellm.yaml and is not reimplemented.
 
   All route comparisons boot both proxies with fixed test master key sk-test-master, independent
-  B1139 Redis/Postgres fixtures and a mock provider. B2401 additionally exercises public sync/async
-  dispatch through SdkHttpCall::ResponsesPublicDispatch; do not invoke FastAPI handlers as helpers.
+  B1139 Redis/Postgres fixtures and a mock provider. Public sync/async dispatch is also exercised
+  through SdkHttpCall::ResponsesPublicDispatch, already on main as a placeholder: replace the Call and
+  Outcome aliases in tools/oracle/src/sdk_http/responses_public_dispatch.rs (Call implements
+  call_kind::CallKind, Outcome is the value of SdkResult::ResponsesPublicDispatch) and fill
+  ResponsesPublicDispatchRequest in tools/oracle/sdk_http/responses_public_dispatch.py under that name;
+  the shared sdk_http enums, dispatchers and dispatch.py stay untouched. Do not invoke FastAPI handlers as helpers.
   No parser is added above B1100/B902. Source count is 336 nonblank/non-comment lines including
   route/dispatch declarations and package exports; estimate 260 composition, 185 tests, 170 HTTP
   fixtures, 90 SDK adapters and 40 wiring, 745 total, plus 80 for the OpenAI binding below: 825 under 830.
@@ -59,9 +63,8 @@ scope:
   - crates/betterlite-core/src/dispatch/responses/**
   - tools/oracle/cases/api/responses-routes/**
   - tools/oracle/fixtures/responses-routes/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_public_dispatch.rs
+  - tools/oracle/src/sdk_http/responses_public_dispatch/**
   - tools/oracle/sdk_http/responses_public_dispatch.py
   - tools/oracle/cases/sdk-http/responses-public-dispatch/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*
@@ -192,7 +195,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_routes::tests::public_dispatch_projection($|::)/)'
   - id: python-sdk
     why: public SDK parity does not reach its real provider transport
-    run: test -f tools/oracle/sdk_http/responses_public_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/responses_public_dispatch.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the public SDK operation lacks a newly added decoder seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-public-dispatch-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

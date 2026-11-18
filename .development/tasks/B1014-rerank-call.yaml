@@ -12,8 +12,11 @@ description: >-
 
   Await a returned coroutine exactly once, or return an immediate result as is. On Exception,
   call B011 with the original model and resolved provider or explicit provider; there is no
-  fallback to openai. Cancellation remains cancellation. B2401 sdk_http.rerank_call drives this
-  wrapper against mock HTTP, comparing provider requests, SDK results and error fields. Finite
+  fallback to openai. Cancellation remains cancellation. SdkHttpCall::RerankCall drives this
+  wrapper against mock HTTP, comparing provider requests, SDK results and error fields. Main already holds
+  its placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/rerank_call.rs (Call
+  implements call_kind::CallKind) and fill RerankCallRequest in tools/oracle/sdk_http/rerank_call.py; the
+  shared sdk_http files and dispatch.py are not this task's. Finite
   injected B1079 operations cover immediate and deferred results without timing sleeps. Existing
   SDK decoders handle the fixture bytes; the wrapper has no parser or config keys.
 
@@ -24,9 +27,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/rerank_call.rs
   - crates/betterlite-core/src/api/rerank_call/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/rerank_call.rs
+  - tools/oracle/src/sdk_http/rerank_call/**
   - tools/oracle/sdk_http/rerank_call.py
   - tools/oracle/cases/sdk-http/rerank-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/rerank-call-*
@@ -70,7 +72,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::rerank_call::tests::/)'
   - id: sdk-python
     why: Provider-call parity must use the SDK HTTP adapter rather than a pure helper.
-    run: test -f tools/oracle/sdk_http/rerank_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: ! grep -q not_built tools/oracle/sdk_http/rerank_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The rerank_call fixture variant must decode through B2401.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/rerank-call-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
