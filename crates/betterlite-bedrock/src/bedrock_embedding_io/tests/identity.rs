@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 
 use secrecy::ExposeSecret as _;
-use serde_json::value::RawValue;
 
 use super::fixture::{Source, credentials, environment, headers, now, runtime, secret_lookup};
 use crate::aws_settings::sources::Credentials;
@@ -29,12 +28,12 @@ fn resolved(access: &str, secret_key: &str, token: &str, region: &str) -> (Crede
     let resolved = loaded
         .credentials
         .expect("the resolver supplies credentials");
-    assert_eq!(resolved.access_key_id.expose_secret().as_str(), access);
+    assert_eq!(resolved.access_key_id.expose_secret(), access);
     assert_eq!(
         resolved
             .session_token
             .as_ref()
-            .map(|value| value.expose_secret().as_str()),
+            .map(|value| value.expose_secret()),
         Some(token)
     );
     (resolved, loaded.region)

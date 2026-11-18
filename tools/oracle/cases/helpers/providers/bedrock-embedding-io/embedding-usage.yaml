@@ -84,7 +84,7 @@ calls:
       response_list:
         - embedding:
             - 0.75
-        inputTextTokenCount: 2
+          inputTextTokenCount: 2
   - bedrock_embedding_io:
       function: embedding_usage
       model: amazon.titan-embed-unknown

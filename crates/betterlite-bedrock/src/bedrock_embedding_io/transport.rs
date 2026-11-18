@@ -61,29 +61,27 @@ pub enum TransferError {
     Failed(#[from] TransportError),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Timeout {
     Seconds(f64),
-    Record {
-        connect: f64,
-        read: f64,
-        write: f64,
-        pool: f64,
-    },
+    Record(Box<TimeoutRecord>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimeoutRecord {
+    pub connect: f64,
+    pub read: f64,
+    pub write: f64,
+    pub pool: f64,
 }
 
 impl Timeout {
     // httpx.Timeout(2.5) sets connect, read, write and pool to 2.5
     #[must_use]
-    pub const fn fields(self) -> [f64; 4] {
+    pub const fn fields(&self) -> [f64; 4] {
         match self {
-            Self::Seconds(seconds) => [seconds, seconds, seconds, seconds],
-            Self::Record {
-                connect,
-                read,
-                write,
-                pool,
-            } => [connect, read, write, pool],
+            Self::Seconds(seconds) => [*seconds, *seconds, *seconds, *seconds],
+            Self::Record(record) => [record.connect, record.read, record.write, record.pool],
         }
     }
 }
@@ -147,7 +145,7 @@ where
     if !(200..300).contains(&reply.status) {
         return Err(provider_error(&reply)?);
     }
-    Ok(decode_embedding_response(&reply.body)?)
+    decode_embedding_response(&reply.body)
 }
 
 // a supplied client of the other handler kind does not count, so a fresh client is built with the timeout
@@ -166,14 +164,19 @@ where
         }
         (true, _) => {
             factory
-                .async_client(ASYNC_CLIENT_PROVIDER, call.timeout)
+                .async_client(ASYNC_CLIENT_PROVIDER, call.timeout.clone())
                 .post(request)
                 .await
         }
         (false, Some(client)) if client.kind == ClientKind::Sync => {
             client.transport.post(request).await
         }
-        (false, _) => factory.sync_client(call.timeout).post(request).await,
+        (false, _) => {
+            factory
+                .sync_client(call.timeout.clone())
+                .post(request)
+                .await
+        }
     }
 }
 
@@ -224,8 +227,8 @@ fn provider_error(reply: &EmbeddingReply) -> Result<EmbeddingIoError, HeaderErro
 
 // LiteLLM reads response.text; bytes that are not UTF-8 are refused by naming their count
 fn response_text(body: &[u8]) -> String {
-    match str::from_utf8(body) {
-        Ok(text) => text.to_owned(),
-        Err(_) => format!("{} bytes that are not UTF-8", body.len()),
-    }
+    str::from_utf8(body).map_or_else(
+        |_| format!("{} bytes that are not UTF-8", body.len()),
+        str::to_owned,
+    )
 }

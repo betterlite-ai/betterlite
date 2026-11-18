@@ -21,7 +21,7 @@ const TITAN_V2_MODEL: &str = "amazon.titan-embed-text-v2:0";
 const RESPONSE_OBJECT: &str = "list";
 const EMBEDDING_OBJECT: &str = "embedding";
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EmbeddingReply {
     pub object: &'static str,
     pub data: Vec<EmbeddingRecord>,
@@ -165,72 +165,79 @@ enum ProviderResponse {
 }
 
 fn provider_embedding_reply(
-    response: ProviderResponse,
+    provider_response: ProviderResponse,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    match response {
-        ProviderResponse::Nova(response) => {
-            let mut data = Vec::with_capacity(response.data.len());
-            for (position, record) in response.data.into_iter().enumerate() {
-                let index =
-                    u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-                data.push(EmbeddingRecord {
-                    object: EMBEDDING_OBJECT.to_owned(),
-                    embedding: embedding_vector(&record.embedding)?,
-                    index,
-                });
-            }
-            let usage = EmbeddingUsage {
-                prompt_tokens: response.usage.prompt_tokens,
-                completion_tokens: 0,
-                total_tokens: response.usage.total_tokens,
-                prompt_tokens_details: response.usage.prompt_tokens_details.as_ref().map(
-                    |counts| PromptTokenCounts {
-                        image_count: Some(u64::from(counts.image_count)),
-                        query_count: None,
-                    },
-                ),
-            };
-            provider_reply(
-                response.model,
-                data,
-                usage,
-                response.invocation_arn.as_ref(),
-            )
-        }
-        ProviderResponse::Marengo(response) => {
-            let mut data = Vec::with_capacity(response.data.len());
-            for record in response.data {
-                let index = u32::try_from(record.index)
-                    .map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-                let mut numbers = Vec::with_capacity(record.embedding.len());
-                for value in record.embedding {
-                    numbers.push(Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable)?);
-                }
-                data.push(EmbeddingRecord {
-                    object: EMBEDDING_OBJECT.to_owned(),
-                    embedding: EmbeddingVector::Floats(numbers),
-                    index,
-                });
-            }
-            let usage = EmbeddingUsage {
-                prompt_tokens: response.usage.prompt_tokens,
-                completion_tokens: response.usage.completion_tokens,
-                total_tokens: response.usage.total_tokens,
-                prompt_tokens_details: response.usage.prompt_tokens_details.as_ref().map(
-                    |counts| PromptTokenCounts {
-                        image_count: counts.image_count,
-                        query_count: counts.query_count,
-                    },
-                ),
-            };
-            provider_reply(
-                response.model,
-                data,
-                usage,
-                response.invocation_arn.as_ref(),
-            )
-        }
+    match provider_response {
+        ProviderResponse::Nova(nova_response) => nova_embedding_reply(nova_response),
+        ProviderResponse::Marengo(marengo_response) => marengo_embedding_reply(marengo_response),
     }
+}
+
+fn nova_embedding_reply(
+    response: NovaEmbeddingResponse,
+) -> Result<EmbeddingReply, EmbeddingIoError> {
+    let mut data = Vec::with_capacity(response.data.len());
+    for (position, record) in response.data.into_iter().enumerate() {
+        let index = u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+        data.push(EmbeddingRecord {
+            object: EMBEDDING_OBJECT.to_owned(),
+            embedding: embedding_vector(&record.embedding)?,
+            index,
+        });
+    }
+    let usage = EmbeddingUsage {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: 0,
+        total_tokens: response.usage.total_tokens,
+        prompt_tokens_details: response.usage.prompt_tokens_details.as_ref().map(|counts| {
+            PromptTokenCounts {
+                image_count: Some(u64::from(counts.image_count)),
+                query_count: None,
+            }
+        }),
+    };
+    provider_reply(
+        response.model,
+        data,
+        usage,
+        response.invocation_arn.as_ref(),
+    )
+}
+
+fn marengo_embedding_reply(
+    response: MarengoEmbeddingResponse,
+) -> Result<EmbeddingReply, EmbeddingIoError> {
+    let mut data = Vec::with_capacity(response.data.len());
+    for record in response.data {
+        let index =
+            u32::try_from(record.index).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+        let mut numbers = Vec::with_capacity(record.embedding.len());
+        for value in record.embedding {
+            numbers.push(Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable)?);
+        }
+        data.push(EmbeddingRecord {
+            object: EMBEDDING_OBJECT.to_owned(),
+            embedding: EmbeddingVector::Floats(numbers),
+            index,
+        });
+    }
+    let usage = EmbeddingUsage {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: response.usage.completion_tokens,
+        total_tokens: response.usage.total_tokens,
+        prompt_tokens_details: response.usage.prompt_tokens_details.as_ref().map(|counts| {
+            PromptTokenCounts {
+                image_count: counts.image_count,
+                query_count: counts.query_count,
+            }
+        }),
+    };
+    provider_reply(
+        response.model,
+        data,
+        usage,
+        response.invocation_arn.as_ref(),
+    )
 }
 
 fn provider_reply(

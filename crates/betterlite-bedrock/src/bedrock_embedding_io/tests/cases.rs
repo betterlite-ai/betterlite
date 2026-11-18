@@ -20,7 +20,7 @@ use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
     ClientKind, EmbeddingCall, EmbeddingReply as TransportReply, EmbeddingRequest, ReplyRequest,
-    SuppliedClient, Timeout, TransferError, post_embedding,
+    SuppliedClient, Timeout, TimeoutRecord, TransferError, post_embedding,
 };
 use crate::bedrock_settings::{ErrorHeaders, ResponseBody};
 use crate::signing::request::AwsSignedRequest;
@@ -186,13 +186,13 @@ fn built_async_client_gets_the_provider_and_timeout() {
 fn timeout_record_is_passed_whole() {
     let data = object(BODY);
     let factory = Factory::new(Reply::ok(r#"{"embeddings":[]}"#));
-    let timeout = Timeout::Record {
+    let timeout = Timeout::Record(Box::new(TimeoutRecord {
         connect: 1.0,
         read: 2.0,
         write: 3.0,
         pool: 4.0,
-    };
-    run_direct(false, &factory, &data, Some(timeout)).expect("the fixture reply decodes");
+    }));
+    run_direct(false, &factory, &data, Some(timeout.clone())).expect("the fixture reply decodes");
     assert_eq!(factory.sync_calls(), vec![Some(timeout)]);
     assert_eq!(
         timeout.fields().map(f64::to_bits),
@@ -485,7 +485,7 @@ fn cohere_reply_is_unmapped() {
     let error = transform(
         COHERE_MODEL,
         BedrockEmbeddingProvider::Cohere,
-        &[r#"{}"#],
+        &["{}"],
         None,
     )
     .expect_err("cohere replies are not transformed here");
@@ -704,12 +704,12 @@ fn explicit_region_and_popped_auth_keys() {
     let resolved = loaded
         .credentials
         .expect("the resolver supplies credentials");
-    assert_eq!(resolved.access_key_id.expose_secret().as_str(), ACCESS_KEY);
+    assert_eq!(resolved.access_key_id.expose_secret(), ACCESS_KEY);
     assert_eq!(
         resolved
             .session_token
             .as_ref()
-            .map(|token| token.expose_secret().as_str()),
+            .map(|token| token.expose_secret()),
         Some(SESSION_TOKEN)
     );
     let calls = source.calls();
@@ -721,14 +721,14 @@ fn explicit_region_and_popped_auth_keys() {
         settings
             .access_key_id
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(|key| key.expose_secret()),
         Some(ACCESS_KEY)
     );
     assert_eq!(
         settings
             .secret_access_key
             .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+            .map(|key| key.expose_secret()),
         Some(SECRET_KEY)
     );
     assert_eq!(settings.session_name.as_deref(), Some("fixture-session"));

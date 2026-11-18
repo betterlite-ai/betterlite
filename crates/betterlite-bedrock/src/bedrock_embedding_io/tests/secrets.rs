@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::{Condvar, Mutex, mpsc};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use super::fixture::{
@@ -39,6 +40,27 @@ impl SyncSecretReader for PendingReader {
         }
         (secret_name == "AWS_REGION_NAME").then(|| SecretString::from("eu-north-1"))
     }
+}
+
+fn start_gate_release_worker(
+    gate: Arc<(Mutex<bool>, Condvar)>,
+) -> (mpsc::Sender<()>, JoinHandle<()>) {
+    let (release_tx, release_rx) = mpsc::channel();
+    let release_worker = thread::spawn(move || {
+        let _ = release_rx.recv_timeout(Duration::from_secs(2));
+        let (released, ready) = &*gate;
+        *released.lock().unwrap() = true;
+        ready.notify_all();
+    });
+    (release_tx, release_worker)
+}
+
+fn single_worker_runtime() -> tokio::runtime::Runtime {
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("the fixture runtime builds")
 }
 
 #[test]
@@ -80,19 +102,8 @@ fn bedrock_embedding_io_managed_lookup_allows_timeout_while_pending() {
         started: Arc::clone(&started),
         read_on_runtime: Arc::clone(&read_on_runtime),
     }));
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
-    let release_gate = Arc::clone(&gate);
-    let release_worker = std::thread::spawn(move || {
-        let _ = release_rx.recv_timeout(Duration::from_secs(2));
-        let (released, ready) = &*release_gate;
-        *released.lock().unwrap() = true;
-        ready.notify_all();
-    });
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .enable_all()
-        .build()
-        .expect("the fixture runtime builds");
+    let (release_tx, release_worker) = start_gate_release_worker(Arc::clone(&gate));
+    let runtime = single_worker_runtime();
     let mut parameters = raw(&[]);
     let variables = environment(&[]);
     let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
