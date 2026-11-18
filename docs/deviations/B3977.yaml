@@ -67,7 +67,7 @@ deviations:
       and TypeError, is the EventPayloadError enum, and the second try/except around the append has no
       counterpart for the same reason as the enqueue path.
     why: >-
-      Each variant names what failed (a missing or wrong-typed field, a call-details read, an unparseable
+      Each variant names what failed (a missing or wrong-typed field, a call-details read, an unparsable
       start_time), and the block event is skipped with an error line carrying the call id, exactly where
       LiteLLM logs and returns.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L887-L922
