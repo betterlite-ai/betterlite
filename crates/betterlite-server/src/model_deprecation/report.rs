@@ -1,22 +1,9 @@
-use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, NaiveDate, Utc};
 
 use super::catalog::DeprecationCatalog;
 use super::clock::UtcClock;
 use super::resolve::{Deployment, resolve_deprecation};
 use super::types::{DeprecationStatus, ModelDeprecationInfo, ModelDeprecationResponse};
-
-#[must_use]
-pub fn collect_from_specs(
-    specs: &[DeploymentSpec],
-    catalog: &dyn DeprecationCatalog,
-    clock: &dyn UtcClock,
-    warn_within_days: i32,
-    today: Option<NaiveDate>,
-) -> ModelDeprecationResponse {
-    let deployments: Vec<Deployment<'_>> = specs.iter().map(Deployment::from_spec).collect();
-    collect_model_deprecations(&deployments, catalog, clock, warn_within_days, today)
-}
 
 #[must_use]
 pub fn collect_model_deprecations(

@@ -55,12 +55,12 @@ def marker_date(kind: str, value: str) -> date | None:
     return None
 
 
-def tagged_value(value: JsonValue) -> JsonValue | date | datetime:
-    match value:
-        case {"kind": str() as kind, "value": str() as value}:
-            return marker_date(kind, value)
+def tagged_value(raw: JsonValue) -> JsonValue | date | datetime:
+    match raw:
+        case {"kind": str() as kind, "value": str() as marker}:
+            return marker_date(kind, marker)
         case None | bool() | int() | float() | str() | list() | dict():
-            return value
+            return raw
 
 
 def replaced_meta(raw: JsonValue) -> Meta:
@@ -117,7 +117,6 @@ def run(input_value: Input) -> JsonValue:
         storage: RouterStorage = router
         storage.model_list = [stored_row(row) for row in rows]
         llm_router = router
-    original_datetime = deprecation.datetime
     FrozenDatetime.instant = FrozenDatetime.fromisoformat(input_value["now"])
     object.__setattr__(deprecation, "datetime", FrozenDatetime)
     litellm.model_cost = cost_entries(input_value["model_cost"])
@@ -133,5 +132,5 @@ def run(input_value: Input) -> JsonValue:
             "message": message,
         }
     finally:
-        object.__setattr__(deprecation, "datetime", original_datetime)
+        object.__setattr__(deprecation, "datetime", datetime)
         litellm.model_cost = EMPTY_COST

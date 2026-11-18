@@ -1,14 +1,15 @@
 use betterlite_models::model_registration::JsonObject;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
-use crate::model_deprecation::report::{classify, collect_from_specs};
+use crate::model_deprecation::report::classify;
 use crate::model_deprecation::types::{
     DEFAULT_CHECK_INTERVAL_SECONDS, DEFAULT_DEPRECATION_WARN_DAYS, DEPRECATION_IDLE_POLL_SECONDS,
     DeprecationStatus, ModelDeprecationInfo, ModelDeprecationResponse,
 };
 
 use super::support::{
-    FixedClock, TestCatalog, calendar_date, capture_debug_logs, moment, names, object, spec, text,
+    FixedClock, TestCatalog, calendar_date, capture_debug_logs, moment, names, object, report,
+    spec, text,
 };
 
 fn dated(name: &str, model: &str, date: &str) -> DeploymentSpec {
@@ -29,7 +30,7 @@ fn already_deprecated() {
         dated("thirty-days-ago", "raw/one", "2026-04-01"),
         dated("yesterday", "raw/two", "2026-04-30"),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -54,7 +55,7 @@ fn invalid_date() {
         dated("bad-text", "raw/b", "not a date"),
         dated("dated", "raw/c", "2026-05-10"),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -74,7 +75,7 @@ fn upcoming_boundary() {
         dated("today", "raw/c", "2026-05-01"),
         dated("yesterday", "raw/d", "2026-04-30"),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -108,7 +109,7 @@ fn deduplicated_model() {
         spec("alpha", "raw/second", second),
         spec("alpha", "raw/later", later),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -136,7 +137,7 @@ fn same_name_two_dates() {
         dated("alpha", "raw/one", "2026-05-20"),
         dated("alpha", "raw/two", "2026-05-10"),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -161,7 +162,7 @@ fn bucket_tie_order() {
         dated("alpha", "raw/a", "2026-05-10"),
         dated("mike", "raw/m", "2026-05-10"),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -173,7 +174,7 @@ fn bucket_tie_order() {
 
 #[test]
 fn no_deployments() {
-    let response = collect_from_specs(
+    let response = report(
         &[],
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -190,7 +191,7 @@ fn no_deployments() {
 #[test]
 fn explicit_today_clock() {
     let specs = vec![dated("alpha", "raw/a", "2026-05-20")];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -201,7 +202,7 @@ fn explicit_today_clock() {
     assert_eq!(response.deprecated[0].days_until_deprecation, -12);
     assert_eq!(response.deprecated[0].status, DeprecationStatus::Deprecated);
 
-    let implicit = collect_from_specs(
+    let implicit = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -215,7 +216,7 @@ fn explicit_today_clock() {
 fn today_from_clock() {
     let specs = vec![dated("alpha", "raw/a", "2026-05-01")];
     let clock = FixedClock(moment("2026-05-01T23:59:59Z"));
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &clock,
@@ -232,7 +233,7 @@ fn negative_window() {
         dated("today", "raw/a", "2026-05-01"),
         dated("yesterday", "raw/b", "2026-04-30"),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -252,7 +253,7 @@ fn missing_public_name() {
         spec("alpha", "raw/a", info.clone()),
         spec("", "raw/b", info),
     ];
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),
@@ -272,7 +273,7 @@ fn debug_dedup_count() {
         spec("delta", "raw/e", JsonObject::new()),
     ];
     let (captured, guard) = capture_debug_logs();
-    let response = collect_from_specs(
+    let response = report(
         &specs,
         &TestCatalog::new(Vec::new()),
         &fixed_clock(),

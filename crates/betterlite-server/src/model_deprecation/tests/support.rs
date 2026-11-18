@@ -13,7 +13,9 @@ use tracing_subscriber::fmt::MakeWriter;
 
 use crate::model_deprecation::catalog::{CatalogDeprecation, DeprecationCatalog};
 use crate::model_deprecation::clock::UtcClock;
-use crate::model_deprecation::types::ModelDeprecationInfo;
+use crate::model_deprecation::report::collect_model_deprecations;
+use crate::model_deprecation::resolve::Deployment;
+use crate::model_deprecation::types::{ModelDeprecationInfo, ModelDeprecationResponse};
 
 pub(crate) fn text(value: &str) -> Json {
     Json::Text(value.to_owned())
@@ -52,6 +54,17 @@ pub(crate) fn spec(name: &str, model: &str, model_info: JsonObject) -> Deploymen
         String::new,
     )
     .unwrap()
+}
+
+pub(crate) fn report(
+    specs: &[DeploymentSpec],
+    catalog: &dyn DeprecationCatalog,
+    clock: &dyn UtcClock,
+    warn_within_days: i32,
+    today: Option<NaiveDate>,
+) -> ModelDeprecationResponse {
+    let deployments: Vec<Deployment<'_>> = specs.iter().map(Deployment::from_spec).collect();
+    collect_model_deprecations(&deployments, catalog, clock, warn_within_days, today)
 }
 
 pub(crate) struct TestCatalog {

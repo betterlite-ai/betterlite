@@ -8,12 +8,28 @@ pub fn decode_deprecation_date(text: &str) -> Option<NaiveDate> {
     let trimmed = text.trim_matches(|character: char| {
         character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
     });
-    match trimmed.len() {
-        7 => parse_basic_week(trimmed),
-        8 => parse_basic_calendar(trimmed)
-            .or_else(|| parse_extended_week(trimmed))
-            .or_else(|| parse_basic_week_day(trimmed)),
-        10 => parse_extended_calendar(trimmed).or_else(|| parse_extended_week_day(trimmed)),
+    match trimmed.as_bytes() {
+        &[y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1] | &[y0, y1, y2, y3, m0, m1, d0, d1] => {
+            NaiveDate::from_ymd_opt(
+                calendar_year(&[y0, y1, y2, y3])?,
+                number(&[m0, m1])?,
+                number(&[d0, d1])?,
+            )
+        }
+        &[y0, y1, y2, y3, b'-', b'W', w0, w1, b'-', d] | &[y0, y1, y2, y3, b'W', w0, w1, d] => {
+            NaiveDate::from_isoywd_opt(
+                calendar_year(&[y0, y1, y2, y3])?,
+                number(&[w0, w1])?,
+                iso_weekday(decimal(d)?)?,
+            )
+        }
+        &[y0, y1, y2, y3, b'-', b'W', w0, w1] | &[y0, y1, y2, y3, b'W', w0, w1] => {
+            NaiveDate::from_isoywd_opt(
+                calendar_year(&[y0, y1, y2, y3])?,
+                number(&[w0, w1])?,
+                Weekday::Mon,
+            )
+        }
         _ => None,
     }
 }
@@ -63,72 +79,12 @@ const fn iso_weekday(iso: u32) -> Option<Weekday> {
     }
 }
 
-fn parse_extended_calendar(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 10] = text.as_bytes().try_into().ok()?;
-    let [y0, y1, y2, y3, b'-', m0, m1, b'-', d0, d1] = bytes;
-    NaiveDate::from_ymd_opt(
-        calendar_year(&[y0, y1, y2, y3])?,
-        number(&[m0, m1])?,
-        number(&[d0, d1])?,
-    )
-}
-
-fn parse_basic_calendar(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 8] = text.as_bytes().try_into().ok()?;
-    let [y0, y1, y2, y3, m0, m1, d0, d1] = bytes;
-    NaiveDate::from_ymd_opt(
-        calendar_year(&[y0, y1, y2, y3])?,
-        number(&[m0, m1])?,
-        number(&[d0, d1])?,
-    )
-}
-
-fn parse_extended_week_day(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 10] = text.as_bytes().try_into().ok()?;
-    let [y0, y1, y2, y3, b'-', b'W', w0, w1, b'-', d] = bytes;
-    NaiveDate::from_isoywd_opt(
-        calendar_year(&[y0, y1, y2, y3])?,
-        number(&[w0, w1])?,
-        iso_weekday(decimal(d)?)?,
-    )
-}
-
-fn parse_basic_week_day(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 8] = text.as_bytes().try_into().ok()?;
-    let [y0, y1, y2, y3, b'W', w0, w1, d] = bytes;
-    NaiveDate::from_isoywd_opt(
-        calendar_year(&[y0, y1, y2, y3])?,
-        number(&[w0, w1])?,
-        iso_weekday(decimal(d)?)?,
-    )
-}
-
-fn parse_extended_week(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 8] = text.as_bytes().try_into().ok()?;
-    let [y0, y1, y2, y3, b'-', b'W', w0, w1] = bytes;
-    NaiveDate::from_isoywd_opt(
-        calendar_year(&[y0, y1, y2, y3])?,
-        number(&[w0, w1])?,
-        Weekday::Mon,
-    )
-}
-
-fn parse_basic_week(text: &str) -> Option<NaiveDate> {
-    let bytes: [u8; 7] = text.as_bytes().try_into().ok()?;
-    let [y0, y1, y2, y3, b'W', w0, w1] = bytes;
-    NaiveDate::from_isoywd_opt(
-        calendar_year(&[y0, y1, y2, y3])?,
-        number(&[w0, w1])?,
-        Weekday::Mon,
-    )
-}
-
 #[must_use]
 pub fn decode_datetime_date(text: &str) -> Option<NaiveDate> {
-    match DateTime::parse_from_rfc3339(text) {
-        Ok(moment) => Some(moment.date_naive()),
-        Err(_) => NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S")
-            .ok()
-            .map(|moment| moment.date_naive()),
+    if let Ok(moment) = DateTime::parse_from_rfc3339(text) {
+        return Some(moment.date_naive());
     }
+    NaiveDateTime::parse_from_str(text, "%Y-%m-%dT%H:%M:%S")
+        .ok()
+        .map(|moment| moment.date_naive())
 }
