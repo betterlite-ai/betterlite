@@ -4,6 +4,7 @@ mod fixtures;
 mod support;
 
 mod error_attributes;
+mod expected_client_error;
 mod management_failure;
 mod management_success;
 mod post_call_failure;

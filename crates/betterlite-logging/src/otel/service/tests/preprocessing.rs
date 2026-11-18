@@ -37,6 +37,10 @@ use crate::otel::vocabulary::constants::attribute_keys::litellm;
     r#"{"metadata":{"litellm_received_at":1704067200.0},"litellm_params":{"first_api_call_start_time":1704067201.5}}"#,
     None
 )]
+#[case::zero_delay_is_kept(
+    r#"{"metadata":{"litellm_received_at":1704067200.0},"first_api_call_start_time":1704067200.0}"#,
+    Some(0.0)
+)]
 fn otel_legacy_service_callbacks_behavior_tests_behavior(
     #[case] container: &str,
     #[case] expected: Option<f64>,
