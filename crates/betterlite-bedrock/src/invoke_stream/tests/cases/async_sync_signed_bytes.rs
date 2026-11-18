@@ -81,10 +81,7 @@ fn posted(signed_json_body: Option<&[u8]>, supplied: Option<HandlerKind>, sync: 
         sync,
         None,
     );
-    let supplied_posts = match supplied_fixture {
-        Some(fixture) => fixture.recorded(),
-        None => Vec::new(),
-    };
+    let supplied_posts = supplied_fixture.map_or_else(Vec::new, |fixture| fixture.recorded());
     Posted {
         supplied: supplied_posts,
         default: default_fixture.recorded(),

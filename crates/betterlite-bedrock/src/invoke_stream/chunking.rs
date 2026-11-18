@@ -14,10 +14,10 @@ const MAX_CHUNK_SIZE: usize = 1024 * 1024;
 // aiter_bytes(chunk_size) hands the decoder fixed-size reads whatever the transport chunked; a fake stream never reads it.
 pub(super) fn apply(pending: PendingOpen, size: Option<u64>) -> PendingOpen {
     // A size beyond the address space keeps the transport's reads, which is what the chunker's flush would hand over anyway.
-    let size = size
+    let chunk_size = size
         .and_then(|raw| usize::try_from(raw).ok())
         .and_then(|raw| NonZeroUsize::new(raw.min(MAX_CHUNK_SIZE)));
-    let Some(size) = size else {
+    let Some(chunk_limit) = chunk_size else {
         return pending;
     };
     let PendingOpen { head, body } = pending;
@@ -25,7 +25,7 @@ pub(super) fn apply(pending: PendingOpen, size: Option<u64>) -> PendingOpen {
         head: StreamHead {
             status: head.status,
             headers: head.headers,
-            chunks: rechunk(head.chunks, size),
+            chunks: rechunk(head.chunks, chunk_limit),
         },
         body,
     }

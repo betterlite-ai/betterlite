@@ -100,12 +100,11 @@ impl Logs {
         Self(Mutex::new(Vec::new()))
     }
 
-    fn record(&self, details: &Json) -> Result<(), PrePostError> {
+    fn record(&self, details: &Json) {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(details.clone());
-        Ok(())
     }
 
     fn entries(&self) -> Vec<Json> {
@@ -282,7 +281,10 @@ pub(super) fn run(
     let deps = deps(supplied.map(shared), shared(default), &redactor);
     let logs = Logs::new();
     let sink = Quiet;
-    let logger = |details: &Json| logs.record(details);
+    let logger = |details: &Json| {
+        logs.record(details);
+        Ok::<(), PrePostError>(())
+    };
     let env = pre_post_env(&redactor, &sink, &logger);
     let mut state = logging_state(&redactor);
     state.stream_options = stream_options;
@@ -450,14 +452,15 @@ impl StreamLogging for Logging {
     fn started(&self, _at: StreamInstant) {}
 
     fn log_chunk(&self, _chunk: &StreamChunk, _cache_hit: bool) {
-        self.0.lock().unwrap_or_else(PoisonError::into_inner).chunks += 1;
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        state.chunks = state.chunks.saturating_add(1);
     }
 
     fn completed(&self, _chunks: &[StreamChunk]) -> StreamBuild {
-        self.0
+        let mut state = self.0
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .completions += 1;
+            .unwrap_or_else(PoisonError::into_inner);
+        state.completions = state.completions.saturating_add(1);
         StreamBuild::Empty
     }
 
@@ -521,11 +524,11 @@ fn shared(fixture: Arc<Fixture>) -> Arc<dyn StreamHandler> {
     fixture
 }
 
-pub(super) fn deps<'deps>(
+pub(super) fn deps(
     supplied: Option<Arc<dyn StreamHandler>>,
     default: Arc<dyn StreamHandler>,
-    redactor: &'deps Redactor,
-) -> StreamDeps<'deps> {
+    redactor: &Redactor,
+) -> StreamDeps<'_> {
     StreamDeps {
         supplied,
         default,
@@ -571,10 +574,8 @@ pub(super) fn contents(chunks: &[StreamChunk]) -> Vec<Option<String>> {
     chunks
         .iter()
         .map(|chunk| {
-            chunk
-                .choices
-                .first()
-                .and_then(|choice| choice.delta.content.clone())
+            let choice = chunk.choices.first()?;
+            choice.delta.content.clone()
         })
         .collect()
 }

@@ -146,8 +146,8 @@ where
 }
 
 // The provider error a decode failure carries: the message and status exception_type() reads off it.
-fn provider_failure(error: &InvokeSourceError) -> Option<(&str, u16)> {
-    let InvokeSourceError::Decode(source) = error else {
+fn provider_failure(source_error: &InvokeSourceError) -> Option<(&str, u16)> {
+    let InvokeSourceError::Decode(source) = source_error else {
         return None;
     };
     match source {
@@ -202,7 +202,7 @@ fn converse_stream(
             logprobs: None,
             extra: JsonObject::new(),
         }],
-        usage: usage.map(|usage| convert(&usage)).transpose()?,
+        usage: usage.map(|usage_value| convert(&usage_value)).transpose()?,
         provider_specific_fields: extra_object(Some(&provider_specific_fields))?,
         hidden_params: JsonObject::new(),
         extra: JsonObject::new(),

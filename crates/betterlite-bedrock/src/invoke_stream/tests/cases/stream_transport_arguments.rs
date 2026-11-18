@@ -133,7 +133,7 @@ fn fake_stream_reaches_b691() {
         contents(&opened.chunks).first(),
         Some(&Some(String::from("hello")))
     );
-    assert_eq!(fixture.recorded()[0].stream, false);
+    assert!(!fixture.recorded()[0].stream);
 }
 
 // stream_chunk_size is applied to the response bytes: a read error drops the frame it had buffered.

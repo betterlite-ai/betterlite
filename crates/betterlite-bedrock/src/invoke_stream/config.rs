@@ -101,8 +101,5 @@ where
     T: Serialize,
     U: DeserializeOwned,
 {
-    match serde_json::to_value(value) {
-        Ok(plain) => serde_json::from_value(plain).ok(),
-        Err(_) => None,
-    }
+    serde_json::to_value(value).map_or_else(|_| None, |plain| serde_json::from_value(plain).ok())
 }

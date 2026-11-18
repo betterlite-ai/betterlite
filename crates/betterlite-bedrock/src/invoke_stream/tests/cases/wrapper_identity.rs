@@ -131,10 +131,8 @@ fn blocking_chunks() {
         .chunks
         .iter()
         .map(|chunk| {
-            chunk
-                .choices
-                .first()
-                .and_then(|choice| choice.finish_reason.clone())
+            let choice = chunk.choices.first()?;
+            choice.finish_reason.clone()
         })
         .collect::<Vec<_>>();
     assert_eq!(reasons, vec![None, Some(String::from("stop"))]);
@@ -266,11 +264,11 @@ fn hidden_params() {
         Some("https://bedrock.example.com")
     );
     let additional = hidden.get("additional_headers");
-    let Some(JsonValue::Object(additional)) = additional else {
+    let Some(JsonValue::Object(additional_headers)) = additional else {
         panic!("the additional_headers object, not {additional:?}");
     };
     assert_eq!(
-        additional
+        additional_headers
             .get("llm_provider-x-amzn-requestid")
             .and_then(JsonValue::as_str),
         Some("req-1")
@@ -478,8 +476,8 @@ fn provider_errors_keep_the_bedrock_class() {
 }
 
 fn config_flags() {
-    assert!(HAS_CUSTOM_STREAM_WRAPPER);
-    assert!(!SUPPORTS_STREAM_PARAM_IN_BODY);
+    const { assert!(HAS_CUSTOM_STREAM_WRAPPER) };
+    const { assert!(!SUPPORTS_STREAM_PARAM_IN_BODY) };
 }
 
 fn assert_duration_millis(opened: &Opened, millis: u64) {

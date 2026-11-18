@@ -36,9 +36,9 @@ pub(super) fn record(
     started: &StreamInstant,
     ended: &StreamInstant,
 ) {
-    let begin = datetime(started);
-    let finish = datetime(ended);
-    if let (Some(begin), Some(finish)) = (begin, finish)
+    let start_time = datetime(started);
+    let end_time = datetime(ended);
+    if let (Some(begin), Some(finish)) = (start_time, end_time)
         && let Err(error) = record_call_duration(log.state, begin, finish)
     {
         // _set_duration_in_model_call_details catches its own errors, and the service call still follows.
