@@ -1,0 +1,9 @@
+task: B319
+deviations:
+  - what: The blocking pre-call check reads and counts only the router's in-memory tier and makes no io-token reservation, while LiteLLM's synchronous pre_call_check reads and increments Redis through the synchronous client and reserves itpm/otpm.
+    why: betterlite's Redis state tier is async-only, so a blocking facade cannot reach it without blocking the async runtime, and the reservation needs the request body the blocking facade does not carry. The async check is the production path and keeps both behaviors.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L160-L237
+  - what: The blocking success and failure callbacks count only the in-memory tier, while LiteLLM's log_success_event and log_failure_event use the synchronous cache calls that also write Redis.
+    why: Same async-only Redis tier as the pre-call facade; the async callbacks are the production path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pre_call_checks/model_rate_limit_check.py#L397-L447
+kept_bugs: []
