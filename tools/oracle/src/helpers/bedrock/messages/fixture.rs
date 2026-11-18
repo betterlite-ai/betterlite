@@ -200,7 +200,7 @@ pub(super) struct Session<'fixture> {
 }
 
 impl<'fixture> Session<'fixture> {
-    fn new(fixture: &'fixture Fixture) -> Result<Self, FixtureError> {
+    pub(super) fn new(fixture: &'fixture Fixture) -> Result<Self, FixtureError> {
         Ok(Self {
             fixture,
             resolution: fixture.resolution(),
@@ -211,7 +211,7 @@ impl<'fixture> Session<'fixture> {
         })
     }
 
-    fn transform(
+    pub(super) fn transform(
         &mut self,
         call: &TransformCall,
         drop_params: bool,
