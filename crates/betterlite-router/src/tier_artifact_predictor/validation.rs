@@ -68,13 +68,6 @@ fn parse_statistic<S: DeclaredStatistic>(
     ))
 }
 
-fn duplicate_statistic(field: &str, tier: TierNumber) -> PredictorError {
-    PredictorError::DuplicateStatistic {
-        field: field.to_owned(),
-        tier: tier.built_in().name(),
-    }
-}
-
 fn statistics_by_key<S, K, F>(
     statistics: &[S],
     list: &str,
@@ -91,7 +84,10 @@ where
         let key = key(statistic, &field)?;
         let (tier, value) = parse_statistic(statistic, &field)?;
         if by_key.entry(key).or_default().insert(tier, value).is_some() {
-            return Err(duplicate_statistic(&field, tier));
+            return Err(PredictorError::DuplicateStatistic {
+                field,
+                tier: tier.built_in().name(),
+            });
         }
     }
     Ok(by_key)
@@ -103,7 +99,10 @@ fn global_statistics(statistics: &[GlobalStatistic]) -> Result<GlobalStatistics,
         let field = format!("global_statistics[{index}]");
         let (tier, value) = parse_statistic(statistic, &field)?;
         if by_tier.insert(tier, value).is_some() {
-            return Err(duplicate_statistic(&field, tier));
+            return Err(PredictorError::DuplicateStatistic {
+                field,
+                tier: tier.built_in().name(),
+            });
         }
     }
     match (
