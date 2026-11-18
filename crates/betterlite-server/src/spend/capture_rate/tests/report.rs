@@ -147,6 +147,29 @@ async fn a_report_covers_yesterday_and_the_preceding_lookback_days() {
         publisher.take(),
         vec![(SpendCaptureProvider::Openai, Some(dec("0.45")))]
     );
+}
+
+#[tokio::test]
+async fn a_below_threshold_report_alerts_after_the_publication() {
+    let timeline = Arc::new(Timeline::default());
+    let credentials = FakeCredentials {
+        key: Some(secret()),
+    };
+    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-16", "100"))]);
+    let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-16", "45")]))]);
+    let publisher = RecordingPublisher::new(Arc::clone(&timeline));
+    let alert = RecordingAlert::new(Arc::clone(&timeline));
+    let job = CaptureRateJob {
+        spend: &spend,
+        http_get: &http,
+        credentials: &credentials,
+        publisher: &publisher,
+        alert: &alert,
+    };
+    let settings = settings(&[SpendCaptureProvider::Openai], "0.9", 3, &[]);
+    run_check(&job, &settings, Some(date("2026-11-18")))
+        .await
+        .unwrap();
     assert_eq!(
         alert.take(),
         vec![
@@ -163,6 +186,29 @@ async fn a_report_covers_yesterday_and_the_preceding_lookback_days() {
     );
     assert_eq!(calls[0].start_date, date("2026-11-15"));
     assert_eq!(calls[0].end_date, date("2026-11-17"));
+}
+
+#[tokio::test]
+async fn the_billing_request_carries_the_window_and_project_scope() {
+    let timeline = Arc::new(Timeline::default());
+    let credentials = FakeCredentials {
+        key: Some(secret()),
+    };
+    let http = FakeHttpGet::with(vec![ok_page(page("2026-11-16", "100"))]);
+    let spend = FakeSpend::with(vec![Ok(spend_days(&[("2026-11-16", "45")]))]);
+    let publisher = RecordingPublisher::new(Arc::clone(&timeline));
+    let alert = RecordingAlert::new(Arc::clone(&timeline));
+    let job = CaptureRateJob {
+        spend: &spend,
+        http_get: &http,
+        credentials: &credentials,
+        publisher: &publisher,
+        alert: &alert,
+    };
+    let settings = settings(&[SpendCaptureProvider::Openai], "0.9", 3, &["proj_a"]);
+    run_check(&job, &settings, Some(date("2026-11-18")))
+        .await
+        .unwrap();
     let requests = http.take_requests();
     assert_eq!(requests.len(), 1);
     assert!(
