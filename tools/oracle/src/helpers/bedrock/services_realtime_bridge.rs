@@ -90,7 +90,7 @@ struct Runs {
     runs: Vec<BridgeView>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 struct BridgeView {
     outcome: &'static str,
     error: Option<&'static str>,
@@ -101,17 +101,6 @@ struct BridgeView {
     scope: Option<ScopeView>,
     state: Option<RealtimeResponseTransformInput>,
     logged: Vec<Json>,
-}
-
-impl BridgeView {
-    // The pump's outcome with nothing observed yet, for the direction that fills only its own side
-    fn from_outcome((outcome, error): (&'static str, Option<&'static str>)) -> Self {
-        Self {
-            outcome,
-            error,
-            ..Self::default()
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]

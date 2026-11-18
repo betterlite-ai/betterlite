@@ -31,19 +31,19 @@ fn push_sent<T>(sent: &Mutex<Vec<T>>, failures: &[usize], value: T) -> Option<us
     failures.contains(&index).then_some(index)
 }
 
-// Copies what a scripted side has received so far, so a later failure keeps the earlier values
-fn read<T: Clone>(values: &Mutex<Vec<T>>) -> Vec<T> {
-    let values = values.lock().unwrap_or_else(PoisonError::into_inner);
-    values.clone()
-}
-
 impl ClientState {
     pub(super) fn sent(&self) -> Vec<String> {
-        read(&self.sent)
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub(super) fn closes(&self) -> Vec<(u16, Option<String>)> {
-        read(&self.closes)
+        self.closes
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 
@@ -108,7 +108,10 @@ pub(super) struct StreamState {
 
 impl StreamState {
     pub(super) fn sent(&self) -> Vec<Json> {
-        read(&self.sent)
+        self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 }
 

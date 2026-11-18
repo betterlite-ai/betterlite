@@ -70,8 +70,9 @@ enum PumpResult<'a> {
     Provider(&'a Result<ForwardEnd, ProviderForwardError<io::Error>>),
 }
 
-fn pump_outcome(result: PumpResult<'_>) -> (&'static str, Option<&'static str>) {
-    match result {
+// The pump's outcome with nothing observed yet, for the direction that fills only its own side
+fn pump_outcome(result: PumpResult<'_>) -> BridgeView {
+    let (outcome, error) = match result {
         PumpResult::Client(result) => match result {
             Ok(ForwardEnd::Ended) => ("ended", None),
             Ok(ForwardEnd::Cancelled) => ("cancelled", None),
@@ -87,6 +88,17 @@ fn pump_outcome(result: PumpResult<'_>) -> (&'static str, Option<&'static str>) 
             Err(ProviderForwardError::Utf8 { .. }) => ("error", Some("utf8")),
             Err(ProviderForwardError::Transform(_)) => ("error", Some("transform")),
         },
+    };
+    BridgeView {
+        outcome,
+        error,
+        sent_to_bedrock: Vec::new(),
+        sent_to_client: Vec::new(),
+        closed_input: false,
+        closed_client: None,
+        scope: None,
+        state: None,
+        logged: Vec::new(),
     }
 }
 
@@ -172,7 +184,7 @@ impl Harness<'_> {
         scope: &EventScope,
         result: ClientRun,
     ) -> Result<BridgeView, Box<HelperError>> {
-        let mut view = BridgeView::from_outcome(pump_outcome(PumpResult::Client(&result)));
+        let mut view = pump_outcome(PumpResult::Client(&result));
         view.sent_to_bedrock = self.wire.sent();
         view.sent_to_client = parse_sent(self.client.sent())?;
         view.closed_input = self.wire.closed.load(Ordering::SeqCst);
@@ -186,21 +198,20 @@ impl Harness<'_> {
         log: CollectedLog,
         result: ProviderRun,
     ) -> Result<BridgeView, Box<HelperError>> {
-        let mut view = BridgeView::from_outcome(pump_outcome(PumpResult::Provider(&result)));
+        let mut view = pump_outcome(PumpResult::Provider(&result));
         view.sent_to_client = parse_sent(self.client.sent())?;
-        view.closed_client = self.closed_client();
+        // The provider pump closes the client at most once, and only on a normal provider end
+        view.closed_client = self
+            .client
+            .closes()
+            .first()
+            .map(|(code, reason)| ClosedClient {
+                code: *code,
+                reason: reason.clone(),
+            });
         view.state = Some(state);
         view.logged = log.events;
         Ok(view)
-    }
-
-    // The provider pump closes the client at most once, and only on a normal provider end
-    fn closed_client(&self) -> Option<ClosedClient> {
-        let closes = self.client.closes();
-        closes.first().map(|(code, reason)| ClosedClient {
-            code: *code,
-            reason: reason.clone(),
-        })
     }
 }
 
