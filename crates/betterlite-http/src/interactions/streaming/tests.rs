@@ -1,10 +1,12 @@
 #![cfg(test)]
 
-use std::io::{Read as _, Write as _};
-use std::net::{SocketAddr, TcpStream};
+use std::io::Write as _;
+use std::net::{SocketAddr, TcpListener};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use betterlite_http_fixture::request::read_request;
+use betterlite_http_fixture::server::{Serving, serve};
 use reqwest::blocking::Client as BlockingClient;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use reqwest::blocking::Response as BlockingResponse;
@@ -19,12 +21,12 @@ use crate::interactions::streaming::asynchronous::create_async_iterator;
 use crate::interactions::streaming::synchronous::create_sync_iterator;
 use crate::proxy::base_builder;
 
-type Sent = (base::Serving, BlockingClient, BlockingResponse);
+type Sent = (Serving, BlockingClient, BlockingResponse);
 
-type SentAsync = (base::Serving, Client, Response);
+type SentAsync = (Serving, Client, Response);
 
-fn answering(status: &str, headers: &[(&str, &str)], body: &str) -> (base::Serving, String) {
-    let serving = base::serve_once(base::reply(status, headers, body), None);
+fn answering(status: &str, headers: &[(&str, &str)], body: &str) -> (Serving, String) {
+    let serving = serve(base::reply(status, headers, body), Duration::ZERO).unwrap();
     let url = format!("http://{}", serving.address);
     (serving, url)
 }
@@ -45,7 +47,7 @@ async fn sent_async(status: &str, headers: &[(&str, &str)], body: &str) -> SentA
 
 // a 500 head whose body never completes: the fixture reads the request, writes part of the body, then closes the socket or holds it open
 fn broken_body(hold: Option<Duration>) -> SocketAddr {
-    let listener = base::listener();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     thread::Builder::new()
         .spawn(move || {
@@ -53,7 +55,7 @@ fn broken_body(hold: Option<Duration>) -> SocketAddr {
             stream
                 .set_read_timeout(Some(Duration::from_secs(5)))
                 .unwrap();
-            read_request(&mut stream);
+            read_request(&mut stream).unwrap();
             stream
                 .write_all(
                     b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 10\r\nconnection: close\r\n\r\nabc",
@@ -65,15 +67,6 @@ fn broken_body(hold: Option<Duration>) -> SocketAddr {
         })
         .unwrap();
     address
-}
-
-fn read_request(stream: &mut TcpStream) {
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte).unwrap();
-        received.push(byte[0]);
-    }
 }
 
 fn sent_broken(
@@ -106,7 +99,7 @@ fn create_sync_iterator_accepts_a_2xx_status(
 
     assert_eq!(seen, body);
     assert!(fixture.calls().contains(&format!("sync_stream|{code}|m")));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -125,7 +118,7 @@ fn create_sync_iterator_refuses_a_status_outside_2xx(#[case] status: &str, #[cas
         "{calls:?}"
     );
     assert!(calls.iter().all(|call| !call.starts_with("sync_stream|")));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -141,7 +134,7 @@ fn create_sync_iterator_leaves_a_config_error_as_a_provider_error() {
 
     assert_eq!(provider_error(error), FixtureError::Stream);
     assert!(logging.model_call_details.contains_key("streamed"));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -196,7 +189,7 @@ async fn create_async_iterator_accepts_a_2xx_status(#[case] status: &str, #[case
     // the factory leaves the body unread, so the iterator can still read it here
     assert_eq!(seen.response.text().await.unwrap(), "hello");
     assert!(fixture.calls().contains(&format!("async_stream|{code}|m")));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -220,7 +213,7 @@ async fn create_async_iterator_refuses_a_status_outside_2xx(
         "{calls:?}"
     );
     assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
@@ -236,7 +229,7 @@ async fn create_async_iterator_leaves_a_config_error_as_a_provider_error() {
 
     assert_eq!(provider_error(error.await), FixtureError::Stream);
     assert!(logging.model_call_details.contains_key("streamed"));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
