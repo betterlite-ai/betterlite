@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -7,6 +5,7 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
+use crate::types::RoutingStrategy;
 
 mod tests;
 
@@ -25,6 +24,8 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawRouter {
     #[serde(default)]
+    routing_strategy: Option<RoutingStrategy>,
+    #[serde(default)]
     routing_strategy_args: Option<RawArgs>,
 }
 
@@ -36,7 +37,7 @@ struct RawArgs {
     ttft_percentile: Option<RawNumber>,
 }
 
-// RoutingArgs.ttl: a number is the ttl and any other value is a load error that names the field
+// RoutingArgs.ttl is a float, and any other shape is an error that names the field
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum RawTtl {
@@ -62,6 +63,10 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        // Router._build_strategy_selector reads these arguments only for the latency handler
+        if self.router_settings.routing_strategy != Some(RoutingStrategy::LatencyBasedRouting) {
+            return Ok(Box::default());
+        }
         let Some(args) = self.router_settings.routing_strategy_args else {
             return Ok(Box::default());
         };
@@ -74,8 +79,7 @@ impl Section for Raw {
                 });
             }
             Some(RawTtl::Number(number)) => {
-                let seconds = resolve_number(Some(number), TTL_PATH, lookup, parse_ttl)?;
-                seconds.map(|seconds| Duration::from_secs(seconds).as_secs_f64())
+                resolve_number(Some(number), TTL_PATH, lookup, parse_float)?
             }
         };
         let buffer = resolve_number(args.lowest_latency_buffer, BUFFER_PATH, lookup, parse_float)?;
@@ -97,15 +101,6 @@ impl Section for Raw {
             ttft_percentile: percentile,
         }))
     }
-}
-
-// the shared routing_strategy_args.ttl is whole seconds, the same shape the v2 usage window reads it in
-fn parse_ttl(text: &str, path: &str) -> Result<u64, ConfigError> {
-    text.parse::<u64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        })
 }
 
 // pydantic's int from a number: a whole float is the integer and a fractional part is an error
