@@ -300,56 +300,70 @@ fn timeout_message_uses_python_general_format(#[case] value: f64, #[case] expect
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancellation_resistant_lookup_returns_deadline() {
     let tasks = TaskTracker::new();
+    let blocking = TaskTracker::new();
     let tracker = stall_tracker();
     let (release, blocker) = std::sync::mpsc::sync_channel::<()>(1);
     let finished = Arc::new(AtomicBool::new(false));
     let lookup_finished = Arc::clone(&finished);
-    let lookup = async move {
+    let join = blocking.spawn_blocking(move || {
         blocker.recv().expect("the test releases the lookup");
         lookup_finished.store(true, Ordering::SeqCst);
+    });
+    let lookup = async move {
+        join.await.expect("the blocking lookup joins");
         Ok::<_, DbLookupError>(7)
     };
     let lookup_request = request("slow", Some(0.02), 10.0, &tracker);
-    let error = bounded_db_lookup(lookup, lookup_request, &tasks)
-        .await
-        .expect_err("the blocked lookup cannot answer in time");
-    assert_deadline(&error, "slow", 0.02);
-    assert!(!finished.load(Ordering::SeqCst));
+    let result = bounded_db_lookup(lookup, lookup_request, &tasks).await;
+    let answered_early = finished.load(Ordering::SeqCst);
     release.send(()).expect("the lookup is still waiting");
-    drain(&tasks).await;
+    blocking.close();
+    blocking.wait().await;
+    assert!(!answered_early, "the blocked lookup cannot answer in time");
+    let error = result.expect_err("the blocked lookup cannot answer in time");
+    assert_deadline(&error, "slow", 0.02);
     assert!(finished.load(Ordering::SeqCst));
+    drain(&tasks).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn abandoned_failure_consumed() {
     let tasks = TaskTracker::new();
+    let blocking = TaskTracker::new();
     let tracker = fake_tracker();
     let (release, blocker) = std::sync::mpsc::sync_channel::<()>(1);
     let finished = Arc::new(AtomicBool::new(false));
     let lookup_finished = Arc::clone(&finished);
-    let lookup = async move {
+    let join = blocking.spawn_blocking(move || {
         blocker.recv().expect("the test releases the lookup");
         lookup_finished.store(true, Ordering::SeqCst);
+    });
+    let lookup = async move {
+        join.await.expect("the blocking lookup joins");
         Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
             ErrorType::Other,
             "the abandoned lookup failed",
         )))
     };
     let lookup_request = request("slow", Some(0.02), 10.0, &tracker);
-    let error = bounded_db_lookup(lookup, lookup_request, &tasks)
-        .await
-        .expect_err("the abandoned lookup cannot answer in time");
-    assert_deadline(&error, "slow", 0.02);
+    let result = bounded_db_lookup(lookup, lookup_request, &tasks).await;
     let first_hit = *tracker
         .last_hit
         .lock()
         .expect("the stall tracker is not poisoned");
-    assert!(first_hit.is_some());
-    assert!(!finished.load(Ordering::SeqCst));
+    let answered_early = finished.load(Ordering::SeqCst);
     tracker.clock.advance(Duration::from_secs(1));
     release.send(()).expect("the lookup is still waiting");
-    drain(&tasks).await;
+    blocking.close();
+    blocking.wait().await;
+    let error = result.expect_err("the abandoned lookup cannot answer in time");
+    assert_deadline(&error, "slow", 0.02);
+    assert!(
+        !answered_early,
+        "the abandoned lookup cannot answer in time"
+    );
     assert!(finished.load(Ordering::SeqCst));
+    assert!(first_hit.is_some());
     assert_eq!(
         *tracker
             .last_hit
@@ -357,6 +371,7 @@ async fn abandoned_failure_consumed() {
             .expect("the stall tracker is not poisoned"),
         first_hit
     );
+    drain(&tasks).await;
 }
 
 #[tokio::test(start_paused = true)]
