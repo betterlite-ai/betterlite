@@ -137,14 +137,14 @@ async fn server(listener: TcpListener, answer: &'static str) -> (Value, String) 
         })
         .unwrap();
     let body: Value = serde_json::from_slice(&input[end..end + length]).unwrap();
-    let (content_type, answer) = if body.get("stream") == Some(&Value::Bool(true)) {
+    let (content_type, response_body) = if body.get("stream") == Some(&Value::Bool(true)) {
         ("text/event-stream", format!("data: {answer}\n\n"))
     } else {
         ("application/json", answer.to_owned())
     };
     let reply = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
-        answer.len()
+        "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{response_body}",
+        response_body.len()
     );
     socket.write_all(reply.as_bytes()).await.unwrap();
     (body, key)
