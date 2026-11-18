@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::credentials::CredentialError;
@@ -118,6 +119,19 @@ fn dataforseo_search_settings_load_the_password() {
         settings.password.as_ref().map(ExposeSecret::expose_secret),
         Some("secret")
     );
+}
+
+#[test]
+fn dataforseo_settings_answer_the_guard_only_for_its_own_names() {
+    let settings = pair().settings;
+    assert_eq!(settings.lookup("DATAFORSEO_LOGIN").as_deref(), Some("user"));
+    assert_eq!(
+        settings.lookup("DATAFORSEO_API_BASE").as_deref(),
+        Some(DATAFORSEO_API_BASE)
+    );
+    assert_eq!(settings.lookup("DATAFORSEO_PASSWORD"), None);
+    let login_only = config(&[("DATAFORSEO_LOGIN", "user")]).settings;
+    assert_eq!(login_only.lookup("DATAFORSEO_LOGIN"), None);
 }
 
 #[test]
@@ -510,6 +524,11 @@ fn dataforseo_request_is_a_one_element_task_array() {
     "\"q\"",
     r#"{"country": "France", "location_code": 2840}"#,
     r#"[{"keyword": "q", "location_name": "France", "language_code": "en", "location_code": 2840}]"#
+)]
+#[case::mapped_location_name_wins(
+    "\"q\"",
+    r#"{"country": "France", "location_name": "Germany"}"#,
+    r#"[{"keyword": "q", "location_name": "France", "language_code": "en"}]"#
 )]
 #[case::caller_location_name(
     "\"q\"",
