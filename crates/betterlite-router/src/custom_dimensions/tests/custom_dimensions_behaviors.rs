@@ -35,7 +35,7 @@ use crate::custom_dimensions::{ClassifierType, DimensionsError, validate};
     vec![config("domain", 0.5, &[], &["gamma"], "match_count")],
     "hybrid",
     weights(&[]),
-    Ok(2)
+    Ok(6)
 )]
 #[case::duplicate_names_after_case_folding(
     vec![named("Domain"), named("domain")],
@@ -131,7 +131,7 @@ fn every_classifier_type_parses_to_its_name(
 fn a_validated_dimension_keeps_its_fields_and_mode() {
     let declared = [config("domain", 0.8, &["alpha"], &["gamma"], "match_count")];
     let validated = validate(&declared, "heuristic", &BTreeMap::new()).unwrap();
-    assert_eq!(validated.work, 2);
+    assert_eq!(validated.work, 6);
     assert_eq!(
         validated.dimensions,
         [CustomDimension {
