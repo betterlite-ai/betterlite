@@ -10,29 +10,27 @@ use crate::api::realtime_sender::RealtimeSender;
 
 use super::{RealtimeGuardrails, UnitFuture};
 
-impl<Config, CallbackError> RealtimeGuardrails<'_, Config, CallbackError>
+// B1110's send boundary: a guardrail frame gets the same provider transform as a client frame
+pub(super) fn send_backend_text<'call, Config, CallbackError>(
+    runner: &'call mut RealtimeGuardrails<'_, Config, CallbackError>,
+    text: &'call str,
+) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
     CallbackError: Error + 'static,
 {
-    // B1110's send boundary: a guardrail frame gets the same provider transform as a client frame
-    pub(super) fn send_backend_text<'call>(
-        &'call mut self,
-        text: &'call str,
-    ) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            let guardrails: &[&dyn RealtimeGuardrailCallback<Error = CallbackError>] = &[];
-            let mut sender = RealtimeSender {
-                state: &mut *self.state,
-                provider: self.provider,
-                guardrails,
-            };
-            sender
-                .send_to_backend(text)
-                .await
-                .map_err(RealtimeGuardrailsError::Send)?;
-            Ok(())
-        }
-        .boxed_local()
+    async move {
+        let guardrails: &[&dyn RealtimeGuardrailCallback<Error = CallbackError>] = &[];
+        let mut sender = RealtimeSender {
+            state: &mut *runner.state,
+            provider: runner.provider,
+            guardrails,
+        };
+        sender
+            .send_to_backend(text)
+            .await
+            .map_err(RealtimeGuardrailsError::Send)?;
+        Ok(())
     }
+    .boxed_local()
 }

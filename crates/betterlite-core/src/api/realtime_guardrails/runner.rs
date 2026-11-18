@@ -154,9 +154,9 @@ where
                     let policy = guardrail.policy();
                     let message =
                         message::violation_message(&violation, policy.violation_message.as_deref());
-                    self.send_block_frames(&message, pre_block_backend_message)
+                    block::send_block_frames(&mut *self, &message, pre_block_backend_message)
                         .await?;
-                    self.finish_block(policy, transcript).await?;
+                    finish::finish_block(self, policy, transcript).await?;
                     Ok(true)
                 }
             }

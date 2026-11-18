@@ -40,28 +40,26 @@ fn block_steps(
     Ok(steps)
 }
 
-impl<Config, CallbackError> RealtimeGuardrails<'_, Config, CallbackError>
+// The frame order: the caller's protocol frame first, the cancellation, the client notice, then the spoken message and a fresh response
+pub(super) fn send_block_frames<'call, Config, CallbackError>(
+    runner: &'call mut RealtimeGuardrails<'_, Config, CallbackError>,
+    message: &'call Json,
+    pre_block_backend_message: Option<&'call str>,
+) -> UnitFuture<'call, Config::Error, CallbackError>
 where
     Config: BaseRealtimeConfig,
     CallbackError: Error + 'static,
 {
-    // The frame order: the caller's protocol frame first, the cancellation, the client notice, then the spoken message and a fresh response
-    pub(super) fn send_block_frames<'call>(
-        &'call mut self,
-        message: &'call Json,
-        pre_block_backend_message: Option<&'call str>,
-    ) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            let steps = block_steps(message, pre_block_backend_message)
-                .map_err(RealtimeGuardrailsError::Encode)?;
-            for step in steps {
-                match step {
-                    BlockStep::Backend(text) => self.send_backend_text(&text).await?,
-                    BlockStep::Client => self.send_client_notice(message).await?,
-                }
+    async move {
+        let steps = block_steps(message, pre_block_backend_message)
+            .map_err(RealtimeGuardrailsError::Encode)?;
+        for step in steps {
+            match step {
+                BlockStep::Backend(text) => backend::send_backend_text(&mut *runner, &text).await?,
+                BlockStep::Client => notice::send_client_notice(&mut *runner, message).await?,
             }
-            Ok(())
         }
-        .boxed_local()
+        Ok(())
     }
+    .boxed_local()
 }
