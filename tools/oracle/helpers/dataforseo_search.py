@@ -131,7 +131,7 @@ def validate_answer(search: SearchConfig, call: ValidateCall) -> JsonValue:
         )
     except (TypeError, ValueError):
         return failure()
-    answer: dict[str, JsonValue] = {"ok": True, "value": validated}
+    answer: dict[str, JsonValue] = {"ok": True, "value": JSON.validate_python(validated)}
     return answer
 
 
