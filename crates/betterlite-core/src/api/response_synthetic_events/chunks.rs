@@ -1,3 +1,5 @@
+use std::io;
+
 use super::error::SyntheticEventsError;
 
 pub const MAX_SYNTHETIC_EVENTS: usize = 1_000_000;
@@ -12,7 +14,11 @@ pub struct EventBudget {
 }
 
 impl EventBudget {
-    pub fn charge(&mut self, events: usize, bytes: usize) -> Result<(), SyntheticEventsError> {
+    pub const fn charge(
+        &mut self,
+        events: usize,
+        bytes: usize,
+    ) -> Result<(), SyntheticEventsError> {
         self.events = self.events.saturating_add(events);
         self.bytes = self.bytes.saturating_add(bytes);
         if self.events > MAX_SYNTHETIC_EVENTS || self.bytes > MAX_SYNTHETIC_BYTES {
@@ -50,15 +56,18 @@ pub fn delta_chunks(
 #[derive(Default)]
 struct ByteCount(usize);
 
-impl std::io::Write for ByteCount {
-    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+impl io::Write for ByteCount {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         self.0 = self.0.saturating_add(data.len());
         Ok(data.len())
     }
 }
 
 #[must_use]
-pub fn payload_bytes<T: serde::Serialize>(value: &T) -> usize {
+pub fn payload_bytes<T>(value: &T) -> usize
+where
+    T: serde::Serialize,
+{
     let mut count = ByteCount::default();
     if serde_json::to_writer(&mut count, value).is_err() {
         // an unmeasurable payload must overcharge the budget, never slip under it

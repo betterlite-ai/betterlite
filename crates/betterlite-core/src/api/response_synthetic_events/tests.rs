@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::mem;
 use std::sync::{Arc, Mutex};
 
 use betterlite_models::decisions::Json;
@@ -11,6 +12,8 @@ use betterlite_openai::api::responses_event_records::records::{
 };
 use betterlite_openai::api::responses_objects::{ResponseApiUsage, ResponsesApiResponse};
 use rust_decimal::Decimal;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Subscriber};
@@ -41,7 +44,7 @@ struct Capture(Arc<Mutex<Vec<String>>>);
 
 impl Capture {
     fn messages(&self) -> Vec<String> {
-        std::mem::take(&mut *self.0.lock().unwrap())
+        mem::take(&mut *self.0.lock().unwrap())
     }
 }
 
@@ -83,7 +86,10 @@ where
     (value, captured.messages())
 }
 
-fn parse<T: serde::de::DeserializeOwned>(text: &str) -> T {
+fn parse<T>(text: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(text).unwrap()
 }
 
@@ -101,7 +107,10 @@ fn response(output: &str) -> ResponsesApiResponse {
     response_with(output, "")
 }
 
-fn to_json<T: serde::Serialize>(value: &T) -> Json {
+fn to_json<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
 }
 
@@ -114,49 +123,53 @@ fn events_json(events: &[ResponsesAPIStreamingResponse]) -> Vec<Json> {
     }
 }
 
-fn field<'a>(value: &'a Json, key: &str) -> &'a Json {
+fn field<'value>(value: &'value Json, key: &str) -> &'value Json {
     match value {
         Json::Object(fields) => fields.get(key).unwrap_or(&Json::Null),
-        _ => &Json::Null,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &Json::Null,
     }
 }
 
-fn at<'a>(value: &'a Json, path: &[&str]) -> &'a Json {
+fn at<'value>(value: &'value Json, path: &[&str]) -> &'value Json {
     path.iter().fold(value, |current, key| field(current, key))
 }
 
 fn item_at(value: &Json, index: usize) -> &Json {
     match value {
         Json::List(items) => items.get(index).unwrap_or(&Json::Null),
-        _ => &Json::Null,
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            &Json::Null
+        }
     }
 }
 
 fn kind(value: &Json) -> &str {
     match field(value, "type") {
         Json::Text(text) => text,
-        _ => "",
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => "",
     }
 }
 
 fn text(value: &Json) -> &str {
     match value {
         Json::Text(text) => text,
-        _ => "",
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => "",
     }
 }
 
 fn integer(value: &Json) -> i64 {
     match value {
         Json::Number(number) => number.as_i64().unwrap_or(i64::MIN),
-        _ => i64::MIN,
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => i64::MIN,
     }
 }
 
 fn number_text(value: &Json) -> String {
     match value {
         Json::Number(number) => number.to_string(),
-        _ => String::new(),
+        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
+            String::new()
+        }
     }
 }
 
@@ -176,14 +189,14 @@ fn deltas(events: &[Json], event_type: &str) -> Vec<String> {
         .collect()
 }
 
-fn event_of<'a>(events: &'a [Json], event_type: &str) -> &'a Json {
+fn event_of<'events>(events: &'events [Json], event_type: &str) -> &'events Json {
     events
         .iter()
         .find(|event| kind(event) == event_type)
         .expect("event present")
 }
 
-fn events_of<'a>(events: &'a [Json], event_type: &str) -> Vec<&'a Json> {
+fn events_of<'events>(events: &'events [Json], event_type: &str) -> Vec<&'events Json> {
     events
         .iter()
         .filter(|event| kind(event) == event_type)
@@ -259,17 +272,16 @@ impl FixedCost {
     }
 
     fn calls(&self) -> Vec<String> {
-        std::mem::take(&mut *self.calls.lock().unwrap())
+        mem::take(&mut *self.calls.lock().unwrap())
     }
 }
 
 fn cost_label(target: &CostTarget<'_>) -> String {
     match target {
         CostTarget::Model(response) => response.id.clone(),
-        CostTarget::Object(fields) => match fields.get("id") {
-            Some(value) => text(value).to_owned(),
-            None => String::new(),
-        },
+        CostTarget::Object(fields) => fields
+            .get("id")
+            .map_or_else(String::new, |value| text(value).to_owned()),
     }
 }
 
@@ -277,7 +289,10 @@ impl ResponsesCostCalculator for FixedCost {
     type Error = CostFailure;
 
     fn response_cost(&self, target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error> {
-        self.calls.lock().unwrap().push(cost_label(target));
+        self.calls
+            .lock()
+            .map_err(|_poison| CostFailure)?
+            .push(cost_label(target));
         if self.fails {
             return Err(CostFailure);
         }
@@ -326,6 +341,7 @@ impl UsageEstimate for FixedEstimate {
     fn estimate(&self) -> Option<ResponseApiUsage> {
         let mut calls = self.calls.lock().unwrap();
         *calls = calls.saturating_add(1);
+        drop(calls);
         self.usage.clone()
     }
 }
@@ -355,11 +371,11 @@ impl FixedTokenization {
     }
 
     fn counts(&self) -> Vec<RecordedCount> {
-        std::mem::take(&mut *self.counts.lock().unwrap())
+        mem::take(&mut *self.counts.lock().unwrap())
     }
 
     fn transforms(&self) -> Vec<(Json, Json)> {
-        std::mem::take(&mut *self.transforms.lock().unwrap())
+        mem::take(&mut *self.transforms.lock().unwrap())
     }
 }
 
@@ -370,20 +386,26 @@ impl UsageTokenization for FixedTokenization {
         if self.fails {
             return Err(CostFailure);
         }
-        self.transforms.lock().unwrap().push((
-            request.request_input.clone(),
-            request.responses_api_request.clone(),
-        ));
+        self.transforms
+            .lock()
+            .map_err(|_poison| CostFailure)?
+            .push((
+                request.request_input.clone(),
+                request.responses_api_request.clone(),
+            ));
         Ok(self.messages.clone())
     }
 
     fn count(&self, request: TokenCountRequest<'_>) -> Result<i64, Self::Error> {
-        self.counts.lock().unwrap().push(RecordedCount {
-            model: request.model.to_owned(),
-            messages: request.messages.map(<[Json]>::to_vec),
-            text: request.text.map(str::to_owned),
-            count_response_tokens: request.count_response_tokens,
-        });
+        self.counts
+            .lock()
+            .map_err(|_poison| CostFailure)?
+            .push(RecordedCount {
+                model: request.model.to_owned(),
+                messages: request.messages.map(<[Json]>::to_vec),
+                text: request.text.map(str::to_owned),
+                count_response_tokens: request.count_response_tokens,
+            });
         Ok(if request.messages.is_some() { 3 } else { 4 })
     }
 }

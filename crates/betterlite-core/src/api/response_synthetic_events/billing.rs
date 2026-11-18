@@ -7,9 +7,9 @@ const DEFAULTED_FIELDS: &str = "error incomplete_details instructions metadata m
      parallel_tool_calls temperature tool_choice tools top_p max_output_tokens previous_response_id \
      reasoning status text truncation usage user store";
 
-pub enum UsageSource<'a> {
-    Model(&'a ResponseApiUsage),
-    Value(&'a Json),
+pub enum UsageSource<'usage> {
+    Model(&'usage ResponseApiUsage),
+    Value(&'usage Json),
 }
 
 pub trait UsageEstimate {
@@ -20,22 +20,26 @@ pub trait UsageEstimate {
 pub fn usage_as_model(source: Option<UsageSource<'_>>) -> Option<ResponseApiUsage> {
     match source? {
         UsageSource::Model(usage) => Some(usage.clone()),
-        UsageSource::Value(value) => serde_json::to_value(value)
-            .ok()
-            .and_then(|converted| serde_json::from_value(converted).ok()),
+        UsageSource::Value(value) => {
+            let converted = serde_json::to_value(value).ok()?;
+            serde_json::from_value(converted).ok()
+        }
     }
 }
 
-pub enum BilledTerminal<'a> {
-    Same(&'a ResponsesApiResponse),
+pub enum BilledTerminal<'response> {
+    Same(&'response ResponsesApiResponse),
     Estimated(Box<ResponsesApiResponse>),
 }
 
 #[must_use]
-pub fn billed_terminal_response<'a, E: UsageEstimate>(
-    response: &'a ResponsesApiResponse,
+pub fn billed_terminal_response<'response, E>(
+    response: &'response ResponsesApiResponse,
     estimate: Option<&E>,
-) -> BilledTerminal<'a> {
+) -> BilledTerminal<'response>
+where
+    E: UsageEstimate,
+{
     let Some(estimator) = estimate else {
         return BilledTerminal::Same(response);
     };
@@ -48,10 +52,13 @@ pub fn billed_terminal_response<'a, E: UsageEstimate>(
 }
 
 #[must_use]
-pub fn billed_terminal_object<E: UsageEstimate>(
+pub fn billed_terminal_object<E>(
     object: &Json,
     estimate: Option<&E>,
-) -> Option<IndexMap<String, Json>> {
+) -> Option<IndexMap<String, Json>>
+where
+    E: UsageEstimate,
+{
     let Json::Object(raw) = object else {
         return None;
     };
@@ -91,8 +98,11 @@ fn filter_reasoning_nulls(constructed: &mut IndexMap<String, Json>) {
 }
 
 fn usage_json(usage: Option<&ResponseApiUsage>) -> Json {
-    usage
-        .and_then(|reported| serde_json::to_value(reported).ok())
-        .and_then(|value| serde_json::from_value(value).ok())
-        .unwrap_or(Json::Null)
+    let Some(found_usage) = usage else {
+        return Json::Null;
+    };
+    let Ok(serialized) = serde_json::to_value(found_usage) else {
+        return Json::Null;
+    };
+    serde_json::from_value(serialized).unwrap_or(Json::Null)
 }

@@ -1,13 +1,14 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
 
-pub enum LoggingEvent<'a> {
-    Value(&'a Json),
-    Event(&'a ResponsesAPIStreamingResponse),
+#[derive(Clone, Copy)]
+pub enum LoggingEvent<'event> {
+    Value(&'event Json),
+    Event(&'event ResponsesAPIStreamingResponse),
 }
 
-pub enum LoggedCopy<'a> {
-    Same(&'a Json),
+pub enum LoggedCopy<'event> {
+    Same(&'event Json),
     Detached(Box<ResponsesAPIStreamingResponse>),
 }
 

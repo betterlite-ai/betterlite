@@ -14,9 +14,10 @@ pub trait HasModelDumpJson {
     fn model_dump_json(&self) -> Result<String, SyntheticEventsError>;
 }
 
-pub enum ResponseObject<'a> {
-    Model(&'a ResponseOutputItem),
-    Value(&'a Json),
+#[derive(Clone, Copy)]
+pub enum ResponseObject<'object> {
+    Model(&'object ResponseOutputItem),
+    Value(&'object Json),
 }
 
 pub fn dump_response_object(object: ResponseObject<'_>) -> Result<Extra, SyntheticEventsError> {
@@ -57,7 +58,10 @@ impl HasModelDumpJson for ResponsesApiResponse {
     }
 }
 
-pub fn dump_json_safely<T: HasModelDumpJson>(response: &T) -> Option<String> {
+pub fn dump_json_safely<T>(response: &T) -> Option<String>
+where
+    T: HasModelDumpJson,
+{
     match response.model_dump_json() {
         Ok(text) => Some(text),
         Err(error) => {

@@ -15,20 +15,9 @@ fn assert_in_progress_event(event: &Json) {
     assert_eq!(integer(field(response, "created_at")), 1_700_000_000);
 }
 
-#[test]
-fn synthetic_text_sequence_matches_litellm() {
-    let output = concat!(
-        r#"[{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":["#,
-        r#"{"type":"output_text","text":"abcdef","annotations":["#,
-        r#"{"type":"url_citation","url":"https://example.test/doc","title":"Doc","start_index":0,"end_index":1}"#,
-        r#"],"logprobs":null}]}]"#
-    );
-    let usage_json = r#","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"cost":0.5}"#;
-    let mut transformed = response_with(output, usage_json);
-    let original = transformed.clone();
-    let items = build(&mut transformed, None, 5);
+fn assert_sequence_kinds(items: &[Json]) {
     assert_eq!(
-        kinds(&items),
+        kinds(items),
         [
             "response.created",
             "response.in_progress",
@@ -43,38 +32,47 @@ fn synthetic_text_sequence_matches_litellm() {
             "response.completed",
         ]
     );
-    assert_eq!(deltas(&items, "response.output_text.delta"), ["abcde", "f"]);
+    assert_eq!(deltas(items, "response.output_text.delta"), ["abcde", "f"]);
     assert_eq!(
-        deltas(&items, "response.output_text.delta")
+        deltas(items, "response.output_text.delta")
             .into_iter()
             .collect::<String>(),
         "abcdef"
     );
-    let created = event_of(&items, "response.created");
+}
+
+fn assert_created_and_part_added(items: &[Json]) {
+    let created = event_of(items, "response.created");
     assert_eq!(text(at(created, &["response", "status"])), "in_progress");
     assert_eq!(at(created, &["response", "output"]), &json("[]"));
     assert_eq!(
         number_text(at(created, &["response", "usage", "cost"])),
         "0.5"
     );
-    let part_added = event_of(&items, "response.content_part.added");
+    let part_added = event_of(items, "response.content_part.added");
     assert_eq!(text(at(part_added, &["part", "text"])), "abcdef");
-    let annotation = event_of(&items, "response.output_text.annotation.added");
+    let annotation = event_of(items, "response.output_text.annotation.added");
     assert_eq!(text(at(annotation, &["annotation", "title"])), "Doc");
     assert_eq!(integer(field(annotation, "annotation_index")), 0);
-    let text_done = event_of(&items, "response.output_text.done");
+}
+
+fn assert_done_events(items: &[Json]) {
+    let text_done = event_of(items, "response.output_text.done");
     assert_eq!(text(field(text_done, "text")), "abcdef");
-    let part_done = event_of(&items, "response.content_part.done");
+    let part_done = event_of(items, "response.content_part.done");
     assert_eq!(text(at(part_done, &["part", "text"])), "abcdef");
     assert_eq!(
         at(part_done, &["part", "annotations"]),
-        &json(&format!(
-            r#"[{{"type":"url_citation","url":"https://example.test/doc","title":"Doc","start_index":0,"end_index":1}}]"#
-        ))
+        &json(
+            r#"[{"type":"url_citation","url":"https://example.test/doc","title":"Doc","start_index":0,"end_index":1}]"#
+        )
     );
-    let item_done = event_of(&items, "response.output_item.done");
+    let item_done = event_of(items, "response.output_item.done");
     assert_eq!(text(at(item_done, &["item", "id"])), "msg_a");
     assert_eq!(integer(field(item_done, "sequence_number")), 1);
+}
+
+fn assert_completed_event(items: &[Json]) {
     let completed = items.last().unwrap();
     assert_eq!(kind(completed), "response.completed");
     assert_eq!(text(at(completed, &["response", "status"])), "completed");
@@ -82,6 +80,24 @@ fn synthetic_text_sequence_matches_litellm() {
     let completed_message = item_at(at(completed, &["response", "output"]), 0);
     let completed_part = item_at(field(completed_message, "content"), 0);
     assert_eq!(text(field(completed_part, "text")), "abcdef");
+}
+
+#[test]
+fn synthetic_text_sequence_matches_litellm() {
+    let output = concat!(
+        r#"[{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":["#,
+        r#"{"type":"output_text","text":"abcdef","annotations":["#,
+        r#"{"type":"url_citation","url":"https://example.test/doc","title":"Doc","start_index":0,"end_index":1}"#,
+        r#"],"logprobs":null}]}]"#
+    );
+    let usage_json = r#","usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"cost":0.5}"#;
+    let mut transformed = response_with(output, usage_json);
+    let original = transformed.clone();
+    let items = build(&mut transformed, None, 5);
+    assert_sequence_kinds(&items);
+    assert_created_and_part_added(&items);
+    assert_done_events(&items);
+    assert_completed_event(&items);
     assert_eq!(transformed, original);
 }
 
@@ -229,18 +245,18 @@ fn empty_text_emits_done_without_deltas() {
 
 #[test]
 fn chunks_split_by_unicode_characters() {
-    let output = format!("[{}]", message_with_text("msg_a", "aé😀b"));
+    let output = format!("[{}]", message_with_text("msg_a", "a\u{e9}\u{1f600}b"));
     let mut transformed = response(&output);
     let items = build(&mut transformed, None, 1);
     assert_eq!(
         deltas(&items, "response.output_text.delta"),
-        ["a", "é", "😀", "b"]
+        ["a", "\u{e9}", "\u{1f600}", "b"]
     );
     let mut twice_transformed = response(&output);
     let twice_items = build(&mut twice_transformed, None, 2);
     assert_eq!(
         deltas(&twice_items, "response.output_text.delta"),
-        ["aé", "😀b"]
+        ["a\u{e9}", "\u{1f600}b"]
     );
 }
 
@@ -308,7 +324,7 @@ fn event_budget_charges_events_and_bytes_up_to_each_limit() {
 #[test]
 fn event_budget_allows_exactly_the_documented_byte_limit() {
     let mut budget = EventBudget::default();
-    budget.charge(0, 268_435_456).unwrap();
+    budget.charge(0, 0x1000_0000).unwrap();
     assert!(matches!(
         budget.charge(0, 1),
         Err(SyntheticEventsError::EventBudgetExceeded)

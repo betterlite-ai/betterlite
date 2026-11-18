@@ -3,25 +3,26 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
-use std::str::FromStr;
+use std::error::Error;
+use std::str::FromStr as _;
 
 use super::billing::{UsageSource, usage_as_model};
 
-pub enum CostTarget<'a> {
-    Model(&'a ResponsesApiResponse),
-    Object(&'a IndexMap<String, Json>),
+pub enum CostTarget<'target> {
+    Model(&'target ResponsesApiResponse),
+    Object(&'target IndexMap<String, Json>),
 }
 
 pub trait ResponsesCostCalculator {
-    type Error: std::error::Error + Send + Sync + 'static;
+    type Error: Error + Send + Sync + 'static;
 
     fn response_cost(&self, target: &CostTarget<'_>) -> Result<Option<Decimal>, Self::Error>;
 }
 
-pub fn stamp_usage_cost<C: ResponsesCostCalculator>(
-    response: &mut ResponsesApiResponse,
-    calculator: Option<&C>,
-) {
+pub fn stamp_usage_cost<C>(response: &mut ResponsesApiResponse, calculator: Option<&C>)
+where
+    C: ResponsesCostCalculator,
+{
     let Some(cost_calculator) = calculator else {
         return;
     };
@@ -44,10 +45,10 @@ pub fn stamp_usage_cost<C: ResponsesCostCalculator>(
     }
 }
 
-pub fn stamp_object_usage_cost<C: ResponsesCostCalculator>(
-    object: &mut IndexMap<String, Json>,
-    calculator: Option<&C>,
-) {
+pub fn stamp_object_usage_cost<C>(object: &mut IndexMap<String, Json>, calculator: Option<&C>)
+where
+    C: ResponsesCostCalculator,
+{
     let Some(cost_calculator) = calculator else {
         return;
     };
@@ -57,8 +58,7 @@ pub fn stamp_object_usage_cost<C: ResponsesCostCalculator>(
     let Some(usage) = usage_as_model(Some(UsageSource::Value(usage_value))) else {
         return;
     };
-    let Ok(usage_json) =
-        serde_json::to_value(&usage).and_then(|value| serde_json::from_value::<Json>(value))
+    let Ok(usage_json) = serde_json::to_value(&usage).and_then(serde_json::from_value::<Json>)
     else {
         return;
     };

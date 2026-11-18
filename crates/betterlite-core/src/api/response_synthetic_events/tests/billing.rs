@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use std::ptr;
 
 use super::*;
 
@@ -13,7 +14,7 @@ fn billed_typed_response_with_usage_is_returned_by_identity() {
     );
     let estimate = FixedEstimate::returning(9, 9);
     match billed_terminal_response(&transformed, Some(&estimate)) {
-        BilledTerminal::Same(response) => assert!(std::ptr::eq(response, &transformed)),
+        BilledTerminal::Same(response) => assert!(ptr::eq(response, &raw const transformed)),
         BilledTerminal::Estimated(_) => panic!("usage present, so the response is returned as is"),
     }
     assert_eq!(estimate.calls(), 0);
@@ -53,7 +54,7 @@ fn billed_typed_response_without_usage_copies_and_estimates() {
 fn billed_typed_response_without_estimator_is_unchanged() {
     let transformed = response("[]");
     match billed_terminal_response(&transformed, None::<&FixedEstimate>) {
-        BilledTerminal::Same(response) => assert!(std::ptr::eq(response, &transformed)),
+        BilledTerminal::Same(response) => assert!(ptr::eq(response, &raw const transformed)),
         BilledTerminal::Estimated(_) => panic!("no estimator means no copy"),
     }
 }

@@ -7,7 +7,6 @@ use betterlite_openai::api::responses_event_records::event_types::{
 use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
-use serde_json::json;
 
 use super::builder::{BuildContext, ItemContext, PartContext, push_event};
 use super::chunks::{EventBudget, delta_chunks, payload_bytes};
@@ -206,12 +205,12 @@ fn content_part_done_part(
                 _ => Json::List(Vec::new()),
             };
             let logprobs = payload.get("logprobs").cloned().unwrap_or(Json::Null);
-            serde_json::from_value(json!({
-                "type": "output_text",
-                "text": text_or_empty(payload.get("text")),
-                "annotations": annotations,
-                "logprobs": logprobs,
-            }))?
+            ContentPartDonePart::OutputText {
+                text: text_or_empty(payload.get("text")),
+                annotations: serde_json::from_value(serde_json::to_value(annotations)?)?,
+                logprobs: serde_json::from_value(serde_json::to_value(logprobs)?)?,
+                extra: Extra::new(),
+            }
         }
         Some(Json::Text(kind)) if kind == "refusal" => ContentPartDonePart::Refusal {
             refusal: text_or_empty(payload.get("refusal")),

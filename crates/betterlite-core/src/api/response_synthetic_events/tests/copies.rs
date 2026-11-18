@@ -2,6 +2,7 @@
 
 use betterlite_openai::api::responses_event_records::event_types::ResponseEvent;
 use rstest::rstest;
+use std::ptr;
 
 use super::*;
 
@@ -9,7 +10,7 @@ use super::*;
 fn logging_copy_returns_nonmodel_events_unchanged() {
     let value = json(r#"{"type":"response.output_text.delta","delta":"x"}"#);
     match logging_copy(LoggingEvent::Value(&value)) {
-        LoggedCopy::Same(same) => assert!(std::ptr::eq(same, &value)),
+        LoggedCopy::Same(same) => assert!(ptr::eq(same, &raw const value)),
         LoggedCopy::Detached(_) => panic!("plain JSON is handed back unchanged"),
     }
     let generic = ResponsesAPIStreamingResponse::Generic(GenericEvent {
@@ -77,10 +78,10 @@ fn logging_copy_falls_back_when_validation_fails() {
     let LoggedCopy::Detached(mut copied) = logging_copy(LoggingEvent::Event(&event)) else {
         panic!("events are copied");
     };
-    if let ResponsesAPIStreamingResponse::Known(known) = copied.as_mut() {
-        if let KnownResponseEvent::OutputTextDelta(delta) = known.as_mut() {
-            delta.item_id = "mutated".to_owned();
-        }
+    if let ResponsesAPIStreamingResponse::Known(known) = copied.as_mut()
+        && let KnownResponseEvent::OutputTextDelta(delta) = known.as_mut()
+    {
+        delta.item_id = "mutated".to_owned();
     }
     assert_eq!(
         to_json(&event),
@@ -253,7 +254,9 @@ fn dump_response_object_handles_models_and_objects() {
         dump_response_object(ResponseObject::Value(&object)).unwrap(),
         match &object {
             Json::Object(fields) => fields.clone().into_iter().collect(),
-            _ => Extra::new(),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+                Extra::new()
+            }
         }
     );
     let transformed = response(r#"[{"type":"mystery","id":"m","payload":1}]"#);
@@ -282,8 +285,7 @@ fn dump_response_object_projects_scalars_to_empty_payloads(#[case] raw: &str) {
     );
 }
 
-#[test]
-fn python_value_semantics_match_litellm() {
+fn assert_scalar_truthiness() {
     assert!(!has_content(&json("null")));
     assert!(has_content(&json("true")));
     assert!(!has_content(&json("false")));
@@ -292,10 +294,16 @@ fn python_value_semantics_match_litellm() {
     assert!(has_content(&json("1")));
     assert!(!has_content(&json(r#""""#)));
     assert!(has_content(&json(r#""x""#)));
+}
+
+fn assert_collection_truthiness() {
     assert!(!has_content(&json("[]")));
     assert!(has_content(&json("[0]")));
     assert!(!has_content(&json("{}")));
     assert!(has_content(&json(r#"{"a":0}"#)));
+}
+
+fn assert_falsy_text_projections() {
     assert_eq!(text_or_empty(None), "");
     assert_eq!(text_or_empty(Some(&json("null"))), "");
     assert_eq!(text_or_empty(Some(&json("false"))), "");
@@ -303,10 +311,21 @@ fn python_value_semantics_match_litellm() {
     assert_eq!(text_or_empty(Some(&json("0"))), "");
     assert_eq!(text_or_empty(Some(&json("[]"))), "");
     assert_eq!(text_or_empty(Some(&json("{}"))), "");
+}
+
+fn assert_truthy_text_projections() {
     assert_eq!(text_or_empty(Some(&json("true"))), "True");
     assert_eq!(text_or_empty(Some(&json("7"))), "7");
     assert_eq!(text_or_empty(Some(&json(r#""x""#))), "x");
     assert_eq!(text_or_empty(Some(&json("[null]"))), "[None]");
+}
+
+#[test]
+fn python_value_semantics_match_litellm() {
+    assert_scalar_truthiness();
+    assert_collection_truthiness();
+    assert_falsy_text_projections();
+    assert_truthy_text_projections();
 }
 
 #[test]
