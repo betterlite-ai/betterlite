@@ -344,17 +344,25 @@ async fn periodic_sync_writes_on_the_interval() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(250))));
     harness.counters.start();
     yield_now().await;
-    harness
-        .counters
-        .increment_window_value(RPM_KEY, Decimal::from(2_i64), TTL)
-        .await
-        .unwrap();
+    fill_window(&harness.counters, RPM_KEY, 2).await;
     advance(Duration::from_millis(249)).await;
     yield_now().await;
     assert_eq!(harness.store.calls(), 0);
     advance(Duration::from_millis(1)).await;
     yield_now().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2_i64)));
+    // a failed tick logs and sleeps again, so the next interval retries
+    harness.store.set_down(true);
+    fill_window(&harness.counters, RPM_KEY, 1).await;
+    advance(Duration::from_millis(250)).await;
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 2);
+    harness.store.set_down(false);
+    fill_window(&harness.counters, RPM_KEY, 3).await;
+    advance(Duration::from_millis(250)).await;
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 3);
+    assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(5_i64)));
     harness.counters.cleanup().await;
 }
 
