@@ -34,7 +34,7 @@ pub(crate) struct Raised {
 pub(crate) struct PolicyDocument {
     pub(crate) violation_message: Option<String>,
     pub(crate) on_violation: Option<OnViolation>,
-    pub(crate) end_session_after_n_fails: Option<usize>,
+    pub(crate) end_session_after_n_fails: Option<i64>,
 }
 
 // The callback object the case installs: a CustomGuardrail, one with native lifecycle hooks, or a plain logger

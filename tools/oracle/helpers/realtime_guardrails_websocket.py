@@ -18,11 +18,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from typing_extensions import override
 
 WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
-REWRITE_TEXT = "the guardrail rewrite"
-MAX_ITEMS = 32
-MAX_TEXT_BYTES = 16 * 1024
-MAX_CAPTURE_BYTES = 1024 * 1024
-DEADLINE_SECONDS = 120.0
+MAX_ITEMS, MAX_TEXT_BYTES, MAX_CAPTURE_BYTES = 32, 16 * 1024, 1024 * 1024
 
 
 class RaisedDocument(TypedDict):
@@ -79,9 +75,8 @@ class ScriptedRaiseError(ValueError):
 
 
 def recorded(text: str) -> JsonValue:
-    payload: JsonValue
     try:
-        payload = {"kind": "json", "value": WIRE.validate_json(text)}
+        payload: JsonValue = {"kind": "json", "value": WIRE.validate_json(text)}
     except ValidationError:
         payload = {"kind": "text", "text": text}
     return {"wire": "text", "payload": payload}
@@ -103,9 +98,11 @@ class ScriptedSocket(RealtimeBackend):
     def scope(self) -> ASGIScope:
         return {"headers": []}
 
+    @override
     async def __aenter__(self) -> Self:
         return self
 
+    @override
     async def __aexit__(
         self,
         exc_type: type[BaseException] | None,
@@ -113,6 +110,7 @@ class ScriptedSocket(RealtimeBackend):
         traceback: TracebackType | None,
     ) -> None: ...
 
+    @override
     async def send(self, message: str | bytes) -> None:
         match message:
             case str():
@@ -128,11 +126,13 @@ class ScriptedSocket(RealtimeBackend):
     async def send_text(self, data: str) -> None:
         await self.send(data)
 
+    @override
     async def recv(self, decode: bool | None = None) -> str:
         raise ScriptedError(f"the scripted socket never receives (decode={decode})", "socket")
 
     receive_text = recv
 
+    @override
     async def close(self, code: int = 1000, reason: str | None = None) -> None:
         self.frame = (code, reason)
         self.timeline.append(f"{self.name}-close")
@@ -181,7 +181,7 @@ class ApplyScript:
             case "clean":
                 return inputs  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
             case "rewrite":
-                return {"texts": [REWRITE_TEXT]}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
+                return {"texts": ["the guardrail rewrite"]}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
             case "raise":
                 raised = self._document.get("raised")
                 if raised is None:
@@ -287,14 +287,13 @@ def text_sizes(input_value: Input) -> list[int]:
 
 def run(input_value: Input) -> JsonValue:
     guardrails = len(input_value["guardrails"])
-    callbacks = len(input_value["callbacks"])
     counts = (len(input_value["runs"]), len(input_value["backend_failures"]),
               len(input_value["client_failures"]))
-    if max(guardrails, callbacks) > MAX_ITEMS or max(counts) > MAX_ITEMS:
+    if max(guardrails, len(input_value["callbacks"])) > MAX_ITEMS or max(counts) > MAX_ITEMS:
         raise ValueError("the scripted guardrails input is past its limits")
     if any(index >= guardrails for index in input_value["callbacks"]):
         raise ValueError("a callback index is past the guardrails")
     sizes = text_sizes(input_value)
     if any(size > MAX_TEXT_BYTES for size in sizes) or sum(sizes) > MAX_CAPTURE_BYTES:
         raise ValueError("the scripted guardrails input is past its byte limit")
-    return asyncio.run(asyncio.wait_for(session(input_value), DEADLINE_SECONDS))
+    return asyncio.run(asyncio.wait_for(session(input_value), 120.0))
