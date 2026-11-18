@@ -17,7 +17,14 @@ fn frame_value(frame: &[u8]) -> Value {
 }
 
 fn original_usage() -> Value {
-    json!({"usage":{"input_tokens":8,"output_tokens":2,"total_tokens":10}})
+    json!({
+        "usage": {
+            "input_tokens": 8,
+            "output_tokens": 2,
+            "total_tokens": 10,
+            "input_tokens_details": {"cached_tokens": 3},
+        }
+    })
 }
 
 #[test]
@@ -47,6 +54,10 @@ fn blocked_response_keeps_original_usage_counts() {
     assert_eq!(response["usage"]["input_tokens"], 8);
     assert_eq!(response["usage"]["output_tokens"], 2);
     assert_eq!(response["usage"]["total_tokens"], 10);
+    assert_eq!(
+        response["usage"]["input_tokens_details"]["cached_tokens"],
+        3
+    );
 }
 
 #[test]
@@ -217,6 +228,23 @@ fn stream_error_has_guardrail_code_and_next_sequence() {
     assert!(errors[0].error.param.is_none());
     assert_eq!(errors[0].sequence_number, 6);
     assert!(errors[0].extra.is_empty());
+}
+
+#[test]
+fn continuation_identity_clamps_an_index_above_the_signed_range() {
+    let events = [json!({"output_index": 18446744073709551615_u64})];
+    assert_eq!(
+        continuation_identity("m", Some(&events), &stamp()),
+        ("resp_fixed".to_owned(), "m".to_owned(), i64::MAX)
+    );
+}
+
+#[test]
+fn standalone_cost_calculator_reports_no_cost() {
+    let object: indexmap::IndexMap<String, betterlite_models::decisions::Json> =
+        indexmap::IndexMap::new();
+    let cost = NoCost.response_cost(&CostTarget::Object(&object)).unwrap();
+    assert!(cost.is_none());
 }
 
 #[test]

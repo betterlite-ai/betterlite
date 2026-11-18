@@ -56,6 +56,29 @@ fn open_item_state_defaults_empty_type_and_role() {
 }
 
 #[test]
+fn open_item_state_reads_type_and_role() {
+    let events = vec![
+        json!({"type":"response.output_item.added","output_index":0,"item":{"id":"m","type":"function_call","role":"user"}}),
+    ];
+    let item = open_item_state(&events).unwrap();
+    assert_eq!(item.item_type, "function_call");
+    assert_eq!(item.role, "user");
+}
+
+#[test]
+fn open_item_state_closed_part_is_not_open() {
+    let events = vec![
+        json!({"type":"response.output_item.added","output_index":0,"item":{"id":"m","type":"message"}}),
+        json!({"type":"response.content_part.added","item_id":"m","content_index":0}),
+        json!({"type":"response.content_part.done","item_id":"m","content_index":0}),
+    ];
+    let item = open_item_state(&events).unwrap();
+    assert!(!item.part_open);
+    assert_eq!(item.content_index, 0);
+    assert_eq!(open_item_closing_events(&events).len(), 1);
+}
+
+#[test]
 fn closing_events_mark_function_call_incomplete() {
     let events = vec![
         json!({"type":"response.output_item.added","output_index":1,"item":{"type":"function_call","id":"call","arguments":"{}"}}),

@@ -61,6 +61,14 @@ fn has_ended_bytes_uses_event_line_and_requires_stop_reason() {
 }
 
 #[test]
+fn has_ended_bytes_requires_a_non_null_stop_reason() {
+    let null_stop = SseChunk::Bytes(
+        b"event: message_delta\ndata: {\"delta\":{\"stop_reason\":null}}\n\n".to_vec(),
+    );
+    assert!(!streaming_has_ended(&[null_stop]));
+}
+
+#[test]
 fn event_text_delta_is_read_without_checking_its_event_type() {
     let event = serde_json::from_value(json!({
         "type":"other_event",

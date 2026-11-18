@@ -51,7 +51,7 @@ fn stream_index(event: &Value) -> Option<i64> {
     let item = StreamItem::Json(to_guardrail(event));
     match stream_item_field(&item, "output_index")? {
         GuardrailValue::SignedInteger(index) => Some(*index),
-        GuardrailValue::UnsignedInteger(index) => i64::try_from(*index).ok(),
+        GuardrailValue::UnsignedInteger(index) => Some(i64::try_from(*index).unwrap_or(i64::MAX)),
         _ => None,
     }
 }
