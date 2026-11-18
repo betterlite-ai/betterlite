@@ -8,31 +8,17 @@ use super::{GaugeError, GaugeTimes};
 mod tests;
 
 pub(super) fn whole_number(value: &CacheCounterValue) -> Result<i64, GaugeError> {
-    match value {
-        CacheCounterValue::Int(number) => Ok(*number),
-        CacheCounterValue::Float(number) => match num_traits::ToPrimitive::to_i64(number) {
-            Some(number) => Ok(number),
-            None => Err(GaugeError::NotWholeNumber {
-                value: value.clone(),
-            }),
-        },
-        CacheCounterValue::Text(text) => parse_whole(text, value),
-        CacheCounterValue::Bytes(bytes) => match from_utf8(bytes) {
-            Ok(text) => parse_whole(text, value),
-            Err(_) => Err(GaugeError::NotWholeNumber {
-                value: value.clone(),
-            }),
-        },
-    }
-}
-
-fn parse_whole(text: &str, value: &CacheCounterValue) -> Result<i64, GaugeError> {
-    match text.trim().parse::<i64>() {
-        Ok(number) => Ok(number),
-        Err(_) => Err(GaugeError::NotWholeNumber {
-            value: value.clone(),
-        }),
-    }
+    let parsed = match value {
+        CacheCounterValue::Int(number) => Some(*number),
+        CacheCounterValue::Float(number) => num_traits::ToPrimitive::to_i64(number),
+        CacheCounterValue::Text(text) => text.trim().parse::<i64>().ok(),
+        CacheCounterValue::Bytes(bytes) => from_utf8(bytes)
+            .ok()
+            .and_then(|text| text.trim().parse::<i64>().ok()),
+    };
+    parsed.ok_or_else(|| GaugeError::NotWholeNumber {
+        value: value.clone(),
+    })
 }
 
 pub(super) fn gauge_in_flight(
@@ -41,15 +27,13 @@ pub(super) fn gauge_in_flight(
 ) -> Result<i64, GaugeError> {
     match value {
         None => Ok(0),
-        Some(GaugeCacheValue::Registry(registry)) => {
-            let mut count = 0_i64;
-            for timestamp in registry.values() {
-                if *timestamp >= times.cutoff {
-                    count = count.saturating_add(1);
-                }
-            }
-            Ok(count)
-        }
+        Some(GaugeCacheValue::Registry(registry)) => Ok(i64::try_from(
+            registry
+                .values()
+                .filter(|timestamp| **timestamp >= times.cutoff)
+                .count(),
+        )
+        .unwrap_or(i64::MAX)),
         Some(GaugeCacheValue::Counter(counter)) => Ok(whole_number(counter)?.max(0)),
     }
 }

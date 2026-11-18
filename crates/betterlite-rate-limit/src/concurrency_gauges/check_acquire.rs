@@ -55,10 +55,9 @@ async fn acquire_from_reply(
     if whole_number(first)? == 1 {
         let index = acquire_element(&values, 1)?;
         let in_flight = acquire_element(&values, 2)?;
-        let position = usize::try_from(index)
+        let gauge = usize::try_from(index)
             .ok()
-            .and_then(|candidate| candidate.checked_sub(1));
-        let gauge = position
+            .and_then(|candidate| candidate.checked_sub(1))
             .and_then(|candidate| requested.get(candidate))
             .ok_or(GaugeError::GaugeIndex {
                 index,
@@ -69,14 +68,10 @@ async fn acquire_from_reply(
     let mut statuses = Vec::with_capacity(counts.len());
     for (gauge, value) in requested.iter().zip(counts) {
         let in_flight = whole_number(value)?;
+        let mirrored = GaugeCacheValue::Counter(CacheCounterValue::Int(in_flight));
         gauges
             .cache
-            .set(
-                &gauge.counter_key,
-                GaugeCacheValue::Counter(CacheCounterValue::Int(in_flight)),
-                PARALLEL_SLOT_TTL,
-                true,
-            )
+            .set(&gauge.counter_key, mirrored, PARALLEL_SLOT_TTL, true)
             .await;
         statuses.push(gauge_status(gauge, in_flight, "OK"));
     }

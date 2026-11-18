@@ -1,6 +1,5 @@
 use std::sync::PoisonError;
 
-use crate::limiter_records::ParallelSlotAcquisition;
 use crate::request_stash::RequestStash;
 
 use super::ConcurrencyGauges;
@@ -15,7 +14,10 @@ pub(super) async fn release_stashed_slot(
     in_logging_callback: bool,
 ) {
     let _guard = stash.parallel_slot_release_lock.lock().await;
-    let acquisition = stashed_acquisition(stash);
+    let acquisition = {
+        let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.parallel_slot.clone()
+    };
     let Some(acquisition) = acquisition else {
         return;
     };
@@ -23,16 +25,6 @@ pub(super) async fn release_stashed_slot(
     if !deferred {
         release_request_slots(gauges, &acquisition).await;
     }
-    stash
-        .state
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .parallel_slot = None;
-}
-
-fn stashed_acquisition(stash: &RequestStash) -> Option<ParallelSlotAcquisition> {
-    let state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
-    let acquisition = state.parallel_slot.clone();
-    drop(state);
-    acquisition
+    let mut state = stash.state.lock().unwrap_or_else(PoisonError::into_inner);
+    state.parallel_slot = None;
 }

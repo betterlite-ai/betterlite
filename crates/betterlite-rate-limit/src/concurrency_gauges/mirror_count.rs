@@ -15,14 +15,10 @@ pub(super) async fn mirror_released_slots(
         let Ok(count) = whole_number(value) else {
             continue;
         };
+        let mirrored = GaugeCacheValue::Counter(CacheCounterValue::Int(count.max(0)));
         gauges
             .cache
-            .set(
-                counter_key,
-                GaugeCacheValue::Counter(CacheCounterValue::Int(count.max(0))),
-                PARALLEL_SLOT_TTL,
-                true,
-            )
+            .set(counter_key, mirrored, PARALLEL_SLOT_TTL, true)
             .await;
     }
 }
