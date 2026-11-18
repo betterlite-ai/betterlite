@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::Future;
 use std::thread;
 
 use betterlite_anthropic::chat_call::ChatClients;
@@ -14,6 +15,25 @@ use super::harness::{
 use super::support::{
     FixtureTransport, RecordingLogger, Silent, logging_env, logging_state, redactor,
 };
+
+// blocks on one call's future on the second thread and gives back what that thread received
+fn on_second_thread<Output, Call>(future: Call) -> Output
+where
+    Output: Send,
+    Call: Future<Output = Output> + Send,
+{
+    thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(future)
+            })
+            .join()
+            .unwrap()
+    })
+}
 
 // the Foundry completion completes on a thread that is not the one that built it
 #[test]
@@ -37,18 +57,7 @@ fn the_foundry_completion_completes_on_a_second_thread() {
         pooled: &pooled,
     };
     let deps = deps_of(&config, clients, &env, &mut state, &logger);
-    let future = completion(request, deps);
-    let result = thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                Builder::new_current_thread()
-                    .build()
-                    .unwrap()
-                    .block_on(future)
-            })
-            .join()
-            .unwrap()
-    });
+    let result = on_second_thread(completion(request, deps));
     let outcome = outcome_of(result).expect("the fixture replies");
     let Outcome::Reply(envelope) = outcome else {
         panic!("a buffered completion returns the reply");

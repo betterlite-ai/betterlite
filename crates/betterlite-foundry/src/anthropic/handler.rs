@@ -50,27 +50,29 @@ where
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Unpin + Send + 'call,
 {
+    // The request's credential sources and token provider are not Send, so prepare runs before the future exists
+    let prepared = prepare(&request, &mut deps);
+    let facts = CallFacts {
+        model: request.model,
+        messages: request.messages,
+        litellm_params: request.litellm_params,
+        api_base: request.api_base,
+        timeout: request.timeout,
+        style: match request.style {
+            Style::Async => CallStyle::Async,
+            Style::Sync => CallStyle::Sync,
+        },
+        now: request.now,
+        disable_add_prefix_to_prompt: request.disable_add_prefix_to_prompt,
+        model_response: request.model_response,
+        // the handler makes its sync call without the caller's speed or reverse map and stamps azure_ai
+        sync_stream: SyncStream {
+            custom_llm_provider: CUSTOM_LLM_PROVIDER,
+            names: SyncStreamNames::Omitted,
+        },
+    };
     async move {
-        let prepared = prepare(&request, &mut deps)?;
-        let facts = CallFacts {
-            model: request.model,
-            messages: request.messages,
-            litellm_params: request.litellm_params,
-            api_base: request.api_base,
-            timeout: request.timeout,
-            style: match request.style {
-                Style::Async => CallStyle::Async,
-                Style::Sync => CallStyle::Sync,
-            },
-            now: request.now,
-            disable_add_prefix_to_prompt: request.disable_add_prefix_to_prompt,
-            model_response: request.model_response,
-            // the handler makes its sync call without the caller's speed or reverse map and stamps azure_ai
-            sync_stream: SyncStream {
-                custom_llm_provider: CUSTOM_LLM_PROVIDER,
-                names: SyncStreamNames::Omitted,
-            },
-        };
+        let prepared = prepared?;
         finish(facts, prepared, deps).await.map_err(ChatError::Call)
     }
 }
