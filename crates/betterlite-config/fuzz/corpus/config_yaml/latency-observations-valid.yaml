@@ -1,5 +1,6 @@
 model_list: []
 router_settings:
+  routing_strategy: latency-based-routing
   routing_strategy_args:
     ttl: 3600
     lowest_latency_buffer: 0.1
