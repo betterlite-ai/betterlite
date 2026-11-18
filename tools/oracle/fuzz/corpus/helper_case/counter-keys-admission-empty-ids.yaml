@@ -1,0 +1,13 @@
+kind: helper
+name: counter-keys-admission-empty-ids-seed
+call:
+  counter_keys:
+    function: admission_counter_keys
+    token: ""
+    team_id: team-1
+    user_id: ""
+    org_id: null
+    project_id: proj-1
+    end_user_id: ""
+env: {}
+compare: {ignore: []}
