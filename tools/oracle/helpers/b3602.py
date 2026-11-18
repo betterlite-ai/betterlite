@@ -1,15 +1,14 @@
-from typing import ClassVar, Literal, TypeAlias, TypedDict
+import json
+from typing import Literal, TypeAlias, TypedDict
 
 import litellm
-from litellm.litellm_core_utils.credential_accessor import CredentialAccessor
-from litellm.proxy.pass_through_endpoints import passthrough_endpoint_router as module
 from litellm.proxy.pass_through_endpoints.passthrough_endpoint_router import (
     PassthroughEndpointRouter,
 )
 from litellm.router import Router
 from litellm.types.passthrough_endpoints.vertex_ai import VertexPassThroughCredentials
+from litellm.types.utils import CredentialItem
 from pydantic import JsonValue, TypeAdapter
-from typing_extensions import override
 
 
 class CommonInput(TypedDict):
@@ -53,6 +52,7 @@ class VertexFields(TypedDict):
 
 VERTEX: TypeAdapter[VertexFields] = TypeAdapter(VertexFields)
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+CREDENTIAL_ITEMS: TypeAdapter[list[CredentialItem]] = TypeAdapter(list[CredentialItem])
 
 
 class RouterGetter:
@@ -61,28 +61,6 @@ class RouterGetter:
 
     def __call__(self) -> Router:
         return self.router
-
-
-class CredentialValues(CredentialAccessor):
-    values: ClassVar[dict[str, dict[str, JsonValue]]] = {}
-
-    @staticmethod
-    @override
-    def get_credential_values(credential_name: str) -> dict[str, JsonValue]:
-        values = CredentialValues.values
-        if credential_name not in values:
-            return {}
-        return values[credential_name]
-
-
-class SecretValues:
-    def __init__(self, values: dict[str, str]) -> None:
-        self.values = values
-
-    def __call__(self, name: str) -> str | None:
-        if name not in self.values:
-            return None
-        return self.values[name]
 
 
 def vertex_fields(value: VertexPassThroughCredentials | None) -> VertexFields | None:
@@ -94,22 +72,32 @@ def vertex_fields(value: VertexPassThroughCredentials | None) -> VertexFields | 
 def run(input_value: Input) -> JsonValue:
     router_instance = Router(model_list=input_value["deployments"])
     router = PassthroughEndpointRouter(llm_router_getter=RouterGetter(router_instance))
-    previous_accessor = module.CredentialAccessor
-    previous_secret_lookup = module.get_secret_str
-    CredentialValues.values = input_value["credentials"]
-    module.CredentialAccessor = CredentialValues
-    module.get_secret_str = SecretValues(input_value["environment"])
+    previous_credentials = litellm.credential_list
+    litellm.credential_list = CREDENTIAL_ITEMS.validate_json(
+        json.dumps(
+            [
+                {
+                    "credential_name": name,
+                    "credential_info": {},
+                    "credential_values": values,
+                }
+                for name, values in input_value["credentials"].items()
+            ]
+        )
+    )
     try:
         if input_value["function"] == "credentials":
             result = router.get_credentials(
                 input_value["provider"], input_value["region"]
             )
-            return JSON.validate_python({"result": result})
+            return JSON.validate_json('{"result":' + json.dumps(result) + "}")
         if input_value["function"] == "vertex_deployments":
             deployment_result = router.get_vertex_credentials_from_router_deployments(
                 input_value["model"]
             )
-            return JSON.validate_python({"result": vertex_fields(deployment_result)})
+            return JSON.validate_json(
+                '{"result":' + json.dumps(vertex_fields(deployment_result)) + "}"
+            )
         for entry in input_value["stored"]:
             router.add_vertex_credentials(
                 entry["project_id"], entry["location"], entry["credentials"]
@@ -117,7 +105,8 @@ def run(input_value: Input) -> JsonValue:
         key_result = router.get_vertex_credentials(
             input_value["project_id"], input_value["location"]
         )
-        return JSON.validate_python({"result": vertex_fields(key_result)})
+        return JSON.validate_json(
+            '{"result":' + json.dumps(vertex_fields(key_result)) + "}"
+        )
     finally:
-        module.CredentialAccessor = previous_accessor
-        module.get_secret_str = previous_secret_lookup
+        litellm.credential_list = previous_credentials

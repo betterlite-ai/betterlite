@@ -9,5 +9,6 @@ call:
     environment:
       OPENAI_API_KEY: environment-key
     credentials: {}
-env: {}
+env:
+  OPENAI_API_KEY: environment-key
 compare: {ignore: []}
