@@ -55,9 +55,9 @@ impl CredentialValue {
 }
 
 impl fmt::Debug for CredentialValue {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // both shapes can carry a secret, so neither prints its contents
-        formatter.write_str("CredentialValue([REDACTED])")
+        f.write_str("CredentialValue([REDACTED])")
     }
 }
 
@@ -66,13 +66,13 @@ impl From<JsonData> for CredentialValue {
         match value {
             JsonData::String(text) => Self::Text(SecretText(SecretString::from(text))),
             JsonData::Null => Self::Null,
-            JsonData::Bool(value) => Self::Bool(value),
-            JsonData::Number(value) => Self::Number(value),
+            JsonData::Bool(flag) => Self::Bool(flag),
+            JsonData::Number(number) => Self::Number(number),
             JsonData::Array(values) => Self::Array(values.into_iter().map(Self::from).collect()),
             JsonData::Object(fields) => Self::Object(
                 fields
                     .into_iter()
-                    .map(|(key, value)| (key, Self::from(value)))
+                    .map(|(key, item)| (key, Self::from(item)))
                     .collect(),
             ),
         }

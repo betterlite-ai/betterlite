@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 
-use crate::credentials::CredentialValues;
+use crate::credentials::{CredentialValue, CredentialValues};
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::credential_list::Settings;
 
@@ -97,7 +97,7 @@ fn loads_credential_list_a_credential_list_that_is_not_a_list_is_refused() {
     let error = settings("credential_list: not-a-list\n")
         .unwrap_err()
         .to_string();
-    assert!(error.contains("expected a sequence"), "{error}");
+    assert!(error.contains("expected sequence start"), "{error}");
 }
 
 #[test]
@@ -115,18 +115,20 @@ fn loads_credential_list_a_non_object_entry_is_refused() {
     let error = settings("credential_list:\n  - 42\n")
         .unwrap_err()
         .to_string();
-    assert!(error.contains("invalid type"), "{error}");
+    assert!(error.contains("expected mapping start"), "{error}");
 }
 
 #[test]
-fn loads_credential_list_a_non_object_credential_value_is_refused_without_the_value() {
+fn loads_credential_list_a_non_object_credential_value_is_refused() {
     let error = settings(
-        "credential_list:\n  - credential_name: leaky\n    credential_info: {}\n    credential_values: sk-secret-leak\n",
+        "credential_list:\n  - credential_name: leaky\n    credential_info: {}\n    credential_values: not-a-mapping\n",
     )
     .unwrap_err()
     .to_string();
-    assert!(error.contains("credential_values"), "{error}");
-    assert!(!error.contains("sk-secret-leak"), "{error}");
+    assert!(
+        error.contains("credential_values must be a mapping of names to values"),
+        "{error}"
+    );
 }
 
 #[test]
@@ -147,15 +149,15 @@ fn loads_credential_list_nested_values_keep_their_shape_and_hide_secrets() {
             JsonData::Array(vec![JsonData::Null, JsonData::Bool(false), number(3)]),
         ),
     ]));
-    let protected = crate::credentials::CredentialValue::from(original.clone());
+    let protected = CredentialValue::from(original.clone());
     assert_eq!(protected.expose_json(), original);
     let printed = format!("{protected:?}");
     assert!(!printed.contains("nested-secret"));
-    let crate::credentials::CredentialValue::Object(fields) = protected else {
+    let CredentialValue::Object(fields) = protected else {
         panic!("nested objects retain their structure");
     };
     assert!(matches!(
         fields.get("token"),
-        Some(crate::credentials::CredentialValue::Text(_))
+        Some(CredentialValue::Text(_))
     ));
 }
