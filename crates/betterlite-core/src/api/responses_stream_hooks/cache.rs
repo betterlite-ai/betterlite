@@ -25,13 +25,11 @@ pub fn converted_stream_requested(kwargs: &IndexMap<String, Json>) -> bool {
 pub(crate) fn value_is_set(value: Option<&Json>) -> bool {
     match value {
         None | Some(Json::Null | Json::Bool(false)) => false,
-        Some(Json::Number(numeric_value)) => {
-            numeric_value.as_i64().is_some_and(|integer| integer != 0)
-                || numeric_value.as_u64().is_some_and(|integer| integer != 0)
-                || numeric_value
-                    .as_f64()
-                    .is_some_and(|float_value| float_value != 0.0_f64)
-        }
+        Some(Json::Number(number)) => number
+            .to_string()
+            .bytes()
+            .take_while(|byte| !matches!(byte, b'e' | b'E'))
+            .any(|byte| matches!(byte, b'1'..=b'9')),
         Some(Json::Text(text)) => !text.is_empty(),
         Some(Json::List(items)) => !items.is_empty(),
         Some(Json::Object(fields)) => !fields.is_empty(),
@@ -73,7 +71,6 @@ impl ResponsesStreamHooks<'_> {
         Ok(())
     }
 
-    // the is_async=True arm: schedule cache.async_add_cache and mark the response cached once it is scheduled
     pub fn schedule_cache(&self, state: &mut ResponsesStreamBaseState) -> Result<(), PortFailure> {
         let Some(prepared) = self.prepare_cache_write(state)? else {
             return Ok(());
@@ -112,8 +109,8 @@ impl ResponsesStreamHooks<'_> {
         {
             return Ok(None);
         }
-        let request_kwargs = cache_request_kwargs(request_kwargs, handler.preset_cache_key());
-        if !handler.should_store_result_in_cache(handler.original_function(), &request_kwargs)? {
+        let prepared_kwargs = cache_request_kwargs(request_kwargs, handler.preset_cache_key());
+        if !handler.should_store_result_in_cache(handler.original_function(), &prepared_kwargs)? {
             return Ok(None);
         }
         if self.cache.is_none() {
@@ -124,7 +121,7 @@ impl ResponsesStreamHooks<'_> {
         };
         Ok(Some(CacheWrite {
             payload,
-            request_kwargs,
+            request_kwargs: prepared_kwargs,
             dynamic_cache: handler.dual_cache(),
         }))
     }

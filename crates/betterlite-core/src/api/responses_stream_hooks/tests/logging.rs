@@ -24,9 +24,9 @@ async fn completed_logging_once() {
         Json::Bool(true),
     )])));
     let success = Success::recording();
-    hooks.cache = Some(cache.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(handler);
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let mut state = base_state();
     state.completed_response = Some(completed_event());
     state.completed_response_cache_hit = Some(false);
@@ -68,7 +68,7 @@ async fn completed_logging_once_restores_the_provider_headers() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let success = Success::recording();
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let source = object(&[
         (
             "additional_headers",
@@ -112,13 +112,13 @@ async fn completed_logging_once_skips_the_cache_when_persistence_is_off() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let cache = Cache::succeeding();
-    hooks.cache = Some(cache.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(Arc::new(CacheHandler::new(json_object(&[(
         "stream",
         Json::Bool(true),
     )]))));
     let success = Success::recording();
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let mut state = base_state();
     state.completed_response = Some(completed_event());
     state.persist_before_logging = false;
@@ -141,13 +141,13 @@ async fn completed_logging_once_passes_the_cache_hit_of_a_cached_response() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let cache = Cache::succeeding();
-    hooks.cache = Some(cache.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(Arc::new(CacheHandler::new(json_object(&[(
         "stream",
         Json::Bool(true),
     )]))));
     let success = Success::recording();
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let mut state = base_state();
     state.completed_response = Some(completed_event());
     state.completed_response_cached = true;
@@ -176,7 +176,7 @@ async fn completed_logging_once_does_not_log_again_after_a_failed_cache_write() 
         Json::Bool(true),
     )]))));
     let success = Success::recording();
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let mut state = base_state();
     state.completed_response = Some(completed_event());
     let mut callback = ResponsesStreamHookState::default();
@@ -202,13 +202,13 @@ async fn completed_logging_once_schedules_the_async_dispatch() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let cache = Cache::succeeding();
-    hooks.cache = Some(cache.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(Arc::new(CacheHandler::new(json_object(&[(
         "stream",
         Json::Bool(true),
     )]))));
     let success = Success::recording();
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let mut state = base_state();
     state.completed_response = Some(completed_event());
 
@@ -236,7 +236,7 @@ async fn completed_logging_once_defers_an_armed_dispatch() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let success = Success::deferred();
-    hooks.success = Some(success.clone());
+    hooks.success = Some(Arc::<Success>::clone(&success));
     let mut state = base_state();
     state.completed_response = Some(completed_event());
     state.persist_before_logging = false;

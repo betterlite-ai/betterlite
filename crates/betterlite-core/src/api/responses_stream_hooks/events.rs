@@ -3,20 +3,20 @@ use betterlite_openai::api::responses_event_records::records::{
 };
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 
-// the nested response a lifecycle event carries; a generic event has none, so nothing is typed
 #[must_use]
 pub fn nested_response(event: &ResponsesAPIStreamingResponse) -> Option<&ResponsesApiResponse> {
     let ResponsesAPIStreamingResponse::Known(known) = event else {
         return None;
     };
-    match known.as_ref() {
-        KnownResponseEvent::ResponseCreated(event)
-        | KnownResponseEvent::ResponseInProgress(event)
-        | KnownResponseEvent::ResponseCompleted(event)
-        | KnownResponseEvent::ResponseFailed(event)
-        | KnownResponseEvent::ResponseIncomplete(event) => Some(&event.response),
-        _ => None,
-    }
+    let (KnownResponseEvent::ResponseCreated(record)
+    | KnownResponseEvent::ResponseInProgress(record)
+    | KnownResponseEvent::ResponseCompleted(record)
+    | KnownResponseEvent::ResponseFailed(record)
+    | KnownResponseEvent::ResponseIncomplete(record)) = known.as_ref()
+    else {
+        return None;
+    };
+    Some(&record.response)
 }
 
 #[must_use]
@@ -26,24 +26,25 @@ pub fn nested_response_mut(
     let ResponsesAPIStreamingResponse::Known(known) = event else {
         return None;
     };
-    match known.as_mut() {
-        KnownResponseEvent::ResponseCreated(event)
-        | KnownResponseEvent::ResponseInProgress(event)
-        | KnownResponseEvent::ResponseCompleted(event)
-        | KnownResponseEvent::ResponseFailed(event)
-        | KnownResponseEvent::ResponseIncomplete(event) => Some(&mut event.response),
-        _ => None,
-    }
+    let (KnownResponseEvent::ResponseCreated(record)
+    | KnownResponseEvent::ResponseInProgress(record)
+    | KnownResponseEvent::ResponseCompleted(record)
+    | KnownResponseEvent::ResponseFailed(record)
+    | KnownResponseEvent::ResponseIncomplete(record)) = known.as_mut()
+    else {
+        return None;
+    };
+    Some(&mut record.response)
 }
 
-// _get_completed_response_object and the terminal type check: only response.completed is cacheable
 #[must_use]
 pub fn completed_response(event: &ResponsesAPIStreamingResponse) -> Option<&ResponsesApiResponse> {
     let ResponsesAPIStreamingResponse::Known(known) = event else {
         return None;
     };
-    match known.as_ref() {
-        KnownResponseEvent::ResponseCompleted(event) => Some(&event.response),
-        _ => None,
+    if let KnownResponseEvent::ResponseCompleted(record) = known.as_ref() {
+        Some(&record.response)
+    } else {
+        None
     }
 }

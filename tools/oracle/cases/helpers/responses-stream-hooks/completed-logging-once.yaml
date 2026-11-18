@@ -1,0 +1,163 @@
+{
+  "kind": "helper",
+  "name": "responses-stream-hooks-completed-logging-once",
+  "call": {
+    "responses_stream_hooks": {
+      "operation": "logging",
+      "rows": [
+        {
+          "event": {
+            "type": "response.completed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "completed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": false,
+          "cached": false,
+          "yielded": false
+        },
+        {
+          "event": {
+            "type": "response.completed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "completed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": false,
+          "cached": true,
+          "yielded": false
+        },
+        {
+          "event": {
+            "type": "response.completed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "completed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": true,
+          "cached": false,
+          "yielded": false
+        },
+        {
+          "event": {
+            "type": "response.completed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "completed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": true,
+          "deferred": false,
+          "cached": false,
+          "yielded": false
+        }
+      ]
+    }
+  }
+}

@@ -55,7 +55,6 @@ async fn run_failure_handlers(
     outcome
 }
 
-// _await_pending_logging: clear the tuple first, then wait for every task and never rethrow one
 pub async fn await_pending_logging(callback: &mut ResponsesStreamHookState) {
     let pending = std::mem::take(&mut callback.pending_logging_tasks);
     for task in pending {

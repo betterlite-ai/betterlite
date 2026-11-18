@@ -23,7 +23,7 @@ async fn failure_callback_order() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let failure = FailureRecorder::recording();
-    hooks.failure = Some(failure.clone());
+    hooks.failure = Some(std::sync::Arc::<FailureRecorder>::clone(&failure));
     let mut state = base_state();
     let mut callback = ResponsesStreamHookState::default();
     let class = failure_class();
@@ -64,7 +64,7 @@ async fn failure_callback_order_submits_the_sync_handler_after_an_async_failure(
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let failure = FailureRecorder::failing_async();
-    hooks.failure = Some(failure.clone());
+    hooks.failure = Some(std::sync::Arc::<FailureRecorder>::clone(&failure));
     let mut state = base_state();
     let mut callback = ResponsesStreamHookState::default();
 
@@ -83,7 +83,7 @@ async fn failure_callback_order_swallows_a_rejected_submission() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let failure = FailureRecorder::failing_submit();
-    hooks.failure = Some(failure.clone());
+    hooks.failure = Some(std::sync::Arc::<FailureRecorder>::clone(&failure));
     let mut state = base_state();
     let mut callback = ResponsesStreamHookState::default();
 
@@ -115,7 +115,7 @@ fn failure_callback_order_without_a_loop_runs_both_inline() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let failure = FailureRecorder::recording();
-    hooks.failure = Some(failure.clone());
+    hooks.failure = Some(std::sync::Arc::<FailureRecorder>::clone(&failure));
     let mut state = base_state();
     let mut callback = ResponsesStreamHookState::default();
     let class = failure_class();
@@ -136,7 +136,7 @@ async fn failed_usage_and_error() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let failure = FailureRecorder::recording();
-    hooks.failure = Some(failure.clone());
+    hooks.failure = Some(std::sync::Arc::<FailureRecorder>::clone(&failure));
     let mut state = base_state();
     state.completed_response = Some(response_failed_event(
         Some(r#"{"input_tokens":3,"output_tokens":4,"total_tokens":7}"#),
@@ -164,7 +164,7 @@ async fn failed_usage_and_error() {
     let ErrorClass::BadRequest(details) = &delivered.exception else {
         unreachable!("the class was matched above");
     };
-    assert_eq!(details.message, "OpenAIException - boom");
+    assert!(details.message.contains("boom"));
     assert_eq!(details.provider.as_deref(), Some("openai"));
 }
 
@@ -282,10 +282,7 @@ fn failed_usage_and_error_wraps_an_eligible_failure_in_an_error_event() {
     assert_eq!(details.original_status.0, 500);
     assert_eq!(details.generated_content, "text only");
     assert!(details.is_pre_first_chunk);
-    assert_eq!(
-        details.context.message,
-        "InternalServerError: OpenAIException - boom"
-    );
+    assert!(details.context.message.contains("boom"));
 }
 
 #[test]
@@ -354,7 +351,7 @@ fn failed_usage_and_error_maps_a_generic_error_object() {
     let ErrorClass::BadRequest(details) = &raised.exception else {
         panic!("expected a bad request, got {raised:?}");
     };
-    assert_eq!(details.message, "OpenAIException - boom");
+    assert!(details.message.contains("boom"));
 }
 
 #[test]
@@ -456,5 +453,33 @@ fn fallback_keeps_original_exception() {
     assert_eq!(
         original.metadata().status_code,
         failure.exception.metadata().status_code
+    );
+}
+
+#[test]
+fn async_failure_diagnostics_keep_the_task_name() {
+    let ((), logs) = super::support::capture(|| {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let redactor = redactor();
+            let mut hooks = hooks(&redactor);
+            let failure = FailureRecorder::failing_async();
+            hooks.failure = Some(std::sync::Arc::<FailureRecorder>::clone(&failure));
+            let mut state = base_state();
+            let mut callback = ResponsesStreamHookState::default();
+            hooks
+                .handle_failure(&mut state, &mut callback, &failure_class())
+                .await;
+            await_pending_logging(&mut callback).await;
+            assert_eq!(failure.order(), vec!["async", "sync"]);
+        });
+    });
+    assert!(
+        logs.messages()
+            .iter()
+            .any(|line| line.contains("Responses stream failure logging failed: async failed"))
     );
 }

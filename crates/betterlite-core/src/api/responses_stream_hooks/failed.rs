@@ -34,7 +34,6 @@ pub struct StreamFailure {
     pub original_exception: Option<ErrorClass>,
 }
 
-// _handle_logging_failed_response: bill what the failure still carries, then route it to failure handlers
 impl ResponsesStreamHooks<'_> {
     pub async fn handle_logging_failed_response<C>(
         &self,
@@ -162,7 +161,6 @@ fn map_response_error(
     )
 }
 
-// _maybe_raise_for_error_event reads only "error" and "response.failed"; every other type passes
 fn mapped_event_error(
     event: &ResponsesAPIStreamingResponse,
     model: &str,

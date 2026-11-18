@@ -34,7 +34,10 @@ async fn deployment_chunk_hooks() {
     let first = ChunkHook::new("first", ChunkAction::Keep);
     let replaced = completed_with_id("resp_2");
     let second = ChunkHook::new("second", ChunkAction::Replace(Box::new(replaced.clone())));
-    hooks.chunk_hooks = vec![first.clone(), second.clone()];
+    hooks.chunk_hooks = vec![
+        std::sync::Arc::<ChunkHook>::clone(&first),
+        std::sync::Arc::<ChunkHook>::clone(&second),
+    ];
     let mut callback = ResponsesStreamHookState::default();
     let details = call_details();
     let request_data = json_object(&[("model", text("request-model"))]);
@@ -73,7 +76,7 @@ async fn deployment_chunk_hooks_fall_back_to_the_logging_call_type() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let hook = ChunkHook::new("hook", ChunkAction::Keep);
-    hooks.chunk_hooks = vec![hook.clone()];
+    hooks.chunk_hooks = vec![std::sync::Arc::<ChunkHook>::clone(&hook)];
     let details = call_details();
     let mut callback = ResponsesStreamHookState::default();
 
@@ -104,7 +107,7 @@ async fn deployment_chunk_hooks_let_an_explicit_call_type_win() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let hook = ChunkHook::new("hook", ChunkAction::Keep);
-    hooks.chunk_hooks = vec![hook.clone()];
+    hooks.chunk_hooks = vec![std::sync::Arc::<ChunkHook>::clone(&hook)];
     let details = call_details();
     let request_data = json_object(&[("model", text("request-model"))]);
 
@@ -133,7 +136,7 @@ async fn deployment_chunk_hooks_fall_back_to_the_model_call_details() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let hook = ChunkHook::new("hook", ChunkAction::Keep);
-    hooks.chunk_hooks = vec![hook.clone()];
+    hooks.chunk_hooks = vec![std::sync::Arc::<ChunkHook>::clone(&hook)];
     let details = call_details();
     let empty = IndexMap::new();
 
@@ -170,7 +173,11 @@ async fn deployment_chunk_hooks_stop_at_a_failing_hook() {
         "later",
         ChunkAction::Replace(Box::new(completed_with_id("resp_3"))),
     );
-    hooks.chunk_hooks = vec![first.clone(), failing.clone(), later.clone()];
+    hooks.chunk_hooks = vec![
+        std::sync::Arc::<ChunkHook>::clone(&first),
+        std::sync::Arc::<ChunkHook>::clone(&failing),
+        std::sync::Arc::<ChunkHook>::clone(&later),
+    ];
     let details = call_details();
     let mut callback = ResponsesStreamHookState::default();
 

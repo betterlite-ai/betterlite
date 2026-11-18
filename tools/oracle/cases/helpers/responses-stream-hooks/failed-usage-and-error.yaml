@@ -1,0 +1,178 @@
+{
+  "kind": "helper",
+  "name": "responses-stream-hooks-failed-usage-and-error",
+  "call": {
+    "responses_stream_hooks": {
+      "operation": "failed",
+      "rows": [
+        {
+          "event": {
+            "type": "response.failed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "failed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              },
+              "error": {
+                "type": "server_error",
+                "code": "server_error",
+                "message": "broken"
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": false,
+          "cached": false,
+          "yielded": false
+        },
+        {
+          "event": {
+            "type": "response.failed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "failed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              },
+              "error": {
+                "type": "server_error",
+                "code": "server_error",
+                "message": "broken"
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": false,
+          "cached": false,
+          "yielded": true
+        },
+        {
+          "event": {
+            "type": "response.failed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "failed",
+              "output": [],
+              "error": {
+                "type": "server_error",
+                "code": "server_error",
+                "message": "broken"
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": false,
+          "cached": false,
+          "yielded": false
+        },
+        {
+          "event": {
+            "type": "response.failed",
+            "sequence_number": 3,
+            "response": {
+              "id": "resp_1",
+              "created_at": 1700000000,
+              "object": "response",
+              "model": "gpt-4o",
+              "status": "failed",
+              "output": [],
+              "usage": {
+                "input_tokens": 10,
+                "output_tokens": 5,
+                "total_tokens": 15
+              },
+              "error": {
+                "type": "invalid_request_error",
+                "code": "400",
+                "message": "broken"
+              }
+            }
+          },
+          "kwargs": {
+            "stream": true,
+            "custom_llm_provider": "openai",
+            "metadata": null,
+            "cache_key": "request"
+          },
+          "preset": null,
+          "request": {},
+          "details": {},
+          "processed": {},
+          "raw": {},
+          "call_type": "responses",
+          "logging_type": "aresponses",
+          "actions": [],
+          "eligible": true,
+          "broken": false,
+          "deferred": false,
+          "cached": false,
+          "yielded": false
+        }
+      ]
+    }
+  }
+}

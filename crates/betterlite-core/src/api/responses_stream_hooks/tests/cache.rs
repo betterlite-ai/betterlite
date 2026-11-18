@@ -35,8 +35,8 @@ async fn terminal_cache_write() {
         ("metadata", Json::Null),
         ("cache_key", text("request-key")),
     ]);
-    hooks.cache = Some(cache.clone());
-    hooks.cache_handler = Some(handler.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
+    hooks.cache_handler = Some(Arc::<CacheHandler>::clone(&handler));
     let mut state = streaming_state();
 
     hooks
@@ -78,16 +78,18 @@ async fn terminal_cache_write_takes_the_preset_key_over_the_request_key() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let cache = Cache::succeeding();
+    let dual = dual_token();
+    assert!(dual != dual_token());
     let handler = Arc::new(
         CacheHandler::new(json_object(&[
             ("stream", Json::Bool(true)),
             ("cache_key", text("request-key")),
         ]))
         .with_preset("preset-key")
-        .with_dual(dual_token()),
+        .with_dual(dual.clone()),
     );
-    hooks.cache = Some(cache.clone());
-    hooks.cache_handler = Some(handler.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
+    hooks.cache_handler = Some(Arc::<CacheHandler>::clone(&handler));
     let mut state = streaming_state();
 
     hooks.persist_cache(&mut state).expect("the write succeeds");
@@ -97,7 +99,12 @@ async fn terminal_cache_write_takes_the_preset_key_over_the_request_key() {
         writes[0].request_kwargs.get("cache_key"),
         Some(&text("preset-key"))
     );
-    assert!(writes[0].dynamic.is_some());
+    assert!(
+        writes[0]
+            .dynamic
+            .as_ref()
+            .is_some_and(|actual| *actual == dual)
+    );
     assert_eq!(
         handler.seen()[0].get("cache_key"),
         Some(&text("preset-key"))
@@ -109,7 +116,7 @@ async fn terminal_cache_write_keeps_nonnull_metadata_and_drops_a_null_key() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let cache = Cache::succeeding();
-    hooks.cache = Some(cache.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(streaming_handler(&[
         ("stream", Json::Bool(true)),
         ("metadata", json_value(&[("user_id", text("u1"))])),
@@ -133,7 +140,7 @@ async fn terminal_cache_write_accepts_a_truthy_converted_stream_flag() {
     for value in [Json::Bool(true), number("1"), Json::Text("yes".to_owned())] {
         let mut hooks = hooks(&redactor);
         let cache = Cache::succeeding();
-        hooks.cache = Some(cache.clone());
+        hooks.cache = Some(Arc::<Cache>::clone(&cache));
         hooks.cache_handler = Some(streaming_handler(&[
             ("stream", Json::Bool(false)),
             ("_headroom_interception_converted_stream", value),
@@ -158,7 +165,7 @@ async fn terminal_cache_write_requires_stream_exactly_true() {
     ] {
         let mut hooks = hooks(&redactor);
         let cache = Cache::succeeding();
-        hooks.cache = Some(cache.clone());
+        hooks.cache = Some(Arc::<Cache>::clone(&cache));
         hooks.cache_handler = Some(streaming_handler(&[("stream", value)]));
         let mut state = streaming_state();
 
@@ -177,14 +184,14 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
     let cache = Cache::succeeding();
 
     let mut no_handler = hooks(&redactor);
-    no_handler.cache = Some(cache.clone());
+    no_handler.cache = Some(Arc::<Cache>::clone(&cache));
     let mut state = streaming_state();
     no_handler
         .persist_cache(&mut state)
         .expect("a missing handler skips the write");
 
     let mut no_kwargs = hooks(&redactor);
-    no_kwargs.cache = Some(cache.clone());
+    no_kwargs.cache = Some(Arc::<Cache>::clone(&cache));
     no_kwargs.cache_handler = Some(Arc::new(CacheHandler::without_request_kwargs()));
     no_kwargs
         .persist_cache(&mut state)
@@ -197,7 +204,7 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
         .expect("a missing global cache skips the write");
 
     let mut refuses = hooks(&redactor);
-    refuses.cache = Some(cache.clone());
+    refuses.cache = Some(Arc::<Cache>::clone(&cache));
     refuses.cache_handler = Some(Arc::new(
         CacheHandler::new(json_object(&[("stream", Json::Bool(true))])).with_store(false),
     ));
@@ -206,9 +213,9 @@ async fn terminal_cache_write_skips_every_missing_dependency() {
         .expect("a refused store skips the write");
 
     let mut cached = hooks(&redactor);
-    cached.cache = Some(cache.clone());
+    cached.cache = Some(Arc::<Cache>::clone(&cache));
     let handler = streaming_handler(&[("stream", Json::Bool(true))]);
-    cached.cache_handler = Some(handler.clone());
+    cached.cache_handler = Some(Arc::<CacheHandler>::clone(&handler));
     let mut cached_state = streaming_state();
     cached_state.completed_response_cached = true;
     cached
@@ -226,7 +233,7 @@ async fn terminal_cache_write_requires_a_completed_typed_response() {
     let redactor = redactor();
     let cache = Cache::succeeding();
     let mut hooks = hooks(&redactor);
-    hooks.cache = Some(cache.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&cache));
     hooks.cache_handler = Some(streaming_handler(&[("stream", Json::Bool(true))]));
     let in_progress = decode(
         r#"{"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_1","created_at":1700000000,"model":"gpt-4o","output":[]}}"#,
@@ -252,7 +259,7 @@ async fn terminal_cache_write_stays_retryable_after_a_failed_write() {
     let redactor = redactor();
     let mut hooks = hooks(&redactor);
     let failing = Cache::failing("broken");
-    hooks.cache = Some(failing.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&failing));
     hooks.cache_handler = Some(streaming_handler(&[("stream", Json::Bool(true))]));
     let mut state = streaming_state();
 
@@ -267,7 +274,7 @@ async fn terminal_cache_write_stays_retryable_after_a_failed_write() {
     assert_eq!(failing.writes().len(), 1);
 
     let succeeding = Cache::succeeding();
-    hooks.cache = Some(succeeding.clone());
+    hooks.cache = Some(Arc::<Cache>::clone(&succeeding));
     hooks.persist_cache(&mut state).expect("a retry succeeds");
     assert!(state.completed_response_cached);
     assert_eq!(succeeding.writes().len(), 1);
@@ -279,7 +286,7 @@ fn terminal_cache_write_logs_an_async_failure_and_keeps_the_flag() {
     let cache = Cache::failing("broken");
     let (scheduled, logs) = capture(|| {
         let mut hooks = hooks(&redactor);
-        hooks.cache = Some(cache.clone());
+        hooks.cache = Some(Arc::<Cache>::clone(&cache));
         hooks.cache_handler = Some(streaming_handler(&[("stream", Json::Bool(true))]));
         let mut state = streaming_state();
         let runtime = Builder::new_current_thread()

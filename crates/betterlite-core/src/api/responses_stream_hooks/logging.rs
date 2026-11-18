@@ -3,7 +3,6 @@ use std::sync::Arc;
 use betterlite_logging::logging_success::types::{SuccessRequest, SuccessResult};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
-use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
 use super::ResponsesStreamHooks;
@@ -17,7 +16,6 @@ use crate::api::responses_stream_primitives::state::{
 };
 use crate::api::responses_stream_primitives::tasks::spawn_logging_task;
 
-// the copy the success handlers see: B928 detaches it, then the provider headers are restored onto it
 #[must_use]
 pub fn logging_event(
     event: &ResponsesAPIStreamingResponse,
@@ -37,7 +35,6 @@ pub fn logging_event(
     }
 }
 
-// _restore_provider_response_headers: headers by value, the source's first and the iterator's as fallback
 pub fn restore_headers(
     event: &mut ResponsesAPIStreamingResponse,
     hidden: &ResponsesStreamHiddenParams,
@@ -102,23 +99,6 @@ fn event_json(event: &ResponsesAPIStreamingResponse) -> Json {
         .unwrap_or(Json::Null)
 }
 
-fn success_request(
-    state: &ResponsesStreamBaseState,
-    result: Json,
-    end_time: DateTime<FixedOffset>,
-    prefer_async_handlers: bool,
-) -> SuccessRequest {
-    SuccessRequest {
-        result: SuccessResult::Other(result),
-        start_time: Some(state.start_time),
-        end_time: Some(end_time),
-        cache_hit: state.completed_response_cache_hit,
-        prefer_async_handlers,
-        standard_logging_object: None,
-        guardrail_snapshot: None,
-    }
-}
-
 fn completed_logging_json(state: &ResponsesStreamBaseState) -> Json {
     state
         .completed_response
@@ -143,19 +123,21 @@ impl ResponsesStreamHooks<'_> {
             self.persist_cache(state)?;
         }
         let end_time = self.clock.now();
-        let request = success_request(state, completed_logging_json(state), end_time, false);
+        let request = SuccessRequest {
+            result: SuccessResult::Other(completed_logging_json(state)),
+            start_time: Some(state.start_time),
+            end_time: Some(end_time),
+            cache_hit: state.completed_response_cache_hit,
+            prefer_async_handlers: false,
+            standard_logging_object: None,
+            guardrail_snapshot: None,
+        };
         if let Some(success) = self.success.as_ref() {
             success.async_success_handler(&request).await;
             success.success_handler(&request);
         }
-        self.run_post_success_hooks(
-            state,
-            callback,
-            details,
-            state.call_type.as_deref(),
-            end_time,
-        )
-        .await;
+        self.run_post_success_hooks(state, callback, details, call_type.as_deref(), end_time)
+            .await;
         Ok(())
     }
 
@@ -173,7 +155,15 @@ impl ResponsesStreamHooks<'_> {
             self.schedule_cache(state)?;
         }
         let end_time = self.clock.now();
-        let request = success_request(state, completed_logging_json(state), end_time, true);
+        let request = SuccessRequest {
+            result: SuccessResult::Other(completed_logging_json(state)),
+            start_time: Some(state.start_time),
+            end_time: Some(end_time),
+            cache_hit: state.completed_response_cache_hit,
+            prefer_async_handlers: true,
+            standard_logging_object: None,
+            guardrail_snapshot: None,
+        };
         if let Some(success) = self.success.as_ref().map(Arc::clone) {
             if success.deferred_armed() {
                 callback.deferred_stream_complete_args = Some(request);
@@ -189,14 +179,8 @@ impl ResponsesStreamHooks<'_> {
                 }
             }
         }
-        self.run_post_success_hooks(
-            state,
-            callback,
-            details,
-            state.call_type.as_deref(),
-            end_time,
-        )
-        .await;
+        self.run_post_success_hooks(state, callback, details, call_type.as_deref(), end_time)
+            .await;
         Ok(())
     }
 }

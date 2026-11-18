@@ -12,7 +12,6 @@ use thiserror::Error;
 
 use crate::routes::CallType;
 
-// LiteLLM's task names, which also prefix the log line a failed task produces
 pub const CACHE_WRITE_TASK: &str = "Responses stream cache write";
 pub const POST_SUCCESS_TASK: &str = "Responses stream post-call success hook";
 pub const FAILURE_LOGGING_TASK: &str = "Responses stream failure logging";
@@ -41,7 +40,6 @@ impl PartialEq for DynamicCacheObject {
 
 impl Eq for DynamicCacheObject {}
 
-// the caching handler's request kwargs and B4296's store decision over them
 pub trait ResponsesStreamCacheHandler: Send + Sync {
     fn request_kwargs(&self) -> Option<&IndexMap<String, Json>>;
 
@@ -58,7 +56,6 @@ pub trait ResponsesStreamCacheHandler: Send + Sync {
     ) -> Result<bool, PortFailure>;
 }
 
-// cache.add_cache(payload, dynamic_cache_object=..., **request_kwargs) and its awaitable twin, B4297's writes
 #[async_trait]
 pub trait ResponsesStreamCacheTarget: Send + Sync {
     fn add_cache(&self, write: CacheWrite) -> Result<(), PortFailure>;
@@ -72,7 +69,6 @@ pub struct CacheWrite {
     pub dynamic_cache: Option<DynamicCacheObject>,
 }
 
-// logging_obj's success side: the coroutine dispatch, run_async_function(async_success_handler), executor.submit(success_handler)
 #[async_trait]
 pub trait ResponsesStreamSuccessTarget: Send + Sync {
     async fn dispatch_success_handlers(&self, request: SuccessRequest);
@@ -84,7 +80,6 @@ pub trait ResponsesStreamSuccessTarget: Send + Sync {
     fn deferred_armed(&self) -> bool;
 }
 
-// logging_obj's failure side: async_failure_handler awaited, then failure_handler submitted
 #[async_trait]
 pub trait ResponsesStreamFailureTarget: Send + Sync {
     async fn async_failure_handler(&self, delivery: &FailureDelivery) -> Result<(), PortFailure>;
@@ -107,7 +102,7 @@ pub trait ResponseMetadataTarget: Send + Sync {
 }
 
 pub struct ResponseMetadataCall<'call> {
-    pub result: &'call ResponsesAPIStreamingResponse,
+    pub result: &'call mut ResponsesAPIStreamingResponse,
     pub model: &'call str,
     pub kwargs: &'call IndexMap<String, Json>,
     pub start_time: DateTime<FixedOffset>,
@@ -115,7 +110,6 @@ pub struct ResponseMetadataCall<'call> {
     pub include_overhead: bool,
 }
 
-// one installed async_post_call_streaming_deployment_hook callback, called for every streamed chunk
 #[async_trait]
 pub trait ChunkDeploymentHook: Send + Sync {
     async fn post_streaming_deployment_hook(

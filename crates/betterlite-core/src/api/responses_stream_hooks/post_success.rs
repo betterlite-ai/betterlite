@@ -14,47 +14,26 @@ use crate::api::responses_stream_primitives::tasks::spawn_logging_task;
 use crate::routes::CallType;
 
 impl ResponsesStreamHooks<'_> {
-    // _run_post_success_hooks: update response metadata, then hand the terminal event to B5367's hooks
     pub async fn run_post_success_hooks(
         &self,
-        state: &ResponsesStreamBaseState,
+        state: &mut ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
         details: &IndexMap<String, Json>,
-        explicit_call_type: Option<&str>,
         end_time: DateTime<FixedOffset>,
     ) {
-        let Some(completed) = state.completed_response.as_ref() else {
+        let Some((payload, response)) = self.post_payload(state, details, end_time) else {
             return;
         };
-        let payload = success_payload(&state.request_data, details);
-        if let Some(metadata) = self.metadata.as_ref() {
-            let rejected = metadata
-                .update_response_metadata(ResponseMetadataCall {
-                    result: completed,
-                    model: &state.model,
-                    kwargs: &payload,
-                    start_time: state.start_time,
-                    end_time,
-                    include_overhead: false,
-                })
-                .err();
-            if let Some(error) = rejected {
-                tracing::debug!("the responses response metadata update failed: {error}");
-            }
-        }
         let Some(hook) = self.success_hook.as_ref().map(Arc::clone) else {
             return;
         };
-        let call_type = resolve_call_type(explicit_call_type, None).unwrap_or(CallType::Responses);
-        let call_type = call_type_name(call_type).unwrap_or_default();
-        let Ok(response) = serde_json::to_value(completed).and_then(serde_json::from_value::<Json>)
-        else {
-            return;
-        };
+        let call_type =
+            resolve_call_type(state.call_type.as_deref(), None).unwrap_or(CallType::Responses);
+        let call_type_text = call_type_name(call_type).unwrap_or_default();
         if Handle::try_current().is_ok() {
             let task_payload = payload.clone();
             let task_response = response.clone();
-            let task_call_type = call_type.clone();
+            let task_call_type = call_type_text.clone();
             let work = async move {
                 hook.success_deployment_hook(&task_payload, &task_response, &task_call_type)
                     .await
@@ -68,11 +47,34 @@ impl ResponsesStreamHooks<'_> {
         }
         // without a loop LiteLLM runs the coroutine to completion and swallows its error
         if let Err(error) = hook
-            .success_deployment_hook(&payload, &response, &call_type)
+            .success_deployment_hook(&payload, &response, &call_type_text)
             .await
         {
             tracing::debug!("the responses post-call success hook failed: {error}");
         }
+    }
+    fn post_payload(
+        &self,
+        state: &mut ResponsesStreamBaseState,
+        details: &IndexMap<String, Json>,
+        end_time: DateTime<FixedOffset>,
+    ) -> Option<(IndexMap<String, Json>, Json)> {
+        let completed = state.completed_response.as_mut()?;
+        let payload = success_payload(&state.request_data, details);
+        if let Some(metadata) = self.metadata.as_ref() {
+            let _result = metadata.update_response_metadata(ResponseMetadataCall {
+                result: &mut *completed,
+                model: &state.model,
+                kwargs: &payload,
+                start_time: state.start_time,
+                end_time,
+                include_overhead: false,
+            });
+        }
+        let response = serde_json::to_value(completed)
+            .and_then(serde_json::from_value)
+            .ok()?;
+        Some((payload, response))
     }
 }
 
@@ -86,12 +88,8 @@ fn success_payload(
             .iter()
             .map(|(key, value)| (key.clone(), value.clone())),
     );
-    if !payload.contains_key("litellm_params") {
-        let params = details
-            .get("litellm_params")
-            .cloned()
-            .unwrap_or(Json::Object(IndexMap::new()));
-        payload.insert("litellm_params".to_owned(), params);
-    }
+    payload
+        .entry("litellm_params".to_owned())
+        .or_insert_with(|| Json::Object(IndexMap::new()));
     payload
 }
