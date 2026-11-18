@@ -202,10 +202,10 @@ def _pools(config: ComplexityRouterConfig) -> dict[str, PoolView]:
         else:
             names = [value]
             single = True
-        stored = {
-            entry.model_name: _STORED_TIER_ENTRY.validate_json(entry.model_dump_json()).litellm_params
-            for entry in config.tier_model_configs.get(tier, ())
-        }
+        stored: dict[str, dict[str, JsonValue]] = {}
+        for entry in config.tier_model_configs.get(tier, ()):
+            viewed = _STORED_TIER_ENTRY.validate_json(entry.model_dump_json())
+            stored[viewed["model_name"]] = viewed["litellm_params"]
         entries = [EntryView(model_name=name, params=stored.get(name, _EMPTY_PARAMS)) for name in names]
         pools[tier] = PoolView(single=single, entries=entries)
     return pools
