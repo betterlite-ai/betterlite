@@ -43,17 +43,17 @@ fn build_info(
         litellm_model: resolved.litellm_model,
         deprecation_date: resolved.deprecation_date,
         days_until_deprecation: days_until,
-        status: classify(days_until, warn_within_days),
+        status: classify(days_until, i64::from(warn_within_days)),
         litellm_provider: resolved.litellm_provider,
     })
 }
 
 #[must_use]
-pub const fn classify(days_until: i64, warn_within_days: i32) -> DeprecationStatus {
+pub const fn classify(days_until: i64, warn_within_days: i64) -> DeprecationStatus {
     if days_until < 0 {
         return DeprecationStatus::Deprecated;
     }
-    if days_until <= i64::from(warn_within_days) {
+    if days_until <= warn_within_days {
         return DeprecationStatus::Imminent;
     }
     DeprecationStatus::Upcoming
