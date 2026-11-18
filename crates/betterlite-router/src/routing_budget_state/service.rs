@@ -73,7 +73,8 @@ impl<R: WindowRedis + SpendRedis + 'static> RoutingBudgetState<R> {
     #[must_use]
     pub async fn sync_with_redis(&self) -> bool {
         let Some(redis) = &self.increments.cache.redis else {
-            return true;
+            // no shared store to write to: the flush only clears the queue LiteLLM would leave growing
+            return self.flush().await;
         };
         if !self.flush().await {
             return false;

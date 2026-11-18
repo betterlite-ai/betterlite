@@ -32,7 +32,7 @@ const CASES: &[(&str, Case)] = &[
     ("repeated_failures_merge_the_batch_once", || Box::pin(repeated_failures_merge_the_batch_once())),
     ("increment_error_reports_the_key_and_source", || Box::pin(increment_error_reports_the_key_and_source())),
     ("invalid_clock_reports_the_key", || Box::pin(invalid_clock_reports_the_key())),
-    ("start_without_a_runtime_starts_no_task", || Box::pin(start_without_a_runtime())),
+    ("start_without_a_runtime_starts_no_task", start_without_a_runtime),
     ("sync_without_a_store_returns_true", || Box::pin(sync_without_a_store_returns_true())),
     ("second_shutdown_flushes_new_increments", || Box::pin(second_shutdown_flushes_new_increments())),
 ];
@@ -196,13 +196,14 @@ async fn invalid_clock_reports_the_key() {
 }
 
 // a thread without a runtime has no handle, so start leaves no task behind instead of panicking
-fn start_without_a_runtime() {
+fn start_without_a_runtime() -> CaseFuture {
     let harness = harness(all_windows());
     let state = Arc::clone(&harness.state);
     thread::scope(|scope| {
         let _handle = scope.spawn(move || state.start());
     });
     assert_eq!(harness.state.sync.lock().unwrap().len(), 0);
+    Box::pin(async {})
 }
 
 // with no shared store the flush has nothing to write, and the sync still reports success

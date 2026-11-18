@@ -29,6 +29,7 @@ fn runtime(paused: bool) -> Runtime {
     false
 )]
 #[case::failed_flush_requeues_and_skips_the_copy("failed_flush_requeues_and_skips_the_copy", false)]
+#[case::cancelled_sync_still_writes_the_flush("cancelled_sync_still_writes_the_flush", false)]
 #[case::failed_read_keeps_the_local_spend("failed_read_keeps_the_local_spend", false)]
 #[case::memory_only_sync_keeps_the_spend("memory_only_sync_keeps_the_spend", false)]
 #[case::shutdown_flushes_the_queue("shutdown_flushes_the_queue", false)]

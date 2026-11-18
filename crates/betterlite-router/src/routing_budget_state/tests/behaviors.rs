@@ -29,6 +29,7 @@ const CASES: &[(&str, Case)] = &[
     ("sync_flushes_then_copies", || Box::pin(sync_flushes_then_copies())),
     ("increments_during_the_flush_are_added_to_the_copy", || Box::pin(increments_during_the_flush_are_added_to_the_copy())),
     ("failed_flush_requeues_and_skips_the_copy", || Box::pin(failed_flush_requeues_and_skips_the_copy())),
+    ("cancelled_sync_still_writes_the_flush", || Box::pin(cancelled_sync_still_writes_the_flush())),
     ("failed_read_keeps_the_local_spend", || Box::pin(failed_read_keeps_the_local_spend())),
     ("memory_only_sync_keeps_the_spend", || Box::pin(memory_only_sync_keeps_the_spend())),
     ("shutdown_flushes_the_queue", || Box::pin(shutdown_flushes_the_queue())),
@@ -229,6 +230,30 @@ async fn failed_flush_requeues_and_skips_the_copy() {
     assert!(harness.state.sync_with_redis().await);
     assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
     assert_eq!(harness.spend(PROVIDER_KEY), Some(cost("0.5")));
+    assert!(harness.queued().is_empty());
+}
+
+// _await_flush_task: cancelling the sync does not cancel the write it started, so a held batch still lands
+async fn cancelled_sync_still_writes_the_flush() {
+    let harness = harness(all_windows());
+    harness
+        .state
+        .log_success(&event(Some("openai"), None, &[], cost("0.5")))
+        .await
+        .unwrap();
+    harness.store().hold(true);
+    let state = Arc::clone(&harness.state);
+    let mut syncs = JoinSet::new();
+    let _task = syncs.spawn(async move { state.sync_with_redis().await });
+    harness.store().entered().notified().await;
+    syncs.abort_all();
+    harness.store().hold(false);
+    harness.store().release();
+    let aborted = syncs.join_next().await.unwrap();
+    assert!(aborted.is_err());
+    // the next flush waits behind the write the cancelled sync started, then finds the queue cleared
+    assert!(harness.state.flush().await);
+    assert_eq!(harness.store().spend(PROVIDER_KEY), Some(cost("0.5")));
     assert!(harness.queued().is_empty());
 }
 
