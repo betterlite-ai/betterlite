@@ -1,6 +1,6 @@
 mod calls;
 mod recording;
-mod runtime;
+pub(crate) mod runtime;
 mod services;
 
 use std::collections::BTreeMap;

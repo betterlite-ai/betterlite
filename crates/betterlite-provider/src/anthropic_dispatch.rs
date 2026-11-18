@@ -21,6 +21,7 @@ impl Adapter for Anthropic {
 pub mod completion;
 #[cfg(any(test, feature = "testing"))]
 pub mod fixtures;
+pub mod native;
 pub mod operations;
 mod tests;
 

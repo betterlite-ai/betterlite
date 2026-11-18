@@ -48,8 +48,8 @@ impl CompletionHandler<String, String> for Recorder<'_> {
             Ok(json(&reply)?)
         })
     }
-    fn logged_response(reply: &Json) -> Json {
-        reply.clone()
+    fn logged_response(reply: &Json) -> Result<Json, Failure> {
+        Ok(reply.clone())
     }
 }
 

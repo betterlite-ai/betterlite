@@ -61,7 +61,7 @@ pub trait CompletionHandler<Client, Encoding> {
         log: &'call mut CallLogging<'_, '_>,
     ) -> HandlerFuture<'call, Self::Reply, Self::Failure>;
 
-    fn logged_response(reply: &Self::Reply) -> Json;
+    fn logged_response(reply: &Self::Reply) -> Result<Json, Self::Failure>;
 }
 
 pub fn complete<'call, Client, Encoding, Handler>(
@@ -97,7 +97,8 @@ where
             post_call(
                 log.state,
                 &PostCall {
-                    original_response: Handler::logged_response(&reply),
+                    original_response: Handler::logged_response(&reply)
+                        .map_err(DispatchError::Completion)?,
                     input,
                     additional_args: AdditionalArgs::default(),
                 },
