@@ -112,6 +112,7 @@ fn config_failure(error: &ConfigError) -> Box<HelperError> {
         | ConfigError::InvalidInteger { .. }
         | ConfigError::InvalidScalar { .. }
         | ConfigError::Environment { .. }
+        | ConfigError::CustomDimensions(_)
         | ConfigError::LoadThread { .. } => "ConfigError",
     };
     helper_error(class, error.to_string())
