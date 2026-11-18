@@ -185,7 +185,7 @@ fn build_observer(
     now: f64,
 ) -> PromptCacheObserver {
     PromptCacheObserver {
-        cache: fake.clone(),
+        cache: Arc::clone(fake),
         parser: Arc::new(FakeParser { observed }),
         clock: Arc::new(move || now),
     }
@@ -453,9 +453,9 @@ async fn lookup_treats_an_exact_entry_expiring_now_as_stale() {
 #[test]
 fn observer_init_keeps_the_injected_cache_and_parser() {
     let fake = Arc::new(FakeCache::new(false));
-    let cache: Arc<dyn ObservationCache> = fake.clone();
+    let cache: Arc<dyn ObservationCache> = Arc::clone(&fake);
     let parser: Arc<dyn ObservationParser> = Arc::new(FakeParser { observed: None });
-    let observer = PromptCacheObserver::new(fake, parser.clone());
+    let observer = PromptCacheObserver::new(fake, Arc::clone(&parser));
     assert!(Arc::ptr_eq(&observer.cache, &cache));
     assert!(Arc::ptr_eq(&observer.parser, &parser));
 }
@@ -630,8 +630,8 @@ async fn event_passes_the_caller_hash_and_deployment_to_the_parser() {
     let fake = Arc::new(FakeCache::new(false));
     let parser = Arc::new(RecordingParser::default());
     let observer = PromptCacheObserver {
-        cache: fake.clone(),
-        parser: parser.clone(),
+        cache: Arc::clone(&fake),
+        parser: Arc::clone(&parser),
         clock: Arc::new(|| NOW),
     };
     let logged = payload();
@@ -817,7 +817,7 @@ async fn storage_drops_an_observation_with_a_non_finite_clock() {
 async fn storage_scopes_the_key_with_the_parsed_scope() {
     let fake = Arc::new(FakeCache::new(false));
     let observer = PromptCacheObserver {
-        cache: fake.clone(),
+        cache: Arc::clone(&fake),
         parser: Arc::new(ObservedCacheParser),
         clock: Arc::new(|| NOW),
     };
