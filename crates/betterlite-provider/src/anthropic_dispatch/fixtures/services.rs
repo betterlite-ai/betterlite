@@ -8,7 +8,7 @@ use betterlite_anthropic::count_tokens::handler::AnthropicCountTokensHandler;
 use betterlite_anthropic::credentials::AnthropicSettings;
 use betterlite_anthropic::files::api::FilesApi;
 use betterlite_anthropic::files::request::FilesClient;
-use chrono::FixedOffset;
+use chrono::{Offset as _, Utc};
 
 use super::Input;
 use super::recording::Transport;
@@ -36,7 +36,7 @@ impl From<&Input> for Services {
             count: AnthropicCountTokensHandler { transport: transport.clone(), request_timeout: Duration::from_secs(5), beta_version: "token-counting-2024-11-01".to_owned() },
             batches: AnthropicBatchesHandler {
                 transport: transport.clone(), config: AnthropicBatchesConfig { settings: settings.clone() },
-                clock: Clock { now: default_now(), zone: FixedOffset::default() }, request_timeout: Duration::from_secs(5),
+                clock: Clock { now: default_now(), zone: Utc.fix() }, request_timeout: Duration::from_secs(5),
             },
             files: FilesApi { transport, clock: default_now },
             client: FilesClient { api_key: input.api_key.clone(), api_base: input.api_base.clone(), settings, timeout: Duration::from_secs(5) },

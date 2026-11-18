@@ -47,7 +47,7 @@ use betterlite_tokenizer::engine::{
     assets::bundled,
     tiktoken::{Encoding, TiktokenEngine},
 };
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, Offset as _, Utc};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::Value;
@@ -299,7 +299,7 @@ pub(super) async fn run(
         },
         clock: Clock {
             now: 1_700_000_000,
-            zone: FixedOffset::default(),
+            zone: Utc.fix(),
         },
         request_timeout: TIMEOUT,
     };

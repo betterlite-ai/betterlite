@@ -17,7 +17,10 @@ use super::super::base::Surface;
 use super::super::completion::{CompletionHandler, HandlerFuture, ResolvedCall};
 use super::{FixtureError, Input, Recorded};
 
-pub(super) fn json<T: Serialize>(value: &T) -> Result<Json, FixtureError> {
+pub(super) fn json<T>(value: &T) -> Result<Json, FixtureError>
+where
+    T: Serialize,
+{
     let encoded = serde_json::to_vec(value)?;
     Ok(serde_json::from_slice(&encoded)?)
 }
@@ -119,18 +122,19 @@ impl Transport {
         headers
             .iter()
             .map(|(name, value)| {
-                let shown = if name == "x-api-key" || name == "authorization" {
-                    if value.to_str().ok()
-                        == self.expected_key.as_ref().map(|key| key.expose_secret())
-                    {
-                        "matched".to_owned()
-                    } else {
-                        "mismatch".to_owned()
-                    }
+                let matched = if value.to_str().ok()
+                    == self.expected_key.as_ref().map(|key| key.expose_secret())
+                {
+                    "matched"
                 } else {
-                    value.to_str().unwrap_or("invalid").to_owned()
+                    "mismatch"
                 };
-                (name.to_string(), shown)
+                let shown = if name == "x-api-key" || name == "authorization" {
+                    matched
+                } else {
+                    value.to_str().unwrap_or("invalid")
+                };
+                (name.to_string(), shown.to_owned())
             })
             .collect()
     }

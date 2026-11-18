@@ -43,7 +43,10 @@ pub struct CallLogging<'state, 'env> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum DispatchError<Failure: std::error::Error + Send + Sync + 'static> {
+pub enum DispatchError<Failure>
+where
+    Failure: std::error::Error + Send + Sync + 'static,
+{
     #[error(transparent)]
     Selection(config::ConfigSelectionError),
     #[error(transparent)]

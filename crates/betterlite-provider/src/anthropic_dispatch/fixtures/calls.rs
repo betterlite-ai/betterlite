@@ -9,7 +9,6 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use http::{HeaderMap, HeaderName, HeaderValue};
-use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::super::base::{Globals, Surface};
@@ -196,23 +195,30 @@ fn outcome_value(
             }
             .to_owned(),
         )),
-        Err(error) => failure_value(error),
+        Err(error) => json(&FailureView::from(error)),
     }
 }
 
-fn failure_value(error: DispatchError<Failure>) -> Result<Json, FixtureError> {
-    let status = match error {
-        DispatchError::Completion(Failure::Status(status)) => Some(status),
-        DispatchError::Count(error) => Some(error.status_code()),
-        DispatchError::Selection(_)
-        | DispatchError::Batch(_)
-        | DispatchError::File(_)
-        | DispatchError::Completion(Failure::Capture(_)) => None,
-    };
-    Ok(Json::Object(IndexMap::from([
-        ("error".to_owned(), Json::Bool(true)),
-        ("status".to_owned(), json(&status)?),
-    ])))
+#[derive(serde::Serialize)]
+struct FailureView {
+    error: bool,
+    status: Option<u16>,
+}
+
+impl From<DispatchError<Failure>> for FailureView {
+    fn from(error: DispatchError<Failure>) -> Self {
+        Self {
+            error: true,
+            status: match error {
+                DispatchError::Completion(Failure::Status(status)) => Some(status),
+                DispatchError::Count(error) => Some(error.status_code()),
+                DispatchError::Selection(_)
+                | DispatchError::Batch(_)
+                | DispatchError::File(_)
+                | DispatchError::Completion(Failure::Capture(_)) => None,
+            },
+        }
+    }
 }
 
 #[derive(serde::Serialize)]

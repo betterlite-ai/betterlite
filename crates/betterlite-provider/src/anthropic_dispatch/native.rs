@@ -71,7 +71,10 @@ pub enum Reply<ClientFailure> {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Failure<ClientFailure: std::error::Error + Send + Sync + 'static> {
+pub enum Failure<ClientFailure>
+where
+    ClientFailure: std::error::Error + Send + Sync + 'static,
+{
     #[error("the selected config is not an Anthropic Messages config")]
     Config,
     #[error("the resolved base is missing")]
@@ -173,12 +176,15 @@ where
     }
 }
 
-async fn messages<Client: ChatTransport>(
+async fn messages<Client>(
     call: &CompletionCall<ClientHandle<Client>, Engine>,
     config: &Config<'_>,
     runtime: &Runtime<'_, Client>,
     log: &mut CallLogging<'_, '_>,
-) -> Result<ChatOutcome<Client::Failure, Counter>, Failure<Client::Failure>> {
+) -> Result<ChatOutcome<Client::Failure, Counter>, Failure<Client::Failure>>
+where
+    Client: ChatTransport,
+{
     let native = ChatCall {
         model: &call.model,
         custom_llm_provider: &call.provider,
