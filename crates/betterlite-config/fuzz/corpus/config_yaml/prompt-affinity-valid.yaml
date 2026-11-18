@@ -1,0 +1,5 @@
+router_settings:
+  optional_pre_call_checks:
+    - prompt_caching
+litellm_settings:
+  enable_anthropic_prompt_caching: true
