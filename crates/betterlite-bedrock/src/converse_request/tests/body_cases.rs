@@ -160,11 +160,7 @@ fn tool_config_breakpoint() {
 }
 
 fn tool_config_point_outside_tool_config() {
-    let elsewhere = TOOL_OPTIONS.replace(
-        r#"{"location": "tool_config", "control": {"ttl": "1h"}},
-            {"location": "tool_config", "control": {"type": "ephemeral"}}"#,
-        r#"{"location": "system"}"#,
-    );
+    let elsewhere = TOOL_OPTIONS.replace(r#""location": "tool_config""#, r#""location": "system""#);
     let call = Call {
         litellm_params: Some(TOOL_LITELLM),
         ..Call::new(CLAUDE_4_5, &elsewhere)
