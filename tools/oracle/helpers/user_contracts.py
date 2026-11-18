@@ -21,11 +21,10 @@ from litellm.types.proxy.management_endpoints.internal_user_endpoints import (
     UserSearchWhere,
     UserUpdateResult,
 )
-from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 from starlette.requests import Request
-from starlette.types import Scope
 
-_OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+_JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 _NAMES: Final = TypeAdapter(list[JsonValue])
 
 Function: TypeAlias = Literal[
@@ -50,19 +49,6 @@ UPDATE_KEYS: Final[tuple[str, ...]] = (
     "user_alias",
     "user_role",
     "max_budget",
-)
-
-NEW_ITEM_KEYS: Final[tuple[str, ...]] = (
-    "user_id",
-    "user_email",
-    "user_alias",
-    "user_role",
-    "max_budget",
-    "teams",
-    "auto_create_key",
-    "send_invite_email",
-    "sso_user_id",
-    "organizations",
 )
 
 _BULK_UPDATE: Final[TypeAdapter[BulkUpdateUserRequest]] = TypeAdapter(BulkUpdateUserRequest)
@@ -104,9 +90,26 @@ class Answers(TypedDict):
     queries: list[QueryOutcome]
 
 
-def object_dump(model: BaseModel) -> dict[str, JsonValue]:
-    text = model.model_dump_json()
-    return _OBJECT.validate_json(text)
+class UpdateUserView(TypedDict):
+    user_id: str | None
+    user_email: str | None
+
+
+class NewUserItemView(TypedDict):
+    user_id: str | None
+    user_email: str | None
+    user_alias: str | None
+    user_role: str | None
+    max_budget: float | None
+    teams: list[str] | list[dict[str, JsonValue]] | None
+    auto_create_key: bool
+    send_invite_email: bool | None
+    sso_user_id: str | None
+    organizations: list[str] | None
+
+
+_BULK_UPDATE_USER_VIEW: TypeAdapter[UpdateUserView] = TypeAdapter(UpdateUserView)
+_BULK_NEW_USER_ITEM_VIEW: TypeAdapter[NewUserItemView] = TypeAdapter(NewUserItemView)
 
 
 def supplied_names(model_fields_set: set[str], keys: tuple[str, ...]) -> JsonValue:
@@ -115,18 +118,18 @@ def supplied_names(model_fields_set: set[str], keys: tuple[str, ...]) -> JsonVal
 
 
 def update_user_view(request: UpdateUserRequest) -> JsonValue:
-    dump = object_dump(request)
-    view: dict[str, JsonValue] = {
-        "user_id": dump["user_id"],
-        "user_email": dump["user_email"],
+    view = _BULK_UPDATE_USER_VIEW.validate_json(request.model_dump_json())
+    answer: dict[str, JsonValue] = {
+        "user_id": view["user_id"],
+        "user_email": view["user_email"],
         "supplied": supplied_names(request.model_fields_set, UPDATE_KEYS),
     }
-    return view
+    return answer
 
 
 def new_user_item_view(item: BulkNewUserItem) -> JsonValue:
-    dump = object_dump(item)
-    return {key: dump[key] for key in NEW_ITEM_KEYS}
+    view = _BULK_NEW_USER_ITEM_VIEW.validate_json(item.model_dump_json())
+    return _JSON.validate_json(_BULK_NEW_USER_ITEM_VIEW.dump_json(view))
 
 
 def bulk_update_answer(call: Call) -> JsonValue:
@@ -141,8 +144,7 @@ def bulk_update_answer(call: Call) -> JsonValue:
 
 
 def bulk_delete_answer(call: Call) -> JsonValue:
-    request = _BULK_DELETE.validate_python(call["body"])
-    return object_dump(request)
+    return _JSON.validate_json(_BULK_DELETE.validate_python(call["body"]).model_dump_json())
 
 
 def bulk_new_answer(call: Call) -> JsonValue:
@@ -151,48 +153,40 @@ def bulk_new_answer(call: Call) -> JsonValue:
 
 
 def update_result_answer(call: Call) -> JsonValue:
-    result = _UPDATE_RESULT.validate_python(call["body"])
-    return object_dump(result)
+    return _JSON.validate_json(_UPDATE_RESULT.validate_python(call["body"]).model_dump_json())
 
 
 def update_response_answer(call: Call) -> JsonValue:
-    response = _UPDATE_RESPONSE.validate_python(call["body"])
-    return object_dump(response)
+    return _JSON.validate_json(_UPDATE_RESPONSE.validate_python(call["body"]).model_dump_json())
 
 
 def delete_result_answer(call: Call) -> JsonValue:
-    result = _DELETE_RESULT.validate_python(call["body"])
-    return object_dump(result)
+    return _JSON.validate_json(_DELETE_RESULT.validate_python(call["body"]).model_dump_json())
 
 
 def delete_response_answer(call: Call) -> JsonValue:
-    response = _DELETE_RESPONSE.validate_python(call["body"])
-    return object_dump(response)
+    return _JSON.validate_json(_DELETE_RESPONSE.validate_python(call["body"]).model_dump_json())
 
 
 def create_result_answer(call: Call) -> JsonValue:
-    result = _CREATE_RESULT.validate_python(call["body"])
-    return object_dump(result)
+    return _JSON.validate_json(_CREATE_RESULT.validate_python(call["body"]).model_dump_json())
 
 
 def new_meta_answer(call: Call) -> JsonValue:
-    meta = _NEW_META.validate_python(call["body"])
-    return object_dump(meta)
+    return _JSON.validate_json(_NEW_META.validate_python(call["body"]).model_dump_json())
 
 
 def new_response_answer(call: Call) -> JsonValue:
-    response = _NEW_RESPONSE.validate_python(call["body"])
-    return object_dump(response)
+    return _JSON.validate_json(_NEW_RESPONSE.validate_python(call["body"]).model_dump_json())
 
 
 def list_response_answer(call: Call) -> JsonValue:
-    response = _LIST_RESPONSE.validate_python(call["body"])
-    return object_dump(response)
+    return _JSON.validate_json(_LIST_RESPONSE.validate_python(call["body"]).model_dump_json())
 
 
 def search_where_answer(call: Call) -> JsonValue:
     where_clause = _SEARCH_WHERE.validate_python(call["body"])
-    return _OBJECT.validate_json(_SEARCH_WHERE.dump_json(where_clause))
+    return _JSON.validate_json(_SEARCH_WHERE.dump_json(where_clause))
 
 
 ANSWERS: Final[dict[Function, Callable[[Call], JsonValue]]] = {
@@ -212,12 +206,13 @@ ANSWERS: Final[dict[Function, Callable[[Call], JsonValue]]] = {
 
 
 def build_request(query: str) -> Request:
-    scope: Scope = {
+    headers: list[tuple[bytes, bytes]] = []
+    scope: dict[str, object] = {
         "type": "http",
         "scheme": "http",
         "path": "/user/info",
         "query_string": query.encode(),
-        "headers": [],
+        "headers": headers,
     }
     return Request(scope=scope)
 
