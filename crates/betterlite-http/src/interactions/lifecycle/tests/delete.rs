@@ -42,18 +42,9 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
     assert_eq!(output, "{\"id\":\"int_1\"}");
     let address = serving.address;
     let request = serving.finish().unwrap();
-    assert!(
-        request
-            .head
-            .starts_with("DELETE /v1beta/interactions/int_1 HTTP/1.1"),
-        "{}",
-        request.head
-    );
-    assert!(
-        request.head.contains("x-goog-api-key: key-1\r\n"),
-        "{}",
-        request.head
-    );
+    let head = &request.head;
+    assert_eq!(request.line, "DELETE /v1beta/interactions/int_1 HTTP/1.1");
+    assert!(head.contains("x-goog-api-key: key-1\r\n"), "{head}");
     assert_eq!(
         fixture.calls(),
         vec![
@@ -67,7 +58,7 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
     assert_eq!(recorded.api_key.expose_secret(), "");
     assert_eq!(
         recorded.api_base,
-        format!("http://{}/v1beta/interactions/int_1", address)
+        format!("http://{address}/v1beta/interactions/int_1")
     );
     assert_eq!(recorded.headers["x-goog-api-key"].expose_secret(), "key-1");
 }

@@ -50,7 +50,7 @@ fn list_agents_gets_the_configured_url_and_query() {
         config.calls(),
         vec![
             "environment|1|1".to_owned(),
-            format!("list_request|http://{}", address),
+            format!("list_request|http://{address}"),
         ]
     );
 }

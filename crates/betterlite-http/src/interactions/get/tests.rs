@@ -218,17 +218,9 @@ fn get_interaction_retrieves_the_interaction_through_the_config() {
 
     assert_eq!(output, "{\"id\":\"int_1\"}");
     let sent = serving.finish().unwrap();
-    assert!(
-        sent.head
-            .starts_with("GET /v1beta/interactions/int_1 HTTP/1.1"),
-        "{}",
-        sent.head
-    );
-    assert!(
-        sent.head.contains("x-goog-api-key: key-1\r\n"),
-        "{}",
-        sent.head
-    );
+    let head = &sent.head;
+    assert_eq!(sent.line, "GET /v1beta/interactions/int_1 HTTP/1.1");
+    assert!(head.contains("x-goog-api-key: key-1\r\n"), "{head}");
     assert_eq!(
         fixture.calls(),
         vec![
@@ -303,7 +295,7 @@ fn get_interaction_takes_the_api_base_from_litellm_params() {
     let recorded = logging.pre_call.as_ref().unwrap();
     assert_eq!(
         recorded.api_base,
-        format!("http://{}/base/v1beta/interactions/int_1", address)
+        format!("http://{address}/base/v1beta/interactions/int_1")
     );
 }
 

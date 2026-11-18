@@ -77,7 +77,7 @@ async fn async_create_interaction_posts_the_provider_request_and_returns_the_res
     assert_eq!(recorded.api_key.expose_secret(), "");
     assert_eq!(
         recorded.api_base,
-        format!("http://{}/v1beta/interactions", address)
+        format!("http://{address}/v1beta/interactions")
     );
     assert!(fixture.calls().contains(&"response|200|r1".to_owned()));
 }

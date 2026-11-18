@@ -8,7 +8,9 @@ use secrecy::SecretString;
 use super::AgentRequestError;
 use super::create_async::async_create_agent;
 use super::create_sync::create_agent;
-use super::support::{self, Config, FixtureError, Recorder, caller_headers, clients, params_at};
+use super::support::{
+    self, Config, FixtureError, Recorder, caller_headers, clients, configured_headers, params_at,
+};
 use crate::interactions::base::tests::support as base;
 use crate::interactions::base::{ClientError, RequestFailure};
 use betterlite_http_fixture::server::serve;
@@ -22,49 +24,36 @@ fn create_agent_posts_the_configured_request_and_returns_the_transform() {
     .unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_body = base::params(r#"{"name": "agent-1", "instructions": "hi"}"#);
-    config.headers.insert(
-        "content-type".to_owned(),
-        SecretString::from("application/json"),
-    );
-    config
-        .headers
-        .insert("x-goog-api-key".to_owned(), SecretString::from("key-1"));
-    let params = params_at(serving.address);
-    let mut request = support::create_request("agent-1", &params);
+    config.headers = configured_headers(&[
+        ("content-type", "application/json"),
+        ("x-goog-api-key", "key-1"),
+    ]);
+    let mut request = support::create_request("agent-1", &params_at(serving.address));
     request.extra_headers = caller_headers(&[("x-caller", "c1")]);
     request.timeout = Some(Duration::from_secs(1));
     let mut clients = clients();
     let mut logging = Recorder::default();
     let output = create_agent(&config, &mut clients, &mut logging, None, &request).unwrap();
     assert_eq!(output, r#"agent-1|200|{"id":"agent-1"}"#);
-    let address = serving.address;
-    let sent = serving.finish().unwrap();
-    assert!(
-        sent.head.starts_with("POST /v1beta/agents HTTP/1.1"),
-        "{}",
-        sent.head
-    );
-    assert!(
-        sent.head.contains("x-goog-api-key: key-1\r\n"),
-        "{}",
-        sent.head
-    );
-    assert!(
-        sent.head.contains("content-type: application/json\r\n"),
-        "{}",
-        sent.head
-    );
-    assert_eq!(
-        support::sent_body(&sent),
-        base::params(r#"{"name": "agent-1", "instructions": "hi"}"#)
-    );
     assert_eq!(
         config.calls(),
         vec![
             "environment|1|1".to_owned(),
-            format!("create_url|http://{}", address),
+            format!("create_url|http://{}", serving.address),
             "create_request|agent-1".to_owned(),
         ]
+    );
+    let sent = serving.finish().unwrap();
+    let head = &sent.head;
+    assert!(head.starts_with("POST /v1beta/agents HTTP/1.1"), "{head}");
+    assert!(head.contains("x-goog-api-key: key-1\r\n"), "{head}");
+    assert!(
+        head.contains("content-type: application/json\r\n"),
+        "{head}"
+    );
+    assert_eq!(
+        support::sent_body(&sent),
+        base::params(r#"{"name": "agent-1", "instructions": "hi"}"#)
     );
 }
 

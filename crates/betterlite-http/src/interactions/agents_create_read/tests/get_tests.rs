@@ -40,22 +40,17 @@ fn get_agent_gets_the_configured_url_and_query() {
     assert_eq!(output, r#"agent-1|200|{"id":"agent-1"}"#);
     let address = serving.address;
     let sent = serving.finish().unwrap();
+    let head = &sent.head;
     assert!(
-        sent.head
-            .starts_with("GET /v1beta/agents/agent-1?alt=json HTTP/1.1"),
-        "{}",
-        sent.head
+        head.starts_with("GET /v1beta/agents/agent-1?alt=json HTTP/1.1"),
+        "{head}"
     );
-    assert!(
-        sent.head.contains("x-goog-api-key: key-1\r\n"),
-        "{}",
-        sent.head
-    );
+    assert!(head.contains("x-goog-api-key: key-1\r\n"), "{head}");
     assert_eq!(
         config.calls(),
         vec![
             "environment|0|1".to_owned(),
-            format!("get_request|agent-1|http://{}", address),
+            format!("get_request|agent-1|http://{address}"),
         ]
     );
 }

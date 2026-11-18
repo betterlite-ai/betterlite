@@ -62,7 +62,7 @@ fn versions_sends_the_get_with_the_transformed_query() {
         fixture.calls(),
         vec![
             "environment|0|1".to_owned(),
-            format!("versions_request|agent-1|http://{}|1", address),
+            format!("versions_request|agent-1|http://{address}|1"),
             "versions_response|agent-1|200".to_owned(),
         ]
     );

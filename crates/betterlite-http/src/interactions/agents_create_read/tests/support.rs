@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use betterlite_config::tls::Verification;
 use betterlite_http_fixture::request::Request;
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::logging::{AgentLogging, AgentPostCall, AgentPreCall};
 use super::{AgentsApiConfig, CreateAgentRequest, body_text};
@@ -233,6 +233,13 @@ pub(crate) fn caller_headers(entries: &[(&str, &str)]) -> BTreeMap<String, Strin
     entries
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+pub(crate) fn configured_headers(entries: &[(&str, &str)]) -> RequestHeaders {
+    entries
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
         .collect()
 }
 

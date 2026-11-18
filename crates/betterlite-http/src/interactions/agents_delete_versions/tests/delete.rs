@@ -62,7 +62,7 @@ fn delete_agent_sends_the_delete_to_the_configured_url() {
         fixture.calls(),
         vec![
             "environment|0|1".to_owned(),
-            format!("delete_request|agent-1|http://{}|1", address),
+            format!("delete_request|agent-1|http://{address}|1"),
             "delete_response|agent-1|200".to_owned(),
         ]
     );
@@ -100,7 +100,7 @@ fn delete_agent_takes_the_api_base_from_litellm_params() {
     let pre = logging.pre_call.as_ref().unwrap();
     assert_eq!(
         pre.api_base,
-        format!("http://{}/base/v1beta/agents/agent-1", address)
+        format!("http://{address}/base/v1beta/agents/agent-1")
     );
 }
 

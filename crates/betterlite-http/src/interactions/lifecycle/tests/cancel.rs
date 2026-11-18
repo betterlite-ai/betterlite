@@ -35,17 +35,14 @@ fn cancel_interaction_posts_the_transformed_body_as_json() {
 
     assert_eq!(output, "{\"status\":\"cancelled\"}");
     let received = serving.finish().unwrap();
+    let head = &received.head;
     assert!(
-        received
-            .head
-            .starts_with("POST /v1beta/interactions/int_1:cancel HTTP/1.1"),
-        "{}",
-        received.head
+        head.starts_with("POST /v1beta/interactions/int_1:cancel HTTP/1.1"),
+        "{head}"
     );
     assert!(
-        received.head.contains("content-type: application/json\r\n"),
-        "{}",
-        received.head
+        head.contains("content-type: application/json\r\n"),
+        "{head}"
     );
     assert_eq!(received.body, r#"{"action":"cancel","reason":"user"}"#);
     assert_eq!(
