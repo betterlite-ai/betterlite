@@ -1,9 +1,11 @@
+mod block;
+mod finish;
+
 use std::convert::Infallible;
 use std::error::Error;
 use std::ptr::{eq, from_ref};
 
 use async_trait::async_trait;
-use betterlite_config::sections::guardrail_params::base::OnViolation;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_models::decisions::Json;
 use futures_util::FutureExt as _;
@@ -11,28 +13,17 @@ use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
-use crate::api::realtime_guardrail_policy::{RealtimeGuardrailCallback, TRANSCRIPTION_EVENT_HOOKS};
-use crate::api::realtime_sender::RealtimeSend as _;
-use crate::api::realtime_sender::RealtimeSender;
+use crate::api::realtime_guardrail_policy::TRANSCRIPTION_EVENT_HOOKS;
 use crate::api::realtime_session_state::RealtimeStreaming;
 use crate::api::request_destination::RequestData;
 
-use super::callback::{
-    GuardrailFailure, GuardrailInput, GuardrailInputType, GuardrailTexts, RealtimeGuardrail,
-    RealtimeGuardrailPolicy,
-};
+use super::callback::{GuardrailFailure, GuardrailInput, GuardrailInputType, RealtimeGuardrail};
 use super::error::RealtimeGuardrailsError;
 use super::message;
-
-const LOGGED_TRANSCRIPT_CHARS: usize = 80;
 
 // The private steps stay local futures: the connection's callbacks and sockets are not Send, like B1110's sender
 type BlockFuture<'call, ConfigError, CallbackError> =
     LocalBoxFuture<'call, Result<bool, RealtimeGuardrailsError<ConfigError, CallbackError>>>;
-type UnitFuture<'call, ConfigError, CallbackError> =
-    LocalBoxFuture<'call, Result<(), RealtimeGuardrailsError<ConfigError, CallbackError>>>;
-type ApplyFuture<'call, CallbackError> =
-    LocalBoxFuture<'call, Result<GuardrailTexts, GuardrailFailure<CallbackError>>>;
 
 // LiteLLM's RealTimeStreaming.run_realtime_guardrails: the connection state, the provider config and litellm.callbacks
 pub struct RealtimeGuardrails<'run, Config, CallbackError = Infallible>
@@ -142,7 +133,16 @@ where
         transcript: &'call str,
     ) -> BlockFuture<'call, Config::Error, CallbackError> {
         async move {
-            match self.apply(guardrail, transcript).await {
+            let input = GuardrailInput {
+                texts: vec![transcript.to_owned()],
+                images: Vec::new(),
+                request_data: IndexMap::from([(
+                    String::from("user_api_key_dict"),
+                    self.state.user_api_key_dict.clone().unwrap_or(Json::Null),
+                )]),
+                input_type: GuardrailInputType::Request,
+            };
+            match guardrail.apply_guardrail(input).await {
                 Ok(_) => Ok(false),
                 Err(GuardrailFailure::Unexpected(error)) => {
                     tracing::error!(
@@ -160,148 +160,6 @@ where
                     Ok(true)
                 }
             }
-        }
-        .boxed_local()
-    }
-
-    fn apply<'call>(
-        &'call self,
-        guardrail: &'call dyn RealtimeGuardrail<Error = CallbackError>,
-        transcript: &'call str,
-    ) -> ApplyFuture<'call, CallbackError> {
-        async move {
-            let input = GuardrailInput {
-                texts: vec![transcript.to_owned()],
-                images: Vec::new(),
-                request_data: IndexMap::from([(
-                    String::from("user_api_key_dict"),
-                    self.state.user_api_key_dict.clone().unwrap_or(Json::Null),
-                )]),
-                input_type: GuardrailInputType::Request,
-            };
-            guardrail.apply_guardrail(input).await
-        }
-        .boxed_local()
-    }
-
-    // The frame order: the caller's protocol frame first, the cancellation, the client notice, then the spoken message and a fresh response
-    fn send_block_frames<'call>(
-        &'call mut self,
-        message: &'call Json,
-        pre_block_backend_message: Option<&'call str>,
-    ) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            let (cancel, response_create) = message::control_frames();
-            if let Some(frames) = pre_block_backend_message {
-                self.send_backend_text(frames).await?;
-            }
-            let cancel_text =
-                serde_json::to_string(&cancel).map_err(RealtimeGuardrailsError::Encode)?;
-            self.send_backend_text(&cancel_text).await?;
-            self.send_client_notice(message).await?;
-            let spoken_text = serde_json::to_string(&message::spoken_message(message))
-                .map_err(RealtimeGuardrailsError::Encode)?;
-            self.send_backend_text(&spoken_text).await?;
-            let create_text =
-                serde_json::to_string(&response_create).map_err(RealtimeGuardrailsError::Encode)?;
-            self.send_backend_text(&create_text).await
-        }
-        .boxed_local()
-    }
-
-    fn finish_block<'call>(
-        &'call mut self,
-        policy: &'call RealtimeGuardrailPolicy,
-        transcript: &'call str,
-    ) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            self.state.setup.violation_count = self.state.setup.violation_count.saturating_add(1);
-            let count = self.state.setup.violation_count;
-            // LiteLLM's int | None; a count past i64::MAX is past every threshold a config can hold
-            let comparable = i64::try_from(count).unwrap_or(i64::MAX);
-            let limit_reached = policy
-                .end_session_after_n_fails
-                .is_some_and(|limit| comparable >= limit);
-            if policy.on_violation == Some(OnViolation::EndSession) || limit_reached {
-                tracing::warn!("[realtime guardrail] ending session after violation {count}");
-                self.close_backend().await?;
-            }
-            let logged: String = transcript.chars().take(LOGGED_TRANSCRIPT_CHARS).collect();
-            tracing::warn!(
-                "[realtime guardrail] BLOCKED transcript (violation {count}): {logged:?}"
-            );
-            Ok(())
-        }
-        .boxed_local()
-    }
-
-    // B1110's send boundary: a guardrail frame gets the same provider transform as a client frame
-    fn send_backend_text<'call>(
-        &'call mut self,
-        text: &'call str,
-    ) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            let guardrails: &[&dyn RealtimeGuardrailCallback<Error = CallbackError>] = &[];
-            let mut sender = RealtimeSender {
-                state: &mut *self.state,
-                provider: self.provider,
-                guardrails,
-            };
-            sender
-                .send_to_backend(text)
-                .await
-                .map_err(RealtimeGuardrailsError::Send)?;
-            Ok(())
-        }
-        .boxed_local()
-    }
-
-    // LiteLLM sends the notice straight to the client socket; it is not an event, so it gets no normalization or beta translation
-    fn send_client_notice<'call>(
-        &'call mut self,
-        message: &'call Json,
-    ) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            let error = Json::Object(IndexMap::from([
-                (
-                    String::from("type"),
-                    Json::Text(String::from("guardrail_violation")),
-                ),
-                (String::from("message"), message.clone()),
-                (
-                    String::from("code"),
-                    Json::Text(String::from("content_policy_violation")),
-                ),
-            ]));
-            let notice = Json::Object(IndexMap::from([
-                (String::from("type"), Json::Text(String::from("error"))),
-                (String::from("error"), error),
-            ]));
-            let text = serde_json::to_string(&notice).map_err(RealtimeGuardrailsError::Encode)?;
-            let client = self
-                .state
-                .client
-                .as_mut()
-                .ok_or(RealtimeGuardrailsError::ClientMissing)?;
-            client
-                .send_text(&text)
-                .await
-                .map_err(RealtimeGuardrailsError::Client)
-        }
-        .boxed_local()
-    }
-
-    fn close_backend<'call>(&'call mut self) -> UnitFuture<'call, Config::Error, CallbackError> {
-        async move {
-            let backend = self
-                .state
-                .backend
-                .as_mut()
-                .ok_or(RealtimeGuardrailsError::BackendMissing)?;
-            backend
-                .close()
-                .await
-                .map_err(RealtimeGuardrailsError::Close)
         }
         .boxed_local()
     }
