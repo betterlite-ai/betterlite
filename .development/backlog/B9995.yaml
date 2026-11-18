@@ -1,13 +1,13 @@
 id: B9995
 milestone: R2 bug fixes
 title: A semantic guard post-call passthrough keeps the blocked response
-status: todo
+status: done
 depends_on: [B8214]
 file: tasks/B9995-semantic-guard-original-response.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2448
