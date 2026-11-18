@@ -122,7 +122,9 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
     };
     let outcome = Scorer::new(resolved)
         .and_then(|scorer| scorer.score_and_classify(&prompt))
-        .map_err(invalid_request)?;
+        .map_err(|source| OperationError::InvalidRequest {
+            message: source.to_string(),
+        })?;
     fields.tier = Some(outcome.tier.name().to_owned());
     fields.score = Some(format!("{:.6}", outcome.score));
     fields.signals = Some(outcome.signals);
@@ -130,25 +132,35 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
     Ok(())
 }
 
-fn invalid_request(source: impl std::fmt::Display) -> OperationError {
-    OperationError::InvalidRequest {
-        message: source.to_string(),
-    }
-}
-
 fn resolved(config: Option<&ProbeConfig>) -> Result<(Config, u64), OperationError> {
     let scoring = scoring_section::Config {
+        tier_models: None,
+        complexity_thresholds: None,
         dimension_weights: config.and_then(|settings| settings.dimension_weights.clone()),
-        ..scoring_section::Config::default()
+        tier_boundaries: None,
+        reasoning_override_min_score: None,
+        code_keywords: None,
+        reasoning_keywords: None,
+        technical_keywords: None,
+        custom_technical_keywords: None,
+        simple_keywords: None,
+        default_model: None,
     };
-    let mut resolved = Config::resolve(&scoring).map_err(invalid_request)?;
+    let mut resolved =
+        Config::resolve(&scoring).map_err(|source| OperationError::InvalidRequest {
+            message: source.to_string(),
+        })?;
     let empty = Vec::new();
     let dimensions = config.map_or(&empty, |settings| &settings.custom_dimensions);
     let classifier = config
         .and_then(|settings| settings.classifier_type.as_deref())
         .unwrap_or("heuristic");
     let validated =
-        validate(dimensions, classifier, &resolved.dimension_weights).map_err(invalid_request)?;
+        validate(dimensions, classifier, &resolved.dimension_weights).map_err(|source| {
+            OperationError::InvalidRequest {
+                message: source.to_string(),
+            }
+        })?;
     resolved.custom_dimensions = validated.dimensions;
     Ok((resolved, validated.work))
 }
