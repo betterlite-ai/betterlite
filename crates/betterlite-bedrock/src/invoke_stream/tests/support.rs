@@ -457,9 +457,7 @@ impl StreamLogging for Logging {
     }
 
     fn completed(&self, _chunks: &[StreamChunk]) -> StreamBuild {
-        let mut state = self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         state.completions = state.completions.saturating_add(1);
         StreamBuild::Empty
     }
