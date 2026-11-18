@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
@@ -89,6 +90,10 @@ fn assert_sap_headers(transport: &Scripted) {
         assert_eq!(auth.as_deref(), Some("Bearer oracle-token"));
         assert_eq!(resource_group(transport, index).as_deref(), Some("default"));
         assert_eq!(client_type(transport, index).as_deref(), Some("LiteLLM"));
+    }
+    let sent = transport.sent();
+    for request in &sent[..5] {
+        assert_eq!(request.deadline, Duration::from_secs(30));
     }
 }
 

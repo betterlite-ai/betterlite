@@ -144,6 +144,7 @@ pub(super) struct Sent {
     pub(super) url: String,
     pub(super) headers: http::HeaderMap,
     pub(super) body: Vec<u8>,
+    pub(super) deadline: Duration,
 }
 
 fn response(status: u16, body: &str) -> UpstreamResponse {
@@ -219,6 +220,7 @@ impl Scripted {
                 url: request.url.to_string(),
                 headers: request.headers.clone(),
                 body,
+                deadline: request.deadline,
             });
     }
 }
