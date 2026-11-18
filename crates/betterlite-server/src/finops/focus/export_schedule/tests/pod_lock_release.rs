@@ -40,7 +40,7 @@ async fn an_unsupported_frequency_still_releases_the_lock_and_returns_the_error(
         &support::environment(&[]),
         params,
         recorder.factory(),
-        Some(support::as_pod_lock(&lock)),
+        Some(support::into_pod_lock(Arc::clone(&lock))),
     );
     let error = initialize_focus_export_job(&logger)
         .await
@@ -75,7 +75,7 @@ async fn a_cancelled_export_still_releases_the_lock_exactly_once() {
                 clock: Arc::new(FixedClock {
                     now: at(support::FIXED_NOW),
                 }),
-                pod_lock: Some(support::as_pod_lock(&lock)),
+                pod_lock: Some(support::into_pod_lock(Arc::clone(&lock))),
                 tasks: tasks.clone(),
             },
         )

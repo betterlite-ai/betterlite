@@ -289,7 +289,7 @@ pub(super) fn locked(
         &BTreeMap::new(),
         params(),
         recorder.factory(),
-        Some(as_pod_lock(&lock)),
+        Some(into_pod_lock(Arc::clone(&lock))),
     );
     (logger, recorder, lock)
 }
@@ -342,8 +342,8 @@ impl FocusPodLock for FakePodLock {
     }
 }
 
-pub(super) fn as_pod_lock(lock: &Arc<FakePodLock>) -> Arc<dyn FocusPodLock> {
-    Arc::clone(lock)
+pub(super) fn into_pod_lock(lock: Arc<FakePodLock>) -> Arc<dyn FocusPodLock> {
+    lock
 }
 
 // One lease per key, like the redis cache the real manager talks to, and the TTLs the manager asked for.
