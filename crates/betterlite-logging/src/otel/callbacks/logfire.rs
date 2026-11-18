@@ -11,9 +11,10 @@ use rust_decimal::prelude::ToPrimitive as _;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
+use crate::datadog_llm_obs::values::{as_object, as_text};
 use crate::fields::payload::StandardLoggingPayload;
 use crate::logging_privacy::snapshot::redact_user_api_key_info;
-use crate::otel::callbacks::{IdGenerator, object_of, text_of};
+use crate::otel::callbacks::IdGenerator;
 
 pub const CALLBACK_NAME: &str = "logfire";
 pub const CHAT_COMPLETION_TEMPLATE: &str = "Chat Completion with {request_data[model]!r}";
@@ -104,14 +105,14 @@ fn build_payload(
     let response = payload
         .response
         .as_ref()
-        .and_then(object_of)
+        .and_then(as_object)
         .cloned()
         .unwrap_or_default();
     let mut fields = header_fields(payload, ids, &response);
     let user = payload
         .model_parameters
         .get("user")
-        .and_then(text_of)
+        .and_then(as_text)
         .unwrap_or_default();
     fields.insert("model".to_owned(), Json::Text(payload.model.clone()));
     fields.insert("user".to_owned(), Json::Text(user.to_owned()));
@@ -137,7 +138,7 @@ fn header_fields(
     ids: IdGenerator,
     response: &IndexMap<String, Json>,
 ) -> IndexMap<String, Json> {
-    let id = match response.get("id").and_then(text_of) {
+    let id = match response.get("id").and_then(as_text) {
         Some(id) => id.to_owned(),
         None => ids(),
     };

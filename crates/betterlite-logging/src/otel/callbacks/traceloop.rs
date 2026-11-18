@@ -11,8 +11,8 @@ use rust_decimal::prelude::ToPrimitive as _;
 use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::error::LoggerError;
 use crate::callback_logger::event::LoggerEvent;
+use crate::datadog_llm_obs::values::{as_object, as_text};
 use crate::fields::payload::StandardLoggingPayload;
-use crate::otel::callbacks::{object_of, text_of};
 use crate::otel::legacy_lifecycle::context::instant_from_ns;
 use crate::otel::legacy_policy::error_recording::{RecordedException, record_exception_on_span};
 use crate::otel::model::metadata::wire::MetadataMap;
@@ -100,7 +100,7 @@ impl TraceloopLogger {
 fn write_attributes(span: &mut SdkSpan, payload: &StandardLoggingPayload) -> Option<()> {
     write_optional_parameters(span, payload);
     write_prompts(span, payload.messages.as_ref())?;
-    let response = object_of(payload.response.as_ref()?)?;
+    let response = as_object(payload.response.as_ref()?)?;
     write_attribute(span, gen_ai::RESPONSE_MODEL, response.get("model"));
     write_usage(span, response.get("usage"));
     write_completions(span, response.get("choices"))
@@ -141,7 +141,7 @@ fn write_prompts(span: &mut SdkSpan, messages: Option<&Json>) -> Option<()> {
         return None;
     };
     for (index, message) in messages.iter().enumerate() {
-        write_role_and_content(span, &format!("{LLM_PROMPTS}.{index}"), object_of(message)?);
+        write_role_and_content(span, &format!("{LLM_PROMPTS}.{index}"), as_object(message)?);
     }
     Some(())
 }
@@ -155,7 +155,7 @@ where
 }
 
 fn write_usage(span: &mut SdkSpan, usage: Option<&Json>) {
-    let Some(usage) = usage.and_then(object_of) else {
+    let Some(usage) = usage.and_then(as_object) else {
         return;
     };
     write_attribute(span, LLM_USAGE_TOTAL_TOKENS, usage.get("total_tokens"));
@@ -173,14 +173,14 @@ fn write_completions(span: &mut SdkSpan, choices: Option<&Json>) -> Option<()> {
         return None;
     };
     for (index, choice) in choices.iter().enumerate() {
-        let fields = object_of(choice)?;
+        let fields = as_object(choice)?;
         let prefix = format!("{LLM_COMPLETIONS}.{index}");
         write_attribute(
             span,
             &format!("{prefix}.finish_reason"),
             fields.get("finish_reason"),
         );
-        let message = fields.get("message").and_then(object_of)?;
+        let message = fields.get("message").and_then(as_object)?;
         write_role_and_content(span, &prefix, message);
     }
     Some(())
@@ -213,7 +213,7 @@ fn attribute_value(value: &Json) -> Option<Value> {
 fn string_array(items: &[Json]) -> Option<Value> {
     let mut strings = Vec::with_capacity(items.len());
     for item in items {
-        strings.push(StringValue::from(text_of(item)?.to_owned()));
+        strings.push(StringValue::from(as_text(item)?.to_owned()));
     }
     Some(Value::Array(Array::String(strings)))
 }
