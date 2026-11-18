@@ -62,10 +62,17 @@ fn named_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
 
 fn flags_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
     let mut probe = walker.input.clone().skip(1);
-    let spec: String = probe
-        .by_ref()
-        .take_while(|letter| FLAG_LETTERS.contains(letter))
-        .collect();
+    let mut spec = String::new();
+    loop {
+        let Some(letter) = probe.clone().next() else {
+            return Err(PatternProblem::Syntax);
+        };
+        if !FLAG_LETTERS.contains(&letter) {
+            break;
+        }
+        spec.push(letter);
+        let _letter = probe.next();
+    }
     let candidate = probe.next().filter(|letter| matches!(letter, ':' | ')'));
     let terminator = candidate.ok_or(PatternProblem::Syntax)?;
     apply_flags(walker, &spec, terminator)
