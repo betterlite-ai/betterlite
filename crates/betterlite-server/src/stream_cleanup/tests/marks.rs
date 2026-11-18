@@ -196,6 +196,26 @@ fn mark_details_disconnected_creates_missing_objects() {
     );
 }
 
+#[test]
+fn mark_details_disconnected_replaces_null_containers() {
+    let mut details = object(&[("litellm_params", Json::Null), ("metadata", Json::Null)]);
+    mark_details_disconnected(&mut details);
+    let marked = object(&[
+        ("client_disconnected", Json::Bool(true)),
+        ("error_information", expected_error_info()),
+    ]);
+    assert_eq!(
+        details,
+        object(&[
+            (
+                "litellm_params",
+                Json::Object(object(&[("metadata", Json::Object(marked.clone()))])),
+            ),
+            ("metadata", Json::Object(marked)),
+        ])
+    );
+}
+
 #[tokio::test]
 async fn run_cleanup_marks_the_request_and_the_logging_details_on_disconnect() {
     let logging = Arc::new(FakeLogging::new(Some(object(&[]))));

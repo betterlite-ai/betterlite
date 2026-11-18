@@ -238,15 +238,24 @@ struct SlotState {
 #[derive(Default)]
 pub(super) struct FakeSlots {
     state: Mutex<SlotState>,
+    logging: Option<Arc<FakeLogging>>,
 }
 
 impl FakeSlots {
-    pub(super) fn failing() -> Self {
+    pub(super) fn attached_to(logging: &Arc<FakeLogging>) -> Self {
+        Self {
+            state: Mutex::new(SlotState::default()),
+            logging: Some(Arc::clone(logging)),
+        }
+    }
+
+    pub(super) fn failing(logging: &Arc<FakeLogging>) -> Self {
         Self {
             state: Mutex::new(SlotState {
                 keys: Vec::new(),
                 fail: true,
             }),
+            logging: Some(Arc::clone(logging)),
         }
     }
 
@@ -262,6 +271,14 @@ impl SlotRelease<String> for FakeSlots {
     ) -> CleanupFuture<'call, Result<(), CleanupError>> {
         let mut state = self.state.lock().unwrap();
         state.keys.push(key.clone());
+        if let Some(logging) = &self.logging {
+            logging
+                .state
+                .lock()
+                .unwrap()
+                .events
+                .push(format!("release:{key}"));
+        }
         let outcome = if state.fail {
             Err(CleanupError::Port("release failed".to_owned()))
         } else {

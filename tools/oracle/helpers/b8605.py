@@ -53,11 +53,13 @@ def model_answer(check: ModelCheck) -> JsonObject:
     }
 
 
-def model_answers(checks: list[ModelCheck]) -> list[JsonObject]:
-    return [model_answer(check) for check in checks]
-
-
 def run(input_value: Input) -> JsonValue:
-    if input_value["function"] == "record_disconnect":
-        return _JSON.validate_python(asyncio.run(record_answers(input_value["requests"])))
-    return _JSON.validate_python(model_answers(input_value["checks"]))
+    answer: JsonValue = None
+    match input_value["function"]:
+        case "record_disconnect":
+            answer = _JSON.validate_python(asyncio.run(record_answers(input_value["requests"])))
+        case "model_checks":
+            answer = _JSON.validate_python(
+                [model_answer(check) for check in input_value["checks"]]
+            )
+    return answer
