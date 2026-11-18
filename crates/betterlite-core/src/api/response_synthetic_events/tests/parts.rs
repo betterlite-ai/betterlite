@@ -237,6 +237,15 @@ fn huge_reasoning_text_part_exceeds_the_event_budget() {
 }
 
 #[test]
+fn huge_response_fields_outside_the_output_exceed_the_event_budget() {
+    let instructions = "i".repeat(90 * 1024 * 1024);
+    let mut transformed = response_with("[]", &format!(r#","instructions":"{instructions}""#));
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+}
+
+#[test]
 fn part_done_annotations_follow_python_truthiness() {
     let parts = concat!(
         r#"{"type":"output_text","text":"hi","annotations":null},"#,
