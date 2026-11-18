@@ -1,10 +1,11 @@
+mod attempt;
 mod clients;
 mod filters;
 
 use betterlite_models::deployment_filters::get_order_filtered_deployments;
 use rand::Rng;
 
-use self::clients::acquire_client;
+use self::attempt::attempt;
 use self::filters::{pre_call_pool, static_pool};
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::lookup::CatalogResolver;
@@ -173,7 +174,7 @@ async fn single_route(
     let Some(selected) = filtered.deployments.into_iter().next() else {
         return Err(no_deployment_error(context, &resolved));
     };
-    Ok(attempt(context, resolved, selected, None))
+    Ok(attempt(context, resolved, selected, None).await)
 }
 
 async fn pool_route<R>(
@@ -195,9 +196,9 @@ where
         let Some(deployment) = set.deployments.into_iter().next() else {
             return Err(no_deployment_error(context, &resolved));
         };
-        return Ok(attempt(context, resolved, deployment, None));
+        return Ok(attempt(context, resolved, deployment, None).await);
     }
-    let pick = select_index(context, dispatch, &resolved.resolution, &set, random).await?;
+    let pick = select_index(context, dispatch, &resolved, &set, random).await?;
     let Some((strategy, index)) = pick else {
         return Err(no_deployment_error(context, &resolved));
     };
@@ -205,7 +206,7 @@ where
     let Some(deployment) = set.deployments.into_iter().nth(index) else {
         return Err(no_deployment_error(context, &resolved));
     };
-    Ok(attempt(context, resolved, deployment, Some(strategy)))
+    Ok(attempt(context, resolved, deployment, Some(strategy)).await)
 }
 
 // The pool after every filter async_get_healthy_deployments applies before it selects.
@@ -252,21 +253,22 @@ async fn narrowed_pool(
 async fn select_index<R>(
     context: &RouteContext<'_>,
     dispatch: &mut StrategyDispatch,
-    resolution: &Resolution,
+    resolved: &ResolvedRoute,
     set: &CandidateSet,
     random: &mut R,
 ) -> Result<Option<(Strategy, usize)>, RoutingError>
 where
     R: Rng + Send,
 {
-    let Some(strategy) = Strategy::of(resolution.strategy) else {
+    let Some(strategy) = Strategy::of(resolved.resolution.strategy) else {
         return Ok(None);
     };
     let strategy_context = StrategyContext {
         deployments: &set.deployments,
+        model_group: &resolved.group,
         route: context,
         dispatch,
-        resolution,
+        resolution: &resolved.resolution,
     };
     let index = strategy::select(strategy, strategy_context, random).await?;
     Ok(Some((strategy, index)))
@@ -281,22 +283,4 @@ fn no_deployment_error(context: &RouteContext<'_>, resolved: &ResolvedRoute) -> 
         context.services.cooldown_list(),
         resolved.model_ids.clone(),
     ))
-}
-
-fn attempt(
-    context: &RouteContext<'_>,
-    resolved: ResolvedRoute,
-    deployment: DeploymentSpec,
-    strategy: Option<Strategy>,
-) -> AttemptResult {
-    let client = acquire_client(context, &resolved.group, &deployment);
-    AttemptResult {
-        group: resolved.group,
-        deployment,
-        aliases: resolved.aliases,
-        strategy,
-        client,
-        override_pre_call: resolved.override_pre_call,
-        bindings: resolved.bindings,
-    }
 }
