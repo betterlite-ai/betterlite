@@ -11,7 +11,6 @@ use tokio::task::yield_now;
 use tokio::time::{advance, timeout};
 
 use crate::router_observations::counter::{CounterSink, Increment};
-use crate::routing_state::MAX_PENDING_DELTAS;
 use crate::routing_state::counter::RouterCounters;
 use crate::routing_state::delta::store::local_amount;
 use crate::routing_state::delta::{Delta, DeltaStore, SyncState};
@@ -19,6 +18,7 @@ use crate::routing_state::error::RoutingStateError;
 use crate::routing_state::metadata::{
     CallbackChannels, deployment_channel, get_counted_usage_tokens,
 };
+use crate::routing_state::{FLUSH_DEADLINE, MAX_PENDING_DELTAS};
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::test_support::FakeRedis;
 use crate::routing_value_store::{RouteIncrement, RouteKey, RoutingValueStore};
@@ -70,12 +70,22 @@ pub(crate) async fn run(name: &str) {
         "metadata_bucket_selection" => metadata_bucket_selection(),
         "key_pattern_is_absent" => key_pattern_is_absent(),
         "real_store_smoke" => real_store_smoke().await,
-        "callback_saturation_flushes_before_dropping" => {
-            callback_saturation_flushes_before_dropping().await;
+        "callback_saturation_flushes_the_whole_queue" => {
+            callback_saturation_flushes_the_whole_queue().await;
         }
         "callback_saturation_honors_the_caller_deadline" => {
             callback_saturation_honors_the_caller_deadline().await;
         }
+        "full_queue_callback_flushes_both_entries" => {
+            full_queue_callback_flushes_both_entries().await;
+        }
+        "scheduled_flush_past_the_deadline_drops_the_joined_deltas" => {
+            scheduled_flush_past_the_deadline_drops_the_joined_deltas().await;
+        }
+        "failed_scheduled_flush_drops_the_joined_deltas" => {
+            failed_scheduled_flush_drops_the_joined_deltas().await;
+        }
+        "cleanup_waits_for_the_scheduled_flush" => cleanup_waits_for_the_scheduled_flush().await,
         "failure_callback_increment_survives_the_merge" => {
             failure_callback_increment_survives_the_merge().await;
         }
@@ -385,32 +395,28 @@ async fn usage_key_merges_the_shared_store_total() {
     assert_eq!(harness.counters.read(TPM_KEY), Some(107));
 }
 
-// the callback sink schedules a full queue's flush on the owner's task set, so saturation drops nothing
-async fn callback_saturation_flushes_before_dropping() {
+// the callback sink stages the whole batch, and the flush it schedules pushes the queue and every joined delta
+async fn callback_saturation_flushes_the_whole_queue() {
     let harness = Harness::with_store(settings(false, None));
     let sink: &dyn CounterSink = harness.counters.as_ref();
     let one = usage_batch(TPM_KEY, 1);
     for _step in 0..=MAX_PENDING_DELTAS {
         sink.increment_pipeline(&one).unwrap();
     }
-    // the delta that filled the queue waits in the scheduled flush, not in a second buffer
+    // the delta that found the queue full waits for the flush it scheduled, beside the full queue
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 1);
     assert_eq!(harness.store.calls(), 0);
     harness.drain_flushes().await;
     assert_eq!(harness.store.calls(), 1);
     assert_eq!(
         harness.store.amount(TPM_KEY),
-        Some(Decimal::from(1_024_u64))
-    );
-    assert_eq!(harness.pending_len(), 1);
-    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
-    assert!(harness.counters.sync_with_redis().await);
-    assert_eq!(
-        harness.store.amount(TPM_KEY),
         Some(Decimal::from(1_025_u64))
     );
     assert_eq!(harness.pending_len(), 0);
-    // a failing store drops only the delta that found the queue full, and the local count keeps every increment
+    assert_eq!(harness.joined_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
+    // a failing store discards the batch the flush carried, and the local count keeps every increment
     let down = Harness::with_store(settings(false, None));
     down.store.set_down(true);
     let down_sink: &dyn CounterSink = down.counters.as_ref();
@@ -419,9 +425,25 @@ async fn callback_saturation_flushes_before_dropping() {
     }
     down.drain_flushes().await;
     assert_eq!(down.pending_len(), 0);
+    assert_eq!(down.joined_len(), 0);
     assert_eq!(down.store.calls(), 1);
     assert_eq!(down.counters.read(TPM_KEY), Some(1_025));
     assert_eq!(down.store.amount(TPM_KEY), None);
+}
+
+// cleanup joins a flush the sink scheduled, so the batch reaches the store before cleanup returns
+async fn cleanup_waits_for_the_scheduled_flush() {
+    let harness = Harness::with_store(settings(false, None));
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    harness.counters.cleanup().await;
+    assert_eq!(harness.store.calls(), 1);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_025_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
 }
 
 // a callback returns inside its caller's deadline even while a stalled flush holds the store
@@ -447,14 +469,109 @@ async fn callback_saturation_honors_the_caller_deadline() {
     .await;
     assert!(outcome.is_ok());
     assert_eq!(harness.store.calls(), 1);
+    // the joined delta rides the same flush once the store answers, beside the queue that filled behind it
     harness.store.set_stalled(false);
     harness.store.release();
     harness.drain_flushes().await;
+    assert_eq!(harness.store.calls(), 2);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(2_050_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.counters.read(TPM_KEY), Some(2_050));
+}
+
+// a full queue and a two-entry TPM/RPM callback: both entries reach the store on the one flush the call schedules
+async fn full_queue_callback_flushes_both_entries() {
+    let harness = Harness::with_store(settings(false, None));
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS))
+        .unwrap();
+    let both = [
+        Increment {
+            key: TPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        },
+        Increment {
+            key: RPM_KEY.to_owned(),
+            value: 1,
+            ttl: TTL,
+        },
+    ];
+    sink.increment_pipeline(&both).unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 2);
+    harness.drain_flushes().await;
+    assert_eq!(harness.store.calls(), 1);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_025_u64))
+    );
+    assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::ONE));
+    assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
+    assert_eq!(harness.counters.read(RPM_KEY), Some(1));
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
+}
+
+// a scheduled flush past its deadline drops the deltas that joined it, and the queue behind it still pushes
+async fn scheduled_flush_past_the_deadline_drops_the_joined_deltas() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    // a second full queue and one more delta join while the stalled flush holds the gate
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 1);
+    advance(FLUSH_DEADLINE).await;
+    yield_now().await;
+    // the store never answered, so the flush's batch and the delta beside it are gone
+    assert_eq!(harness.joined_len(), 0);
+    harness.store.set_stalled(false);
+    harness.store.release();
+    harness.drain_flushes().await;
+    assert!(harness.counters.sync_with_redis().await);
     assert_eq!(
         harness.store.amount(TPM_KEY),
         Some(Decimal::from(1_024_u64))
     );
+    assert_eq!(harness.pending_len(), 0);
     assert_eq!(harness.counters.read(TPM_KEY), Some(2_050));
+}
+
+// a scheduled flush whose store fails drops the deltas that joined it, and the queue behind it still pushes
+async fn failed_scheduled_flush_drops_the_joined_deltas() {
+    let harness = Harness::with_store(settings(false, None));
+    harness.store.set_stalled(true);
+    let sink: &dyn CounterSink = harness.counters.as_ref();
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    yield_now().await;
+    assert_eq!(harness.store.calls(), 1);
+    // a second full queue and one more delta join while the stalled flush holds the gate
+    sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
+        .unwrap();
+    assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 1);
+    // the store answers the stalled push with an error, so the batch and the joined delta are discarded
+    harness.store.set_down(true);
+    harness.store.release();
+    harness.drain_flushes().await;
+    assert_eq!(harness.joined_len(), 0);
+    harness.store.set_down(false);
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_024_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
 }
 
 // a store that never answers: the one second deadline ends the caller's wait and the new delta is dropped

@@ -209,12 +209,11 @@ impl Harness {
     }
 
     pub(crate) fn pending_len(&self) -> usize {
-        self.counters
-            .state
-            .pending
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len()
+        queue_len(&self.counters.state.pending)
+    }
+
+    pub(crate) fn joined_len(&self) -> usize {
+        queue_len(&self.counters.state.joined)
     }
 
     pub(crate) fn tracked_len(&self) -> usize {
@@ -240,6 +239,10 @@ impl Harness {
             StoreRead::Value(_) | StoreRead::Missing => None,
         }
     }
+}
+
+fn queue_len(queue: &Mutex<Vec<Delta>>) -> usize {
+    queue.lock().unwrap_or_else(PoisonError::into_inner).len()
 }
 
 pub(crate) fn same_f64(left: f64, right: f64) -> bool {

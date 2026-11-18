@@ -31,8 +31,8 @@ const TPM_KEY: &str = "global_router:dep-a:gpt-4o:tpm:00-00";
 pub(crate) async fn run(name: &str) {
     match name {
         "queue_cap_is_1024" => queue_cap_is_1024().await,
-        "callback_saturation_without_a_runtime_drops" => {
-            callback_saturation_without_a_runtime_drops().await;
+        "callback_saturation_without_a_runtime_keeps_the_delta" => {
+            callback_saturation_without_a_runtime_keeps_the_delta().await;
         }
         "tracked_cap_is_1024" => tracked_cap_is_1024(),
         "window_increment_rejects_an_oversized_key" => {
@@ -60,17 +60,18 @@ async fn queue_cap_is_1024() {
             .unwrap();
     }
     assert_eq!(harness.pending_len(), 1024);
-    // the caller that fills the queue flushes it, then its own delta joins the drained queue
+    // the caller that fills the queue flushes it, and its own delta rides that one push
     let overflow = harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::ONE, TTL)
         .await;
     assert_eq!(overflow.unwrap(), Decimal::from(1025_i64));
-    assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(1024_i64)));
-    assert_eq!(harness.pending_len(), 1);
-    assert!(harness.counters.sync_with_redis().await);
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(1025_i64)));
+    assert_eq!(harness.store.pushed().len(), 1);
     assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
+    // the queue is empty now, so a sync has nothing to push
+    assert!(!harness.counters.sync_with_redis().await);
 
     // the same overflow with the store down loses the batch and the observation, and a later sync starts over
     let down = Harness::with_store(settings(false, None));
@@ -87,6 +88,7 @@ async fn queue_cap_is_1024() {
         .await;
     assert_eq!(down_overflow.unwrap(), Decimal::from(1025_i64));
     assert_eq!(down.pending_len(), 0);
+    assert_eq!(down.joined_len(), 0);
     assert_eq!(down.store.calls(), 1);
     assert_eq!(down.store.amount(RPM_KEY), None);
     down.store.set_down(false);
@@ -99,8 +101,8 @@ async fn queue_cap_is_1024() {
     assert_eq!(down.pending_len(), 0);
 }
 
-// a sink call on a thread outside every runtime cannot hand the flush off, so it keeps the cap and drops the delta
-async fn callback_saturation_without_a_runtime_drops() {
+// a sink call on a thread outside every runtime cannot hand the flush off, so the delta waits for the next sync
+async fn callback_saturation_without_a_runtime_keeps_the_delta() {
     let harness = Harness::with_store(settings(false, None));
     harness
         .counters
@@ -116,10 +118,17 @@ async fn callback_saturation_without_a_runtime_drops() {
         });
     });
     assert_eq!(harness.pending_len(), MAX_PENDING_DELTAS);
+    assert_eq!(harness.joined_len(), 1);
     assert_eq!(harness.store.calls(), 0);
     assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
-    harness.drain_flushes().await;
-    assert_eq!(harness.store.calls(), 0);
+    // the owner's next sync carries the full queue and the delta that joined it
+    assert!(harness.counters.sync_with_redis().await);
+    assert_eq!(
+        harness.store.amount(TPM_KEY),
+        Some(Decimal::from(1_025_u64))
+    );
+    assert_eq!(harness.pending_len(), 0);
+    assert_eq!(harness.joined_len(), 0);
 }
 
 fn tracked_cap_is_1024() {

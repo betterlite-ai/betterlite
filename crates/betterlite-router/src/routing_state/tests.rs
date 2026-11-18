@@ -50,14 +50,24 @@ fn runtime(paused: bool) -> Runtime {
 #[case::metadata_bucket_selection("metadata_bucket_selection", false)]
 #[case::key_pattern_is_absent("key_pattern_is_absent", false)]
 #[case::real_store_smoke("real_store_smoke", false)]
-#[case::callback_saturation_flushes_before_dropping(
-    "callback_saturation_flushes_before_dropping",
+#[case::callback_saturation_flushes_the_whole_queue(
+    "callback_saturation_flushes_the_whole_queue",
     false
 )]
 #[case::callback_saturation_honors_the_caller_deadline(
     "callback_saturation_honors_the_caller_deadline",
     false
 )]
+#[case::full_queue_callback_flushes_both_entries("full_queue_callback_flushes_both_entries", false)]
+#[case::scheduled_flush_past_the_deadline_drops_the_joined_deltas(
+    "scheduled_flush_past_the_deadline_drops_the_joined_deltas",
+    true
+)]
+#[case::failed_scheduled_flush_drops_the_joined_deltas(
+    "failed_scheduled_flush_drops_the_joined_deltas",
+    false
+)]
+#[case::cleanup_waits_for_the_scheduled_flush("cleanup_waits_for_the_scheduled_flush", false)]
 #[case::failure_callback_increment_survives_the_merge(
     "failure_callback_increment_survives_the_merge",
     false
@@ -73,8 +83,8 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 
 #[rstest]
 #[case::queue_cap_is_1024("queue_cap_is_1024", false)]
-#[case::callback_saturation_without_a_runtime_drops(
-    "callback_saturation_without_a_runtime_drops",
+#[case::callback_saturation_without_a_runtime_keeps_the_delta(
+    "callback_saturation_without_a_runtime_keeps_the_delta",
     false
 )]
 #[case::tracked_cap_is_1024("tracked_cap_is_1024", false)]
