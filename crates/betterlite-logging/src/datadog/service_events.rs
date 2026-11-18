@@ -16,8 +16,8 @@ pub const DD_LOGGED_SUCCESS_SERVICE_TYPES: &[ServiceType] = &[ServiceType::Reset
 
 #[derive(Debug, Error)]
 pub enum ServiceEventError {
-    // LiteLLM's json.dumps writes NaN or Infinity here, a body Datadog rejects; a duration that is not
-    // a finite number fails the event instead (docs/deviations/B3934.yaml)
+    // LiteLLM's json.dumps writes a bare NaN or Infinity into the message, which is not JSON there;
+    // a duration that is not a finite number fails the event instead (docs/deviations/B3934.yaml)
     #[error("the service duration {0} is not a finite number")]
     Duration(f64),
     #[error("the service payload could not be converted to a JSON object")]
