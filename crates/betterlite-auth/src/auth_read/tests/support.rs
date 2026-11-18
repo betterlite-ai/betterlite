@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::error::Error;
+use std::fmt::Debug;
 use std::future::pending;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};

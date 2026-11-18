@@ -315,7 +315,7 @@ async fn writes_do_not_use_read_deadline() {
         data: data.clone(),
     };
     let create_request = Create {
-        data: data.clone(),
+        data,
         include: Presence::Value(Fields::new()),
     };
     let updated = table

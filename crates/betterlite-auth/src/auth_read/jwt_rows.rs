@@ -175,7 +175,7 @@ impl Table for JwtRows {
         };
         Query {
             sql: JWT_COUNT_FILTER_SQL,
-            parameters: predicate.parameters().to_vec(),
+            parameters: predicate.parameters(),
         }
     }
 

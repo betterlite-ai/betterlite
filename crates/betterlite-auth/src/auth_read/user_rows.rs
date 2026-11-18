@@ -244,7 +244,7 @@ pub fn list_query<'query>(
     }
 }
 
-fn insert_query<'query>(data: &'query UserCreate, memberships: bool) -> Query<'query> {
+fn insert_query(data: &UserCreate, memberships: bool) -> Query<'_> {
     Query {
         sql: if memberships {
             USER_INSERT_MEMBERS_SQL
