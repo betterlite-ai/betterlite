@@ -12,7 +12,6 @@ use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_tokenizer::engine::Engine;
-use futures_util::future::BoxFuture;
 use secrecy::ExposeSecret as _;
 use std::error::Error as StdError;
 use std::sync::{Mutex, PoisonError};
@@ -68,13 +67,13 @@ impl<Client> Runtime<'_, Client>
 where
     Client: ChatTransport,
 {
-    fn send<'call>(
+    async fn send<'call>(
         &'call self,
         request: ChatCall<'call>,
         call: &'call CompletionCall<ClientHandle<Client>, Engine>,
         config: &'call Config<'_>,
         log: &'call mut CallLogging<'_, '_>,
-    ) -> BoxFuture<'call, ChatResult<Client, Counter>> {
+    ) -> ChatResult<Client, Counter> {
         let clients = ChatClients {
             pooled: self.pooled,
             supplied: call.client.as_ref().map(|client| SuppliedChatClient {
@@ -93,7 +92,7 @@ where
             max_event_bytes: self.max_event_bytes,
             max_error_body_bytes: self.max_error_body_bytes,
         };
-        Box::pin(chat_call(request, deps))
+        chat_call(request, deps).await
     }
 }
 
