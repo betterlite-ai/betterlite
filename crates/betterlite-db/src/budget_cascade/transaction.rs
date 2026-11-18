@@ -11,14 +11,6 @@ use crate::spend_reset_unit_of_work::{
     BudgetCascadeUnitOfWork, UnitOfWorkError, budget_cascade_unit_of_work,
 };
 
-fn commit_outcome(outcome: Result<(), UnitOfWorkError<Infallible>>) -> Result<(), CommitError> {
-    match outcome {
-        Ok(()) => Ok(()),
-        Err(UnitOfWorkError::Commit(error)) => Err(error),
-        Err(UnitOfWorkError::Body(never)) => match never {},
-    }
-}
-
 // Zero the gated spend and advance budget_reset_at in one transaction: advancing the window alone would hide the tier from every later tick while its dependents stay pinned at the cap.
 pub async fn commit_budget_cascade(
     store: &PostgresStore,
@@ -48,7 +40,11 @@ pub async fn commit_budget_cascade(
         },
     )
     .await;
-    commit_outcome(outcome)
+    match outcome {
+        Ok(()) => Ok(()),
+        Err(UnitOfWorkError::Commit(error)) => Err(error),
+        Err(UnitOfWorkError::Body(never)) => match never {},
+    }
 }
 
 mod tests;
