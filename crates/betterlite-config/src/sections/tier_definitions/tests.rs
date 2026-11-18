@@ -311,6 +311,17 @@ fn an_empty_variable_counts_as_unset() {
 }
 
 #[test]
+fn an_explicit_empty_label_stays_as_written() {
+    let config = only("        tier_labels:\n          SIMPLE: \"\"\n", &[])
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        config.tier_labels.get("SIMPLE").map(String::as_str),
+        Some("")
+    );
+}
+
+#[test]
 fn an_empty_variable_model_name_fails_the_load() {
     let keys = "        tier_models:
           ECO:
