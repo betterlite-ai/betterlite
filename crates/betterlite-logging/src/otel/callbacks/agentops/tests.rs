@@ -90,7 +90,9 @@ async fn receive(stream: &mut TcpStream) -> Received {
     let mut buffer = Vec::new();
     let head_end = loop {
         if let Some(position) = buffer.windows(4).position(|window| window == b"\r\n\r\n") {
-            break position + 4;
+            break position
+                .checked_add(4)
+                .expect("the header terminator fits in the buffer");
         }
         read_more(stream, &mut buffer).await;
     };
@@ -168,11 +170,13 @@ async fn agentops_callback_fetches_the_token_with_the_documented_request_shape()
     let transport = CaptureTransport::default();
     let callback =
         AgentOpsCallback::connect(config(AUTH_ENDPOINT, Some("agentops-key")), &transport).await;
-    let requests = transport
+    let request = transport
         .requests
         .lock()
-        .expect("the captured requests lock");
-    let request = requests.first().expect("one token request");
+        .expect("the captured requests lock")
+        .first()
+        .cloned()
+        .expect("one token request");
     assert_eq!(request.url, AUTH_ENDPOINT);
     assert_eq!(
         request
