@@ -5,6 +5,7 @@ use betterlite_models::decisions::Json as Plain;
 use betterlite_openai::sagemaker_completion::params::Options;
 use betterlite_prompts::arguments::json::Json as Prompted;
 use indexmap::IndexMap;
+use rstest::rstest;
 use serde_json::Number;
 
 #[test]
@@ -50,13 +51,26 @@ fn converts_nested_completion_json_values() {
     );
 }
 
-#[test]
-fn completion_body_keeps_a_number_that_fits_no_primitive() {
-    let source: Options =
-        serde_json::from_str(r#"{"big": 123456789012345678901234567890}"#).expect("a JSON object");
+#[rstest]
+#[case::u128("123456789012345678901234567890")]
+#[case::beyond_u128("12345678901234567890123456789012345678901234567890")]
+#[case::negative("-123456789012345678901234567890")]
+#[case::precise_fraction("0.123456789012345678901234567890")]
+fn completion_body_keeps_a_number_that_fits_no_primitive(#[case] number: &str) {
+    let source: Options = serde_json::from_str(&format!(
+        r#"{{"big": {number}, "nested": [{{"number": {number}}}]}}"#
+    ))
+    .expect("a JSON object");
     let converted = completion_body(&source).expect("a convertible body");
-    let big: Number = serde_json::from_str("123456789012345678901234567890").expect("a big number");
-    assert_eq!(converted.get("big"), Some(&Plain::Number(big)));
+    let big: Number = serde_json::from_str(number).expect("an exact number");
+    assert_eq!(converted.get("big"), Some(&Plain::Number(big.clone())));
+    assert_eq!(
+        converted.get("nested"),
+        Some(&Plain::List(vec![Plain::Object(IndexMap::from([(
+            String::from("number"),
+            Plain::Number(big),
+        )]))]))
+    );
 }
 
 #[test]

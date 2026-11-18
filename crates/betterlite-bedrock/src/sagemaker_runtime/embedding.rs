@@ -103,8 +103,8 @@ pub async fn embedding<T: SagemakerTransport, C: SagemakerCredentials>(
     }
     let reply = serde_json::from_slice(&response.body)?;
     match sagemaker_embedding::get_model_config(call.model) {
-        EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(serde_json::from_value(
-            project_response(&reply),
+        EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(serde_json::from_slice(
+            &serde_json::to_vec(&project_response(&reply))?,
         )?)),
         EmbeddingConfig::HuggingFace => Ok(EmbeddingReply::HuggingFace(
             hf::transform_response(&response.body, MOCK_STATUS, call.model, &prepared.body)

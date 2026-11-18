@@ -3,13 +3,13 @@ use betterlite_openai::sagemaker_completion::params::Options;
 use betterlite_prompts::arguments::json::Json as Prompted;
 use indexmap::IndexMap;
 
-// Preserve arbitrary-precision numbers when entering the signing tree.
+// JSON bytes preserve Number tokens that serde's untagged content visitor rejects as u128.
 pub(crate) fn completion_body(
     body: &Options,
 ) -> Result<IndexMap<String, Plain>, serde_json::Error> {
     body.iter()
         .map(|(name, value)| {
-            let plain: Plain = serde_json::from_value(value.clone())?;
+            let plain: Plain = serde_json::from_slice(&serde_json::to_vec(value)?)?;
             Ok((name.clone(), plain))
         })
         .collect()

@@ -505,25 +505,36 @@ async fn completion_and_embedding_take_aws_region_before_aws_region_name() {
     assert_eq!(embedding.call.region, "us-east-1");
 }
 
+#[rstest]
+#[case::bedrock_arn(
+    "arn:aws:bedrock:eu-central-1:123456789012:model/example",
+    "eu-central-1"
+)]
+#[case::sagemaker_arn(
+    "arn:aws:sagemaker:eu-central-1:123456789012:endpoint/example",
+    "us-east-2"
+)]
+#[case::endpoint("endpoint", "us-east-2")]
 #[tokio::test]
-async fn chat_region_comes_from_the_model_arn_before_the_environment() {
+async fn chat_region_recognizes_only_bedrock_arns(#[case] model: &str, #[case] region: &str) {
     let counter = Counter;
     let workspace = Workspace::new();
-    let runtime = runtime(
+    let mut runtime = runtime(
         FakeTransport::new(200, "{}", &[]),
         TestCredentials::working(),
         &counter,
     );
+    runtime.environment.region_name = Some(String::from("us-east-2"));
     let mut chat = workspace.chat(false);
-    chat.model = "arn:aws:sagemaker:eu-central-1:123456789012:endpoint/example";
+    chat.model = model;
     let prepared = chat::prepare_chat(&runtime, &chat)
         .await
         .expect("chat request");
-    assert_eq!(prepared.region, "eu-central-1");
+    assert_eq!(prepared.region, region);
     assert!(
         prepared
             .url
-            .starts_with("https://runtime.sagemaker.eu-central-1.")
+            .starts_with(&format!("https://runtime.sagemaker.{region}."))
     );
 }
 

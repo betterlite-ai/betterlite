@@ -71,13 +71,20 @@ async fn embedding_sends_the_custom_attributes_header() {
     );
 }
 
+#[rstest]
+#[case::ordinary("2")]
+#[case::large_number("123456789012345678901234567890")]
 #[tokio::test]
-async fn embedding_projects_a_voyage_reply() {
+async fn embedding_projects_a_voyage_reply(#[case] number: &str) {
     let counter = Counter;
     let workspace = Workspace::new();
     let reply = embedding::embedding(
         &runtime(
-            FakeTransport::new(200, r#"{"data":[{"embedding":[1,2]}]}"#, &[]),
+            FakeTransport::new(
+                200,
+                &format!(r#"{{"data":[{{"embedding":[1,{number}]}}]}}"#),
+                &[],
+            ),
             TestCredentials::working(),
             &counter,
         ),
@@ -86,4 +93,9 @@ async fn embedding_projects_a_voyage_reply() {
     .await
     .expect("voyage reply");
     assert!(matches!(reply, EmbeddingReply::Voyage(_)));
+    assert!(
+        serde_json::to_string(&reply)
+            .expect("reply JSON")
+            .contains(number)
+    );
 }
