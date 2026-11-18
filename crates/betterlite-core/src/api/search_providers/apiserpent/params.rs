@@ -92,7 +92,11 @@ impl ApiserpentParams {
                 "safe" => self.safe = Some(text(optional_params, name)?),
                 "language" => self.language = Some(text(optional_params, name)?),
                 "pixel_position" => {
-                    self.pixel_position = Some(boolean(optional_params, name)?);
+                    self.pixel_position = Some(
+                        value
+                            .as_bool()
+                            .ok_or(ApiserpentSearchError::OptionType { field: name })?,
+                    );
                 }
                 _ => {}
             }
@@ -165,14 +169,5 @@ fn number(optional_params: &Object, name: &'static str) -> Result<i64, Apiserpen
         .ok_or(ApiserpentSearchError::OptionType { field: name })?;
     value
         .as_i64()
-        .ok_or(ApiserpentSearchError::OptionType { field: name })
-}
-
-fn boolean(optional_params: &Object, name: &'static str) -> Result<bool, ApiserpentSearchError> {
-    let value = optional_params
-        .get(name)
-        .ok_or(ApiserpentSearchError::OptionType { field: name })?;
-    value
-        .as_bool()
         .ok_or(ApiserpentSearchError::OptionType { field: name })
 }
