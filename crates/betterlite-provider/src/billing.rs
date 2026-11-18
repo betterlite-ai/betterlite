@@ -142,7 +142,10 @@ pub enum OpenAiCostCurrency {
 }
 
 pub fn decode_openai_costs_page(body: &[u8]) -> Result<OpenAiCostsPage, BillingError> {
-    serde_json::from_slice(body).map_err(|source| BillingError::Shape { source })
+    match serde_json::from_slice(body) {
+        Ok(page) => Ok(page),
+        Err(source) => Err(BillingError::Shape { source }),
+    }
 }
 
 pub async fn fetch_openai_daily_costs(
@@ -166,15 +169,11 @@ fn costs_window(
     let end_exclusive = end_date
         .checked_add_days(Days::new(1))
         .ok_or(BillingError::DateRange)?;
+    let start_time = start_date.and_time(NaiveTime::MIN).and_utc().timestamp();
+    let end_time = end_exclusive.and_time(NaiveTime::MIN).and_utc().timestamp();
     let mut window = vec![
-        (
-            "start_time".to_owned(),
-            utc_midnight(start_date).to_string(),
-        ),
-        (
-            "end_time".to_owned(),
-            utc_midnight(end_exclusive).to_string(),
-        ),
+        ("start_time".to_owned(), start_time.to_string()),
+        ("end_time".to_owned(), end_time.to_string()),
         ("bucket_width".to_owned(), "1d".to_owned()),
         ("limit".to_owned(), OPENAI_COSTS_PAGE_LIMIT.to_string()),
     ];
@@ -182,10 +181,6 @@ fn costs_window(
         window.push(("project_ids[]".to_owned(), project_id.clone()));
     }
     Ok(window)
-}
-
-fn utc_midnight(day: NaiveDate) -> i64 {
-    day.and_time(NaiveTime::MIN).and_utc().timestamp()
 }
 
 fn authorization_headers(admin_key: &SecretString) -> Result<HeaderMap, BillingError> {
