@@ -16,8 +16,7 @@ use crate::api::realtime_session_state::RealtimeStreaming;
 use crate::api::request_destination::RequestData;
 
 use super::callback::{
-    GuardrailFailure, GuardrailInput, GuardrailInputType, GuardrailTexts, GuardrailViolation,
-    RealtimeGuardrail, RealtimeGuardrailPolicy,
+    GuardrailFailure, GuardrailInput, GuardrailInputType, GuardrailTexts, RealtimeGuardrail,
 };
 use super::error::RealtimeGuardrailsError;
 use super::message;
@@ -114,16 +113,6 @@ where
         if already_run.iter().any(|seen| std::ptr::eq(*seen, identity)) {
             return Ok(false);
         }
-        self.runs_for(guardrail, check_data, hooks)
-    }
-
-    // LiteLLM's any(): the hooks are asked in order, and a raising predicate ends the run
-    fn runs_for(
-        &self,
-        guardrail: &(dyn RealtimeGuardrail<Error = CallbackError>),
-        check_data: &RequestData,
-        hooks: &[GuardrailEventHooks],
-    ) -> Result<bool, RealtimeGuardrailsError<Config::Error, CallbackError>> {
         for hook in hooks {
             if guardrail
                 .should_run_guardrail(check_data, *hook)
@@ -151,13 +140,12 @@ where
                 Err(RealtimeGuardrailsError::Unexpected(error))
             }
             Err(GuardrailFailure::Blocked(violation)) => {
-                self.block(
-                    guardrail.policy(),
-                    violation,
-                    pre_block_backend_message,
-                    transcript,
-                )
-                .await?;
+                let policy = guardrail.policy();
+                let message =
+                    message::violation_message(&violation, policy.violation_message.as_deref());
+                self.send_block_frames(&message, pre_block_backend_message)
+                    .await?;
+                self.finish_block(policy, transcript).await?;
                 Ok(true)
             }
         }
@@ -180,20 +168,7 @@ where
         guardrail.apply_guardrail(input).await
     }
 
-    // A block: the caller's protocol frame first, the cancellation, the client notice, then the spoken message and a fresh response
-    async fn block(
-        &mut self,
-        policy: &RealtimeGuardrailPolicy,
-        violation: GuardrailViolation,
-        pre_block_backend_message: Option<&str>,
-        transcript: &str,
-    ) -> Result<(), RealtimeGuardrailsError<Config::Error, CallbackError>> {
-        let message = message::violation_message(&violation, policy.violation_message.as_deref());
-        self.send_block_frames(&message, pre_block_backend_message)
-            .await?;
-        self.finish_block(policy, transcript).await
-    }
-
+    // The frame order: the caller's protocol frame first, the cancellation, the client notice, then the spoken message and a fresh response
     async fn send_block_frames(
         &mut self,
         message: &Json,
@@ -257,7 +232,21 @@ where
         &mut self,
         message: &Json,
     ) -> Result<(), RealtimeGuardrailsError<Config::Error, CallbackError>> {
-        let notice = message::notice(message);
+        let error = Json::Object(IndexMap::from([
+            (
+                String::from("type"),
+                Json::Text(String::from("guardrail_violation")),
+            ),
+            (String::from("message"), message.clone()),
+            (
+                String::from("code"),
+                Json::Text(String::from("content_policy_violation")),
+            ),
+        ]));
+        let notice = Json::Object(IndexMap::from([
+            (String::from("type"), Json::Text(String::from("error"))),
+            (String::from("error"), error),
+        ]));
         let text = serde_json::to_string(&notice).map_err(RealtimeGuardrailsError::Encode)?;
         let client = self
             .state

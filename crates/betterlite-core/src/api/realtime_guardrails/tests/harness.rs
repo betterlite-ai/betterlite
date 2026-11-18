@@ -147,40 +147,6 @@ impl BaseRealtimeConfig for Split {
     }
 }
 
-// The provider config is only a type parameter for the runner; every case here sends through the default path
-pub(super) struct NoProvider;
-
-#[async_trait]
-impl BaseRealtimeConfig for NoProvider {
-    type Error = ConfigFailure;
-    type Backend = MockBackend;
-
-    fn validate_environment(
-        &self,
-        _environment: &Environment<'_>,
-    ) -> Result<HeaderMap, ConfigFailure> {
-        Ok(HeaderMap::new())
-    }
-
-    fn transform_realtime_request(
-        &self,
-        _message: &str,
-        _model: &str,
-        _session_configuration_request: Option<&str>,
-    ) -> Result<Vec<RealtimeMessage>, ConfigFailure> {
-        Err(ConfigFailure)
-    }
-
-    fn transform_realtime_response(
-        &self,
-        _message: &RealtimeMessage,
-        _model: &str,
-        _input: &RealtimeResponseTransformInput,
-    ) -> Result<RealtimeResponseTypedDict, ConfigFailure> {
-        Err(ConfigFailure)
-    }
-}
-
 #[derive(Clone, Default)]
 pub(super) struct Timeline(Arc<Mutex<Vec<&'static str>>>);
 
@@ -589,7 +555,7 @@ pub(super) async fn selection(hooks: Option<&[GuardrailEventHooks]>) -> Selectio
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> =
         vec![&eligible, &eligible, &native, &logger, &never];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,
@@ -634,7 +600,7 @@ pub(super) async fn blocked_message(
     guardrail.policy.violation_message = configured.map(str::to_owned);
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,
@@ -660,7 +626,7 @@ pub(super) async fn one_block(
 ) -> Result<bool, RealtimeGuardrailsError<ConfigFailure, TestFailure>> {
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![guardrail];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,

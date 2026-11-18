@@ -12,7 +12,7 @@ use serde_json::Number;
 use super::callback::{GuardrailViolation, RealtimeGuardrail};
 use super::error::RealtimeGuardrailsError;
 use super::harness::{
-    Fixture, NoProvider, Outcome, PROMPT_PREFIX, Predicate, SendLog, Sockets, Split, TestFailure,
+    Fixture, Outcome, PROMPT_PREFIX, Predicate, SendLog, Sockets, Split, TestFailure,
     blocked_message, blocking_guardrail, capture, check_data, closes, frames, guardrail_input,
     json, lock, one_block, selection,
 };
@@ -67,7 +67,7 @@ async fn realtime_guardrail_clean_apply_continues() {
     second.outcome = Outcome::Clean;
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&first, &second];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,
@@ -91,7 +91,7 @@ async fn realtime_guardrail_block_sequence() {
     let later = blocking_guardrail();
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&blocking, &later];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,
@@ -269,7 +269,7 @@ async fn realtime_guardrail_message_precedence_unexpected_error() {
     };
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,
@@ -332,7 +332,7 @@ async fn realtime_guardrail_end_session_threshold_two() {
     guardrail.policy.end_session_after_n_fails = Some(2);
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
     let mut state = fixture.state();
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,
@@ -517,7 +517,7 @@ async fn realtime_guardrail_count_survives_the_run() {
     let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
     let mut state = fixture.state();
     state.setup.violation_count = 5;
-    let mut runner: RealtimeGuardrails<'_, NoProvider, TestFailure> = RealtimeGuardrails {
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
         state: &mut state,
         provider: None,
         guardrails: &guardrails,

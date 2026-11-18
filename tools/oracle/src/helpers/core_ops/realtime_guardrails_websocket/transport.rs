@@ -48,6 +48,12 @@ impl WireLog {
         }
         Ok(())
     }
+
+    fn accept(&mut self, target: &str, text: String) -> Result<(), WebSocketError> {
+        self.begin(target)?;
+        self.sent.push(text);
+        Ok(())
+    }
 }
 
 pub(crate) struct ScriptedBackend {
@@ -64,10 +70,7 @@ impl RealtimeBackend for ScriptedBackend {
                 message: String::from("the guardrail runner sends no binary frames"),
             });
         };
-        let mut log = self.log.locked();
-        log.begin("backend")?;
-        log.sent.push(text);
-        drop(log);
+        self.log.locked().accept("backend", text)?;
         self.timeline.locked().push("backend");
         Ok(())
     }
@@ -102,10 +105,7 @@ pub(crate) struct ScriptedClient {
 #[async_trait]
 impl ClientWebSocket for ScriptedClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        let mut log = self.log.locked();
-        log.begin("client")?;
-        log.sent.push(data.to_owned());
-        drop(log);
+        self.log.locked().accept("client", data.to_owned())?;
         self.timeline.locked().push("client");
         Ok(())
     }

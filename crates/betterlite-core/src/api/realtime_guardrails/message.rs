@@ -58,20 +58,6 @@ fn error_message_wins(value: &Json) -> bool {
     }
 }
 
-pub(crate) fn notice(message: &Json) -> Json {
-    object(vec![
-        ("type", Json::Text(String::from("error"))),
-        (
-            "error",
-            object(vec![
-                ("type", Json::Text(String::from("guardrail_violation"))),
-                ("message", message.clone()),
-                ("code", Json::Text(String::from("content_policy_violation"))),
-            ]),
-        ),
-    ])
-}
-
 // The two control frames that bracket a block: the cancellation and the request for a fresh response
 pub(crate) fn control_frames() -> (Json, Json) {
     let cancel = object(vec![("type", Json::Text(String::from("response.cancel")))]);

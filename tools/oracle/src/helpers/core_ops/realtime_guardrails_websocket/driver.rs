@@ -129,7 +129,22 @@ async fn run_all(
 ) -> Vec<Value> {
     let mut outcomes = Vec::new();
     for document in runs {
-        let outcome = run_once(session, callbacks, document).await;
+        let outcome = {
+            let mut runner: RealtimeGuardrails<'_, ScriptedConfig, ScriptedError> =
+                RealtimeGuardrails {
+                    state: &mut session.state,
+                    provider: None,
+                    guardrails: callbacks,
+                };
+            runner
+                .run_realtime_guardrails(
+                    &document.transcript,
+                    document.item_id.as_deref(),
+                    document.pre_block_backend_message.as_deref(),
+                    document.event_hooks.as_deref(),
+                )
+                .await
+        };
         let (backend, client) = frame_log(session);
         match outcome {
             Ok(blocked) => outcomes.push(json!({
@@ -164,26 +179,6 @@ fn report(session: &Session, runs: Vec<Value>, checks: Vec<Value>, applied: Vec<
             "client_closes": session.client.locked().closes,
         },
     })
-}
-
-async fn run_once(
-    session: &mut Session,
-    callbacks: &[&dyn RealtimeGuardrail<Error = ScriptedError>],
-    document: &RunDocument,
-) -> Result<bool, RealtimeGuardrailsError<ScriptedError, ScriptedError>> {
-    let mut runner: RealtimeGuardrails<'_, ScriptedConfig, ScriptedError> = RealtimeGuardrails {
-        state: &mut session.state,
-        provider: None,
-        guardrails: callbacks,
-    };
-    runner
-        .run_realtime_guardrails(
-            &document.transcript,
-            document.item_id.as_deref(),
-            document.pre_block_backend_message.as_deref(),
-            document.event_hooks.as_deref(),
-        )
-        .await
 }
 
 fn open_session(input: &Input) -> Session {
