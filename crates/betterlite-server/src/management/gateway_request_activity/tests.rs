@@ -99,6 +99,14 @@ async fn a_non_admin_caller_gets_the_auth_forbidden_detail() {
 }
 
 #[tokio::test]
+async fn a_master_key_caller_passes_the_auth_check() {
+    let reply = get(app(None), Some(&caller("master_key", Vec::new())), ACTIVITY).await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: DetailBody = reply.json();
+    assert_eq!(body.detail, DB_ERROR);
+}
+
+#[tokio::test]
 async fn the_auth_check_runs_before_the_database_check() {
     let reply = get(
         app(None),
