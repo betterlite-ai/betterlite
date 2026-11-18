@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_models::decisions::Json;
-use http::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
@@ -30,12 +29,4 @@ pub struct ChatRequest<'call> {
     pub now: i64,
     pub disable_add_prefix_to_prompt: bool,
     pub model_response: ResponseEnvelope,
-}
-
-pub(super) struct Prepared {
-    pub(super) body: IndexMap<String, Json>,
-    pub(super) header_map: HeaderMap,
-    pub(super) optional_params: IndexMap<String, Json>,
-    pub(super) json_mode: bool,
-    pub(super) stream: bool,
 }

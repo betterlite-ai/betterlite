@@ -4,9 +4,6 @@ pub mod handler;
 pub mod request;
 pub mod transform;
 
-mod buffered;
-mod stream;
-
 mod tests;
 
 pub const CUSTOM_LLM_PROVIDER: &str = "azure_ai";

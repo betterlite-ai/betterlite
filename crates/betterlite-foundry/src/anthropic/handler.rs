@@ -2,10 +2,16 @@ use std::error::Error as StdError;
 
 use betterlite_anthropic::anthropic_http_stream::completion::ParameterError;
 use betterlite_anthropic::anthropic_http_stream::transport::StreamTransport;
+use betterlite_anthropic::chat_call::CallFacts;
+use betterlite_anthropic::chat_call::CallStyle;
 use betterlite_anthropic::chat_call::ChatDeps;
 use betterlite_anthropic::chat_call::ChatOutcome;
+use betterlite_anthropic::chat_call::SyncStream;
+use betterlite_anthropic::chat_call::SyncStreamNames;
 use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest};
 use betterlite_anthropic::chat_call::error::ChatCallError;
+use betterlite_anthropic::chat_call::finish;
+use betterlite_anthropic::chat_call::prepare::Prepared;
 use betterlite_anthropic::chat_call::transport::ChatTransport;
 use betterlite_anthropic::headers::AnthropicHeaders;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
@@ -21,7 +27,7 @@ use indexmap::IndexMap;
 use super::CUSTOM_LLM_PROVIDER;
 use super::environment::{EnvironmentError, EnvironmentRequest, validate_environment};
 use super::error::ChatError;
-use super::request::{ChatRequest, Prepared};
+use super::request::{ChatRequest, Style};
 use super::transform::{promote_extra_body, promoted_for_environment, transform_request};
 
 const STREAM_FIELD: &str = "stream";
@@ -46,11 +52,26 @@ where
 {
     async move {
         let prepared = prepare(&request, &mut deps).await?;
-        if prepared.stream {
-            super::stream::open(request, prepared, deps).await
-        } else {
-            super::buffered::send(request, prepared, deps).await
-        }
+        let facts = CallFacts {
+            model: request.model,
+            messages: request.messages,
+            litellm_params: request.litellm_params,
+            api_base: request.api_base,
+            timeout: request.timeout,
+            style: match request.style {
+                Style::Async => CallStyle::Async,
+                Style::Sync => CallStyle::Sync,
+            },
+            now: request.now,
+            disable_add_prefix_to_prompt: request.disable_add_prefix_to_prompt,
+            model_response: request.model_response,
+            // the handler makes its sync call without the caller's speed or reverse map and stamps azure_ai
+            sync_stream: SyncStream {
+                custom_llm_provider: CUSTOM_LLM_PROVIDER,
+                names: SyncStreamNames::Omitted,
+            },
+        };
+        Ok(finish(facts, prepared, deps).await?)
     }
     .boxed_local()
 }
@@ -90,8 +111,8 @@ where
         body,
         header_map,
         optional_params,
-        json_mode,
         stream,
+        json_mode,
     })
 }
 
