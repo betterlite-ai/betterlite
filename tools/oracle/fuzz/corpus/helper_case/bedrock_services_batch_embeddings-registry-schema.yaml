@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-services-batch-embeddings-registry-schema
+call:
+  bedrock_services_batch_embeddings:
+    function: registry_schema
+    model_cost:
+      "amazon.titan-embed-text-v2:0":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      "amazon.titan-embed-text-v2:9":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: cohere_v3}}
+      "amazon.titan-embed-text-v2:3": {litellm_provider: bedrock, mode: embedding}
+    models:
+      - "amazon.titan-embed-text-v2:0"
+      - "amazon.titan-embed-text-v2:9"
+      - "amazon.titan-embed-text-v2:3"
+      - "amazon.titan-embed-text-v1"
+env: {}
+compare: {ignore: []}
