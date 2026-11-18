@@ -7,23 +7,16 @@ use betterlite_logging::otel::legacy_lifecycle::lifecycle::{
 };
 use betterlite_logging::otel::legacy_lifecycle::tracer::{DynamicOtel, TracerChoice};
 use betterlite_logging::otel::legacy_policy::capture::LoggingFlags;
-use betterlite_logging::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
+use betterlite_logging::otel::legacy_policy::config::OpenTelemetryConfig;
 use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
-use betterlite_logging::otel::model::vocabulary::semconv::OTELSemconvCategory;
 use betterlite_logging::otel::plumbing::events::SystemClock;
-use betterlite_logging::otel::plumbing::exporters::HttpClients;
 use betterlite_logging::otel::v2_callback::live_span::{LiveSpan, RootSpans};
-use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
-    LegacyOtel, LegacyOtelEnvironment, LegacyOtelInit, init_legacy_otel,
-};
-use betterlite_logging::otel_provider_assembly::opentelemetry_legacy_provider::GlobalProviders;
 use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, SpanContext, TraceContextExt as _};
-use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::trace::InMemorySpanExporter;
 use serde::Deserialize;
 
@@ -80,15 +73,6 @@ impl DynamicOtel for ProbeDynamic {
         _dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
         self.config.clone()
-    }
-}
-
-struct NoServer;
-
-#[async_trait::async_trait]
-impl HttpClient for NoServer {
-    async fn send_bytes(&self, _request: Request<Bytes>) -> Result<Response<Bytes>, HttpError> {
-        Err(HttpError::from("no connection is opened by this helper"))
     }
 }
 
