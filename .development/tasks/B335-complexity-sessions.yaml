@@ -1,7 +1,9 @@
 id: B335
 title: Complexity session pins and user-turn lifecycle
 description: 'Add the complexity router session/user-turn lifecycle around B334 placement, consuming B359
-  turn overrides and B324 atomic affinity. Keep persistent session pins separate from transient floors
+  turn overrides and B372 atomic affinity. async_pre_routing_hook reaches B372 only through B334
+  _pin_model_for_tier, and that function claims the tier pin with B372 claim_affinity_pin. The session
+  pin itself is a plain router cache read and write. Keep persistent session pins separate from transient floors
   so a one-turn constraint cannot rewrite the session model. Return typed decision causes and signals
   for metadata/header mapping, and revalidate retained pins through the current plugin policy. B359 owns matching
   and stall detection; this task only composes their typed outcomes. Configuration boundary keys introduced

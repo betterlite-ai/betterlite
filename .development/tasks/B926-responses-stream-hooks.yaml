@@ -6,9 +6,13 @@ description: >-
   Consume B2413 state/error/task primitives and B928 detached logging/cost helpers; neither
   depends on this task. B250/B251 provide success/failure handlers, B068 cost calculation,
   B4296/B4297 cache eligibility/writes, B189 callback registry/converted-stream flags, B004 response
-  metadata, B157 async_post_call_success_deployment_hook and B198 async/thread execution.
-  B068/B157 have no detailed task files yet: consume those exact injected interfaces,
-  not local copies of their implementations. Python callbacks remain supported per README.
+  metadata, B5367 async_post_call_success_deployment_hook and B198 async/thread execution. B068 is merged and in
+  this crate: call crates/betterlite-core/src/cost/completion.rs directly. B5367 built the success hook loop as
+  betterlite_sdk::call_setup::hooks::success_deployment_hook, and betterlite-sdk depends on betterlite-core, so this
+  module cannot call it: take it as an injected port, one trait in responses_stream_hooks whose async method gets the
+  request data, the response and the call type and returns the response to keep or the hook error. The SDK side
+  implements that trait over B5367's function; your tests and the helper case use a recording implementation.
+  Never reimplement the callback loop here. Python callbacks remain supported per README.
 
   Use B171 responses_stream_hooks with recording cache/logging/callback dependencies and
   deterministic barriers. Compare invocation order, arguments, mutations and diagnostics;

@@ -17,8 +17,10 @@ description: >-
   litellm_call_id and inferred data_residency. extra_query is ignored; extra_body reaches B2418
   but is unused. No prompt-management, managed-file mapping or mock-response shortcut runs here.
 
-  Drive SdkHttpCall::ResponsesCompact through B2401 with production SDK calls and the mock
-  provider. Native tests in api::responses_compact_call::tests cover ordered logging and typed
+  Drive SdkHttpCall::ResponsesCompact with production SDK calls and the mock provider. The variant
+  is a placeholder on main: build its Call (implementing call_kind::CallKind) and Outcome in
+  tools/oracle/src/sdk_http/responses_compact.rs and ResponsesCompactRequest in
+  tools/oracle/sdk_http/responses_compact.py, without touching the shared sdk_http files. Native tests in api::responses_compact_call::tests cover ordered logging and typed
   dependency outcomes. B509 owns JSON decoding downstream. Count 155 owned nonblank/non-comment
   lines; estimate 175 implementation, 125 tests, 85 fixtures, 85 adapters and 25 wiring, 495
   changed lines within 540.
@@ -27,9 +29,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_compact_call.rs
   - crates/betterlite-core/src/api/responses_compact_call/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_compact.rs
+  - tools/oracle/src/sdk_http/responses_compact/**
   - tools/oracle/sdk_http/responses_compact.py
   - tools/oracle/cases/sdk-http/responses-compact/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-*
@@ -96,7 +97,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_compact_call::tests::compact_native_support_required($|::)/)'
   - id: python-adapter
     why: the compact SDK fixture never reaches its actual provider handler
-    run: test -f tools/oracle/sdk_http/responses_compact.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_compact.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: compact SDK calls have no newly added typed input seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-compact-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

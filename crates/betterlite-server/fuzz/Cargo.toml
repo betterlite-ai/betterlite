@@ -20,6 +20,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = "1.0.154"
 
 [[bin]]
+name = "anthropic_sse_events"
+path = "fuzz_targets/anthropic_sse_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "key_header"
 path = "fuzz_targets/key_header.rs"
 test = false
@@ -295,6 +302,13 @@ bench = false
 [[bin]]
 name = "model_deprecation"
 path = "fuzz_targets/model_deprecation.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "roi_settings_body"
+path = "fuzz_targets/roi_settings_body.rs"
 test = false
 doc = false
 bench = false
