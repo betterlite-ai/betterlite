@@ -1,0 +1,24 @@
+kind: helper
+name: model-catalog-lookup-lookup-group
+call:
+  model_catalog_lookup:
+    function: get_deployment_by_model_group_name
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: gpt-4o
+        litellm_params:
+          model: azure/gpt-4o
+        model_info:
+          id: b
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: gpt-4o
+env: {}
+compare: {ignore: []}

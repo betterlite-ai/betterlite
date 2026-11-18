@@ -1,0 +1,24 @@
+kind: helper
+name: model-catalog-lookup-resolve-name-before-id
+call:
+  model_catalog_lookup:
+    function: resolve_model_name_from_model_id
+    model_list:
+      - model_name: shared
+        litellm_params:
+          model: openai/shared
+        model_info:
+          id: x1
+      - model_name: other
+        litellm_params:
+          model: openai/other
+        model_info:
+          id: shared
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_id: shared
+env: {}
+compare: {ignore: []}
