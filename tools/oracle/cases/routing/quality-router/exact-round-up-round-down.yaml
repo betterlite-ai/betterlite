@@ -1,0 +1,77 @@
+kind: probe
+name: quality-router-exact-round-up-round-down
+compare:
+  numeric:
+    - pointer: /output/quality_router/decision/score
+      absolute_tolerance: 0.000001
+      why: the score is the classifier's float sum, and its last bits may differ between the two runtimes
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one, two, three]
+                  complexity_to_quality: {SIMPLE: 2}
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1}
+            - model_name: two
+              litellm_params: {model: openai/two}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 2}
+            - model_name: three
+              litellm_params: {model: openai/three}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 3}
+        messages:
+          - role: user
+            content: hello there
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one, three]
+                  complexity_to_quality: {SIMPLE: 2}
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1}
+            - model_name: three
+              litellm_params: {model: openai/three}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 3}
+        messages:
+          - role: user
+            content: hello there
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  complexity_to_quality: {SIMPLE: 2}
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1}
+        messages:
+          - role: user
+            content: hello there

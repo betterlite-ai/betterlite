@@ -1,0 +1,35 @@
+kind: probe
+name: quality-router-unknown-config-fields-warning
+compare:
+  numeric:
+    - pointer: /output/quality_router/decision/score
+      absolute_tolerance: 0.000001
+      why: the score is the classifier's float sum, and its last bits may differ between the two runtimes
+  expected_difference:
+    - pointer: /output/quality_router/warnings
+      reference: []
+      rust:
+        - "quality_router: ignoring unknown QualityRouterConfig field 'mystery' for router 'qr'"
+        - "quality_router: ignoring unknown RoutingPreferences field 'odd' for model 'one'"
+      why: LiteLLM's pydantic models accept extra fields silently, so betterlite keeps the route and reports each ignored key
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/config.py#L74
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      quality_router:
+        config:
+          model_list:
+            - model_name: qr
+              litellm_params:
+                model: auto_router/quality_router
+                quality_router_config:
+                  available_models: [one]
+                  mystery: 1
+            - model_name: one
+              litellm_params: {model: openai/one}
+              model_info:
+                litellm_routing_preferences: {quality_tier: 1, odd: x}
+        messages:
+          - role: user
+            content: hello there
