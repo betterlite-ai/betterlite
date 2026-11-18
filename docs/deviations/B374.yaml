@@ -1,0 +1,47 @@
+task: B374
+deviations:
+  - what: >-
+      betterlite's configuration section names the tier-to-model map `tier_models` and the
+      opt-in non-reasoning tier `non_reasoning_tier`, and accepts LiteLLM's `tiers` and
+      `enable_non_reasoning_tier` as aliases of each, where LiteLLM declares only the latter
+      pair.
+    why: >-
+      The task names `tier_models` and `non_reasoning_tier` as the configuration boundary this
+      module introduces, matching the key B328 already reads for the baseline tier map. A LiteLLM
+      YAML file that spells `tiers` or `enable_non_reasoning_tier` still loads with identical
+      behavior, so no working configuration changes meaning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L856-L880
+  - what: >-
+      A tier entry written as an object with `model_name` and `litellm_params` is accepted by this
+      task's configuration section and by the router service, but a configuration file that spells
+      one fails to load: the baseline complexity_router_config view B328 owns reads only bare model
+      names and lists of them, and the loader fails when that view rejects the entry.
+    why: >-
+      The baseline view sits outside this task's scope, and changing it to accept object entries
+      would move B328's parser and its rejection test into this task. The parameterized schema,
+      its parameter overrides and its duplicate-model validation are implemented and tested on the
+      section and service side, so once the baseline view reads the same shape the file path works
+      unchanged. Until then a config file that needs per-entry parameters fails loudly at load
+      time instead of dropping the parameters.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L260-L273
+  - what: >-
+      An `os.environ/` reference in a tier definition name or description, a tier label, a pool
+      entry's model name or a parameter value that names an unset variable fails the load with
+      MissingEnvironment, where LiteLLM's environment walk stores None and lets the field's
+      validation decide.
+    why: >-
+      betterlite resolves references in these keys with the same rule as every other scalar
+      setting, so a mistyped variable can't quietly become a missing tier name, a dropped label or
+      a null parameter. A working configuration that spells `os.environ/<KEY>` with the variable
+      set resolves identically on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5767-L5787
+  - what: >-
+      Classifier replies, display labels and duplicate tier names are compared after Unicode
+      simple lowercasing, where LiteLLM compares them with `casefold`.
+    why: >-
+      The two agree for ASCII, which is what tier names and labels in these keys spell, and Rust's
+      standard library lowercases without Python's `casefold` special cases. A name or label whose
+      comparison depends on casefold-only expansions, such as `ß` matching `SS`, can resolve
+      differently.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L1872-L1877
+kept_bugs: []
