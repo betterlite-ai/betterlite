@@ -16,7 +16,7 @@ use betterlite_server::member_request_contracts::members::{
 };
 use betterlite_server::member_request_contracts::organization::{
     OrganizationTableUpdate, OrganizationTableWithMembers, OrganizationUpdateRequestV2,
-    PresentFields,
+    PresentFields as _,
 };
 use betterlite_server::member_request_contracts::team::DeleteTeamRequest;
 
@@ -91,19 +91,19 @@ fn outcome(record: &Record, value: &Json) -> HelperResult {
     }
 }
 
-fn recorded<T>(record: Result<T, MemberContractError>) -> HelperResult
+fn recorded<T>(decoded: Result<T, MemberContractError>) -> HelperResult
 where
     T: Serialize,
 {
-    let record = record.map_err(validation_failure)?;
+    let record = decoded.map_err(validation_failure)?;
     Ok(json!({
         "outcome": "record",
         "dump": record,
     }))
 }
 
-fn patched(request: Result<OrganizationUpdateRequestV2, MemberContractError>) -> HelperResult {
-    let request = request.map_err(validation_failure)?;
+fn patched(decoded: Result<OrganizationUpdateRequestV2, MemberContractError>) -> HelperResult {
+    let request = decoded.map_err(validation_failure)?;
     Ok(json!({
         "outcome": "record",
         "dump": request,
