@@ -5,7 +5,7 @@ description: >-
   index and archive handlers, B8648 supplies their real stored-skill reader and mounts
   them, and B8670 mounts B3211's UI document. B8648 compares only the disabled skill
   routes over HTTP. Complete the missing enabled-path comparisons against independently
-  seeded Postgres databases, using B5076's booted LiteLLM environment and the existing
+  seeded Postgres databases, using B9942's booted LiteLLM environment and the existing
   betterlite binary. Add the UI settings combinations below that B3211 currently proves
   only with helpers. This task registers no route, changes no gateway handler or config
   section, and invokes no FastAPI handler from a helper adapter.
