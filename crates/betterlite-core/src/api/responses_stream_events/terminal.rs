@@ -16,10 +16,7 @@ use crate::api::response_synthetic_events::stamping::{
 
 pub struct EstimatedUsage<'estimate, Tokenization> {
     pub tokenization: &'estimate Tokenization,
-    pub model: &'estimate str,
-    pub request_input: &'estimate Json,
-    pub request: Json,
-    pub generated: String,
+    pub request: EstimateRequest<'estimate>,
 }
 
 impl<Tokenization> UsageEstimate for EstimatedUsage<'_, Tokenization>
@@ -27,15 +24,38 @@ where
     Tokenization: UsageTokenization,
 {
     fn estimate(&self) -> Option<ResponseApiUsage> {
-        estimate_usage_safely(
-            self.tokenization,
-            &EstimateRequest {
-                model: self.model,
-                request_input: self.request_input,
-                responses_api_request: &self.request,
-                generated_text: &self.generated,
+        estimate_usage_safely(self.tokenization, &self.request)
+    }
+}
+
+// completed and incomplete bill the response, failed only logs it
+#[derive(Clone, Copy)]
+pub enum Terminal {
+    Billed,
+    Failed,
+}
+
+impl Terminal {
+    #[must_use]
+    pub fn of(event: &ResponsesAPIStreamingResponse) -> Option<Self> {
+        match event {
+            ResponsesAPIStreamingResponse::Known(known) => {
+                if let KnownResponseEvent::ResponseFailed(_) = known.as_ref() {
+                    return Some(Self::Failed);
+                }
+                if let KnownResponseEvent::ResponseCompleted(_)
+                | KnownResponseEvent::ResponseIncomplete(_) = known.as_ref()
+                {
+                    return Some(Self::Billed);
+                }
+                None
+            }
+            ResponsesAPIStreamingResponse::Generic(record) => match record.r#type.as_str() {
+                "response.failed" => Some(Self::Failed),
+                "response.completed" | "response.incomplete" => Some(Self::Billed),
+                _ => None,
             },
-        )
+        }
     }
 }
 
@@ -48,9 +68,10 @@ pub fn bill<Estimate, Calculator>(
     Calculator: ResponsesCostCalculator,
 {
     match event {
-        ResponsesAPIStreamingResponse::Known(known) => match known.as_mut() {
-            KnownResponseEvent::ResponseCompleted(record)
-            | KnownResponseEvent::ResponseIncomplete(record) => {
+        ResponsesAPIStreamingResponse::Known(known) => {
+            if let KnownResponseEvent::ResponseCompleted(record)
+            | KnownResponseEvent::ResponseIncomplete(record) = known.as_mut()
+            {
                 if let BilledTerminal::Estimated(copy) =
                     billed_terminal_response(&record.response, estimate)
                 {
@@ -58,43 +79,10 @@ pub fn bill<Estimate, Calculator>(
                 }
                 stamp_usage_cost(&mut record.response, calculator);
             }
-            KnownResponseEvent::ResponseFailed(record) => {
+            if let KnownResponseEvent::ResponseFailed(record) = known.as_mut() {
                 stamp_usage_cost(&mut record.response, calculator);
             }
-            KnownResponseEvent::ResponseCreated(_)
-            | KnownResponseEvent::ResponseInProgress(_)
-            | KnownResponseEvent::ResponsePartAdded(_)
-            | KnownResponseEvent::ReasoningSummaryTextDelta(_)
-            | KnownResponseEvent::ReasoningSummaryTextDone(_)
-            | KnownResponseEvent::ReasoningSummaryPartDone(_)
-            | KnownResponseEvent::OutputItemAdded(_)
-            | KnownResponseEvent::OutputItemDone(_)
-            | KnownResponseEvent::ContentPartAdded(_)
-            | KnownResponseEvent::ContentPartDone(_)
-            | KnownResponseEvent::OutputTextDelta(_)
-            | KnownResponseEvent::OutputTextAnnotationAdded(_)
-            | KnownResponseEvent::OutputTextDone(_)
-            | KnownResponseEvent::RefusalDelta(_)
-            | KnownResponseEvent::RefusalDone(_)
-            | KnownResponseEvent::FunctionCallArgumentsDelta(_)
-            | KnownResponseEvent::FunctionCallArgumentsDone(_)
-            | KnownResponseEvent::FileSearchCallInProgress(_)
-            | KnownResponseEvent::FileSearchCallSearching(_)
-            | KnownResponseEvent::FileSearchCallCompleted(_)
-            | KnownResponseEvent::WebSearchCallInProgress(_)
-            | KnownResponseEvent::WebSearchCallSearching(_)
-            | KnownResponseEvent::WebSearchCallCompleted(_)
-            | KnownResponseEvent::McpListToolsInProgress(_)
-            | KnownResponseEvent::McpListToolsCompleted(_)
-            | KnownResponseEvent::McpListToolsFailed(_)
-            | KnownResponseEvent::McpCallInProgress(_)
-            | KnownResponseEvent::McpCallArgumentsDelta(_)
-            | KnownResponseEvent::McpCallArgumentsDone(_)
-            | KnownResponseEvent::McpCallCompleted(_)
-            | KnownResponseEvent::McpCallFailed(_)
-            | KnownResponseEvent::ImageGenerationPartialImage(_)
-            | KnownResponseEvent::Error(_) => {}
-        },
+        }
         ResponsesAPIStreamingResponse::Generic(record) => {
             let Some(response) = record.extra.get("response") else {
                 return;

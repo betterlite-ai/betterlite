@@ -10,24 +10,6 @@ use indexmap::IndexMap;
 
 use crate::api::response_id_traversal::record::{DictRecord, Record};
 
-// the event field whose container ids are encoded
-#[derive(Clone, Copy)]
-pub enum Slot {
-    Item,
-    Annotation,
-    Part,
-}
-
-impl Slot {
-    fn key(self) -> &'static str {
-        match self {
-            Slot::Item => "item",
-            Slot::Annotation => "annotation",
-            Slot::Part => "part",
-        }
-    }
-}
-
 pub enum Target<'event> {
     Extra(&'event mut Extra),
     Extras(&'event mut Vec<Extra>),
@@ -63,45 +45,57 @@ pub fn response_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Resp
     }
 }
 
+// the event's own kind names the one slot whose container ids are encoded
 #[must_use]
-pub fn slot_target(event: &mut ResponsesAPIStreamingResponse, slot: Slot) -> Option<Target<'_>> {
+pub fn slot_target(event: &mut ResponsesAPIStreamingResponse) -> Option<Target<'_>> {
     match event {
-        ResponsesAPIStreamingResponse::Known(known) => known_target(known.as_mut(), slot),
-        ResponsesAPIStreamingResponse::Generic(record) => generic_target(&mut record.extra, slot),
+        ResponsesAPIStreamingResponse::Known(known) => known_target(known.as_mut()),
+        ResponsesAPIStreamingResponse::Generic(record) => {
+            generic_target(&mut record.extra, &record.r#type)
+        }
     }
 }
 
-fn known_target(event: &mut KnownResponseEvent, slot: Slot) -> Option<Target<'_>> {
-    match (event, slot) {
-        (KnownResponseEvent::OutputItemAdded(record), Slot::Item) => match &mut record.item {
+fn known_target(event: &mut KnownResponseEvent) -> Option<Target<'_>> {
+    if let KnownResponseEvent::OutputItemAdded(record) = event {
+        return match &mut record.item {
             RequiredNullable::Value(extra) => Some(Target::Extra(extra)),
             RequiredNullable::Null => None,
-        },
-        (KnownResponseEvent::OutputItemDone(record), Slot::Item) => {
-            Some(Target::Extra(&mut record.item))
-        }
-        (KnownResponseEvent::OutputTextAnnotationAdded(record), Slot::Annotation) => {
-            Some(Target::Extra(&mut record.annotation))
-        }
-        (KnownResponseEvent::ContentPartDone(record), Slot::Part) => match &mut record.part {
+        };
+    }
+    if let KnownResponseEvent::OutputItemDone(record) = event {
+        return Some(Target::Extra(&mut record.item));
+    }
+    if let KnownResponseEvent::OutputTextAnnotationAdded(record) = event {
+        return Some(Target::Extra(&mut record.annotation));
+    }
+    if let KnownResponseEvent::ContentPartDone(record) = event {
+        return match &mut record.part {
             ContentPartDonePart::OutputText { annotations, .. } => {
                 Some(Target::Extras(annotations))
             }
             ContentPartDonePart::Refusal { .. } | ContentPartDonePart::ReasoningText { .. } => None,
-        },
-        (_, _) => None,
+        };
     }
+    None
 }
 
-fn generic_target(extra: &mut Extra, slot: Slot) -> Option<Target<'_>> {
-    let value = extra.get_mut(slot.key())?;
-    if matches!(slot, Slot::Part) {
-        let Json::Object(fields) = value else {
-            return None;
-        };
-        return fields.get_mut("annotations").map(Target::Values);
+fn generic_target<'event>(extra: &'event mut Extra, event_type: &str) -> Option<Target<'event>> {
+    match event_type {
+        "response.output_item.added" | "response.output_item.done" => {
+            Some(Target::Value(extra.get_mut("item")?))
+        }
+        "response.output_text.annotation.added" => {
+            Some(Target::Value(extra.get_mut("annotation")?))
+        }
+        "response.content_part.done" => {
+            let Json::Object(fields) = extra.get_mut("part")? else {
+                return None;
+            };
+            fields.get_mut("annotations").map(Target::Values)
+        }
+        _ => None,
     }
-    Some(Target::Value(value))
 }
 
 // a pydantic event model answers getattr("response") from its allowed extras, so any variant may carry one
@@ -172,13 +166,12 @@ where
 
 #[must_use]
 pub fn json_of(record: &Record) -> Json {
-    let fields = match record {
-        Record::Dict(dict) => &dict.values,
-        Record::Object { object } => &object.fields,
-        Record::List(items) => return Json::List(items.iter().map(json_of).collect()),
-        Record::Scalar(value) => return value.clone(),
-    };
-    object_of(fields)
+    match record {
+        Record::Dict(dict) => object_of(&dict.values),
+        Record::Object { object } => object_of(&object.fields),
+        Record::List(items) => Json::List(items.iter().map(json_of).collect()),
+        Record::Scalar(value) => value.clone(),
+    }
 }
 
 fn object_of(fields: &IndexMap<String, Record>) -> Json {

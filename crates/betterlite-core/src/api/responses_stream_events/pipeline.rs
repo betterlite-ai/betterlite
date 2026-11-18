@@ -2,16 +2,14 @@ use betterlite_logging::logging_state::events::update_completion_start_time;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
-use chrono::{DateTime, FixedOffset};
 
-use super::kinds::{EventKind, event_kind, is_terminal};
-use super::record::{ResponseTarget, Slot, response_target};
-use super::terminal::{self, EstimatedUsage};
+use super::record::{ResponseTarget, response_target};
+use super::terminal::{self, EstimatedUsage, Terminal};
 use super::{
-    JsonShape, ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
+    ProcessEventError, ResponsesEventProcessor, ResponsesEventTransform, affinity,
     decode_responses_stream_value, deltas, identity,
 };
-use crate::api::response_synthetic_events::estimate::UsageTokenization;
+use crate::api::response_synthetic_events::estimate::{EstimateRequest, UsageTokenization};
 use crate::api::response_synthetic_events::stamping::ResponsesCostCalculator;
 use crate::api::responses_stream_hooks::failed::handle_logging_failed_response;
 use crate::api::responses_stream_hooks::failure::handle_failure;
@@ -42,7 +40,12 @@ where
             state.finished = true;
             return Ok(None);
         }
-        mark_completion_start(logging, self.hooks.clock.now());
+        let start_missing = logging
+            .read(&mut |state| state.completion_start_time.is_none())
+            .unwrap_or(false);
+        if start_missing {
+            logging.edit(&mut |state| update_completion_start_time(state, self.hooks.clock.now()));
+        }
         match self.handle_payload(payload, state, callback).await {
             Ok(event) => Ok(event),
             Err(error) => {
@@ -81,8 +84,7 @@ where
         state: &mut ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
     ) -> Result<Option<ResponsesAPIStreamingResponse>, ProcessEventError<Transform::Error>> {
-        let kind = event_kind(&event);
-        if has_response_key(parsed) {
+        if matches!(parsed, Json::Object(fields) if fields.contains_key("response")) {
             let metadata = affinity::request_metadata(state);
             let provider = state.custom_llm_provider.as_deref();
             match response_target(&mut event) {
@@ -95,26 +97,12 @@ where
                 None => {}
             }
         }
-        if matches!(kind, EventKind::TextDelta | EventKind::ArgsDelta) {
-            deltas::accumulate(&event, kind, state);
-        }
+        deltas::accumulate(&event, state);
         let provider = state.custom_llm_provider.as_deref();
         let model_id = state.hidden_params.model_id.as_deref();
-        match kind {
-            EventKind::Item => identity::encode(&mut event, Slot::Item, provider, model_id)?,
-            EventKind::Annotation => {
-                identity::encode(&mut event, Slot::Annotation, provider, model_id)?;
-            }
-            EventKind::Part => identity::encode(&mut event, Slot::Part, provider, model_id)?,
-            EventKind::Completed
-            | EventKind::Incomplete
-            | EventKind::Failed
-            | EventKind::TextDelta
-            | EventKind::ArgsDelta
-            | EventKind::Other => {}
-        }
+        identity::encode(&mut event, provider, model_id)?;
         affinity::wrap_cipher(&mut event, state);
-        if is_terminal(kind) {
+        if let Some(kind) = Terminal::of(&event) {
             return self
                 .store_terminal(event, kind, state, callback)
                 .await
@@ -126,11 +114,11 @@ where
     async fn store_terminal(
         &mut self,
         mut event: ResponsesAPIStreamingResponse,
-        kind: EventKind,
+        kind: Terminal,
         state: &mut ResponsesStreamBaseState,
         callback: &mut ResponsesStreamHookState,
     ) -> Result<ResponsesAPIStreamingResponse, ProcessEventError<Transform::Error>> {
-        let failed = kind == EventKind::Failed;
+        let failed = matches!(kind, Terminal::Failed);
         {
             let generated = format!(
                 "{}{}",
@@ -144,10 +132,12 @@ where
             } else {
                 self.tokenization.map(|tokenization| EstimatedUsage {
                     tokenization,
-                    model: &state.model,
-                    request_input,
-                    request,
-                    generated,
+                    request: EstimateRequest {
+                        model: &state.model,
+                        request_input,
+                        responses_api_request: &request,
+                        generated_text: &generated,
+                    },
                 })
             };
             terminal::bill(&mut event, estimate.as_ref(), self.calculator);
@@ -167,21 +157,5 @@ where
                 .await?;
         }
         Ok(event)
-    }
-}
-
-fn has_response_key(parsed: &Json) -> bool {
-    match parsed {
-        Json::Object(fields) => fields.contains_key("response"),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => false,
-    }
-}
-
-fn mark_completion_start(logging: &StreamLoggingObject, now: DateTime<FixedOffset>) {
-    let missing = logging
-        .read(&mut |state| state.completion_start_time.is_none())
-        .unwrap_or(false);
-    if missing {
-        logging.edit(&mut |state| update_completion_start_time(state, now));
     }
 }

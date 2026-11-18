@@ -7,7 +7,7 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 
-use super::record::{Slot, Target, json_of, record_of, record_of_fields, slot_target};
+use super::record::{Target, json_of, record_of, record_of_fields, slot_target};
 use crate::api::response_id_traversal::container::encode_container_id;
 use crate::api::response_id_traversal::metadata::AffinityMetadata;
 use crate::api::response_id_traversal::record::TraversalError;
@@ -51,27 +51,24 @@ pub fn rewrite_response_value(
     provider: Option<&str>,
     metadata: &AffinityMetadata,
 ) -> Result<(), RewriteError> {
-    match value {
-        Json::Object(fields) => {
-            let mut record = record_of_fields(fields.iter());
-            rewrite_response_id(&mut record, provider, metadata)?;
-            *value = json_of(&record);
-            Ok(())
-        }
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Ok(()),
-    }
+    let Json::Object(fields) = value else {
+        return Ok(());
+    };
+    let mut record = record_of_fields(fields.iter());
+    rewrite_response_id(&mut record, provider, metadata)?;
+    *value = json_of(&record);
+    Ok(())
 }
 
 pub fn encode(
     event: &mut ResponsesAPIStreamingResponse,
-    slot: Slot,
     provider: Option<&str>,
     model_id: Option<&str>,
 ) -> Result<(), RewriteError> {
-    match slot_target(event, slot) {
-        Some(target) => encode_target(target, provider, model_id),
-        None => Ok(()),
-    }
+    let Some(target) = slot_target(event) else {
+        return Ok(());
+    };
+    encode_target(target, provider, model_id)
 }
 
 fn encode_target(

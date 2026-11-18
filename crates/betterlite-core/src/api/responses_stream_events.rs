@@ -28,7 +28,6 @@ pub use crate::api::responses_stream_primitives::state::{
 pub mod affinity;
 pub mod deltas;
 pub mod identity;
-pub mod kinds;
 pub mod record;
 pub mod terminal;
 

@@ -1,7 +1,9 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
+use betterlite_openai::api::responses_event_records::records::{
+    KnownResponseEvent, ResponsesAPIStreamingResponse,
+};
 
-use super::record::{Slot, Target, slot_target};
+use super::record::{Target, slot_target};
 use crate::api::response_id_codecs::encrypted::wrap_encrypted_content;
 use crate::api::response_id_traversal::metadata::{AffinityMetadata, ModelInfo};
 use crate::api::responses_stream_primitives::state::ResponsesStreamBaseState;
@@ -19,7 +21,10 @@ pub fn wrap_cipher(event: &mut ResponsesAPIStreamingResponse, state: &ResponsesS
     else {
         return;
     };
-    if let Some(Target::Extra(extra)) = slot_target(event, Slot::Item) {
+    if !item_event(event) {
+        return;
+    }
+    if let Some(Target::Extra(extra)) = slot_target(event) {
         wrap_slot(extra.get_mut("encrypted_content"), model_id);
     }
 }
@@ -35,6 +40,19 @@ pub fn request_metadata(state: &ResponsesStreamBaseState) -> AffinityMetadata {
     }
 }
 
+fn item_event(event: &ResponsesAPIStreamingResponse) -> bool {
+    match event {
+        ResponsesAPIStreamingResponse::Known(known) => matches!(
+            known.as_ref(),
+            KnownResponseEvent::OutputItemAdded(_) | KnownResponseEvent::OutputItemDone(_)
+        ),
+        ResponsesAPIStreamingResponse::Generic(record) => matches!(
+            record.r#type.as_str(),
+            "response.output_item.added" | "response.output_item.done"
+        ),
+    }
+}
+
 fn wrap_slot(slot: Option<&mut Json>, model_id: &str) {
     let Some(Json::Text(text)) = slot else {
         return;
@@ -46,20 +64,11 @@ fn wrap_slot(slot: Option<&mut Json>, model_id: &str) {
 }
 
 fn enabled(state: &ResponsesStreamBaseState) -> bool {
-    match state
-        .litellm_metadata
-        .as_ref()
-        .and_then(|metadata| metadata.get("encrypted_content_affinity_enabled"))
-    {
-        Some(Json::Bool(true)) => true,
-        Some(
-            Json::Null
-            | Json::Bool(false)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        )
-        | None => false,
-    }
+    matches!(
+        state
+            .litellm_metadata
+            .as_ref()
+            .and_then(|metadata| metadata.get("encrypted_content_affinity_enabled")),
+        Some(Json::Bool(true))
+    )
 }
