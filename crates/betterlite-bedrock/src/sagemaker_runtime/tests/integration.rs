@@ -445,6 +445,95 @@ async fn sagemaker_nova_chat_drops_the_model_field() {
 }
 
 #[tokio::test]
+async fn completion_component_header_is_added_after_signing() {
+    let counter = Counter;
+    let mut workspace = Workspace::new();
+    workspace.options = Options::from([(
+        String::from("model_id"),
+        Value::String(String::from("component")),
+    )]);
+    let runtime = runtime(
+        FakeTransport::new(200, "{}", &[]),
+        FakeCredentials,
+        &counter,
+    );
+    let prepared = runtime
+        .prepare_completion(&workspace.completion())
+        .await
+        .expect("completion request");
+    assert!(prepared.headers.iter().any(|(name, value)| {
+        name == "X-Amzn-SageMaker-Inference-Component" && value == "component"
+    }));
+    let authorization = prepared
+        .headers
+        .iter()
+        .find_map(|(name, value)| (name == "Authorization").then_some(value))
+        .expect("signed request");
+    assert!(
+        !authorization
+            .to_ascii_lowercase()
+            .contains("x-amzn-sagemaker-inference-component")
+    );
+    let plain_workspace = Workspace::new();
+    let plain = runtime
+        .prepare_completion(&plain_workspace.completion())
+        .await
+        .expect("plain request");
+    assert!(
+        !plain
+            .headers
+            .iter()
+            .any(|(name, _)| name == "X-Amzn-SageMaker-Inference-Component")
+    );
+}
+
+#[tokio::test]
+async fn chat_reads_a_compatible_reply() {
+    let counter = Counter;
+    let workspace = Workspace::new();
+    let reply = runtime(
+        FakeTransport::new(
+            200,
+            r#"{"choices":[{"index":0,"message":{"role":"assistant","content":"hi"}}]}"#,
+            &[],
+        ),
+        FakeCredentials,
+        &counter,
+    )
+    .chat(&workspace.chat(false))
+    .await
+    .expect("chat reply");
+    assert_eq!(
+        reply.response.choices[0].message.content.as_deref(),
+        Some("hi")
+    );
+}
+
+#[tokio::test]
+async fn embedding_sends_the_custom_attributes_header() {
+    let counter = Counter;
+    let workspace = Workspace::new();
+    let prepared = runtime(
+        FakeTransport::new(200, "{}", &[]),
+        FakeCredentials,
+        &counter,
+    )
+    .prepare_embedding(&workspace.embedding("voyage-3"))
+    .await
+    .expect("embedding request");
+    assert!(prepared.call.headers.iter().any(|(name, value)| {
+        name == "X-Amzn-SageMaker-Custom-Attributes" && value == "accept_eula=true"
+    }));
+    assert!(
+        prepared
+            .call
+            .headers
+            .iter()
+            .any(|(name, value)| { name == "Content-Type" && value == "application/json" })
+    );
+}
+
+#[tokio::test]
 async fn chat_rejects_a_redirect_without_a_location() {
     let counter = Counter;
     let workspace = Workspace::new();
