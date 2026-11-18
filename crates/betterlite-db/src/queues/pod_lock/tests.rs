@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 use rstest::rstest;
+use tokio::time::timeout;
 use uuid::Uuid;
 
 use super::owner::{PodId, PodOwnerError, decode_pod_owner, lease_key};
@@ -183,10 +184,12 @@ impl FakeCache {
 impl LockCache for FakeCache {
     #[rustfmt::skip]
     fn get_owner(&self, _key: &str) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
-        let outcome = match &*self.get.lock().unwrap_or_else(PoisonError::into_inner) {
+        let guard = self.get.lock().unwrap_or_else(PoisonError::into_inner);
+        let outcome = match &*guard {
             Ok(owner) => Ok(owner.clone()),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "get_owner" }),
         };
+        drop(guard);
         let replacement = self
             .takeover
             .lock()
@@ -210,10 +213,12 @@ impl LockCache for FakeCache {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(owner.to_owned());
-        let outcome = match &*self.set.lock().unwrap_or_else(PoisonError::into_inner) {
+        let guard = self.set.lock().unwrap_or_else(PoisonError::into_inner);
+        let outcome = match &*guard {
             Ok(stored) => Ok(*stored),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "set_owner_if_absent" }),
         };
+        drop(guard);
         if matches!(&outcome, Ok(true)) {
             self.store.lock().unwrap_or_else(PoisonError::into_inner).stored_json =
                 Some(serde_json::to_string(owner).unwrap());
@@ -226,10 +231,12 @@ impl LockCache for FakeCache {
         self.deletes.fetch_add(1, Ordering::SeqCst);
         let store = Arc::clone(&self.store);
         let delayed = self.pending_delete.load(Ordering::SeqCst);
-        let outcome = match &*self.delete.lock().unwrap_or_else(PoisonError::into_inner) {
+        let guard = self.delete.lock().unwrap_or_else(PoisonError::into_inner);
+        let outcome = match &*guard {
             Ok(count) => Ok(*count),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "delete" }),
         };
+        drop(guard);
         async move {
             if delayed {
                 pending::<()>().await;
@@ -601,8 +608,7 @@ async fn a_cancelled_release_keeps_the_lease_and_emits_nothing() {
     cache.lease_held_by(manager.pod_id.as_ref());
     cache.delete_count(1);
     cache.delay_delete();
-    let cancelled =
-        tokio::time::timeout(Duration::from_millis(20), manager.release_lock("job")).await;
+    let cancelled = timeout(Duration::from_millis(20), manager.release_lock("job")).await;
     assert!(cancelled.is_err());
     assert_eq!(cache.deletes(), 1);
     assert!(cache.deleted_owners().is_empty());

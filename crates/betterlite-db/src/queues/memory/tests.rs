@@ -3,6 +3,8 @@
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use tokio::time::timeout;
+
 use super::{EnqueueObserver, MemoryQueueError, MemoryUpdateQueue, NoEnqueueObserver};
 use crate::queues::test_support::captured_logs;
 
@@ -77,7 +79,7 @@ fn keeps_a_threshold_below_capacity_without_warning() {
 async fn add_update_waits_for_capacity_and_a_cancelled_add_admits_nothing() {
     let queue = MemoryUpdateQueue::new(1, 0, 10, Arc::new(NoEnqueueObserver)).unwrap();
     queue.add_update("first").await.unwrap();
-    let cancelled = tokio::time::timeout(Duration::from_millis(20), queue.add_update("second"));
+    let cancelled = timeout(Duration::from_millis(20), queue.add_update("second"));
     assert!(cancelled.await.is_err());
     assert_eq!(queue.drain_updates(), vec!["first"]);
     queue.add_update("second").await.unwrap();
