@@ -1,25 +1,28 @@
 id: B9992
-title: Per-deployment drop_params reaches the provider adapters
+title: Deployment drop_params and the unsupported-param check reach the adapters
 description: >-
-  A deployment's litellm_params.drop_params and additional_drop_params never reach a provider call. In LiteLLM the
-  router copies the deployment's litellm_params and spreads them under the request's own kwargs (router.py
-  L3722-L3756), so a deployment value applies unless the request sets its own. completion keeps both in
-  non_default_params (main.py L5406, through get_non_default_completion_params at utils.py L10239-L10240) and passes
-  them to get_optional_params (main.py L5642). There additional_drop_params removes the named params
-  (pre_process_non_default_params, utils.py L4281-L4337, called at L4494-L4501), and drop_params drops an unsupported
-  param instead of raising (utils.py L4529-L4531).
+  A deployment's litellm_params.drop_params and additional_drop_params never reach a provider call, and the OpenAI
+  chat path never runs LiteLLM's unsupported-param check. In LiteLLM the router copies the deployment's
+  litellm_params and spreads them under the request's own kwargs (router.py L3722-L3756), so a deployment value
+  applies unless the request sets its own. completion keeps both in non_default_params (main.py L5406, through
+  get_non_default_completion_params at utils.py L10239-L10240) and passes them to get_optional_params (main.py
+  L5642). There additional_drop_params removes the named params (pre_process_non_default_params, utils.py
+  L4281-L4337, called at L4494-L4501). Then, for every provider, OpenAI included, the supported list plus
+  allowed_openai_params goes to _check_valid_arg (utils.py L4543-L4561), and an unsupported param raises
+  UnsupportedParamsError with status 400 unless drop_params is true, when it is dropped (L4529-L4537).
 
 
-  In betterlite the config parses both: crates/betterlite-config/src/sections/drop_params.rs L62-L91 fills
+  In betterlite the config parses both values: crates/betterlite-config/src/sections/drop_params.rs L62-L91 fills
   DropPolicySettings.deployments by model_list position. Nothing outside betterlite-config reads that list.
   ChatDeployment in crates/betterlite-openai/src/chat/deployment.rs L70-L86 has no field for it.
   Deployment::from_chat in crates/betterlite-provider/src/prepared/deployment.rs sets drop_params: None (L52), and
   Deployment has no additional_drop_params field. chat_fields in crates/betterlite-provider/src/prepared/body.rs
-  (L28-L63) filters the known params by the supported list only, so neither the request's nor the deployment's
-  additional_drop_params removes anything. B010 logged this as a deviation until the owner of ChatDeployment adds the
-  fields (docs/deviations/B010.yaml L38-L44). A user sees two differences: on the OpenAI path a deployment's
-  additional_drop_params names are still sent, and after B9986 an anthropic/ deployment with drop_params true answers
-  UnsupportedParams where LiteLLM drops the param.
+  (L28-L63) keeps a known param only when the supported list names it, so an unsupported param is dropped without
+  an error, allowed_openai_params is ignored, and neither the request's nor the deployment's additional_drop_params
+  removes anything. B010 logged the missing fields as a deviation until the owner of ChatDeployment adds them
+  (docs/deviations/B010.yaml L38-L44). A user sees three differences: an OpenAI deployment answers 200 where LiteLLM
+  answers 400 for an unsupported param, a deployment's additional_drop_params names are still sent, and after B9986
+  an anthropic/ deployment with drop_params true answers 400 where LiteLLM drops the param.
 
 
   The chat deployment. ChatDeployment gains pub drop_policy: DeploymentDropPolicy, the
@@ -35,17 +38,26 @@ description: >-
   passes one. Every Deployment literal in the test files in scope sets an empty list.
 
 
-  The OpenAI path. chat_fields takes a new argument additional_drop_params: &[String], the deployment's list. The
-  call's list is the request's additional_drop_params when the request sends a list, otherwise the deployment's, as
-  the router's kwargs order gives. Remove those names from the known params before the supported filter. The chat
-  request builders in openai_dispatch.rs and aiohttp_openai_dispatch.rs pass &deployment.additional_drop_params, and
-  chat_body in openai_dispatch/compose.rs passes an empty list, so only the request's own list applies there.
+  One check for both paths. B9986's gateway/parameters.rs builds a ParameterPolicy and calls B9989's
+  map_listed_parameters for Anthropic. Move that part into pub(crate) fn listed_parameters(fields:
+  &IndexMap<String, JsonValue>, supported: &[&'static str], model: &str, deployment: &Deployment) ->
+  Result<ParameterMapping, OperationError> in prepared/body.rs, beside chat_request_fields, and call it from both
+  paths instead of keeping two copies. It reads the policy from the fields without removing them: drop_params is the
+  request's value when it sends one, otherwise deployment.drop_params read through normalize_drop_params, ORed with
+  B9988's deployment.global_drop_params; additional_drop_params is the request's list when it sends one, otherwise
+  deployment.additional_drop_params; allowed_openai_params is the request's. It builds ChatParameters from the fields
+  without the names in RESERVED_PARAMETER_NAMES and returns map_listed_parameters(supported, model,
+  CallType::ChatCompletion, &parameters, &policy), with every ParameterError as B9986's OperationError::Parameters.
+  The Anthropic step keeps its own handling of extra_headers, extra_body and the mapping, and the runtime's
+  global_drop_params field goes away, since deployment.global_drop_params carries the same value.
 
 
-  The Anthropic path. In crates/betterlite-provider/src/anthropic_dispatch/gateway/parameters.rs, B9986's
-  ParameterPolicy takes drop_params from the request when it sets one and from deployment.drop_params otherwise, then
-  ORs the proxy-wide flag in, as LiteLLM checks litellm.drop_params or the call's value. additional_drop_params is the
-  request's list when it sends one, otherwise deployment.additional_drop_params.
+  The OpenAI path. chat_fields takes a new argument deployment: &Deployment. Before the partition it calls
+  listed_parameters on the params B9989's chat_request_fields returns, with the supported list it already computes, so an unsupported param answers
+  OperationError::Parameters with ParameterError::Unsupported, the 400 B9986's server arm gives. The body then keeps a
+  known param when the supported list or the request's allowed_openai_params names it and the call's
+  additional_drop_params does not. The chat request builders in openai_dispatch.rs and aiohttp_openai_dispatch.rs
+  pass their deployment, and chat_plan in openai_dispatch/compose.rs passes the Deployment it builds on to chat_body.
 
 
   Tests. Add the test function a_deployment_drop_policy_reaches_its_chat_deployment to
@@ -53,13 +65,16 @@ description: >-
   drop_params true and additional_drop_params [temperature], gives the second those values and the first the
   default. Write rstest function from_chat_drop_policy_cases in the new child module
   crates/betterlite-provider/src/prepared/tests/drop_policy.rs, declared by mod drop_policy; in prepared/tests.rs,
-  with named cases flag_copied, list_copied and default_unset. Add Family::DeploymentDropParams to
-  openai_dispatch_cases as case deployment_additional_drop_params, in the new child module
-  openai_dispatch/tests/deployment_drop_params.rs: with the deployment list [temperature], a loopback upstream gets
-  top_p and no temperature, and with a request list [top_p] it gets temperature and no top_p. Add the named cases
-  anthropic_provider_deployment_drop_params (a deployment with drop_params true sends a logit_bias request without
-  logit_bias) and anthropic_provider_request_drop_params_wins (the request's drop_params false over the deployment's
-  true answers OperationError::UnsupportedParams) to anthropic_dispatch_cases.
+  with named cases flag_copied, list_copied and default_unset. Add these cases to openai_dispatch_cases, each a Family
+  variant with its function in the new child module openai_dispatch/tests/drop_params.rs, against a loopback
+  upstream: deployment_additional_drop_params (with the deployment list [temperature] the upstream gets top_p and no
+  temperature, and with a request list [top_p] it gets temperature and no top_p), openai_unsupported_param (a gpt-4
+  deployment and response_format answer OperationError::Parameters with ParameterError::Unsupported and nothing is
+  sent), openai_unsupported_param_dropped (the same request with drop_params true is sent without response_format)
+  and openai_allowed_param (the same request with allowed_openai_params [response_format] is sent with it). Add the
+  named cases anthropic_provider_deployment_drop_params (a deployment with drop_params true sends a logit_bias request
+  without logit_bias) and anthropic_provider_request_drop_params_wins (the request's drop_params false over the
+  deployment's true answers OperationError::Parameters with ParameterError::Unsupported) to anthropic_dispatch_cases.
 scope:
   paths:
   - crates/betterlite-openai/src/chat/deployment.rs
@@ -71,6 +86,7 @@ scope:
   - crates/betterlite-server/tests/text_streaming/mod.rs
   - crates/betterlite-core/src/dispatch/tests/support.rs
   - crates/betterlite-provider/src/prepared/deployment.rs
+  - crates/betterlite-provider/src/prepared/deployment/**
   - crates/betterlite-provider/src/prepared/body.rs
   - crates/betterlite-provider/src/prepared/tests.rs
   - crates/betterlite-provider/src/prepared/tests/identity.rs
@@ -78,10 +94,11 @@ scope:
   - crates/betterlite-provider/src/openai_dispatch.rs
   - crates/betterlite-provider/src/openai_dispatch/compose.rs
   - crates/betterlite-provider/src/openai_dispatch/tests.rs
-  - crates/betterlite-provider/src/openai_dispatch/tests/deployment_drop_params.rs
+  - crates/betterlite-provider/src/openai_dispatch/tests/drop_params.rs
   - crates/betterlite-provider/src/aiohttp_openai_dispatch.rs
   - crates/betterlite-provider/src/aiohttp_openai_dispatch/tests.rs
   - crates/betterlite-provider/src/anthropic_dispatch/gateway/parameters.rs
+  - crates/betterlite-provider/src/anthropic_dispatch/gateway/runtime.rs
   - crates/betterlite-provider/src/anthropic_dispatch/tests.rs
   - crates/betterlite-provider/src/anthropic_dispatch/tests/gateway.rs
   - crates/betterlite-provider/src/operation/tests.rs
@@ -100,8 +117,11 @@ references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4281-L4337
   why: pre_process_non_default_params removes the additional_drop_params names from the OpenAI and the
     provider-specific params.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4466-L4531
-  why: get_optional_params normalizes drop_params and drops an unsupported param instead of raising when it is true.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4561
+  why: _check_valid_arg runs for every provider against the supported list plus allowed_openai_params, raises
+    UnsupportedParamsError unless drop_params is true, and drops the param when it is.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L945-L967
+  why: UnsupportedParamsError always sets status_code 400.
 dod:
 - text: >-
     setup carries the policy: chat_deployments gives each ChatDeployment the drop_params and additional_drop_params of
@@ -117,6 +137,11 @@ dod:
     deployment's.
   proof:
   - openai-drops
+- text: >-
+    openai check: an unsupported param on the OpenAI chat path answers 400 unless drop_params is set, drop_params drops
+    it, and allowed_openai_params sends it.
+  proof:
+  - openai-check
 - text: >-
     anthropic drops: a deployment's drop_params true drops an unsupported param, and a request's false wins over it.
   proof:
@@ -139,21 +164,25 @@ checks:
   - id: openai-drops
     why: The OpenAI chat body still carries a name the deployment or the request drops.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_deployment_additional_drop_params$/)'
+  - id: openai-check
+    why: The OpenAI chat path sends an unsupported param, drops it without drop_params, keeps it with drop_params, or
+      drops a param allowed_openai_params names.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::case_[0-9]+_openai_(unsupported_param|unsupported_param_dropped|allowed_param)$/)'
   - id: anthropic-drops
     why: The Anthropic call ignores the deployment's drop_params, or the deployment's value wins over the request's.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::anthropic_dispatch_cases::case_[0-9]+_anthropic_provider_(deployment_drop_params|request_drop_params_wins)$/)'
   - id: regressions
-    why: The new ChatDeployment or Deployment field, or the chat_fields argument, broke a test that builds one.
-    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::from_chat_drop_policy_cases::case_[0-9]+_list_copied$/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^prepared::/) | test(/::openai_dispatch_cases::/) | test(/^aiohttp_openai_dispatch::/) | test(/^anthropic_dispatch::/) | test(/^provider::tests::/) | test(/^operation::/) | test(/^embedding_rerank_providers::/) | test(/^vertex_embedding_binding::/)' && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chat::/) | test(/^completion_chat_bridge::/) | test(/^text_completion_execution::/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::/) | test(/^routes::completions::/) | binary(text_streaming)'
+    why: The new ChatDeployment or Deployment field, the chat_fields argument, the check or the moved policy code broke
+      a test that builds a deployment or a chat body.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::from_chat_drop_policy_cases::case_[0-9]+_list_copied$/)' && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^prepared::/) | test(/::openai_dispatch_cases::/) | test(/^aiohttp_openai_dispatch::/) | test(/^anthropic_dispatch::/) | test(/^provider::tests::/) | test(/^operation::/) | test(/^embedding_rerank_providers::/) | test(/^vertex_embedding_binding::/)' && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^chat::/) | test(/^completion_chat_bridge::/) | test(/^text_completion_execution::/)' && cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^dispatch::/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::/) | test(/^routes::completions::/) | test(/^routes::chat::/) | binary(text_streaming)'
 oracle_cases: []
 deviations: []
 out_of_scope:
 - >-
-  What chat_fields does with an unsupported known param stays as it is; this task changes only which names it
-  removes before the supported filter.
-- >-
   The 422 resend is gated by the proxy-wide flag only (B9988); a deployment's drop_params does not turn it on there
   either.
+- >-
+  aiohttp_openai keeps the OpenAI supported list chat_fields uses for it today; a list of its own is not this task.
 pitfalls:
 - >-
   Dispatched runs cannot compile. Search for ChatDeployment { and for Deployment { followed by drop_params: before
@@ -165,9 +194,17 @@ pitfalls:
   (text, seconds, retries, drop_params, affinity_header) into the child module prepared/deployment/parse.rs.
   chat_setup.rs is 270 on main and grows in B9988 and B9990, so the copy stays at two lines.
 - >-
-  DropParams has Flag and Text variants. from_chat only ever builds Flag; the Anthropic step reads Text through
+  DropParams has Flag and Text variants. from_chat only ever builds Flag; listed_parameters reads both through
   normalize_drop_params as from_params already does.
+- >-
+  map_listed_parameters skips the names LiteLLM never validates (user, stream, stream_options, max_retries and n of
+  1), so the existing OpenAI tests that send them keep passing; the supported filter still decides whether they go
+  into the body.
+- >-
+  The OpenAI path now reads the request into ChatParameters, as the Anthropic path does, so a value of the wrong type
+  answers OperationError::Parameters with ParameterError::Encode where the body sent it before. The regressions
+  check runs every openai_dispatch_cases case, so each one that passes on main must still pass.
 budget:
-  max_changed_lines: 600
+  max_changed_lines: 800
   max_new_expects: 0
 review_level: standard

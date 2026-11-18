@@ -84,9 +84,9 @@ description: >-
   betterlite_anthropic::capabilities::supported_params::get_supported_openai_params(&deployment.model,
   Some(anthropic), &mut environment, &catalogs) gives the supported list, and B9989's
   map_listed_parameters(&supported, &deployment.model, CallType::ChatCompletion, &parameters, &policy) runs LiteLLM's
-  _check_valid_arg. ParameterError::Unsupported { model, names } becomes a new OperationError::UnsupportedParams {
-  model, names }, the UnsupportedParamsError LiteLLM raises with status 400 unless drop_params is set; any other
-  ParameterError becomes OperationError::Anthropic. The mapping's standard map is the non_default_params for B576's
+  _check_valid_arg. Every ParameterError becomes a new OperationError::Parameters { #[source] source: ParameterError }
+  in crates/betterlite-provider/src/operation.rs; ParameterError::Unsupported is the UnsupportedParamsError LiteLLM
+  raises with status 400 unless drop_params is set. The mapping's standard map is the non_default_params for B576's
   betterlite_anthropic::params::map_openai_params with a ParamsRequest for deployment.model, provider anthropic, the
   runtime's budgets and default_max_tokens the runtime's max_tokens. The mapping's provider_fields then go into
   optional_params at the top level, as add_provider_specific_params_to_optional_params does for a non-OpenAI provider.
@@ -168,9 +168,9 @@ description: >-
   source: Box<AnthropicCallError> } in crates/betterlite-provider/src/operation.rs. chat_error in
   crates/betterlite-server/src/server/chat_setup/provider_call.rs and its twin in provider_call/embedding.rs match
   OperationError exhaustively, so both gain the two arms here: OperationError::Anthropic goes to CallError::Operation
-  next to TransformRetry, a 500, and OperationError::UnsupportedParams { names, .. } goes to ChatError::Request with
-  RequestError::Unsupported { name: names joined with a comma and a space }, the 400 the route already answers for a
-  rejected parameter.
+  next to TransformRetry, a 500. OperationError::Parameters with ParameterError::Unsupported { names, .. } goes to
+  ChatError::Request with RequestError::Unsupported { name: names joined with a comma and a space }, the 400 the route
+  already answers for a rejected parameter, and any other ParameterError goes to CallError::Operation, a 500.
 
 
   The other Upstream matches. openai_dispatch.rs and aiohttp_openai_dispatch.rs add Upstream::Anthropic(_) to their
@@ -188,7 +188,7 @@ description: >-
   arriving as delta tool_calls, a closing finish_reason chunk), anthropic_provider_dispatch_thinking (a thinking block
   arriving as delta reasoning_content and thinking_blocks after Chunk::parse), anthropic_provider_dispatch_error (a 400
   from the upstream becomes OperationError::Provider with that status), anthropic_provider_unsupported_param
-  (logit_bias answers OperationError::UnsupportedParams and nothing is sent), anthropic_provider_dropped_param (the
+  (logit_bias answers OperationError::Parameters with ParameterError::Unsupported and nothing is sent), anthropic_provider_dropped_param (the
   same request with drop_params true is sent without logit_bias), anthropic_provider_remote_file (a file_data URL the
   loopback serves as a PDF is fetched once and sent as a base64 document block) and anthropic_provider_remote_file_error
   (a file_data URL the loopback answers with 404 becomes OperationError::Provider with status 400, a body naming the
@@ -290,7 +290,7 @@ dod:
   proof:
   - adapter-error
 - text: >-
-    unsupported params: a param outside Anthropic's supported list answers OperationError::UnsupportedParams unless
+    unsupported params: a param outside Anthropic's supported list answers OperationError::Parameters (Unsupported) unless
     drop_params is set, and with drop_params the call is sent without it.
   proof:
   - adapter-params

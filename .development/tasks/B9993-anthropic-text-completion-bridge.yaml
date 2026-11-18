@@ -11,13 +11,14 @@ description: >-
   UnavailableAdapter, and converted reads only ChatCompletion::OpenAi.
 
 
-  The runtime. The completion routes get only Arc<ServerState>, and ServerState is the shared slot registry, so the
-  runtime is built where the routes are. CompletionState gains anthropic: Arc<OnceCell<Arc<AnthropicRuntime>>>,
-  created empty in routes(), and CompletionCalls gets a clone of that Arc where it is built per request. chat() takes
-  the runtime with get_or_try_init, building it on the first bridged chat call with B9986's
-  AnthropicRuntime::new(&state.config, &state.executor.client, Arc::clone(&state.executor.bundled_catalog)), the
-  lazy pattern CompletionExecutor already uses for its catalog. A RuntimeError answers TextCompletionFailure::internal
-  with its message. chat() then passes Some(&runtime) to answer_chat and provider_stream in place of B9990's None.
+  The runtime. B9990 builds one AnthropicRuntime per server in the ServerState slot
+  crates/betterlite-server/src/state/anthropic_runtime.rs, as Slot { runtime: Result<Arc<AnthropicRuntime>,
+  Arc<RuntimeError>> }, at startup in application in crates/betterlite-server/src/server.rs. The completion routes
+  read that slot and build no runtime of their own. CompletionState gains anthropic: Result<Arc<AnthropicRuntime>,
+  Arc<RuntimeError>>, cloned from state.anthropic_runtime.runtime in routes(), and CompletionCalls gets a clone of it
+  where it is built per request. chat() answers TextCompletionFailure::internal with the error's message on Err, a
+  case startup already refuses, and otherwise passes Some(&runtime) to answer_chat and provider_stream in place of
+  B9990's None.
 
 
   The reply. In the buffered arm, OperationResult::Chat(completion) goes to converted as today.
@@ -90,8 +91,9 @@ checks:
     why: An Anthropic 400 through the completions route loses its status.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_upstream_error$/)'
   - id: regressions
-    why: The runtime cell, the reply arm or the frames_answer split broke a completions route test.
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_buffered_text$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::/) | binary(text_streaming)'
+    why: The routes built a second runtime, or the slot read, the reply arm or the frames_answer split broke a
+      completions route test.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_buffered_text$/)' && test "$(grep -rn 'AnthropicRuntime::new(' crates/betterlite-server/src --include=*.rs | grep -v -e '/tests' -e 'tests.rs' | wc -l)" -eq 1 && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::/) | binary(text_streaming)'
 oracle_cases:
 - tools/oracle/cases/completions/anthropic-deployment-nonstream.yaml
 deviations: []
@@ -110,8 +112,8 @@ pitfalls:
   main, so move the body of CompletionCalls::chat into a pub(super) async fn in bridge.rs (203 lines) and keep a
   one-call method in completions.rs.
 - >-
-  The runtime is built once per process on the first bridged chat call and lives beside the chat routes' runtime; it
-  is not a second fetch path, and its beta matrix loader caches the same way.
+  One runtime per server: never call AnthropicRuntime::new in the completion routes. B9990's one-runtime check counts
+  its calls outside tests in betterlite-server and expects exactly one, in the slot.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

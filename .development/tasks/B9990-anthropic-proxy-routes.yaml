@@ -26,18 +26,32 @@ description: >-
   B027's resolve_key then runs LiteLLM's key chain for a deployment without its own key.
 
 
+  One runtime per server. The AnthropicRuntime lives in the ServerState slot
+  crates/betterlite-server/src/state/anthropic_runtime.rs. This plan already declares it in state.rs as
+  anthropic_runtime, with a placeholder Slot built by Slot::new(config, &shared) in ServerState::new; this task fills
+  the file and leaves state.rs alone. The slot becomes pub struct Slot { pub runtime: Result<Arc<AnthropicRuntime>,
+  Arc<RuntimeError>> }, and Slot::new builds it with B9986's AnthropicRuntime::new(config, &shared.client,
+  Arc::clone(&shared.bundled_catalog)), so the beta matrix loader and the catalog load once per server. The runtime
+  needs the outbound client, so Shared in crates/betterlite-server/src/state/shared.rs gains pub client:
+  ProxiedClient. The startup site is application in crates/betterlite-server/src/server.rs: where it builds Shared
+  today it also sets client: executor.client.clone(), and every other Shared literal (routes/tests.rs,
+  auth/auth_model_lists/tests.rs and cost_service/tests.rs) sets a client the way the tests beside it build one.
+
+
   The runtime on the call. answer_chat, provider_chat and provider_stream take a new last argument anthropic:
   Option<&Arc<AnthropicRuntime>> and set inputs.anthropic = anthropic.cloned() on the Deployment they build with
-  Deployment::from_chat, before prepare. ChatCalls gains pub(crate) anthropic: Arc<AnthropicRuntime>. ChatCalls::new
-  binds BundledCatalog::default().get() once and passes that Arc to runtime_counter and to
-  AnthropicRuntime::new(config, &executor.client, Arc::clone(&catalog)). Its error becomes pub(crate) enum
-  ChatCallsError { Counter(CountError), Runtime(RuntimeError) }. The Counter variant keeps B9988's message the token
-  counter limits are invalid: {source}, and Runtime reads the Anthropic runtime could not be built: {source}. In
-  crates/betterlite-server/src/server.rs, B9988's ServerError::TokenCounter { source: CountError } becomes
-  ServerError::ChatCalls { #[source] source: ChatCallsError } with #[error(transparent)], so the counter failure keeps
-  its text. ChatCall::complete and ChatCall::stream pass Some(&self.anthropic). Every other caller passes None:
-  answer_chat and provider_stream in the completions bridge in crates/betterlite-server/src/routes/completions.rs and
-  both provider_stream calls in routes/completions/streaming/tests.rs.
+  Deployment::from_chat, before prepare. ChatCalls gains pub(crate) anthropic: Arc<AnthropicRuntime>, taken from the
+  slot: ChatCalls::new gets a third argument anthropic: &anthropic_runtime::Slot and clones its runtime. Its error
+  becomes pub(crate) enum ChatCallsError { Counter(CountError), Runtime(Arc<RuntimeError>) }. The Counter variant keeps
+  B9988's message the token counter limits are invalid: {source}, and Runtime reads the Anthropic runtime could not
+  be built: {source}, so a bad config still stops startup. In application, ChatCalls::new runs before router()
+  takes state by value and receives &state.anthropic_runtime. B9988's ServerError::TokenCounter { source: CountError }
+  becomes ServerError::ChatCalls { #[source] source: ChatCallsError } with #[error(transparent)], so the counter
+  failure keeps its text. Every test that builds ChatCalls::new builds the slot with anthropic_runtime::Slot::new from
+  its config and a Shared of its executor's client and catalog. ChatCall::complete and ChatCall::stream pass
+  Some(&self.anthropic). Every other caller passes None: answer_chat and provider_stream in the completions bridge in
+  crates/betterlite-server/src/routes/completions.rs and both provider_stream calls in
+  routes/completions/streaming/tests.rs.
 
 
   The route arms. ChatCall::complete in routes/chat/streaming.rs takes OperationResult::Anthropic(AnthropicResult::Reply(reply))
@@ -65,6 +79,16 @@ description: >-
 scope:
   paths:
   - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/server/error.rs
+  - crates/betterlite-server/src/state/anthropic_runtime.rs
+  - crates/betterlite-server/src/state/shared.rs
+  - crates/betterlite-server/src/routes/tests.rs
+  - crates/betterlite-server/src/auth/auth_model_lists/tests.rs
+  - crates/betterlite-server/src/cost_service/tests.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/tests/stream.rs
+  - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/stream/tests.rs
   - crates/betterlite-server/src/server/chat_setup.rs
   - crates/betterlite-server/src/server/chat_setup/anthropic_defaults.rs
   - crates/betterlite-server/src/server/chat_setup/provider_call.rs
@@ -110,6 +134,11 @@ dod:
   proof:
   - own-key
 - text: >-
+    one runtime: the server builds one AnthropicRuntime, in the anthropic_runtime slot, and the chat routes take it
+    from there.
+  proof:
+  - one-runtime
+- text: >-
     nothing regresses: chat setup, the chat routes and the completions routes keep passing with the new argument and
     the ChatCalls field.
   proof:
@@ -124,10 +153,14 @@ checks:
   - id: own-key
     why: An anthropic/ deployment without its own key sends the OpenAI key upstream.
     run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_own_key_only$/)'
+  - id: one-runtime
+    why: AnthropicRuntime::new runs outside the anthropic_runtime slot or more than once in the server, or the routes
+      built from the slot do not answer.
+    run: test "$(grep -rn 'AnthropicRuntime::new(' crates/betterlite-server/src --include=*.rs | grep -v -e '/tests' -e 'tests.rs' | wc -l)" -eq 1 && grep -q 'AnthropicRuntime::new(' crates/betterlite-server/src/state/anthropic_runtime.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_buffered_reply$/)'
   - id: regressions
-    why: The new argument, the ChatCalls field, ChatCallsError or the credential reset broke a chat setup, chat route
-      or completions test.
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_buffered_reply$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::/) | test(/^routes::chat::/) | test(/^routes::completions::/)'
+    why: The new argument, the slot, the Shared client, ChatCallsError or the credential reset broke a chat setup,
+      chat route, completions, route state, cost service or model list test.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_buffered_reply$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::/) | test(/^routes::chat::/) | test(/^routes::completions::/) | test(/^routes::tests::/) | test(/^cost_service::/) | test(/^auth::auth_model_lists::/)'
 oracle_cases:
 - tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
 deviations: []
@@ -159,8 +192,10 @@ pitfalls:
   File sizes. Every file stays at or under 300 lines. crates/betterlite-server/src/routes/chat/streaming.rs is 295
   today and B9988 moves the recovery code out of it; if the new arms still do not fit, move streamed_result and
   answered_result into streaming/relay.rs (113 lines) rather than growing it. chat_setup.rs is 270, so
-  apply_anthropic_defaults lives in chat_setup/anthropic_defaults.rs. server.rs is 302 today, so the error rename
-  changes lines in place and adds none. completions.rs is 297, so the None arguments go on lines that already exist.
+  apply_anthropic_defaults lives in chat_setup/anthropic_defaults.rs. server.rs is 302 today, 8 of them mod lines
+  the size check skips, and B9988 grows it; the error rename changes lines in place, and if the client line and the
+  ChatCalls::new binding still do not fit, move ServerError into the child module server/error.rs with a pub use in
+  server.rs. completions.rs is 297, so the None arguments go on lines that already exist.
 - >-
   The projected provider headers already carry the llm_provider- prefix. The route's provider_prefixed_name keeps
   names that contain llm_provider, so buffered_reply checks them as they arrive.
