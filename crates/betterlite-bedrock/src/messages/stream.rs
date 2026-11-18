@@ -21,9 +21,7 @@ use crate::event_frames::error::EventFrameError;
 use crate::event_frames::message::parse_message_from_event;
 use crate::event_frames::shape::ResponseStreamShape;
 use crate::event_frames::tally::EventStreamTally;
-use crate::message_usage::{
-    MessageUsageError, MessageUsageState, StreamItem, promote_invocation_metrics,
-};
+use crate::message_usage::{MessageUsageState, StreamItem, promote_invocation_metrics};
 
 const BEDROCK_ERROR: &str = "BedrockError";
 const CHUNK_ERROR: &str = "ChunkError";
@@ -36,9 +34,9 @@ const READ_ERROR: &str = "ReadError";
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 #[error("{message}")]
 pub struct MessagesStreamError {
-    kind: String,
-    message: String,
-    status: Option<u16>,
+    pub kind: String,
+    pub message: String,
+    pub status: Option<u16>,
 }
 
 impl MessagesStreamError {
@@ -48,21 +46,6 @@ impl MessagesStreamError {
             message,
             status,
         }
-    }
-
-    #[must_use]
-    pub fn kind(&self) -> &str {
-        &self.kind
-    }
-
-    #[must_use]
-    pub fn message(&self) -> &str {
-        &self.message
-    }
-
-    #[must_use]
-    pub const fn status(&self) -> Option<u16> {
-        self.status
     }
 }
 
@@ -91,8 +74,7 @@ pub struct MessagesStreamRequest {
     pub redactor: Arc<Redactor>,
 }
 
-// get_async_streaming_response_iterator's iterator: the B609 decoder over the response body, B623's
-// usage promotion, and the B979 SSE rendering `bedrock_sse_wrapper` yields.
+// get_async_streaming_response_iterator's iterator: the B609 decoder over the response body, B623's usage promotion, and the B979 SSE rendering `bedrock_sse_wrapper` yields.
 pub struct MessagesSseStream {
     chunks: Chunks,
     buffer: BytesMut,
@@ -162,12 +144,16 @@ impl MessagesSseStream {
             .map_err(|error| MessagesStreamError::new(JSON_ERROR, error.to_string(), None))?;
         let item = match item {
             StreamItem::Event(fields) => {
-                StreamItem::Event(promote_invocation_metrics(fields).map_err(usage_failure)?)
+                StreamItem::Event(promote_invocation_metrics(fields).map_err(|error| {
+                    MessagesStreamError::new(MESSAGE_USAGE_ERROR, error.to_string(), None)
+                })?)
             }
             StreamItem::Chunk(raw) => StreamItem::Chunk(raw),
         };
         let mut items = Vec::new();
-        self.usage.push(item, &mut items).map_err(usage_failure)?;
+        self.usage.push(item, &mut items).map_err(|error| {
+            MessagesStreamError::new(MESSAGE_USAGE_ERROR, error.to_string(), None)
+        })?;
         for item in items {
             self.render(item)?;
         }
@@ -207,7 +193,11 @@ impl MessagesSseStream {
         let mut items = Vec::new();
         let usage = mem::take(&mut self.usage);
         if let Err(error) = usage.finish(&mut items) {
-            self.failure = Some(usage_failure(error));
+            self.failure = Some(MessagesStreamError::new(
+                MESSAGE_USAGE_ERROR,
+                error.to_string(),
+                None,
+            ));
             return;
         }
         for item in items {
@@ -217,10 +207,6 @@ impl MessagesSseStream {
             }
         }
     }
-}
-
-fn usage_failure(error: MessageUsageError) -> MessagesStreamError {
-    MessagesStreamError::new(MESSAGE_USAGE_ERROR, error.to_string(), None)
 }
 
 #[async_trait]
@@ -242,7 +228,11 @@ impl MessagesProviderStream for MessagesSseStream {
                 Some(Ok(chunk)) => self.absorb(&chunk),
                 Some(Err(error)) => {
                     self.ended = true;
-                    self.failure = Some(read_failure(error));
+                    self.failure = Some(MessagesStreamError::new(
+                        READ_ERROR,
+                        error.to_string(),
+                        None,
+                    ));
                 }
                 None => {
                     self.ended = true;
@@ -259,8 +249,4 @@ impl MessagesProviderStream for MessagesSseStream {
         self.chunks = Box::pin(futures_util::stream::empty::<Result<Vec<u8>, HttpError>>());
         Some(Ok(()))
     }
-}
-
-fn read_failure(error: HttpError) -> MessagesStreamError {
-    MessagesStreamError::new(READ_ERROR, error.to_string(), None)
 }

@@ -28,10 +28,7 @@ use crate::message_options::effort::clamp_adaptive_effort;
 use crate::message_options::{MessageOptionsError, OptionsSources};
 use crate::model_routes::ParamMap;
 
-mod body;
-
-#[cfg(test)]
-pub(crate) use body::drop_unsupported_output_config;
+pub(crate) mod body;
 
 // AmazonAnthropicClaudeMessagesConfig.DEFAULT_BEDROCK_ANTHROPIC_API_VERSION
 pub const BEDROCK_ANTHROPIC_API_VERSION: &str = "bedrock-2023-05-31";
@@ -95,10 +92,8 @@ impl MessagesTransformError {
     }
 }
 
-// AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request through the provider
-// overrides: remember the requested display, clamp effort, prepare the native request, restore
-// the display on adaptive thinking, normalize system turns, then apply the Bedrock invoke rules.
-pub async fn transform_anthropic_messages_request<Source, Transport, Lookup>(
+// AmazonAnthropicClaudeMessagesConfig.transform_anthropic_messages_request: remember the requested display, clamp effort, prepare the native request, restore the display on adaptive thinking, normalize system turns, then apply the Bedrock invoke rules.
+pub async fn transform_request<Source, Transport, Lookup>(
     request: &MessagesRequest<'_>,
     sources: &mut TransformSources<'_, '_, Source, Transport, Lookup>,
 ) -> Result<Object, MessagesTransformError>
@@ -122,12 +117,8 @@ where
         sources.packaged,
     )
     .await?;
-    let mid_conversation_system = supports_mid_conversation_system(
-        request.model,
-        &mut *sources.environment,
-        sources.catalogs,
-    )
-    .await;
+    let mid_conversation_system =
+        supports_mid_system(request.model, &mut *sources.environment, sources.catalogs).await;
     let mut body = native_body(request, params, sources).await?;
     restore_display_updates(&mut body, requested_display_updates);
     normalize_system_turns(&mut body, mid_conversation_system);
@@ -171,7 +162,7 @@ where
     .map_err(MessagesTransformError::from)
 }
 
-async fn supports_mid_conversation_system<Source, Transport>(
+async fn supports_mid_system<Source, Transport>(
     model: &str,
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
     catalogs: &CatalogSources<'_>,

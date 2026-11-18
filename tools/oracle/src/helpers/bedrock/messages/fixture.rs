@@ -7,7 +7,7 @@ use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_bedrock::bedrock_model_capabilities::ModelInfoLookup;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
 use betterlite_bedrock::messages::transform::{
-    MessagesRequest, MessagesTransformError, TransformSources, transform_anthropic_messages_request,
+    MessagesRequest, MessagesTransformError, TransformSources, transform_request,
 };
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_config::sections::anthropic_capability_catalog::Settings;
@@ -188,15 +188,6 @@ impl Fixture {
             provider_generation: 0,
         }
     }
-
-    pub(super) fn transform(
-        &self,
-        call: &TransformCall,
-        drop_params: bool,
-    ) -> Result<Object, MessagesTransformError> {
-        let mut session = Session::new(self)?;
-        session.transform(call, drop_params)
-    }
 }
 
 pub(super) struct Session<'fixture> {
@@ -246,6 +237,6 @@ impl<'fixture> Session<'fixture> {
             packaged: self.fixture.packaged.as_ref(),
         };
         self.runtime
-            .block_on(transform_anthropic_messages_request(&request, &mut sources))
+            .block_on(transform_request(&request, &mut sources))
     }
 }

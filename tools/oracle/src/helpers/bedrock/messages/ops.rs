@@ -30,7 +30,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tracing::Level;
 
-use super::fixture::Fixture;
+use super::fixture::{Fixture, Session};
 use super::input::{Constructor, ErrorClass, EventStream, Input, InvokeUrl, Transform};
 use super::logs::capture_logs;
 
@@ -90,19 +90,16 @@ fn signed_headers(pairs: &[(String, String)]) -> serde_json::Map<String, Value> 
     object
 }
 
-fn request_policy(call: &InvokeUrl) -> Option<BedrockRequestPolicy> {
-    let fields: IndexSet<String> = call.policy_fields.iter().flatten().cloned().collect();
-    (!fields.is_empty()).then(|| BedrockRequestPolicy { fields })
-}
-
 fn messages_environment(
     call: &InvokeUrl,
 ) -> Result<(IndexMap<String, String>, Option<String>), Box<HelperError>> {
     let metadata = metadata_params(call);
+    let fields: IndexSet<String> = call.policy_fields.iter().flatten().cloned().collect();
+    let policy = (!fields.is_empty()).then(|| BedrockRequestPolicy { fields });
     validate_messages_environment(
         &call.headers,
         &metadata,
-        request_policy(call).as_ref(),
+        policy.as_ref(),
         call.api_base.as_deref(),
         call.api_key.as_ref(),
     )
@@ -147,8 +144,7 @@ fn signed_request(
         model: Some(&call.model),
         stream: call.stream,
         fake_stream: call.fake_stream,
-        // Python signs inside signing_harness, which seals the environment, so only
-        // optional_params can pick the region on that side.
+        // Python signs inside signing_harness, which seals the environment, so only optional_params can pick the region there.
         region_inputs: RegionInputs::default(),
         now: fixture_clock(call.now)?,
     };
@@ -200,7 +196,8 @@ fn transform(call: &Transform) -> HelperResult {
     let (_guard, logs) = capture_logs();
     let mut answers = Vec::with_capacity(call.calls.len());
     for entry in &call.calls {
-        let body = fixture
+        let mut session = Session::new(&fixture).map_err(failure)?;
+        let body = session
             .transform(entry, call.drop_params)
             .map_err(failure)?;
         answers.push(json!({
@@ -237,9 +234,9 @@ fn event_stream(call: &EventStream) -> HelperResult {
                 Ok(None) => break,
                 Err(error) => {
                     failure = json!({
-                        "class": error.kind(),
-                        "message": error.message(),
-                        "status": error.status(),
+                        "class": error.kind,
+                        "message": error.message,
+                        "status": error.status,
                     });
                     break;
                 }

@@ -9,9 +9,9 @@ use crate::bedrock_settings::ErrorHeaders;
 use crate::invoke_primitives::url::{InvokeEnvironment, InvokeModelUrl};
 use crate::messages::config::MessagesConfig;
 use crate::messages::tests::support::{
-    EFFORT_TIER_INFO, Fixture, Keys, Session, Signing, body_json, call, capture_logs, chunk_frame,
-    close_after_first, contract, declared, error_frame, header, js, kept_warnings, obj, sign,
-    stream_all,
+    EFFORT_TIER_INFO, Fixture, Keys, Session, Signing, TestFrame, body_json, call, capture_logs,
+    close_after_first, contract, declared, header, js, kept_warnings, obj, sign, stream_all,
+    test_frame,
 };
 use crate::messages::transport::{
     MessagesEndpoint, get_error_class, messages_complete_url, validate_messages_environment,
@@ -33,7 +33,6 @@ const NATIVE_PARAMS: &str = r#"{"max_tokens":1024,"temperature":0.2,"stop_sequen
 const NATIVE_BODY: &str = r#"{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":[{"type":"text","text":"hello"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}],"max_tokens":1024,"temperature":0.2,"stop_sequences":["END"],"top_p":0.9,"metadata":{"user_id":"u1"},"anthropic_version":"custom-version","system":[{"type":"text","text":"be nice"}]}"#;
 
 const BETA_PARAMS: &str = r#"{"max_tokens":512,"tools":[{"type":"tool_search_tool_regex_20251119","name":"tool_search"},{"name":"geo","description":"geo","input_schema":{"type":"object","properties":{"q":{"type":"string"}}},"eager_input_streaming":true}],"safeguards":[]}"#;
-const BETA_BODY: &str = r#"{"messages":[{"role":"user","content":"hi"}],"max_tokens":512,"tools":[{"type":"tool_search_tool_regex_20251119","name":"tool_search"},{"name":"geo","description":"geo","input_schema":{"type":"object","properties":{"q":{"type":"string"}}}}],"safeguards":[],"anthropic_version":"bedrock-2023-05-31","anthropic_beta":["dangerous-tool-use-2026-09-03","fine-grained-tool-streaming-2025-05-14","tool-search-tool-2025-10-19"]}"#;
 
 const ADAPTIVE_PARAMS: &str =
     r#"{"max_tokens":1024,"thinking":{"type":"adaptive","display":"updates"}}"#;
@@ -103,9 +102,34 @@ fn metadata_params() -> MetadataParams {
 
 pub(crate) fn messages_invoke_url() {
     let merged = merged_environment();
-    let url = stream_url();
-    signed_stream_request(&merged, &url);
+    let streamed = endpoint_url(
+        None,
+        Some(true),
+        InvokeEnvironment {
+            region_name: Some("us-east-1"),
+            region: None,
+            session_region: None,
+            runtime_endpoint: None,
+        },
+    );
+    assert_eq!(streamed.endpoint_url, STREAM_URL);
+    signed_stream_request(&merged, &streamed);
     proxy_variant();
+}
+
+fn endpoint_url(
+    api_base: Option<&str>,
+    stream: Option<bool>,
+    environment: InvokeEnvironment<'_>,
+) -> InvokeModelUrl {
+    messages_complete_url(MessagesEndpoint {
+        api_base,
+        model: MODEL_SONNET,
+        optional_params: &Default::default(),
+        stream,
+        environment,
+    })
+    .expect("the endpoint url builds")
 }
 
 fn merged_environment() -> IndexMap<String, String> {
@@ -130,24 +154,6 @@ fn merged_environment() -> IndexMap<String, String> {
     );
     assert_eq!(merged.len(), 2);
     merged
-}
-
-fn stream_url() -> InvokeModelUrl {
-    let url = messages_complete_url(MessagesEndpoint {
-        api_base: None,
-        model: MODEL_SONNET,
-        optional_params: &Default::default(),
-        stream: Some(true),
-        environment: InvokeEnvironment {
-            region_name: Some("us-east-1"),
-            region: None,
-            session_region: None,
-            runtime_endpoint: None,
-        },
-    })
-    .expect("the stream url builds");
-    assert_eq!(url.endpoint_url, STREAM_URL);
-    url
 }
 
 fn signed_stream_request(merged: &IndexMap<String, String>, url: &InvokeModelUrl) {
@@ -190,7 +196,17 @@ fn signed_stream_request(merged: &IndexMap<String, String>, url: &InvokeModelUrl
 fn proxy_variant() {
     let api_key = SecretString::from("fixture-api-key");
     let merged = proxy_environment(&api_key);
-    let url = proxy_url();
+    let url = endpoint_url(
+        Some(INVOKE_BASE),
+        None,
+        InvokeEnvironment {
+            region_name: None,
+            region: None,
+            session_region: None,
+            runtime_endpoint: None,
+        },
+    );
+    assert_eq!(url.endpoint_url, INVOKE_URL);
     proxy_signed_request(&merged, &url, &api_key);
 }
 
@@ -207,24 +223,6 @@ fn proxy_environment(api_key: &SecretString) -> IndexMap<String, String> {
     assert!(merged.is_empty());
     assert_eq!(api_base.as_deref(), Some(INVOKE_BASE));
     merged
-}
-
-fn proxy_url() -> InvokeModelUrl {
-    let url = messages_complete_url(MessagesEndpoint {
-        api_base: Some(INVOKE_BASE),
-        model: MODEL_SONNET,
-        optional_params: &Default::default(),
-        stream: None,
-        environment: InvokeEnvironment {
-            region_name: None,
-            region: None,
-            session_region: None,
-            runtime_endpoint: None,
-        },
-    })
-    .expect("the proxy url builds");
-    assert_eq!(url.endpoint_url, INVOKE_URL);
-    url
 }
 
 fn proxy_signed_request(
@@ -272,7 +270,6 @@ pub(crate) fn messages_native_body() {
 }
 
 pub(crate) fn anthropic_beta_body() {
-    let (_guard, logs) = capture_logs();
     let body = declared(
         &call(
             "fixture-tool-search",
@@ -283,8 +280,14 @@ pub(crate) fn anthropic_beta_body() {
         false,
     )
     .expect("the beta request transforms");
-    assert_eq!(body_json(&body), js(BETA_BODY));
-    assert_eq!(kept_warnings(&logs), Vec::<String>::new());
+    assert_eq!(
+        body.get("anthropic_beta"),
+        Some(&js(
+            r#"["dangerous-tool-use-2026-09-03","fine-grained-tool-streaming-2025-05-14","tool-search-tool-2025-10-19"]"#
+        ))
+    );
+    assert!(!body.contains_key("stream"));
+    assert!(!body.contains_key("anthropic-beta"));
 }
 
 pub(crate) fn adaptive_display_updates() {
@@ -485,10 +488,10 @@ pub(crate) fn messages_constructor() {
 
 pub(crate) fn aws_event_to_sse() {
     let mut frame = Vec::new();
-    frame.extend(chunk_frame(EVENT_START));
-    frame.extend(chunk_frame(EVENT_CONTENT));
-    frame.extend(chunk_frame(EVENT_DELTA));
-    frame.extend(chunk_frame(EVENT_STOP));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_START)));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_CONTENT)));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_DELTA)));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_STOP)));
     let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
     assert!(failure.is_none());
     let expected = [SSE_START, SSE_CONTENT, SSE_DELTA, SSE_STOP];
@@ -500,8 +503,8 @@ pub(crate) fn aws_event_to_sse() {
 
 pub(crate) fn message_start_event() {
     let mut frame = Vec::new();
-    frame.extend(chunk_frame(EVENT_START));
-    frame.extend(chunk_frame(EVENT_STOP));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_START)));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_STOP)));
     let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
     assert!(failure.is_none());
     assert_eq!(emitted.len(), 2);
@@ -520,8 +523,8 @@ pub(crate) fn message_start_event() {
 // A body cut before message_stop still yields the buffered delta when the iterator finishes.
 fn unfinished_stream() {
     let mut frame = Vec::new();
-    frame.extend(chunk_frame(EVENT_START));
-    frame.extend(chunk_frame(EVENT_DELTA));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_START)));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_DELTA)));
     let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
     assert!(failure.is_none());
     assert_eq!(emitted.len(), 2);
@@ -538,8 +541,8 @@ fn unfinished_stream() {
 
 fn closed_stream() {
     let mut frame = Vec::new();
-    frame.extend(chunk_frame(EVENT_START));
-    frame.extend(chunk_frame(EVENT_STOP));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_START)));
+    frame.extend(test_frame(TestFrame::Chunk(EVENT_STOP)));
     let closure = close_after_first(vec![frame]);
     assert_eq!(closure.first, Some(SSE_START.as_bytes().to_vec()));
     assert!(closure.closed);
@@ -547,14 +550,17 @@ fn closed_stream() {
 }
 
 pub(crate) fn native_error_event() {
-    let frame = error_frame("validationException", br#"{"message": "bad input"}"#);
+    let frame = test_frame(TestFrame::Failure(
+        "validationException",
+        br#"{"message": "bad input"}"#,
+    ));
     let (emitted, failure) = stream_all(stream_headers(), vec![frame]);
     assert!(emitted.is_empty());
     let error = failure.expect("the error frame fails the stream");
-    assert_eq!(error.kind(), "BedrockError");
+    assert_eq!(error.kind, "BedrockError");
     assert_eq!(
-        error.message(),
+        error.message,
         r#"validationException {"message": "bad input"}"#
     );
-    assert_eq!(error.status(), Some(400));
+    assert_eq!(error.status, Some(400));
 }

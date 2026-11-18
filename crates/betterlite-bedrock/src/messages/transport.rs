@@ -29,8 +29,7 @@ pub struct MessagesEndpoint<'request> {
     pub environment: InvokeEnvironment<'request>,
 }
 
-// AmazonInvokeConfig.get_complete_url behind the messages config: the provider picks the
-// invoke-with-response-stream suffix and the endpoint keeps its proxy and base distinctions.
+// AmazonInvokeConfig.get_complete_url behind the messages config: the provider picks the invoke-with-response-stream suffix and the endpoint keeps its proxy and base distinctions.
 pub fn messages_complete_url(request: MessagesEndpoint<'_>) -> Result<InvokeModelUrl, UrlError> {
     invoke_model_url(CompleteUrl {
         api_base: request.api_base,
@@ -55,8 +54,7 @@ pub struct MessagesSignRequest<'request> {
     pub now: SystemTime,
 }
 
-// AmazonInvokeConfig.sign_request behind the messages config. The signer reads neither stream
-// flag, so both travel exactly as the caller supplied them.
+// AmazonInvokeConfig.sign_request behind the messages config; the signer reads neither stream flag, so both travel exactly as the caller supplied them.
 pub async fn sign_messages_request<Resolve, Fut>(
     request: MessagesSignRequest<'_>,
     resolve_credentials: Resolve,
@@ -89,8 +87,7 @@ where
     .await
 }
 
-// get_error_class hands the caller's status, message and headers to LiteLLM's BedrockError
-// unchanged; it fabricates no type, param or code.
+// get_error_class hands the caller's status, message and headers to LiteLLM's BedrockError unchanged; it fabricates no type, param or code.
 pub fn get_error_class(
     message: &str,
     status_code: u16,
@@ -107,8 +104,7 @@ pub fn get_error_class(
     })
 }
 
-// LiteLLM's messages environment validation merges only the metadata header: it passes no
-// guardrail headers, returns the api_base it was given and never turns api_key into a header.
+// LiteLLM's messages environment validation merges only the metadata header: no guardrail headers, the api_base it was given, and api_key never becomes a header.
 pub fn validate_messages_environment(
     headers: &IndexMap<String, String>,
     litellm_params: &MetadataParams,

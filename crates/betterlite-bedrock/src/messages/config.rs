@@ -1,10 +1,7 @@
 use betterlite_prompts::arguments::json::Object;
 use thiserror::Error;
 
-// AmazonAnthropicClaudeMessagesConfig.__init__ calls BaseAnthropicMessagesConfig.__init__ first,
-// and that class defines no __init__, so object's initializer runs and rejects every keyword
-// before AmazonInvokeConfig.__init__ can configure anything. The config therefore has no state,
-// and request options never reach it.
+// AmazonAnthropicClaudeMessagesConfig.__init__ calls BaseAnthropicMessagesConfig.__init__ first; that class defines no __init__, so object's initializer rejects every keyword before AmazonInvokeConfig.__init__ runs, and the config has no state of its own.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct MessagesConfig;
 

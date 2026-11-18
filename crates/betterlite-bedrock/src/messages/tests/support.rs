@@ -54,9 +54,9 @@ use super::super::mantle_inputs::region::split_region_prefix;
 use super::super::messages::stream::{
     MessagesStreamError, MessagesStreamRequest, messages_sse_stream,
 };
-use super::super::messages::transform::drop_unsupported_output_config;
+use super::super::messages::transform::body::drop_unsupported_output_config;
 use super::super::messages::transform::{
-    MessagesRequest, MessagesTransformError, TransformSources, transform_anthropic_messages_request,
+    MessagesRequest, MessagesTransformError, TransformSources, transform_request,
 };
 use super::super::messages::transport::{MessagesSignRequest, sign_messages_request};
 use super::super::model_routes::ParamMap;
@@ -74,8 +74,7 @@ const NORMALIZERS: NameNormalizers = NameNormalizers {
     mantle_region_split: split_region_prefix,
 };
 
-// The same cost map the oracle cases send, so both sides resolve the same capabilities, plus the
-// models the capability assertions need: a supported flag and an explicit absence.
+// The same cost map the oracle cases send, plus the models the capability assertions need: a supported flag and an explicit absence.
 pub(super) const MODEL_COST: &str = r#"{
   "bedrock/fixture-plain": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": false},
   "fixture-plain": {"litellm_provider": "bedrock", "mode": "chat", "supports_mid_conversation_system": false},
@@ -305,7 +304,7 @@ impl<'fixture> Session<'fixture> {
             packaged: self.fixture.packaged.as_ref(),
         };
         self.runtime
-            .block_on(transform_anthropic_messages_request(&request, &mut sources))
+            .block_on(transform_request(&request, &mut sources))
     }
 
     pub(super) fn drop_output_config(&mut self, body: &mut Object, model: &str, drop_params: bool) {
@@ -370,27 +369,32 @@ pub(super) fn text(value: &str) -> HeaderValue {
     HeaderValue::String(StrBytes::from(value.to_owned()))
 }
 
-pub(super) fn chunk_frame(body: &str) -> Vec<u8> {
-    let payload = format!("{{\"bytes\":\"{}\"}}", STANDARD.encode(body));
-    frame(
-        &[
-            (":event-type", text("chunk")),
-            (":content-type", text("application/json")),
-            (":message-type", text("event")),
-        ],
-        payload.as_bytes(),
-    )
+pub(super) enum TestFrame<'payload> {
+    Chunk(&'payload str),
+    Failure(&'payload str, &'payload [u8]),
 }
 
-pub(super) fn error_frame(exception_type: &str, payload: &[u8]) -> Vec<u8> {
-    frame(
-        &[
-            (":exception-type", text(exception_type)),
-            (":content-type", text("application/json")),
-            (":message-type", text("exception")),
-        ],
-        payload,
-    )
+pub(super) fn test_frame(frame: TestFrame<'_>) -> Vec<u8> {
+    let (name, value, message_type, payload) = match frame {
+        TestFrame::Chunk(body) => (
+            ":event-type",
+            "chunk",
+            "event",
+            format!("{{\"bytes\":\"{}\"}}", STANDARD.encode(body)).into_bytes(),
+        ),
+        TestFrame::Failure(exception_type, body) => (
+            ":exception-type",
+            exception_type,
+            "exception",
+            body.to_vec(),
+        ),
+    };
+    let headers = [
+        (name, text(value)),
+        (":content-type", text("application/json")),
+        (":message-type", text(message_type)),
+    ];
+    frame(&headers, &payload)
 }
 
 pub(super) fn chunks(pieces: Vec<Vec<u8>>) -> Chunks {

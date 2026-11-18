@@ -89,18 +89,112 @@ where
     insert_version(&mut body);
     body.shift_remove(STREAM);
     body.shift_remove(MODEL);
-    let injected = prepare_cache(&mut body, request, sources).await?;
+    let mut pipeline = Pipeline { request, sources };
+    let injected = pipeline.prepare_cache(&mut body).await?;
     let params = feature_params(&body);
-    apply_invoke_rules(request, sources, &mut body).await?;
-    apply_betas(request, sources, &params, injected, &mut body).await?;
-    drop_unsupported_output_config(
-        &mut body,
-        request,
-        &mut *sources.environment,
-        sources.catalogs,
-    )
-    .await;
+    pipeline.apply_invoke_rules(&mut body).await?;
+    pipeline.apply_betas(&params, injected, &mut body).await?;
+    pipeline.drop_output_config(&mut body).await;
     Ok(strip_unsupported_fields(&body)?)
+}
+
+struct Pipeline<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+{
+    request: &'request MessagesRequest<'request>,
+    sources: &'sources mut TransformSources<'context, 'environment, Source, Transport, Lookup>,
+}
+
+impl<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
+    Pipeline<'request, 'sources, 'context, 'environment, Source, Transport, Lookup>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
+    async fn prepare_cache(&mut self, body: &mut Object) -> Result<bool, MessagesTransformError> {
+        let mut params: ParamMap = serde_json::from_value(serde_json::to_value(&*body)?)?;
+        let model = self.request.model;
+        let injected = ensure_clear_thinking(
+            &mut params,
+            model,
+            &mut OptionsSources {
+                environment: &mut *self.sources.environment,
+                catalogs: self.sources.catalogs,
+                budgets: self.sources.budgets,
+            },
+        )
+        .await?;
+        remove_ttl_from_cache_control(&mut params, Some(model), self.request.model_cost)?;
+        *body = serde_json::from_value(serde_json::to_value(&params)?)?;
+        Ok(injected)
+    }
+
+    async fn apply_invoke_rules(
+        &mut self,
+        body: &mut Object,
+    ) -> Result<(), MessagesTransformError> {
+        let mut capabilities = SchemaCapabilities {
+            environment: &mut *self.sources.environment,
+            catalogs: self.sources.catalogs,
+        };
+        apply_structured_output(self.request.model, body, &mut capabilities).await;
+        normalize_effort(
+            self.request.model,
+            body,
+            self.sources.lookup,
+            self.sources.packaged,
+        )
+        .await?;
+        strip_unsupported_config_keys(self.request.model, body, &mut capabilities).await;
+        normalize_tool_custom_field(body);
+        normalize_tool_schema_types(body);
+        ensure_tool_names(body);
+        Ok(())
+    }
+
+    async fn apply_betas(
+        &mut self,
+        params: &FeatureParams,
+        injected: bool,
+        body: &mut Object,
+    ) -> Result<(), MessagesTransformError> {
+        let tools = optional_list(&self.request.optional_params, TOOLS);
+        let mcp_servers = optional_list(&self.request.optional_params, MCP_SERVERS);
+        let betas = beta_headers(
+            BetaHeadersRequest {
+                model: self.request.model,
+                messages: &self.request.messages,
+                tools: &tools,
+                mcp_servers: &mcp_servers,
+                safeguards: self.request.optional_params.get(SAFEGUARDS),
+                params,
+                headers: self.request.headers,
+                outgoing: body,
+                clear_thinking_injected: injected,
+                subclass_provider: None,
+            },
+            &mut *self.sources.environment,
+            self.sources.catalogs,
+            self.sources.matrix,
+        )
+        .await?;
+        insert_betas(body, betas);
+        strip_eager_tools(body);
+        Ok(())
+    }
+
+    async fn drop_output_config(&mut self, body: &mut Object) {
+        drop_unsupported_output_config(
+            body,
+            self.request,
+            &mut *self.sources.environment,
+            self.sources.catalogs,
+        )
+        .await;
+    }
 }
 
 // DEFAULT_BEDROCK_ANTHROPIC_API_VERSION fills the version only when the request names none.
@@ -114,35 +208,7 @@ fn insert_version(body: &mut Object) {
     );
 }
 
-async fn prepare_cache<Source, Transport, Lookup>(
-    body: &mut Object,
-    request: &MessagesRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Lookup>,
-) -> Result<bool, MessagesTransformError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    let mut params: ParamMap = serde_json::from_value(serde_json::to_value(&*body)?)?;
-    let injected = ensure_clear_thinking(
-        &mut params,
-        request.model,
-        &mut OptionsSources {
-            environment: &mut *sources.environment,
-            catalogs: sources.catalogs,
-            budgets: sources.budgets,
-        },
-    )
-    .await?;
-    remove_ttl_from_cache_control(&mut params, Some(request.model), request.model_cost)?;
-    *body = serde_json::from_value(serde_json::to_value(&params)?)?;
-    Ok(injected)
-}
-
-// LiteLLM shallow-copies output_config before B597 rewrites it so the beta detection reads the
-// shape the native preparation left; Rust owns this object, so the copy is the snapshot taken
-// before apply_structured_output runs.
+// LiteLLM shallow-copies output_config before B597 rewrites it; Rust owns this object, so the snapshot is taken before apply_structured_output runs.
 fn feature_params(body: &Object) -> FeatureParams {
     FeatureParams {
         compaction: body.get(COMPACTION).map(ContractJson::from),
@@ -150,66 +216,6 @@ fn feature_params(body: &Object) -> FeatureParams {
         output_config: body.get(OUTPUT_CONFIG).map(ContractJson::from),
         reasoning_effort: body.get(REASONING_EFFORT).map(ContractJson::from),
     }
-}
-
-async fn apply_invoke_rules<Source, Transport, Lookup>(
-    request: &MessagesRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Lookup>,
-    body: &mut Object,
-) -> Result<(), MessagesTransformError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    let mut capabilities = SchemaCapabilities {
-        environment: &mut *sources.environment,
-        catalogs: sources.catalogs,
-    };
-    apply_structured_output(request.model, body, &mut capabilities).await;
-    normalize_effort(request.model, body, sources.lookup, sources.packaged).await?;
-    strip_unsupported_config_keys(request.model, body, &mut capabilities).await;
-    normalize_tool_custom_field(body);
-    normalize_tool_schema_types(body);
-    ensure_tool_names(body);
-    Ok(())
-}
-
-async fn apply_betas<Source, Transport, Lookup>(
-    request: &MessagesRequest<'_>,
-    sources: &mut TransformSources<'_, '_, Source, Transport, Lookup>,
-    params: &FeatureParams,
-    injected: bool,
-    body: &mut Object,
-) -> Result<(), MessagesTransformError>
-where
-    Source: DynamicMetadataSource,
-    Transport: ModelInfoClient,
-    Lookup: ModelInfoLookup,
-{
-    let tools = optional_list(&request.optional_params, TOOLS);
-    let mcp_servers = optional_list(&request.optional_params, MCP_SERVERS);
-    let betas = beta_headers(
-        BetaHeadersRequest {
-            model: request.model,
-            messages: &request.messages,
-            tools: &tools,
-            mcp_servers: &mcp_servers,
-            safeguards: request.optional_params.get(SAFEGUARDS),
-            params,
-            headers: request.headers,
-            outgoing: body,
-            clear_thinking_injected: injected,
-            subclass_provider: None,
-        },
-        &mut *sources.environment,
-        sources.catalogs,
-        sources.matrix,
-    )
-    .await?;
-    insert_betas(body, betas);
-    strip_eager_tools(body);
-    Ok(())
 }
 
 fn optional_list(optional_params: &Object, key: &str) -> Vec<Json> {
@@ -239,8 +245,7 @@ fn strip_eager_tools(body: &mut Object) {
     );
 }
 
-// LiteLLM's final output_config drop. Its own pipeline never reaches it, since the strip above
-// removes every non-format key exactly when the effort lookup says no, but the contract stays.
+// LiteLLM's final output_config drop: its own pipeline never reaches it, since the strip above removes every non-format key when the effort lookup says no, but the contract stays.
 pub(crate) async fn drop_unsupported_output_config<Source, Transport>(
     body: &mut Object,
     request: &MessagesRequest<'_>,
