@@ -312,3 +312,10 @@ path = "fuzz_targets/roi_settings_body.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "cost_estimate_request"
+path = "fuzz_targets/cost_estimate_request.rs"
+test = false
+doc = false
+bench = false
