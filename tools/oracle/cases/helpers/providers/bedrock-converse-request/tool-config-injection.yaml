@@ -1,0 +1,87 @@
+kind: helper
+name: bedrock-converse-request-tool-config-injection
+call:
+  bedrock_converse_request:
+    model: anthropic.claude-4-5-test
+    messages: [{role: user, content: hi}]
+    model_cost:
+      anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+    optional_params:
+      tools:
+        - type: function
+          function:
+            name: lookup
+            description: finds things
+            parameters: {type: object, properties: {}}
+      tool_choice: {tool: {name: lookup}}
+      _parallel_tool_use_config: {tool_choice: {type: auto, disable_parallel_tool_use: true}}
+      cache_control_injection_points:
+        - {location: tool_config, control: {ttl: 1h}}
+        - {location: tool_config, control: {type: ephemeral}}
+    litellm_params:
+      drop_params: true
+      metadata: {team: core}
+      model_info: {id: deployment-1}
+    global_drop: false
+    modify_params: false
+    neutralize_orphaned_blocks: true
+    request_metadata_fields: null
+calls:
+  - bedrock_converse_request:
+      model: anthropic.claude-4-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+      optional_params:
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+        tool_choice: {tool: {name: lookup}}
+        _parallel_tool_use_config: {tool_choice: {type: auto, disable_parallel_tool_use: true}}
+        cache_control_injection_points: [{location: system}]
+      litellm_params:
+        drop_params: true
+        metadata: {team: core}
+        model_info: {id: deployment-1}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: meta.llama-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        meta.llama-test: {litellm_provider: bedrock, supports_prompt_caching: false}
+      optional_params:
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+        tool_choice: {tool: {name: lookup}}
+      litellm_params:
+        drop_params: true
+        metadata: {team: core}
+        model_info: {id: deployment-1}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-4-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_adaptive_thinking: false}
+      optional_params:
+        tool_choice: {tool: {name: lookup}}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+env: {}
+compare: {ignore: []}
