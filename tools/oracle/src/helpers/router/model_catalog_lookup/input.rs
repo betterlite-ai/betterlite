@@ -17,6 +17,10 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) stale_index: bool,
     #[serde(default)]
+    pub(crate) missing_ids: Vec<usize>,
+    #[serde(default)]
+    pub(crate) missing_info: Vec<usize>,
+    #[serde(default)]
     pub(crate) arguments: Arguments,
 }
 
@@ -39,14 +43,14 @@ pub(crate) struct GroupRow {
     pub(crate) routing_strategy: String,
 }
 
-// The method's own arguments, each one required by the function that reads it.
+// The method's own arguments; exclude_team_models keeps LiteLLM's false default when the case leaves it out.
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Arguments {
     pub(crate) model_id: Option<String>,
     pub(crate) model_name: Option<String>,
     pub(crate) team_id: Option<String>,
-    pub(crate) exclude_team_models: Option<bool>,
+    pub(crate) exclude_team_models: bool,
     pub(crate) candidate_id: Option<String>,
     pub(crate) deployment_index: Option<usize>,
 }

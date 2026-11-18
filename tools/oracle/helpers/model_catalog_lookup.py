@@ -1,9 +1,15 @@
 import json
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import litellm
 from litellm.router import Router
-from litellm.types.router import Deployment, DeploymentTypedDict, RouterModelGroupAliasItem
+from litellm.router_utils import pattern_match_deployments
+from litellm.types.router import (
+    Deployment,
+    DeploymentTypedDict,
+    RouterModelGroupAliasItem,
+    RoutingGroup,
+)
 from pydantic import JsonValue, TypeAdapter
 
 LOOKUP_FUNCTIONS: Final = frozenset(
@@ -47,6 +53,8 @@ class Input(TypedDict):
     routing_groups: list[dict[str, JsonValue]]
     inferred_provider: str | None
     stale_index: bool
+    missing_ids: NotRequired[list[int]]
+    missing_info: NotRequired[list[int]]
     arguments: Arguments
 
 
@@ -54,19 +62,38 @@ class ParamsView(TypedDict):
     model: str
 
 
-class InfoView(TypedDict, total=False):
-    id: str | None
-    team_id: str | None
-    team_public_model_name: str | None
-
-
 class DeploymentView(TypedDict):
     model_name: str
     litellm_params: ParamsView
-    model_info: InfoView
+    model_info: NotRequired[dict[str, JsonValue]]
 
 
-VIEW: Final = TypeAdapter(DeploymentView)
+class StoredRow(TypedDict, total=False):
+    model_info: dict[str, JsonValue]
+
+
+class RouterStorage(Protocol):
+    model_list: list[StoredRow]
+
+
+class IncludePredicate(Protocol):
+    def should_include_deployment(
+        self, model_name: str, model: dict[str, JsonValue], team_id: str | None = None
+    ) -> bool: ...
+
+
+class FixedProvider:
+    def __init__(self, provider: str | None) -> None:
+        self.provider = provider
+
+    def __call__(self, model: str | None) -> str | None:  # noqa: ARG002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_llm_provider_logic.py#L146
+        return self.provider
+
+
+GROUPS: Final[TypeAdapter[list[RoutingGroup | dict[str, JsonValue]]]] = TypeAdapter(
+    list[RoutingGroup | dict[str, JsonValue]]
+)
+VIEW: Final[TypeAdapter[DeploymentView]] = TypeAdapter(DeploymentView)
 
 
 def required(value: str | None, name: str) -> str:
@@ -76,7 +103,10 @@ def required(value: str | None, name: str) -> str:
 
 
 def row_view(value: DeploymentView) -> dict[str, JsonValue]:
-    info = value["model_info"]
+    info: dict[str, JsonValue] = {}
+    declared = value.get("model_info")
+    if declared is not None:
+        info = declared
     row: dict[str, JsonValue] = {
         "model_name": value["model_name"],
         "model": value["litellm_params"]["model"],
@@ -94,10 +124,11 @@ def optional_row(value: Deployment | None) -> dict[str, JsonValue] | None:
 
 
 def listing_rows(rows: list[DeploymentTypedDict] | None) -> list[JsonValue]:
-    projected: list[JsonValue] = []
     if rows is None:
-        return projected
-    projected.extend(row_view(VIEW.validate_json(json.dumps(row))) for row in rows)
+        return []
+    projected: list[JsonValue] = []
+    for row in rows:
+        projected.append(row_view(VIEW.validate_json(json.dumps(row))))
     return projected
 
 
@@ -105,61 +136,91 @@ def lookup_answer(router: Router, call: Input) -> JsonValue:
     arguments = call["arguments"]
     match call["function"]:
         case "get_deployment":
-            return optional_row(router.get_deployment(required(arguments.get("model_id"), "model_id")))
+            given = required(arguments.get("model_id"), "model_id")
+            return optional_row(router.get_deployment(given))
         case "get_deployment_by_model_group_name":
             group_name = required(arguments.get("model_name"), "model_name")
             return optional_row(router.get_deployment_by_model_group_name(group_name))
         case "get_model_ids":
             flag = arguments.get("exclude_team_models")
-            if flag is None:
-                raise ValueError("arguments.exclude_team_models is required")
+            exclude = False if flag is None else flag
             ids: list[JsonValue] = []
-            ids.extend(router.get_model_ids(arguments.get("model_name"), exclude_team_models=flag))
+            ids.extend(
+                router.get_model_ids(arguments.get("model_name"), exclude_team_models=exclude)
+            )
             return ids
         case "has_model_id":
-            return router.has_model_id(required(arguments.get("candidate_id"), "candidate_id"))
+            candidate = required(arguments.get("candidate_id"), "candidate_id")
+            return router.has_model_id(candidate)
         case "resolve_model_name_from_model_id":
             return router.resolve_model_name_from_model_id(arguments.get("model_id"))
-    raise ValueError(f"unsupported lookup function {call['function']}")
+        case _:
+            raise ValueError(f"unsupported lookup function {call['function']}")
 
 
 def listing_answer(router: Router, call: Input) -> JsonValue:
     arguments = call["arguments"]
     match call["function"]:
         case "get_candidate_model_ids_for_route":
-            candidates: list[JsonValue] = []
             model = required(arguments.get("model_name"), "model_name")
-            candidates.extend(sorted(router.get_candidate_model_ids_for_route(model, arguments.get("team_id"))))
+            candidates: list[JsonValue] = []
+            candidates.extend(
+                sorted(router.get_candidate_model_ids_for_route(model, arguments.get("team_id")))
+            )
             return candidates
         case "get_model_names":
             names: list[JsonValue] = []
             names.extend(router.get_model_names(arguments.get("team_id")))
             return names
         case "get_model_list":
-            return listing_rows(router.get_model_list(arguments.get("model_name"), arguments.get("team_id")))
+            return listing_rows(
+                router.get_model_list(arguments.get("model_name"), arguments.get("team_id"))
+            )
         case "get_model_list_from_model_alias":
-            return listing_rows(router.get_model_list_from_model_alias(arguments.get("model_name")))
+            return listing_rows(
+                router.get_model_list_from_model_alias(arguments.get("model_name"))
+            )
         case "should_include_deployment":
             index = arguments.get("deployment_index")
             if index is None:
                 raise ValueError("arguments.deployment_index is required")
-            model_name = required(arguments.get("model_name"), "model_name")
-            return router.should_include_deployment(
-                model_name=model_name, model=call["model_list"][index], team_id=arguments.get("team_id")
+            predicate: IncludePredicate = router
+            return predicate.should_include_deployment(
+                model_name=required(arguments.get("model_name"), "model_name"),
+                model=call["model_list"][index],
+                team_id=arguments.get("team_id"),
             )
-    raise ValueError(f"unsupported listing function {call['function']}")
+        case _:
+            raise ValueError(f"unsupported listing function {call['function']}")
 
 
 def run(input_value: Input) -> JsonValue:
     litellm.suppress_debug_info = True
+    groups = GROUPS.validate_json(json.dumps(input_value["routing_groups"]))
     router = Router(
         model_list=input_value["model_list"],
         model_group_alias=input_value["model_group_alias"],
-        routing_groups=input_value["routing_groups"],
+        routing_groups=groups,
     )
     if input_value["stale_index"]:
         router.model_id_to_deployment_index_map[STALE_ID] = STALE_INDEX
         router.model_name_to_deployment_indices[STALE_NAME] = [STALE_INDEX]
-    if input_value["function"] in LOOKUP_FUNCTIONS:
-        return lookup_answer(router, input_value)
-    return listing_answer(router, input_value)
+    storage: RouterStorage = router
+    missing_ids = input_value.get("missing_ids")
+    if missing_ids is not None:
+        for index in missing_ids:
+            info = storage.model_list[index].get("model_info")
+            if info is not None:
+                del info["id"]
+    missing_info = input_value.get("missing_info")
+    if missing_info is not None:
+        for index in missing_info:
+            del storage.model_list[index]["model_info"]
+    provider = pattern_match_deployments.inferred_provider
+    pattern_match_deployments.inferred_provider = FixedProvider(input_value["inferred_provider"])
+    try:
+        if input_value["function"] in LOOKUP_FUNCTIONS:
+            return lookup_answer(router, input_value)
+        return listing_answer(router, input_value)
+    finally:
+        pattern_match_deployments.inferred_provider = provider

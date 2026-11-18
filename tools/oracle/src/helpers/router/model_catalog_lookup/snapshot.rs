@@ -6,7 +6,6 @@ use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use betterlite_router::deployment_identity::stable_id::generate_model_id;
 use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
-use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::routing_groups::group::RoutingGroup;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 
@@ -21,23 +20,15 @@ const STALE_INDEX: usize = 99;
 // A Router as model_catalog_lookup sees it: the model list with its indices, the aliases and the routing groups.
 pub(crate) struct Snapshot {
     pub(crate) catalog: DeploymentCatalog,
-    aliases: AliasMap,
-    groups: RoutingGroupIndex,
-    provider: Box<dyn Fn(&str) -> Option<String>>,
+    pub(crate) aliases: AliasMap,
+    pub(crate) groups: RoutingGroupIndex,
+    pub(crate) provider: Box<dyn Fn(&str) -> Option<String>>,
 }
 
 impl Snapshot {
     // set_model_list then _init_routing_groups: every row as a deployment under the catalog's indices, then the groups over them.
     pub(crate) fn build(input: &Input) -> Result<Self, Failure> {
-        let mut catalog = DeploymentCatalog::default();
-        for row in &input.model_list {
-            let spec = spec(row)?;
-            catalog.index_patterns(&spec)?;
-            catalog.push(spec);
-        }
-        for row in &input.model_list {
-            catalog.model_names.insert(row.model_name.clone());
-        }
+        let catalog = catalog_rows(input)?;
         let aliases = alias_map(&input.model_group_alias);
         let groups = routing_group_index(&input.routing_groups, &catalog.model_names, &aliases)?;
         let declared = input.inferred_provider.clone();
@@ -57,15 +48,35 @@ impl Snapshot {
                 .name_index
                 .insert(STALE_NAME.to_owned(), vec![STALE_INDEX]);
         }
+        damage_rows(&mut snapshot.catalog, input);
         Ok(snapshot)
     }
+}
 
-    pub(crate) fn lookup(&self) -> CatalogLookup<'_> {
-        CatalogLookup {
-            catalog: &self.catalog,
-            model_group_alias: &self.aliases,
-            routing_groups: &self.groups,
-            inferred_provider: &*self.provider,
+// set_model_list: every row as a deployment under the catalog's indices, and its name among the known model names.
+fn catalog_rows(input: &Input) -> Result<DeploymentCatalog, Failure> {
+    let mut catalog = DeploymentCatalog::default();
+    for row in &input.model_list {
+        let spec = spec(row)?;
+        catalog.index_patterns(&spec)?;
+        catalog.push(spec);
+    }
+    for row in &input.model_list {
+        catalog.model_names.insert(row.model_name.clone());
+    }
+    Ok(catalog)
+}
+
+// The damaged rows a prebuilt snapshot asked for: an id removed from model_info, and a model_info removed whole.
+fn damage_rows(catalog: &mut DeploymentCatalog, input: &Input) {
+    for index in &input.missing_ids {
+        if let Some(row) = catalog.models.get_mut(*index) {
+            row.model_info.remove("id");
+        }
+    }
+    for index in &input.missing_info {
+        if let Some(row) = catalog.models.get_mut(*index) {
+            row.model_info = JsonObject::new();
         }
     }
 }

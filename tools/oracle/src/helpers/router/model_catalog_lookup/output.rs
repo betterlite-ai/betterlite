@@ -12,47 +12,78 @@ use super::snapshot::Snapshot;
 // The answer the case asked for: the production lookup or listing call, projected to the fields LiteLLM's rows expose.
 pub(crate) fn answer(input: &Input) -> Result<Value, Failure> {
     let snapshot = Snapshot::build(input)?;
-    let lookup = snapshot.lookup();
+    let lookup = CatalogLookup {
+        catalog: &snapshot.catalog,
+        model_group_alias: &snapshot.aliases,
+        routing_groups: &snapshot.groups,
+        inferred_provider: &*snapshot.provider,
+    };
+    call_answer(&lookup, &snapshot, input)
+}
+
+// The call the case named, each answer read from the argument it needs.
+fn call_answer(
+    lookup: &CatalogLookup<'_>,
+    snapshot: &Snapshot,
+    input: &Input,
+) -> Result<Value, Failure> {
     let arguments = &input.arguments;
     let name = arguments.model_name.as_deref();
     let team = arguments.team_id.as_deref();
-    let model_id = arguments.model_id.as_deref();
     match input.function {
-        Function::GetDeployment => Ok(row_value(
-            lookup.get_deployment(required(model_id, "model_id")?)?,
+        Function::GetDeployment => deployment_value(lookup, arguments.model_id.as_deref()),
+        Function::GetDeploymentByModelGroupName => group_value(lookup, name),
+        Function::GetModelIds => Ok(json!(
+            lookup.get_model_ids(name, arguments.exclude_team_models)
         )),
-        Function::GetDeploymentByModelGroupName => Ok(row_value(
-            lookup.get_deployment_by_model_group_name(required(name, "model_name")?)?,
-        )),
-        Function::GetModelIds => model_ids_answer(&lookup, arguments),
         Function::GetCandidateModelIdsForRoute => Ok(json!(
-            lookup.get_candidate_model_ids_for_route(required(name, "model_name")?, team)?
+            lookup.candidate_model_ids(name.ok_or(Failure::Argument("model_name"))?, team)?
         )),
-        Function::HasModelId => Ok(json!(
-            lookup.has_model_id(required(arguments.candidate_id.as_deref(), "candidate_id")?)
+        Function::HasModelId => candidate_value(lookup, arguments),
+        Function::ResolveModelNameFromModelId => Ok(json!(
+            lookup.resolve_model_name(arguments.model_id.as_deref())?
         )),
-        Function::ResolveModelNameFromModelId => {
-            Ok(json!(lookup.resolve_model_name_from_model_id(model_id)?))
-        }
         Function::GetModelNames => Ok(json!(lookup.get_model_names(team)?)),
-        Function::GetModelList => Ok(rows_value(&lookup.get_model_list(name, team)?)),
-        Function::GetModelListFromModelAlias => {
-            Ok(rows_value(&lookup.get_model_list_from_model_alias(name)?))
+        Function::GetModelList => {
+            let rows = lookup.get_model_list(name, team)?;
+            Ok(Value::Array(rows.iter().map(deployment_row).collect()))
         }
-        Function::ShouldIncludeDeployment => include_answer(&snapshot, arguments),
+        Function::GetModelListFromModelAlias => {
+            let rows = lookup.list_from_alias(name)?;
+            Ok(Value::Array(rows.iter().map(deployment_row).collect()))
+        }
+        Function::ShouldIncludeDeployment => include_answer(snapshot, arguments),
     }
 }
 
-fn model_ids_answer(lookup: &CatalogLookup<'_>, arguments: &Arguments) -> Result<Value, Failure> {
-    let exclude = required_bool(arguments.exclude_team_models, "exclude_team_models")?;
-    Ok(json!(
-        lookup.get_model_ids(arguments.model_name.as_deref(), exclude)
-    ))
+fn deployment_value(lookup: &CatalogLookup<'_>, model_id: Option<&str>) -> Result<Value, Failure> {
+    match lookup.get_deployment(model_id.ok_or(Failure::Argument("model_id"))?)? {
+        Some(row) => Ok(deployment_row(row)),
+        None => Ok(Value::Null),
+    }
+}
+
+fn group_value(lookup: &CatalogLookup<'_>, model_name: Option<&str>) -> Result<Value, Failure> {
+    match lookup.deployment_by_group_name(model_name.ok_or(Failure::Argument("model_name"))?)? {
+        Some(row) => Ok(deployment_row(row)),
+        None => Ok(Value::Null),
+    }
+}
+
+fn candidate_value(lookup: &CatalogLookup<'_>, arguments: &Arguments) -> Result<Value, Failure> {
+    let candidate = arguments
+        .candidate_id
+        .as_deref()
+        .ok_or(Failure::Argument("candidate_id"))?;
+    Ok(json!(lookup.catalog.id_index.contains_key(candidate)))
 }
 
 // should_include_deployment reads the case's own row, so the caller picks it by position.
 fn include_answer(snapshot: &Snapshot, arguments: &Arguments) -> Result<Value, Failure> {
-    let model_name = required(arguments.model_name.as_deref(), "model_name")?;
+    let model_name = arguments
+        .model_name
+        .as_deref()
+        .ok_or(Failure::Argument("model_name"))?;
     let index = arguments
         .deployment_index
         .ok_or(Failure::Argument("deployment_index"))?;
@@ -66,25 +97,6 @@ fn include_answer(snapshot: &Snapshot, arguments: &Arguments) -> Result<Value, F
         deployment,
         arguments.team_id.as_deref()
     )))
-}
-
-fn required<'value>(
-    value: Option<&'value str>,
-    name: &'static str,
-) -> Result<&'value str, Failure> {
-    value.ok_or(Failure::Argument(name))
-}
-
-fn required_bool(value: Option<bool>, name: &'static str) -> Result<bool, Failure> {
-    value.ok_or(Failure::Argument(name))
-}
-
-fn row_value(row: Option<&DeploymentSpec>) -> Value {
-    row.map_or(Value::Null, deployment_row)
-}
-
-fn rows_value(rows: &[DeploymentSpec]) -> Value {
-    Value::Array(rows.iter().map(deployment_row).collect())
 }
 
 // One deployment as a case compares it: its names and its team ownership.
