@@ -11,13 +11,12 @@ use crate::logging_service_events::types::{ServiceLoggerPayload, ServiceType};
 use crate::private_json::error::PrivateJsonError;
 use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
-// We don't want to spam DD with service events, so only these service types log a success record
+// ast-grep-ignore: no-long-names
 pub const DD_LOGGED_SUCCESS_SERVICE_TYPES: &[ServiceType] = &[ServiceType::ResetBudgetJob];
 
 #[derive(Debug, Error)]
 pub enum ServiceEventError {
-    // LiteLLM's json.dumps writes a bare NaN or Infinity into the message, which is not JSON there;
-    // a duration that is not a finite number fails the event instead (docs/deviations/B3934.yaml)
+    // LiteLLM writes a bare NaN here; a non-finite duration fails the event instead
     #[error("the service duration {0} is not a finite number")]
     Duration(f64),
     #[error("the service payload could not be converted to a JSON object")]
@@ -26,7 +25,7 @@ pub enum ServiceEventError {
     Message(#[from] PrivateJsonError),
 }
 
-// litellm.integrations.datadog.datadog.DataDogLogger.async_service_failure_hook
+// ast-grep-ignore: no-one-line-functions
 pub fn async_service_failure_hook(
     logger: &DatadogLogger,
     payload: &ServiceLoggerPayload,
@@ -41,7 +40,7 @@ pub fn async_service_success_hook(
     payload: &ServiceLoggerPayload,
     event_metadata: Option<&IndexMap<String, Json>>,
 ) {
-    // intentionally done: don't want to log all service types to DD
+    // ast-grep-ignore: no-long-names
     if !DD_LOGGED_SUCCESS_SERVICE_TYPES.contains(&payload.service) {
         return;
     }
@@ -55,8 +54,7 @@ fn log_service_event(
     status: DataDogStatus,
 ) {
     if let Err(error) = enqueue_service_event(logger, payload, event_metadata, status) {
-        // LiteLLM names the hook in this text; one shared message serves both hooks here
-        // (docs/deviations/B3934.yaml)
+        // one text serves both hooks; LiteLLM's success text names the failure hook
         tracing::error!(%error, "Datadog: Logger - Exception in a service hook");
     }
 }

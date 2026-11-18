@@ -16,7 +16,7 @@ use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
 // LiteLLM's DatadogProxyFailureHookJsonMessage: the five fields its literal writes
 #[derive(Serialize)]
-struct DatadogProxyFailureHookJsonMessage {
+struct ProxyFailureMessage {
     exception: String,
     error_class: String,
     status_code: Option<i64>,
@@ -70,7 +70,7 @@ fn proxy_failure_message(
 ) -> Result<String, ProxyFailureError> {
     let information = get_error_information(logging, traceback_str);
     let status_code = numeric_status_code(&information);
-    let message = DatadogProxyFailureHookJsonMessage {
+    let message = ProxyFailureMessage {
         exception: information.error_message.flatten().unwrap_or_default(),
         error_class: information.error_class.flatten().unwrap_or_default(),
         status_code,

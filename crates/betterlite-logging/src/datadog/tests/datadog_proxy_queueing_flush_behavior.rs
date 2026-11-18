@@ -41,12 +41,14 @@ async fn datadog_proxy_queueing_flush_behavior() {
     assert_eq!(transport.post_count(), 1);
     let delivered = transport.posted_events();
     assert_eq!(delivered.len(), 2);
-    for event in &delivered {
-        assert_eq!(text(field(event, "status")), "error");
-        assert_eq!(text(field(event, "ddtags")), TAGS);
-        let inner = json(text(field(event, "message")));
-        assert_eq!(text(field(&inner, "exception")), "down");
-    }
+    assert_eq!(text(field(&delivered[0], "status")), "error");
+    assert_eq!(text(field(&delivered[1], "status")), "error");
+    assert_eq!(text(field(&delivered[0], "ddtags")), TAGS);
+    assert_eq!(text(field(&delivered[1], "ddtags")), TAGS);
+    let first_inner = json(text(field(&delivered[0], "message")));
+    assert_eq!(text(field(&first_inner, "exception")), "down");
+    let second_inner = json(text(field(&delivered[1], "message")));
+    assert_eq!(text(field(&second_inner, "exception")), "down");
 
     // after a flush the next failure starts a fresh batch and stays queued
     async_post_call_failure_hook(&logger, &NullTracer, &context, None, IndexMap::new()).await;
