@@ -4,8 +4,7 @@ use serde::de::Error as _;
 
 use crate::proxy_request_contracts::{ContractError, Fields};
 
-// The sentences B8411's user requests raise, reused by the typed rows that inherit their validators.
-pub(crate) const USER_SELECTOR: &str = "Either user id or user email must be provided";
+// The sentence B8411's /user/new request raises, reused by the bulk rows that inherit its validator.
 pub(crate) const PASSWORD_UNSUPPORTED: &str = "password cannot be set via /user/new. Users set their own password through an invitation link (POST /invitation/new).";
 
 pub(crate) fn check_count(field: &str, count: usize, maximum: usize) -> Result<(), ContractError> {
