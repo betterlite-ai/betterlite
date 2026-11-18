@@ -100,84 +100,58 @@ impl CohereReplyBody {
     // B1418's populate takes JSON, so the typed reply turns back into JSON only here
     fn into_json(self) -> Json {
         match self {
-            Self::Envelope(envelope) => CohereReplyEnvelope::into_json(*envelope),
-            Self::Scalar(scalar) => scalar.into_json(),
+            Self::Envelope(envelope) => envelope_json(*envelope),
+            Self::Scalar(CohereReplyScalar::Bool(value)) => Json::Bool(value),
+            Self::Scalar(CohereReplyScalar::Number(number)) => Json::Number(number),
+            Self::Scalar(CohereReplyScalar::Text(text)) => Json::Text(text),
+            Self::Scalar(CohereReplyScalar::List(rows)) => {
+                Json::List(rows.into_iter().map(row_json).collect())
+            }
+            Self::Scalar(CohereReplyScalar::Null) => Json::Null,
         }
     }
 }
 
-impl CohereReplyEnvelope {
-    fn into_json(self) -> Json {
-        let mut fields = Object::new();
-        if let Some(embeddings) = self.embeddings {
-            fields.insert(String::from("embeddings"), embeddings.into_json());
-        }
-        if let Some(kind) = self.response_type {
-            fields.insert(String::from("response_type"), Json::Text(kind));
-        }
-        if let Some(meta) = self.meta {
-            fields.insert(String::from("meta"), meta.into_json());
-        }
-        Json::Object(fields)
-    }
-}
-
-impl ReplyEmbeddings {
-    fn into_json(self) -> Json {
-        match self {
-            Self::Rows(rows) => Json::List(rows.into_iter().map(embedding_json).collect()),
-            Self::Groups(groups) => Json::Object(
+fn envelope_json(envelope: CohereReplyEnvelope) -> Json {
+    let mut fields = Object::new();
+    if let Some(embeddings) = envelope.embeddings {
+        let rows = match *embeddings {
+            ReplyEmbeddings::Rows(rows) => Json::List(rows.into_iter().map(row_json).collect()),
+            ReplyEmbeddings::Groups(groups) => Json::Object(
                 groups
                     .into_iter()
                     .map(|(name, rows)| {
-                        let values = rows.into_iter().map(embedding_json).collect();
-                        (name, Json::List(values))
+                        (name, Json::List(rows.into_iter().map(row_json).collect()))
                     })
                     .collect(),
             ),
-        }
+        };
+        fields.insert(String::from("embeddings"), rows);
     }
+    if let Some(kind) = envelope.response_type {
+        fields.insert(String::from("response_type"), Json::Text(kind));
+    }
+    if let Some(meta) = envelope.meta {
+        let mut meta_fields = Object::new();
+        if let Some(billed) = meta.billed_units {
+            let mut counts = Object::new();
+            if let Some(tokens) = billed.input_tokens {
+                counts.insert(
+                    String::from("input_tokens"),
+                    Json::Number(Number::from(tokens)),
+                );
+            }
+            if let Some(images) = billed.images {
+                counts.insert(String::from("images"), Json::Number(Number::from(images)));
+            }
+            meta_fields.insert(String::from("billed_units"), Json::Object(counts));
+        }
+        fields.insert(String::from("meta"), Json::Object(meta_fields));
+    }
+    Json::Object(fields)
 }
 
-impl CohereReplyMeta {
-    fn into_json(self) -> Json {
-        let mut fields = Object::new();
-        if let Some(billed) = self.billed_units {
-            fields.insert(String::from("billed_units"), billed.into_json());
-        }
-        Json::Object(fields)
-    }
-}
-
-impl CohereBilledUnits {
-    fn into_json(self) -> Json {
-        let mut fields = Object::new();
-        if let Some(tokens) = self.input_tokens {
-            fields.insert(
-                String::from("input_tokens"),
-                Json::Number(Number::from(tokens)),
-            );
-        }
-        if let Some(images) = self.images {
-            fields.insert(String::from("images"), Json::Number(Number::from(images)));
-        }
-        Json::Object(fields)
-    }
-}
-
-impl CohereReplyScalar {
-    fn into_json(self) -> Json {
-        match self {
-            Self::Bool(value) => Json::Bool(value),
-            Self::Number(number) => Json::Number(number),
-            Self::Text(text) => Json::Text(text),
-            Self::List(rows) => Json::List(rows.into_iter().map(embedding_json).collect()),
-            Self::Null => Json::Null,
-        }
-    }
-}
-
-fn embedding_json(embedding: EmbeddingVector) -> Json {
+fn row_json(embedding: EmbeddingVector) -> Json {
     match embedding {
         EmbeddingVector::Base64(text) => Json::Text(text),
         EmbeddingVector::Floats(numbers) => {
