@@ -3,7 +3,6 @@
     reason = "pinned statistical routing arithmetic"
 )]
 
-// the reference compares non_ascii / max(1, length) > 0.1 over the prompt's code points
 #[must_use]
 pub fn mostly_non_ascii(non_ascii: usize, length: usize) -> bool {
     let count = f64::from(u32::try_from(non_ascii).unwrap_or(u32::MAX));

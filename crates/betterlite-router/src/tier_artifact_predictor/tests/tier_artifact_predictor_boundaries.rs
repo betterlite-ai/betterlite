@@ -8,7 +8,7 @@ use tokio::time::timeout;
 use super::{artifact_json, parsed, predictor, statistics};
 use crate::adaptive_classification::request_type::RequestType;
 use crate::tier_artifact_predictor::artifact::{
-    MAX_ARTIFACT_BYTES, TierNumber, TierStatistic, parse_artifact, resolve_tier_artifact,
+    MAX_ARTIFACT_BYTES, TierNumber, parse_artifact, resolve_tier_artifact,
 };
 use crate::tier_artifact_predictor::error::PredictorError;
 use crate::tier_artifact_predictor::predictor::TierSuccessPredictor;
@@ -195,7 +195,7 @@ fn draft(successes: [f64; 4], observations: [f64; 4], routing_threshold: f64) ->
 
 fn valid_bytes() -> Vec<u8> {
     artifact_json(
-        &super::global_json((1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)),
+        &super::global_json([(1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)]),
         "",
     )
     .into_bytes()
@@ -245,7 +245,7 @@ fn parse_error(global: &str, fields: &str) -> PredictorError {
 }
 
 fn schema_version() {
-    let global = super::global_json((1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0));
+    let global = super::global_json([(1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)]);
     let fields = ", \"schema_version\": 2";
     match parse_error(&global, fields) {
         PredictorError::SchemaVersion { version } => assert_eq!(version, 2),
@@ -263,15 +263,13 @@ fn tier_out_of_range(tier: u32) {
 
 fn successes_equal_observations() {
     let artifact = parsed(
-        &super::global_json((1.0, 1.0), (2.0, 2.0), (1.0, 1.0), (0.0, 1.0)),
+        &super::global_json([(1.0, 1.0), (2.0, 2.0), (1.0, 1.0), (0.0, 1.0)]),
         "",
     );
+    assert_eq!(artifact.global.one.successes.to_bits(), 1.0_f64.to_bits());
     assert_eq!(
-        artifact.global.one,
-        TierStatistic {
-            successes: 1.0,
-            observations: 1.0,
-        }
+        artifact.global.one.observations.to_bits(),
+        1.0_f64.to_bits()
     );
 }
 
@@ -315,34 +313,31 @@ fn negative_successes() {
 
 fn non_finite_successes() {
     let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
-    artifact.global_statistics[0].successes = f64::INFINITY;
-    match validation::validate(&artifact) {
-        Err(PredictorError::NonFinite { field }) => {
-            assert_eq!(field, "global_statistics[0].successes");
-        }
-        other => panic!("unexpected outcome: {other:?}"),
-    }
     artifact.global_statistics[0].successes = f64::NAN;
-    assert!(matches!(
-        validation::validate(&artifact),
-        Err(PredictorError::NonFinite { .. })
-    ));
+    assert_eq!(rejected_field(&artifact), "global_statistics[0].successes");
+    artifact.global_statistics[0].successes = f64::INFINITY;
+    assert_eq!(rejected_field(&artifact), "global_statistics[0].successes");
 }
 
 fn non_finite_observations() {
     let mut artifact = draft([1.0; 4], [2.0; 4], 0.75);
+    artifact.global_statistics[3].observations = f64::INFINITY;
+    assert_eq!(
+        rejected_field(&artifact),
+        "global_statistics[3].observations"
+    );
     artifact.global_statistics[3].observations = f64::NAN;
-    match validation::validate(&artifact) {
-        Err(PredictorError::NonFinite { field }) => {
-            assert_eq!(field, "global_statistics[3].observations");
-        }
+    assert_eq!(
+        rejected_field(&artifact),
+        "global_statistics[3].observations"
+    );
+}
+
+fn rejected_field(artifact: &Artifact) -> String {
+    match validation::validate(artifact) {
+        Err(PredictorError::NonFinite { field }) => field,
         other => panic!("unexpected outcome: {other:?}"),
     }
-    artifact.global_statistics[3].observations = f64::INFINITY;
-    assert!(matches!(
-        validation::validate(&artifact),
-        Err(PredictorError::NonFinite { .. })
-    ));
 }
 
 fn non_finite_prior_mass() {
@@ -395,13 +390,16 @@ fn threshold_outside(threshold: f64) {
 fn duplicate_global_statistic() {
     let global = "{\"tier\": 1, \"successes\": 1.0, \"observations\": 2.0}, {\"tier\": 1, \"successes\": 1.0, \"observations\": 2.0}, {\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0}, {\"tier\": 3, \"successes\": 1.0, \"observations\": 2.0}";
     let error = parse_error(global, "");
-    // the tier renders through TierNumber's Display, the pinned upper-case tier name
+    // the error names the repeated statistic and renders the pinned upper-case tier name
     assert_eq!(
         error.to_string(),
-        "the tier artifact declares tier SIMPLE twice in its global statistics"
+        "the tier artifact declares statistic global_statistics[1] twice for tier SIMPLE"
     );
     match error {
-        PredictorError::DuplicateGlobalTier { tier } => assert_eq!(tier, TierNumber::One),
+        PredictorError::DuplicateStatistic { field, tier } => {
+            assert_eq!(field, "global_statistics[1]");
+            assert_eq!(tier, "SIMPLE");
+        }
         other => panic!("unexpected error: {other:?}"),
     }
 }
@@ -419,15 +417,15 @@ fn missing_global_statistic() {
 }
 
 fn four_global() -> String {
-    super::global_json((1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0))
+    super::global_json([(1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)])
 }
 
 fn duplicate_domain_statistic() {
     let fields = ", \"domain_statistics\": [{\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}, {\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}]";
     match parse_error(&four_global(), fields) {
-        PredictorError::DuplicateDomainStatistic { request_type, tier } => {
-            assert_eq!(request_type, "general");
-            assert_eq!(tier, TierNumber::Two);
+        PredictorError::DuplicateStatistic { field, tier } => {
+            assert_eq!(field, "domain_statistics[1]");
+            assert_eq!(tier, "MEDIUM");
         }
         other => panic!("unexpected error: {other:?}"),
     }
@@ -435,13 +433,12 @@ fn duplicate_domain_statistic() {
 
 fn duplicate_cohort_statistic() {
     let fields = ", \"cohort_statistics\": [{\"tier\": 3, \"successes\": 1.0, \"observations\": 2.0, \"cohort\": \"general|short|code=0|math=0|mc=0|intl=0\"}, {\"tier\": 3, \"successes\": 1.0, \"observations\": 2.0, \"cohort\": \"general|short|code=0|math=0|mc=0|intl=0\"}]";
-    match parse_error(&four_global(), fields) {
-        PredictorError::DuplicateCohortStatistic { cohort, tier } => {
-            assert_eq!(cohort, "general|short|code=0|math=0|mc=0|intl=0");
-            assert_eq!(tier, TierNumber::Three);
-        }
-        other => panic!("unexpected error: {other:?}"),
-    }
+    let text = parse_error(&four_global(), fields).to_string();
+    assert!(
+        text.contains("statistic cohort_statistics[1] twice"),
+        "got {text}"
+    );
+    assert!(text.ends_with("twice for tier COMPLEX"), "got {text}");
 }
 
 fn unknown_request_type() {

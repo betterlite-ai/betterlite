@@ -26,6 +26,7 @@ enum Behavior {
     Signals,
     ClassifiedTier,
     Forecast,
+    ForecastPrecision,
     BuiltInArtifact,
     Attribution,
     ShippedConfigSeed,
@@ -37,6 +38,10 @@ enum Behavior {
     CohortBucket {
         length: usize,
         expected: &'static str,
+    },
+    UnicodeSelection {
+        prompt: &'static str,
+        expected: TierNumber,
     },
     EmptyPrompt,
 }
@@ -53,6 +58,7 @@ enum Behavior {
 #[case::signals(Behavior::Signals)]
 #[case::classified_tier(Behavior::ClassifiedTier)]
 #[case::forecast(Behavior::Forecast)]
+#[case::forecast_precision(Behavior::ForecastPrecision)]
 #[case::builtin_artifact(Behavior::BuiltInArtifact)]
 #[case::attribution(Behavior::Attribution)]
 #[case::shipped_config_seed(Behavior::ShippedConfigSeed)]
@@ -87,6 +93,36 @@ enum Behavior {
     request_type: RequestType::General,
     expected: "general|short|code=0|math=0|mc=0|intl=1",
 })]
+// U+0301 is not a word character for Python's \b, so the keyword "code" still ends there
+#[case::combining_mark_after_code(Behavior::CohortFlags {
+    prompt: "code\u{301}",
+    request_type: RequestType::General,
+    expected: "general|short|code=1|math=0|mc=0|intl=1",
+})]
+// re.IGNORECASE folds the dotless i to i, so "function" matches with U+0131 in place of i
+#[case::dotless_i_in_function(Behavior::CohortFlags {
+    prompt: "funct\u{131}on",
+    request_type: RequestType::General,
+    expected: "general|short|code=1|math=0|mc=0|intl=1",
+})]
+// the long s is not an i, so "function" with U+017F in place of i is no keyword
+#[case::long_s_in_function(Behavior::CohortFlags {
+    prompt: "funct\u{17f}on",
+    request_type: RequestType::General,
+    expected: "general|short|code=0|math=0|mc=0|intl=1",
+})]
+#[case::combining_mark_selects_simple(Behavior::UnicodeSelection {
+    prompt: "code\u{301}",
+    expected: TierNumber::One,
+})]
+#[case::dotless_i_selects_simple(Behavior::UnicodeSelection {
+    prompt: "funct\u{131}on",
+    expected: TierNumber::One,
+})]
+#[case::long_s_selects_complex(Behavior::UnicodeSelection {
+    prompt: "funct\u{17f}on",
+    expected: TierNumber::Three,
+})]
 #[case::short_at_199(Behavior::CohortBucket { length: 199, expected: "short" })]
 #[case::medium_at_200(Behavior::CohortBucket { length: 200, expected: "medium" })]
 #[case::medium_at_799(Behavior::CohortBucket { length: 799, expected: "medium" })]
@@ -107,6 +143,7 @@ fn tier_artifact_predictor_behaviors(#[case] behavior: Behavior) {
         Behavior::Signals => signals(),
         Behavior::ClassifiedTier => classified_tier(),
         Behavior::Forecast => forecast(),
+        Behavior::ForecastPrecision => forecast_precision(),
         Behavior::BuiltInArtifact => builtin_artifact(),
         Behavior::Attribution => attribution(),
         Behavior::ShippedConfigSeed => shipped_config_seed(),
@@ -121,6 +158,15 @@ fn tier_artifact_predictor_behaviors(#[case] behavior: Behavior) {
                 cohort(&prompt, RequestType::General),
                 format!("general|{expected}|code=0|math=0|mc=0|intl=0")
             );
+        }
+        Behavior::UnicodeSelection { prompt, expected } => {
+            let artifact =
+                resolve_tier_artifact(&ArtifactSource::BuiltIn("ultrafeedback".to_owned()))
+                    .expect("the packaged artifact validates");
+            let predictor =
+                TierSuccessPredictor::new(artifact, None).expect("the pinned patterns compile");
+            let prediction = predictor.predict(prompt, RequestType::General);
+            assert_eq!(prediction.required_tier, expected);
         }
         Behavior::EmptyPrompt => {
             assert_eq!(
@@ -141,7 +187,9 @@ fn cohort(prompt: &str, request_type: RequestType) -> String {
 }
 
 fn classifier(global: GlobalStatistics) -> TierArtifactPredictor {
-    TierArtifactPredictor::new(artifact_with(global), None).expect("the pinned patterns compile")
+    let predictor = TierSuccessPredictor::new(artifact_with(global), None)
+        .expect("the pinned patterns compile");
+    TierArtifactPredictor::new(predictor).expect("the pinned patterns compile")
 }
 
 fn global_only() {
@@ -162,7 +210,7 @@ fn global_only() {
 fn domain_posterior() {
     let fields = ", \"domain_statistics\": [{\"tier\": 2, \"successes\": 2.0, \"observations\": 6.0, \"request_type\": \"general\"}]";
     let artifact = parsed(
-        &global_json((0.0, 6.0), (0.0, 2.0), (1.0, 2.0), (4.0, 6.0)),
+        &global_json([(0.0, 6.0), (0.0, 2.0), (1.0, 2.0), (4.0, 6.0)]),
         fields,
     );
     let predictor = TierSuccessPredictor::new(artifact, None).expect("the pinned patterns compile");
@@ -183,7 +231,7 @@ fn domain_posterior() {
 fn cohort_posterior() {
     let fields = ", \"cohort_statistics\": [{\"tier\": 3, \"successes\": 3.0, \"observations\": 4.0, \"cohort\": \"general|short|code=0|math=0|mc=0|intl=0\"}]";
     let artifact = parsed(
-        &global_json((0.0, 6.0), (0.0, 2.0), (1.0, 2.0), (4.0, 6.0)),
+        &global_json([(0.0, 6.0), (0.0, 2.0), (1.0, 2.0), (4.0, 6.0)]),
         fields,
     );
     let predictor = TierSuccessPredictor::new(artifact, None).expect("the pinned patterns compile");
@@ -303,6 +351,27 @@ fn forecast() {
     );
 }
 
+// the forecast carries the unrounded probabilities: a six-decimal forecast shifts every one of these
+fn forecast_precision() {
+    let artifact = resolve_tier_artifact(&ArtifactSource::BuiltIn("ultrafeedback".to_owned()))
+        .expect("the packaged artifact validates");
+    let predictor = TierSuccessPredictor::new(artifact, None).expect("the pinned patterns compile");
+    let outcome = TierArtifactPredictor::new(predictor)
+        .expect("the pinned patterns compile")
+        .classify("code\u{301}");
+    assert_eq!(
+        outcome.forecast.probabilities.map(f64::to_bits),
+        [
+            0.7926039425750072_f64.to_bits(),
+            0.8701522651000183_f64.to_bits(),
+            0.9020887951011245_f64.to_bits(),
+            0.9844772976161567_f64.to_bits(),
+        ]
+    );
+    assert_eq!(outcome.forecast.threshold.to_bits(), 0.75_f64.to_bits());
+    assert_eq!(outcome.signals[1], "tier-probability:simple=0.792604");
+}
+
 // the shipped config seed names the packaged artifact and the model_list handoff keeps its threshold
 fn shipped_config_seed() {
     let config = corpus_config(CONFIG_SEED).expect("the shipped seed loads");
@@ -363,7 +432,7 @@ fn builtin_artifact() {
 fn attribution() {
     let fields = ", \"datasets\": [{\"name\": \"openbmb/UltraFeedback\", \"url\": \"https://huggingface.co/datasets/openbmb/UltraFeedback\", \"license\": \"MIT\", \"rows\": 255864, \"success_definition\": \"score >= 4\"}], \"success_definition\": \"score >= 4\", \"split_method\": \"hash split\"";
     let artifact = parsed(
-        &global_json((0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)),
+        &global_json([(0.0, 6.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)]),
         fields,
     );
     assert_eq!(artifact.datasets.len(), 1);

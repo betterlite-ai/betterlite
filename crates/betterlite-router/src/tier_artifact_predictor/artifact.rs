@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::fmt::{self, Formatter};
 
 use betterlite_config::sections::tier_artifact_predictor::ArtifactSource;
 use betterlite_config::sections::tier_artifact_predictor::artifact::{Artifact, Dataset};
@@ -9,14 +8,7 @@ use crate::complexity_scoring::tier::ComplexityTier;
 use crate::tier_artifact_predictor::error::PredictorError;
 use crate::tier_artifact_predictor::validation;
 
-// bounded-inputs: a packaged or configured artifact is decoded only inside this many bytes
 pub const MAX_ARTIFACT_BYTES: usize = 1_048_576;
-
-// the pinned artifact ships with the crate, so a changing download never replaces it
-const BUILT_IN_ARTIFACTS: [(&str, &[u8]); 1] = [(
-    "ultrafeedback",
-    include_bytes!("fixtures/ultrafeedback_tiers.json"),
-)];
 
 pub type TierStatistics = BTreeMap<TierNumber, TierStatistic>;
 
@@ -58,13 +50,6 @@ impl TierNumber {
     }
 }
 
-impl fmt::Display for TierNumber {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.built_in().name())
-    }
-}
-
-// the reference keys global statistics by tier, so the validated form names the four slots
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GlobalStatistics {
     pub one: TierStatistic,
@@ -98,21 +83,16 @@ pub struct ValidatedArtifact {
     pub split_method: String,
 }
 
-// resolve_tier_artifact: a configured name reads the packaged artifact; an inline artifact is used as given
 pub fn resolve_tier_artifact(source: &ArtifactSource) -> Result<ValidatedArtifact, PredictorError> {
     match source {
-        ArtifactSource::BuiltIn(name) => match BUILT_IN_ARTIFACTS
-            .iter()
-            .find(|(artifact_name, _bytes)| *artifact_name == name)
-        {
-            Some((_artifact_name, bytes)) => parse_artifact(bytes),
-            None => Err(PredictorError::UnknownArtifact { name: name.clone() }),
+        ArtifactSource::BuiltIn(name) => match name.as_str() {
+            "ultrafeedback" => parse_artifact(include_bytes!("fixtures/ultrafeedback_tiers.json")),
+            _ => Err(PredictorError::UnknownArtifact { name: name.clone() }),
         },
         ArtifactSource::Inline(artifact) => validation::validate(artifact),
     }
 }
 
-// TrainedTierArtifact.model_validate_json behind the bounded-inputs limit
 pub fn parse_artifact(bytes: &[u8]) -> Result<ValidatedArtifact, PredictorError> {
     if bytes.len() > MAX_ARTIFACT_BYTES {
         return Err(PredictorError::ArtifactTooLarge {

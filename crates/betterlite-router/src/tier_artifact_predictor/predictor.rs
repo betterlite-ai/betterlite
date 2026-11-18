@@ -13,7 +13,6 @@ pub struct TierPrediction {
     pub required_tier: TierNumber,
 }
 
-// StandardLoggingHeuristicV2Forecast: the four tier probabilities, the applied threshold and the choice
 #[derive(Debug, Clone, PartialEq)]
 pub struct TierForecast {
     pub probabilities: [f64; 4],
@@ -22,7 +21,6 @@ pub struct TierForecast {
     pub request_type: RequestType,
 }
 
-// ClassificationOutcome for classifier_type heuristic_v2: no score, five signals and the forecast
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassifierOutcome {
     pub tier: Tier,
@@ -39,7 +37,6 @@ pub struct TierSuccessPredictor {
 }
 
 impl TierSuccessPredictor {
-    // __init__: an absent override keeps the artifact's routing_threshold
     pub fn new(
         artifact: ValidatedArtifact,
         threshold: Option<f64>,
@@ -52,7 +49,6 @@ impl TierSuccessPredictor {
         })
     }
 
-    // predict: the running maximum over the four raw posterior means, then the first tier at the threshold
     #[must_use]
     pub fn predict(&self, prompt: &str, request_type: RequestType) -> TierPrediction {
         let cohort = self.matcher.similarity_cohort(prompt, request_type);
@@ -73,7 +69,6 @@ impl TierSuccessPredictor {
         }
     }
 
-    // _probability: the global mean, then the domain posterior, then the cohort posterior
     fn probability(&self, tier: TierNumber, request_type: RequestType, cohort: &str) -> f64 {
         let global = self.artifact.global.for_tier(tier);
         let global_mean = posterior_math::smoothed_mean(global.successes, global.observations);
@@ -112,18 +107,15 @@ pub struct TierArtifactPredictor {
 }
 
 impl TierArtifactPredictor {
-    pub fn new(
-        artifact: ValidatedArtifact,
-        threshold: Option<f64>,
-    ) -> Result<Self, PredictorError> {
+    pub fn new(predictor: TierSuccessPredictor) -> Result<Self, PredictorError> {
+        let classifier =
+            Classifier::new().map_err(|source| PredictorError::Classifier { source })?;
         Ok(Self {
-            predictor: TierSuccessPredictor::new(artifact, threshold)?,
-            classifier: Classifier::new()
-                .map_err(|source| PredictorError::Classifier { source })?,
+            predictor,
+            classifier,
         })
     }
 
-    // _classify_with_heuristic_v2: the pinned request-type classifier feeds the artifact predictor
     #[must_use]
     pub fn classify(&self, prompt: &str) -> ClassifierOutcome {
         let request_type = self.classifier.classify_prompt(prompt);

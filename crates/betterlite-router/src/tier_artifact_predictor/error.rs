@@ -1,5 +1,4 @@
 use crate::adaptive_classification::error::AdaptiveClassificationError;
-use crate::tier_artifact_predictor::artifact::TierNumber;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PredictorError {
@@ -30,17 +29,8 @@ pub enum PredictorError {
         successes: f64,
         observations: f64,
     },
-    #[error("the tier artifact declares tier {tier} twice in its global statistics")]
-    DuplicateGlobalTier { tier: TierNumber },
-    #[error("the tier artifact must carry exactly one global statistic for each of the four tiers")]
-    MissingGlobalStatistics,
-    #[error("the tier artifact declares request type {request_type} twice for tier {tier}")]
-    DuplicateDomainStatistic {
-        request_type: String,
-        tier: TierNumber,
-    },
-    #[error("the tier artifact declares cohort {cohort} twice for tier {tier}")]
-    DuplicateCohortStatistic { cohort: String, tier: TierNumber },
+    #[error("the tier artifact declares statistic {field} twice for tier {tier}")]
+    DuplicateStatistic { field: String, tier: &'static str },
     #[error("tier artifact request type {request_type} is not a known request type")]
     UnknownRequestType { request_type: String },
     #[error("tier artifact field {field} cannot be empty")]

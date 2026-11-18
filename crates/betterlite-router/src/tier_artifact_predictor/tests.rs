@@ -22,16 +22,15 @@ pub(crate) fn statistics(
     three: (f64, f64),
     four: (f64, f64),
 ) -> GlobalStatistics {
-    let [first, second, third, fourth] =
-        [one, two, three, four].map(|(successes, observations)| TierStatistic {
-            successes,
-            observations,
-        });
+    let tier = |(successes, observations)| TierStatistic {
+        successes,
+        observations,
+    };
     GlobalStatistics {
-        one: first,
-        two: second,
-        three: third,
-        four: fourth,
+        one: tier(one),
+        two: tier(two),
+        three: tier(three),
+        four: tier(four),
     }
 }
 
@@ -54,13 +53,8 @@ pub(crate) fn predictor(global: GlobalStatistics) -> TierSuccessPredictor {
 }
 
 // the four statistics as an artifact object spells them
-pub(crate) fn global_json(
-    one: (f64, f64),
-    two: (f64, f64),
-    three: (f64, f64),
-    four: (f64, f64),
-) -> String {
-    [one, two, three, four]
+pub(crate) fn global_json(statistics: [(f64, f64); 4]) -> String {
+    statistics
         .into_iter()
         .enumerate()
         .map(|(index, (successes, observations))| {
