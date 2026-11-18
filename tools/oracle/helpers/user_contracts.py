@@ -52,9 +52,9 @@ UPDATE_KEYS: Final[tuple[str, ...]] = (
 _BULK_UPDATE: Final[TypeAdapter[BulkUpdateUserRequest]] = TypeAdapter(BulkUpdateUserRequest)
 _BULK_NEW: Final[TypeAdapter[BulkNewUserRequest]] = TypeAdapter(BulkNewUserRequest)
 _SEARCH_WHERE: Final[TypeAdapter[UserSearchWhere]] = TypeAdapter(UserSearchWhere)
+_UPDATE_RESULT: Final[TypeAdapter[UserUpdateResult]] = TypeAdapter(UserUpdateResult)
 _RECORD_MODELS: Final[dict[Function, type[BaseModel]]] = {
     "bulk_delete": BulkDeleteUserRequest,
-    "user_update_result": UserUpdateResult,
     "bulk_update_response": BulkUpdateUserResponse,
     "user_delete_result": UserDeleteResult,
     "bulk_delete_response": BulkDeleteUsersResponse,
@@ -136,16 +136,16 @@ def answer(call: Call) -> JsonValue:
     function = call["function"]
     body = call["body"]
     if function == "bulk_update":
-        request = _BULK_UPDATE.validate_python(body)
+        update_request = _BULK_UPDATE.validate_python(body)
         users: JsonValue = None
-        if request.users is not None:
-            users = [update_user_view(user) for user in request.users]
+        if update_request.users is not None:
+            users = [update_user_view(user) for user in update_request.users]
         updates: JsonValue = None
-        if request.user_updates is not None:
-            updates = supplied_names(request.user_updates.model_fields_set, UPDATE_KEYS)
-        return {"users": users, "all_users": request.all_users, "user_updates": updates}
+        if update_request.user_updates is not None:
+            updates = supplied_names(update_request.user_updates.model_fields_set, UPDATE_KEYS)
+        return {"users": users, "all_users": update_request.all_users, "user_updates": updates}
     if function == "bulk_new":
-        request = _BULK_NEW.validate_python(body)
+        new_request = _BULK_NEW.validate_python(body)
         return {
             "users": [
                 _JSON.validate_json(
@@ -153,12 +153,14 @@ def answer(call: Call) -> JsonValue:
                         _BULK_NEW_USER_ITEM_VIEW.validate_json(item.model_dump_json())
                     )
                 )
-                for item in request.users
+                for item in new_request.users
             ]
         }
     if function == "user_search_where":
         where_clause = _SEARCH_WHERE.validate_python(body)
         return _JSON.validate_json(_SEARCH_WHERE.dump_json(where_clause))
+    if function == "user_update_result":
+        return _JSON.validate_json(_UPDATE_RESULT.validate_python(body).model_dump_json())
     return _JSON.validate_json(_RECORD_MODELS[function].model_validate(body).model_dump_json())
 
 
