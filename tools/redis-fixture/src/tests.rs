@@ -102,6 +102,20 @@ fn the_startup_budget_and_poll_interval_match_the_design() {
     assert_eq!(POLL_INTERVAL, Duration::from_millis(2));
 }
 
+#[cfg(unix)]
+#[test]
+fn a_socket_path_that_is_not_utf8_is_a_typed_error() {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt as _;
+    use std::path::PathBuf;
+
+    use crate::server::socket_url;
+
+    let socket = PathBuf::from(OsString::from_vec(b"/tmp/redis-\xff/redis.sock".to_vec()));
+    let error = socket_url(&socket).unwrap_err();
+    assert!(matches!(error, RedisFixtureError::NonUtf8Path { .. }));
+}
+
 #[cfg(target_os = "linux")]
 fn process_is_alive(process: u32) -> bool {
     Path::new("/proc").join(process.to_string()).exists()

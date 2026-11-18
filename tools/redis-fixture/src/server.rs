@@ -142,7 +142,7 @@ fn spawn_error(source: io::Error) -> RedisFixtureError {
     }
 }
 
-fn socket_url(socket: &Path) -> Result<String, RedisFixtureError> {
+pub(crate) fn socket_url(socket: &Path) -> Result<String, RedisFixtureError> {
     let path = socket
         .to_str()
         .ok_or_else(|| RedisFixtureError::NonUtf8Path {
