@@ -56,7 +56,7 @@ pub(super) struct Reply {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Case {
+pub(crate) struct Case {
     pub(super) op: Operation,
     pub(super) model: String,
     #[serde(default)]
