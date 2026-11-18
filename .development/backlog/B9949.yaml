@@ -1,0 +1,13 @@
+id: B9949
+milestone: R2 bug fixes
+title: Retry a not-found route once after the model registry read-through
+status: todo
+depends_on: [B8231, B9964]
+file: tasks/B9949-route-read-through-retry.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

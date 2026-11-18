@@ -1,0 +1,36 @@
+kind: helper
+name: prometheus-failure-exception-class-budget-special-case
+call:
+  b3880:
+    function: get_exception_class_name
+    exception:
+      kind: budget_exceeded
+      message: "Budget has been exceeded"
+      llm_provider: "openai"
+calls:
+  - b3880:
+      function: get_exception_class_name
+      exception:
+        kind: rate_limit
+        message: "slow down"
+        llm_provider: "openai"
+  - b3880:
+      function: get_exception_class_name
+      exception:
+        kind: rate_limit
+        message: "slow down"
+        llm_provider: "azureOpenai"
+  - b3880:
+      function: get_exception_class_name
+      exception:
+        kind: rate_limit
+        message: "slow down"
+        llm_provider: null
+  - b3880:
+      function: get_exception_class_name
+      exception:
+        kind: rate_limit
+        message: "slow down"
+        llm_provider: ""
+env: {}
+compare: {ignore: []}
