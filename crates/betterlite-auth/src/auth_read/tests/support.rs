@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -9,7 +10,10 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use betterlite_db::database_failures::deadline::DbLookupError;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LookupClock};
-use betterlite_db::database_faults::{DbError, ErrorType};
+use betterlite_db::postgres_store::errors::DbError as RepositoryFault;
+use betterlite_db::postgres_store::rows::KeyColumn;
+use betterlite_db::user_repository::RowDecodeError;
+use betterlite_db::user_repository::projection::UserRecordError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
@@ -17,16 +21,19 @@ use tracing::Level;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::auth_read::table::{AuthTable, Create, FindMany, FindOne, ReadContext, Update};
+use crate::auth_read::repository::NativeKey;
+use crate::auth_read::table::{
+    AuthReadError, AuthTable, Create, FindMany, FindOne, ReadContext, Update,
+};
 
 pub(super) type Fields = BTreeMap<String, String>;
 
 type OneRequest = FindOne<Fields, Fields>;
 type ManyRequest = FindMany<Fields, Fields>;
 type WriteRequest = Update<Fields, Fields>;
-type OneAnswer = Result<Option<RichRow>, DbLookupError>;
-type ManyAnswer = Result<Vec<RichRow>, DbLookupError>;
-type RowAnswer = Result<RichRow, DbLookupError>;
+type OneAnswer = Result<Option<RichRow>, AuthReadError<RowDecodeError>>;
+type ManyAnswer = Result<Vec<RichRow>, AuthReadError<RowDecodeError>>;
+type RowAnswer = Result<RichRow, AuthReadError<RowDecodeError>>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct JwtMapping {
@@ -155,24 +162,24 @@ impl RecordingRepo {
             .push(call);
     }
 
-    async fn stall<Output>(&self) -> Result<Output, DbLookupError> {
+    async fn stall<Output>(&self) -> Result<Output, AuthReadError<RowDecodeError>> {
         let _held = HeldFlag(&self.dropped);
         std::future::pending().await
     }
 
-    async fn reply<Output>(&self, ready: Output) -> Result<Output, DbLookupError> {
+    async fn reply<Output>(&self, ready: Output) -> Result<Output, AuthReadError<RowDecodeError>> {
         match self.mode {
             Mode::Pending => self.stall().await,
             Mode::Delayed => {
                 tokio::time::sleep(Duration::from_secs(60)).await;
                 Ok(ready)
             }
-            Mode::Error => Err(read_error()),
+            Mode::Error => Err(repository_error()),
             Mode::Row | Mode::Missing => Ok(ready),
         }
     }
 
-    async fn reply_one(&self) -> Result<Option<RichRow>, DbLookupError> {
+    async fn reply_one(&self) -> Result<Option<RichRow>, AuthReadError<RowDecodeError>> {
         let ready = match self.mode {
             Mode::Missing => None,
             Mode::Row | Mode::Error | Mode::Pending | Mode::Delayed => Some(self.row.clone()),
@@ -180,7 +187,7 @@ impl RecordingRepo {
         self.reply(ready).await
     }
 
-    async fn reply_many(&self) -> Result<Vec<RichRow>, DbLookupError> {
+    async fn reply_many(&self) -> Result<Vec<RichRow>, AuthReadError<RowDecodeError>> {
         let ready = match self.mode {
             Mode::Missing => Vec::new(),
             Mode::Row | Mode::Error | Mode::Pending | Mode::Delayed => self.rows.clone(),
@@ -188,7 +195,7 @@ impl RecordingRepo {
         self.reply(ready).await
     }
 
-    async fn reply_created(&self) -> Result<RichRow, DbLookupError> {
+    async fn reply_created(&self) -> Result<RichRow, AuthReadError<RowDecodeError>> {
         self.reply(self.row.clone()).await
     }
 }
@@ -208,6 +215,7 @@ impl AuthTable for RecordingRepo {
     type Filter = Fields;
     type Include = Fields;
     type Data = Fields;
+    type Failure = RowDecodeError;
 
     async fn find_unique(&self, request: OneRequest) -> OneAnswer {
         self.record(RecordedCall::FindUnique(request));
@@ -250,26 +258,34 @@ pub(super) fn recording_row_repo(mode: Mode, row: RichRow) -> Arc<RecordingRepo>
     Arc::new(RecordingRepo::new(mode, row, Vec::new()))
 }
 
-pub(super) fn read_error() -> DbLookupError {
-    DbLookupError::Database(DbError {
-        error_type: ErrorType::Read,
-        message: "the membership read failed".to_owned(),
-        code: Some("XX000".to_owned()),
-        meta_code: None,
-        traceback_modules: vec!["asyncpg.protocol".to_owned()],
-        cause: Some(Box::new(DbError {
-            error_type: ErrorType::EngineConnection,
-            message: "the pool refused the connection".to_owned(),
-            code: None,
-            meta_code: None,
-            traceback_modules: Vec::new(),
-            cause: None,
-        })),
+pub(super) fn native_key() -> NativeKey<Infallible> {
+    NativeKey {
+        column: KeyColumn::Id,
+        value: Box::new("user-1"),
+    }
+}
+
+pub(super) fn assert_connect<Output, Failure>(read: Result<Output, AuthReadError<Failure>>)
+where
+    Failure: std::error::Error + std::fmt::Debug + 'static,
+{
+    match read {
+        Err(AuthReadError::Repository(RepositoryFault::NoDbConnected)) => {}
+        Err(other) => panic!("the native failure is not a deadline, got {other:?}"),
+        Ok(_) => panic!("the unconnected repository returns no row"),
+    }
+}
+
+pub(super) fn repository_error() -> AuthReadError<RowDecodeError> {
+    AuthReadError::Repository(RepositoryFault::InvalidRecord {
+        source: RowDecodeError::User {
+            source: UserRecordError::NotAnObject,
+        },
     })
 }
 
-pub(super) fn assert_deadline(error: DbLookupError, lookup: &str, seconds: f64) {
-    let DbLookupError::Deadline(exceeded) = error else {
+pub(super) fn assert_deadline(error: AuthReadError<RowDecodeError>, lookup: &str, seconds: f64) {
+    let AuthReadError::Lookup(DbLookupError::Deadline(exceeded)) = error else {
         panic!("the read must fail with a deadline, got {error:?}");
     };
     assert_eq!(exceeded.lookup, lookup);

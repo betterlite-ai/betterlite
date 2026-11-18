@@ -1,10 +1,24 @@
+use std::error::Error;
 use std::future::Future;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_db::database_failures::deadline::{DbLookupError, LookupRequest, bounded_db_lookup};
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, LookupClock, SystemClock};
+use betterlite_db::postgres_store::errors::DbError as RepositoryFault;
 use tokio_util::task::TaskTracker;
+
+// Both failure kinds cross the deadline boundary unchanged: LiteLLM's lookup fault or B700's typed error.
+#[derive(Debug, thiserror::Error)]
+pub enum AuthReadError<Failure>
+where
+    Failure: Error + 'static,
+{
+    #[error(transparent)]
+    Lookup(DbLookupError),
+    #[error(transparent)]
+    Repository(RepositoryFault<Failure>),
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Presence<T> {
@@ -56,31 +70,32 @@ pub trait AuthTable: Send + Sync + 'static {
     type Filter: Send + 'static;
     type Include: Send + 'static;
     type Data: Send + 'static;
+    type Failure: Error + Send + Sync + 'static;
 
     async fn find_unique(
         &self,
         request: FindOne<Self::Key, Self::Include>,
-    ) -> Result<Option<Self::Row>, DbLookupError>;
+    ) -> Result<Option<Self::Row>, AuthReadError<Self::Failure>>;
 
     async fn find_first(
         &self,
-        request: FindOne<Self::Key, Self::Include>,
-    ) -> Result<Option<Self::Row>, DbLookupError>;
+        request: FindOne<Self::Filter, Self::Include>,
+    ) -> Result<Option<Self::Row>, AuthReadError<Self::Failure>>;
 
     async fn find_many(
         &self,
         request: FindMany<Self::Filter, Self::Include>,
-    ) -> Result<Vec<Self::Row>, DbLookupError>;
+    ) -> Result<Vec<Self::Row>, AuthReadError<Self::Failure>>;
 
     async fn update(
         &self,
         request: Update<Self::Key, Self::Data>,
-    ) -> Result<Option<Self::Row>, DbLookupError>;
+    ) -> Result<Option<Self::Row>, AuthReadError<Self::Failure>>;
 
     async fn create(
         &self,
         request: Create<Self::Data, Self::Include>,
-    ) -> Result<Self::Row, DbLookupError>;
+    ) -> Result<Self::Row, AuthReadError<Self::Failure>>;
 }
 
 pub struct ReadContext<Clock = SystemClock> {
@@ -91,15 +106,20 @@ pub struct ReadContext<Clock = SystemClock> {
 
 pub(super) type OneRequest<Table> =
     FindOne<<Table as AuthTable>::Key, <Table as AuthTable>::Include>;
+pub(super) type FirstRequest<Table> =
+    FindOne<<Table as AuthTable>::Filter, <Table as AuthTable>::Include>;
 pub(super) type ManyRequest<Table> =
     FindMany<<Table as AuthTable>::Filter, <Table as AuthTable>::Include>;
 pub(super) type UpdateRequest<Table> =
     Update<<Table as AuthTable>::Key, <Table as AuthTable>::Data>;
 pub(super) type CreateRequest<Table> =
     Create<<Table as AuthTable>::Data, <Table as AuthTable>::Include>;
-pub(super) type OneAnswer<Table> = Result<Option<<Table as AuthTable>::Row>, DbLookupError>;
-pub(super) type ManyAnswer<Table> = Result<Vec<<Table as AuthTable>::Row>, DbLookupError>;
-pub(super) type RowAnswer<Table> = Result<<Table as AuthTable>::Row, DbLookupError>;
+pub(super) type OneAnswer<Table> =
+    Result<Option<<Table as AuthTable>::Row>, AuthReadError<<Table as AuthTable>::Failure>>;
+pub(super) type ManyAnswer<Table> =
+    Result<Vec<<Table as AuthTable>::Row>, AuthReadError<<Table as AuthTable>::Failure>>;
+pub(super) type RowAnswer<Table> =
+    Result<<Table as AuthTable>::Row, AuthReadError<<Table as AuthTable>::Failure>>;
 
 pub struct BoundedTable<T, Clock = SystemClock> {
     pub(super) table: Arc<T>,
@@ -112,10 +132,13 @@ where
     T: AuthTable,
     Clock: LookupClock + 'static,
 {
-    async fn bounded<Output, Lookup>(&self, lookup: Lookup) -> Result<Output, DbLookupError>
+    async fn bounded<Answer, Lookup>(
+        &self,
+        lookup: Lookup,
+    ) -> Result<Answer, AuthReadError<T::Failure>>
     where
-        Output: Send + 'static,
-        Lookup: Future<Output = Result<Output, DbLookupError>> + Send + 'static,
+        Answer: Send + 'static,
+        Lookup: Future<Output = Result<Answer, AuthReadError<T::Failure>>> + Send + 'static,
     {
         let request = LookupRequest {
             name: &self.lookup,
@@ -123,7 +146,16 @@ where
             default_deadline_seconds: self.context.default_deadline_seconds,
             tracker: self.context.tracker.as_ref(),
         };
-        bounded_db_lookup(lookup, request, &self.context.tasks).await
+        let outcome = bounded_db_lookup(
+            async move { Ok::<_, DbLookupError>(lookup.await) },
+            request,
+            &self.context.tasks,
+        )
+        .await;
+        match outcome {
+            Ok(answer) => answer,
+            Err(deadline) => Err(AuthReadError::Lookup(deadline)),
+        }
     }
 }
 
@@ -138,6 +170,7 @@ where
     type Filter = T::Filter;
     type Include = T::Include;
     type Data = T::Data;
+    type Failure = T::Failure;
 
     async fn find_unique(&self, request: OneRequest<T>) -> OneAnswer<T> {
         let table = Arc::clone(&self.table);
@@ -145,7 +178,7 @@ where
             .await
     }
 
-    async fn find_first(&self, request: OneRequest<T>) -> OneAnswer<T> {
+    async fn find_first(&self, request: FirstRequest<T>) -> OneAnswer<T> {
         let table = Arc::clone(&self.table);
         self.bounded(async move { table.find_first(request).await })
             .await
@@ -183,6 +216,7 @@ where
     type Filter = T::Filter;
     type Include = T::Include;
     type Data = T::Data;
+    type Failure = T::Failure;
 
     async fn find_unique(&self, request: OneRequest<T>) -> OneAnswer<T> {
         match self {
@@ -191,7 +225,7 @@ where
         }
     }
 
-    async fn find_first(&self, request: OneRequest<T>) -> OneAnswer<T> {
+    async fn find_first(&self, request: FirstRequest<T>) -> OneAnswer<T> {
         match self {
             Self::Bounded(table) => table.find_first(request).await,
             Self::Unbounded(table) => table.find_first(request).await,

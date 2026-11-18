@@ -1,41 +1,23 @@
-use std::convert::Infallible;
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_db::database_failures::deadline::DbLookupError;
-use betterlite_db::database_faults::ErrorType;
-use betterlite_db::postgres_store::rows::KeyColumn;
 use betterlite_db::user_repository::tables::USER_TABLE;
 use rstest::rstest;
 
 use crate::auth_read::adapter::AuthReadAdapter;
-use crate::auth_read::repository::{NativeKey, RepositoryTable};
-use crate::auth_read::table::{AuthTable, Create, FindMany, FindOne, Presence, Update};
+use crate::auth_read::repository::RepositoryTable;
+use crate::auth_read::table::{
+    AuthReadError, AuthTable, Create, FindMany, FindOne, Presence, Update,
+};
 
 use super::support::{
-    Fields, Harness, Mode, RecordedCall, assert_deadline, recording_repo, recording_repo_with,
-    rich_row,
+    Fields, Harness, Mode, RecordedCall, assert_connect, assert_deadline, native_key,
+    recording_repo, recording_repo_with, rich_row,
 };
 
 fn filter() -> Fields {
     Fields::from([("id".to_owned(), "row-1".to_owned())])
-}
-
-fn native_key() -> NativeKey<Infallible> {
-    NativeKey::new(KeyColumn::Id, "user-1")
-}
-
-fn assert_connect<Output>(read: Result<Output, DbLookupError>) {
-    match read {
-        Err(DbLookupError::Database(fault)) => {
-            let message = fault.message;
-            assert_eq!(fault.error_type, ErrorType::Connect);
-            assert!(message.contains("No DB Connected"), "{message}");
-        }
-        Err(other) => panic!("the native failure is not a deadline, got {other:?}"),
-        Ok(_) => panic!("the unconnected repository returns no row"),
-    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -275,14 +257,20 @@ async fn repository_error_cause_kept() {
         })
         .await
         .expect_err("the repository failure surfaces unchanged");
-    let DbLookupError::Database(database) = error else {
+    let AuthReadError::Repository(fault) = error else {
         panic!("the repository error must not become a deadline, got {error:?}");
     };
-    assert_eq!(database.error_type, ErrorType::Read);
-    assert_eq!(database.message, "the membership read failed");
-    assert_eq!(database.code.as_deref(), Some("XX000"));
-    let cause = std::error::Error::source(&database).expect("the nested cause is kept");
-    assert_eq!(cause.to_string(), "the pool refused the connection");
+    assert_eq!(fault.to_string(), "invalid database record");
+    let decode = std::error::Error::source(&fault).expect("the decode failure stays attached");
+    assert_eq!(
+        decode.to_string(),
+        "the stored user record is not a readable row"
+    );
+    let reason = std::error::Error::source(decode).expect("the decode reason stays attached");
+    assert_eq!(
+        reason.to_string(),
+        "the stored user record needs to be a JSON object"
+    );
 }
 
 #[tokio::test]
@@ -401,7 +389,7 @@ async fn repository_composes_with_native_table() {
     assert_connect(
         table
             .find_first(FindOne {
-                filter: native_key(),
+                filter: Vec::new(),
                 include: Presence::Omitted,
             })
             .await,
