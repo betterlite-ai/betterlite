@@ -1,0 +1,6 @@
+model_list:
+  - model_name: custom-tier-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        tier_definitions: not-a-list

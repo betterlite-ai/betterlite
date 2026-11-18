@@ -1,0 +1,285 @@
+id: B9988
+title: OpenAI output-limit and rejected-field recovery on the proxy chat path
+description: >-
+  Wire B505's output-limit and rejected-field recovery into the path real proxy chat calls take. An output-limit 400
+  becomes a 200 length-truncated reply, or on a stream the two frames LiteLLM's stream wrapper sends; a 422 is resent
+  once without the fields it rejects when the proxy-wide drop_params is on. This is the provider-specific repair,
+  not a router retry policy. Split from B505 on 11-18: B505 builds the pure functions in
+  crates/betterlite-openai/src/output_limits.rs and output_limits/**, impl PromptTokens for Counter, and
+  runtime_counter in crates/betterlite-tokenizer/src/count/runtime.rs. Call them; never reimplement them here.
+
+
+  Own the callers' repair branches in litellm/llms/openai/openai.py: the BadRequestError branch of
+  make_openai_chat_completion_request and the UnprocessableEntityError branches of acompletion and async_streaming,
+  ported where the proxy runs them, in betterlite-provider and betterlite-server as described below.
+
+
+  Why the repair lives on the provider path: B505's first plan put the repair in ChatExecutor::send and ChatExecutor::stream. Since B010 a
+  proxy chat call that no mock answers goes through provider_chat in
+  crates/betterlite-server/src/server/chat_setup/provider_call.rs and provider_stream in
+  crates/betterlite-server/src/routes/chat/streaming.rs, and both run betterlite-provider's OpenAi prepare, execute
+  and decode. The executor only serves mocked calls and the oracle's SDK harness, so with the repair there the three
+  chat oracle cases got a 400 from betterlite where LiteLLM answers 200. The 422 case also needs the proxy-wide flag:
+  its config sets litellm_settings.drop_params, and LiteLLM's retry reads litellm.drop_params, never the call's own
+  drop_params.
+
+
+  The proxy-wide drop_params, in betterlite-openai and betterlite-provider. Add pub global_drop_params: bool to
+  OpenAiDefaults and to ChatDeployment in crates/betterlite-openai/src/chat/deployment.rs; resolve_with sets
+  global_drop_params: defaults.global_drop_params. openai_defaults in crates/betterlite-server/src/server/chat_setup.rs
+  and in tools/oracle/src/sdk_http/native.rs set it from config.sections.drop_params.policy.global_drop_params, the
+  value of litellm_settings.drop_params or LITELLM_DROP_PARAMS. Every other OpenAiDefaults and ChatDeployment literal
+  sets false. Add pub global_drop_params: bool to Deployment in crates/betterlite-provider/src/prepared/deployment.rs:
+  from_chat copies deployment.global_drop_params, and from_params sets false since its params never carry the
+  proxy-wide setting.
+
+
+  The 422 retry, in betterlite-provider. In crates/betterlite-provider/src/transform_retry.rs the hook becomes
+  fallible: fn transform_request(&self, _prepared: &mut PreparedRequest, _response: &UpstreamResponse, _deployment:
+  &Deployment) -> Result<(), OperationError>, with a default body of Ok(()), and send_with_retry propagates it with
+  ?. Add OperationError::RejectedFields { #[source] source: RejectedFieldsError } in
+  crates/betterlite-provider/src/operation.rs. In crates/betterlite-provider/src/openai_dispatch.rs, chat_request sets
+  retry to TransformRetry::bounded(2)? when deployment.global_drop_params is true and TransformRetry::DISABLED
+  otherwise, matching LiteLLM's for _ in range(2) loop. Delete the empty impl TransformOnUnprocessable for OpenAi {}
+  there and write the filled impl in the new child module crates/betterlite-provider/src/openai_dispatch/recovery.rs,
+  declared by mod recovery; at the bottom of openai_dispatch.rs. should_retry answers response.status == 422, the
+  status of openai.UnprocessableEntityError. transform_request takes the body of a PreparedRequest::Chat or
+  PreparedRequest::Stream (any other variant returns Ok(())), parses it into a Map<String, Value>
+  (OperationError::Encode on failure), builds the SDK's exception body from the 422 (the response JSON's error member
+  when the body is a JSON object holding one, else the whole JSON value, else the body text as a JSON string),
+  calls without_rejected_fields(ErrorBody::Sdk(&error_body), &sent) (OperationError::RejectedFields on failure) and
+  writes the result back as the request body. It drops whatever loc[1] names, model and messages included, as the
+  async and streaming handlers do with data.
+
+
+  The output-limit seam, in betterlite-provider. Add OperationResult::OutputLimit { sent: Box<Map<String, Value>> } in
+  operation.rs: the request body as sent, for the caller to rebuild the reply from. recovery.rs also owns pub(super)
+  fn output_limit(chat: &PreparedChat, response: &UpstreamResponse) -> Result<Option<OperationResult>,
+  OperationError>: it answers Ok(None) unless response.status is 400 and ErrorBody::Http(&response.body)
+  .reaches_output_limit(), and otherwise parses chat.http.body into the sent map (OperationError::Encode on failure).
+  OpenAi::decode calls it first in its (PreparedKind::Chat(chat), Upstream::Buffered(response)) and
+  (PreparedKind::Stream(chat), Upstream::Buffered(response)) arms and returns the Some value; with None both arms run
+  as today, so every other 400 stays OperationError::Provider.
+
+
+  The reply, in betterlite-server. answer_chat and provider_chat in provider_call.rs return Result<(OperationResult,
+  HeaderMap, Duration), CallError<ChatError>>: provider_chat drops its let-else and hands the decoded result on, and
+  the mock path wraps its reply as OperationResult::Chat(ChatCompletion::OpenAi(..)). provider_stream in
+  streaming.rs returns Result<(OperationResult, HeaderMap), CallError<ChatError>>, with the headers read from
+  Upstream::headers() before decode. chat_error in provider_call.rs and its embedding twin in
+  provider_call/embedding.rs send OperationError::RejectedFields to CallError::Operation next to TransformRetry, a 500
+  as LiteLLM's AttributeError gives. ChatCalls in streaming.rs becomes pub(crate) struct ChatCalls { pub(crate)
+  executor: Arc<ChatExecutor>, pub(crate) counter: Counter } with pub(crate) fn new(config: &Config, executor:
+  Arc<ChatExecutor>) -> Result<Self, CountError>; it builds the counter with runtime_counter(config,
+  &Arc::new(executor.client.clone()), &BundledCatalog::default().get()). ChatCall::complete matches the result:
+  OperationResult::Chat goes on as today, OperationResult::OutputLimit { sent } goes to recovery::completion and any
+  other variant answers ChatFailure::Mismatched. ChatCall::stream does the same with OperationResult::Stream and
+  recovery::stream.
+
+
+  The new module crates/betterlite-server/src/routes/chat/streaming/recovery.rs, declared by mod recovery; in
+  streaming.rs, holds pub(super) async fn completion(calls: &ChatCalls, sent: &Map<String, Value>, headers: HeaderMap,
+  client_model: Option<&str>) -> Result<(ChatCompletion, HeaderMap), ChatFailure> and pub(super) async fn
+  stream(calls: &ChatCalls, sent: &Map<String, Value>, headers: HeaderMap, upstream_time: Duration) ->
+  Result<ChatStreamAnswer, ChatFailure>. Both call build_limit_response with Recovery { clock: calls.executor.clock,
+  next_id: calls.executor.next_id, tokens: &calls.counter } and the 400's headers. A PromptCountError answers
+  ChatFailure::Internal { message: error.to_string() }, and a RecoveredBody of the other shape answers
+  ChatFailure::Mismatched. completion returns ChatCompletion::OpenAi(Box::new(response.for_client(client_model))) with
+  the returned headers. stream yields two SSE frames (data: {json}, then a blank line) as a BoxStream of Ok(Vec<u8>)
+  items, the shape mock_stream already builds: first the recovered chunk with finish_reason null, then the same chunk
+  with an empty delta (Delta::default()) and finish_reason length. That is what LiteLLM's CustomStreamWrapper makes of
+  the one chunk; relay_bytes then adds data: [DONE] as for any upstream stream.
+
+
+  Wiring. crates/betterlite-server/src/routes/chat.rs: mod streaming; becomes pub(crate) mod streaming;, and
+  chat_routes_with_call_id takes calls: Arc<ChatCalls> in place of executor: Arc<ChatExecutor>. Its three-line
+  ChatCalls construction becomes exactly these two lines: let executor = Arc::clone(&calls.executor); and let calls:
+  Arc<dyn ChatCall> = calls;. In crates/betterlite-server/src/server.rs, application builds ChatCalls::new(config,
+  Arc::clone(&executor)) and passes Arc::new of it; ServerError gains TokenCounter { #[source] source: CountError }
+  with the message the token counter limits are invalid: {source}. Every test that calls chat_routes_with_call_id
+  builds ChatCalls::new the same way; a test with no Config at hand loads one with ConfigLoader { lookup:
+  BTreeMap::new() }.load("").
+
+
+
+
+  Oracle. The three chat cases tools/oracle/cases/chat/openai-output-limit-buffered.yaml,
+  openai-output-limit-stream.yaml and openai-422-drop-retry.yaml run the real gateway against LiteLLM; their
+  recovered replies carry the real prompt count. B505's first run already wrote them: fetch that commit with git
+  fetch origin refs/pull/2410/head (B505's PR keeps it after the branch goes), then read them with git show
+  672ada1dc5:tools/oracle/cases/chat/<name>.yaml and keep them unless the CI oracle run says LiteLLM answers
+  otherwise.
+
+
+  Tests. Write rstest function openai_recovery_cases in crates/betterlite-provider/src/openai_dispatch/recovery/tests.rs
+  with named cases output_limit_chat, output_limit_stream, unrelated_400_stays_provider, retry_drops_rejected_fields,
+  retry_needs_global_flag and malformed_detail_fails_the_call, driving OpenAi prepare, execute and decode against a
+  loopback upstream. Write rstest function output_limit_route_cases in
+  crates/betterlite-server/src/routes/chat/streaming/recovery/tests.rs with named cases buffered_length_reply,
+  stream_two_frames, unrelated_400_answers_400 and drop_params_resend, booting chat_routes_with_call_id against a
+  loopback upstream and asserting both the client response and the captured upstream requests. Each case exercises
+  its named outcome independently with stable clocks and IDs. Existing API tasks retain route registration; this task
+  must not register a duplicate axum route.
+
+
+  Budget: about 120 changed lines in betterlite-provider, about 200 in betterlite-server and about 30 for the
+  global_drop_params field and its literals, plus the deviations log. Test files and oracle cases do not count.
+scope:
+  paths:
+  - crates/betterlite-openai/src/chat/deployment.rs
+  - crates/betterlite-openai/src/chat/deployment/tests.rs
+  - crates/betterlite-openai/src/chat/execution/tests.rs
+  - crates/betterlite-provider/src/openai_dispatch.rs
+  - crates/betterlite-provider/src/openai_dispatch/recovery.rs
+  - crates/betterlite-provider/src/openai_dispatch/recovery/**
+  - crates/betterlite-provider/src/transform_retry.rs
+  - crates/betterlite-provider/src/transform_retry/tests.rs
+  - crates/betterlite-provider/src/operation.rs
+  - crates/betterlite-provider/src/operation/tests.rs
+  - crates/betterlite-provider/src/prepared/deployment.rs
+  - crates/betterlite-provider/src/aiohttp_openai_dispatch/tests.rs
+  - crates/betterlite-provider/src/provider/tests/openai.rs
+  - crates/betterlite-provider/src/vertex_embedding_binding/calls/tests.rs
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/embedding.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/tests.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call/tests/stream.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/streaming/recovery.rs
+  - crates/betterlite-server/src/routes/chat/streaming/recovery/**
+  - crates/betterlite-server/src/routes/chat/streaming/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/stream/tests.rs
+  - crates/betterlite-transcribe/src/vector_store_contracts/tests/direct.rs
+  - tools/oracle/src/sdk_http/native.rs
+  - tools/oracle/cases/chat/openai-output-limit-*.yaml
+  - tools/oracle/cases/chat/openai-422-*.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L465-L545
+  why: The buffered and streaming request helpers recover an output-limit BadRequestError through build_output_token_limit_response
+    and hand back the 400's headers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1070-L1187
+  why: Streaming caller; its UnprocessableEntityError branch at L1141-L1144 drops the rejected fields from data and loops.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L985-L995
+  why: The acompletion UnprocessableEntityError branch the proxy runs, gated by litellm.drop_params or the handler's
+    own drop_params argument, dropping from data.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L645-L670
+  why: completion's drop_params argument defaults to None.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2689-L2707
+  why: main.completion calls the OpenAI handler without drop_params, so only the module global turns the 422 retry
+    on.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6618-L6619
+  why: litellm_settings.drop_params sets litellm.drop_params.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L819-L866
+  why: is_chunk_non_empty counts the recovered chunk as non-empty because it carries the assistant role before the
+    first chunk was sent.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L945-L1001
+  why: return_processed_chunk_logic sends that chunk with its finish_reason popped.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1715-L1728
+  why: finish_reason_handler builds the closing chunk with the held finish_reason, length here.
+- url: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_client.py#L687
+  why: The SDK's exception body is the response JSON's error member when the JSON is an object, else the decoded body.
+dod:
+- text: 'openai output limit buffered: a proxy chat call whose OpenAI upstream answers the output-limit 400 gets a
+    200 length-truncated completion with the real prompt count and the 400''s headers, through OpenAi::decode''s
+    OperationResult::OutputLimit and the server''s recovery::completion, and matches tools/oracle/cases/chat/openai-output-limit-buffered.yaml.'
+  proof:
+  - provider-recovery
+  - route-recovery
+  - oracle
+- text: 'openai output limit stream: a streaming proxy chat call whose upstream answers the output-limit 400 gets
+    the two frames LiteLLM''s stream wrapper sends (the chunk with finish_reason null, then an empty delta with
+    finish_reason length) and data: [DONE], and matches tools/oracle/cases/chat/openai-output-limit-stream.yaml.'
+  proof:
+  - provider-recovery
+  - route-recovery
+  - oracle
+- text: 'openai 422 drop retry: with litellm_settings.drop_params true, a 422 is resent once without the fields its
+    detail names and the second answer reaches the client; without the proxy-wide flag no retry happens, whatever
+    the call or deployment drop_params says; a malformed detail fails the call. Matches tools/oracle/cases/chat/openai-422-drop-retry.yaml.'
+  proof:
+  - provider-recovery
+  - route-recovery
+  - oracle
+- text: The chat routes build their Counter with B505's runtime_counter through ChatCalls::new; nothing in
+    betterlite-server builds a second one by hand.
+  proof:
+  - route-recovery
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: provider-recovery
+    why: OpenAi decode does not answer OperationResult::OutputLimit for the output-limit 400, another 400 is recovered,
+      the 422 resend keeps a rejected field, the retry runs without the proxy-wide flag, or a malformed detail does not
+      fail the call.
+    run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_recovery_cases::/)'
+  - id: route-recovery
+    why: The booted chat routes do not answer the length-truncated reply, the two stream frames, the unrelated 400
+      or the 422 resend the way the named cases assert.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::output_limit_route_cases::/)'
+oracle_cases:
+- tools/oracle/cases/chat/openai-output-limit-buffered.yaml
+- tools/oracle/cases/chat/openai-output-limit-stream.yaml
+- tools/oracle/cases/chat/openai-422-drop-retry.yaml
+deviations: []
+out_of_scope:
+- B505 owns the output_limits functions, the Azure raw-send wrappers, impl PromptTokens for Counter, runtime_counter
+  and the helper oracle cases. Call them as they are; a gap in them goes back to the architect, not into a copy here.
+- ChatExecutor::send and ChatExecutor::stream stay as on main. They serve only mocked calls and the oracle's SDK
+  harness; a later task that wants the repair there calls the same output_limits functions.
+- The gateway relay passes ordinary upstream stream chunks through one to one and does not port LiteLLM's
+  CustomStreamWrapper. Only the recovered stream's two frames are built here.
+- Shared transport pooling, timeout/TLS/proxy settings and implicit-retry suppression are B173; do not construct
+  a second outbound client in a provider crate.
+pitfalls:
+- Dispatched runs cannot compile, so follow the signatures in the description exactly. Chunk in
+  betterlite_openai::stream::chunk derives no Clone, so write the second stream frame by serializing the same chunk
+  again after the change (take the choice's finish_reason before the first frame, put it back and set the delta to
+  Delta::default() before the second). A failed serialization answers ChatFailure::Route(ChatError::Encode { source })
+  as mock_stream does.
+- 'Imports a dispatched run cannot see go unused: openai_dispatch.rs drops TransformOnUnprocessable from its
+  crate::transform_retry import (recovery.rs imports it). The Rewrite test hook in transform_retry/tests.rs overrides
+  transform_request, so it takes the new return type and returns Ok(()).'
+- 'File sizes: the file-size check counts every line except bare mod x; and pub mod x; lines, so pub(crate) mod
+  streaming; counts. crates/betterlite-server/src/routes/chat.rs is exactly 300 today and must stay at or under
+  300. That is why its ChatCalls construction shrinks to the two lines given. streaming.rs is 259, so the recovery
+  bodies go to streaming/recovery.rs. crates/betterlite-server/src/routes/embeddings.rs is 298, so do not add a
+  CallError variant: its embedding_port_failure match would need a new arm.'
+- The 422 retry is gated by the proxy-wide flag only. A request's own drop_params and a deployment's
+  litellm_params.drop_params never turn it on, since openai.py reads litellm.drop_params or the handler's drop_params
+  argument and main.py never passes that argument.
+- The resend drops whatever loc[1] names, model and messages included, as the async and streaming handlers drop
+  from data. After the second 422 the provider's error reaches the client; LiteLLM's loop returns None there, and
+  this task's deviations log records that.
+- 'The second stream frame comes from reading streaming_handler.py, not from a LiteLLM run: frame 0 is the recovered
+  chunk with delta {role: assistant, content: ""} and finish_reason null, frame 1 has an empty delta and finish_reason
+  length. openai-output-limit-stream.yaml ignores /0 and /1 ids and timestamps, and that fits two frames. If the first
+  CI oracle run shows another shape for frame 1, match LiteLLM''s.'
+- B024 (https://github.com/betterlite-ai/betterlite/pull/2247, merged) turned OpenAiResult into an enum and added
+  module lines at the top of openai_dispatch.rs. Put mod recovery; at the bottom of openai_dispatch.rs, keep the
+  decode and chat_request edits in their own hunks and leave OpenAiResult alone.
+- >-
+  docs/deviations/B9988.yaml holds the second-422 row, moved from B505's log. Its what is "A second 422 after the
+  dropped fields were resent reaches the client as the provider's own error. LiteLLM's two-iteration loop drops the
+  newly named fields and then falls out of the function, returning None, so the caller receives no completion at
+  all instead of an error." Its why is "A null completion reported as a success is a bug no working setup can rely
+  on, so rule owned-behavior-is-built keeps the provider error, which carries the status and the rejected fields."
+  Its link is
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L709-L842.
+- >-
+  B9986 and this task share files: server/chat_setup/provider_call.rs, provider_call/embedding.rs,
+  crates/betterlite-provider/src/operation.rs, operation/tests.rs, prepared/deployment.rs,
+  aiohttp_openai_dispatch/tests.rs and provider/tests/openai.rs. free.pl runs them one after the other, so the second
+  one merges main and finds the other's variants: B9986 adds OperationError::Anthropic, OperationError::Parameters,
+  Upstream::Anthropic, the two-variant AnthropicResult in OperationResult::Anthropic and Deployment.anthropic. Keep its
+  arms in chat_error and its embedding twin, add RejectedFields beside them, and set every field B9986 added in the
+  Deployment literals.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard
