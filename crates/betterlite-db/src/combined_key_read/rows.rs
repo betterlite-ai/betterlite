@@ -68,8 +68,11 @@ where
     // a writer read still fills the grace cache, but it never reads a value another request cached
     pub(super) async fn grace_lookup(&self, hash: &KeyHash, use_writer: bool) -> Option<String> {
         let now = self.services.clock.now();
-        if !use_writer && let Some(cached) = self.cached_grace(hash, now) {
-            return Some(cached);
+        if !use_writer {
+            let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(cached) = cache.lookup(hash, now) {
+                return Some(cached);
+            }
         }
         match self.database.deprecated_row(hash, now, use_writer).await {
             Ok(Some(deprecated)) => self.remember_grace(hash, &deprecated, now),
@@ -82,11 +85,6 @@ where
                 None
             }
         }
-    }
-
-    fn cached_grace(&self, hash: &KeyHash, now: DateTime<Utc>) -> Option<String> {
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        cache.lookup(hash, now)
     }
 
     fn remember_grace(

@@ -218,13 +218,15 @@ fn expires_isoformat(expires: Expiry) -> Expiry {
             Some(formatted) => Expiry::Text(formatted),
             None => Expiry::Text(text),
         },
-        Expiry::DateTime(value) => Expiry::Text(format_datetime(&value)),
+        Expiry::DateTime(value) => {
+            Expiry::Text(format_naive(value.naive_local(), Some(*value.offset())))
+        }
     }
 }
 
 fn parsed_isoformat(text: &str) -> Option<String> {
     if let Ok(value) = DateTime::parse_from_rfc3339(text) {
-        return Some(format_datetime(&value));
+        return Some(format_naive(value.naive_local(), Some(*value.offset())));
     }
     for pattern in ["%Y-%m-%dT%H:%M:%S%.f", "%Y-%m-%d %H:%M:%S%.f"] {
         if let Ok(value) = NaiveDateTime::parse_from_str(text, pattern) {
@@ -232,10 +234,6 @@ fn parsed_isoformat(text: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn format_datetime(value: &DateTime<FixedOffset>) -> String {
-    format_naive(value.naive_local(), Some(*value.offset()))
 }
 
 fn format_naive(value: NaiveDateTime, offset: Option<FixedOffset>) -> String {

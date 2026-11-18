@@ -1,18 +1,17 @@
-use std::fmt::Display;
-
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Pool;
 use tokio_postgres::Row;
+use tokio_postgres::types::ToSql;
 
 use crate::budget_permission_rows::JsonData;
 use crate::database_faults::{DbError, ErrorType};
 use crate::database_replica::client::{Attribute, DatabaseClient};
 use crate::database_replica::pinned::{WriterPinnedClient, writer_wrapper};
-use crate::database_replica::routing::{Route, RouteError};
+use crate::database_replica::routing::Route;
 use crate::key_hash::KeyHash;
 use crate::key_repository::TokenTableAccess;
 
-use super::grace::{DeprecatedRowError, DeprecatedToken};
+use super::grace::DeprecatedToken;
 use super::ports::{DeprecatedFuture, KeyReadDatabase, QUERY_FIRST_METHOD, RowFuture};
 use super::sql::{COMBINED_KEY_SQL, DEPRECATED_KEY_SQL};
 
@@ -33,7 +32,7 @@ where
         hash: &'lookup KeyHash,
         use_writer: bool,
     ) -> RowFuture<'lookup> {
-        Box::pin(async move { combined_row(&self.database, hash, use_writer).await })
+        Box::pin(async move { self.combined_row(hash, use_writer).await })
     }
 
     fn deprecated_row<'lookup>(
@@ -42,54 +41,85 @@ where
         now: DateTime<Utc>,
         use_writer: bool,
     ) -> DeprecatedFuture<'lookup> {
-        Box::pin(async move { deprecated_row(&self.database, hash, now, use_writer).await })
+        Box::pin(async move { self.deprecated_token(hash, now, use_writer).await })
     }
 }
 
-async fn combined_row<Client>(
-    database: &Option<WriterPinnedClient<'_, Client>>,
-    hash: &KeyHash,
-    use_writer: bool,
-) -> Result<Option<JsonData>, DbError>
+impl<Client> PostgresKeyDatabase<'_, Client>
 where
     Client: DatabaseClient,
     Client::Attribute: TokenTableAccess + Send + Sync,
 {
-    let route = route_for(database, use_writer, QUERY_FIRST_METHOD)?;
-    let client = connection(&route, QUERY_FIRST_METHOD).await?;
-    let row = client
-        .query_opt(COMBINED_KEY_SQL, &[hash])
-        .await
-        .map_err(query_fault)?;
-    row.map(|found| decode_row(&found)).transpose()
-}
-
-async fn deprecated_row<Client>(
-    database: &Option<WriterPinnedClient<'_, Client>>,
-    hash: &KeyHash,
-    now: DateTime<Utc>,
-    use_writer: bool,
-) -> Result<Option<DeprecatedToken>, DbError>
-where
-    Client: DatabaseClient,
-    Client::Attribute: TokenTableAccess + Send + Sync,
-{
-    let route = route_for(database, use_writer, DEPRECATED_TOKEN_TABLE)?;
-    let client = connection(&route, FIND_FIRST_METHOD).await?;
-    let naive_now = now.naive_utc();
-    let found = client
-        .query_opt(DEPRECATED_KEY_SQL, &[hash, &naive_now])
-        .await
-        .map_err(query_fault)?;
-    found
-        .map(|row| {
-            DeprecatedToken::from_columns(
-                row.try_get(0).map_err(record_fault)?,
-                row.try_get(1).map_err(record_fault)?,
+    async fn combined_row(
+        &self,
+        hash: &KeyHash,
+        use_writer: bool,
+    ) -> Result<Option<JsonData>, DbError> {
+        let found = self
+            .fetch_row(
+                use_writer,
+                QUERY_FIRST_METHOD,
+                QUERY_FIRST_METHOD,
+                COMBINED_KEY_SQL,
+                &[hash],
             )
-            .map_err(deprecated_fault)
-        })
-        .transpose()
+            .await?;
+        let Some(row) = found else {
+            return Ok(None);
+        };
+        let text: String = row
+            .try_get(0)
+            .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+        let fields = serde_json::from_str(&text)
+            .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+        Ok(Some(fields))
+    }
+
+    async fn deprecated_token(
+        &self,
+        hash: &KeyHash,
+        now: DateTime<Utc>,
+        use_writer: bool,
+    ) -> Result<Option<DeprecatedToken>, DbError> {
+        let naive_now = now.naive_utc();
+        let found = self
+            .fetch_row(
+                use_writer,
+                DEPRECATED_TOKEN_TABLE,
+                FIND_FIRST_METHOD,
+                DEPRECATED_KEY_SQL,
+                &[hash, &naive_now],
+            )
+            .await?;
+        found
+            .map(|row| {
+                let active_token_id = row
+                    .try_get(0)
+                    .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+                let revoke_at = row
+                    .try_get(1)
+                    .map_err(|source| fault(ErrorType::Data, source.to_string()))?;
+                DeprecatedToken::from_columns(active_token_id, revoke_at)
+                    .map_err(|source| fault(ErrorType::Data, source.to_string()))
+            })
+            .transpose()
+    }
+
+    async fn fetch_row(
+        &self,
+        use_writer: bool,
+        attribute: &str,
+        method: &str,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+    ) -> Result<Option<Row>, DbError> {
+        let route = route_for(&self.database, use_writer, attribute)?;
+        let client = connection(&route, method).await?;
+        client
+            .query_opt(sql, parameters)
+            .await
+            .map_err(|source| fault(ErrorType::RawQuery, source.to_string()))
+    }
 }
 
 fn route_for<'db, Client>(
@@ -106,7 +136,9 @@ where
     if use_writer {
         return direct_route(writer_wrapper(*pinned), attribute);
     }
-    pinned.attribute(attribute).map_err(route_fault)
+    pinned
+        .attribute(attribute)
+        .map_err(|source| fault(ErrorType::Other, source.to_string()))
 }
 
 // a writer-pinned read goes to the raw writer client, so it never consults the replica routing
@@ -117,7 +149,10 @@ fn direct_route<'db, Client>(
 where
     Client: DatabaseClient,
 {
-    match client.attribute(attribute).map_err(route_fault)? {
+    let attribute_result = client
+        .attribute(attribute)
+        .map_err(|source| fault(ErrorType::Other, source.to_string()))?;
+    match attribute_result {
         Some(Attribute::Direct(accessor) | Attribute::Model(accessor)) => {
             Ok(Route::Direct(accessor))
         }
@@ -142,30 +177,6 @@ where
             format!("database pool unavailable: {source}"),
         )
     })
-}
-
-fn decode_row(row: &Row) -> Result<JsonData, DbError> {
-    let text: String = row.try_get(0).map_err(record_fault)?;
-    serde_json::from_str(&text).map_err(|source| fault(ErrorType::Data, source.to_string()))
-}
-
-fn route_fault<Failure>(source: RouteError<Failure>) -> DbError
-where
-    Failure: Display,
-{
-    fault(ErrorType::Other, source.to_string())
-}
-
-fn deprecated_fault(source: DeprecatedRowError) -> DbError {
-    fault(ErrorType::Data, source.to_string())
-}
-
-fn query_fault(source: tokio_postgres::Error) -> DbError {
-    fault(ErrorType::RawQuery, source.to_string())
-}
-
-fn record_fault(source: tokio_postgres::Error) -> DbError {
-    fault(ErrorType::Data, source.to_string())
 }
 
 fn no_database() -> DbError {

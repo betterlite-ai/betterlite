@@ -66,7 +66,7 @@ where
                 .clock
                 .instant()
                 .saturating_duration_since(start);
-            let error = match self.measured_attempt(request).await {
+            let error = match measured_attempt(self, request).await {
                 Ok(view) => return Ok(view),
                 Err(error) => error,
             };
@@ -78,65 +78,6 @@ where
                 .diagnostics
                 .emit(Diagnostic::Backoff { tries });
             self.services.pause.pause(wait).await;
-        }
-    }
-
-    // log_db_metrics wraps each get_data call: it awaits a failure metric and schedules a success metric
-    async fn measured_attempt(
-        &self,
-        request: &CombinedKeyRequest<'_>,
-    ) -> Result<Option<CombinedKeyView>, KeyReadError> {
-        let parked: Mutex<Option<KeyReadError>> = Mutex::new(None);
-        let table = Json::Text(String::from(COMBINED_VIEW_TABLE));
-        let call = DbMetricCall {
-            function_name: READ_CALL_TYPE,
-            parent_otel_span: request.parent_otel_span.clone(),
-            table_name: Some(&table),
-            second_positional: None,
-        };
-        let operation = async {
-            match self.attempt(request).await {
-                Ok(view) => Ok(view),
-                Err(KeyReadError::Database(fault)) => Err(DbLookupError::Database(fault)),
-                Err(error) => {
-                    *parked.lock().unwrap_or_else(PoisonError::into_inner) = Some(error);
-                    Err(parked_lookup_error())
-                }
-            }
-        };
-        let metric_clock = MetricWallClock(self.services.clock);
-        let context = DbMetricContext {
-            sink: Arc::clone(&self.sink),
-            resolver: self.services.resolver,
-            clock: &metric_clock,
-            tasks: self.services.tasks,
-        };
-        let outcome = log_db_metrics(operation, &call, context).await;
-        match outcome {
-            Ok(view) => Ok(view),
-            Err(DbMetricError::Lookup(DbLookupError::Database(fault))) => {
-                Err(KeyReadError::Database(fault))
-            }
-            Err(DbMetricError::Lookup(_non_database)) => Err(take_parked(parked)),
-            Err(DbMetricError::Metric(failure)) => Err(KeyReadError::Metrics {
-                message: failure.to_string(),
-            }),
-        }
-    }
-
-    // the get_data body plus its error boundary: a failed attempt reports before the metric and backoff run
-    async fn attempt(
-        &self,
-        request: &CombinedKeyRequest<'_>,
-    ) -> Result<Option<CombinedKeyView>, KeyReadError> {
-        let started = self.services.clock.instant();
-        let outcome = self.lookup(request).await;
-        match outcome {
-            Ok(view) => Ok(view),
-            Err(error) => {
-                self.report_failure(&error, started);
-                Err(error)
-            }
         }
     }
 
@@ -156,39 +97,86 @@ where
             return Ok(None);
         }
         let row = self.read_row(&hash, request.use_writer).await?;
-        if row.is_none()
-            && request.check_deprecated
-            && let Some(active_token_id) = self.grace_lookup(&hash, request.use_writer).await
-        {
-            return self.grace_read(request, &active_token_id).await;
-        }
         match row {
-            Some(fields) => {
-                let refreshed = epoch_decimal(self.services.clock.now());
-                let view = CombinedKeyView::construct(fields, refreshed)?;
-                Ok(Some(view))
+            Some(fields) => Ok(Some(CombinedKeyView::construct(
+                fields,
+                epoch_decimal(self.services.clock.now()),
+            ))),
+            None if request.check_deprecated => {
+                self.deprecated_view(request, &hash, request.use_writer)
+                    .await
             }
             None => Ok(None),
         }
     }
 
-    // the deprecated key recurses once with check_deprecated off, so a grace lookup can never chain
-    async fn grace_read(
+    // the grace row only matters when the combined view missed, and its recursive read never checks again
+    async fn deprecated_view(
         &self,
         request: &CombinedKeyRequest<'_>,
-        active_token_id: &str,
+        hash: &KeyHash,
+        use_writer: bool,
     ) -> Result<Option<CombinedKeyView>, KeyReadError> {
-        let recursive = CombinedKeyRequest {
-            token: Some(active_token_id),
-            query_type: KeyQueryType::FindUnique,
-            check_deprecated: false,
-            use_writer: request.use_writer,
-            parent_otel_span: request.parent_otel_span.clone(),
+        let Some(active_token_id) = self.grace_lookup(hash, use_writer).await else {
+            return Ok(None);
         };
-        let found = Box::pin(self.read(&recursive)).await?;
+        let found = Box::pin(self.read(&request.deprecated_hop(&active_token_id))).await?;
         if found.is_some() {
             self.services.diagnostics.emit(Diagnostic::DeprecatedUsed);
         }
         Ok(found)
+    }
+}
+
+// log_db_metrics wraps each get_data call: it awaits a failure metric and schedules a success metric
+async fn measured_attempt<Database, Reconnect, Sink>(
+    reader: &KeyReader<'_, Database, Reconnect, Sink>,
+    request: &CombinedKeyRequest<'_>,
+) -> Result<Option<CombinedKeyView>, KeyReadError>
+where
+    Database: KeyReadDatabase,
+    Reconnect: PlanReconnect,
+    Sink: DbServiceEventSink + 'static,
+{
+    let parked: Mutex<Option<KeyReadError>> = Mutex::new(None);
+    let table = Json::Text(String::from(COMBINED_VIEW_TABLE));
+    let call = DbMetricCall {
+        function_name: READ_CALL_TYPE,
+        parent_otel_span: request.parent_otel_span.clone(),
+        table_name: Some(&table),
+        second_positional: None,
+    };
+    let operation = async {
+        let started = reader.services.clock.instant();
+        let error = match reader.lookup(request).await {
+            Ok(view) => return Ok(view),
+            Err(error) => error,
+        };
+        reader.report_failure(&error, started);
+        match error {
+            KeyReadError::Database(fault) => Err(DbLookupError::Database(fault)),
+            other => {
+                *parked.lock().unwrap_or_else(PoisonError::into_inner) = Some(other);
+                Err(parked_lookup_error())
+            }
+        }
+    };
+    let metric_clock = MetricWallClock(reader.services.clock);
+    let context = DbMetricContext {
+        sink: Arc::clone(&reader.sink),
+        resolver: reader.services.resolver,
+        clock: &metric_clock,
+        tasks: reader.services.tasks,
+    };
+    let outcome = log_db_metrics(operation, &call, context).await;
+    match outcome {
+        Ok(view) => Ok(view),
+        Err(DbMetricError::Lookup(DbLookupError::Database(fault))) => {
+            Err(KeyReadError::Database(fault))
+        }
+        Err(DbMetricError::Lookup(_non_database)) => Err(take_parked(parked)),
+        Err(DbMetricError::Metric(failure)) => Err(KeyReadError::Metrics {
+            message: failure.to_string(),
+        }),
     }
 }
