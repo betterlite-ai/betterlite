@@ -103,3 +103,19 @@ fn stale_removal_removes_a_wildcard_when_only_an_exact_route_is_live() {
     assert_eq!(route_count(&routes, "/custom"), 1);
     assert_eq!(route_count(&routes, "/custom/*"), 0);
 }
+
+#[test]
+fn stale_removal_removes_a_wildcard_when_the_subpath_route_is_dropped() {
+    let routes = shared();
+    let with_subpath = parse_endpoint(
+        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"include_subpath":true,"methods":["GET"]}"#,
+    );
+    let without_subpath = parse_endpoint(
+        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"methods":["GET"]}"#,
+    );
+    register_with(&routes, &[with_subpath], None, &[]);
+    register_with(&routes, &[without_subpath], None, &[]);
+    assert_eq!(registry_keys(&routes), ["e1:exact:/custom:GET".to_owned()]);
+    assert_eq!(route_count(&routes, "/custom"), 1);
+    assert_eq!(route_count(&routes, "/custom/*"), 0);
+}
