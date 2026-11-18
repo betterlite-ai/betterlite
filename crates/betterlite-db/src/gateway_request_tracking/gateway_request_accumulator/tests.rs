@@ -1,6 +1,8 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::Mutex;
 
 use chrono::DateTime;
 use chrono::TimeZone as _;
@@ -28,7 +30,10 @@ fn accumulator_at(year: i32, month: u32, day: u32) -> GatewayRequestAccumulator 
             .single()
             .expect("a valid UTC instant"),
     );
-    GatewayRequestAccumulator::with_clock(Arc::new(clock))
+    GatewayRequestAccumulator {
+        counts: Mutex::new(BTreeMap::new()),
+        clock: Arc::new(clock),
+    }
 }
 
 fn key(date: &str, category: &str, route: &str) -> GatewayRequestKey {
@@ -86,7 +91,7 @@ fn record_keys_by_the_utc_date_of_the_clock() {
 
 #[test]
 fn the_default_accumulator_keys_by_the_current_utc_date() {
-    let accumulator = GatewayRequestAccumulator::new();
+    let accumulator = GatewayRequestAccumulator::default();
     let before = Utc::now().format(GATEWAY_REQUEST_DATE_FORMAT).to_string();
     accumulator.record("api", "/v1/chat/completions", 200);
     let after = Utc::now().format(GATEWAY_REQUEST_DATE_FORMAT).to_string();

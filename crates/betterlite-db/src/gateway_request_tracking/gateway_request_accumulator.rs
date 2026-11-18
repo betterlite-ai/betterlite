@@ -6,7 +6,6 @@ use std::sync::PoisonError;
 
 use crate::gateway_requests::GatewayRequestKey;
 use crate::gateway_requests::GatewayRequestSnapshot;
-use crate::gateway_requests::gateway_request_counts::GatewayRequestCounts;
 
 use super::GATEWAY_REQUEST_DATE_FORMAT;
 use super::GatewayRequestClock;
@@ -16,27 +15,11 @@ use super::fold_gateway_counts::fold_counts;
 mod tests;
 
 pub struct GatewayRequestAccumulator {
-    counts: Mutex<GatewayRequestSnapshot>,
-    clock: Arc<dyn GatewayRequestClock>,
+    pub counts: Mutex<GatewayRequestSnapshot>,
+    pub clock: Arc<dyn GatewayRequestClock>,
 }
 
 impl GatewayRequestAccumulator {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            counts: Mutex::new(BTreeMap::new()),
-            clock: Arc::new(SystemClock),
-        }
-    }
-
-    #[must_use]
-    pub fn with_clock(clock: Arc<dyn GatewayRequestClock>) -> Self {
-        Self {
-            counts: Mutex::new(BTreeMap::new()),
-            clock,
-        }
-    }
-
     pub fn record(&self, category: &str, route: &str, status_code: u16) {
         let date = self
             .clock
@@ -73,6 +56,9 @@ impl GatewayRequestAccumulator {
 
 impl Default for GatewayRequestAccumulator {
     fn default() -> Self {
-        Self::new()
+        Self {
+            counts: Mutex::new(BTreeMap::new()),
+            clock: Arc::new(SystemClock),
+        }
     }
 }

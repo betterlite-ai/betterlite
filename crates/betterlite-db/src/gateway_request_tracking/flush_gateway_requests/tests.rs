@@ -14,7 +14,7 @@ use crate::gateway_request_tracking::test_support::snapshot;
 use crate::gateway_requests::GatewayRequestSnapshot;
 
 fn accumulator_with(initial: &GatewayRequestSnapshot) -> GatewayRequestAccumulator {
-    let accumulator = GatewayRequestAccumulator::new();
+    let accumulator = GatewayRequestAccumulator::default();
     accumulator.restore(initial);
     accumulator
 }
@@ -141,7 +141,7 @@ async fn the_flush_never_raises_when_the_leader_drain_fails() {
 #[tokio::test]
 async fn an_empty_accumulator_flushes_nothing() {
     let database = FakeDatabase::default();
-    let accumulator = GatewayRequestAccumulator::new();
+    let accumulator = GatewayRequestAccumulator::default();
     flush_gateway_requests(&database, &accumulator, None).await;
     assert_eq!(database.calls(), 0);
 }
@@ -155,7 +155,7 @@ async fn an_empty_accumulator_pushes_nothing() {
         MAX_REDIS_BUFFER_DEQUEUE_COUNT,
     );
     let database = FakeDatabase::default();
-    let accumulator = GatewayRequestAccumulator::new();
+    let accumulator = GatewayRequestAccumulator::default();
     flush_gateway_requests(&database, &accumulator, Some(&buffer)).await;
     assert!(list.pushed().is_empty());
     assert_eq!(database.calls(), 0);
