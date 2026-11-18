@@ -122,6 +122,7 @@ impl From<SpendRowLookup<'_>> for LookupRecord {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct FakeRows {
     pub(crate) row: Mutex<Option<SpendRow>>,
     pub(crate) window: Mutex<Option<WindowSpendRow>>,
@@ -136,23 +137,8 @@ pub(crate) struct FakeRows {
 }
 
 impl FakeRows {
-    pub(crate) fn empty() -> Self {
-        Self {
-            row: Mutex::new(None),
-            window: Mutex::new(None),
-            logs: Mutex::new(Vec::new()),
-            lookups: Mutex::new(Vec::new()),
-            window_lookups: Mutex::new(Vec::new()),
-            log_lookups: Mutex::new(Vec::new()),
-            rows_fail: AtomicBool::new(false),
-            window_fails: AtomicBool::new(false),
-            logs_fail: AtomicBool::new(false),
-            delay: Duration::ZERO,
-        }
-    }
-
     pub(crate) fn with_row(row: SpendRow) -> Self {
-        let rows = Self::empty();
+        let rows = Self::default();
         *rows.row.lock().expect("the fake row lock") = Some(row);
         rows
     }
@@ -214,15 +200,16 @@ impl SpendCounterRows for FakeRows {
         entity_id: &str,
         window_start: DateTime<Utc>,
     ) -> Result<Vec<SpendAggregateRow>, FakeError> {
-        self.log_lookups.lock().expect("the fake log lock").push((
-            entity,
-            entity_id.to_owned(),
-            window_start,
-        ));
+        let record = (entity, entity_id.to_owned(), window_start);
+        self.log_lookups
+            .lock()
+            .expect("the fake log lock")
+            .push(record);
         if self.logs_fail.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
-        Ok(self.logs.lock().expect("the fake logs lock").clone())
+        let logs = self.logs.lock().expect("the fake logs lock").clone();
+        Ok(logs)
     }
 }
 
@@ -356,19 +343,17 @@ impl ReseedCache for FakeCache {
 
     async fn redis_get(&self, _counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
         self.redis_gets.fetch_add(1, Ordering::Relaxed);
-        let scripted = self
+        match self
             .redis_answers
             .lock()
             .expect("the fake answer lock")
-            .pop_front();
-        if let Some(answer) = scripted {
-            return match answer {
-                RedisAnswer::Hit(value) => Ok(Some(value)),
-                RedisAnswer::Miss => Ok(None),
-                RedisAnswer::Fail => Err(FakeError),
-            };
+            .pop_front()
+        {
+            Some(RedisAnswer::Hit(value)) => Ok(Some(value)),
+            Some(RedisAnswer::Miss) => Ok(None),
+            Some(RedisAnswer::Fail) => Err(FakeError),
+            None => Ok(self.redis_value()),
         }
-        Ok(self.redis_value())
     }
 
     async fn redis_set_nx(
@@ -393,33 +378,31 @@ impl ReseedCache for FakeCache {
     }
 
     async fn memory_get(&self, counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
-        self.memory_gets.fetch_add(1, Ordering::Relaxed);
         if self.memory_get_fails.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
+        self.memory_gets.fetch_add(1, Ordering::Relaxed);
         let scripted = self
             .memory_answers
             .lock()
             .expect("the fake answer lock")
             .pop_front();
-        match scripted {
-            Some(answer) => Ok(answer),
-            None => Ok(self.memory_text(counter_key)),
-        }
+        Ok(scripted.unwrap_or_else(|| self.memory_text(counter_key)))
     }
 
     async fn memory_set(&self, counter_key: &str, value: Decimal) -> Result<(), FakeError> {
         if self.memory_set_fails.load(Ordering::Relaxed) {
             return Err(FakeError);
         }
+        let stored = ReseedCacheValue::Number(value);
+        self.memory
+            .lock()
+            .expect("the fake memory lock")
+            .insert(counter_key.to_owned(), stored);
         self.memory_sets
             .lock()
             .expect("the fake memory set lock")
             .push((counter_key.to_owned(), value));
-        self.memory
-            .lock()
-            .expect("the fake memory lock")
-            .insert(counter_key.to_owned(), ReseedCacheValue::Number(value));
         Ok(())
     }
 

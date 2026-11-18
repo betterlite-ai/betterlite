@@ -7,11 +7,12 @@ use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_context::local_ttl_cache::credential::{Credential, CredentialHandle};
 use betterlite_redis::cache_primitives::decode::CachedValue;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::decimal;
 use crate::spend_reseed::cache::ReseedCache as _;
-use crate::spend_reseed::cache::dual::{memory_value, redis_value};
+use crate::spend_reseed::cache::dual::{StoredValue, stored_value};
 use crate::spend_reseed::values::ReseedCacheValue;
 
 fn settings() -> DualCacheSettings {
@@ -81,82 +82,67 @@ async fn configured_redis_tier_reports_itself_and_refuses_reads() {
     );
 }
 
+#[rstest]
+#[case::boolean(CacheValue::Boolean(true), Some(ReseedCacheValue::Boolean(true)))]
+#[case::integer(CacheValue::Integer(7), Some(ReseedCacheValue::Number(decimal("7"))))]
+#[case::float(CacheValue::Float(2.5), Some(ReseedCacheValue::Number(decimal("2.5"))))]
+#[case::text(
+    CacheValue::Text("abc".to_owned()),
+    Some(ReseedCacheValue::Text("abc".to_owned()))
+)]
+#[case::number_text(
+    CacheValue::Text("1.5".to_owned()),
+    Some(ReseedCacheValue::Number(decimal("1.5")))
+)]
+#[case::null(CacheValue::Null, None)]
+#[case::array(
+    CacheValue::Array(vec![CacheValue::Integer(1)]),
+    Some(ReseedCacheValue::Unreadable)
+)]
+#[case::object(
+    CacheValue::Object(BTreeMap::new()),
+    Some(ReseedCacheValue::Unreadable)
+)]
+#[case::bytes(
+    CacheValue::Bytes(vec![1, 2]),
+    Some(ReseedCacheValue::Unreadable)
+)]
 #[tokio::test]
-async fn memory_values_map_to_cache_amounts() {
+async fn memory_values_map_to_cache_amounts(
+    #[case] value: CacheValue,
+    #[case] expected: Option<ReseedCacheValue>,
+) {
     let (memory, cache) = local_cache();
-    let cases = [
-        (
-            "boolean",
-            CacheValue::Boolean(true),
-            Some(ReseedCacheValue::Boolean(true)),
-        ),
-        (
-            "integer",
-            CacheValue::Integer(7),
-            Some(ReseedCacheValue::Number(decimal("7"))),
-        ),
-        (
-            "float",
-            CacheValue::Float(2.5),
-            Some(ReseedCacheValue::Number(decimal("2.5"))),
-        ),
-        (
-            "text",
-            CacheValue::Text("abc".to_owned()),
-            Some(ReseedCacheValue::Text("abc".to_owned())),
-        ),
-        (
-            "json text",
-            CacheValue::Text("1.5".to_owned()),
-            Some(ReseedCacheValue::Number(decimal("1.5"))),
-        ),
-        ("null", CacheValue::Null, None),
-        (
-            "array",
-            CacheValue::Array(vec![CacheValue::Integer(1)]),
-            Some(ReseedCacheValue::Unreadable),
-        ),
-        (
-            "object",
-            CacheValue::Object(BTreeMap::new()),
-            Some(ReseedCacheValue::Unreadable),
-        ),
-        (
-            "bytes",
-            CacheValue::Bytes(vec![1, 2]),
-            Some(ReseedCacheValue::Unreadable),
-        ),
-    ];
-    for (key, value, expected) in cases {
-        memory.set_cache(key, value, None).expect("the raw value");
-        let mapped = cache.memory_get(key).await.expect("the read");
-        assert_eq!(mapped, expected);
-    }
+    memory
+        .set_cache("spend:key:t", value, None)
+        .expect("the raw value");
+    let mapped = cache.memory_get("spend:key:t").await.expect("the read");
+    assert_eq!(mapped, expected);
 }
 
 #[test]
 fn redis_values_map_to_cache_amounts() {
-    assert_eq!(redis_value(CachedValue::Null), None);
+    assert_eq!(stored_value(StoredValue::Redis(CachedValue::Null)), None);
     assert_eq!(
-        redis_value(CachedValue::Boolean(true)),
+        stored_value(StoredValue::Redis(CachedValue::Boolean(true))),
         Some(ReseedCacheValue::Boolean(true))
     );
     assert_eq!(
-        redis_value(CachedValue::Number(
+        stored_value(StoredValue::Redis(CachedValue::Number(
             serde_json::Number::from_f64(2.5).expect("a finite number")
-        )),
+        ))),
         Some(ReseedCacheValue::Number(decimal("2.5")))
     );
     assert_eq!(
-        redis_value(CachedValue::Text("2.5".to_owned())),
+        stored_value(StoredValue::Redis(CachedValue::Text("2.5".to_owned()))),
         Some(ReseedCacheValue::Text("2.5".to_owned()))
     );
     assert_eq!(
-        redis_value(CachedValue::Array(Vec::new())),
+        stored_value(StoredValue::Redis(CachedValue::Array(Vec::new()))),
         Some(ReseedCacheValue::Unreadable)
     );
     assert_eq!(
-        redis_value(CachedValue::Object(BTreeMap::new())),
+        stored_value(StoredValue::Redis(CachedValue::Object(BTreeMap::new()))),
         Some(ReseedCacheValue::Unreadable)
     );
     let credential = CredentialHandle(Arc::new(Credential {
@@ -164,7 +150,7 @@ fn redis_values_map_to_cache_amounts() {
         headers: BTreeMap::new(),
     }));
     assert_eq!(
-        memory_value(CacheValue::Credential(credential)),
+        stored_value(StoredValue::Memory(CacheValue::Credential(credential))),
         Some(ReseedCacheValue::Unreadable)
     );
 }

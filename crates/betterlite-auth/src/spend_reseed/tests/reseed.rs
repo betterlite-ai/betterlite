@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::support::{
@@ -13,44 +14,45 @@ use crate::spend_reseed::reseed::CoalescedError;
 use crate::spend_reseed::rows::SpendRow;
 use crate::spend_reseed::values::{ReseedCacheValue, SpendValueError};
 
+#[rstest]
+#[case::key("spend:key:token", Some(LookupRecord::Key("token".to_owned())))]
+#[case::empty_key("spend:key:", Some(LookupRecord::Key(String::new())))]
+#[case::team_member(
+    "spend:team_member:user:team",
+    Some(LookupRecord::TeamMember {
+        user_id: "user".to_owned(),
+        team_id: "team".to_owned(),
+    })
+)]
+#[case::team("spend:team:t1", Some(LookupRecord::Team("t1".to_owned())))]
+#[case::empty_team("spend:team:", Some(LookupRecord::Team(String::new())))]
+#[case::user("spend:user:u1", Some(LookupRecord::User("u1".to_owned())))]
+#[case::empty_user("spend:user:", Some(LookupRecord::User(String::new())))]
+#[case::org("spend:org:o1", Some(LookupRecord::Organization("o1".to_owned())))]
+#[case::empty_org("spend:org:", Some(LookupRecord::Organization(String::new())))]
+#[case::project("spend:project:p1", Some(LookupRecord::Project("p1".to_owned())))]
+#[case::empty_project("spend:project:", Some(LookupRecord::Project(String::new())))]
+#[case::other_prefix("other:key:t", None)]
+#[case::tag("spend:tag:t", None)]
+#[case::model_access_group("spend:model_access_group:g", None)]
+#[case::end_user("spend:end_user:e", None)]
 #[tokio::test]
-async fn all_primary_prefixes_and_empty_ids() {
+async fn all_primary_prefixes_and_empty_ids(
+    #[case] counter_key: &str,
+    #[case] expected: Option<LookupRecord>,
+) {
     let rows = Arc::new(FakeRows::with_row(spend_row("2.5")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
-    let cases = [
-        ("spend:key:token", LookupRecord::Key("token".to_owned())),
-        ("spend:key:", LookupRecord::Key(String::new())),
-        (
-            "spend:team_member:user:team",
-            LookupRecord::TeamMember {
-                user_id: "user".to_owned(),
-                team_id: "team".to_owned(),
-            },
-        ),
-        ("spend:team:t1", LookupRecord::Team("t1".to_owned())),
-        ("spend:team:", LookupRecord::Team(String::new())),
-        ("spend:user:u1", LookupRecord::User("u1".to_owned())),
-        ("spend:user:", LookupRecord::User(String::new())),
-        ("spend:org:o1", LookupRecord::Organization("o1".to_owned())),
-        ("spend:org:", LookupRecord::Organization(String::new())),
-        ("spend:project:p1", LookupRecord::Project("p1".to_owned())),
-        ("spend:project:", LookupRecord::Project(String::new())),
-    ];
-    for (counter_key, expected) in cases {
-        assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("2.5"))));
-        assert_eq!(rows.lookups().last(), Some(&expected));
+    match expected {
+        Some(lookup) => {
+            assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("2.5"))));
+            assert_eq!(rows.lookups(), vec![lookup]);
+        }
+        None => {
+            assert_eq!(counter.from_db(counter_key).await, Ok(None));
+            assert!(rows.lookups().is_empty());
+        }
     }
-    assert_eq!(rows.lookups().len(), 11);
-    let unmatched = [
-        "other:key:t",
-        "spend:tag:t",
-        "spend:model_access_group:g",
-        "spend:end_user:e",
-    ];
-    for counter_key in unmatched {
-        assert_eq!(counter.from_db(counter_key).await, Ok(None));
-    }
-    assert_eq!(rows.lookups().len(), 11);
 }
 
 #[tokio::test]
@@ -82,35 +84,34 @@ async fn member_last_colon_split() {
     );
 }
 
+#[rstest]
+#[case::key_window("spend:key:token:window:1h", true)]
+#[case::team_window("spend:team:t1:window:1d", true)]
+#[case::last_window_wins("spend:key:token:window:1h:window:1d", true)]
+// rpartition scans the whole key, so a suffix at the prefix boundary still counts
+#[case::key_at_boundary("spend:key:window:1h", true)]
+#[case::team_at_boundary("spend:team:window:1d", true)]
+#[case::unknown_duration("spend:key:token:window:soon", false)]
+#[case::empty_duration("spend:key:token:window:", false)]
+#[case::no_window("spend:key:token", false)]
+#[case::bad_duration("spend:team:t1:window:1g", false)]
+#[case::user_window("spend:user:u1:window:1h", false)]
+#[case::member_window("spend:team_member:u:t:window:1h", false)]
+#[case::trailing_unknown("spend:key:token:window:1h:window:soon", false)]
 #[tokio::test]
-async fn valid_window_only_suppresses_key_team() {
+async fn valid_window_only_suppresses_key_team(
+    #[case] counter_key: &str,
+    #[case] suppressed: bool,
+) {
     let rows = Arc::new(FakeRows::with_row(spend_row("3")));
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
-    let suppressed = [
-        "spend:key:token:window:1h",
-        "spend:team:t1:window:1d",
-        "spend:key:token:window:1h:window:1d",
-        // rpartition scans the whole key, so a suffix at the prefix boundary still counts
-        "spend:key:window:1h",
-        "spend:team:window:1d",
-    ];
-    for counter_key in suppressed {
+    if suppressed {
         assert_eq!(counter.from_db(counter_key).await, Ok(None));
-    }
-    assert!(rows.lookups().is_empty());
-    let looked_up = [
-        "spend:key:token:window:soon",
-        "spend:key:token:window:",
-        "spend:key:token",
-        "spend:team:t1:window:1g",
-        "spend:user:u1:window:1h",
-        "spend:team_member:u:t:window:1h",
-        "spend:key:token:window:1h:window:soon",
-    ];
-    for counter_key in looked_up {
+        assert!(rows.lookups().is_empty());
+    } else {
         assert_eq!(counter.from_db(counter_key).await, Ok(Some(decimal("3"))));
+        assert_eq!(rows.lookups().len(), 1);
     }
-    assert_eq!(rows.lookups().len(), 7);
 }
 
 #[tokio::test]
@@ -133,39 +134,43 @@ async fn primary_query_bound_gate_error_log_and_none() {
     );
     assert!(logs.contains("the counter row read failed"));
 
-    let empty_rows = Arc::new(FakeRows::empty());
+    let empty_rows = Arc::new(FakeRows::default());
     let empty = reseed_with(Some(Arc::clone(&empty_rows)), services(25), 5.0);
     assert_eq!(empty.from_db("spend:key:token").await, Ok(None));
     assert_eq!(empty_rows.lookups().len(), 1);
 }
 
+#[rstest]
+#[case::non_numeric_text(
+    "\"abc\"",
+    Err(SpendValueError::OutOfRange {
+        text: "abc".to_owned(),
+    })
+)]
+#[case::list("[1]", Err(SpendValueError::NotNumeric { kind: "a list" }))]
+#[case::object(
+    "{\"x\": 1}",
+    Err(SpendValueError::NotNumeric { kind: "an object" })
+)]
+#[case::zero("0", Ok(Decimal::ZERO))]
+#[case::null("null", Ok(Decimal::ZERO))]
+#[case::false_value("false", Ok(Decimal::ZERO))]
+#[case::empty_text("\"\"", Ok(Decimal::ZERO))]
+#[case::empty_list("[]", Ok(Decimal::ZERO))]
+#[case::empty_object("{}", Ok(Decimal::ZERO))]
+#[case::padded_text("\" 2.5 \"", Ok(decimal("2.5")))]
+#[case::exponent_text("\"1e2\"", Ok(decimal("100")))]
 #[tokio::test]
-async fn conversion_after_query_catch() {
-    let cases = [
-        (
-            "\"abc\"",
-            Err(SpendValueError::OutOfRange {
-                text: "abc".to_owned(),
-            }),
-        ),
-        ("[1]", Err(SpendValueError::NotNumeric { kind: "a list" })),
-        (
-            "{\"x\": 1}",
-            Err(SpendValueError::NotNumeric { kind: "an object" }),
-        ),
-        ("0", Ok(Decimal::ZERO)),
-        ("null", Ok(Decimal::ZERO)),
-        ("false", Ok(Decimal::ZERO)),
-        ("\"\"", Ok(Decimal::ZERO)),
-        ("[]", Ok(Decimal::ZERO)),
-        ("{}", Ok(Decimal::ZERO)),
-        ("\" 2.5 \"", Ok(decimal("2.5"))),
-        ("\"1e2\"", Ok(decimal("100"))),
-    ];
-    for (spend, expected) in cases {
-        let counter = reseed(FakeRows::with_row(spend_row(spend)));
-        assert_eq!(counter.from_db("spend:key:token").await, expected);
-    }
+async fn conversion_after_query_catch(
+    #[case] spend: &str,
+    #[case] expected: Result<Decimal, SpendValueError>,
+) {
+    let counter = reseed(FakeRows::with_row(spend_row(spend)));
+    assert_eq!(counter.from_db("spend:key:token").await, expected);
+}
+
+#[tokio::test]
+async fn absent_stored_spend_reads_zero() {
     let absent_field = reseed(FakeRows::with_row(SpendRow { spend: None }));
     assert_eq!(
         absent_field.from_db("spend:key:token").await,
@@ -267,24 +272,25 @@ async fn batch_read_error_propagates() {
     assert!(rows.lookups().is_empty());
 }
 
+#[rstest]
+#[case::number(ReseedCacheValue::Number(decimal("3")), decimal("3"))]
+#[case::padded_text(ReseedCacheValue::Text(" 2.5 ".to_owned()), decimal("2.5"))]
+#[case::boolean(ReseedCacheValue::Boolean(true), decimal("1"))]
 #[tokio::test]
-async fn redis_hit_miss_error_local_fallback() {
-    for (hit, expected) in [
-        (ReseedCacheValue::Number(decimal("3")), decimal("3")),
-        (ReseedCacheValue::Text(" 2.5 ".to_owned()), decimal("2.5")),
-        (ReseedCacheValue::Boolean(true), decimal("1")),
-    ] {
-        let hit_rows = Arc::new(FakeRows::with_row(spend_row("9")));
-        let hit_counter = reseed_with(Some(Arc::clone(&hit_rows)), services(25), 5.0);
-        let hit_cache = FakeCache::new(true).with_redis(hit);
-        let hit_batch = FakeBatch::new(None);
-        let outcome = hit_counter
-            .coalesced(&hit_cache, &hit_batch, "spend:key:t", false)
-            .await;
-        assert_eq!(answered(outcome), Some(expected));
-        assert_eq!(hit_cache.memory_gets.load(Ordering::Relaxed), 0);
-        assert!(hit_rows.lookups().is_empty());
-    }
+async fn redis_hit_miss_error_local_fallback(
+    #[case] hit: ReseedCacheValue,
+    #[case] expected: Decimal,
+) {
+    let hit_rows = Arc::new(FakeRows::with_row(spend_row("9")));
+    let hit_counter = reseed_with(Some(Arc::clone(&hit_rows)), services(25), 5.0);
+    let hit_cache = FakeCache::new(true).with_redis(hit);
+    let hit_batch = FakeBatch::new(None);
+    let outcome = hit_counter
+        .coalesced(&hit_cache, &hit_batch, "spend:key:t", false)
+        .await;
+    assert_eq!(answered(outcome), Some(expected));
+    assert_eq!(hit_cache.memory_gets.load(Ordering::Relaxed), 0);
+    assert!(hit_rows.lookups().is_empty());
 
     let error_rows = Arc::new(FakeRows::with_row(spend_row("9")));
     let error_counter = reseed_with(Some(Arc::clone(&error_rows)), services(25), 5.0);
@@ -345,7 +351,7 @@ async fn unreadable_redis_falls_back_and_memory_conversion_propagates() {
 
 #[tokio::test]
 async fn local_increment_same_lock() {
-    let rows = Arc::new(FakeRows::empty());
+    let rows = Arc::new(FakeRows::default());
     let counter = reseed_with(Some(Arc::clone(&rows)), services(25), 5.0);
     let mut cache = FakeCache::new(false);
     cache.increment_delay = Duration::from_millis(20);

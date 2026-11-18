@@ -1,9 +1,14 @@
 use std::sync::Arc;
 
+use rstest::rstest;
+
 use crate::spend_reseed::locks::LockRegistry;
 
+#[rstest]
+#[case::zero(0_i64)]
+#[case::negative(-3)]
 #[tokio::test]
-async fn lru_hit_overflow_zero_negative_and_held_eviction() {
+async fn lru_hit_overflow_zero_negative_and_held_eviction(#[case] bound: i64) {
     let registry = LockRegistry::from(2);
     let first = registry.lock_for("a");
     let second = registry.lock_for("b");
@@ -29,10 +34,8 @@ async fn lru_hit_overflow_zero_negative_and_held_eviction() {
     drop(guard);
 
     // a zero or negative bound strips every entry it inserts, so callers stop sharing a lock
-    for bound in [0_i64, -3] {
-        let registry = LockRegistry::from(bound);
-        let first = registry.lock_for("z");
-        let second = registry.lock_for("z");
-        assert!(!Arc::ptr_eq(&first, &second));
-    }
+    let registry = LockRegistry::from(bound);
+    let first = registry.lock_for("z");
+    let second = registry.lock_for("z");
+    assert!(!Arc::ptr_eq(&first, &second));
 }

@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use rstest::rstest;
+
 use crate::loader::{ConfigError, ConfigLoader};
 
 const LOCKS: &str = "SPEND_COUNTER_RESEED_LOCKS_MAX_SIZE";
@@ -24,13 +26,17 @@ fn reseed_lock_default10000() {
     assert_eq!(locks("10000").unwrap(), 10_000);
 }
 
+#[rstest]
+#[case::text("soon")]
+#[case::decimal("2.5")]
+#[case::empty("")]
+#[case::spaces("  ")]
+#[case::separated("10 000")]
 #[test]
-fn invalid_integer_stops_startup() {
-    for value in ["soon", "2.5", "", "  ", "10 000"] {
-        match locks(value) {
-            Err(ConfigError::InvalidInteger { path, .. }) => assert_eq!(path, LOCKS, "{value:?}"),
-            other => panic!("{value:?} must stop startup: {other:?}"),
-        }
+fn invalid_integer_stops_startup(#[case] value: &str) {
+    match locks(value) {
+        Err(ConfigError::InvalidInteger { path, .. }) => assert_eq!(path, LOCKS, "{value:?}"),
+        other => panic!("{value:?} must stop startup: {other:?}"),
     }
 }
 

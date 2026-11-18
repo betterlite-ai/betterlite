@@ -4,6 +4,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::NaiveDateTime;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
@@ -139,26 +140,17 @@ async fn insert_log(pool: &Pool, api_key: &str, team_id: &str, spend: f64, momen
 }
 
 async fn seed_primary_rows(pool: &Pool) {
-    insert_spend(
-        pool,
-        "LiteLLM_VerificationToken",
-        "token",
-        "hashed-key",
-        2.5,
-    )
-    .await;
-    insert_spend(pool, "LiteLLM_TeamTable", "team_id", "t1", 3.25).await;
-    insert_spend(pool, "LiteLLM_UserTable", "user_id", "u1", 4.5).await;
-    insert_spend(
-        pool,
-        "LiteLLM_OrganizationTable",
-        "organization_id",
-        "org1",
-        5.25,
-    )
-    .await;
-    insert_spend(pool, "LiteLLM_ProjectTable", "project_id", "proj1", 6.75).await;
-    insert_spend(pool, "LiteLLM_EndUserTable", "user_id", "eu1", 7.25).await;
+    let rows = [
+        ("LiteLLM_VerificationToken", "token", "hashed-key", 2.5),
+        ("LiteLLM_TeamTable", "team_id", "t1", 3.25),
+        ("LiteLLM_UserTable", "user_id", "u1", 4.5),
+        ("LiteLLM_OrganizationTable", "organization_id", "org1", 5.25),
+        ("LiteLLM_ProjectTable", "project_id", "proj1", 6.75),
+        ("LiteLLM_EndUserTable", "user_id", "eu1", 7.25),
+    ];
+    for (table, column, identifier, spend) in rows {
+        insert_spend(pool, table, column, identifier, spend).await;
+    }
     execute(
         pool,
         r#"INSERT INTO "LiteLLM_VerificationToken" (token, spend) VALUES ($1, NULL)"#,
@@ -189,31 +181,31 @@ async fn close(fixture: PostgresFixture, pool: Pool) {
     fixture.close_async().await.expect("the fixture cleanup");
 }
 
+#[rstest]
+#[case::key(SpendRowLookup::Key("hashed-key"), "2.5")]
+#[case::team_member(
+    SpendRowLookup::TeamMember {
+        user_id: "u1",
+        team_id: "t1",
+    },
+    "1.75"
+)]
+#[case::team(SpendRowLookup::Team("t1"), "3.25")]
+#[case::user(SpendRowLookup::User("u1"), "4.5")]
+#[case::organization(SpendRowLookup::Organization("org1"), "5.25")]
+#[case::project(SpendRowLookup::Project("proj1"), "6.75")]
+#[case::end_user(SpendRowLookup::EndUser("eu1"), "7.25")]
 #[tokio::test]
-async fn primary_rows_from_the_database() {
+async fn primary_rows_from_the_database(
+    #[case] lookup: SpendRowLookup<'static>,
+    #[case] expected: &str,
+) {
     let (fixture, pool) = database().await;
     seed_primary_rows(&pool).await;
     let rows = rows_of(&pool);
-    let cases = [
-        (SpendRowLookup::Key("hashed-key"), "2.5"),
-        (
-            SpendRowLookup::TeamMember {
-                user_id: "u1",
-                team_id: "t1",
-            },
-            "1.75",
-        ),
-        (SpendRowLookup::Team("t1"), "3.25"),
-        (SpendRowLookup::User("u1"), "4.5"),
-        (SpendRowLookup::Organization("org1"), "5.25"),
-        (SpendRowLookup::Project("proj1"), "6.75"),
-        (SpendRowLookup::EndUser("eu1"), "7.25"),
-    ];
-    for (lookup, expected) in cases {
-        let stored = rows.spend_row(lookup).await.expect("the spend row");
-        let found = stored.expect("a stored row");
-        assert_eq!(stored_amount(found.spend.as_ref()), Ok(decimal(expected)));
-    }
+    let stored = rows.spend_row(lookup).await.expect("the spend row");
+    let found = stored.expect("a stored row");
+    assert_eq!(stored_amount(found.spend.as_ref()), Ok(decimal(expected)));
     let absent = rows.spend_row(SpendRowLookup::Key("other")).await;
     assert_eq!(absent.expect("the spend row"), None);
     let null_spend = rows.spend_row(SpendRowLookup::Key("null-spend")).await;
