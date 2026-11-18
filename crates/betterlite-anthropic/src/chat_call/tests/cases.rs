@@ -330,7 +330,6 @@ fn assert_streamed(run: &Run) {
 fn pre_stream_error() {
     unauthenticated_pre_stream_error();
     transform_pre_stream_error();
-    filter_pre_stream_error();
 }
 
 fn unauthenticated_pre_stream_error() {
@@ -346,30 +345,39 @@ fn unauthenticated_pre_stream_error() {
 }
 
 fn transform_pre_stream_error() {
-    let unprepared = execute(&Setup {
-        transform_failure: Some("the case's transform refuses"),
-        ..Setup::chat()
-    });
-    assert_eq!(unprepared.status(), None);
-    assert!(format!("{}", unprepared.error()).contains("the case's transform refuses"));
-    assert_eq!(unprepared.posts_supplied, 0);
-    assert_eq!(unprepared.posts_pooled, 0);
-    assert_eq!(unprepared.calls, ["sync".to_owned()]);
+    pre_send_failures(
+        Setup {
+            transform_failure: Some("the case's transform refuses"),
+            ..Setup::chat()
+        },
+        Setup {
+            style: CallStyle::Async,
+            filter_failure: Some("the case's filter refuses"),
+            ..Setup::chat()
+        },
+    );
 }
 
-fn filter_pre_stream_error() {
-    let unfiltered = execute(&Setup {
-        style: CallStyle::Async,
-        filter_failure: Some("the case's filter refuses"),
-        ..Setup::chat()
-    });
-    assert_eq!(unfiltered.status(), None);
-    assert!(format!("{}", unfiltered.error()).contains("the case's filter refuses"));
-    assert_eq!(unfiltered.posts_supplied, 0);
-    assert_eq!(unfiltered.posts_pooled, 0);
+fn pre_send_failures(transform_setup: Setup, filter_setup: Setup) {
+    let transformed = execute(&transform_setup);
+    assert_failure_without_post(&transformed, "the case's transform refuses", &["sync"]);
+
+    let filtered = execute(&filter_setup);
+    assert_failure_without_post(
+        &filtered,
+        "the case's filter refuses",
+        &["async", "filter:anthropic"],
+    );
+}
+
+fn assert_failure_without_post(run: &Run, message: &str, expected_calls: &[&str]) {
+    assert_eq!(run.status(), None);
+    assert!(format!("{}", run.error()).contains(message));
+    assert_eq!(run.posts_supplied, 0);
+    assert_eq!(run.posts_pooled, 0);
     assert_eq!(
-        unfiltered.calls,
-        ["async".to_owned(), "filter:anthropic".to_owned()]
+        run.calls.iter().map(String::as_str).collect::<Vec<_>>(),
+        expected_calls
     );
 }
 

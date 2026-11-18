@@ -10,6 +10,7 @@ use std::time::Duration;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
+use futures_util::FutureExt as _;
 use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -86,7 +87,7 @@ where
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Unpin + Send + 'call,
 {
-    Box::pin(async move {
+    async move {
         if call.style == CallStyle::Embedding {
             return Ok(ChatOutcome::Embedding);
         }
@@ -95,7 +96,8 @@ where
             return send_stream(call, prepared, deps).await;
         }
         send::buffered(call, prepared, deps).await
-    })
+    }
+    .boxed_local()
 }
 fn send_stream<'call, Config, Client, Counter>(
     call: ChatCall<'call>,
