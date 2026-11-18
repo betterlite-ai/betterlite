@@ -1,5 +1,5 @@
 import json
-from typing import Annotated, Final, Literal, TypeVar, TypedDict
+from typing import Annotated, Final, Literal, TypeVar
 
 from litellm.litellm_core_utils.internal_call_metadata import effective_turn_off_message_logging
 from litellm.litellm_core_utils.redact_messages import should_redact_message_logging
