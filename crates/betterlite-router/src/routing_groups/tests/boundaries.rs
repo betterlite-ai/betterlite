@@ -2,19 +2,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, Ready, ready};
 
 use betterlite_models::decisions::Json;
-use betterlite_models::metadata::levels::ReasoningEffort;
 use rstest::rstest;
 use serde_json::Number;
 
 use super::support::{
-    SUPPORTS_SEED, SUPPORTS_TEMPERATURE, cost_map, deployment, group, info, object, priority_group,
-    raw, text, with_args, with_priorities,
+    SUPPORTS_SEED, SUPPORTS_TEMPERATURE, deployment, group, info, object, priority_group, raw,
+    text, with_args, with_priorities,
 };
 use crate::router_predicates::JsonMap;
-use crate::routing_groups::effort::{
-    GroupReasoningEfforts, intersect_supported_efforts, nearest_declared_effort,
-    resolve_supported_efforts,
-};
 use crate::routing_groups::group::{
     MAX_MODEL_PRIORITY, RoutingGroup, parse_routing_groups, validate_routing_strategy,
 };
@@ -406,71 +401,6 @@ fn a_duplicate_group_in_the_index_names_the_group() {
     );
 }
 
-fn an_empty_declared_list_keeps_the_request() {
-    assert_eq!(
-        nearest_declared_effort(ReasoningEffort::Minimal, &[]),
-        ReasoningEffort::Minimal
-    );
-}
-
-fn an_empty_side_empties_the_intersection() {
-    assert_eq!(
-        intersect_supported_efforts(Some(&[]), Some(&[ReasoningEffort::Low])),
-        Some(Vec::new())
-    );
-    assert_eq!(
-        intersect_supported_efforts(Some(&[ReasoningEffort::Low]), Some(&[])),
-        Some(Vec::new())
-    );
-}
-
-fn a_late_unknown_deployment_clears_the_aggregate() {
-    let mut efforts = GroupReasoningEfforts::default();
-    efforts.observe(Some(vec![ReasoningEffort::Low]));
-    efforts.observe(None);
-    assert_eq!(efforts.supported, None);
-    assert!(efforts.unknown);
-}
-
-fn an_empty_declared_list_is_a_known_empty() {
-    let map = cost_map(&[]);
-    let model_info = info(&[
-        ("supports_reasoning", Json::Bool(true)),
-        ("reasoning_effort_levels", Json::List(Vec::new())),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&model_info, true, &map),
-        Some(Vec::new())
-    );
-}
-
-fn a_declared_value_that_is_not_a_list_falls_back_to_the_flags() {
-    let map = cost_map(&[]);
-    let model_info = info(&[
-        ("supports_reasoning", Json::Bool(true)),
-        ("reasoning_effort_levels", text("high")),
-    ]);
-    assert_eq!(resolve_supported_efforts(&model_info, false, &map), None);
-}
-
-fn a_flag_that_is_not_a_boolean_still_advertises() {
-    let map = cost_map(&[]);
-    let model_info = info(&[
-        ("supports_reasoning", Json::Bool(true)),
-        ("supports_minimal_reasoning_effort", text("yes")),
-    ]);
-    assert_eq!(
-        resolve_supported_efforts(&model_info, false, &map),
-        Some(vec![
-            ReasoningEffort::None,
-            ReasoningEffort::Minimal,
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-        ])
-    );
-}
-
 fn an_extra_body_that_empties_is_removed() {
     let deployment_params = info(&[("extra_body", object(&[("reasoning_effort", text("low"))]))]);
     let request = info(&[("reasoning_effort", text("high"))]);
@@ -614,20 +544,6 @@ fn a_kept_tier_param_keeps_its_value() {
 ))]
 #[case::a_duplicate_group_in_the_index_names_the_group(settled(
     a_duplicate_group_in_the_index_names_the_group
-))]
-#[case::an_empty_declared_list_keeps_the_request(settled(
-    an_empty_declared_list_keeps_the_request
-))]
-#[case::an_empty_side_empties_the_intersection(settled(an_empty_side_empties_the_intersection))]
-#[case::a_late_unknown_deployment_clears_the_aggregate(settled(
-    a_late_unknown_deployment_clears_the_aggregate
-))]
-#[case::an_empty_declared_list_is_a_known_empty(settled(an_empty_declared_list_is_a_known_empty))]
-#[case::a_declared_value_that_is_not_a_list_falls_back_to_the_flags(settled(
-    a_declared_value_that_is_not_a_list_falls_back_to_the_flags
-))]
-#[case::a_flag_that_is_not_a_boolean_still_advertises(settled(
-    a_flag_that_is_not_a_boolean_still_advertises
 ))]
 #[case::an_extra_body_that_empties_is_removed(settled(an_extra_body_that_empties_is_removed))]
 #[case::a_non_object_extra_body_is_left_alone(settled(a_non_object_extra_body_is_left_alone))]

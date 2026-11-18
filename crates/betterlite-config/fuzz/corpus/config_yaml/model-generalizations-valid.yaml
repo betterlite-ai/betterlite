@@ -1,0 +1,10 @@
+fallback_generalizations:
+  rules:
+    - pattern: "^acme-"
+      model_info:
+        litellm_provider: acme
+        mode: chat
+    - pattern: "acme-slow"
+      model_info:
+        supports_vision: true
+      fill_missing_for_providers: [acme]
