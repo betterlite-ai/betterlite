@@ -3,7 +3,7 @@
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_openai::embedding::EmbeddingInput;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_tokenizer::engine::error::EngineError;
 use rstest::rstest;
 
@@ -310,10 +310,15 @@ fn a_body_without_embeddings_is_refused() {
     ));
 }
 
-#[test]
-fn a_body_that_is_not_an_object_is_refused_as_embeddingless() {
+#[rstest]
+#[case::bool(b"true")]
+#[case::number(b"5")]
+#[case::text(b"\"hello\"")]
+#[case::list(b"[]")]
+#[case::null(b"null")]
+fn a_body_that_is_not_an_object_is_refused_as_embeddingless(#[case] body: &[u8]) {
     let error = transform_response(
-        b"[]",
+        body,
         "cohere.embed-english-v3",
         None,
         &Object::new(),
@@ -343,4 +348,121 @@ fn a_body_texts_value_that_is_not_an_input_keeps_the_serde_error() {
         panic!("expected a request error");
     };
     assert!(source.is_data(), "{source}");
+}
+
+#[test]
+fn the_replied_rows_keep_their_numbers() {
+    let reply = transform_response(
+        br#"{"embeddings": [[0.5, 0.25], [1.5]]}"#,
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap();
+
+    assert_eq!(
+        serde_json::from_value::<Json>(serde_json::to_value(&reply.data).unwrap()).unwrap(),
+        serde_json::from_str::<Json>(
+            r#"[{"object": "embedding", "index": 0, "embedding": [0.5, 0.25]},
+                {"object": "embedding", "index": 1, "embedding": [1.5]}]"#
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn a_base64_reply_row_is_kept_as_text() {
+    let reply = transform_response(
+        br#"{"embeddings": ["aGVsbG8="]}"#,
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap();
+
+    assert_eq!(
+        serde_json::from_value::<Json>(serde_json::to_value(&reply.data).unwrap()).unwrap(),
+        serde_json::from_str::<Json>(
+            r#"[{"object": "embedding", "index": 0, "embedding": "aGVsbG8="}]"#
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn a_grouped_reply_labels_every_row_with_its_type() {
+    let reply = transform_response(
+        br#"{"embeddings": {"float": [[0.5]], "int8": [[3.5], [4.5]]}}"#,
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap();
+
+    assert_eq!(
+        serde_json::from_value::<Json>(serde_json::to_value(&reply.data).unwrap()).unwrap(),
+        serde_json::from_str::<Json>(
+            r#"[{"object": "embedding", "index": 0, "embedding": [0.5], "type": "float"},
+                {"object": "embedding", "index": 0, "embedding": [3.5], "type": "int8"},
+                {"object": "embedding", "index": 1, "embedding": [4.5], "type": "int8"}]"#
+        )
+        .unwrap()
+    );
+}
+
+#[test]
+fn a_rows_reply_marked_by_type_is_refused_as_embeddingless() {
+    let error = transform_response(
+        br#"{"embeddings": [[0.5]], "response_type": "embeddings_by_type"}"#,
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap_err();
+
+    assert!(matches!(
+        error,
+        CohereReplyError::Legacy(CohereLegacyEmbeddingError::Embeddings)
+    ));
+}
+
+#[test]
+fn image_billed_units_count_as_prompt_tokens() {
+    let reply = transform_response(
+        br#"{"embeddings": [[0.5]], "meta": {"billed_units": {"images": 2}}}"#,
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap();
+
+    assert_eq!(reply.usage.prompt_tokens, 2);
+    assert_eq!(reply.usage.total_tokens, 2);
+    assert_eq!(reply.usage.completion_tokens, 0);
+    let details = reply.usage.prompt_tokens_details.as_ref().unwrap();
+    assert_eq!(details.text_tokens, None);
+    assert_eq!(details.image_tokens, Some(2));
+}
+
+#[rstest]
+#[case::row(br#"{"embeddings": [[true]]}"#)]
+#[case::group(br#"{"embeddings": {"float": 5}}"#)]
+#[case::response_type(br#"{"embeddings": [[0.5]], "response_type": 5}"#)]
+#[case::meta(br#"{"embeddings": [[0.5]], "meta": {"billed_units": {"input_tokens": "seven"}}}"#)]
+fn a_reply_outside_the_declared_shape_is_refused(#[case] body: &[u8]) {
+    let error = transform_response(
+        body,
+        "cohere.embed-english-v3",
+        None,
+        &Object::new(),
+        &Words,
+    )
+    .unwrap_err();
+
+    assert!(matches!(error, CohereReplyError::Shape { .. }), "{error}");
 }

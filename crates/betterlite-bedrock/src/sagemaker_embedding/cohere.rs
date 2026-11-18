@@ -3,10 +3,11 @@ use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingResponse;
 use betterlite_openai::cohere_legacy_embedding::decode::populate_embedding_response;
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
-use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_openai::embedding::{EmbeddingInput, EmbeddingVector};
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde_json::Number;
 use thiserror::Error;
 
 use crate::titan_embeddings::cohere as bedrock_cohere;
@@ -26,6 +27,11 @@ pub enum CohereReplyError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the Cohere reply body does not have the declared shape")]
+    Shape {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the Cohere request data is not an embedding input")]
     Request {
         #[source]
@@ -35,59 +41,82 @@ pub enum CohereReplyError {
     Legacy(#[from] CohereLegacyEmbeddingError),
 }
 
-// B1418's populate reads the reply, so this checks the body's shape and hands its values back unchanged
+// the declared reply: an object with the fields populate reads, or a value that cannot carry any of them
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum CohereReplyBody {
-    Envelope(CohereReplyEnvelope),
-    Other(Json),
+    // boxed: the envelope dwarfs the scalar shapes, which share this enum
+    Envelope(Box<CohereReplyEnvelope>),
+    Scalar(CohereReplyScalar),
 }
 
 #[derive(Debug, Deserialize)]
 struct CohereReplyEnvelope {
-    embeddings: Option<ReplyEmbeddings>, // its rows are copied verbatim into the records
-    response_type: Option<Json>,         // populate compares only the embeddings_by_type marker
-    meta: Option<Json>,                  // calculate_usage reads billed_units from it
-    #[serde(flatten)]
-    rest: Object,   // every other key is populate's to ignore
+    // boxed: the grouped rows map dwarfs every other reply shape
+    embeddings: Option<Box<ReplyEmbeddings>>,
+    response_type: Option<String>,
+    meta: Option<CohereReplyMeta>,
 }
 
-// the two row shapes populate reads; any other value reaches it untouched and it answers Embeddings
+// CohereEmbeddingResponse declares number rows; a reply carries them alone or grouped by type, as base64 strings too
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum ReplyEmbeddings {
-    Rows(Vec<Json>),
-    Groups(IndexMap<String, Vec<Json>>),
-    Other(Json),
+    Rows(Vec<EmbeddingVector>),
+    Groups(IndexMap<String, Vec<EmbeddingVector>>),
 }
 
-// the request fields the reply input falls back to, checked as an embedding input only once chosen
+#[derive(Debug, Deserialize)]
+struct CohereReplyMeta {
+    billed_units: Option<CohereBilledUnits>,
+}
+
+// Meta's billed units are the two integer counts calculate_usage reads
+#[derive(Debug, Deserialize)]
+struct CohereBilledUnits {
+    input_tokens: Option<i64>,
+    images: Option<i64>,
+}
+
+// a reply that is not an object: populate refuses it before reading any field, so these values only fix the shape
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum CohereReplyScalar {
+    Bool(bool),
+    Number(Number),
+    Text(String),
+    List(Vec<EmbeddingVector>),
+    Null,
+}
+
+// the request fields the reply input falls back to, typed as the Cohere request writes them
 #[derive(Debug, Deserialize)]
 struct CohereRequestBody {
-    texts: Option<Json>,
-    images: Option<Json>,
+    texts: Option<Vec<String>>,
+    images: Option<Vec<String>>,
 }
 
 impl CohereReplyBody {
+    // B1418's populate takes JSON, so the typed reply turns back into JSON only here
     fn into_json(self) -> Json {
         match self {
-            Self::Envelope(envelope) => envelope.into_json(),
-            Self::Other(value) => value,
+            Self::Envelope(envelope) => CohereReplyEnvelope::into_json(*envelope),
+            Self::Scalar(scalar) => scalar.into_json(),
         }
     }
 }
 
 impl CohereReplyEnvelope {
     fn into_json(self) -> Json {
-        let mut fields = self.rest;
+        let mut fields = Object::new();
         if let Some(embeddings) = self.embeddings {
             fields.insert(String::from("embeddings"), embeddings.into_json());
         }
         if let Some(kind) = self.response_type {
-            fields.insert(String::from("response_type"), kind);
+            fields.insert(String::from("response_type"), Json::Text(kind));
         }
         if let Some(meta) = self.meta {
-            fields.insert(String::from("meta"), meta);
+            fields.insert(String::from("meta"), meta.into_json());
         }
         Json::Object(fields)
     }
@@ -96,14 +125,63 @@ impl CohereReplyEnvelope {
 impl ReplyEmbeddings {
     fn into_json(self) -> Json {
         match self {
-            Self::Rows(rows) => Json::List(rows),
+            Self::Rows(rows) => Json::List(rows.into_iter().map(embedding_json).collect()),
             Self::Groups(groups) => Json::Object(
                 groups
                     .into_iter()
-                    .map(|(name, rows)| (name, Json::List(rows)))
+                    .map(|(name, rows)| {
+                        let values = rows.into_iter().map(embedding_json).collect();
+                        (name, Json::List(values))
+                    })
                     .collect(),
             ),
-            Self::Other(value) => value,
+        }
+    }
+}
+
+impl CohereReplyMeta {
+    fn into_json(self) -> Json {
+        let mut fields = Object::new();
+        if let Some(billed) = self.billed_units {
+            fields.insert(String::from("billed_units"), billed.into_json());
+        }
+        Json::Object(fields)
+    }
+}
+
+impl CohereBilledUnits {
+    fn into_json(self) -> Json {
+        let mut fields = Object::new();
+        if let Some(tokens) = self.input_tokens {
+            fields.insert(
+                String::from("input_tokens"),
+                Json::Number(Number::from(tokens)),
+            );
+        }
+        if let Some(images) = self.images {
+            fields.insert(String::from("images"), Json::Number(Number::from(images)));
+        }
+        Json::Object(fields)
+    }
+}
+
+impl CohereReplyScalar {
+    fn into_json(self) -> Json {
+        match self {
+            Self::Bool(value) => Json::Bool(value),
+            Self::Number(number) => Json::Number(number),
+            Self::Text(text) => Json::Text(text),
+            Self::List(rows) => Json::List(rows.into_iter().map(embedding_json).collect()),
+            Self::Null => Json::Null,
+        }
+    }
+}
+
+fn embedding_json(embedding: EmbeddingVector) -> Json {
+    match embedding {
+        EmbeddingVector::Base64(text) => Json::Text(text),
+        EmbeddingVector::Floats(numbers) => {
+            Json::List(numbers.into_iter().map(Json::Number).collect())
         }
     }
 }
@@ -146,8 +224,13 @@ pub fn transform_response(
     request_data: &Object,
     encoding: &dyn TextEncoding,
 ) -> Result<LegacyEmbeddingResponse, CohereReplyError> {
-    let reply: CohereReplyBody =
-        serde_json::from_slice(body).map_err(|source| CohereReplyError::Body { source })?;
+    let reply: CohereReplyBody = serde_json::from_slice(body).map_err(|source| {
+        if source.is_data() {
+            CohereReplyError::Shape { source }
+        } else {
+            CohereReplyError::Body { source }
+        }
+    })?;
     let input = reply_input(logged_input, request_data)?;
     populate_embedding_response(&reply.into_json(), model, &input, encoding)
         .map_err(CohereReplyError::Legacy)
@@ -157,39 +240,30 @@ fn reply_input(
     logged_input: Option<&EmbeddingInput>,
     request_data: &Object,
 ) -> Result<Vec<String>, CohereReplyError> {
-    let mut chosen = logged_input.filter(|input| has_value(input)).cloned();
-    if chosen.is_none() {
-        let value = serde_json::to_value(request_data)
-            .map_err(|source| CohereReplyError::Request { source })?;
-        let body: CohereRequestBody =
-            serde_json::from_value(value).map_err(|source| CohereReplyError::Request { source })?;
-        for candidate in [body.texts, body.images].into_iter().flatten() {
-            if !candidate.is_truthy() {
-                continue;
+    if let Some(input) = logged_input.filter(|input| has_value(input)) {
+        return match input {
+            EmbeddingInput::Text(text) => Ok(vec![text.clone()]),
+            EmbeddingInput::Texts(texts) => Ok(texts.clone()),
+            EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_) => {
+                Err(CohereReplyError::Legacy(CohereLegacyEmbeddingError::Usage(
+                    CohereEmbeddingError::InputNotText,
+                )))
             }
-            let encoded = serde_json::to_value(candidate)
-                .map_err(|source| CohereReplyError::Request { source })?;
-            chosen = Some(
-                serde_json::from_value(encoded)
-                    .map_err(|source| CohereReplyError::Request { source })?,
-            );
-            break;
-        }
+        };
     }
-    match chosen {
-        None => Ok(Vec::new()),
-        Some(EmbeddingInput::Text(text)) => Ok(vec![text]),
-        Some(EmbeddingInput::Texts(texts)) => Ok(texts),
-        Some(EmbeddingInput::Tokens(_) | EmbeddingInput::TokenLists(_)) => {
-            Err(CohereReplyError::Legacy(CohereLegacyEmbeddingError::Usage(
-                CohereEmbeddingError::InputNotText,
-            )))
-        }
-    }
+    let value = serde_json::to_value(request_data)
+        .map_err(|source| CohereReplyError::Request { source })?;
+    let body: CohereRequestBody =
+        serde_json::from_value(value).map_err(|source| CohereReplyError::Request { source })?;
+    Ok([body.texts, body.images]
+        .into_iter()
+        .flatten()
+        .find(|texts| !texts.is_empty())
+        .unwrap_or_default())
 }
 
 // Cohere's input choice skips an empty value, as the pinned code's `or` chain does
-fn has_value(input: &EmbeddingInput) -> bool {
+const fn has_value(input: &EmbeddingInput) -> bool {
     match input {
         EmbeddingInput::Text(text) => !text.is_empty(),
         EmbeddingInput::Texts(texts) => !texts.is_empty(),

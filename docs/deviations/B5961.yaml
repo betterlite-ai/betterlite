@@ -25,6 +25,16 @@ deviations:
     why: >-
       betterlite models a reply row as the shared EmbeddingVector, a number list or a base64 string, which is what the OpenAI embeddings API declares; LiteLLM's Embedding.embedding is an unchecked `list | str` and its assignment never validates, so a row outside that shape only fails where a client later reads it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283
+  - what: >-
+      A Cohere reply whose embedding rows, response_type, meta or billed units are outside the declared response types is refused with the reply reader's shape error, a list body whose rows are outside the declared row type is refused the same way, and any other body that is not an object is refused as embeddingless. LiteLLM reads every row, response_type and meta value unchecked, so a row that is not a number list or a base64 string, a non-string response_type or a non-integer billed unit reaches its EmbeddingResponse as given, while a body that is not an object or a meta that is not a map raises TypeError and answers 500.
+    why: >-
+      betterlite models the reply as CohereEmbeddingResponse declares it, rows of numbers or base64 strings with a literal response_type and integer billed units, and answers a typed error for a value outside that shape instead of carrying it into the response. A working Cohere endpoint answers the declared shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L149-L178
+  - what: >-
+      A Cohere reply whose fallback request data holds a texts or images value that is not a list of strings is refused with the request error, while LiteLLM turns any truthy value into the usage input and a bare string becomes a one-item list.
+    why: >-
+      CohereEmbeddingRequest declares texts and images as list[str], and the request betterlite builds writes exactly that, so a value outside the declared type is an error naming the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L108-L112
 kept_bugs:
   - what: >-
       Both SageMaker embedding configs answer validate_environment with only Content-Type: application/json, dropping every caller header.
