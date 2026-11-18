@@ -139,8 +139,8 @@ where
     T: DeserializeOwned,
     F: FnOnce(serde_json::Error) -> RoiSettingsError,
 {
-    let bytes = serde_json::to_vec(parameter).map_err(InternalError::Encode)?;
-    serde_json::from_slice(&bytes).map_err(invalid)
+    serde_json::from_slice(&serde_json::to_vec(parameter).map_err(InternalError::Encode)?)
+        .map_err(invalid)
 }
 
 pub(super) async fn load_stored(
