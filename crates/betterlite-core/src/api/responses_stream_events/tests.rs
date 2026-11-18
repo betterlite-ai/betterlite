@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![expect(clippy::too_many_lines, reason = "whole stream sequences")]
 
 use std::io::Error as IoError;
 use std::str::FromStr as _;
@@ -64,6 +63,7 @@ const GENERIC_TEXT_DELTA: &str =
 const NON_STRING_DELTA: &str = r#"{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":7}"#;
 
 const CREATED: &str = r#"{"type":"response.created","sequence_number":0,"response":{"id":"resp_1","created_at":1,"object":"response","output":[{"type":"message","id":"msg_1","container_id":"c"}]}}"#;
+const IN_PROGRESS: &str = r#"{"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_1","created_at":1,"object":"response","status":"in_progress","output":[{"type":"message","id":"msg_1","container_id":"c"}]}}"#;
 const COMPLETED: &str = r#"{"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","created_at":1700000000,"object":"response","status":"completed","output":[]}}"#;
 const COMPLETED_USAGE: &str = r#"{"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","created_at":1700000000,"object":"response","status":"completed","output":[],"usage":{"input_tokens":7,"output_tokens":9,"total_tokens":16}}}"#;
 const COMPLETED_COST: &str = r#"{"type":"response.completed","sequence_number":3,"response":{"id":"resp_2","created_at":1700000000,"object":"response","status":"completed","output":[],"usage":{"input_tokens":7,"output_tokens":9,"total_tokens":16,"cost":0.25}}}"#;
@@ -289,6 +289,25 @@ impl Recorder {
     }
 }
 
+#[derive(Clone, Default)]
+struct Seen(Arc<Mutex<Vec<(String, Json)>>>);
+
+impl Seen {
+    fn push(&self, model: &str, chunk: &Json) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((model.to_owned(), chunk.clone()));
+    }
+
+    fn entries(&self) -> Vec<(String, Json)> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
 #[derive(Default)]
 struct SuccessPort {
     calls: Recorder,
@@ -450,8 +469,8 @@ impl Ports {
         redactor: &'run Redactor,
         clock: Arc<dyn SuccessClock>,
     ) -> ResponsesStreamHooks<'run> {
-        let success: Arc<dyn ResponsesStreamSuccessTarget> = self.success.clone();
-        let failure: Arc<dyn ResponsesStreamFailureTarget> = self.failure.clone();
+        let success: Arc<dyn ResponsesStreamSuccessTarget> = Arc::clone(&self.success);
+        let failure: Arc<dyn ResponsesStreamFailureTarget> = Arc::clone(&self.failure);
         ResponsesStreamHooks {
             cache: self.cache.clone(),
             cache_handler: self.cache_handler.clone(),
@@ -466,60 +485,21 @@ impl Ports {
     }
 }
 
-struct Direct;
+enum TransformMode {
+    Direct,
+    Rejecting,
+    Recording(Seen),
+    Fixed(ResponsesAPIStreamingResponse),
+}
 
-impl ResponsesEventTransform for Direct {
-    type Error = IoError;
-
-    fn transform(
-        &self,
-        _model: &str,
-        chunk: &Json,
-        _logging: &mut IndexMap<String, Json>,
-    ) -> Result<ResponsesAPIStreamingResponse, IoError> {
-        let encoded = serde_json::to_string(chunk).map_err(IoError::other)?;
-        match serde_json::from_str::<ResponsesAPIStreamingResponse>(&encoded) {
-            Ok(event) => Ok(event),
-            Err(_error) => Ok(generic_event(chunk)),
-        }
+impl TransformMode {
+    fn recording() -> (Self, Seen) {
+        let seen = Seen::default();
+        (Self::Recording(seen.clone()), seen)
     }
 }
 
-struct Rejecting;
-
-impl ResponsesEventTransform for Rejecting {
-    type Error = IoError;
-
-    fn transform(
-        &self,
-        _model: &str,
-        _chunk: &Json,
-        _logging: &mut IndexMap<String, Json>,
-    ) -> Result<ResponsesAPIStreamingResponse, IoError> {
-        Err(IoError::other("the provider transform failed"))
-    }
-}
-
-struct Recording {
-    seen: Mutex<Vec<(String, Json)>>,
-}
-
-impl Recording {
-    fn new() -> Self {
-        Self {
-            seen: Mutex::new(Vec::new()),
-        }
-    }
-
-    fn seen(&self) -> Vec<(String, Json)> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl ResponsesEventTransform for Recording {
+impl ResponsesEventTransform for TransformMode {
     type Error = IoError;
 
     fn transform(
@@ -528,27 +508,22 @@ impl ResponsesEventTransform for Recording {
         chunk: &Json,
         logging: &mut IndexMap<String, Json>,
     ) -> Result<ResponsesAPIStreamingResponse, IoError> {
-        self.seen
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push((model.to_owned(), chunk.clone()));
-        logging.insert("transform_type".to_owned(), at(chunk, &["type"]).clone());
-        Ok(decode(TEXT_DELTA))
-    }
-}
-
-struct Fixed(ResponsesAPIStreamingResponse);
-
-impl ResponsesEventTransform for Fixed {
-    type Error = IoError;
-
-    fn transform(
-        &self,
-        _model: &str,
-        _chunk: &Json,
-        _logging: &mut IndexMap<String, Json>,
-    ) -> Result<ResponsesAPIStreamingResponse, IoError> {
-        Ok(self.0.clone())
+        match self {
+            Self::Direct => {
+                let encoded = serde_json::to_string(chunk).map_err(IoError::other)?;
+                match serde_json::from_str::<ResponsesAPIStreamingResponse>(&encoded) {
+                    Ok(event) => Ok(event),
+                    Err(_error) => Ok(generic_event(chunk)),
+                }
+            }
+            Self::Rejecting => Err(IoError::other("the provider transform failed")),
+            Self::Recording(seen) => {
+                seen.push(model, chunk);
+                logging.insert("transform_type".to_owned(), at(chunk, &["type"]).clone());
+                Ok(decode(TEXT_DELTA))
+            }
+            Self::Fixed(event) => Ok(event.clone()),
+        }
     }
 }
 
@@ -557,12 +532,12 @@ fn generic_event(chunk: &Json) -> ResponsesAPIStreamingResponse {
     let mut event_type = "None".to_owned();
     if let Json::Object(fields) = chunk {
         for (name, value) in fields {
-            if name == "type" {
-                if let Json::Text(text) = value {
-                    event_type = text.clone();
+            match (name.as_str(), value) {
+                ("type", Json::Text(text)) => event_type.clone_from(text),
+                ("type", _) => {}
+                (_, value) => {
+                    extra.insert(name.clone(), value.clone());
                 }
-            } else {
-                extra.insert(name.clone(), value.clone());
             }
         }
     }
@@ -686,6 +661,61 @@ impl ProjectQuotaCallback for QuotaCounter {
 impl QuotaCounter {
     fn calls(&self) -> usize {
         *self.calls.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+struct Rig<T> {
+    ports: Ports,
+    redactor: Redactor,
+    transform: Option<T>,
+    tokenization: Option<Tokenization>,
+    calculator: Option<Calculator>,
+    limits: ApiLimits,
+    details: IndexMap<String, Json>,
+    state: ResponsesStreamBaseState,
+    callback: ResponsesStreamHookState,
+    logging: StreamLoggingObject,
+    clock: Arc<dyn SuccessClock>,
+}
+
+impl<T: ResponsesEventTransform> Rig<T> {
+    fn new(transform: Option<T>) -> Self {
+        Self::with_ports(Ports::recording(), transform)
+    }
+
+    fn with_ports(ports: Ports, transform: Option<T>) -> Self {
+        Self {
+            ports,
+            redactor: redactor(),
+            transform,
+            tokenization: None,
+            calculator: None,
+            limits: ApiLimits::default(),
+            details: IndexMap::new(),
+            state: stream_state(),
+            callback: ResponsesStreamHookState::default(),
+            logging: logging_object(),
+            clock: fixed_clock(),
+        }
+    }
+
+    async fn process(
+        &mut self,
+        payload: &str,
+    ) -> Result<Option<ResponsesAPIStreamingResponse>, ProcessEventError<T::Error>> {
+        let hooks = self.ports.hooks(&self.redactor, Arc::clone(&self.clock));
+        let mut processor = ResponsesEventProcessor {
+            transform: self.transform.as_ref(),
+            tokenization: self.tokenization.as_ref(),
+            calculator: self.calculator.as_ref(),
+            hooks: &hooks,
+            details: &mut self.details,
+            dispatch: Dispatch::Inline,
+            limits: &self.limits,
+        };
+        processor
+            .process(payload, &mut self.state, &mut self.callback, &self.logging)
+            .await
     }
 }
 
