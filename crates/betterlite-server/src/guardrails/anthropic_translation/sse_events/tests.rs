@@ -123,3 +123,67 @@ fn replays_the_anthropic_sse_events_corpus() {
         let _ = content_block_state(&[chunk]);
     }
 }
+
+#[test]
+fn iter_events_replaces_invalid_utf8_and_keeps_the_event() {
+    let mut bytes = b"data: {\"type\":\"content_block_start\",\"index\":1,\"text\":\"".to_vec();
+    bytes.push(0xff);
+    bytes.extend_from_slice(b"\"}\n\n");
+    let events = iter_sse_events(&SseChunk::Bytes(bytes));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["text"], "\u{fffd}");
+}
+
+#[test]
+fn iter_events_ignores_non_object_json_and_reads_every_data_line() {
+    let events = iter_sse_events(&SseChunk::Bytes(
+        b"data: [1,2]\n\ndata: {\"index\":2}\ndata: not json\n\n".to_vec(),
+    ));
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0]["index"], 2);
+}
+
+#[test]
+fn text_reader_joins_blocks_and_keeps_the_last_data_line() {
+    let source = "event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"a\"}}\n\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"ignored\"}}\n\nevent: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"b\"}}\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"c\"}}\n\n";
+    assert_eq!(extract_text_from_sse(source.as_bytes()), "ac");
+}
+
+#[test]
+fn text_reader_ignores_other_event_types_and_non_text_deltas() {
+    let source = "event: content_block_start\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\nevent: content_block_delta\ndata: {\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{}\"}}\n\nevent: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\"}}\n\n";
+    assert_eq!(extract_text_from_sse(source.as_bytes()), "");
+}
+
+#[test]
+fn text_reader_parses_crlf_lines() {
+    let source = "event: content_block_delta\r\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"hi\"}}\r\n\r\n";
+    assert_eq!(extract_text_from_sse(source.as_bytes()), "hi");
+}
+
+#[test]
+fn has_ended_needs_the_message_delta_event_type_and_a_non_null_reason() {
+    let wrong_type = SseChunk::Bytes(
+        b"event: content_block_delta\ndata: {\"delta\":{\"stop_reason\":\"end_turn\"}}\n\n"
+            .to_vec(),
+    );
+    let null_reason = SseChunk::Event(
+        serde_json::from_value(json!({"type":"message_delta","delta":{"stop_reason":null}}))
+            .unwrap(),
+    );
+    assert!(!streaming_has_ended(&[wrong_type, null_reason]));
+}
+
+#[test]
+fn fingerprints_ignore_non_tool_use_content_blocks() {
+    let items = [
+        SseChunk::Bytes(
+            b"data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n"
+                .to_vec(),
+        ),
+        SseChunk::Bytes(
+            b"data: {\"type\":\"content_block_delta\",\"content_block\":{\"type\":\"tool_use\"}}\n\n".to_vec(),
+        ),
+    ];
+    assert!(streamed_tool_use_fingerprints(&items).is_empty());
+}
