@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use betterlite_config::sections::tier_definitions as section;
 use betterlite_models::decisions::Json;
 use betterlite_router::classifier_verdict::call::{RequestKwargs, effective_logging_off};
@@ -70,7 +72,7 @@ fn required<'value, T>(value: Option<&'value T>, name: &str) -> Result<&'value T
     })
 }
 
-fn invalid<T, E: std::fmt::Display>(result: Result<T, E>) -> Result<T, OperationError> {
+fn invalid<T, E: Display>(result: Result<T, E>) -> Result<T, OperationError> {
     result.map_err(|source| OperationError::InvalidRequest {
         message: source.to_string(),
     })
@@ -133,7 +135,7 @@ fn render_response_format() -> Result<String, OperationError> {
 
 fn resolve_label(payload: &Payload) -> Result<Option<String>, OperationError> {
     let tiers = tier_set(payload)?;
-    let label = required(payload.label.as_deref(), "label")?;
+    let label = required(payload.label.as_ref(), "label")?;
     Ok(tiers
         .resolve_classified_tier(label)
         .map(|tier| tier.name().to_owned()))
