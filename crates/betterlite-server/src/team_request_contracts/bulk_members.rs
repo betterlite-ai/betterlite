@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use betterlite_config::sections::budget_reset::BudgetResetSettings;
 use betterlite_core::budget_reset::{ResetClocks, budget_duration_error};
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::member_removal_identity::identity::MemberIdentity;
 use jiff::tz::TimeZoneDatabase;
 use serde::{Deserialize, Serialize};
 
@@ -26,23 +27,32 @@ pub struct TeamMemberRef {
 impl TeamMemberRef {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
         let reference: Self = decode_request(value)?;
-        require_identity(&reference)?;
-        reject_both_identifiers(&reference)?;
-        Ok(reference)
+        let identity = team_identity(reference.user_id, reference.user_email)?;
+        reject_both_identifiers(&identity)?;
+        Ok(Self::from(identity))
     }
 }
 
-fn require_identity(reference: &TeamMemberRef) -> Result<(), TeamContractError> {
-    if reference.user_id.is_none() && reference.user_email.is_none() {
-        return Err(TeamContractError::Validation {
-            message: "Either user id or user email must be provided".to_owned(),
-        });
+impl From<MemberIdentity> for TeamMemberRef {
+    fn from(identity: MemberIdentity) -> Self {
+        Self {
+            user_id: identity.user_id,
+            user_email: identity.user_email,
+        }
     }
-    Ok(())
 }
 
-fn reject_both_identifiers(reference: &TeamMemberRef) -> Result<(), TeamContractError> {
-    if reference.user_id.is_some() && reference.user_email.is_some() {
+fn team_identity(
+    user_id: Option<String>,
+    user_email: Option<String>,
+) -> Result<MemberIdentity, TeamContractError> {
+    MemberIdentity::new(user_id, user_email).map_err(|source| TeamContractError::Validation {
+        message: source.to_string(),
+    })
+}
+
+fn reject_both_identifiers(identity: &MemberIdentity) -> Result<(), TeamContractError> {
+    if identity.user_id.is_some() && identity.user_email.is_some() {
         return Err(TeamContractError::Validation {
             message: "Each member must be identified by exactly one of user_id or user_email"
                 .to_owned(),
@@ -84,20 +94,16 @@ impl TeamMemberBudgetPatch {
         database: &TimeZoneDatabase,
     ) -> Result<Self, TeamContractError> {
         let input: TeamMemberPatchInput = decode_request(value)?;
-        let reference = TeamMemberRef {
-            user_id: input.user_id,
-            user_email: input.user_email,
-        };
-        require_identity(&reference)?;
+        let identity = team_identity(input.user_id, input.user_email)?;
         let duration =
             budget_duration_error(input.budget_duration.as_deref(), settings, clocks, database);
         if let Some(message) = duration {
             return Err(TeamContractError::Validation { message });
         }
-        reject_both_identifiers(&reference)?;
+        reject_both_identifiers(&identity)?;
         let supplied_fields: BTreeSet<String> = object(value)?.keys().cloned().collect();
         Ok(Self {
-            reference,
+            reference: TeamMemberRef::from(identity),
             max_budget_in_team: input.max_budget_in_team,
             tpm_limit: input.tpm_limit,
             rpm_limit: input.rpm_limit,
@@ -115,19 +121,18 @@ pub struct BulkTeamMemberDeleteRequest {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct BulkDeleteInput {
+struct BulkMembersInput {
     members: Vec<JsonData>,
 }
 
 impl BulkTeamMemberDeleteRequest {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
-        let input: BulkDeleteInput = decode_request(value)?;
+        let input: BulkMembersInput = decode_request(value)?;
         check_member_count(input.members.len(), MAX_BULK_TEAM_MEMBER_DELETES)?;
-        let members = input
-            .members
-            .iter()
-            .map(TeamMemberRef::from_value)
-            .collect::<Result<Vec<TeamMemberRef>, TeamContractError>>()?;
+        let mut members = Vec::with_capacity(input.members.len());
+        for row in &input.members {
+            members.push(TeamMemberRef::from_value(row)?);
+        }
         Ok(Self { members })
     }
 }
@@ -137,12 +142,6 @@ pub struct BulkBudgetUpdateRequest {
     pub members: Vec<TeamMemberBudgetPatch>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct BulkBudgetUpdateInput {
-    members: Vec<JsonData>,
-}
-
 impl BulkBudgetUpdateRequest {
     pub fn from_value(
         value: &JsonData,
@@ -150,14 +149,14 @@ impl BulkBudgetUpdateRequest {
         clocks: ResetClocks<'_>,
         database: &TimeZoneDatabase,
     ) -> Result<Self, TeamContractError> {
-        let input: BulkBudgetUpdateInput = decode_request(value)?;
+        let input: BulkMembersInput = decode_request(value)?;
         check_member_count(input.members.len(), MAX_BULK_BUDGET_UPDATES)?;
-        let members = input
+        input
             .members
             .iter()
             .map(|member| TeamMemberBudgetPatch::from_value(member, settings, clocks, database))
-            .collect::<Result<Vec<TeamMemberBudgetPatch>, TeamContractError>>()?;
-        Ok(Self { members })
+            .collect::<Result<Vec<TeamMemberBudgetPatch>, TeamContractError>>()
+            .map(|members| Self { members })
     }
 }
 
