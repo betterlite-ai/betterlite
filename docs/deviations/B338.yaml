@@ -9,8 +9,8 @@ deviations:
   - what: Unknown QualityRouterConfig and RoutingPreferences keys are preserved and reported as router warnings while the route still runs; LiteLLM accepts them silently through pydantic's extra="allow".
     why: The task keeps the keys accepted so a valid LiteLLM config still starts, and reports the keys an operator wrote but betterlite ignores.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/config.py#L74
-  - what: Keyword ties compare input_cost_per_token as Decimal and order as an exact i64, so two prices or two orders that Python's float() collapses into one value stay ordered, and the cheaper or lower-order model can win where LiteLLM falls through to the model name.
-    why: B338 keeps configuration numbers exactly as declared and price arithmetic in Decimal; the difference shows only beyond f64 precision, and decimal_prices_keep_more_precision_than_python_floats and large_orders_keep_more_precision_than_python_floats pin it.
+  - what: Keyword and tier ties compare input_cost_per_token as Decimal and order as an exact i64, so two prices or two orders that Python's float() collapses into one value stay ordered, and the cheaper or lower-order model can win where LiteLLM falls through to the model name.
+    why: B338 keeps configuration numbers exactly as declared and price arithmetic in Decimal; the difference shows only beyond f64 precision, and decimal_prices_keep_digits_past_float_precision, large_orders_keep_more_precision_than_python_floats and the quality-router-decimal-prices probe pin it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L217-L229
 kept_bugs:
   - what: A keyword matches anywhere in the lowercased user message, so a keyword "code" also matches "encode" and "decode"; betterlite keeps the substring match.
