@@ -224,9 +224,7 @@ async fn narrowed_pool(
     set = CandidateSet {
         deployments: without_blocked(set.deployments),
     };
-    let kept = context.services.filter_deployments(set.deployments)?;
-    set = CandidateSet { deployments: kept };
-    // async_callback_filter_deployments runs every callback filter, PromptCachingDeploymentCheck among them
+    set.deployments = context.services.filter_deployments(set.deployments)?;
     set = context::run(RouteStage::PromptAffinity, set, context).await?;
     set = CandidateSet {
         deployments: pre_call_pool(context, group, set.deployments)?,
