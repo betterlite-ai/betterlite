@@ -12,20 +12,15 @@ from litellm.proxy.spend_tracking.spend_counter_batch import (
     spend_counter_batch_scope,
 )
 from litellm.proxy.utils import PrismaClient
+from opentelemetry.trace import Span
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
 FLOAT: Final = TypeAdapter(float)
-JSON: Final = TypeAdapter(JsonValue)
 
 Operation: TypeAlias = Literal[
-    "from_db",
-    "end_user_from_db",
-    "increment_in_memory",
-    "coalesced",
-    "window_from_table",
-    "window_from_db",
-    "window_from_spend_logs",
+    "from_db", "end_user_from_db", "increment_in_memory", "coalesced",
+    "window_from_table", "window_from_db", "window_from_spend_logs",
 ]
 
 
@@ -64,8 +59,7 @@ class LogWhere(TypedDict):
 
 class Row:
     def __init__(self, spend: float | None, window_start: datetime | None = None) -> None:
-        self.spend = spend
-        self.window_start = window_start
+        self.spend, self.window_start = spend, window_start
 
 
 def as_utc(moment: datetime) -> datetime:
@@ -80,12 +74,6 @@ def scripted_amount(answer: JsonValue) -> float | None:
     if answer == "fail":
         raise ValueError("the scripted cache read failed")
     return FLOAT.validate_python(answer)
-
-
-def required_duration(duration: str | None) -> str:
-    if duration is None:
-        raise ValueError("window_from_table needs a duration")
-    return duration
 
 
 class ScriptedTable:
@@ -119,7 +107,9 @@ class ScriptedTable:
         if self.fails:
             raise ValueError("the scripted store read failed")
         field = by[0]
-        entity_id = where["api_key"] if field == "api_key" else where["team_id"]
+        entity_id = where.get("api_key") if field == "api_key" else where.get("team_id")
+        if entity_id is None:
+            raise ValueError("the log aggregation has no entity filter")
         window_start = where["startTime"]["gte"]
         matching = [spend for moment, spend in self.logs if as_utc(moment) >= as_utc(window_start)]
         if not matching:
@@ -150,9 +140,7 @@ class ScriptedMemory(InMemoryCache):
         self.values: dict[str, float] = {}
 
     def current(self, key: str) -> float | None:
-        if key in self.values:
-            return self.values[key]
-        return self.initial
+        return self.values.get(key, self.initial)
 
     @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> float | None:
@@ -168,8 +156,7 @@ class ScriptedMemory(InMemoryCache):
 
 
 class ScriptedRedis(RedisCache):
-    # RedisCache.__init__ opens a real client; the scripted methods below
-    # answer every read and write
+    # RedisCache.__init__ opens a real client, so skip it and script every call below
     def __init__(self, cache: CacheInput, batch: JsonValue) -> None:
         object.__init__(self)
         self.answers = list(cache["answers"])
@@ -178,8 +165,13 @@ class ScriptedRedis(RedisCache):
         self.sets: list[tuple[str, float]] = []
 
     @override
-    async def async_get_cache(self, key: str, **kwargs: JsonValue) -> float | None:
-        del key, kwargs
+    async def async_get_cache(
+        self,
+        key: str,
+        parent_otel_span: Span | None = None,
+        **kwargs: JsonValue,
+    ) -> float | None:
+        del key, parent_otel_span, kwargs
         if not self.answers:
             return None
         return scripted_amount(self.answers.pop(0))
@@ -195,11 +187,12 @@ class ScriptedRedis(RedisCache):
     @override
     async def async_batch_get_cache(
         self,
-        key_list: list[str],
-        **kwargs: JsonValue,
+        key_list: list[str] | list[str | None],
+        parent_otel_span: Span | None = None,
     ) -> dict[str, float | None]:
-        del kwargs
-        return dict.fromkeys(key_list, scripted_amount(self.batch))
+        del parent_otel_span
+        amount = scripted_amount(self.batch)
+        return {key: amount for key in key_list if key is not None}
 
 
 def build_table(data: Input) -> ScriptedTable:
@@ -230,11 +223,14 @@ async def apply(data: Input, cache: DualCache, client: FakeClient | None) -> flo
                 client, cache, data["counter_key"], data["require_cache_warm"]
             )
         case "window_from_table":
+            duration = data["duration"]
+            if duration is None:
+                raise ValueError("window_from_table needs a duration")
             value = await SpendCounterReseed.window_from_table(
                 client,
                 data["entity"],
                 data["entity_id"],
-                required_duration(data["duration"]),
+                duration,
                 datetime.fromisoformat(data["expected_start"]),
             )
         case "window_from_db":
@@ -255,20 +251,19 @@ async def apply(data: Input, cache: DualCache, client: FakeClient | None) -> flo
     return value
 
 
-async def scenario(data: Input) -> JsonValue:
-    cache_input = data["cache"]
-    memory = ScriptedMemory(cache_input["memory"], fails=cache_input["memory_set_fails"])
-    redis_enabled = cache_input["redis"]
-    redis = ScriptedRedis(cache_input, data["batch"])
-    cache = DualCache(in_memory_cache=memory, redis_cache=redis if redis_enabled else None)
-    table = build_table(data)
-    client = FakeClient(table) if data["prisma"] else None
+async def scenario(
+    data: Input,
+    cache: DualCache,
+    client: FakeClient | None,
+    memory: ScriptedMemory,
+    redis: ScriptedRedis,
+) -> JsonValue:
     value: float | None = None
     batch_after: float | None = None
     if data["batch"] is None:
         value = await apply(data, cache, client)
     else:
-        batch_redis: Final = redis if redis_enabled else None
+        batch_redis: Final = redis if data["cache"]["redis"] else None
         with spend_counter_batch_scope(batch_redis, frozenset((data["counter_key"],))):
             value = await apply(data, cache, client)
             active = active_spend_counter_batch()
@@ -276,15 +271,25 @@ async def scenario(data: Input) -> JsonValue:
                 state = await active.read(data["counter_key"])
                 if state is not None:
                     batch_after = state[0]
-    return JSON.validate_python(
-        {
-            "value": value,
-            "memory_after": memory.current(data["counter_key"]),
-            "batch_after": batch_after,
-            "redis_sets": [JSON.validate_python([key, amount]) for key, amount in redis.sets],
-        }
-    )
+    redis_sets: list[JsonValue] = []
+    for key, amount in redis.sets:
+        pair: JsonValue = [key, amount]
+        redis_sets.append(pair)
+    return {
+        "value": value,
+        "memory_after": memory.current(data["counter_key"]),
+        "batch_after": batch_after,
+        "redis_sets": redis_sets,
+    }
 
 
 def run(input_value: Input) -> JsonValue:
-    return asyncio.run(scenario(input_value))
+    cache_input = input_value["cache"]
+    memory = ScriptedMemory(cache_input["memory"], fails=cache_input["memory_set_fails"])
+    redis = ScriptedRedis(cache_input, input_value["batch"])
+    cache = DualCache(
+        in_memory_cache=memory,
+        redis_cache=redis if cache_input["redis"] else None,
+    )
+    client = FakeClient(build_table(input_value)) if input_value["prisma"] else None
+    return asyncio.run(scenario(input_value, cache, client, memory, redis))

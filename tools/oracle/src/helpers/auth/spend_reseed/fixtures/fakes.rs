@@ -84,15 +84,19 @@ impl FakeCache {
         }
     }
 
-    pub(crate) fn memory_json(&self) -> Value {
-        let memory = self
-            .state
+    fn stored_amount(&self) -> Option<Decimal> {
+        self.state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .memory;
-        memory.map_or(Value::Null, |amount| {
-            Decimal::from_f64(amount).map_or(Value::Null, amount_json)
-        })
+            .memory
+            .and_then(Decimal::from_f64)
+    }
+
+    pub(crate) fn memory_json(&self) -> Value {
+        let Some(amount) = self.stored_amount() else {
+            return Value::Null;
+        };
+        amount_json(amount)
     }
 
     pub(crate) fn sets_json(&self) -> Value {
@@ -153,14 +157,10 @@ impl ReseedCache for FakeCache {
     }
 
     async fn memory_get(&self, _counter_key: &str) -> Result<Option<ReseedCacheValue>, FakeError> {
-        let memory = self
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .memory;
-        Ok(memory
-            .and_then(Decimal::from_f64)
-            .map(ReseedCacheValue::Number))
+        let Some(amount) = self.stored_amount() else {
+            return Ok(None);
+        };
+        Ok(Some(ReseedCacheValue::Number(amount)))
     }
 
     async fn memory_set(&self, _counter_key: &str, value: Decimal) -> Result<(), FakeError> {

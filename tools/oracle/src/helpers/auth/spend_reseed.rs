@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use betterlite_auth::budget_counter::CounterEntityType;
 use betterlite_auth::spend_reseed::reseed::SpendCounterReseed;
+use betterlite_auth::spend_reseed::windows::WindowQuery;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive as _;
@@ -55,18 +56,24 @@ async fn execute(input: &Input) -> HelperResult {
             .coalesced(&cache, &batch, &input.counter_key, input.require_cache_warm)
             .await
             .map_err(failure)?,
-        Operation::WindowFromTable => counter
-            .window_from_table(
-                &entity,
-                &input.entity_id,
-                input
-                    .duration
-                    .as_deref()
-                    .ok_or_else(|| failure("window_from_table needs a duration"))?,
-                timestamp(&input.expected_start)?,
-            )
-            .await
-            .map_err(failure)?,
+        Operation::WindowFromTable => {
+            let query = WindowQuery {
+                entity_type: &entity,
+                entity_id: &input.entity_id,
+                start: timestamp(&input.start)?,
+            };
+            counter
+                .window_from_table(
+                    &query,
+                    input
+                        .duration
+                        .as_deref()
+                        .ok_or_else(|| failure("window_from_table needs a duration"))?,
+                    timestamp(&input.expected_start)?,
+                )
+                .await
+                .map_err(failure)?
+        }
         Operation::WindowFromDb => counter
             .window_from_db(
                 &entity,
@@ -76,10 +83,17 @@ async fn execute(input: &Input) -> HelperResult {
             )
             .await
             .map_err(failure)?,
-        Operation::WindowFromSpendLogs => counter
-            .window_from_spend_logs(&entity, &input.entity_id, timestamp(&input.start)?)
-            .await
-            .map_err(failure)?,
+        Operation::WindowFromSpendLogs => {
+            let query = WindowQuery {
+                entity_type: &entity,
+                entity_id: &input.entity_id,
+                start: timestamp(&input.start)?,
+            };
+            counter
+                .window_from_spend_logs(&query)
+                .await
+                .map_err(failure)?
+        }
     };
     Ok(json!({
         "value": value.map_or(Value::Null, amount_json),
