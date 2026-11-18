@@ -1,6 +1,8 @@
 #![cfg(test)]
 
-use super::{cache_request_kwargs, converted_stream_requested, is_stream_cache_eligible};
+use super::{
+    CacheEligibility, cache_request_kwargs, converted_stream_requested, is_stream_cache_eligible,
+};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
@@ -45,31 +47,22 @@ fn converted_stream_flags_require_truthy_values() {
 #[test]
 fn terminal_cache_requires_completed_event_and_all_dependencies() {
     let kwargs = IndexMap::new();
-    assert!(is_stream_cache_eligible(
-        "response.completed",
-        Some(&Json::Bool(true)),
-        &kwargs,
-        true,
-        true,
-        true,
-        true
-    ));
-    assert!(!is_stream_cache_eligible(
-        "response.failed",
-        Some(&Json::Bool(true)),
-        &kwargs,
-        true,
-        true,
-        true,
-        true
-    ));
-    assert!(!is_stream_cache_eligible(
-        "response.completed",
-        Some(&Json::Bool(true)),
-        &kwargs,
-        true,
-        true,
-        false,
-        true
-    ));
+    let input = CacheEligibility {
+        event_type: "response.completed",
+        stream: Some(&Json::Bool(true)),
+        kwargs: &kwargs,
+        has_typed_response: true,
+        has_cache_handler: true,
+        has_global_cache: true,
+        store_allowed: true,
+    };
+    assert!(is_stream_cache_eligible(&input));
+    assert!(!is_stream_cache_eligible(&CacheEligibility {
+        event_type: "response.failed",
+        ..input
+    }));
+    assert!(!is_stream_cache_eligible(&CacheEligibility {
+        has_global_cache: false,
+        ..input
+    }));
 }

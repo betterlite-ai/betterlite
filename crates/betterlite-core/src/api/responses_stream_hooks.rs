@@ -16,7 +16,11 @@ pub fn converted_stream_requested(kwargs: &IndexMap<String, Json>) -> bool {
 fn value_is_set(value: Option<&Json>) -> bool {
     match value {
         None | Some(Json::Null | Json::Bool(false)) => false,
-        Some(Json::Number(number)) => number.as_f64().is_some_and(|number| number != 0.0),
+        Some(Json::Number(value)) => {
+            value.as_i64().is_some_and(|integer| integer != 0)
+                || value.as_u64().is_some_and(|integer| integer != 0)
+                || value.as_f64().is_some_and(|float| float != 0.0_f64)
+        }
         Some(Json::Text(text)) => !text.is_empty(),
         Some(Json::List(items)) => !items.is_empty(),
         Some(Json::Object(fields)) => !fields.is_empty(),
@@ -45,22 +49,26 @@ pub fn cache_request_kwargs(
     copied
 }
 
+#[derive(Clone, Copy)]
+pub struct CacheEligibility<'a> {
+    pub event_type: &'a str,
+    pub stream: Option<&'a Json>,
+    pub kwargs: &'a IndexMap<String, Json>,
+    pub has_typed_response: bool,
+    pub has_cache_handler: bool,
+    pub has_global_cache: bool,
+    pub store_allowed: bool,
+}
+
 #[must_use]
-pub fn is_stream_cache_eligible(
-    event_type: &str,
-    stream: Option<&Json>,
-    kwargs: &IndexMap<String, Json>,
-    has_typed_response: bool,
-    has_cache_handler: bool,
-    has_global_cache: bool,
-    store_allowed: bool,
-) -> bool {
-    event_type == "response.completed"
-        && has_typed_response
-        && has_cache_handler
-        && has_global_cache
-        && store_allowed
-        && (matches!(stream, Some(Json::Bool(true))) || converted_stream_requested(kwargs))
+pub fn is_stream_cache_eligible(input: &CacheEligibility<'_>) -> bool {
+    input.event_type == "response.completed"
+        && input.has_typed_response
+        && input.has_cache_handler
+        && input.has_global_cache
+        && input.store_allowed
+        && (matches!(input.stream, Some(Json::Bool(true)))
+            || converted_stream_requested(input.kwargs))
 }
 
 mod tests;
