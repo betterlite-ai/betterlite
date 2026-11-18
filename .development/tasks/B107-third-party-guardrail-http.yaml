@@ -93,7 +93,9 @@ description: >-
   the model call), and no-auth (no key with master_key set fails before any vendor or model call).
   The chat handler on main serves POST /v1/chat/completions, /chat/completions,
   /engines/{model:path}/chat/completions and /openai/deployments/{model:path}/chat/completions; use the
-  unprefixed alias in generic-example-pass and the canonical path elsewhere.
+  unprefixed alias in generic-example-pass and the canonical path elsewhere. The pre_call guardrails reach
+  that handler in two steps: B8803 makes routes/chat.rs run B8801's shared pre-call step with B8802's
+  production ports, and B8805's PreCallHooks port runs B8393's PreCallHook over shared.proxy_logging (B8399).
 scope:
   paths:
     - crates/betterlite-server/src/app/callbacks/third_party_legacy.rs

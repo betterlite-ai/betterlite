@@ -28,7 +28,11 @@ description: >-
   Wiring in server.rs. `application` calls `native_compaction::install(app, scalar_root)` as its last step, after the
   admission stack and after `RootPaths::wrap`, so the target's app is the whole stack a client reaches. That order matters:
   the child path carries the root prefix and only RootPaths cuts it, and LiteLLM's ASGI child runs every middleware,
-  admission included. `serve_connection` puts `axum::extract::ConnectInfo(remote_address)` on every request of the
+  admission included. From the inside out the stack is routes.rs `router()` (B8610 ends it with `app::wrap`, edge's CORS
+  and outer error layers), then request_stack, admission, RootPaths and install. B8610's app::wrap is the last step of
+  router(), not of application(), so the two never compete for the same place. B8610 also rebuilds application() around
+  Shared and StartupOutputs, and this task uses nothing from that rebuild; whichever of the two lands second keeps the
+  other's change, and install stays the last call. `serve_connection` puts `axum::extract::ConnectInfo(remote_address)` on every request of the
   connection, for example with `axum::Extension(ConnectInfo(remote_address))` used as a tower layer around the router
   before `TowerToHyperService::new`. Touch nothing else in server.rs.
 
@@ -123,7 +127,7 @@ out_of_scope:
   - "The compression_interception callback name (callback_utils.py L153-L162): B9821 owns the SDK callback list and B9822 the compression callback."
 pitfalls:
   - "Router::layer wraps every route, not the router as one service, so clone the target's app once in install from the router value before the layer; never rebuild it per request."
-  - "install must be the last wrap in application: inside RootPaths the child's /tenant-a prefix is never cut and the child gets a 404."
+  - "install must be the last wrap in application, outside RootPaths and so outside router() and its app::wrap: inside RootPaths the child's /tenant-a prefix is never cut and the child gets a 404."
   - "By the time a handler runs, RootPaths has cut the prefix from parts.uri, so the root path comes from RequestRootPath through get_request_root_path and the parent URL from OriginalUri."
   - "server.rs drives hyper itself, so axum's into_make_service_with_connect_info does not apply; ConnectInfo has to be added per connection in serve_connection."
   - "The target and the built executor hold the caller's Authorization header; never log the headers or derive Debug output that prints them."
