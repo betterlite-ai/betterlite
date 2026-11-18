@@ -62,6 +62,26 @@ pub struct SagemakerEvents<Chunks> {
     done: bool,
 }
 
+impl<Chunks> SagemakerEvents<Chunks> {
+    // a failed absorb ends the stream: the frame or projection error is already pending
+    fn accept(&mut self, bytes: &[u8]) {
+        if !self.state.absorb(bytes, &mut self.pending) {
+            self.done = true;
+        }
+    }
+
+    fn source_failed(&mut self, source: HttpError) {
+        self.pending
+            .push_back(Err(SagemakerStreamError::Body(source)));
+        self.done = true;
+    }
+
+    fn exhausted(&mut self) {
+        self.done = true;
+        self.state.finish(&mut self.pending);
+    }
+}
+
 impl<Chunks> Iterator for SagemakerEvents<Chunks>
 where
     Chunks: Iterator<Item = Result<Vec<u8>, HttpError>>,
@@ -77,20 +97,9 @@ where
                 return None;
             }
             match self.chunks.next() {
-                Some(Ok(bytes)) => {
-                    if !self.state.absorb(&bytes, &mut self.pending) {
-                        self.done = true;
-                    }
-                }
-                Some(Err(source)) => {
-                    self.pending
-                        .push_back(Err(SagemakerStreamError::Body(source)));
-                    self.done = true;
-                }
-                None => {
-                    self.done = true;
-                    self.state.finish(&mut self.pending);
-                }
+                Some(Ok(bytes)) => self.accept(&bytes),
+                Some(Err(source)) => self.source_failed(source),
+                None => self.exhausted(),
             }
         }
     }
@@ -113,20 +122,9 @@ where
             }
             match Pin::new(&mut this.chunks).poll_next(cx) {
                 Poll::Pending => return Poll::Pending,
-                Poll::Ready(Some(Ok(bytes))) => {
-                    if !this.state.absorb(&bytes, &mut this.pending) {
-                        this.done = true;
-                    }
-                }
-                Poll::Ready(Some(Err(source))) => {
-                    this.pending
-                        .push_back(Err(SagemakerStreamError::Body(source)));
-                    this.done = true;
-                }
-                Poll::Ready(None) => {
-                    this.done = true;
-                    this.state.finish(&mut this.pending);
-                }
+                Poll::Ready(Some(Ok(bytes))) => this.accept(&bytes),
+                Poll::Ready(Some(Err(source))) => this.source_failed(source),
+                Poll::Ready(None) => this.exhausted(),
             }
         }
     }

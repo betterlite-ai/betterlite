@@ -103,18 +103,8 @@ fn embedding_rows(embeddings: &[Json]) -> Vec<HfEmbeddingRecord> {
 }
 
 fn unexpected(value: &Json) -> SagemakerError {
-    SagemakerError {
-        status_code: UNEXPECTED_FORMAT,
-        message: format!(
-            "Unexpected response format. Expected list or dict with 'embedding' key, got: {}",
-            python_type_name(value)
-        ),
-        headers: None,
-    }
-}
-
-fn python_type_name(value: &Json) -> &'static str {
-    match value {
+    // LiteLLM names the value with type(value).__name__
+    let kind = match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",
         Json::Number(number) if number.is_i64() || number.is_u64() => "int",
@@ -122,6 +112,13 @@ fn python_type_name(value: &Json) -> &'static str {
         Json::Text(_) => "str",
         Json::List(_) => "list",
         Json::Object(_) => "dict",
+    };
+    SagemakerError {
+        status_code: UNEXPECTED_FORMAT,
+        message: format!(
+            "Unexpected response format. Expected list or dict with 'embedding' key, got: {kind}"
+        ),
+        headers: None,
     }
 }
 

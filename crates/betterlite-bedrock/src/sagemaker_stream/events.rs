@@ -56,7 +56,7 @@ impl EventState {
         if self.accumulated.is_empty() {
             return;
         }
-        let Some(value) = self.parsed() else {
+        let Ok(value) = serde_json::from_str(&self.accumulated) else {
             tracing::error!(
                 "Warning: Unparseable JSON data remained: {}",
                 self.accumulated
@@ -82,20 +82,19 @@ impl EventState {
 
     // the buffer is cleared only when the JSON parses and projects, as the pinned iterator clears it after the yield
     fn project_accumulated(&mut self, pending: &mut VecDeque<EventItem>) -> bool {
-        let Some(value) = self.parsed() else {
+        let Ok(value) = serde_json::from_str(&self.accumulated) else {
             return true;
         };
         self.push_projection(&value, pending)
     }
 
     fn push_projection(&mut self, value: &Json, pending: &mut VecDeque<EventItem>) -> bool {
-        match self.project(value) {
-            Ok(chunk) => {
-                self.push_chunk(chunk, pending);
-                true
-            }
-            Err(error) => self.failed(error, pending),
-        }
+        let chunk = match self.project(value) {
+            Ok(chunk) => chunk,
+            Err(error) => return self.failed(error, pending),
+        };
+        self.push_chunk(chunk, pending);
+        true
     }
 
     // a buffer that still parses here failed its projection on arrival, so the same failure returns
@@ -110,10 +109,6 @@ impl EventState {
     fn push_chunk(&mut self, chunk: SagemakerChunk, pending: &mut VecDeque<EventItem>) {
         self.accumulated.clear();
         pending.push_back(Ok(Some(chunk)));
-    }
-
-    fn parsed(&self) -> Option<Json> {
-        serde_json::from_str(&self.accumulated).ok()
     }
 
     fn project(&self, value: &Json) -> Result<SagemakerChunk, SagemakerStreamError> {
