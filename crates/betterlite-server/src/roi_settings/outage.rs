@@ -5,7 +5,7 @@ use betterlite_db::postgres_store::diagnostics::DriverError;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_repository::config::ConfigError;
 
-// LiteLLM reads these out of the message, so a timeout answers 503 and a user-cancelled query stays a 500.
+// LiteLLM reads these out of the message, so a timeout is a 503 and a user cancel is not.
 const OUTAGE_MESSAGES: [&str; 13] = [
     "can't reach database server",
     "cannot reach database server",
