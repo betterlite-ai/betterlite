@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from functools import partial
-from typing import Literal
+from typing import Literal, cast, override
 
 import httpx
 from aiohttp import ClientSession
@@ -28,7 +28,14 @@ AsyncCall = Callable[
 ]
 
 
-class Timeout(APITimeoutError):
+class TimeoutErrorName(type):
+    @property
+    @override
+    def __name__(cls) -> str:
+        return "Timeout"
+
+
+class TimeoutError(APITimeoutError, metaclass=TimeoutErrorName):
     message: str
     status_code: int
 
@@ -37,6 +44,7 @@ class Timeout(APITimeoutError):
         self.message = message
         self.status_code = 408
 
+    @override
     def __str__(self) -> str:
         return self.message
 
@@ -224,7 +232,7 @@ def http_error(case: HttpRequest) -> JsonValue:
         if case["asynchronous"]:
             message, separator, _elapsed = str(error).partition(", time taken=")
             if separator:
-                raise Timeout(f"{message}, time taken=<seconds> seconds") from error
+                raise TimeoutError(f"{message}, time taken=<seconds> seconds") from error
         raise
     except BedrockError as error:
         names = {name.lower() for name in case["reply"]["headers"]}
