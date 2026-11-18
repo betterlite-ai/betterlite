@@ -1,0 +1,52 @@
+kind: helper
+name: bedrock-legacy-models-legacy-config-defaults
+call:
+  bedrock_legacy_models:
+    constructors:
+      default_max_tokens: 4096
+      cases:
+        - family: ai21
+          calls:
+            - maxTokens: 0
+              stopSequences: []
+              frequencePenalty: {scale: 0}
+              presencePenalty: {scale: 1}
+              countPenalty: {scale: 2}
+        - family: ai21
+          calls:
+            - {}
+        - family: cohere
+          calls:
+            - {max_tokens: 8, temperature: 0.1, return_likelihood: ALL}
+        - family: cohere
+          calls:
+            - {temperature: 0.2}
+        - family: llama
+          calls:
+            - {maxTokenCount: 32, temperature: 0.5, topP: 1}
+            - {}
+        - family: mistral
+          calls:
+            - {max_tokens: 3, temperature: 0.2, top_p: 1, top_k: 40, stop: [END]}
+        - family: mistral
+          calls:
+            - {}
+        - family: titan
+          calls:
+            - {maxTokenCount: 0, stopSequences: [], temperature: 0, topP: 0}
+        - family: titan
+          calls:
+            - {stopSequences: [x]}
+        - family: anthropic
+          calls:
+            - max_tokens_to_sample: 5
+              stop_sequences: ["\n\nHuman:"]
+              temperature: 0.5
+              top_k: 5
+              top_p: 1
+              anthropic_version: bedrock-2023-05-31
+        - family: anthropic
+          calls:
+            - {}
+env: {}
+compare: {ignore: []}
