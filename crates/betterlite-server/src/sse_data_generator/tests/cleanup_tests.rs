@@ -12,9 +12,10 @@ use tokio::runtime::Runtime;
 
 use super::super::types::{SseDataGenerator, StreamSource};
 use super::{
-    EndState, Outcome, body_of, body_with_request, chat_chunk, frames, other_failure, quiet_source,
-    recorded_outcomes, recording_generator, request, snapshot_handle, source,
+    EndState, Outcome, body_of, chat_chunk, frames, other_failure, quiet_source, recorded_outcomes,
+    recording_generator, request, snapshot_handle, source,
 };
+use crate::data_generator_select::{AsyncDataGenerator, GeneratorInput};
 
 fn recording_cleanup() -> (SseDataGenerator<String>, Arc<Mutex<Vec<Outcome>>>) {
     let outcome_log = Arc::new(Mutex::new(Vec::new()));
@@ -31,7 +32,7 @@ fn cleanup_after_normal_end() {
     let (generator, outcome_log) = recording_cleanup();
     let mut stream_source = source(vec![Ok(chat_chunk("x"))], JsonObject::new());
     stream_source.snapshot = Some(snapshot_handle());
-    let out = frames(&generator, stream_source, request(&[]), false);
+    let out = frames(body_of(&generator, stream_source, request(&[]), false));
     assert_eq!(out.len(), 2);
     let outcomes = recorded_outcomes(&outcome_log);
     assert_eq!(outcomes.len(), 1);
@@ -44,12 +45,12 @@ fn cleanup_after_normal_end() {
 #[test]
 fn cleanup_after_error_frame() {
     let (generator, outcome_log) = recording_cleanup();
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Err(other_failure("boom"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 1);
     let outcomes = recorded_outcomes(&outcome_log);
     assert_eq!(outcomes.len(), 1);
@@ -85,13 +86,13 @@ fn cleanup_keeps_request_parts() {
         .expect("request")
         .into_parts()
         .0;
-    let body = body_with_request(
-        &generator,
-        source(Vec::new(), JsonObject::new()),
-        request(&[]),
-        Some(parts),
-        false,
-    );
+    let body = generator.generate(GeneratorInput {
+        response: source(Vec::new(), JsonObject::new()),
+        key: String::from("key-1"),
+        request_data: request(&[]),
+        request: Some(parts),
+        responses_stream_errors: false,
+    });
     let out = Runtime::new()
         .expect("runtime")
         .block_on(body.collect::<Vec<_>>());

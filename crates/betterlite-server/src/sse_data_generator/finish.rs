@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 
-use super::cleanup::{finish, mark_completed};
+use super::cleanup::finish;
 use super::failure::failure_frame;
 use super::stream::Drive;
 use super::types::{FailureKind, Flag, StreamFailure};
@@ -16,7 +16,9 @@ where
     Key: Send + Sync + 'static,
 {
     drive.finished = Flag(true);
-    mark_completed(&mut drive.session);
+    if let Some(outcome) = drive.session.outcome.as_mut() {
+        outcome.stream_completed = true;
+    }
     if !drive.session.setup.wrapped.0 {
         drive
             .session
@@ -63,7 +65,9 @@ where
         finish(&mut drive.session, false);
         return vec![Err(io::Error::other(failure))];
     }
-    mark_completed(&mut drive.session);
+    if let Some(outcome) = drive.session.outcome.as_mut() {
+        outcome.stream_completed = true;
+    }
     let frame = failure_frame(&failure);
     vec![Ok(Bytes::from(frame))]
 }
@@ -91,7 +95,9 @@ fn state_failure<Key>(
 where
     Key: Send + Sync + 'static,
 {
-    mark_completed(&mut drive.session);
+    if let Some(outcome) = drive.session.outcome.as_mut() {
+        outcome.stream_completed = true;
+    }
     let frame = drive
         .session
         .error_state

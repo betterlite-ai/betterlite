@@ -11,15 +11,6 @@ where
     session.cleanup.finalize(outcome);
 }
 
-pub(super) fn mark_completed<Key>(session: &mut Session<Key>)
-where
-    Key: Sync,
-{
-    if let Some(outcome) = session.outcome.as_mut() {
-        outcome.stream_completed = true;
-    }
-}
-
 impl<Key> Drop for Session<Key>
 where
     Key: Sync,

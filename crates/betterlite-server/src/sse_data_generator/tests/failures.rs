@@ -10,7 +10,7 @@ use rstest::rstest;
 use super::super::failure::failure_frame;
 use super::super::types::{FailureKind, FailureParam, StreamFailure};
 use super::{
-    EndState, Outcome, chat_chunk, chunk_frame, collect, count, expected_chunk, frames,
+    EndState, Outcome, body_of, chat_chunk, chunk_frame, collect, count, expected_chunk, frames,
     other_failure, plain_generator, recorded, recorded_outcomes, recording_generator, request,
     source,
 };
@@ -91,12 +91,12 @@ fn plain_failure_omits_done() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let outcomes = Arc::new(Mutex::new(Vec::new()));
     let (generator, _hooks) = recording_generator(Arc::clone(&events), Arc::clone(&outcomes), None);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Err(other_failure("boom"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![String::from(
@@ -123,12 +123,12 @@ fn http_failure_aborts_body() {
         Arc::clone(&outcome_log),
         None,
     );
-    let out = collect(
+    let out = collect(body_of(
         &generator,
         source(vec![Err(http_failure("boom"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].as_ref().expect_err("io error").to_string(), "boom");
     let outcomes = recorded_outcomes(&outcome_log);
@@ -148,12 +148,12 @@ fn error_state_failure_frames(#[case] skip: JsonValue, #[case] length: usize) {
         Some(String::from("event: response.failed\n\n")),
     );
     let data = request(&[("_litellm_skip_openai_stream_done", skip)]);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Err(other_failure("boom"))], JsonObject::new()),
         data,
         true,
-    );
+    ));
     assert_eq!(out.len(), length);
     assert_eq!(out[0], "event: response.failed\n\n");
     assert_eq!(
@@ -178,12 +178,12 @@ fn http_error_state_emits_frame() {
         Arc::new(Mutex::new(Vec::new())),
         Some(String::from("event: response.failed\n\n")),
     );
-    let out = collect(
+    let out = collect(body_of(
         &generator,
         source(vec![Err(http_failure("boom"))], JsonObject::new()),
         request(&[]),
         true,
-    );
+    ));
     let texts: Vec<String> = out
         .into_iter()
         .map(|frame| String::from_utf8(frame.expect("frame").to_vec()).expect("utf8"))
@@ -199,12 +199,12 @@ fn http_error_state_emits_frame() {
 
 #[test]
 fn error_state_done_only() {
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(vec![Err(other_failure("boom"))], JsonObject::new()),
         request(&[]),
         true,
-    );
+    ));
     assert_eq!(out, vec![DONE_FRAME.to_owned()]);
 }
 
@@ -217,12 +217,12 @@ fn failure_hook_error_aborts_body() {
         None,
     );
     hooks.set_failure_fails(true);
-    let out = collect(
+    let out = collect(body_of(
         &generator,
         source(vec![Err(other_failure("boom"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 1);
     assert_eq!(
         out[0].as_ref().expect_err("io error").to_string(),
@@ -241,12 +241,12 @@ fn only_data_frames_are_marked() {
         Ok(StreamItem::Bytes(Bytes::from_static(b": ping"))),
         Ok(StreamItem::Text(String::from("data: failed"))),
     ];
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(items, JsonObject::new()),
         request(&[]),
         true,
-    );
+    ));
     assert_eq!(out.len(), 4);
     assert_eq!(out[0], chunk_frame(&expected_chunk("x", None)));
     assert_eq!(out[1], ": ping\n\n");
@@ -262,12 +262,12 @@ fn stripped_usage_is_not_observed() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let (generator, _hooks) =
         recording_generator(Arc::clone(&events), Arc::new(Mutex::new(Vec::new())), None);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Ok(super::usage_artifact())], JsonObject::new()),
         request(&[("_litellm_strip_stream_usage", JsonValue::from(true))]),
         true,
-    );
+    ));
     assert_eq!(out, [DONE_FRAME]);
     assert_eq!(count(&recorded(&events), "observe"), 0);
     assert_eq!(count(&recorded(&events), "mark"), 0);

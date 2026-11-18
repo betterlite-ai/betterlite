@@ -35,12 +35,12 @@ fn fallback_generator() -> (SseDataGenerator<String>, Arc<RecordingHooks>) {
 #[test]
 fn chat_frames_restamp_model() {
     let data = request(&[("model", JsonValue::from("requested-model"))]);
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(vec![Ok(chat_chunk("hello"))], JsonObject::new()),
         data,
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![
@@ -52,12 +52,12 @@ fn chat_frames_restamp_model() {
 
 #[test]
 fn empty_request_keeps_model() {
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(vec![Ok(chat_chunk("hello"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![
@@ -75,12 +75,12 @@ fn empty_request_keeps_model() {
 #[case::null(JsonValue::Null, 1)]
 fn skip_done_reads_json_bool(#[case] value: JsonValue, #[case] done_frames: usize) {
     let data = request(&[("_litellm_skip_openai_stream_done", value)]);
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(Vec::new(), JsonObject::new()),
         data,
         false,
-    );
+    ));
     assert_eq!(out.len(), done_frames);
 }
 
@@ -90,12 +90,12 @@ fn wrapped_skips_deferred_logging() {
     let (generator, hooks) =
         recording_generator(Arc::clone(&events), Arc::new(Mutex::new(Vec::new())), None);
     hooks.set_wrap(true);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Ok(chat_chunk("x"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 3);
     assert_eq!(out[0], "data: wrapped\n\n");
     let log = recorded(&events);
@@ -108,7 +108,7 @@ fn unwrapped_logs_once() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let (generator, _hooks) =
         recording_generator(Arc::clone(&events), Arc::new(Mutex::new(Vec::new())), None);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(
             vec![Ok(chat_chunk("x")), Ok(chat_chunk("y"))],
@@ -116,7 +116,7 @@ fn unwrapped_logs_once() {
         ),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 3);
     let log = recorded(&events);
     assert_eq!(count(&log, "wrap"), 0);
@@ -128,7 +128,7 @@ fn capability_flags_are_read_once() {
     let events = Arc::new(Mutex::new(Vec::new()));
     let (generator, _hooks) =
         recording_generator(Arc::clone(&events), Arc::new(Mutex::new(Vec::new())), None);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(
             vec![Ok(chat_chunk("x")), Ok(chat_chunk("y"))],
@@ -136,7 +136,7 @@ fn capability_flags_are_read_once() {
         ),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 3);
     let log = recorded(&events);
     assert_eq!(count(&log, "needs-wrap"), 1);
@@ -157,12 +157,12 @@ fn chunk_hook_sees_str_so_far() {
         Ok(full_chunk("two")),
         Ok(chat_chunk("three")),
     ];
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(items, JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 6);
     let log = recorded(&events);
     let seen: Vec<&str> = log
@@ -179,12 +179,12 @@ fn chunk_failure_emits_error() {
         recording_generator(Arc::clone(&events), Arc::new(Mutex::new(Vec::new())), None);
     hooks.set_per_chunk(true);
     hooks.set_chunk_fails(true);
-    let out = collect(
+    let out = collect(body_of(
         &generator,
         source(vec![Ok(chat_chunk("x"))], JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 1);
     let frame = String::from_utf8(out[0].as_ref().expect("frame").to_vec()).expect("utf8");
     assert_eq!(
@@ -198,12 +198,12 @@ fn chunk_failure_emits_error() {
 fn response_fallback_is_latched() {
     let (generator, _hooks) = fallback_generator();
     let hidden = fallback_hidden(Some("from-response"), &["response-error"]);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Ok(chat_chunk("x"))], hidden),
         include_request(),
         false,
-    );
+    ));
     assert_eq!(out.len(), 3);
     assert!(out[0].contains("\"model\":\"from-response\""));
     assert!(out[1].contains("litellm-fallback-metadata"));
@@ -225,12 +225,12 @@ fn chunk_fallback_is_latched() {
             fallback_hidden(Some("other-model"), &["second-error"]),
         )),
     ];
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(items, JsonObject::new()),
         include_request(),
         false,
-    );
+    ));
     assert_eq!(out.len(), 4);
     assert!(out[0].contains("\"model\":\"fallback-model\""));
     assert!(out[1].contains("litellm-fallback-metadata"));
@@ -248,7 +248,12 @@ fn fallback_errors_keep_first_list() {
         chat_chunk("x"),
         fallback_hidden(Some("chunk-model"), &["chunk-error"]),
     ))];
-    let out = frames(&generator, source(items, hidden), include_request(), false);
+    let out = frames(body_of(
+        &generator,
+        source(items, hidden),
+        include_request(),
+        false,
+    ));
     assert_eq!(out.len(), 3);
     assert!(out[0].contains("\"model\":\"chunk-model\""));
     assert!(out[1].contains("\"fallback_model\":\"chunk-model\""));
@@ -280,12 +285,12 @@ fn fallback_event_needs_both_gates(#[case] gate: Gate) {
     };
     generator.expose_fallback_errors = expose;
     let hidden = fallback_hidden(Some("fallback-model"), &["first-error"]);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Ok(chat_chunk("x"))], hidden),
         data,
         false,
-    );
+    ));
     let open = matches!(gate, Gate::Open);
     assert_eq!(out.len(), if open { 3 } else { 2 });
     assert!(out[0].contains("\"model\":\"fallback-model\""));
@@ -303,12 +308,12 @@ fn fallback_event_needs_both_gates(#[case] gate: Gate) {
 #[case::strip_text(JsonValue::from("true"), 2)]
 fn strips_only_when_enabled(#[case] value: JsonValue, #[case] written: usize) {
     let data = request(&[("_litellm_strip_stream_usage", value)]);
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(vec![Ok(usage_artifact())], JsonObject::new()),
         data,
         false,
-    );
+    ));
     assert_eq!(out.len(), written);
     assert_eq!(out[written - 1], DONE_FRAME);
 }
@@ -322,7 +327,7 @@ fn usage_skip_emits_fallback_once() {
     ]);
     let hidden = fallback_hidden(Some("fallback-model"), &["first-error"]);
     let items = vec![Ok(usage_artifact()), Ok(chat_chunk("after"))];
-    let out = frames(&generator, source(items, hidden), data, false);
+    let out = frames(body_of(&generator, source(items, hidden), data, false));
     assert_eq!(out.len(), 3);
     assert!(out[0].contains("litellm-fallback-metadata"));
     assert!(out[1].contains("\"model\":\"fallback-model\""));
@@ -338,12 +343,12 @@ fn raw_frames_keep_delimiters() {
         ))),
         Ok(StreamItem::Text(String::from("o"))),
     ];
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(items, JsonObject::new()),
         data,
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![
@@ -357,7 +362,7 @@ fn raw_frames_keep_delimiters() {
 #[test]
 fn raw_flushes_partial_frame() {
     let data = request(&[("_litellm_raw_sse_stream", JsonValue::from(true))]);
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(
             vec![Ok(StreamItem::Bytes(Bytes::from_static(b"data: one")))],
@@ -365,7 +370,7 @@ fn raw_flushes_partial_frame() {
         ),
         data,
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![String::from("data: one\n\n"), DONE_FRAME.to_owned()]
@@ -375,7 +380,7 @@ fn raw_flushes_partial_frame() {
 #[test]
 fn raw_keeps_complete_frame() {
     let data = request(&[("_litellm_raw_sse_stream", JsonValue::from(true))]);
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(
             vec![Ok(StreamItem::Bytes(Bytes::from_static(
@@ -385,7 +390,7 @@ fn raw_keeps_complete_frame() {
         ),
         data,
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![String::from("data: two\r\n\r\n"), DONE_FRAME.to_owned()]
@@ -397,7 +402,7 @@ fn raw_rejects_overflow() {
     let data = request(&[("_litellm_raw_sse_stream", JsonValue::from(true))]);
     let mut payload = String::from("data: complete\n\n");
     payload.push_str(&"x".repeat(MAX_RAW_SSE_BUFFER_CHARS + 1));
-    let out = collect(
+    let out = collect(body_of(
         &plain_generator(),
         source(
             vec![Ok(StreamItem::Bytes(Bytes::from(payload)))],
@@ -405,7 +410,7 @@ fn raw_rejects_overflow() {
         ),
         data,
         false,
-    );
+    ));
     assert_eq!(out.len(), 2);
     assert_eq!(
         String::from_utf8(out[0].as_ref().expect("frame").to_vec()).expect("utf8"),
@@ -423,7 +428,7 @@ fn raw_accepts_limit_characters() {
     let data = request(&[("_litellm_raw_sse_stream", JsonValue::from(true))]);
     let mut payload = String::from("data: complete\n\n");
     payload.push_str(&"é".repeat(MAX_RAW_SSE_BUFFER_CHARS));
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(
             vec![Ok(StreamItem::Bytes(Bytes::from(payload)))],
@@ -431,7 +436,7 @@ fn raw_accepts_limit_characters() {
         ),
         data,
         false,
-    );
+    ));
     assert_eq!(out.len(), 3);
     assert_eq!(out[0], "data: complete\n\n");
     assert_eq!(out[1].chars().count(), MAX_RAW_SSE_BUFFER_CHARS + 2);
@@ -445,7 +450,7 @@ fn raw_accepts_limit_characters() {
 #[case::comment(b": keepalive", ": keepalive\n\n")]
 #[case::delimited(b"data: payload\n\n", "data: payload\n\n")]
 fn non_raw_bytes_relay(#[case] raw: &[u8], #[case] expected: &str) {
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(
             vec![Ok(StreamItem::Bytes(Bytes::copy_from_slice(raw)))],
@@ -453,7 +458,7 @@ fn non_raw_bytes_relay(#[case] raw: &[u8], #[case] expected: &str) {
         ),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out.len(), 2);
     assert_eq!(out[0], expected);
     assert_eq!(out[1], DONE_FRAME);
@@ -465,12 +470,12 @@ fn text_error_stops_loop() {
         Ok(StreamItem::Text(String::from("data: failed"))),
         Ok(chat_chunk("ignored")),
     ];
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(items, JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(
         out,
         vec![String::from("data: failed"), DONE_FRAME.to_owned()]
@@ -482,7 +487,12 @@ fn text_error_skips_fallback() {
     let (generator, _hooks) = fallback_generator();
     let hidden = fallback_hidden(Some("fallback-model"), &["first-error"]);
     let items = vec![Ok(StreamItem::Text(String::from("data: failed")))];
-    let out = frames(&generator, source(items, hidden), include_request(), false);
+    let out = frames(body_of(
+        &generator,
+        source(items, hidden),
+        include_request(),
+        false,
+    ));
     assert_eq!(
         out,
         vec![String::from("data: failed"), DONE_FRAME.to_owned()]
@@ -495,7 +505,7 @@ fn text_error_skips_fallback() {
 #[case::event("event: update", "data: event: update\n\n")]
 #[case::comment(": ping", "data: : ping\n\n")]
 fn plain_text_becomes_data_frame(#[case] text: &str, #[case] expected: &str) {
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(
             vec![Ok(StreamItem::Text(text.to_owned()))],
@@ -503,7 +513,7 @@ fn plain_text_becomes_data_frame(#[case] text: &str, #[case] expected: &str) {
         ),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out, vec![expected.to_owned(), DONE_FRAME.to_owned()]);
 }
 
@@ -514,12 +524,12 @@ fn bytes_replace_invalid_utf8() {
         Ok(StreamItem::Bytes(Bytes::from_static(b"\xe2"))),
         Ok(StreamItem::Bytes(Bytes::from_static(b"\x82\xac"))),
     ];
-    let out = frames(
+    let out = frames(body_of(
         &plain_generator(),
         source(items, JsonObject::new()),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out[0], "data: a\u{fffd}b\n\n");
     assert_eq!(out[1], "data: \u{fffd}\n\n");
     assert_eq!(out[2], "data: \u{fffd}\u{fffd}\n\n");
@@ -573,7 +583,7 @@ fn emits_hook_replacement() {
         recording_generator(Arc::clone(&events), Arc::new(Mutex::new(Vec::new())), None);
     hooks.set_per_chunk(true);
     hooks.rewrite.store(true, Ordering::Relaxed);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(
             vec![Ok(chat_chunk("one")), Ok(chat_chunk("two"))],
@@ -581,7 +591,7 @@ fn emits_hook_replacement() {
         ),
         request(&[]),
         false,
-    );
+    ));
     assert_eq!(out[0], chunk_frame(&expected_chunk("hooked", None)));
     assert_eq!(out[1], chunk_frame(&expected_chunk("hooked", None)));
     assert_eq!(count(&recorded(&events), "chunk:hooked"), 1);
@@ -591,12 +601,12 @@ fn emits_hook_replacement() {
 fn no_event_without_errors() {
     let (generator, _hooks) = fallback_generator();
     let hidden = fallback_hidden(None, &[]);
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Ok(chat_chunk("x"))], hidden),
         include_request(),
         false,
-    );
+    ));
     assert_eq!(
         out,
         [
@@ -610,11 +620,11 @@ fn no_event_without_errors() {
 fn uses_supplied_router_check() {
     let mut generator = plain_generator();
     generator.is_model_router = |model| model == "router";
-    let out = frames(
+    let out = frames(body_of(
         &generator,
         source(vec![Ok(chat_chunk("x"))], JsonObject::new()),
         request(&[("model", JsonValue::from("router"))]),
         false,
-    );
+    ));
     assert_eq!(out[0], chunk_frame(&expected_chunk("x", None)));
 }

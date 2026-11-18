@@ -7,7 +7,6 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
-use axum::http::request::Parts;
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -479,50 +478,23 @@ fn body_of(
     request_data: BTreeMap<String, JsonValue>,
     responses_stream_errors: bool,
 ) -> BoxStream<'static, Result<Bytes, io::Error>> {
-    body_with_request(
-        generator,
-        source,
-        request_data,
-        None,
-        responses_stream_errors,
-    )
-}
-
-fn body_with_request(
-    generator: &SseDataGenerator<String>,
-    source: StreamSource,
-    request_data: BTreeMap<String, JsonValue>,
-    request: Option<Parts>,
-    responses_stream_errors: bool,
-) -> BoxStream<'static, Result<Bytes, io::Error>> {
     generator.generate(GeneratorInput {
         response: source,
         key: String::from("key-1"),
         request_data,
-        request,
+        request: None,
         responses_stream_errors,
     })
 }
 
-fn collect(
-    generator: &SseDataGenerator<String>,
-    source: StreamSource,
-    request_data: BTreeMap<String, JsonValue>,
-    responses_stream_errors: bool,
-) -> Vec<Result<Bytes, io::Error>> {
-    let body = body_of(generator, source, request_data, responses_stream_errors);
+fn collect(body: BoxStream<'static, Result<Bytes, io::Error>>) -> Vec<Result<Bytes, io::Error>> {
     Runtime::new()
         .expect("runtime")
         .block_on(body.collect::<Vec<_>>())
 }
 
-fn frames(
-    generator: &SseDataGenerator<String>,
-    source: StreamSource,
-    request_data: BTreeMap<String, JsonValue>,
-    responses_stream_errors: bool,
-) -> Vec<String> {
-    collect(generator, source, request_data, responses_stream_errors)
+fn frames(body: BoxStream<'static, Result<Bytes, io::Error>>) -> Vec<String> {
+    collect(body)
         .into_iter()
         .map(|frame| String::from_utf8(frame.expect("frame").to_vec()).expect("utf8"))
         .collect()

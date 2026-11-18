@@ -7,12 +7,12 @@ use encoding_rs::UTF_8;
 use super::failure::unix_timestamp;
 use super::stream::{Drive, Output};
 use super::types::{FailureKind, FailureParam, Flag, StreamFailure};
+use crate::stream_chunks::MAX_RAW_SSE_BUFFER_CHARS;
 use crate::stream_chunks::StreamItem;
 use crate::stream_chunks::fallback::{fallback_event_frame, fallback_metadata};
 use crate::stream_chunks::frames::{ends_with_frame_delimiter, pop_sse_frame, sse_data_frame};
 use crate::stream_chunks::restamp::{RestampInput, restamp_chunk_model};
 use crate::stream_chunks::serialize::{chunk_response_text, is_usage_artifact, serialize_chunk};
-use crate::stream_chunks::{ChunkKind, MAX_RAW_SSE_BUFFER_CHARS};
 
 const RELAY_PREFIXES: [&str; 3] = ["data:", "event:", ":"];
 
@@ -26,7 +26,9 @@ where
     if drive.session.setup.per_chunk.0 {
         item = match hook(drive, item).await {
             Ok(hooked) => {
-                grow_text(drive, &hooked);
+                if let StreamItem::Chunk(chunk) = &hooked {
+                    drive.chunk_text.push_str(&chunk_response_text(chunk));
+                }
                 hooked
             }
             Err(failure) => return super::finish::handle_failure(drive, failure).await,
@@ -36,12 +38,13 @@ where
     let pending = pending(drive);
     restamp(drive, &mut item);
     if strip_usage(drive, &item) {
-        return skipped(drive, pending);
+        return output(drive, Output::Raw(Vec::new()), pending);
     }
     if let Some(state) = drive.session.error_state.as_mut() {
         state.observe_chunk(&item);
     }
-    output(drive, item, pending)
+    let classified = classify(drive, item);
+    output(drive, classified, pending)
 }
 
 async fn hook<Key>(drive: &mut Drive<Key>, item: StreamItem) -> Result<StreamItem, StreamFailure>
@@ -56,18 +59,6 @@ where
     hooks
         .chunk_hook(item, key, drive.session.request_data.as_ref(), so_far)
         .await
-}
-
-fn grow_text<Key>(drive: &mut Drive<Key>, item: &StreamItem)
-where
-    Key: Sync,
-{
-    if let StreamItem::Chunk(chunk) = item
-        && matches!(chunk.kind, ChunkKind::ModelStream | ChunkKind::ModelFull)
-    {
-        let text = chunk_response_text(chunk);
-        drive.chunk_text.push_str(&text);
-    }
 }
 
 fn latch_fallback<Key>(drive: &mut Drive<Key>, item: &StreamItem)
@@ -128,17 +119,6 @@ where
     matches!(item, StreamItem::Chunk(chunk) if is_usage_artifact(chunk))
 }
 
-fn skipped<Key>(drive: &mut Drive<Key>, pending: bool) -> Vec<Result<Bytes, io::Error>>
-where
-    Key: Sync,
-{
-    if !pending {
-        return Vec::new();
-    }
-    drive.fallback_sent = Flag(true);
-    vec![Ok(Bytes::from(fallback_event(drive)))]
-}
-
 fn fallback_event<Key>(drive: &Drive<Key>) -> String
 where
     Key: Sync,
@@ -150,22 +130,19 @@ where
 
 fn output<Key>(
     drive: &mut Drive<Key>,
-    item: StreamItem,
-    pending: bool,
+    classified: Output,
+    mut pending: bool,
 ) -> Vec<Result<Bytes, io::Error>>
 where
     Key: Send + Sync + 'static,
 {
-    match classify(drive, item) {
-        Output::Item(frame) => {
-            let marked = if let Some(state) = drive.session.error_state.as_mut() {
-                state.mark_emitted(frame)
-            } else {
-                frame
-            };
-            raw_frames(drive, vec![marked], pending)
-        }
-        Output::Raw(frames) => raw_frames(drive, frames, pending),
+    let mut frames = match classified {
+        Output::Item(frame) => vec![if let Some(state) = drive.session.error_state.as_mut() {
+            state.mark_emitted(frame)
+        } else {
+            frame
+        }],
+        Output::Raw(frames) => frames,
         Output::Overflow(frames) => {
             drive.pending_failure = Some(StreamFailure {
                 message: "Raw SSE stream exceeded maximum buffered size without a frame delimiter"
@@ -175,10 +152,19 @@ where
                 status_code: None,
                 kind: FailureKind::Other,
             });
-            raw_frames(drive, frames, false)
+            pending = false;
+            frames
         }
-        Output::End => super::finish::end(drive),
+        Output::End => return super::finish::end(drive),
+    };
+    if pending {
+        drive.fallback_sent = Flag(true);
+        frames.push(fallback_event(drive));
     }
+    frames
+        .into_iter()
+        .map(|frame| Ok(Bytes::from(frame)))
+        .collect()
 }
 
 fn classify<Key>(drive: &mut Drive<Key>, item: StreamItem) -> Output
@@ -187,45 +173,45 @@ where
 {
     match item {
         StreamItem::Chunk(chunk) => Output::Item(sse_data_frame(&serialize_chunk(&chunk))),
-        StreamItem::Bytes(bytes) => classify_bytes(drive, &bytes),
-        StreamItem::Text(text) => classify_text(drive, text),
+        StreamItem::Bytes(bytes) => {
+            let text = UTF_8.decode_without_bom_handling(&bytes).0.into_owned();
+            text_output(drive, text, TextSource::Bytes)
+        }
+        StreamItem::Text(text) => text_output(drive, text, TextSource::Text),
     }
 }
 
-fn classify_bytes<Key>(drive: &mut Drive<Key>, bytes: &[u8]) -> Output
-where
-    Key: Sync,
-{
-    let text = UTF_8.decode_without_bom_handling(bytes).0.into_owned();
-    if drive.session.setup.raw.0 {
-        return buffer_raw(drive, &text);
-    }
-    if RELAY_PREFIXES
-        .iter()
-        .any(|prefix| text.starts_with(*prefix))
-    {
-        let frame = if ends_with_frame_delimiter(&text) {
-            text
-        } else {
-            format!("{text}\n\n")
-        };
-        return Output::Raw(vec![frame]);
-    }
-    Output::Item(sse_data_frame(&text))
+enum TextSource {
+    Bytes,
+    Text,
 }
 
-fn classify_text<Key>(drive: &mut Drive<Key>, text: String) -> Output
+fn text_output<Key>(drive: &mut Drive<Key>, text: String, source: TextSource) -> Output
 where
     Key: Sync,
 {
     if drive.session.setup.raw.0 {
         return buffer_raw(drive, &text);
     }
-    if text.starts_with("data: ") {
-        drive.error_message = Some(text);
-        return Output::End;
+    match source {
+        TextSource::Bytes
+            if RELAY_PREFIXES
+                .iter()
+                .any(|prefix| text.starts_with(*prefix)) =>
+        {
+            let frame = if ends_with_frame_delimiter(&text) {
+                text
+            } else {
+                format!("{text}\n\n")
+            };
+            Output::Raw(vec![frame])
+        }
+        TextSource::Text if text.starts_with("data: ") => {
+            drive.error_message = Some(text);
+            Output::End
+        }
+        TextSource::Bytes | TextSource::Text => Output::Item(sse_data_frame(&text)),
     }
-    Output::Item(sse_data_frame(&text))
 }
 
 fn buffer_raw<Key>(drive: &mut Drive<Key>, text: &str) -> Output
@@ -242,23 +228,4 @@ where
         return Output::Overflow(frames);
     }
     Output::Raw(frames)
-}
-
-fn raw_frames<Key>(
-    drive: &mut Drive<Key>,
-    frames: Vec<String>,
-    pending: bool,
-) -> Vec<Result<Bytes, io::Error>>
-where
-    Key: Sync,
-{
-    let mut output = frames
-        .into_iter()
-        .map(|frame| Ok(Bytes::from(frame)))
-        .collect::<Vec<_>>();
-    if pending {
-        drive.fallback_sent = Flag(true);
-        output.push(Ok(Bytes::from(fallback_event(drive))));
-    }
-    output
 }
