@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use super::support::{Harness, details, exception, field, json, object_keys, text};
 
-const BASE: &str = r#"{"litellm_call_id":"call-1","standard_logging_object":{"id":"chatcmpl-provider","model":"gpt-4o","status":"success","messages":[{"role":"user","content":"hi"}],"litellm_params":{"custom":true}}}"#;
+const BASE: &str = r#"{"litellm_call_id":"call-1","standard_logging_object":{"id":"chatcmpl-provider","model":"gpt-4o","status":"success","response":"provider text","messages":[{"role":"user","content":"hi"}],"litellm_params":{"custom":true}}}"#;
 
 const FALLBACK: &str = r#"{"litellm_call_id":"call-1","model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"start_time":"2026-01-01T00:00:00.5Z"}"#;
 
