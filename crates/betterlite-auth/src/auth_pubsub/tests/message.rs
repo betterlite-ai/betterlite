@@ -269,6 +269,19 @@ fn malformed_message() {
         decode_invalidation(b"{\"cache_key\":\"a\x01b\"}"),
         Err(DecodeError::Syntax)
     );
+    let slash = "\\";
+    let lone_surrogate = format!("{{\"cache_key\":\"{slash}ud800\"}}");
+    assert_eq!(
+        decode_invalidation(lone_surrogate.as_bytes()),
+        Err(DecodeError::Syntax)
+    );
+}
+
+#[test]
+fn huge_integer_becomes_infinity() {
+    let huge = format!("{{\"cache_key\":\"k\",\"new_value\":{}}}", "9".repeat(400));
+    let decoded = parsed(huge.as_bytes()).expect("a huge integer still parses");
+    assert!(same_number(decoded.new_value, Some(f64::INFINITY)));
 }
 
 #[test]
