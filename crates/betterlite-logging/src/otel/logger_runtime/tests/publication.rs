@@ -1,0 +1,337 @@
+#![cfg(test)]
+
+use std::collections::BTreeSet;
+use std::sync::{Arc, Mutex};
+
+use opentelemetry_sdk::trace::SdkTracerProvider;
+
+use crate::callback_logger::CallbackLogger;
+use crate::otel::config::ExporterOwner;
+use crate::otel::logger_runtime::factory::build_otel_v2_logger;
+use crate::otel::logger_runtime::publish::{fan_out_provider, publish_global_v2_provider};
+use crate::otel::logger_runtime::select::{
+    excluded_db_systems, select_global_otel_v2_logger, v2_configs,
+};
+use crate::otel::logger_runtime::types::{ConstructorSettings, InjectedProviders, LoggerClass};
+
+use super::support::{
+    FakeLogger, finished, fixture, fixture_excluding, fixture_sink, fixture_with_base, lock,
+    operator_exporter, owned_fixture_sink, placeholder, probe, register_callback, settings,
+    tenant_destination,
+};
+
+#[test]
+fn registered_first() {
+    let fixture = fixture();
+    let registered = register_callback(&fixture, settings(vec![]), "registered");
+    let other = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![]),
+        Some("other"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&other.callback)];
+    let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    let registered_callback: Arc<dyn CallbackLogger> = registered;
+    assert!(Arc::ptr_eq(&selected.callback, &registered_callback));
+}
+
+#[test]
+fn first_v2_fallback() {
+    let fixture = fixture();
+    let legacy: Arc<dyn CallbackLogger> = Arc::new(FakeLogger {
+        name: "legacy".to_owned(),
+    });
+    let first = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![]),
+        Some("first"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let second = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![]),
+        Some("second"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![
+        legacy,
+        Arc::clone(&first.callback),
+        Arc::clone(&second.callback),
+    ];
+    let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    assert!(Arc::ptr_eq(&selected.callback, &first.callback));
+    assert_eq!(fixture.constructor.records().len(), 2);
+}
+
+#[test]
+fn generic_once() {
+    let fixture = fixture();
+    let in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    let first = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    let second = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    assert!(Arc::ptr_eq(&first, &second));
+    assert_eq!(fixture.constructor.records().len(), 1);
+    assert_eq!(fixture.constructor.records()[0].callback_name, None);
+    assert_eq!(first.config, settings(vec![placeholder()]));
+}
+
+// logger.py:871 builds OpenTelemetryV2() for the OTEL_* fallback, even with a langfuse mapper in the config
+#[test]
+fn the_fallback_stays_generic_with_the_langfuse_mapper() {
+    let mut base = settings(vec![placeholder()]);
+    base.mapper_names = vec!["langfuse".to_owned()];
+    let fixture = fixture_with_base(base.clone());
+    let in_memory: Vec<Arc<dyn CallbackLogger>> = Vec::new();
+    let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    let records = fixture.constructor.records();
+    assert_eq!(records[0].class, LoggerClass::Generic);
+    assert_eq!(selected.config, base);
+}
+
+#[test]
+fn legacy_slot_with_v2_catalog() {
+    let fixture = fixture();
+    let legacy: Arc<dyn CallbackLogger> = Arc::new(FakeLogger {
+        name: "legacy".to_owned(),
+    });
+    let v2 = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![]),
+        Some("v2"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![legacy, Arc::clone(&v2.callback)];
+    let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    assert!(Arc::ptr_eq(&selected.callback, &v2.callback));
+    let configs = v2_configs(&fixture.runtime, &in_memory, &selected);
+    assert_eq!(configs.len(), 1);
+    assert_eq!(fixture.constructor.records().len(), 1);
+}
+
+#[test]
+fn distinct_equal_configs() {
+    let fixture = fixture();
+    let config = settings(vec![operator_exporter()]);
+    let first = build_otel_v2_logger(
+        &fixture.runtime,
+        config.clone(),
+        Some("first"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let second = build_otel_v2_logger(
+        &fixture.runtime,
+        config.clone(),
+        Some("second"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&first.callback), Arc::clone(&second.callback)];
+    let selected = select_global_otel_v2_logger(&fixture.runtime, &in_memory).expect("selected");
+    let configs = v2_configs(&fixture.runtime, &in_memory, &selected);
+    assert_eq!(configs, vec![config.clone(), config]);
+}
+
+#[test]
+fn explicit_empty_exclusions() {
+    let fixture = fixture_excluding(Some(Vec::new()));
+    let mut config = settings(vec![]);
+    config.excluded_services = BTreeSet::from(["postgresql".to_owned()]);
+    assert!(excluded_db_systems(&fixture.runtime, &config).is_empty());
+}
+
+#[test]
+fn absent_exclusions_use_the_selected_config() {
+    let fixture = fixture();
+    let mut config = settings(vec![]);
+    config.excluded_services = BTreeSet::from(["redis".to_owned()]);
+    assert_eq!(
+        excluded_db_systems(&fixture.runtime, &config),
+        config.excluded_services
+    );
+}
+
+#[test]
+fn configured_exclusions_normalize() {
+    let fixture = fixture_excluding(Some(vec![
+        " Redis ".to_owned(),
+        "postgres".to_owned(),
+        "postgresql".to_owned(),
+        "batch_write_to_db".to_owned(),
+        "typo".to_owned(),
+    ]));
+    assert_eq!(
+        excluded_db_systems(&fixture.runtime, &settings(vec![])),
+        BTreeSet::from(["postgresql".to_owned(), "redis".to_owned()])
+    );
+}
+
+#[test]
+fn configured_exclusions_keep_the_postgresql_spelling() {
+    let fixture = fixture_excluding(Some(vec!["postgresql".to_owned()]));
+    assert_eq!(
+        excluded_db_systems(&fixture.runtime, &settings(vec![])),
+        BTreeSet::from(["postgresql".to_owned()])
+    );
+}
+
+#[test]
+fn attach_before_publish() {
+    let fixture = fixture();
+    let unwired = fan_out_provider(&fixture.runtime);
+    assert!(unwired.registry().fan_out.is_none());
+    let fan_out = Arc::clone(&unwired.fan_out);
+    let attached = Arc::new(Mutex::new(None));
+    let received = Arc::new(Mutex::new(None));
+    let setter: &dyn Fn(&SdkTracerProvider) = &|provider: &SdkTracerProvider| {
+        *lock(&attached) = Some(lock(&fan_out).fan_out.is_some());
+        *lock(&received) = Some(provider.clone());
+    };
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![fixture_sink()]),
+        Some("published"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let published =
+        publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
+    assert_eq!(*lock(&attached), Some(true));
+    let seen = lock(&received).clone().expect("the setter saw a provider");
+    probe(&seen);
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    probe(&published.provider);
+    assert_eq!(fixture.export_sinks.finished(), 2);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn remembered_provider_beats_global() {
+    let fixture = fixture();
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![fixture_sink()]),
+        Some("catalog"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let published = publish_global_v2_provider(
+        &fixture.runtime,
+        &in_memory,
+        &|_provider: &SdkTracerProvider| {},
+    )
+    .expect("published");
+    let provider = fan_out_provider(&fixture.runtime);
+    assert!(provider.registry().fan_out.is_some());
+    probe(&provider.provider);
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+    probe(&published.provider);
+    assert_eq!(fixture.export_sinks.finished(), 2);
+}
+
+#[test]
+fn registered_fallback_attaches() {
+    let fixture = fixture();
+    register_callback(&fixture, settings(vec![]), "registered");
+    let provider = fan_out_provider(&fixture.runtime);
+    assert!(provider.registry().fan_out.is_some());
+    probe(&provider.provider);
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn published_provider_delivers_to_a_tenant_destination() {
+    let fixture = fixture();
+    fixture
+        .scope
+        .set_destinations(vec![tenant_destination("catalog")]);
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![fixture_sink()]),
+        Some("catalog"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let received = Arc::new(Mutex::new(None));
+    let setter: &dyn Fn(&SdkTracerProvider) = &|provider: &SdkTracerProvider| {
+        *lock(&received) = Some(provider.clone());
+    };
+    publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
+    let provider = lock(&received).clone().expect("the setter saw a provider");
+    probe(&provider);
+    provider.force_flush().expect("flushed");
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(fixture.tenant_sinks.finished(), 1);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn published_provider_keeps_an_overridden_backend_silent() {
+    let fixture = fixture();
+    fixture
+        .scope
+        .set_destinations(vec![tenant_destination("newrelic")]);
+    let logger = build_otel_v2_logger(
+        &fixture.runtime,
+        settings(vec![owned_fixture_sink(ExporterOwner::Newrelic)]),
+        Some("newrelic"),
+        InjectedProviders::default(),
+        ConstructorSettings::default(),
+    )
+    .expect("built");
+    let in_memory = vec![Arc::clone(&logger.callback)];
+    let received = Arc::new(Mutex::new(None));
+    let setter: &dyn Fn(&SdkTracerProvider) = &|provider: &SdkTracerProvider| {
+        *lock(&received) = Some(provider.clone());
+    };
+    publish_global_v2_provider(&fixture.runtime, &in_memory, setter).expect("published");
+    let provider = lock(&received).clone().expect("the setter saw a provider");
+    probe(&provider);
+    provider.force_flush().expect("flushed");
+    assert_eq!(fixture.export_sinks.finished(), 0);
+    assert_eq!(fixture.tenant_sinks.finished(), 1);
+}
+
+#[test]
+fn registered_provider_delivers_to_a_tenant_destination() {
+    let fixture = fixture();
+    fixture
+        .scope
+        .set_destinations(vec![tenant_destination("registered")]);
+    register_callback(&fixture, settings(vec![]), "registered");
+    let provider = fan_out_provider(&fixture.runtime);
+    probe(&provider.provider);
+    provider.provider.force_flush().expect("flushed");
+    assert_eq!(fixture.export_sinks.finished(), 1);
+    assert_eq!(fixture.tenant_sinks.finished(), 1);
+    assert_eq!(finished(&fixture.sdk_sink), 0);
+}
+
+#[test]
+fn sdk_fallback_builds_nothing() {
+    let fixture = fixture();
+    let provider = fan_out_provider(&fixture.runtime);
+    assert!(provider.registry().fan_out.is_none());
+    probe(&provider.provider);
+    assert_eq!(finished(&fixture.sdk_sink), 1);
+    assert_eq!(fixture.constructor.records().len(), 0);
+}
