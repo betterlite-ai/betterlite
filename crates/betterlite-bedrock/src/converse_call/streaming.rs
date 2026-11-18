@@ -40,7 +40,7 @@ pub struct WrappedStream<'deps> {
     pub custom_llm_provider: &'static str,
     pub response_headers: IndexMap<String, String>,
     pub stream_chunk_size: Option<u64>,
-    redactor: &'deps Redactor,
+    pub redactor: &'deps Redactor,
 }
 
 pub struct PendingStream<'deps> {

@@ -6,7 +6,7 @@ from contextlib import AsyncExitStack, redirect_stdout
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from typing import Protocol, TypedDict, Unpack, runtime_checkable
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
@@ -130,6 +130,10 @@ class Fixture:
                 litellm_params=params,
                 stream_options=None,
                 messages=messages,
+                dispatch_failure_handlers=AsyncMock(return_value=None),
+                dispatch_success_handlers=AsyncMock(return_value=None),
+                async_failure_handler=AsyncMock(return_value=None),
+                async_success_handler=AsyncMock(return_value=None),
             ),
             optional_params=dict(self.input["params"]),
             acompletion=self.input["asynchronous"],
