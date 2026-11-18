@@ -1,7 +1,7 @@
 mod fakes;
+mod warnings;
 
 use std::collections::BTreeMap;
-use std::fmt::Debug;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_auth::auth_cache::gateway_cache;
@@ -21,12 +21,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio::task::yield_now;
-use tracing::field::{Field, Visit};
-use tracing::{Event, Level, Subscriber};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::registry;
 
 use self::fakes::{Clock, Endpoint, Eviction, PublishMode, Step};
+use self::warnings::Warnings;
 
 const CLOCK_NOW: f64 = 1000.0_f64;
 const SETTLE: usize = 1000;
@@ -78,42 +77,6 @@ pub(crate) enum StepInput {
     Block,
     Fail,
     Message { message: String },
-}
-
-struct Capture(String);
-
-impl Visit for Capture {
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        if field.name() == "message" {
-            self.0 = format!("{value:?}");
-        }
-    }
-}
-
-struct Warnings(Shared);
-
-impl<Inner: Subscriber> Layer<Inner> for Warnings {
-    fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let level = *event.metadata().level();
-        if !event
-            .metadata()
-            .target()
-            .starts_with("betterlite_auth::auth_pubsub")
-            || !matches!(level, Level::WARN | Level::ERROR)
-        {
-            return;
-        }
-        let mut capture = Capture(String::new());
-        event.record(&mut capture);
-        let name = if level == Level::WARN {
-            "warning"
-        } else {
-            "error"
-        };
-        lock(&self.0)
-            .warnings
-            .push(json!({ "level": name, "message": capture.0 }));
-    }
 }
 
 pub(crate) struct Op;
