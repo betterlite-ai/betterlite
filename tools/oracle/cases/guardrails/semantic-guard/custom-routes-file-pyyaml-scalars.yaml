@@ -1,0 +1,13 @@
+kind: helper
+name: custom-routes-file-pyyaml-scalars
+call:
+  b3808:
+    function: build_routes
+    custom_routes_file: |-
+      - route_name: 1e3
+        description: y
+        utterances: [1e3, 1.5e3, 0o10, y, 1e-3, 1.5E3, .5e3]
+        similarity_threshold: 0.8
+    global_threshold: 0.5
+env: {}
+compare: {ignore: []}
