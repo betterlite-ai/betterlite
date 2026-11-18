@@ -15,11 +15,11 @@ pub async fn async_post_call_failure_hook(
     exception: Option<&ModifyResponseException>,
     caller_metadata: &IndexMap<String, Json>,
 ) {
-    let Some(exception) = exception else {
+    let Some(block) = exception else {
         return;
     };
     // Every registered Rubrik instance sees this hook; only the one whose guardrail raised the block may pop the stash.
-    if exception.guardrail_name != logger.settings.guardrail_name {
+    if block.guardrail_name != logger.settings.guardrail_name {
         return;
     }
     let stash = mem::take(&mut request_data.logging_obj);
@@ -40,10 +40,10 @@ pub async fn async_post_call_failure_hook(
             litellm_call_id = call_id,
             model,
             user_id,
-            raising_guardrail = %exception.guardrail_name,
+            raising_guardrail = %block.guardrail_name,
             "Rubrik: block exception without stashed logging_obj"
         );
         return;
     };
-    build_and_enqueue_block_event(logger, &logging_obj, exception, caller_metadata).await;
+    build_and_enqueue_block_event(logger, &logging_obj, block, caller_metadata).await;
 }

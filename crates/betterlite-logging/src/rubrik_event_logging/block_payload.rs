@@ -22,19 +22,18 @@ pub fn prepare_block_failure_payload(
     caller_metadata: &IndexMap<String, Json>,
 ) -> Result<IndexMap<String, Json>, EventPayloadError> {
     // A streamed block can arrive with the object already set; a prompt block never has it.
-    let mut payload = match field_object(call_details, STANDARD_LOGGING_OBJECT)? {
-        Some(base) => base.clone(),
-        None => {
-            let call_id = text_field(call_details, "litellm_call_id")
-                .ok()
-                .flatten()
-                .unwrap_or("None");
-            tracing::debug!(
-                litellm_call_id = call_id,
-                "Rubrik: standard_logging_object not yet on model_call_details; using the fallback payload"
-            );
-            build_fallback_payload(call_details, caller_metadata)?
-        }
+    let mut payload = if let Some(base) = field_object(call_details, STANDARD_LOGGING_OBJECT)? {
+        base.clone()
+    } else {
+        let call_id = text_field(call_details, "litellm_call_id")
+            .ok()
+            .flatten()
+            .unwrap_or("None");
+        tracing::debug!(
+            litellm_call_id = call_id,
+            "Rubrik: standard_logging_object not yet on model_call_details; using the fallback payload"
+        );
+        build_fallback_payload(call_details, caller_metadata)?
     };
     payload.insert(
         "response".to_owned(),
