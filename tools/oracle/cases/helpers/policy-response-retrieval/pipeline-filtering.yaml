@@ -12,6 +12,7 @@ call:
     tags: []
     pipelines:
       - {policy_name: post, mode: post_call, guardrails: [g1, g2]}
+      - {policy_name: post-two, mode: post_call, guardrails: [g4]}
       - {policy_name: pre, mode: pre_call, guardrails: [g3]}
     already_attached: []
 env: {}
