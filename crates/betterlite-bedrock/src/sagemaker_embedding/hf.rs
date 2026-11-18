@@ -146,12 +146,15 @@ pub fn transform_response(
 }
 
 fn decode_reply(body: &[u8], status_code: u16) -> Result<HfReplyBody, HfReplyError> {
-    serde_json::from_slice(body).map_err(|source| match source.is_data() {
-        true => HfReplyError::Shape { source },
-        false => HfReplyError::Parse {
-            status_code,
-            source,
-        },
+    serde_json::from_slice(body).map_err(|source| {
+        if source.is_data() {
+            HfReplyError::Shape { source }
+        } else {
+            HfReplyError::Parse {
+                status_code,
+                source,
+            }
+        }
     })
 }
 
@@ -198,9 +201,10 @@ impl HfScalar {
 
 // LiteLLM names the value with type(value).__name__
 fn number_kind(number: &Number) -> &'static str {
-    match number.is_i64() || number.is_u64() {
-        true => "int",
-        false => "float",
+    if number.is_i64() || number.is_u64() {
+        "int"
+    } else {
+        "float"
     }
 }
 
