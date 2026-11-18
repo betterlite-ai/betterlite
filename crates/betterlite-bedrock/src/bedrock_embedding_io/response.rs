@@ -58,53 +58,36 @@ pub fn transform_response(
         && response_list.len() == 1
         && reply.contains_key("invocationArn")
     {
-        return match async_response(reply, model, provider)? {
-            Some(response) => provider_embedding_reply(response),
-            None => Ok(EmbeddingReply {
-                object: RESPONSE_OBJECT,
-                data: vec![EmbeddingRecord {
-                    object: EMBEDDING_OBJECT.to_owned(),
-                    embedding: EmbeddingVector::Floats(Vec::new()),
-                    index: 0,
-                }],
-                model: model.to_owned(),
-                usage: EmbeddingUsage {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0,
-                    prompt_tokens_details: None,
-                },
-                invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
-            }),
+        return match provider {
+            BedrockEmbeddingProvider::Twelvelabs => {
+                let response =
+                    marengo::transform_async_response(&parse_one::<Params>(reply)?, model);
+                provider_embedding_reply(ProviderResponse::Marengo(response))
+            }
+            BedrockEmbeddingProvider::Nova => {
+                let response = nova::transform_invoke_response(&parse_one::<Params>(reply)?, model);
+                provider_embedding_reply(ProviderResponse::Nova(response))
+            }
+            BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
+                Ok(EmbeddingReply {
+                    object: RESPONSE_OBJECT,
+                    data: vec![EmbeddingRecord {
+                        object: EMBEDDING_OBJECT.to_owned(),
+                        embedding: EmbeddingVector::Floats(Vec::new()),
+                        index: 0,
+                    }],
+                    model: model.to_owned(),
+                    usage: EmbeddingUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                        prompt_tokens_details: None,
+                    },
+                    invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
+                })
+            }
         };
     }
-    regular_reply(response_list, model, provider, batch_data)
-}
-
-// only a single reply that names the ARN enters the async branch; a null ARN is still an ARN
-fn async_response(
-    reply: &Object,
-    model: &str,
-    provider: BedrockEmbeddingProvider,
-) -> Result<Option<ProviderResponse>, EmbeddingIoError> {
-    match provider {
-        BedrockEmbeddingProvider::Twelvelabs => Ok(Some(ProviderResponse::Marengo(
-            marengo::transform_async_response(&parse_one::<Params>(reply)?, model),
-        ))),
-        BedrockEmbeddingProvider::Nova => Ok(Some(ProviderResponse::Nova(
-            nova::transform_invoke_response(&parse_one::<Params>(reply)?, model),
-        ))),
-        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => Ok(None),
-    }
-}
-
-// the exact titan models are chosen before the provider, which only sees twelvelabs and nova
-fn regular_reply(
-    response_list: &[Object],
-    model: &str,
-    provider: BedrockEmbeddingProvider,
-    batch_data: Option<&[Object]>,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
     match model {
         TITAN_MULTIMODAL_MODEL => {
             let response = multimodal::transform_response(response_list, model, batch_data)?;
@@ -118,35 +101,26 @@ fn regular_reply(
             let response = titan::transform_response(response_list, model, v2::by_type_embedding)?;
             Ok(titan_embedding_reply(response))
         }
-        _ => provider_reply(response_list, model, provider, batch_data),
-    }
-}
-
-fn provider_reply(
-    response_list: &[Object],
-    model: &str,
-    provider: BedrockEmbeddingProvider,
-    batch_data: Option<&[Object]>,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    match provider {
-        BedrockEmbeddingProvider::Twelvelabs => {
-            let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
-            let batch = batch_data
-                .map(parse_list::<MarengoBilledRequest>)
-                .transpose()?;
-            let response = marengo::transform_response(&replies, model, batch.as_deref())?;
-            provider_embedding_reply(ProviderResponse::Marengo(response))
-        }
-        BedrockEmbeddingProvider::Nova => {
-            let replies = parse_list::<Params>(response_list)?;
-            let batch = batch_data.map(parse_list::<Params>).transpose()?;
-            let response = nova::transform_response(&replies, model, batch.as_deref())?;
-            provider_embedding_reply(ProviderResponse::Nova(response))
-        }
-        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
-            Err(EmbeddingIoError::Unmapped {
-                model: model.to_owned(),
-            })
-        }
+        _ => match provider {
+            BedrockEmbeddingProvider::Twelvelabs => {
+                let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
+                let batch = batch_data
+                    .map(parse_list::<MarengoBilledRequest>)
+                    .transpose()?;
+                let response = marengo::transform_response(&replies, model, batch.as_deref())?;
+                provider_embedding_reply(ProviderResponse::Marengo(response))
+            }
+            BedrockEmbeddingProvider::Nova => {
+                let replies = parse_list::<Params>(response_list)?;
+                let batch = batch_data.map(parse_list::<Params>).transpose()?;
+                let response = nova::transform_response(&replies, model, batch.as_deref())?;
+                provider_embedding_reply(ProviderResponse::Nova(response))
+            }
+            BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
+                Err(EmbeddingIoError::Unmapped {
+                    model: model.to_owned(),
+                })
+            }
+        },
     }
 }
