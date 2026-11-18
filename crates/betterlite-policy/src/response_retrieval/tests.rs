@@ -205,12 +205,12 @@ fn request() -> RetrievalRequest<'static> {
     }
 }
 
-fn dependencies<'a>(
-    registry: &'a PolicyRegistry,
-    attachments: &'a AttachmentRegistry,
-    router: Option<&'a dyn PolicyRouterView>,
-    decoder: &'a dyn Fn(Option<&str>) -> Option<String>,
-) -> RetrievalDependencies<'a> {
+fn dependencies<'source>(
+    registry: &'source PolicyRegistry,
+    attachments: &'source AttachmentRegistry,
+    router: Option<&'source dyn PolicyRouterView>,
+    decoder: &'source dyn Fn(Option<&str>) -> Option<String>,
+) -> RetrievalDependencies<'source> {
     RetrievalDependencies {
         registry,
         attachments,
@@ -520,7 +520,7 @@ fn attaches_post_call_pipelines_with_provenance() {
     let decoder = decode_with("dep-1");
     let mut data = bare_data("resp_a");
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (_, logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
     let bucket = bucket_of(&data);
     assert_eq!(bucket.applied_policies, Some(strings(&["p1", "p2"])));
     assert_eq!(
@@ -579,7 +579,7 @@ fn creates_the_metadata_bucket_when_no_policies_match() {
     let decoder = decode_with("dep-1");
     let mut data = bare_data("resp_a");
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (_, logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
     assert_eq!(bucket_of(&data), &MetadataBucket::default());
     assert!(logs.is_empty());
 }
@@ -594,7 +594,7 @@ fn uninitialized_registry_leaves_the_data_untouched() {
     data.passthrough.insert("caller".to_owned(), text("kept"));
     let before = data.clone();
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (_, logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
     assert_eq!(data, before);
     assert!(logs.is_empty());
 }
@@ -634,7 +634,7 @@ fn ungoverned_retrieval_warns_and_leaves_the_data_untouched(
         has_router.then_some(router_view),
         &decoder,
     );
-    let (_, logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
     assert_eq!(data, before);
     assert_eq!(
         logs,
@@ -674,7 +674,7 @@ fn already_attached_pipelines_are_kept_and_new_ones_merged() {
     let (mut data, registry, attachments, router) = dedup_setup();
     let decoder = decode_with("dep-1");
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (_, logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
     let bucket = bucket_of(&data);
     assert_eq!(
         stored_pipelines(bucket),
@@ -741,7 +741,7 @@ fn a_fully_attached_bucket_is_left_alone() {
     let router = Router::new(&[("dep-1", "gpt-4o")], &[]);
     let decoder = decode_with("dep-1");
     let deps = dependencies(&registry, &attachments, Some(&router), &decoder);
-    let (_, logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
+    let ((), logs) = captured(|| attach_retrieval_pipelines(&mut data, &request(), &deps));
     let bucket = bucket_of(&data);
     assert_eq!(bucket.guardrail_pipelines, Some(stored));
     assert_eq!(bucket.pipeline_managed_guardrails, None);
@@ -777,7 +777,7 @@ fn condition_filtered_policies_are_not_attached() {
 
 #[test]
 fn existing_headers_and_sources_are_preserved() {
-    let bucket = MetadataBucket {
+    let existing = MetadataBucket {
         guardrail_pipelines: None,
         pipeline_managed_guardrails: None,
         applied_policies: Some(strings(&["old-policy"])),
@@ -785,7 +785,7 @@ fn existing_headers_and_sources_are_preserved() {
         policy_sources: Some(sources(&[("old-policy", "team:team-a")])),
         passthrough: BTreeMap::new(),
     };
-    let mut data = data("resp_a", bucket);
+    let mut data = data("resp_a", existing);
     run_standard_retrieval(&mut data);
     let bucket = bucket_of(&data);
     assert_eq!(
@@ -862,20 +862,20 @@ fn null_stored_pipelines_read_as_empty() {
 #[test]
 fn a_non_object_metadata_value_fails_to_deserialize() {
     let result = serde_json::from_str::<RetrievalData>(r#"{"metadata": "junk"}"#);
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[test]
 fn a_non_string_response_id_fails_to_deserialize() {
     let result = serde_json::from_str::<RetrievalData>(r#"{"response_id": 1}"#);
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[test]
 fn a_non_list_guardrail_pipelines_value_fails_to_deserialize() {
     let result =
         serde_json::from_str::<RetrievalData>(r#"{"metadata": {"_guardrail_pipelines": "junk"}}"#);
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[test]
@@ -883,18 +883,18 @@ fn a_malformed_stored_pipeline_fails_to_deserialize() {
     let result = serde_json::from_str::<RetrievalData>(
         r#"{"metadata": {"_guardrail_pipelines": [["p1", {"mode": "pre_call", "steps": []}]]}}"#,
     );
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[test]
 fn a_non_list_applied_policies_header_fails_to_deserialize() {
     let result = serde_json::from_str::<RetrievalData>(r#"{"metadata": {"applied_policies": 5}}"#);
-    assert!(result.is_err());
+    result.unwrap_err();
 }
 
 #[test]
 fn a_non_object_policy_sources_value_fails_to_deserialize() {
     let result =
         serde_json::from_str::<RetrievalData>(r#"{"metadata": {"policy_sources": "junk"}}"#);
-    assert!(result.is_err());
+    result.unwrap_err();
 }

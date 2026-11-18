@@ -35,7 +35,7 @@ impl Helper for Op {
             router: input
                 .router
                 .as_ref()
-                .map(|view| view as &dyn PolicyRouterView),
+                .map(|view| -> &dyn PolicyRouterView { view }),
             model_id_from_response_id: decoder,
         };
         let request = RetrievalRequest {
@@ -45,7 +45,7 @@ impl Helper for Op {
             },
             tags,
         };
-        let (_, logs) =
+        let ((), logs) =
             logging::captured(|| attach_retrieval_pipelines(&mut data, &request, &deps));
         Ok(json!({
             "data": data,

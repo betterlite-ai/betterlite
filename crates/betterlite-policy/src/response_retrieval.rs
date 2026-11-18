@@ -104,21 +104,21 @@ pub trait PolicyRouterView: Send + Sync {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct RetrievalAuth<'a> {
-    pub team_alias: Option<&'a str>,
-    pub key_alias: Option<&'a str>,
+pub struct RetrievalAuth<'source> {
+    pub team_alias: Option<&'source str>,
+    pub key_alias: Option<&'source str>,
 }
 
-pub struct RetrievalRequest<'a> {
-    pub auth: RetrievalAuth<'a>,
+pub struct RetrievalRequest<'source> {
+    pub auth: RetrievalAuth<'source>,
     pub tags: Vec<String>,
 }
 
-pub struct RetrievalDependencies<'a> {
-    pub registry: &'a PolicyRegistry,
-    pub attachments: &'a AttachmentRegistry,
-    pub router: Option<&'a dyn PolicyRouterView>,
-    pub model_id_from_response_id: &'a dyn Fn(Option<&str>) -> Option<String>,
+pub struct RetrievalDependencies<'source> {
+    pub registry: &'source PolicyRegistry,
+    pub attachments: &'source AttachmentRegistry,
+    pub router: Option<&'source dyn PolicyRouterView>,
+    pub model_id_from_response_id: &'source dyn Fn(Option<&str>) -> Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -127,13 +127,13 @@ pub struct PostCallPipelines {
     pub sources: BTreeMap<String, String>,
 }
 
-#[must_use]
+#[must_use = "returns the model group or the reason the retrieval is ungoverned"]
 pub fn model_group_for_response_id(
     response_id: Option<&str>,
     router: Option<&dyn PolicyRouterView>,
     model_id_from_response_id: &dyn Fn(Option<&str>) -> Option<String>,
 ) -> Result<String, UngovernedRetrieval> {
-    let Some(router) = router else {
+    let Some(view) = router else {
         return Err(UngovernedRetrieval {
             reason: UngovernedReason::NoRouter,
         });
@@ -143,12 +143,12 @@ pub fn model_group_for_response_id(
             reason: UngovernedReason::ResponseIdNamesNoDeployment,
         });
     };
-    let Some(model_name) = router.deployment_model_name(&model_id) else {
+    let Some(model_name) = view.deployment_model_name(&model_id) else {
         return Err(UngovernedRetrieval {
             reason: UngovernedReason::DeploymentNoLongerInRouter,
         });
     };
-    if let Some(hidden_by) = submit_model_hidden_by(&model_name, &router.model_group_aliases()) {
+    if let Some(hidden_by) = submit_model_hidden_by(&model_name, &view.model_group_aliases()) {
         tracing::warn!(
             "Policy engine: background response {} re-matches policies on retrieval as model group {} ({}), so a policy attached to the model name it was submitted as does not run on it",
             response_id.unwrap_or("None"),
@@ -207,11 +207,13 @@ pub fn post_call_pipelines(
         .iter()
         .map(|found| found.policy_name.clone())
         .collect();
-    let applied = policies_matching_conditions(&policy_names, context, &registry.policies);
-    let pipelines = resolve_pipelines_for_context(context, registry, attachments, Some(&applied))
-        .into_iter()
-        .filter(|(_, pipeline)| pipeline.mode == PipelineMode::PostCall)
-        .collect();
+    let condition_matched =
+        policies_matching_conditions(&policy_names, context, &registry.policies);
+    let pipelines =
+        resolve_pipelines_for_context(context, registry, attachments, Some(&condition_matched))
+            .into_iter()
+            .filter(|(_, pipeline)| pipeline.mode == PipelineMode::PostCall)
+            .collect();
     let sources = matches
         .into_iter()
         .map(|found| (found.policy_name, found.matched_via))
