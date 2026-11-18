@@ -21,7 +21,7 @@ use betterlite_logging::passthrough_stream_logging::types::EndpointType;
 use betterlite_logging::worker::{LoggingWorker, WorkerSettings};
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
-use futures_util::StreamExt;
+use futures_util::StreamExt as _;
 use futures_util::stream::{Stream, try_unfold};
 use indexmap::IndexMap;
 use reqwest::Response;
@@ -33,7 +33,8 @@ use super::messages_stream_logging::outcome::Flag;
 use super::result::{SdkResult, StreamFactoryRun};
 use super::vector_query_embedding::outbound_client;
 
-type Chunks = Pin<Box<dyn Stream<Item = Result<Vec<u8>, SdkHttpError>>>>;
+// drain awaits each chunk, so the boxed stream carries Send into the runner's future
+type Chunks = Pin<Box<dyn Stream<Item = Result<Vec<u8>, SdkHttpError>> + Send>>;
 
 // reqwest has no is_closed flag, so the flag records the drained stream releasing the live response.
 struct Live {
