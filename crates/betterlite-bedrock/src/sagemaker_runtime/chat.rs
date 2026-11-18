@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 
-use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_models::decisions::Json as Plain;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_wire::{
@@ -76,11 +75,6 @@ where
         })
     }
 
-    async fn chat_request(&self, call: &ChatCall<'_>) -> Result<OutboundRequest, RuntimeError> {
-        let prepared = self.prepare_chat(call).await?;
-        self.outbound(&prepared)
-    }
-
     async fn sign_chat(
         &self,
         call: &ChatCall<'_>,
@@ -138,7 +132,7 @@ where
     pub async fn chat(&self, call: &ChatCall<'_>) -> Result<CompatibleReply, SagemakerError> {
         let response = self
             .transport
-            .send(self.chat_request(call).await?)
+            .send(self.outbound(&self.prepare_chat(call).await?)?)
             .await
             .map_err(timeout_error)?;
         read_chat_response(
@@ -153,10 +147,9 @@ where
         &self,
         call: &ChatCall<'_>,
     ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
-        let request = self.chat_request(call).await?;
         let (status, chunks) = self
             .transport
-            .open_stream(request)
+            .open_stream(self.outbound(&self.prepare_chat(call).await?)?)
             .await
             .map_err(timeout_error)?;
         if status != 200 {
