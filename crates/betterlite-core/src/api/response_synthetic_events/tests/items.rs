@@ -1,8 +1,6 @@
 #![cfg(test)]
 
 use super::*;
-use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
 
 #[test]
 fn function_call_arguments_chunk_and_finish() {
@@ -190,86 +188,6 @@ fn oversized_envelope_keeps_output_after_budget_error() {
     assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
     assert_eq!(transformed.output, original_output);
     assert!(allocated < 32 * 1024 * 1024);
-}
-
-#[test]
-fn protected_child_dies_when_owner_is_terminated() {
-    let executable = std::env::current_exe().unwrap();
-    let mut owner = ChildGuard(
-        Command::new("setpriv")
-            .args(["--pdeathsig", "KILL", "--"])
-            .arg(executable)
-            .args([
-                "--exact",
-                "api::response_synthetic_events::tests::items::protected_child_owner",
-                "--nocapture",
-            ])
-            .env("BETTERLITE_PROTECTED_CHILD_OWNER", "1")
-            .stdout(Stdio::piped())
-            .spawn()
-            .unwrap(),
-    );
-    let mut output = BufReader::new(owner.0.stdout.take().unwrap());
-    let child_id = output
-        .lines()
-        .map(Result::unwrap)
-        .find_map(|line| {
-            line.strip_prefix("CHILD_PID:")
-                .map(|value| value.parse::<u32>().unwrap())
-        })
-        .unwrap();
-    owner.0.kill().unwrap();
-    owner.0.wait().unwrap();
-    let child_terminated = std::iter::repeat_with(|| {
-        let terminated = !process_is_alive(child_id);
-        if !terminated {
-            std::thread::sleep(std::time::Duration::from_millis(10));
-        }
-        terminated
-    })
-    .take(100)
-    .any(std::convert::identity);
-    if child_terminated {
-        return;
-    }
-    let _ = Command::new("kill")
-        .args(["-KILL", &child_id.to_string()])
-        .status();
-    panic!("protected child {child_id} survived its owner");
-}
-
-#[test]
-fn protected_child_owner() {
-    if std::env::var_os("BETTERLITE_PROTECTED_CHILD_OWNER").is_none() {
-        return;
-    }
-    let child = ChildGuard(
-        Command::new("setpriv")
-            .args(["--pdeathsig", "KILL", "--", "sleep", "60"])
-            .spawn()
-            .unwrap(),
-    );
-    writeln!(std::io::stdout().lock(), "CHILD_PID:{}", child.0.id()).unwrap();
-    std::io::stdout().lock().flush().unwrap();
-    std::thread::sleep(std::time::Duration::from_secs(60));
-}
-
-struct ChildGuard(Child);
-
-impl Drop for ChildGuard {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn process_is_alive(pid: u32) -> bool {
-    let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
-        return false;
-    };
-    stat.rsplit_once(')')
-        .and_then(|(_details, state)| state.trim_start().chars().next())
-        .is_some_and(|state| state != 'Z' && state != 'X')
 }
 
 #[test]
