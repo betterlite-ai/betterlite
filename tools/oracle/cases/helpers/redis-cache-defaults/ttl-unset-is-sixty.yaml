@@ -1,0 +1,5 @@
+kind: helper
+name: redis-cache-defaults-ttl-unset-is-sixty
+call: {b5630: {function: cache_defaults, default_redis_ttl: null, redis_flush_size: null}}
+env: {}
+compare: {ignore: []}

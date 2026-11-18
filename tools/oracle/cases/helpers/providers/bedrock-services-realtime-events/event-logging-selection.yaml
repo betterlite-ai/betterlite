@@ -1,0 +1,76 @@
+kind: helper
+name: event-logging-selection
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    steps:
+    - method: should_log
+      configured: null
+      event:
+        type: session.created
+    - method: should_log
+      configured: null
+      event:
+        type: response.done
+    - method: should_log
+      configured: null
+      event:
+        type: response.created
+    - method: should_log
+      configured: null
+      event:
+        type: session.updated
+    - method: should_log
+      configured: null
+      event: {}
+    - method: should_log
+      configured: null
+      event:
+        type: 3
+    - method: should_log
+      configured: null
+      event:
+        type: null
+    - method: should_log
+      configured: '*'
+      event: {}
+    - method: should_log
+      configured: '*'
+      event:
+        type: 3
+    - method: should_log
+      configured:
+      - session.created
+      - response.done
+      event:
+        type: response.done
+    - method: should_log
+      configured:
+      - session.created
+      - response.done
+      event:
+        type: response.created
+    - method: should_log
+      configured: []
+      event:
+        type: session.created
+    - method: should_log
+      configured:
+      - session.created
+      event:
+        type: null
+    - method: should_log
+      configured:
+      - '*'
+      event:
+        type: '*'
+    - method: should_log
+      configured:
+      - '*'
+      event:
+        type: session.created
+env: {}
+compare:
+  ignore: []
