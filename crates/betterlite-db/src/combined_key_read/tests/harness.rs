@@ -281,16 +281,6 @@ pub(crate) struct ScriptedDatabase {
 }
 
 impl ScriptedDatabase {
-    pub(crate) fn shared(timeline: &Timeline) -> Self {
-        Self {
-            rows: Mutex::new(VecDeque::new()),
-            deprecated: Mutex::new(VecDeque::new()),
-            row_calls: Mutex::new(Vec::new()),
-            grace_calls: Mutex::new(Vec::new()),
-            timeline: Arc::clone(timeline),
-        }
-    }
-
     pub(crate) fn row_calls(&self) -> Vec<RecordedRowCall> {
         lock(&self.row_calls).clone()
     }
@@ -375,17 +365,6 @@ pub(crate) struct ScriptedReconnect {
 }
 
 impl ScriptedReconnect {
-    pub(crate) fn shared(generation: u64, handle: Option<Arc<u64>>, timeline: &Timeline) -> Self {
-        Self {
-            generation,
-            handle,
-            last_observed: Mutex::new(generation),
-            results: Mutex::new(VecDeque::new()),
-            requests: Mutex::new(Vec::new()),
-            timeline: Arc::clone(timeline),
-        }
-    }
-
     pub(crate) fn requests(&self) -> Vec<RecordedReconnect> {
         lock(&self.requests).clone()
     }
@@ -451,8 +430,21 @@ impl Harness {
     pub(crate) fn new(step: Duration) -> Self {
         let timeline = Timeline::default();
         Self {
-            database: ScriptedDatabase::shared(&timeline),
-            reconnect: ScriptedReconnect::shared(1, Some(Arc::new(7)), &timeline),
+            database: ScriptedDatabase {
+                rows: Mutex::new(VecDeque::new()),
+                deprecated: Mutex::new(VecDeque::new()),
+                row_calls: Mutex::new(Vec::new()),
+                grace_calls: Mutex::new(Vec::new()),
+                timeline: Arc::clone(&timeline),
+            },
+            reconnect: ScriptedReconnect {
+                generation: 1,
+                handle: Some(Arc::new(7)),
+                last_observed: Mutex::new(1),
+                results: Mutex::new(VecDeque::new()),
+                requests: Mutex::new(Vec::new()),
+                timeline: Arc::clone(&timeline),
+            },
             sink: Arc::new(RecordingSink::shared(&timeline)),
             clock: StepClock::new(step, fixed_now()),
             jitter: FullJitter,

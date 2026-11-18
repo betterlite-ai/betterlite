@@ -105,6 +105,24 @@ const INSERT_LIVE_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVerif
 const INSERT_EXPIRED_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVerificationToken"
     (id, token, active_token_id, revoke_at)
     VALUES ($1, $2, $3, '2020-01-01 00:00:00')"#;
+const INSERT_OTHER_BUDGET: &str = r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, tpm_limit, rpm_limit, created_by, updated_by)
+    VALUES ('budget-m2', 55, 56, 'test', 'test')"#;
+const INSERT_OTHER_TEAM: &str = r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, spend, members_with_roles)
+    VALUES ('team-2', 'Team Two', 0.0, '[]'::jsonb)"#;
+const INSERT_OTHER_MEMBERSHIP: &str = r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
+    VALUES ('u2', 'team-2', 9.0, 'budget-m2')"#;
+const INSERT_MEMBER_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, models)
+    VALUES ($1, 'u1', 'team-2', ARRAY[]::TEXT[])"#;
+const INSERT_MEMBER_LIMITS: &str = r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
+    VALUES ('u1', 'team-2', 4.0, 'budget-m2')"#;
+const INSERT_TEAM_ORG_BUDGET: &str = r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by)
+    VALUES ('budget-team-org', 11, 'test', 'test')"#;
+const INSERT_KEY_ORG_BUDGET: &str = r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by)
+    VALUES ('budget-key-org', 22, 'test', 'test')"#;
+const INSERT_TEAM_THREE: &str = r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, organization_id, members_with_roles)
+    VALUES ('team-3', 'Team Three', 'org-team', '[]'::jsonb)"#;
+const INSERT_ORG_KEY: &str = r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, organization_id, models)
+    VALUES ($1, 'u1', 'team-3', 'org-key', ARRAY[]::TEXT[])"#;
 
 // Postgres has no SELECT trigger, so the joined team table becomes a view whose predicate raises a chosen server message
 const RAISE_CACHED_PLAN: &str = "
@@ -381,26 +399,16 @@ pub(crate) async fn every_join_alias_and_null(fixture: &Fixture) {
 }
 
 pub(crate) async fn membership_requires_both_ids(fixture: &Fixture) {
-    seed_other_member(fixture).await;
+    fixture.execute(INSERT_OTHER_BUDGET, &[]).await;
+    fixture.execute(INSERT_OTHER_TEAM, &[]).await;
+    fixture.execute(INSERT_OTHER_MEMBERSHIP, &[]).await;
     let stored = hash_token(TOKEN_MEMBER);
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, models)
-               VALUES ($1, 'u1', 'team-2', ARRAY[]::TEXT[])"#,
-            &[&stored],
-        )
-        .await;
+    fixture.execute(INSERT_MEMBER_KEY, &[&stored]).await;
     let without = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
     assert!(without.team_member.is_none());
     assert!(without.team_member_spend.is_none());
     assert!(without.team_member_tpm_limit.is_none());
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
-               VALUES ('u1', 'team-2', 4.0, 'budget-m2')"#,
-            &[],
-        )
-        .await;
+    fixture.execute(INSERT_MEMBER_LIMITS, &[]).await;
     let with = fixture.read(TOKEN_MEMBER).await.unwrap().unwrap();
     assert_eq!(
         with.team_member_spend,
@@ -410,65 +418,9 @@ pub(crate) async fn membership_requires_both_ids(fixture: &Fixture) {
     assert_eq!(with.team_member_rpm_limit, Some(56));
 }
 
-async fn seed_other_member(fixture: &Fixture) {
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, tpm_limit, rpm_limit, created_by, updated_by)
-               VALUES ('budget-m2', 55, 56, 'test', 'test')"#,
-            &[],
-        )
-        .await;
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, spend, members_with_roles)
-               VALUES ('team-2', 'Team Two', 0.0, '[]'::jsonb)"#,
-            &[],
-        )
-        .await;
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamMembership" (user_id, team_id, spend, budget_id)
-               VALUES ('u2', 'team-2', 9.0, 'budget-m2')"#,
-            &[],
-        )
-        .await;
-}
-
 pub(crate) async fn key_org_differs_from_team_org(fixture: &Fixture) {
-    seed_two_organizations(fixture).await;
-    let stored = hash_token(TOKEN_ORG);
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" (token, user_id, team_id, organization_id, models)
-               VALUES ($1, 'u1', 'team-3', 'org-key', ARRAY[]::TEXT[])"#,
-            &[&stored],
-        )
-        .await;
-    let view = fixture.read(TOKEN_ORG).await.unwrap().unwrap();
-    assert_eq!(view.token.org_id.as_deref(), Some("org-key"));
-    assert_eq!(view.organization_alias.as_deref(), Some("Key Org"));
-    assert_eq!(
-        view.organization_max_budget,
-        Some(rust_decimal::Decimal::from(22_i32))
-    );
-    assert_eq!(view.team_alias.as_deref(), Some("Team Three"));
-}
-
-async fn seed_two_organizations(fixture: &Fixture) {
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by)
-               VALUES ('budget-team-org', 11, 'test', 'test')"#,
-            &[],
-        )
-        .await;
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_BudgetTable" (budget_id, max_budget, created_by, updated_by)
-               VALUES ('budget-key-org', 22, 'test', 'test')"#,
-            &[],
-        )
-        .await;
+    fixture.execute(INSERT_TEAM_ORG_BUDGET, &[]).await;
+    fixture.execute(INSERT_KEY_ORG_BUDGET, &[]).await;
     fixture
         .execute(
             INSERT_ORGANIZATION,
@@ -481,13 +433,17 @@ async fn seed_two_organizations(fixture: &Fixture) {
             &[&"org-key", &"Key Org", &"budget-key-org"],
         )
         .await;
-    fixture
-        .execute(
-            r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, organization_id, members_with_roles)
-               VALUES ('team-3', 'Team Three', 'org-team', '[]'::jsonb)"#,
-            &[],
-        )
-        .await;
+    fixture.execute(INSERT_TEAM_THREE, &[]).await;
+    let stored = hash_token(TOKEN_ORG);
+    fixture.execute(INSERT_ORG_KEY, &[&stored]).await;
+    let view = fixture.read(TOKEN_ORG).await.unwrap().unwrap();
+    assert_eq!(view.token.org_id.as_deref(), Some("org-key"));
+    assert_eq!(view.organization_alias.as_deref(), Some("Key Org"));
+    assert_eq!(
+        view.organization_max_budget,
+        Some(rust_decimal::Decimal::from(22_i32))
+    );
+    assert_eq!(view.team_alias.as_deref(), Some("Team Three"));
 }
 
 pub(crate) async fn native_driver_error_message_is_classified(fixture: &Fixture) {
