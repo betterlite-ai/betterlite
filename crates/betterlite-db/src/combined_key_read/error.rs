@@ -35,7 +35,7 @@ impl DatabaseFailure {
     }
 }
 
-pub(crate) fn database_fault(error_type: ErrorType, message: String) -> DbError {
+pub(crate) const fn database_fault(error_type: ErrorType, message: String) -> DbError {
     DbError {
         error_type,
         message,

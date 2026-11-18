@@ -10,14 +10,19 @@ use super::reader::KeyReader;
 pub(crate) const FAILURE_HEADING: &str =
     "LiteLLM Prisma Client Exception: Error with `get_data`. Args passed in: [redacted] ";
 
-impl<Database, Reconnect, Sink> KeyReader<'_, Database, Reconnect, Sink>
+// the workspace denies multiple_inherent_impl, so the failure report lives on this trait
+pub(super) trait KeyFailureReport {
+    fn report_failure(&self, error: &KeyReadError, started: Instant);
+}
+
+impl<Database, Reconnect, Sink> KeyFailureReport for KeyReader<'_, Database, Reconnect, Sink>
 where
     Database: KeyReadDatabase,
     Reconnect: PlanReconnect,
     Sink: DbServiceEventSink + 'static,
 {
     // the source prints, logs a traceback and detaches failure_handler before the error leaves get_data
-    pub(super) fn report_failure(&self, error: &KeyReadError, started: Instant) {
+    fn report_failure(&self, error: &KeyReadError, started: Instant) {
         let duration = self
             .services
             .clock

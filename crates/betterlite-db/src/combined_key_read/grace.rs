@@ -27,11 +27,11 @@ impl DeprecatedToken {
         active_token_id: Option<String>,
         revoke_at: Option<NaiveDateTime>,
     ) -> Result<Self, DeprecatedRowError> {
-        let active_token_id = active_token_id.ok_or(DeprecatedRowError::MissingActiveTokenId)?;
-        let revoke_at = revoke_at.ok_or(DeprecatedRowError::MissingRevokeAt)?;
+        let active = active_token_id.ok_or(DeprecatedRowError::MissingActiveTokenId)?;
+        let revoke = revoke_at.ok_or(DeprecatedRowError::MissingRevokeAt)?;
         Ok(Self {
-            active_token_id: SecretString::from(active_token_id),
-            revoke_at: revoke_at.and_utc(),
+            active_token_id: SecretString::from(active),
+            revoke_at: revoke.and_utc(),
         })
     }
 }

@@ -101,8 +101,8 @@ impl CombinedKeyView {
         mut fields: BTreeMap<String, JsonData>,
         refreshed_at: Decimal,
     ) -> Result<Self, ViewError> {
+        drop_null_columns(&mut fields);
         let member = select_team_member(&fields)?;
-        default_team_columns(&mut fields);
         apply_budget_aliases(&mut fields);
         stringify_end_user_id(&mut fields);
         promote_key_organization(&mut fields);
@@ -117,6 +117,11 @@ impl CombinedKeyView {
         }
         Ok(view)
     }
+}
+
+// the flattened token decodes through serde's buffered Content, where a null option reaches a visitor that rejects it, and LiteLLM reads null as the field's default
+fn drop_null_columns(fields: &mut BTreeMap<String, JsonData>) {
+    fields.retain(|_, value| !matches!(value, JsonData::Null));
 }
 
 // LiteLLM walks every role entry and keeps the last whose user_id equals the key's, so an email alone never matches
@@ -143,15 +148,6 @@ fn select_team_member(fields: &BTreeMap<String, JsonData>) -> Result<Option<Memb
         selected = Some(member);
     }
     Ok(selected)
-}
-
-fn default_team_columns(fields: &mut BTreeMap<String, JsonData>) {
-    if matches!(fields.get("team_models"), None | Some(JsonData::Null)) {
-        fields.insert("team_models".to_owned(), JsonData::Array(Vec::new()));
-    }
-    if matches!(fields.get("team_blocked"), None | Some(JsonData::Null)) {
-        fields.insert("team_blocked".to_owned(), JsonData::Bool(false));
-    }
 }
 
 fn apply_budget_aliases(fields: &mut BTreeMap<String, JsonData>) {
@@ -234,10 +230,10 @@ fn format_naive(value: NaiveDateTime, offset: Option<FixedOffset>) -> String {
     } else {
         format!(".{micros:06}")
     };
-    match offset {
-        None => format!("{base}{fraction}"),
-        Some(zone) => format!("{base}{fraction}{zone}"),
-    }
+    offset.map_or_else(
+        || format!("{base}{fraction}"),
+        |zone| format!("{base}{fraction}{zone}"),
+    )
 }
 
 #[must_use]

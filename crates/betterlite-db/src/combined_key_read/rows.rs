@@ -20,14 +20,38 @@ use super::view::ViewError;
 pub(crate) const RECONNECT_REASON: &str = "postgres_cached_plan_error";
 pub(crate) const CACHED_PLAN_WARNING: &str = "PostgreSQL cached plan error detected for token lookup; recreating the database connection and retrying with the same query. This may occur during rolling deployments when schema changes are applied.";
 
-impl<Database, Reconnect, Sink> KeyReader<'_, Database, Reconnect, Sink>
+// the workspace denies multiple_inherent_impl, so the row and grace steps live on this trait
+pub(super) trait KeyRowRead {
+    async fn read_row(
+        &self,
+        hash: &KeyHash,
+        use_writer: bool,
+    ) -> Result<Option<BTreeMap<String, JsonData>>, KeyReadError>;
+
+    async fn row_query(
+        &self,
+        hash: &KeyHash,
+        use_writer: bool,
+    ) -> Result<Option<BTreeMap<String, JsonData>>, KeyReadError>;
+
+    async fn grace_lookup(&self, hash: &KeyHash, use_writer: bool) -> Option<SecretString>;
+
+    fn remember_grace(
+        &self,
+        hash: &KeyHash,
+        deprecated: &DeprecatedToken,
+        now: DateTime<Utc>,
+    ) -> Option<SecretString>;
+}
+
+impl<Database, Reconnect, Sink> KeyRowRead for KeyReader<'_, Database, Reconnect, Sink>
 where
     Database: KeyReadDatabase,
     Reconnect: PlanReconnect,
     Sink: DbServiceEventSink + 'static,
 {
     // a stale plan on a replica read reconnects once and retries the same query, whatever the reconnect reports
-    pub(super) async fn read_row(
+    async fn read_row(
         &self,
         hash: &KeyHash,
         use_writer: bool,
@@ -65,11 +89,7 @@ where
     }
 
     // a writer read still fills the grace cache, but it never reads a value another request cached
-    pub(super) async fn grace_lookup(
-        &self,
-        hash: &KeyHash,
-        use_writer: bool,
-    ) -> Option<SecretString> {
+    async fn grace_lookup(&self, hash: &KeyHash, use_writer: bool) -> Option<SecretString> {
         let now = self.services.clock.now();
         if !use_writer {
             let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
@@ -118,14 +138,14 @@ fn is_cached_plan(error: &DatabaseFailure) -> bool {
     // LiteLLM matches the marker case-sensitively on the database message, which the driver hides
     match error {
         DatabaseFailure::Reported(fault) => fault.message.contains(STALE_PLAN_MARKER),
-        DatabaseFailure::Driver(error) => error
+        DatabaseFailure::Driver(driver) => driver
             .driver
             .as_db_error()
             .is_some_and(|database| database.message().contains(STALE_PLAN_MARKER)),
     }
 }
 
-fn reconnect_request<'request>() -> ReconnectRequest<'request> {
+const fn reconnect_request<'request>() -> ReconnectRequest<'request> {
     ReconnectRequest {
         reason: RECONNECT_REASON,
         force: false,

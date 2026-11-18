@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -22,8 +23,10 @@ use super::grace::DeprecatedKeyCache;
 use super::ports::{
     Diagnostic, KeyFailureHook, KeyReadDatabase, KeyReadDiagnostics, MetricWallClock, PlanReconnect,
 };
+use super::report::KeyFailureReport as _;
 use super::request::{COMBINED_VIEW_TABLE, CombinedKeyRequest, KeyQueryType};
 use super::retry::{parked_lookup_error, retry_wait, take_parked};
+use super::rows::KeyRowRead as _;
 use super::view::{CombinedKeyView, epoch_decimal};
 
 // the deprecated key re-enters read, so its future is boxed to keep the Send proof from cycling
@@ -59,36 +62,41 @@ where
     Reconnect: PlanReconnect,
     Sink: DbServiceEventSink + 'static,
 {
-    // the backoff decorator around get_data: at most three attempts and ten seconds, jittered waits
     #[must_use]
     pub fn read<'reader>(
         &'reader self,
         request: &'reader CombinedKeyRequest,
     ) -> ReadFuture<'reader> {
-        Box::pin(async move {
-            let start = self.services.clock.instant();
-            let mut tries: u32 = 0;
-            loop {
-                tries = tries.saturating_add(1);
-                let elapsed = self
-                    .services
-                    .clock
-                    .instant()
-                    .saturating_duration_since(start);
-                let error = match self.measured_attempt(request).await {
-                    Ok(view) => return Ok(view),
-                    Err(error) => error,
-                };
-                if tries >= MAX_TRIES || elapsed >= MAX_TIME {
-                    return Err(error);
-                }
-                let wait = retry_wait(self.services.jitter, tries, elapsed);
-                self.services
-                    .diagnostics
-                    .emit(Diagnostic::Backoff { tries });
-                self.services.pause.pause(wait).await;
+        Box::pin(self.read_attempts(request))
+    }
+
+    // the backoff decorator around get_data: at most three attempts and ten seconds, jittered waits
+    async fn read_attempts(
+        &self,
+        request: &CombinedKeyRequest,
+    ) -> Result<Option<CombinedKeyView>, KeyReadError> {
+        let start = self.services.clock.instant();
+        let mut tries: u32 = 0;
+        loop {
+            tries = tries.saturating_add(1);
+            let elapsed = self
+                .services
+                .clock
+                .instant()
+                .saturating_duration_since(start);
+            let error = match self.measured_attempt(request).await {
+                Ok(view) => return Ok(view),
+                Err(error) => error,
+            };
+            if tries >= MAX_TRIES || elapsed >= MAX_TIME {
+                return Err(error);
             }
-        })
+            let wait = retry_wait(self.services.jitter, tries, elapsed);
+            self.services
+                .diagnostics
+                .emit(Diagnostic::Backoff { tries });
+            self.services.pause.pause(wait).await;
+        }
     }
 
     async fn lookup(
@@ -185,7 +193,10 @@ where
             KeyReadError::Database(failure) => {
                 Err(DbLookupError::Database(failure.into_db_error()))
             }
-            other => {
+            other @ (KeyReadError::MissingToken
+            | KeyReadError::View(_)
+            | KeyReadError::Reconnect(_)
+            | KeyReadError::Metrics { .. }) => {
                 *parked.lock().unwrap_or_else(PoisonError::into_inner) = Some(other);
                 Err(parked_lookup_error())
             }
@@ -199,7 +210,7 @@ fn metric_outcome<Failure>(
     parked: Mutex<Option<KeyReadError>>,
 ) -> Result<Option<CombinedKeyView>, KeyReadError>
 where
-    Failure: std::error::Error + 'static,
+    Failure: Error + 'static,
 {
     match outcome {
         Ok(view) => Ok(view),
