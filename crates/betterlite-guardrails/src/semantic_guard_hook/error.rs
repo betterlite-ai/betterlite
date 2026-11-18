@@ -65,14 +65,14 @@ impl<E> From<SemanticGuardHookError<E>> for GuardrailFailure
 where
     E: Error + Send + Sync + 'static,
 {
-    fn from(error: SemanticGuardHookError<E>) -> Self {
-        match error {
+    fn from(hook_error: SemanticGuardHookError<E>) -> Self {
+        match hook_error {
             SemanticGuardHookError::Blocked(failure) => failure,
-            error @ (SemanticGuardHookError::Messages { .. }
+            raised @ (SemanticGuardHookError::Messages { .. }
             | SemanticGuardHookError::Text { .. }
             | SemanticGuardHookError::Scoring { .. }) => Self::Http {
                 status: INTERNAL_STATUS,
-                detail: error.to_string(),
+                detail: raised.to_string(),
             },
         }
     }
