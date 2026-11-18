@@ -1,0 +1,30 @@
+task: B8397
+deviations:
+  - what: Each dispatcher branch takes typed filters and compiled SQL instead of Prisma where, order and take maps; the columns, filters and ordering are the ones LiteLLM's own branch builds.
+    why: docs/compatibility.md stops parity at LiteLLM's declared types, and a Python dict where condition has no typed Rust equivalent; a caller picks the branch through the typed filter and query constants rather than by spelling column names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5043-L5063
+  - what: The spend find_unique branch is SpendQuery::UNIQUE, which returns the matching rows from a LIMIT 1 query as a list, where LiteLLM's Prisma find_unique returns one row or None.
+    why: One typed read path serves both get_data query types for the spend table; the unique query keeps LiteLLM's LIMIT 1, so the typed result holds at most one row and a caller that needs the row takes it from there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5046-L5055
+  - what: A config insert writes the params one after another and then invalidates each name, where LiteLLM schedules every upsert and gathers them concurrently before it invalidates.
+    why: betterlite runs one statement at a time over its routed handles; the same rows land and every written name is invalidated, so a failed set can only differ in which of the preceding writes survive.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5366-L5382
+  - what: A cache eviction during a config insert is logged and never fails the insert, where LiteLLM awaits invalidate_config_param and lets its error out of insert_data.
+    why: The invalidator the task fixes returns nothing, and the stale entry expires at the cache TTL; a Redis outage must not turn a completed database write into a 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5380-L5382
+  - what: A failure event's traceback is LiteLLM's error line followed by the Rust error source chain, not CPython's traceback.format_exc frames.
+    why: A Rust service has no Python frames to render; the event keeps LiteLLM's error line, exception text and duration for the failure handler to read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5407-L5414
+  - what: The unfiltered team list reads its take from the table settings, whose default is 20, instead of reading MAX_TEAM_LIST_LIMIT from the environment inside the query.
+    why: betterlite resolves that value once through its config section rather than reading the environment on a query path; the injected default equals LiteLLM's constant, so the row count is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5113-L5115
+kept_bugs:
+  - what: Every failed table operation is retried three times within ten seconds, including failures no retry can fix, such as a missing row or a value the database rejects on every attempt.
+    why: The backoff decorator catches Exception, and a working setup relies on it for transient database faults; LiteLLM never classifies errors, so neither does betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4854-L4860
+  - what: get_generic_data makes a single try within two seconds, unlike the three tries in ten seconds of the other dispatchers.
+    why: A working setup depends on the generic lookups failing fast while the write paths retry; the policy is pinned to the decorator LiteLLM puts on that one dispatcher.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4729-L4736
+  - what: The user_notification find_unique branch returns the first row for a user_id even though many notifications can share it, because LiteLLM runs Prisma find_unique on a column that is not unique.
+    why: A working setup reads the row Prisma returns, so betterlite answers with the first matching row instead of rejecting the filter as ambiguous.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5116-L5119
