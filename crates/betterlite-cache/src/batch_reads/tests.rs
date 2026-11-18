@@ -854,7 +854,7 @@ fn shared_read_failure_sets_none_only_for_caches_with_redis_keys() {
         BatchReadsError::RedisValues(RedisCacheValuesError::TtlOutOfRange { seconds: 1.0_f64 });
     let (subscriber, bytes) = capture_logs();
     with_default(subscriber, || {
-        shared_read_failure(&error, &prepared, &mut slots)
+        shared_read_failure(&error, &prepared, &mut slots);
     });
     assert!(matches!(slots.get(&0), Some(None)));
     assert_eq!(
