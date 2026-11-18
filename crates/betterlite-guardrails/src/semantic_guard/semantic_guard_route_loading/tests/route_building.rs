@@ -243,3 +243,48 @@ fn a_quoted_scalar_utterance_stays_text() {
         vec!["1".to_owned(), "true".to_owned()]
     );
 }
+
+#[test]
+fn a_file_scalar_pyyaml_reads_as_text_stays_text() {
+    let (_folder, path) = routes_file(
+        "- route_name: 1e3\n  description: y\n  utterances: [1e3, 1.5e3, 0o10, y, 1e-3, 1.5E3, .5e3]\n  similarity_threshold: 0.8\n  metadata: {source: pyyaml}\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap(),
+        vec![route(
+            "1e3",
+            Some("y"),
+            &["1e3", "1.5e3", "0o10", "y", "1e-3", "1.5E3", ".5e3"],
+            0.8,
+        )]
+    );
+}
+
+#[test]
+fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
+    let (_folder, path) = routes_file(
+        "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap(),
+        vec![route(
+            "2020-01-01",
+            Some("1:30"),
+            &["2020-01-01", "1:30"],
+            0.5,
+        )]
+    );
+}
+
+#[test]
+fn a_file_octal_threshold_is_read_by_the_yaml_readers_inference() {
+    let (_folder, path) = routes_file(
+        "- route_name: explicit\n  utterances: [\"a\"]\n  similarity_threshold: 0o10\n- route_name: leading\n  utterances: [\"b\"]\n  similarity_threshold: 0127\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    let routes = build_routes(&sources).unwrap();
+    assert_eq!(routes[0].score_threshold.to_bits(), 8.0_f64.to_bits());
+    assert_eq!(routes[1].score_threshold.to_bits(), 127.0_f64.to_bits());
+}

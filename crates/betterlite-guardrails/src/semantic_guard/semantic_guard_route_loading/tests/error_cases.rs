@@ -140,6 +140,46 @@ fn a_file_entry_with_a_non_string_utterance_is_rejected() {
 }
 
 #[test]
+fn a_file_utterance_pyyaml_reads_as_a_number_is_rejected() {
+    let (_folder, path) = routes_file("- route_name: x\n  utterances: [1.5e+3]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "utterances");
+            assert_eq!(expected, "a list of strings");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
+fn a_file_utterance_pyyaml_reads_as_a_boolean_is_rejected() {
+    let (_folder, path) = routes_file("- route_name: x\n  utterances: [Yes]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    match build_routes(&sources) {
+        Err(RouteLoadError::CustomRoutes {
+            source:
+                CustomRoutesError::Definition {
+                    index: 0,
+                    source: DefinitionError::FieldType { field, expected },
+                },
+            ..
+        }) => {
+            assert_eq!(field, "utterances");
+            assert_eq!(expected, "a list of strings");
+        }
+        other => panic!("expected a field type error, got {other:?}"),
+    }
+}
+
+#[test]
 fn a_mapping_entry_with_a_non_string_utterance_is_rejected() {
     let (_folder, path) = routes_file("route_name: x\nutterances: [\"a\", 1]\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);

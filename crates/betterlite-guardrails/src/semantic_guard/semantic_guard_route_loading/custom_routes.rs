@@ -4,7 +4,7 @@ use std::path::Path;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::definition::{DefinitionError, RawDefinition, RouteDefinition};
+use super::definition::{DefinitionError, RawDefinition, RawDefinitionText, RouteDefinition};
 use super::error::RouteLoadError;
 
 pub const MAX_ROUTES_FILE_BYTES: usize = 0x0010_0000;
@@ -49,14 +49,16 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
                 serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
                     source: Box::new(source),
                 })?;
-            definitions(raw)
+            let texts: Option<Vec<RawDefinitionText>> = serde_saphyr::from_slice(bytes).ok();
+            definitions(raw, texts)
         }
         GuardrailValue::Object(_) => {
             let raw: RawDefinition =
                 serde_saphyr::from_slice(bytes).map_err(|source| CustomRoutesError::Yaml {
                     source: Box::new(source),
                 })?;
-            definitions(vec![raw])
+            let text: Option<RawDefinitionText> = serde_saphyr::from_slice(bytes).ok();
+            definitions(vec![raw], text.map(|text| vec![text]))
         }
         GuardrailValue::Null
         | GuardrailValue::Boolean(_)
@@ -92,11 +94,16 @@ fn read_error(path: &Path, source: io::Error) -> RouteLoadError {
     }
 }
 
-fn definitions(raw: Vec<RawDefinition>) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
+fn definitions(
+    raw: Vec<RawDefinition>,
+    texts: Option<Vec<RawDefinitionText>>,
+) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     let mut parsed = Vec::with_capacity(raw.len());
     for (index, item) in raw.into_iter().enumerate() {
+        let text = texts.as_ref().and_then(|texts| texts.get(index));
         parsed.push(
-            item.into_definition()
+            item.with_pyyaml_scalars(text)
+                .into_definition()
                 .map_err(|source| CustomRoutesError::Definition { index, source })?,
         );
     }
