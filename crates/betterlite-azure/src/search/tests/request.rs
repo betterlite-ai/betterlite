@@ -1,3 +1,4 @@
+use betterlite_config::sections::azure_search::Settings;
 use betterlite_openai::search::provider::SearchQuery;
 use serde_json::json;
 
@@ -10,6 +11,7 @@ pub(super) fn search_request_web_tool() {
     web_tool_country();
     connection_tool_body();
     connection_tool_ignores_country();
+    blank_connection_id_is_web_mode();
     joined_query();
 }
 
@@ -94,6 +96,19 @@ fn connection_tool_ignores_country() {
         json!([{"project_connection_id": "connection-1", "count": 2}])
     );
     assert!(tool.get("user_location").is_none());
+}
+
+fn blank_connection_id_is_web_mode() {
+    let settings = Settings {
+        connection_id: Some(String::new()),
+        ..model_settings()
+    };
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let body = request_body(&config, &object(json!({"max_results": 2})));
+    assert_eq!(body["tools"], json!([{"type": "web_search"}]));
 }
 
 fn joined_query() {
