@@ -1,0 +1,135 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::settings::JsonValue;
+use betterlite_redis::redis_cache::RedisCache;
+use betterlite_redis::redis_client_reuse::transport::RedisCacheFamily;
+use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides;
+use betterlite_secret_managers::secret_lookup::text_to_bool;
+use serde::de::Error as _;
+
+use super::error::CoordRedisError;
+use crate::proxy_request_contracts::coordination_redis::CoordinationRedisParams;
+use crate::redis_cache_wiring::build::{RedisCacheRequest, RedisCacheWiring};
+
+pub const REDIS_CLUSTER_NODES: &str = "REDIS_CLUSTER_NODES";
+const REDIS_SENTINEL_NODES: &str = "REDIS_SENTINEL_NODES";
+
+// litellm only branches on cluster mode for a non-empty node list; an empty or absent REDIS_CLUSTER_NODES keeps the plain client.
+pub fn usage_family(
+    params: &CoordinationRedisParams,
+    env: &BTreeMap<String, String>,
+) -> Result<RedisCacheFamily, CoordRedisError> {
+    match params.startup_nodes.as_ref() {
+        Some(nodes) if nodes.is_empty() => Ok(RedisCacheFamily::Standalone),
+        Some(_) => Ok(RedisCacheFamily::Cluster),
+        None => env_family(env),
+    }
+}
+
+pub fn env_family(env: &BTreeMap<String, String>) -> Result<RedisCacheFamily, CoordRedisError> {
+    let Some(text) = env
+        .get(REDIS_CLUSTER_NODES)
+        .filter(|text| text_to_bool(text.as_str()).is_none())
+    else {
+        return Ok(RedisCacheFamily::Standalone);
+    };
+    let parsed: JsonValue =
+        serde_json::from_str(text).map_err(|source| CoordRedisError::ClusterNodes { source })?;
+    Ok(if python_truthy(&parsed) {
+        RedisCacheFamily::Cluster
+    } else {
+        RedisCacheFamily::Standalone
+    })
+}
+
+// get_secret_str turns the exact "true"/"false" texts into bools and then answers None, so such a value names no node list.
+#[must_use]
+pub fn env_has_redis_target(env: &BTreeMap<String, String>) -> bool {
+    env.contains_key("REDIS_HOST")
+        || env.contains_key("REDIS_URL")
+        || env
+            .get(REDIS_CLUSTER_NODES)
+            .is_some_and(|text| text_to_bool(text.as_str()).is_none())
+        || env
+            .get(REDIS_SENTINEL_NODES)
+            .is_some_and(|text| text_to_bool(text.as_str()).is_none())
+}
+
+pub async fn build_usage_redis(
+    params: &CoordinationRedisParams,
+    wiring: &RedisCacheWiring,
+    env: &BTreeMap<String, String>,
+) -> Result<RedisCache, CoordRedisError> {
+    let family = usage_family(params, env)?;
+    let request = usage_cache_request(params, family)?;
+    wiring
+        .build(request, env)
+        .await
+        .map_err(CoordRedisError::from)
+}
+
+pub async fn build_from_env(
+    wiring: &RedisCacheWiring,
+    env: &BTreeMap<String, String>,
+) -> Result<Option<RedisCache>, CoordRedisError> {
+    if !env_has_redis_target(env) {
+        return Ok(None);
+    }
+    let family = env_family(env)?;
+    let request = RedisCacheRequest {
+        overrides: RedisOverrides::default(),
+        family,
+        namespace: None,
+        redis_flush_size: None,
+    };
+    let cache = wiring.build(request, env).await?;
+    Ok(Some(cache))
+}
+
+// litellm hands RedisCache every model_dump field, so the cache's own namespace and flush size come from the block and the client never sees them.
+fn usage_cache_request(
+    params: &CoordinationRedisParams,
+    family: RedisCacheFamily,
+) -> Result<RedisCacheRequest, CoordRedisError> {
+    let serialized =
+        serde_json::to_value(params).map_err(|source| CoordRedisError::Overrides { source })?;
+    let JsonValue::Object(fields) = serialized else {
+        return Err(CoordRedisError::Overrides {
+            source: serde_json::Error::custom("the coordination Redis params are not an object"),
+        });
+    };
+    let settings = fields
+        .into_iter()
+        .filter(|(name, value)| {
+            !value.is_null() && name != "namespace" && name != "redis_flush_size"
+        })
+        .collect();
+    let overrides = serde_json::from_value::<RedisOverrides>(JsonValue::Object(settings))
+        .map_err(|source| CoordRedisError::Overrides { source })?;
+    Ok(RedisCacheRequest {
+        overrides,
+        family,
+        namespace: params
+            .extra
+            .get("namespace")
+            .and_then(JsonValue::as_str)
+            .map(str::to_owned),
+        redis_flush_size: params
+            .extra
+            .get("redis_flush_size")
+            .and_then(JsonValue::as_u64)
+            .and_then(|size| usize::try_from(size).ok()),
+    })
+}
+
+// Python truthiness decides whether a parsed REDIS_CLUSTER_NODES selects a cluster client.
+fn python_truthy(value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Null => false,
+        JsonValue::Bool(flag) => *flag,
+        JsonValue::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
+        JsonValue::String(text) => !text.is_empty(),
+        JsonValue::Array(items) => !items.is_empty(),
+        JsonValue::Object(fields) => !fields.is_empty(),
+    }
+}

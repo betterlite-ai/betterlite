@@ -1,0 +1,34 @@
+use betterlite_env::EnvError;
+use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
+use thiserror::Error;
+
+use crate::proxy_request_contracts::ContractError;
+use crate::redis_cache_wiring::build::RedisCacheWiringError;
+
+#[derive(Debug, Error)]
+pub enum CoordRedisError {
+    #[error("general_settings.coordination_redis must be a mapping of Redis connection params")]
+    NotMapping,
+    #[error(
+        "general_settings.coordination_redis needs a connection target: set one of host, url, startup_nodes, or sentinel_nodes"
+    )]
+    MissingTarget,
+    #[error(transparent)]
+    Params(#[from] ContractError),
+    #[error("REDIS_CLUSTER_NODES is not valid JSON: {source}")]
+    ClusterNodes {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the coordination Redis params could not be read as Redis settings: {source}")]
+    Overrides {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error(transparent)]
+    Build(#[from] RedisCacheWiringError),
+    #[error(transparent)]
+    Secrets(#[from] SecretLookupError),
+    #[error(transparent)]
+    Environment(#[from] EnvError),
+}
