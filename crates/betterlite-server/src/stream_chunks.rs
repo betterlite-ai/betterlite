@@ -34,7 +34,7 @@ pub enum StreamItem {
 
 impl StreamItem {
     #[must_use]
-    pub fn hidden_params(&self) -> Option<&JsonObject> {
+    pub const fn hidden_params(&self) -> Option<&JsonObject> {
         match self {
             Self::Chunk(chunk) => Some(&chunk.hidden),
             Self::Bytes(_) | Self::Text(_) => None,

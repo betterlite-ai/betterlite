@@ -10,11 +10,11 @@ pub(super) fn is_text_config(value: &Json) -> bool {
 }
 
 fn format_is_config(format: Option<&Json>) -> bool {
-    let Some(format) = format else {
+    let Some(config) = format else {
         return true;
     };
-    let Json::Object(entries) = format else {
-        return matches!(format, Json::Null);
+    let Json::Object(entries) = config else {
+        return matches!(config, Json::Null);
     };
     match entries.get("type") {
         Some(Json::Null) => true,

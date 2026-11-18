@@ -3,99 +3,72 @@ use super::typed_chunk;
 use crate::stream_chunks::ChunkKind;
 use crate::stream_chunks::serialize::serialize_chunk;
 
+fn assert_event_chunk(body: &str, expected: &str) {
+    let chunk = typed_chunk(ChunkKind::Event, body);
+    assert_eq!(serialize_chunk(&chunk), expected);
+}
+
 #[test]
 fn serialize_text_keeps_dictionary_alternative_nulls() {
-    let unknown_format = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_dict", "created_at": 40, "output": [], "text": {"format": {"type": "future_format", "nullable": null}, "nullable": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&unknown_format),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_dict","created_at":40,"output":[],"#,
             r#""text":{"format":{"type":"future_format","nullable":null},"nullable":null}}}"#
-        )
+        ),
     );
-    let missing_schema = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_schema", "created_at": 41, "output": [], "text": {"format": {"type": "json_schema", "name": "n", "nullable": null}, "nullable": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&missing_schema),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_schema","created_at":41,"output":[],"#,
             r#""text":{"format":{"type":"json_schema","name":"n","nullable":null},"nullable":null}}}"#
-        )
+        ),
     );
-    let bad_verbosity = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_bad", "created_at": 42, "output": [], "text": {"format": {"type": "text"}, "verbosity": "loud", "nullable": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&bad_verbosity),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_bad","created_at":42,"output":[],"#,
             r#""text":{"format":{"type":"text"},"verbosity":"loud","nullable":null}}}"#
-        )
+        ),
     );
-    let bad_name = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_name", "created_at": 47, "output": [], "text": {"format": {"type": "json_schema", "name": 5, "schema": {"type": "object"}, "nullable": null}, "nullable": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&bad_name),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_name","created_at":47,"output":[],"#,
             r#""text":{"format":{"type":"json_schema","name":5,"schema":{"type":"object"},"nullable":null},"nullable":null}}}"#
-        )
+        ),
     );
 }
 
 #[test]
 fn serialize_text_config_strips_declared_nulls() {
-    let chunk = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_ok", "created_at": 43, "output": [], "text": {"format": {"type": "json_schema", "name": "n", "schema": {"type": "object", "x": null}, "nullable": null, "extra": 5}, "verbosity": null, "nullable": null, "obj": {"a": null}}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&chunk),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_ok","created_at":43,"output":[],"#,
             r#""text":{"format":{"type":"json_schema","name":"n","schema":{"type":"object","x":null},"extra":5},"obj":{"a":null}}}}"#
-        )
+        ),
     );
-    let text_format = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_text", "created_at": 44, "output": [], "text": {"format": {"type": "text", "extra": null}, "verbosity": null, "extra_null": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&text_format),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_text","created_at":44,"output":[],"#,
             r#""text":{"format":{"type":"text"}}}}"#
-        )
+        ),
     );
-    let no_format = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_none", "created_at": 45, "output": [], "text": {"verbosity": "low", "nullable": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&no_format),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_none","created_at":45,"output":[],"#,
             r#""text":{"verbosity":"low"}}}"#
-        )
+        ),
     );
-    let null_format = typed_chunk(
-        ChunkKind::Event,
+    assert_event_chunk(
         r#"{"type": "response.created", "response": {"id": "resp_text_null", "created_at": 46, "output": [], "text": {"format": null, "nullable": null}}}"#,
-    );
-    assert_eq!(
-        serialize_chunk(&null_format),
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_null","created_at":46,"output":[],"#,
             r#""text":{}}}"#
-        )
+        ),
     );
 }
 

@@ -103,8 +103,8 @@ fn hidden_headers(headers: &str) -> JsonObject {
     object(&format!(r#"{{"additional_headers": {headers}}}"#))
 }
 
-fn model_text(text: &str) -> Option<Json> {
-    Some(Json::Text(text.to_owned()))
+fn model_text(text: &str) -> Json {
+    Json::Text(text.to_owned())
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn int_like_reads_python_int_text(#[case] raw: &str) {
 #[case::minus_only(r#""-""#)]
 #[case::hex(r#""0x10""#)]
 #[case::inner_space(r#""1 0""#)]
-#[case::unicode_digit(r#""١""#)]
+#[case::unicode_digit("\"\\u0661\"")]
 #[case::zero(r#""0""#)]
 #[case::negative_zero(r#""-0""#)]
 fn int_like_rejects_bad_text(#[case] raw: &str) {
@@ -394,7 +394,7 @@ fn restamp_sets_client_model() {
     let mut item = chat_item(Some("provider/x"));
     let logged = restamp_chunk_model(&mut item, &restamp_input("gpt-4o", &request), false);
     assert!(logged);
-    assert_eq!(item_model(&item), model_text("gpt-4o").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("gpt-4o")));
 }
 
 #[test]
@@ -403,7 +403,7 @@ fn restamp_adds_missing_model() {
     let mut item = chat_item(None);
     let logged = restamp_chunk_model(&mut item, &restamp_input("gpt-4o", &request), false);
     assert!(logged);
-    assert_eq!(item_model(&item), model_text("gpt-4o").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("gpt-4o")));
 }
 
 #[test]
@@ -422,7 +422,7 @@ fn restamp_keeps_logged_flag() {
     let mut item = chat_item(Some("provider/x"));
     let logged = restamp_chunk_model(&mut item, &restamp_input("gpt-4o", &request), true);
     assert!(logged);
-    assert_eq!(item_model(&item), model_text("gpt-4o").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("gpt-4o")));
 }
 
 #[test]
@@ -431,7 +431,7 @@ fn restamp_keeps_flag_on_matching_model() {
     let mut item = chat_item(Some("gpt-4o"));
     let logged = restamp_chunk_model(&mut item, &restamp_input("gpt-4o", &request), true);
     assert!(logged);
-    assert_eq!(item_model(&item), model_text("gpt-4o").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("gpt-4o")));
 }
 
 #[test]
@@ -507,7 +507,7 @@ fn restamp_skips_model_router_before_fallback() {
     input.fallback_model = Some("fallback-x");
     let logged = restamp_chunk_model(&mut item, &input, false);
     assert!(logged);
-    assert_eq!(item_model(&item), model_text("fallback-x").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("fallback-x")));
     assert_eq!(ROUTER_CALLS.load(Ordering::SeqCst), 1);
 }
 
@@ -524,7 +524,7 @@ fn restamp_router_check_gets_requested_model() {
     other.is_model_router = named;
     let mut second = chat_item(Some("provider/x"));
     assert!(restamp_chunk_model(&mut second, &other, false));
-    assert_eq!(item_model(&second), model_text("gpt-4o").as_ref());
+    assert_eq!(item_model(&second), Some(&model_text("gpt-4o")));
 }
 
 #[test]
@@ -542,7 +542,7 @@ fn restamp_skips_fastest_response_before_fallback() {
     fallback.fallback_attempted = true;
     fallback.fallback_model = Some("fallback-x");
     assert!(restamp_chunk_model(&mut item, &fallback, false));
-    assert_eq!(item_model(&item), model_text("fallback-x").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("fallback-x")));
 }
 
 #[test]
@@ -566,7 +566,7 @@ fn restamp_stamps_every_chunk_kind(#[case] kind: ChunkKind) {
     let mut item = StreamItem::Chunk(typed_chunk(kind, r#"{"type": "response.created"}"#));
     let logged = restamp_chunk_model(&mut item, &restamp_input("gpt-4o", &request), false);
     assert!(logged, "{kind:?}");
-    assert_eq!(item_model(&item), model_text("gpt-4o").as_ref(), "{kind:?}");
+    assert_eq!(item_model(&item), Some(&model_text("gpt-4o")), "{kind:?}");
 }
 
 #[test]
@@ -577,7 +577,7 @@ fn restamp_uses_fallback_model_after_fallback() {
     input.fallback_attempted = true;
     input.fallback_model = Some("fallback-x");
     assert!(restamp_chunk_model(&mut item, &input, false));
-    assert_eq!(item_model(&item), model_text("fallback-x").as_ref());
+    assert_eq!(item_model(&item), Some(&model_text("fallback-x")));
 }
 
 #[test]
@@ -597,7 +597,7 @@ fn restamp_logs_mismatch_once() {
         let logged = restamp_chunk_model(&mut item, &input, false);
         let mut second = chat_item(Some("provider/y"));
         let second_logged = restamp_chunk_model(&mut second, &input, logged);
-        assert_eq!(item_model(&second), model_text("gpt-4o").as_ref());
+        assert_eq!(item_model(&second), Some(&model_text("gpt-4o")));
         (logged, second_logged)
     };
     assert!(logged && second_logged);
@@ -960,8 +960,8 @@ fn replays_the_sse_frame_corpus(#[files("fuzz/corpus/sse_frame/*")] path: PathBu
     let Ok(buffer) = str::from_utf8(&bytes) else {
         return;
     };
-    let (frame, rest) = pop_sse_frame(buffer);
-    if let Some(frame) = frame {
+    let (next_frame, rest) = pop_sse_frame(buffer);
+    if let Some(frame) = next_frame {
         assert!(
             SSE_FRAME_DELIMITERS
                 .iter()

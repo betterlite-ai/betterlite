@@ -40,12 +40,12 @@ fn restamp_target<'item, 'request>(
     if should_return_raw_model_name(input.request_data) {
         return None;
     }
-    let target = if input.fallback_attempted {
+    let chosen = if input.fallback_attempted {
         input.fallback_model
     } else {
         Some(input.requested_model)
     };
-    let target = target.filter(|model| !model.is_empty())?;
+    let target = chosen.filter(|model| !model.is_empty())?;
     let StreamItem::Chunk(chunk) = item else {
         return None;
     };
@@ -97,12 +97,12 @@ fn log_mismatch(
         Some(Json::Text(text)) => text.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
     };
-    let downstream = match downstream {
+    let downstream_text = match downstream {
         None | Some(Json::Null) => String::from("None"),
         Some(Json::Text(text)) => text.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
     };
     tracing::debug!(
-        "litellm_call_id={call_id}: streaming chunk model mismatch - target={target} downstream={downstream} fallback_was_attempted={fallback_attempted}. Overriding chunk model to target."
+        "litellm_call_id={call_id}: streaming chunk model mismatch - target={target} downstream={downstream_text} fallback_was_attempted={fallback_attempted}. Overriding chunk model to target."
     );
 }

@@ -10,10 +10,10 @@ mod tool_shapes;
 #[derive(Clone, Copy)]
 enum Shape {
     Value,
-    Fields(&'static [(&'static str, Shape)]),
-    Tagged(&'static [(&'static str, Shape)]),
-    Tools(&'static [(&'static str, Shape)]),
-    Union(&'static [(&'static str, Shape)], fn(&Json) -> bool),
+    Fields(&'static [(&'static str, Self)]),
+    Tagged(&'static [(&'static str, Self)]),
+    Tools(&'static [(&'static str, Self)]),
+    Union(&'static [(&'static str, Self)], fn(&Json) -> bool),
 }
 
 const EMPTY: &[(&str, Shape)] = &[];
@@ -129,7 +129,7 @@ fn event_shape(body: &JsonObject) -> Shape {
         .iter()
         .find(|(event, _fields)| *event == kind.as_str())
         .map_or(Shape::Fields(EMPTY), |(_event, fields)| {
-            Shape::Fields(*fields)
+            Shape::Fields(fields)
         })
 }
 
