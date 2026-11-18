@@ -1,5 +1,4 @@
 use betterlite_bedrock::agentcore_search_reply::decode_agentcore_search_reply;
-use betterlite_bedrock::agentcore_search_reply::error::SearchReplyError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
