@@ -1,3 +1,4 @@
+use rust_decimal::serde::arbitrary_precision::serialize;
 use rust_decimal::{Decimal, RoundingStrategy};
 use serde::Serializer;
 
@@ -10,7 +11,7 @@ where
     if value.scale() == 0 {
         value.rescale(1);
     }
-    rust_decimal::serde::arbitrary_precision::serialize(&value, serializer)
+    serialize(&value, serializer)
 }
 
 pub fn serialize_optional_money<S>(rate: &Option<Decimal>, serializer: S) -> Result<S::Ok, S::Error>
@@ -27,8 +28,10 @@ where
 #[must_use]
 pub fn format_percent(value: Decimal, decimals: u32) -> String {
     let scaled = value.saturating_mul(Decimal::ONE_HUNDRED);
-    let rounded = scaled.round_dp_with_strategy(decimals, RoundingStrategy::MidpointNearestEven);
-    format!("{rounded:.decimals$}%")
+    let mut rounded =
+        scaled.round_dp_with_strategy(decimals, RoundingStrategy::MidpointNearestEven);
+    rounded.rescale(decimals);
+    format!("{rounded}%")
 }
 
 // Python's {value:,.2f}: two fractional digits, half-even, with thousands separators.
@@ -42,7 +45,7 @@ pub fn format_usd(amount: Decimal) -> String {
         .filter(char::is_ascii_digit)
         .count();
     let mut grouped = String::new();
-    let mut seen = 0usize;
+    let mut seen = 0_usize;
     for character in text.chars() {
         if character.is_ascii_digit() && seen < whole_len {
             let remaining = whole_len.saturating_sub(seen);
