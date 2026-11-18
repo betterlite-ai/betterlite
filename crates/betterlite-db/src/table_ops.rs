@@ -257,7 +257,8 @@ where
                 .clock
                 .instant()
                 .saturating_duration_since(started);
-            if tries >= policy.tries || elapsed >= policy.budget {
+            // the counter stops at the policy's try count, so equality is the last-try test
+            if tries == policy.tries || elapsed >= policy.budget {
                 return Err(error);
             }
             self.ports
