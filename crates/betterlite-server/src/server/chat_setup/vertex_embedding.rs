@@ -9,34 +9,21 @@ use betterlite_config::sections::vertex_embedding_dispatch::Settings as Embeddin
 use betterlite_config::types::Config;
 use betterlite_core::operation::embedding::EmbeddingCall;
 use betterlite_core::vertex_embedding_dispatch::{Pinned, VertexEmbeddingDispatchError, pin};
-use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
-use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
-use betterlite_http::proxy::ProxiedClient;
-use betterlite_models::catalog::ModelCatalog;
 use betterlite_openai::chat::deployment::{ChatDeployment, Provider as DeploymentProvider};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_provider::vertex_embedding_binding::calls::VertexEmbeddingCalls;
-use betterlite_tokenizer::count::Counter;
 use betterlite_tokenizer::count::error::CountError;
-use betterlite_tokenizer::count::settings::Settings as CountSettings;
-use betterlite_tokenizer::engine::fetch::TiktokenFetcher;
-use betterlite_tokenizer::engine::hub::HubDownloader;
-use betterlite_tokenizer::engine::limits::{BlockingCounter, CountingService};
-use betterlite_tokenizer::engine::selection::Selector;
+use betterlite_tokenizer::count::runtime::runtime_counter;
 use betterlite_vertex::credential_sources::sdk::{
     CredentialClock, GoogleAuth, HttpPolicy, SystemClock,
 };
 use betterlite_vertex::token_cache::CredentialCache;
 use betterlite_vertex::token_refresh::CredentialRefresh;
 use thiserror::Error;
-use tokio::time::Instant;
 use tokio_util::task::TaskTracker;
 
-use counter::{InlineCounter, RuntimeTextCounter};
+use counter::RuntimeTextCounter;
 use executor::VertexCredentialExecutor;
-
-// the anyio limiter LiteLLM counts tokens under, as the tokenizer's own tests size it
-const TOKEN_COUNT_CONCURRENCY: usize = 4;
 
 #[derive(Debug, Error)]
 pub enum VertexEmbeddingSetupError {
@@ -79,7 +66,8 @@ pub fn vertex_embedding_calls(
     let cache = Arc::new(CredentialCache::new(clock, executor));
     let refresh = Arc::new(CredentialRefresh::new(Arc::clone(&cache), tasks.clone()));
     let counter = RuntimeTextCounter {
-        counter: token_counter(config, &transport, &catalog)?,
+        counter: runtime_counter(config, &transport, &catalog)
+            .map_err(|source| VertexEmbeddingSetupError::Limits { source })?,
     };
     Ok(Some(Arc::new(VertexEmbeddingCalls {
         catalog,
@@ -112,58 +100,4 @@ fn pinned_deployments(
         pinned.insert(deployment.model_id.clone(), pins);
     }
     Ok(pinned)
-}
-
-// the chain the tokenizer's own tests build: a bundled vocabulary needs no download, and the hub is reached only for a custom tokenizer
-fn token_counter(
-    config: &Config,
-    client: &Arc<ProxiedClient>,
-    catalog: &Arc<ModelCatalog>,
-) -> Result<Counter, VertexEmbeddingSetupError> {
-    let settings = CountSettings::from_config(&config.sections.token_counting);
-    let limits = settings
-        .encode_limits()
-        .map_err(|source| VertexEmbeddingSetupError::Limits { source })?;
-    let facility: Arc<dyn BlockingCounter> = Arc::new(InlineCounter);
-    let service = Arc::new(CountingService::new(
-        TOKEN_COUNT_CONCURRENCY,
-        facility,
-        limits,
-    ));
-    let fetcher = Arc::new(TiktokenFetcher::new(
-        Arc::clone(client),
-        None,
-        Arc::clone(&service),
-    ));
-    let selector = Arc::new(Selector::new(
-        Arc::clone(&fetcher),
-        hub_downloader(config, client),
-        Arc::clone(catalog),
-        Arc::clone(&service),
-        false,
-    ));
-    Ok(Counter::new(
-        selector,
-        service,
-        Arc::clone(catalog),
-        settings,
-    ))
-}
-
-fn hub_downloader(config: &Config, client: &Arc<ProxiedClient>) -> Arc<HubDownloader> {
-    let hub = config.sections.huggingface_hub.clone();
-    let reader: Arc<dyn HubTokenFileReader> = Arc::new(TokioHubTokenFileReader);
-    let hub_clock: Arc<dyn HubClock> = Arc::new(SystemHubClock::default());
-    let resolver = Arc::new(HubTokenResolver::new(
-        hub.clone(),
-        config.sections.huggingface_oidc.clone(),
-        Arc::clone(client),
-        reader,
-        hub_clock,
-    ));
-    Arc::new(HubDownloader::new(
-        Arc::new(hub),
-        resolver,
-        Arc::new(Instant::now),
-    ))
 }

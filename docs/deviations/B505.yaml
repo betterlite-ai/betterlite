@@ -1,42 +1,6 @@
 task: B505
 deviations:
   - what: >-
-      The proxy's chat route only reaches this repair for calls answered by a mock. Every other chat call leaves
-      betterlite-openai through betterlite-server's answer_chat, which hands it to betterlite-provider's ChatOperation,
-      so an output-limit 400 or a 422 from the provider reaches the client unchanged. LiteLLM applies the repair inside
-      the OpenAI and Azure completion wrappers, which every chat call goes through.
-    why: >-
-      The route wiring changed after this task was written. B010 (b2eb8f6721) sent non-mocked chat calls to
-      provider_chat, in crates/betterlite-server/src/server/chat_setup/provider_call.rs, and that file is outside this
-      task's scope. The repair is implemented and tested in ChatExecutor::send and ChatExecutor::stream; moving the
-      route back to them, or porting the repair into the provider crate, is a decision for the owner of that wiring.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L837-L842
-  - what: >-
-      The 422 retry runs when the call itself carries drop_params true, read from the request's own parameters.
-      LiteLLM also retries when the module global litellm.drop_params is true, which the proxy sets from
-      litellm_settings.drop_params, so a proxy configured that way retries while the executor answers the 422.
-    why: >-
-      The executor has no module global to read, and the call's own parameter is the only signal a proxy request
-      carries inside this task's scope. Wiring the drop_params config section into the executor's constructor needs
-      betterlite-server's chat setup, which this task does not own.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6619
-  - what: >-
-      A second 422 after the dropped fields were resent reaches the client as the provider's own error. LiteLLM's
-      two-iteration loop drops the newly named fields and then falls out of the function, returning None, so the
-      caller receives no completion at all instead of an error.
-    why: >-
-      A null completion reported as a success is a bug no working setup can rely on, so rule owned-behavior-is-built
-      keeps the provider error, which carries the status and the rejected fields.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L709-L842
-  - what: >-
-      The 422 retry keeps model and messages even when the provider names them among the rejected fields. LiteLLM's
-      proxy callers drop the rejected fields from the transformed request body and resend it, so a retry that named
-      either field would go out without it.
-    why: >-
-      A chat request without model or messages can never succeed, and no working setup relies on that failure. The
-      sync completion path rebuilds both fields through transform_request and behaves like betterlite here.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L990-L993
-  - what: >-
       The output-limit marker is matched inside the provider's error text: the raw response body on the buffered path,
       and the transport error's message on the Azure raw-send path. LiteLLM matches it inside the SDK exception's
       message, which is the "Error code: 400 - {body}" rendering of the same reply.

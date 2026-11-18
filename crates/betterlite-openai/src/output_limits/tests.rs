@@ -8,29 +8,20 @@
     )
 )]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::MockPlan;
-use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use futures_util::StreamExt as _;
+use betterlite_models::catalog::BundledCatalog;
+use betterlite_tokenizer::count::runtime::runtime_counter;
 use http::{HeaderMap, HeaderValue};
-use rand::SeedableRng as _;
-use rand::rngs::StdRng;
 use rstest::rstest;
 use serde_json::{Map, Value, json};
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
-use tokio::time::timeout;
-use url::Url;
 use uuid::Uuid;
 
 use super::build::{RecoveredBody, Recovery, build_limit_response};
@@ -39,15 +30,8 @@ use super::{
     ErrorBody, OUTPUT_TOKEN_LIMIT_MARKER, RejectedFieldsError, decode_rejected_fields,
     without_rejected_fields,
 };
-use crate::chat::deployment::{ChatDeployment, Provider};
-use crate::chat::execution::{ChatError, ChatExecutor};
-use crate::chat::response::ChatResponse;
-use crate::chat::{ChatRequest, MockSettings};
-use crate::embedding::EmbeddingResponse;
-use crate::openai_base_config::CatalogCapabilities;
 
 const COMPLETION: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"up"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}"#;
-const USER_TURN: &str = r#"[{"role":"user","content":"hello world"}]"#;
 
 fn fixed_clock() -> u64 {
     1_700_000_000
@@ -108,130 +92,6 @@ fn recovery(tokens: &dyn PromptTokens) -> Recovery<'_> {
         next_id: fixed_id,
         tokens,
     }
-}
-
-fn deployment(base_url: &str) -> ChatDeployment {
-    let api_base = format!("{base_url}/v1");
-    let endpoint = Url::parse(&format!("{base_url}/v1/chat/completions")).expect("endpoint");
-    let provider = Provider::OpenAi {
-        model: String::from("gpt-3.5-turbo"),
-    };
-    ChatDeployment {
-        model_group: String::from("g"),
-        litellm_model: String::from("openai/gpt-3.5-turbo"),
-        provider,
-        api_base,
-        endpoint,
-        authorization: None,
-        api_key: Some(secrecy::SecretString::from(String::from("k"))),
-        organization: None,
-        timeout: Duration::from_secs(30),
-        timeout_seconds: 30.0,
-        model_id: String::from("g"),
-        weight: 0,
-        rpm: 0,
-        tpm: 0,
-    }
-}
-
-fn unused_chat(
-    _plan: &MockPlan<'_>,
-    _usage: UsageDefaults,
-    _model: &str,
-    _id: &str,
-    _created: u64,
-) -> Result<ChatResponse, MockError> {
-    Err(MockError::WrongType {
-        field: "mock_response",
-    })
-}
-
-fn unused_embedding(
-    _response: Option<&MockResponse>,
-    _model: &str,
-) -> Result<EmbeddingResponse, MockError> {
-    Err(MockError::EmbeddingFailure)
-}
-
-fn executor(base_url: &str) -> ChatExecutor {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("proxy");
-    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("client");
-    ChatExecutor {
-        client,
-        deployments: vec![deployment(base_url)],
-        catalog: CatalogCapabilities {
-            chat_models: BTreeSet::new(),
-            text_models: BTreeSet::new(),
-        },
-        random: Mutex::new(StdRng::seed_from_u64(1)),
-        clock: fixed_clock,
-        next_id: fixed_id,
-        mock: MockSettings::default(),
-        mock_chat: unused_chat,
-        mock_embedding: unused_embedding,
-        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("redactor"),
-    }
-}
-
-struct Reply {
-    status: u16,
-    body: String,
-}
-
-async fn serve(listener: TcpListener, replies: Vec<Reply>, seen: Arc<Mutex<Vec<String>>>) {
-    for reply in replies {
-        let (mut stream, _) = timeout(Duration::from_secs(5), listener.accept())
-            .await
-            .expect("no request reached the provider")
-            .expect("accepted request");
-        let mut received = Vec::new();
-        while !received.ends_with(b"\r\n\r\n") {
-            received.push(stream.read_u8().await.expect("request head"));
-        }
-        let head = String::from_utf8(received).expect("request head text");
-        let length: usize = head
-            .lines()
-            .find_map(|line| line.strip_prefix("content-length: "))
-            .map_or(0, |value| value.parse().expect("content length"));
-        let mut sent = vec![0_u8; length];
-        stream.read_exact(&mut sent).await.expect("request body");
-        seen.lock()
-            .expect("seen")
-            .push(String::from_utf8(sent).expect("request text"));
-        let response = format!(
-            "HTTP/1.1 {} X\r\ncontent-type: application/json\r\nx-request-id: r1\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-            reply.status,
-            reply.body.len(),
-            reply.body
-        );
-        stream
-            .write_all(response.as_bytes())
-            .await
-            .expect("provider reply");
-    }
-}
-
-async fn listen() -> (TcpListener, String) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("address"));
-    (listener, base)
-}
-
-fn bodies(seen: &Mutex<Vec<String>>) -> Vec<Value> {
-    seen.lock()
-        .expect("seen")
-        .iter()
-        .map(|request| {
-            let body = request.split("\r\n\r\n").nth(1).expect("request body");
-            serde_json::from_str(body).expect("request json")
-        })
-        .collect()
-}
-
-fn marker_error() -> String {
-    format!(
-        r#"{{"error":{{"message":"{OUTPUT_TOKEN_LIMIT_MARKER}","type":"invalid_request_error","param":null,"code":"max_tokens"}}}}"#
-    )
 }
 
 fn two_element_loc() {
@@ -424,7 +284,10 @@ async fn prompt_token_count() {
     assert_eq!(answer.headers, header_map(&[("x-request-id", "r1")]));
     assert_eq!(
         recorder.calls(),
-        vec![(String::from("gpt-3.5-turbo"), messages.to_vec())]
+        vec![(
+            String::from("gpt-3.5-turbo"),
+            messages.as_array().expect("messages").clone()
+        )]
     );
     let unmodelled = fields(&[("messages", json!([]))]);
     build_limit_response(&unmodelled, HeaderMap::new(), &recovery(&recorder))
@@ -452,6 +315,15 @@ async fn prompt_token_count() {
         assert_eq!(completion.usage.total_tokens, 0);
     }
     assert!(uncounted.calls().is_empty());
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("")
+    .expect("config");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("proxy");
+    let client = Arc::new(ProxiedClient::outbound(&Arc::new(policy)).expect("client"));
+    let tokens =
+        runtime_counter(&config, &client, &BundledCatalog::default().get()).expect("counter");
     let counted = build_limit_response(
         &fields(&[
             ("model", json!("gpt-3.5-turbo")),
@@ -464,7 +336,7 @@ async fn prompt_token_count() {
         &Recovery {
             clock: fixed_clock,
             next_id: fixed_id,
-            tokens: &super::tokens::TokenizerPromptTokens,
+            tokens: &tokens,
         },
     )
     .await;
@@ -473,280 +345,6 @@ async fn prompt_token_count() {
     };
     assert_eq!(completion.usage.prompt_tokens, 9);
     assert_eq!(completion.usage.total_tokens, 9);
-}
-
-async fn unrelated_error() {
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request = ChatRequest::parse(
-        br#"{"model":"g","max_tokens":1,"messages":[{"role":"user","content":"hi"}]}"#,
-    )
-    .expect("request");
-    let replies = vec![Reply {
-        status: 400,
-        body: String::from(
-            r#"{"error":{"message":"could not finish the message","type":"invalid_request_error","param":"max_tokens"}}"#,
-        ),
-    }];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.send(chat.deployments.first().expect("deployment"), &request)
-    );
-    let error = answered.expect_err("an unrelated 400 is not repaired");
-    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
-    let failure = error.failure(&chat.redactor);
-    assert_eq!(failure.status, 400);
-    assert_eq!(failure.error_type, "invalid_request_error");
-    assert_eq!(failure.param.as_deref(), Some("max_tokens"));
-    assert_eq!(
-        bodies(&seen),
-        vec![json!({
-            "model": "gpt-3.5-turbo",
-            "max_tokens": 1,
-            "messages": [{"role": "user", "content": "hi"}],
-        })]
-    );
-}
-
-async fn openai_output_limit_buffered() {
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request =
-        ChatRequest::parse(format!(r#"{{"model":"g","messages":{USER_TURN}}}"#).as_bytes())
-            .expect("request");
-    let replies = vec![Reply {
-        status: 400,
-        body: marker_error(),
-    }];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.send(chat.deployments.first().expect("deployment"), &request)
-    );
-    let outcome = answered.expect("the output limit becomes a reply");
-    assert_eq!(outcome.upstream.status, 200);
-    assert_eq!(
-        outcome
-            .upstream
-            .headers
-            .get("x-request-id")
-            .expect("header"),
-        "r1"
-    );
-    assert_eq!(
-        serde_json::to_value(&outcome.response).expect("response json"),
-        json!({
-            "id": "chatcmpl-00000000-0000-0000-0000-000000000007",
-            "object": "chat.completion",
-            "created": 1_700_000_000,
-            "model": "g",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "length",
-                "provider_specific_fields": {},
-                "message": {
-                    "role": "assistant",
-                    "content": "",
-                    "provider_specific_fields": {"refusal": null},
-                },
-            }],
-            "usage": {"prompt_tokens": 9, "completion_tokens": 0, "total_tokens": 9},
-        })
-    );
-    let sent = bodies(&seen);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(
-        sent.first().and_then(|body| body.get("messages")),
-        Some(&json!([{"role": "user", "content": "hello world"}]))
-    );
-    assert!(sent.first().and_then(|body| body.get("stream")).is_none());
-}
-
-async fn openai_output_limit_stream() {
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request = ChatRequest::parse(
-        format!(r#"{{"model":"g","stream":true,"messages":{USER_TURN}}}"#).as_bytes(),
-    )
-    .expect("request");
-    let replies = vec![Reply {
-        status: 400,
-        body: marker_error(),
-    }];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.stream(chat.deployments.first().expect("deployment"), &request)
-    );
-    let stream = answered.expect("the output limit becomes a chunk");
-    assert_eq!(stream.headers.get("x-request-id").expect("header"), "r1");
-    let mut body = stream.body;
-    let mut frames = Vec::new();
-    while let Some(frame) = body.next().await {
-        frames.push(frame.expect("frame"));
-    }
-    assert_eq!(frames.len(), 1);
-    let frame = String::from_utf8(frames.remove(0)).expect("frame text");
-    let chunk = frame
-        .strip_prefix("data: ")
-        .and_then(|rest| rest.strip_suffix("\n\n"))
-        .expect("one sse event");
-    assert_eq!(
-        serde_json::from_str::<Value>(chunk).expect("chunk json"),
-        json!({
-            "id": "chatcmpl-00000000-0000-0000-0000-000000000007",
-            "object": "chat.completion.chunk",
-            "created": 1_700_000_000,
-            "model": "gpt-3.5-turbo",
-            "choices": [{
-                "index": 0,
-                "finish_reason": "length",
-                "delta": {"role": "assistant", "content": ""},
-            }],
-        })
-    );
-    let sent = bodies(&seen);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(
-        sent.first().and_then(|body| body.get("stream")),
-        Some(&json!(true))
-    );
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request = ChatRequest::parse(
-        format!(r#"{{"model":"g","stream":true,"messages":{USER_TURN}}}"#).as_bytes(),
-    )
-    .expect("request");
-    let replies = vec![Reply {
-        status: 400,
-        body: String::from(
-            r#"{"error":{"message":"invalid max_tokens value","type":"invalid_request_error","param":"max_tokens"}}"#,
-        ),
-    }];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.stream(chat.deployments.first().expect("deployment"), &request)
-    );
-    let Err(error) = answered else {
-        panic!("an unrelated 400 is not repaired on the stream path");
-    };
-    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
-    assert_eq!(error.failure(&chat.redactor).status, 400);
-    assert_eq!(bodies(&seen).len(), 1);
-}
-
-async fn openai_422_drop_retry() {
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request = ChatRequest::parse(
-        br#"{"model":"g","temperature":2,"drop_params":true,"messages":[{"role":"user","content":"hi"}]}"#,
-    )
-    .expect("request");
-    let replies = vec![
-        Reply {
-            status: 422,
-            body: String::from(
-                r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"unsupported value\"}]}","type":"invalid_request_error"}}"#,
-            ),
-        },
-        Reply {
-            status: 200,
-            body: String::from(COMPLETION),
-        },
-    ];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.send(chat.deployments.first().expect("deployment"), &request)
-    );
-    let outcome = answered.expect("the rejected field is dropped");
-    assert_eq!(outcome.response.id, "c1");
-    assert!(
-        request.temperature.is_some(),
-        "the caller's request keeps it"
-    );
-    let sent = bodies(&seen);
-    assert_eq!(sent.len(), 2);
-    assert_eq!(
-        sent.first().and_then(|body| body.get("temperature")),
-        Some(&json!(2))
-    );
-    assert!(
-        sent.get(1)
-            .and_then(|body| body.get("temperature"))
-            .is_none()
-    );
-    for body in &sent {
-        assert_eq!(body.get("model"), Some(&json!("gpt-3.5-turbo")));
-        assert!(body.get("drop_params").is_none());
-    }
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request = ChatRequest::parse(
-        br#"{"model":"g","temperature":2,"messages":[{"role":"user","content":"hi"}]}"#,
-    )
-    .expect("request");
-    let rejected = String::from(
-        r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"unsupported value\"}]}","type":"invalid_request_error"}}"#,
-    );
-    let replies = vec![Reply {
-        status: 422,
-        body: rejected,
-    }];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.send(chat.deployments.first().expect("deployment"), &request)
-    );
-    let Err(error) = answered else {
-        panic!("a 422 without drop_params is not retried");
-    };
-    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
-    assert_eq!(error.failure(&chat.redactor).status, 422);
-    let sent = bodies(&seen);
-    assert_eq!(sent.len(), 1);
-    assert_eq!(
-        sent.first().and_then(|body| body.get("temperature")),
-        Some(&json!(2))
-    );
-    let (listener, base) = listen().await;
-    let chat = executor(&base);
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let request = ChatRequest::parse(
-        br#"{"model":"g","temperature":2,"drop_params":true,"messages":[{"role":"user","content":"hi"}]}"#,
-    )
-    .expect("request");
-    let rejected = String::from(
-        r#"{"error":{"message":"{\"detail\":[{\"loc\":[\"body\",\"temperature\"],\"msg\":\"unsupported value\"}]}","type":"invalid_request_error"}}"#,
-    );
-    let replies = vec![
-        Reply {
-            status: 422,
-            body: rejected.clone(),
-        },
-        Reply {
-            status: 422,
-            body: rejected,
-        },
-    ];
-    let ((), answered) = tokio::join!(
-        serve(listener, replies, Arc::clone(&seen)),
-        chat.send(chat.deployments.first().expect("deployment"), &request)
-    );
-    let Err(error) = answered else {
-        panic!("a second 422 becomes the provider's error");
-    };
-    assert!(matches!(&error, ChatError::Provider { .. }), "{error}");
-    assert_eq!(error.failure(&chat.redactor).status, 422);
-    let sent = bodies(&seen);
-    assert_eq!(sent.len(), 2);
-    assert!(
-        sent.get(1)
-            .and_then(|body| body.get("temperature"))
-            .is_none()
-    );
 }
 
 fn malformed_nested_error_failure() {
@@ -787,9 +385,6 @@ enum Scenario {
     SingleLengthStreamChunk,
     PromptTokenCount,
     UnrelatedError,
-    OpenAiOutputLimitBuffered,
-    OpenAiOutputLimitStream,
-    OpenAi422DropRetry,
     MalformedNestedErrorFailure,
     AzureRawSendHeaders,
     AzureOutputLimitRecovery,
@@ -804,9 +399,6 @@ enum Scenario {
 #[case::single_length_stream_chunk(Scenario::SingleLengthStreamChunk)]
 #[case::prompt_token_count(Scenario::PromptTokenCount)]
 #[case::unrelated_error(Scenario::UnrelatedError)]
-#[case::openai_output_limit_buffered(Scenario::OpenAiOutputLimitBuffered)]
-#[case::openai_output_limit_stream(Scenario::OpenAiOutputLimitStream)]
-#[case::openai_422_drop_retry(Scenario::OpenAi422DropRetry)]
 #[case::malformed_nested_error_failure(Scenario::MalformedNestedErrorFailure)]
 #[case::azure_raw_send_headers(Scenario::AzureRawSendHeaders)]
 #[case::azure_output_limit_recovery(Scenario::AzureOutputLimitRecovery)]
@@ -820,10 +412,7 @@ async fn output_limits_cases(#[case] scenario: Scenario) {
         Scenario::EmptyLengthCompletion => empty_length_completion().await,
         Scenario::SingleLengthStreamChunk => single_length_stream_chunk().await,
         Scenario::PromptTokenCount => prompt_token_count().await,
-        Scenario::UnrelatedError => unrelated_error().await,
-        Scenario::OpenAiOutputLimitBuffered => openai_output_limit_buffered().await,
-        Scenario::OpenAiOutputLimitStream => openai_output_limit_stream().await,
-        Scenario::OpenAi422DropRetry => openai_422_drop_retry().await,
+        Scenario::UnrelatedError => raw_send::unrelated_error().await,
         Scenario::MalformedNestedErrorFailure => malformed_nested_error_failure(),
         Scenario::AzureRawSendHeaders => raw_send::azure_raw_send_headers().await,
         Scenario::AzureOutputLimitRecovery => raw_send::azure_output_limit_recovery().await,

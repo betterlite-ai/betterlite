@@ -252,3 +252,33 @@ pub(super) async fn azure_async_timeout() {
         "gone - timeout value=0.5, time taken=1.25 seconds"
     );
 }
+
+pub(super) async fn unrelated_error() {
+    let data = fields(&[("model", json!("gpt-3.5-turbo")), ("messages", json!([]))]);
+    let recorder = Recorder::new(7);
+    let body = json!({"message": "could not finish the message", "type": "invalid_request_error", "param": "max_tokens", "code": null});
+    let transport = ScriptedTransport {
+        calls: Mutex::new(Vec::new()),
+        answer: Err(RawChatError::BadRequest(Box::new(BadRequestReply {
+            message: String::from("could not finish the message"),
+            headers: header_map(&[("x-request-id", "r1")]),
+            body: body.clone(),
+        }))),
+    };
+    let sync = send_raw_chat_sync(&transport, &data, 2.5, &recovery(&recorder)).await;
+    let asynchronous =
+        send_raw_chat_async(&transport, &data, 2.5, fixed_now, &recovery(&recorder)).await;
+    for answer in [sync, asynchronous] {
+        let Err(RawChatError::BadRequest(error)) = answer else {
+            panic!("an unrelated bad request must propagate");
+        };
+        assert_eq!(error.body, body);
+        assert_eq!(error.message, "could not finish the message");
+        assert_eq!(error.headers, header_map(&[("x-request-id", "r1")]));
+    }
+    assert_eq!(
+        *transport.calls.lock().expect("calls"),
+        vec![(data.clone(), 2.5), (data, 2.5)]
+    );
+    assert!(recorder.calls().is_empty());
+}
