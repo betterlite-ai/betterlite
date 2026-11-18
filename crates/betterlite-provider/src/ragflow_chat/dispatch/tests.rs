@@ -18,9 +18,7 @@ use super::dispatch;
 use super::error::DispatchError;
 use super::handler::{ChatCompletionHandler, HandlerError};
 use crate::ragflow_chat::error::RagflowError;
-use crate::ragflow_chat::tests::support::{
-    environment, logging, messages, object, redactor, secrets,
-};
+use crate::ragflow_chat::tests::support::{environment, logging, messages, redactor, secrets};
 
 struct Fixture {
     secrets: SecretLookup,
