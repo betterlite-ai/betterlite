@@ -9,7 +9,7 @@ use betterlite_openai::cohere_legacy_embedding::decode::{
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
 use betterlite_oracle_helper_api::error::HelperError;
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::error::RedactionError;
 use serde::Serialize;
 use serde_json::Value;
@@ -258,7 +258,7 @@ const SKIPPED: [&str; 6] = [
 ];
 
 fn headers_value(headers: &[(String, String)]) -> Result<Value, AdapterError> {
-    let mut fields = betterlite_prompts::arguments::json::Object::new();
+    let mut fields = Object::new();
     for (name, value) in headers {
         let lowered = name.to_ascii_lowercase();
         if SKIPPED.contains(&lowered.as_str()) || (lowered == "accept" && value == "*/*") {

@@ -7,12 +7,14 @@ use betterlite_bedrock::embedding_call::error::EmbeddingCallError;
 use betterlite_bedrock::embedding_call::plan::remaining_options;
 use betterlite_bedrock::embedding_call::{
     Dependencies, EmbeddingCall, EmbeddingCallResponse, EmbeddingEnvironment, LogContext, ParamMap,
+    embeddings,
 };
 use betterlite_bedrock::signing::executor::AwsSigningExecutor;
+use betterlite_models::decisions::Json as Decisions;
 use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use super::super::input::{Case, Supplied};
 use super::super::output::AdapterError;
@@ -75,7 +77,7 @@ pub(crate) fn run(case: &Case) -> Result<Harness, AdapterError> {
     let sink = DiscardingSink;
     let mut state = state(&redactor)?;
     let capture = Capture::default();
-    let logger = |details: &betterlite_models::decisions::Json| capture.push(details);
+    let logger = |details: &Decisions| capture.push(details);
     let prepost = env(&state, &redactor, &sink, &logger);
     let supplied_view = supplied.as_ref().map(|(kind, client)| SuppliedClient {
         kind: *kind,
@@ -95,12 +97,7 @@ pub(crate) fn run(case: &Case) -> Result<Harness, AdapterError> {
             encoding: &encoding,
             signing: &signing,
         };
-        runtime()?.block_on(betterlite_bedrock::embedding_call::embeddings(
-            &mut call,
-            dependencies,
-            supplied_view,
-            &mut log,
-        ))
+        runtime()?.block_on(embeddings(&mut call, dependencies, supplied_view, &mut log))
     };
     let mut requests = factory.requests();
     requests.extend(supplied.iter().flat_map(|(_, client)| client.requests()));
@@ -145,6 +142,6 @@ fn clock(now: u64) -> Result<SystemTime, AdapterError> {
         .ok_or(AdapterError::Clock)
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, AdapterError> {
+fn runtime() -> Result<Runtime, AdapterError> {
     Ok(Builder::new_current_thread().enable_all().build()?)
 }

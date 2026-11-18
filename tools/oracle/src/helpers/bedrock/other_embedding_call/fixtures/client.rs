@@ -10,6 +10,7 @@ use betterlite_bedrock::bedrock_embedding_io::transport::{
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport;
 use serde_json::{Value, json};
 
 use super::super::input::{Failure, Reply};
@@ -76,17 +77,17 @@ impl FixtureClient {
 
     fn answer(&self, url: &str) -> Result<EmbeddingReply, TransferError> {
         match self.replies.take() {
-            None => Err(TransferError::Failed(TransportError::Closed)),
+            None
+            | Some(Reply {
+                failure: Some(Failure::Failed),
+                ..
+            }) => Err(TransferError::Failed(TransportError::Closed)),
             Some(Reply {
                 failure: Some(Failure::Timeout),
                 ..
             }) => Err(TransferError::Timeout {
                 elapsed: Duration::from_millis(125),
             }),
-            Some(Reply {
-                failure: Some(Failure::Failed),
-                ..
-            }) => Err(TransferError::Failed(TransportError::Closed)),
             Some(reply) => Ok(EmbeddingReply {
                 status: reply.status,
                 headers: reply.headers(),
@@ -138,9 +139,7 @@ impl EmbeddingTransport for FixtureClient {
     }
 }
 
-impl betterlite_openai::cohere_legacy_embedding::execute::LegacyEmbeddingTransport
-    for FixtureClient
-{
+impl LegacyEmbeddingTransport for FixtureClient {
     fn send(
         &self,
         request: OutboundRequest,
