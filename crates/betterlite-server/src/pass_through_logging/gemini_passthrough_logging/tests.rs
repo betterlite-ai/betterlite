@@ -183,6 +183,22 @@ fn route_generate_content_decodes_and_prices_the_response() {
 }
 
 #[test]
+fn route_generate_content_logs_the_candidate_metadata_lists() {
+    let body = r#"{"modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"hello"}],"role":"model"},"finishReason":"STOP","safetyRatings":[{"category":"HARM_CATEGORY_DANGER"}],"index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#;
+    let fixture = fixture(GENERATE_ROUTE, body);
+    let cost = FakeCost::priced(Decimal::new(25, 3));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the generateContent reply is logged");
+    let result = result_json(&outcome);
+    assert_eq!(
+        field(&result, "vertex_ai_safety_results"),
+        &json(r#"[[{"category":"HARM_CATEGORY_DANGER"}]]"#)
+    );
+    assert_eq!(field(&result, "vertex_ai_citation_metadata"), &json("[]"));
+}
+
+#[test]
 fn route_stream_generate_content_alone_is_not_the_generate_content_branch() {
     let fixture = fixture(
         STREAM_ROUTE,
