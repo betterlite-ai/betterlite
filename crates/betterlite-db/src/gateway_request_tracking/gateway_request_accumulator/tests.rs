@@ -8,6 +8,7 @@ use chrono::Utc;
 use rstest::rstest;
 
 use super::GatewayRequestAccumulator;
+use crate::gateway_request_tracking::GATEWAY_REQUEST_DATE_FORMAT;
 use crate::gateway_request_tracking::GatewayRequestClock;
 use crate::gateway_requests::GatewayRequestKey;
 use crate::gateway_requests::GatewayRequestSnapshot;
@@ -81,6 +82,21 @@ fn record_keys_by_the_utc_date_of_the_clock() {
     accumulator.record("api", "/v1/chat/completions", 200);
     let keys: Vec<GatewayRequestKey> = accumulator.drain().keys().cloned().collect();
     assert_eq!(keys, vec![key("2026-09-04", "api", "/v1/chat/completions")]);
+}
+
+#[test]
+fn the_default_accumulator_keys_by_the_current_utc_date() {
+    let accumulator = GatewayRequestAccumulator::new();
+    let before = Utc::now().format(GATEWAY_REQUEST_DATE_FORMAT).to_string();
+    accumulator.record("api", "/v1/chat/completions", 200);
+    let after = Utc::now().format(GATEWAY_REQUEST_DATE_FORMAT).to_string();
+    let dates: Vec<String> = accumulator
+        .drain()
+        .keys()
+        .map(|key| key.date.clone())
+        .collect();
+    assert_eq!(dates.len(), 1);
+    assert!(dates[0] == before || dates[0] == after);
 }
 
 #[test]
