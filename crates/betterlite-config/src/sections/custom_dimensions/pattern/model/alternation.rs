@@ -1,12 +1,12 @@
 use regex_syntax::ast;
 
 use super::super::PatternProblem;
-use super::{ClassItem, PyNode, prefix_eq, push_unique, sequence};
+use super::{ClassItem, PyNode, lower, prefix_eq, push_unique};
 
 pub(super) fn nodes(alternation: &ast::Alternation) -> Result<Vec<PyNode>, PatternProblem> {
     let mut branches = Vec::with_capacity(alternation.asts.len());
     for branch in &alternation.asts {
-        branches.push(sequence(branch)?);
+        branches.push(lower(branch)?);
     }
     let mut prefix = Vec::new();
     hoist(&mut branches, &mut prefix);

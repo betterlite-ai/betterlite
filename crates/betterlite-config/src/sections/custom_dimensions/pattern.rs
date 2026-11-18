@@ -1,8 +1,6 @@
-use std::fmt;
-
 mod cost;
 mod model;
-mod scan;
+mod normalize;
 
 pub const MAX_CUSTOM_PATTERN_REPEAT: u64 = 64;
 pub const MAX_CUSTOM_PATTERN_WORK: u64 = 2048;
@@ -33,14 +31,8 @@ impl PatternProblem {
     }
 }
 
-impl fmt::Display for PatternProblem {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(self.message())
-    }
-}
-
 pub fn pattern_work(pattern: &str) -> Result<u64, PatternProblem> {
-    let canonical = scan::canonical(pattern)?;
-    let nodes = model::parse(&canonical)?;
+    let normalized = normalize::pattern(pattern)?;
+    let nodes = model::parse(&normalized)?;
     cost::work(&nodes)
 }

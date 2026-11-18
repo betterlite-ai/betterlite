@@ -31,14 +31,8 @@ fn sequence_cost(nodes: &[PyNode], depth: u64) -> Result<Cost, PatternProblem> {
 
 fn node_cost(node: &PyNode, depth: u64) -> Result<Cost, PatternProblem> {
     match node {
-        PyNode::Literal(_) | PyNode::NotLiteral(_) | PyNode::Any | PyNode::Assertion(_) => {
-            Ok((1, 1))
-        }
-        PyNode::Class { negated, items } => {
-            let count = u64::try_from(items.len()).unwrap_or(u64::MAX);
-            let steps = count.saturating_add(1).saturating_add(u64::from(*negated));
-            Ok((1, steps))
-        }
+        PyNode::Literal(_) | PyNode::NotLiteral(_) | PyNode::Any | PyNode::Assertion => Ok((1, 1)),
+        PyNode::Class { .. } => Ok((1, class_atom_steps(node))),
         PyNode::Unsupported => Err(PatternProblem::Unsupported),
         PyNode::Subpattern(body) => sequence_cost(body, depth.saturating_add(1)),
         PyNode::Branch(branches) => branch_cost(branches, depth),

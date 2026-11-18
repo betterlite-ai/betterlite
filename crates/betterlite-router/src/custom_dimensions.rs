@@ -49,21 +49,6 @@ impl ClassifierType {
     }
 
     #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Heuristic => "heuristic",
-            Self::HeuristicV2 => "heuristic_v2",
-            Self::Llm => "llm",
-            Self::Capability => "capability",
-            Self::LlmV2 => "llm_v2",
-            Self::Custom => "custom",
-            Self::HeuristicFirst => "heuristic_first",
-            Self::Hybrid => "hybrid",
-            Self::Jev => "jev",
-        }
-    }
-
-    #[must_use]
     pub const fn accepts_custom_dimensions(self) -> bool {
         matches!(self, Self::Heuristic | Self::HeuristicFirst | Self::Hybrid)
     }
@@ -143,8 +128,7 @@ pub fn validate(
     }
     let work = checked
         .iter()
-        .map(|dimension| dimension.work)
-        .fold(0_u64, u64::saturating_add);
+        .fold(0_u64, |work, dimension| work.saturating_add(dimension.work));
     if work > MAX_CUSTOM_DIMENSIONS_WORK {
         return Err(DimensionsError::Work {
             work,
