@@ -210,22 +210,27 @@ fn protected_child_dies_when_owner_is_terminated() {
             .unwrap(),
     );
     let mut output = BufReader::new(owner.0.stdout.take().unwrap());
-    let mut child_id = None;
-    for line in output.lines() {
-        let line = line.unwrap();
-        if let Some(value) = line.strip_prefix("CHILD_PID:") {
-            child_id = Some(value.parse::<u32>().unwrap());
-            break;
-        }
-    }
-    let child_id = child_id.unwrap();
+    let child_id = output
+        .lines()
+        .map(Result::unwrap)
+        .find_map(|line| {
+            line.strip_prefix("CHILD_PID:")
+                .map(|value| value.parse::<u32>().unwrap())
+        })
+        .unwrap();
     owner.0.kill().unwrap();
     owner.0.wait().unwrap();
-    for _attempt in 0..100 {
-        if !process_is_alive(child_id) {
-            return;
+    let child_terminated = std::iter::repeat_with(|| {
+        let terminated = !process_is_alive(child_id);
+        if !terminated {
+            std::thread::sleep(std::time::Duration::from_millis(10));
         }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+        terminated
+    })
+    .take(100)
+    .any(std::convert::identity);
+    if child_terminated {
+        return;
     }
     let _ = Command::new("kill")
         .args(["-KILL", &child_id.to_string()])
