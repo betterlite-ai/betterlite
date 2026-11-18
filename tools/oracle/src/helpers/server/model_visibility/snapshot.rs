@@ -96,7 +96,9 @@ fn alias_target(value: &Json) -> AliasTarget {
             model: item.get("model").cloned(),
             hidden: item.get("hidden").cloned(),
         },
-        _ => AliasTarget::Unsupported(value.clone()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            AliasTarget::Unsupported(value.clone())
+        }
     }
 }
 

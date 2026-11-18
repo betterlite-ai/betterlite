@@ -19,6 +19,7 @@ pub async fn hidden_unhealthy_model_names<R>(
 ) -> Result<BTreeSet<String>, R::Error>
 where
     R: RouterHealth,
+    R::Error: Send,
 {
     let Some(router) = llm_router else {
         return Ok(BTreeSet::new());
