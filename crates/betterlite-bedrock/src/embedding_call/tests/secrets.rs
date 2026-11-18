@@ -32,7 +32,7 @@ fn a_signed_request_names_its_headers_only() {
     };
     let signed = sign_item(
         b"{\"inputText\":\"hello\"}",
-        SigningInput {
+        &SigningInput {
             endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-embed-text-v1/invoke",
             credentials: Some(&credentials),
             region: "us-east-1",
@@ -59,7 +59,7 @@ fn a_signed_request_names_its_headers_only() {
 fn a_signing_failure_carries_no_credentials() {
     let failure = sign_item(
         b"{}",
-        SigningInput {
+        &SigningInput {
             endpoint_url: "https://bedrock-runtime.us-east-1.amazonaws.com/model/amazon.titan-embed-text-v1/invoke",
             credentials: None,
             region: "us-east-1",

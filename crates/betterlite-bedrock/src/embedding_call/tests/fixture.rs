@@ -63,7 +63,7 @@ pub(super) struct SteppingClock {
 impl SteppingClock {
     pub(super) fn new(times: Vec<SystemTime>, fallback: SystemTime) -> Self {
         Self {
-            times: Mutex::new(times.into()),
+            times: Mutex::new(VecDeque::from(times)),
             fallback,
         }
     }
@@ -628,7 +628,7 @@ pub(super) fn run_with_source(probe: &Probe, source: &Source) -> Run {
     let api_key = probe.api_key.as_deref().map(secret);
     let bearer = probe.bearer.as_deref().map(secret);
     let replies = Replies::queue(&probe.replies);
-    let clock = Arc::new(SteppingClock::new(probe.clock.clone(), now()));
+    let clock: Arc<dyn Clock> = Arc::new(SteppingClock::new(probe.clock.clone(), now()));
     let mut call = EmbeddingCall {
         model: &probe.model,
         input: &probe.input,

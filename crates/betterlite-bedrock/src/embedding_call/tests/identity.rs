@@ -19,8 +19,8 @@ fn distinct_sources_do_not_share_credentials() {
     let second = run_with_source(&probe, &second_source);
     assert_eq!(first.headers()["X-Amz-Security-Token"], "first-token");
     assert_eq!(second.headers()["X-Amz-Security-Token"], "second-token");
-    let first_auth = &first.headers()["Authorization"];
-    let second_auth = &second.headers()["Authorization"];
+    let first_auth = first.headers()["Authorization"].clone();
+    let second_auth = second.headers()["Authorization"].clone();
     assert!(first_auth.starts_with(&format!(
         "AWS4-HMAC-SHA256 Credential={ONE_ACCESS}/20231114/us-east-1/bedrock/aws4_request"
     )));

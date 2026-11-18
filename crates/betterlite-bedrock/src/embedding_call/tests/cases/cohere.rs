@@ -8,7 +8,7 @@ use betterlite_prompts::arguments::json::Json;
 
 use super::super::fixture::{ClientCall, Reply, fixture_probe, object, run};
 use super::super::support::{argument_fields, decisions_value, legacy, logged_response, phases};
-use crate::bedrock_embedding_io::transport::{ClientKind, Timeout, TimeoutRecord};
+use crate::bedrock_embedding_io::transport::{ClientKind, Timeout, TimeoutRecord, TransferError};
 use crate::embedding_call::error::EmbeddingCallError;
 use crate::embedding_call::execute::cohere_timeout;
 use crate::embedding_call::{EmbeddingCall, EmbeddingEnvironment, ParamMap};
@@ -172,7 +172,7 @@ fn the_plan_deadline_follows_the_handler() {
     );
     assert_eq!(
         deadline(true, Some(Timeout::Seconds(2.5))),
-        Duration::from_secs_f64(2.5)
+        Duration::try_from_secs_f64(2.5).expect("2.5 seconds is a duration")
     );
     let record = TimeoutRecord {
         connect: 1.0,
@@ -182,7 +182,7 @@ fn the_plan_deadline_follows_the_handler() {
     };
     assert_eq!(
         deadline(true, Some(Timeout::Record(Box::new(record)))),
-        Duration::from_secs_f64(30.0)
+        Duration::try_from_secs_f64(30.0).expect("30 seconds is a duration")
     );
     assert_eq!(deadline(true, None), SYNC_CLIENT_TIMEOUT);
 }
@@ -216,6 +216,12 @@ fn an_async_timeout_keeps_its_handler_status() {
     timeout_probe.replies = vec![Reply::Timeout];
     let timeout = run(&timeout_probe);
     assert_eq!(timeout.error().status(), Some(408));
+    assert!(matches!(
+        timeout.error(),
+        EmbeddingCallError::CohereTimeout {
+            source: TransferError::Timeout { elapsed }
+        } if *elapsed == Duration::from_millis(125)
+    ));
     assert_eq!(timeout.factory_requests.len(), 1);
     let mut failed_probe = fixture_probe();
     failed_probe.model = String::from(COHERE_MODEL);

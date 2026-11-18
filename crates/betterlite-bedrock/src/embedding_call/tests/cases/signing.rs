@@ -46,7 +46,7 @@ fn every_request_carries_its_own_signature() {
     let sent: Object = serde_json::from_slice(&first.body).expect("the first body is an object");
     assert_eq!(
         fields(&outcome.snapshots[0]).get("input"),
-        Some(&Decisions::Object(decisions_object(&sent)))
+        Some(&decisions_object(&sent))
     );
     let arguments = argument_fields(&outcome.snapshots[0]);
     assert_eq!(
@@ -55,7 +55,7 @@ fn every_request_carries_its_own_signature() {
     );
     assert_eq!(
         arguments.get("complete_input_dict"),
-        Some(&Decisions::Object(decisions_object(&sent)))
+        Some(&decisions_object(&sent))
     );
     let reply = snapshot_response(&outcome.snapshots[1]);
     assert_eq!(reply, parsed(&titan_body("[1.0]", 1)));
