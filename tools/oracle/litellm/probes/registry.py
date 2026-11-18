@@ -207,7 +207,7 @@ OPERATIONS: dict[str, type[Operation]] = {
     "passthrough_request_policies": PassthroughRequestPolicies,
     "passthrough_selection": PassthroughSelection,
     "pre_routing_registry": PreRoutingRegistry,
-    "prompt_affinity": PromptAffinity,
+    "prompt_affinity": PromptAffinity,  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998-L1005
     "quality_router": QualityRouter,
     "redis_failure_policy": RedisFailurePolicy,
     "request_batch": RequestBatch,
