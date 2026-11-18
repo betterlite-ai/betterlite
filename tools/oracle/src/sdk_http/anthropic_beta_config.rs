@@ -14,7 +14,8 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::error::SdkHttpError;
-use super::result::{BetaConfigRun, BetaStepOutcome, Diagnostic, SdkResult};
+use super::result::kinds::SdkResult;
+use super::result::{BetaConfigRun, BetaStepOutcome, Diagnostic};
 use super::vector_query_embedding::outbound_client;
 use super::{AnthropicBetaConfigCall, BetaConfigStep, BetaConfigUrl};
 

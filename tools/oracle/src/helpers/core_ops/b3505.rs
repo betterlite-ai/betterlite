@@ -2,10 +2,10 @@ mod fixture;
 mod harness;
 mod projection;
 mod records;
-mod server;
 
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
 use betterlite_core::api::agents::item::error::AgentItemFailureError;
@@ -18,6 +18,9 @@ use serde::Deserialize;
 use serde_json::{Map, Number, Value, json};
 use tokio::runtime::{Builder, Runtime};
 
+use betterlite_http_fixture::error::FixtureError as FixtureThreadError;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
@@ -58,13 +61,17 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
-        let (address, captured) = server::serve(input.status, &input.body)?;
+        let serving = serve(
+            reply(&format!("{} fixture", input.status), &[], &input.body),
+            Duration::ZERO,
+        )
+        .map_err(|error| failed(&error))?;
         let mut harness = Harness::new(&input.litellm_call_id)?;
         let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failed(&error))?;
-        let kwargs = kwargs_of(input, &address);
+        let kwargs = kwargs_of(input, &serving.address);
         let request = AgentItemRequest {
             name: &input.name,
             custom_llm_provider: input.provider.as_deref(),
@@ -83,18 +90,24 @@ impl Helper for Op {
             redactor: &harness.redactor,
         };
         let outcome = operate(input.operation, &FixtureConfig, deps, &request, &runtime);
-        let head = captured.join().unwrap_or_default();
+        let head = finish_head(serving)?;
         let mut answer = Map::new();
-        answer.insert(
-            "request".to_owned(),
-            projection::request(&head, &wanted(input)),
-        );
+        let sent_report = projection::request(&head, &wanted(input));
+        answer.insert("request".to_owned(), sent_report);
         answer.insert("logging".to_owned(), projection::logging(&harness));
         match outcome {
             Ok(value) => answer.insert("response".to_owned(), value),
             Err(error) => answer.insert("error".to_owned(), projection::error(&error.class)),
         };
         Ok(Value::Object(answer))
+    }
+}
+
+fn finish_head(serving: Serving) -> Result<String, Box<HelperError>> {
+    match serving.finish() {
+        Ok(received) => Ok(received.head),
+        Err(FixtureThreadError::NoRequest) => Ok(String::new()),
+        Err(error) => Err(failed(&error)),
     }
 }
 

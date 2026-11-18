@@ -16,6 +16,7 @@ use crate::providers::vertex::gemini_live_defer_setup;
 use crate::raw::{RawConfig, RawGeneral, RawLiteLlm, RawNumber, RawRouter};
 use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_secret};
 use crate::secret_codec::general_settings;
+use crate::sections::custom_dimensions::LoadError;
 use crate::sections::{RawSections, Sections};
 use crate::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust, RouterSettings};
 mod deployment;
@@ -34,6 +35,8 @@ impl EnvironmentLookup for BTreeMap<String, String> {
 }
 #[derive(Debug, Error)]
 pub enum ConfigError {
+    #[error(transparent)]
+    CustomDimensions(#[from] LoadError),
     #[error(transparent)]
     Environment {
         #[from]
@@ -73,6 +76,7 @@ impl ConfigError {
     #[must_use]
     pub const fn category(&self) -> &'static str {
         match self {
+            Self::CustomDimensions(_) => "custom_dimensions",
             Self::Yaml { .. } => "yaml",
             Self::Unsupported { .. } => "unsupported_key",
             Self::MissingEnvironment { .. } => "missing_environment",

@@ -1,0 +1,21 @@
+kind: probe
+name: provider-and-deployment-cost
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_budget_state:
+        provider_budget_config:
+          openai: {budget_limit: "100", time_period: 1d}
+        deployments:
+          - {model_id: dep-1, max_budget: "20", budget_duration: 2h}
+        steps:
+          - {kind: success, provider: openai, model_id: dep-1, cost: "1.25"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: memory, key: "deployment_spend:dep-1:2h"}
+          - {kind: sync}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: memory, key: "deployment_spend:dep-1:2h"}
+          - {kind: redis, key: "provider_spend:openai:1d"}
+          - {kind: redis, key: "deployment_spend:dep-1:2h"}
+compare: {ignore: []}

@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -28,7 +29,7 @@ fn fixture() -> Fixture {
 
 #[test]
 fn delete_agent_sends_the_delete_to_the_configured_url() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -44,17 +45,24 @@ fn delete_agent_sends_the_delete_to_the_configured_url() {
     .unwrap();
 
     assert_eq!(output, "delete|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
+    let address = serving.address;
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("DELETE /v1beta/agents/agent-1 HTTP/1.1"),
-        "{sent}"
+        sent.head
+            .starts_with("DELETE /v1beta/agents/agent-1 HTTP/1.1"),
+        "{}",
+        sent.head
     );
-    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
+    assert!(
+        sent.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        sent.head
+    );
     assert_eq!(
         fixture.calls(),
         vec![
             "environment|0|1".to_owned(),
-            format!("delete_request|agent-1|http://{}|1", serving.address),
+            format!("delete_request|agent-1|http://{address}|1"),
             "delete_response|agent-1|200".to_owned(),
         ]
     );
@@ -62,7 +70,7 @@ fn delete_agent_sends_the_delete_to_the_configured_url() {
 
 #[test]
 fn delete_agent_takes_the_api_base_from_litellm_params() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -81,15 +89,18 @@ fn delete_agent_takes_the_api_base_from_litellm_params() {
     )
     .unwrap();
 
-    let sent = serving.request.join().unwrap();
+    let address = serving.address;
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("DELETE /base/v1beta/agents/agent-1 HTTP/1.1"),
-        "{sent}"
+        sent.head
+            .starts_with("DELETE /base/v1beta/agents/agent-1 HTTP/1.1"),
+        "{}",
+        sent.head
     );
     let pre = logging.pre_call.as_ref().unwrap();
     assert_eq!(
         pre.api_base,
-        format!("http://{}/base/v1beta/agents/agent-1", serving.address)
+        format!("http://{address}/base/v1beta/agents/agent-1")
     );
 }
 
@@ -127,7 +138,7 @@ fn delete_agent_reports_a_non_string_api_base() {
 
 #[test]
 fn delete_agent_logs_the_pre_call_and_the_post_call() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -159,12 +170,12 @@ fn delete_agent_logs_the_pre_call_and_the_post_call() {
         logging.model_call_details.get("additional_args"),
         Some(&JsonValue::Object(IndexMap::new()))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_agent_records_a_reply_that_is_not_text() {
-    let serving = server::serve_once(reply_with_bytes("200 OK", b"deleted \xff"), None);
+    let serving = serve(reply_with_bytes("200 OK", b"deleted \xff"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -184,15 +195,16 @@ fn delete_agent_records_a_reply_that_is_not_text() {
         logging.model_call_details.get("original_response"),
         Some(&JsonValue::Text("deleted ".to_owned()))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_agent_uses_the_caller_timeout_when_given() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(300)),
-    );
+        Duration::from_millis(300),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -216,15 +228,16 @@ fn delete_agent_uses_the_caller_timeout_when_given() {
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_agent_lets_the_caller_timeout_win_over_the_request_timeout() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(300)),
-    );
+        Duration::from_millis(300),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -249,15 +262,16 @@ fn delete_agent_lets_the_caller_timeout_win_over_the_request_timeout() {
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_agent_sends_the_request_timeout_the_environment_names() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(400)),
-    );
+        Duration::from_millis(400),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -281,7 +295,7 @@ fn delete_agent_sends_the_request_timeout_the_environment_names() {
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -314,10 +328,11 @@ fn delete_agent_reports_an_unusable_request_timeout() {
 
 #[test]
 fn delete_agent_returns_the_provider_error_for_a_failing_status() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("404 Not Found", &[("retry-after", "7")], "missing"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -346,7 +361,7 @@ fn delete_agent_returns_the_provider_error_for_a_failing_status() {
         "{calls:?}"
     );
     assert!(logging.model_call_details.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -416,7 +431,7 @@ fn delete_agent_sends_the_caller_headers_to_validate_environment(
     #[case] extra: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -433,12 +448,12 @@ fn delete_agent_sends_the_caller_headers_to_validate_environment(
     .unwrap();
 
     assert_eq!(fixture.calls().first().map(String::as_str), Some(expected));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_agent_sends_the_delete_to_the_configured_url() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -455,12 +470,18 @@ async fn async_delete_agent_sends_the_delete_to_the_configured_url() {
     .unwrap();
 
     assert_eq!(output, "delete|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("DELETE /v1beta/agents/agent-1 HTTP/1.1"),
-        "{sent}"
+        sent.head
+            .starts_with("DELETE /v1beta/agents/agent-1 HTTP/1.1"),
+        "{}",
+        sent.head
     );
-    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
+    assert!(
+        sent.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        sent.head
+    );
     let pre = logging.pre_call.as_ref().unwrap();
     assert_eq!(pre.input, "agent-1");
     assert_eq!(
@@ -471,10 +492,11 @@ async fn async_delete_agent_sends_the_delete_to_the_configured_url() {
 
 #[tokio::test]
 async fn async_delete_agent_sends_the_caller_timeout() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(300)),
-    );
+        Duration::from_millis(300),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -499,15 +521,16 @@ async fn async_delete_agent_sends_the_caller_timeout() {
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_agent_uses_the_request_timeout_when_the_caller_gives_none() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(400)),
-    );
+        Duration::from_millis(400),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -532,15 +555,16 @@ async fn async_delete_agent_uses_the_request_timeout_when_the_caller_gives_none(
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_agent_returns_the_provider_error_for_a_failing_status() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("500 Internal Server Error", &[], "boom"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -564,7 +588,7 @@ async fn async_delete_agent_returns_the_provider_error_for_a_failing_status() {
             .any(|record| record.starts_with("delete_response"))
     );
     assert!(logging.model_call_details.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]

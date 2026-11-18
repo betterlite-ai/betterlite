@@ -5,8 +5,11 @@ description: >-
   vector_stores/main.py:46-491 in core::api::vector_store_search. Resolve provider names with B174 and configs with B010,
   optional fields with B1058, embedding execution with B1059 and search registry credentials with B1062.
   Call B2484 search or B2485 create transport; B011 maps exceptions and B247 owns client logging.
-  SDK calls run through B2401 VectorStoreSearchCreate against a mock provider, including both execution
-  modes and request-context preservation. Pure mock constructors and executor validation use native tests.
+  SDK calls run through SdkHttpCall::VectorStoreSearchCreate against a mock provider, including both
+  execution modes and request-context preservation. The variant is a placeholder on main: replace the
+  Call and Outcome aliases in tools/oracle/src/sdk_http/vector_store_search_create.rs (Call implements
+  call_kind::CallKind) and fill VectorStoreSearchCreateRequest in
+  tools/oracle/sdk_http/vector_store_search_create.py; the shared sdk_http files stay as they are. Pure mock constructors and executor validation use native tests.
   REQUEST_TIMEOUT is B002's float seconds setting, default 6000. Timeout null or 0 uses that value.
   All optional arguments default null, including provider; only null provider becomes openai. Search's
   max_num_results is null despite the docstring saying 10; no local 1-50 validation occurs.
@@ -24,9 +27,8 @@ scope:
   - crates/betterlite-config/src/api/vector_store_search.rs
   - crates/betterlite-config/src/api/vector_store_search/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/vector_store_search_create.rs
+  - tools/oracle/src/sdk_http/vector_store_search_create/**
   - tools/oracle/sdk_http/vector_store_search_create.py
   - tools/oracle/cases/sdk-http/vector-store-search-create/**
   - tools/oracle/fuzz/corpus/sdk_http_case/vector-store-search-create-*
@@ -94,7 +96,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^api::vector_store_search::tests::loads_search_timeout($|::)/)'
   - id: python-adapter
     why: SDK create/search does not execute the independent pinned implementation
-    run: test -f tools/oracle/sdk_http/vector_store_search_create.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/vector_store_search_create.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: config-corpus
     why: the timeout setting lacks newly committed loader input
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/config_yaml/vector-store-search-*)" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'

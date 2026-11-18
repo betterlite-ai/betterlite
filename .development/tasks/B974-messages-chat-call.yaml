@@ -8,8 +8,11 @@ description: >-
   router fallback behavior. stream defaults false; max_tokens is required here, with no DEFAULT_MAX_TOKENS lookup.
 
   HelperCall::MessagesCompletionArguments tests only the pure kwargs builder with a typed adapter-result seam
-  for its otherwise unreachable null-result failure. SdkHttpCall::MessagesChatCall uses B2401 for both sync and
-  async executions, including actual streaming HTTP and summary requests. Return normalized decoded Anthropic
+  for its otherwise unreachable null-result failure. SdkHttpCall::MessagesChatCall covers both sync and
+  async executions, including actual streaming HTTP and summary requests. The variant is on main as a
+  placeholder: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/messages_chat_call.rs
+  (Call implements call_kind::CallKind) and fill MessagesChatCallRequest in
+  tools/oracle/sdk_http/messages_chat_call.py, without editing the shared sdk_http files. Return normalized decoded Anthropic
   events while retaining raw frames as artifacts. Do not invoke a FastAPI function. B967/B977 own stream parsing
   and emission; this task introduces no new byte decoder or config setting. Own 289 nonblank/non-comment physical
   lines plus the two constant/instance assignments; budget 270 implementation, 175 tests, 180 fixtures,
@@ -24,9 +27,8 @@ scope:
   - tools/oracle/helpers/messages_completion_arguments/**
   - tools/oracle/cases/helpers/messages-completion-arguments/**
   - tools/oracle/fuzz/corpus/helper_case/messages_completion_arguments-*
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/messages_chat_call.rs
+  - tools/oracle/src/sdk_http/messages_chat_call/**
   - tools/oracle/sdk_http/messages_chat_call.py
   - tools/oracle/cases/sdk-http/messages-chat-call/**
   - tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-call-*
@@ -99,7 +101,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::messages_chat_call::/)'
   - id: python-adapters
     why: the argument or provider-execution adapter is not independently checked
-    run: test -f tools/oracle/helpers/messages_completion_arguments.py && test -f tools/oracle/sdk_http/messages_chat_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/messages_completion_arguments.py && ! grep -q not_built tools/oracle/sdk_http/messages_chat_call.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: corpus
     why: a chat-call operation cannot be selected by the oracle
     run: grep -qE '^[[:space:]]+messages_completion_arguments:' tools/oracle/fuzz/corpus/helper_case/messages_completion_arguments-* && grep -qE '^[[:space:]]+messages_chat_call:' tools/oracle/fuzz/corpus/sdk_http_case/messages-chat-call-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus) | test(/^sdk_http::tests::replays_corpus$/)'
