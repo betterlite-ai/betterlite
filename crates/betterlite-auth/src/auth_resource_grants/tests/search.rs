@@ -171,6 +171,17 @@ fn view_trait_grants_drive_the_view() {
     };
     assert!(can_user_view_search_tool("allowed-tool", &key, &team).expect("the view"));
     assert!(!can_user_view_search_tool("other", &key, &team).expect("the view"));
+
+    let unrestricted = user_key(r#"{"token":"key-2","team_id":"team-1"}"#);
+    let restricted_team = team(RESTRICTED_TEAM);
+    let open_key = KeySearchGrant {
+        token: &unrestricted,
+    };
+    let closed_team = TeamSearchGrant {
+        team: Some(&restricted_team),
+    };
+    assert!(can_user_view_search_tool("allowed-tool", &open_key, &closed_team).expect("the view"));
+    assert!(!can_user_view_search_tool("other", &open_key, &closed_team).expect("the team denial"));
 }
 
 #[test]

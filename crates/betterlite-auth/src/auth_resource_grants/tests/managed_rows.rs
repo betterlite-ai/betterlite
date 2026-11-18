@@ -1,7 +1,13 @@
+use std::sync::Arc;
+
+use betterlite_cache::backend::memory::local::LocalMemoryOps;
+use betterlite_cache::dual_cache::{DualCacheSettings, MAX_REDIS_BATCH_CACHE_SIZE};
 use betterlite_db::managed_resource_rows::files::ManagedVectorStoresTable;
 
+use crate::auth_cache::gateway_cache;
 use crate::auth_resource_grants::managed_rows::{
-    ManagedVectorStoreLookupError, VectorStoreRow, project_row, vector_store_rows_by_uuids,
+    ManagedVectorStoreCache, ManagedVectorStoreLookupError, VectorStoreRow, project_row,
+    vector_store_rows_by_uuids,
 };
 use crate::auth_resource_grants::tests::support::{
     RecordingCache, RecordingRows, managed_store, row,
@@ -173,6 +179,42 @@ async fn management_ttl_applied() {
     assert_eq!(
         cache.writes(),
         vec![("managed_vector_store_id:a".to_owned(), 123.5)]
+    );
+}
+
+#[tokio::test]
+async fn auth_cache_round_trip_uses_management_ttl() {
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1000.0_f64);
+    let memory = Arc::new(LocalMemoryOps::new(1024, clock).expect("the local memory tier builds"));
+    let cache = gateway_cache(
+        Arc::clone(&memory),
+        memory,
+        None,
+        DualCacheSettings {
+            default_in_memory_ttl: Some(30.0_f64),
+            default_redis_ttl: None,
+            batch_cache_expiry: None,
+            max_redis_batch_cache_size: MAX_REDIS_BATCH_CACHE_SIZE,
+            redis_delete_chunk_size: MAX_REDIS_BATCH_CACHE_SIZE,
+        },
+        45.0_f64,
+    );
+    let key = "managed_vector_store_id:a";
+    assert_eq!(cache.management_ttl().to_bits(), 30.0_f64.to_bits());
+    assert!(
+        cache
+            .read(key)
+            .await
+            .expect("the empty cache read")
+            .is_none()
+    );
+    cache
+        .write(key, &stored("a"), cache.management_ttl())
+        .await
+        .expect("the cache write");
+    assert_eq!(
+        cache.read(key).await.expect("the cached read"),
+        Some(stored("a"))
     );
 }
 

@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
+use betterlite_db::postgres_store::rows::{Key, KeyAction, KeyColumn, Table};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
@@ -16,7 +17,9 @@ use crate::auth_resource_grants::managed_rows::{
     ManagedRowsQuery, ManagedVectorStoreRows, vector_store_rows_by_uuids,
 };
 use crate::auth_resource_grants::postgres::{open_permissions, open_vector_stores};
-use crate::auth_resource_grants::rows::{ManagedVectorStoreTable, managed_store_list};
+use crate::auth_resource_grants::rows::{
+    ManagedVectorStoreTable, ObjectPermissionTable, managed_store_list,
+};
 use crate::auth_resource_grants::tests::support::RecordingCache;
 use crate::auth_resource_grants::vector_store::ObjectPermissionRows;
 
@@ -100,6 +103,120 @@ fn list_binds_the_id_array_and_take() {
     );
     assert!(listed.sql.contains("LIMIT $1"), "{}", listed.sql);
     assert_eq!(listed.parameters.len(), 1);
+}
+
+#[test]
+fn table_statements_cover_every_action_and_membership() {
+    let permission_table = ObjectPermissionTable;
+    let store_table = ManagedVectorStoreTable;
+    let id = String::from("id-1");
+    let permission_find = permission_table.keyed(
+        KeyAction::Find,
+        Key {
+            column: KeyColumn::Id,
+            value: &id,
+        },
+    );
+    assert!(
+        permission_find
+            .sql
+            .contains("FROM \"LiteLLM_ObjectPermissionTable\""),
+        "{}",
+        permission_find.sql
+    );
+    assert!(
+        permission_find.sql.starts_with("SELECT "),
+        "{}",
+        permission_find.sql
+    );
+    assert_eq!(permission_find.parameters.len(), 1);
+    let permission_delete = permission_table.keyed(
+        KeyAction::Delete,
+        Key {
+            column: KeyColumn::Id,
+            value: &id,
+        },
+    );
+    assert!(
+        permission_delete
+            .sql
+            .starts_with("DELETE FROM \"LiteLLM_ObjectPermissionTable\""),
+        "{}",
+        permission_delete.sql
+    );
+    let permission_update = permission_table.keyed(
+        KeyAction::Update(&()),
+        Key {
+            column: KeyColumn::Id,
+            value: &id,
+        },
+    );
+    assert!(
+        permission_update
+            .sql
+            .starts_with("UPDATE \"LiteLLM_ObjectPermissionTable\""),
+        "{}",
+        permission_update.sql
+    );
+    let permission_membership = permission_table.membership(KeyColumn::Id);
+    assert!(
+        permission_membership.contains("ANY($1::text[])"),
+        "{permission_membership}"
+    );
+
+    let store_find = store_table.keyed(
+        KeyAction::Find,
+        Key {
+            column: KeyColumn::Id,
+            value: &id,
+        },
+    );
+    assert!(
+        store_find
+            .sql
+            .contains("FROM \"LiteLLM_ManagedVectorStoresTable\""),
+        "{}",
+        store_find.sql
+    );
+    assert!(store_find.sql.starts_with("SELECT "), "{}", store_find.sql);
+    assert_eq!(store_find.parameters.len(), 1);
+    let store_delete = store_table.keyed(
+        KeyAction::Delete,
+        Key {
+            column: KeyColumn::Id,
+            value: &id,
+        },
+    );
+    assert!(
+        store_delete
+            .sql
+            .starts_with("DELETE FROM \"LiteLLM_ManagedVectorStoresTable\""),
+        "{}",
+        store_delete.sql
+    );
+    let store_update = store_table.keyed(
+        KeyAction::Update(&()),
+        Key {
+            column: KeyColumn::Id,
+            value: &id,
+        },
+    );
+    assert!(
+        store_update
+            .sql
+            .starts_with("UPDATE \"LiteLLM_ManagedVectorStoresTable\""),
+        "{}",
+        store_update.sql
+    );
+    let store_membership = store_table.membership(KeyColumn::Id);
+    assert!(
+        store_membership.contains("ANY($1::text[])"),
+        "{store_membership}"
+    );
+    assert!(
+        store_membership.contains("\"LiteLLM_ManagedVectorStoresTable\""),
+        "{store_membership}"
+    );
 }
 
 #[tokio::test]
