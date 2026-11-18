@@ -6,7 +6,7 @@ from litellm.router_strategy.complexity_router.config import (
     ComplexityTier,
 )
 from pydantic import Field, JsonValue, TypeAdapter, ValidationError
-from typing_extensions import override
+from typing_extensions import TypedDict, override
 
 from probes.protocol import Operation, ProbeError, Strict
 
@@ -17,8 +17,16 @@ OrderFeatureName = Literal["adaptive", "session_affinity", "escalation_keywords"
 
 _PROBE_CLASSIFIER_MODEL: Final[str] = "probe-classifier"
 _ESCALATION_KEYWORD: Final[str] = "escalate"
-_JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 _EMPTY_PARAMS: Final[dict[str, JsonValue]] = {}
+
+
+class StoredTierEntry(TypedDict):
+    model_name: str
+    litellm_params: dict[str, JsonValue]
+
+
+# the params reach the probe through LiteLLM's serializer, so a change there shows up as a probe difference
+_STORED_TIER_ENTRY: Final[TypeAdapter[StoredTierEntry]] = TypeAdapter(StoredTierEntry)
 
 
 class TierDefinitionInput(Strict):
@@ -95,6 +103,9 @@ class TierDefinitions(Operation):
             config = ComplexityRouterConfig.model_validate(values)
         except ValidationError as error:
             raise ProbeError("invalid_request", str(error)) from error
+        labeled = [LabeledTier(tier=tier.value, label=label) for tier, label in config.labeled_tiers()]
+        resolved = [_resolved(config.resolve_classified_tier(query)) for query in self.queries]
+        names = [_tier_name(config.tier_for_label(query)) for query in self.queries]
         return Output(
             custom=config.has_custom_tiers,
             non_reasoning=config.enable_non_reasoning_tier,
@@ -102,11 +113,11 @@ class TierDefinitions(Operation):
             tier_names=list(config.tier_names()),
             wire_labels=list(config.classifier_wire_labels()),
             severity_order=[tier.value for tier in config.active_tier_severity_order()],
-            labeled_tiers=[LabeledTier(tier=tier.value, label=label) for tier, label in config.labeled_tiers()],
+            labeled_tiers=labeled,
             fallback_tier=config.fallback_tier,
             pools=_pools(config),
-            resolved_tiers=[_resolved(config.resolve_classified_tier(query)) for query in self.queries],
-            label_tiers=[_tier_name(config.tier_for_label(query)) for query in self.queries],
+            resolved_tiers=resolved,
+            label_tiers=names,
         )
 
 
@@ -192,13 +203,11 @@ def _pools(config: ComplexityRouterConfig) -> dict[str, PoolView]:
             names = [value]
             single = True
         stored = {
-            entry.model_name: _JSON_OBJECT.validate_python(dict(entry.litellm_params))
+            entry.model_name: _STORED_TIER_ENTRY.validate_json(entry.model_dump_json()).litellm_params
             for entry in config.tier_model_configs.get(tier, ())
         }
-        pools[tier] = PoolView(
-            single=single,
-            entries=[EntryView(model_name=name, params=stored.get(name, _EMPTY_PARAMS)) for name in names],
-        )
+        entries = [EntryView(model_name=name, params=stored.get(name, _EMPTY_PARAMS)) for name in names]
+        pools[tier] = PoolView(single=single, entries=entries)
     return pools
 
 
