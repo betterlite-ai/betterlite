@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock_embedding_io-http-error-seed
+call:
+  bedrock_embedding_io:
+    function: http_error
+    asynchronous: false
+    supplied: none
+    url: https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke
+    headers: {Content-Type: application/json}
+    data: {inputText: hello}
+    reply:
+      status: 400
+      headers: {Content-Type: application/json, X-Amzn-Errortype: ValidationException}
+      body: '{"message":"bad input"}'
+env: {}
+compare: {ignore: []}
