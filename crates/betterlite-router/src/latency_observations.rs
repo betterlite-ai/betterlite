@@ -113,7 +113,9 @@ impl LatencyObservations {
             .checked_add(sample.total_tokens)
             .ok_or(LatencyError::Overflow)?;
         usage.rpm = usage.rpm.checked_add(1).ok_or(LatencyError::Overflow)?;
-        write(&mut cache, &sample.key, &stored, self.settings.ttl_seconds)
+        write(&mut cache, &sample.key, &stored, self.settings.ttl_seconds)?;
+        drop(cache);
+        Ok(())
     }
 
     // async_log_failure_event: a timeout appends the 1000-second penalty, every other failure is ignored
@@ -143,7 +145,9 @@ impl LatencyObservations {
             .entry(deployment_id.to_owned())
             .or_default();
         push_window(&mut deployment.latency, PENALTY_SECONDS, limit);
-        write(&mut cache, &key, &samples, self.settings.ttl_seconds)
+        write(&mut cache, &key, &samples, self.settings.ttl_seconds)?;
+        drop(cache);
+        Ok(())
     }
 
     // the reader B315's selection takes its windows and minute counters from
