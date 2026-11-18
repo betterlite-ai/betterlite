@@ -7,12 +7,6 @@ pub type EvictFuture<'name> = Pin<Box<dyn Future<Output = Result<(), EvictError>
 #[derive(Debug, thiserror::Error)]
 pub enum EvictError {
     #[error("the cached {param_name} row could not be evicted: {source}")]
-    Cache {
-        param_name: String,
-        #[source]
-        source: betterlite_cache::dual_cache::DualCacheError,
-    },
-    #[error("the cached {param_name} row could not be evicted: {source}")]
     Io {
         param_name: String,
         #[source]

@@ -20,7 +20,7 @@ fn eviction_failure(error: ReloadScheduleError) -> EvictError {
 
 fn evicted_param_name(error: &EvictError) -> &str {
     match error {
-        EvictError::Cache { param_name, .. } | EvictError::Io { param_name, .. } => param_name,
+        EvictError::Io { param_name, .. } => param_name,
     }
 }
 
