@@ -70,10 +70,10 @@ where
         hashed: &str,
         fields: &TokenWrite,
     ) -> Result<LiteLLMVerificationToken, KeyUserWriteError> {
-        tracing::debug!(payload = ?debug_payload(fields, hashed), "PrismaClient: insert_data");
         let mut data = fields.clone();
         data.0
             .insert(TokenColumn::Token, TokenValue::Text(hashed.to_owned()));
+        tracing::debug!(payload = ?debug_payload(&data, hashed), "PrismaClient: insert_data");
         if matches!(
             data.0.get(&TokenColumn::BudgetLimits),
             Some(TokenValue::Null)

@@ -30,7 +30,7 @@ pub fn jsonify_object(
         };
         *value = encoder.encode(value).map_or_else(
             |_| JsonData::String(String::from(FAILED_TO_SERIALIZE_JSON)),
-            |json| JsonData::String(json),
+            JsonData::String,
         );
     }
     converted
