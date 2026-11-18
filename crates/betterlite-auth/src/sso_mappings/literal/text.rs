@@ -44,16 +44,17 @@ pub(super) fn parse_text(cursor: &mut Cursor<'_>, depth: usize) -> Result<Litera
     };
     let mut value = String::new();
     let bytes = matches!(start.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
-    loop {
+    // each pass consumes at least one quote, so a bounded loop catches a step that stalls
+    for _ in 0..=cursor.bytes.len() {
         let piece = scan_text(cursor, start)?;
         if !bytes {
             value.push_str(&piece);
         }
         if skip_trivia(cursor, depth)? {
-            break;
+            return Ok(text_literal(bytes, value));
         }
         let Some(next) = text_start(cursor) else {
-            break;
+            return Ok(text_literal(bytes, value));
         };
         let next_bytes = matches!(next.prefix, TextPrefix::Bytes | TextPrefix::RawBytes);
         if next_bytes != bytes {
@@ -61,10 +62,14 @@ pub(super) fn parse_text(cursor: &mut Cursor<'_>, depth: usize) -> Result<Litera
         }
         start = next;
     }
+    Err(LiteralError::Syntax)
+}
+
+fn text_literal(bytes: bool, value: String) -> Literal {
     if bytes {
-        return Ok(Literal::Bytes);
+        return Literal::Bytes;
     }
-    Ok(Literal::Str(value))
+    Literal::Str(value)
 }
 
 fn scan_text(cursor: &mut Cursor<'_>, start: TextStart) -> Result<String, LiteralError> {
@@ -75,7 +80,8 @@ fn scan_text(cursor: &mut Cursor<'_>, start: TextStart) -> Result<String, Litera
     let width = if triple { 3 } else { 1 };
     let mut at = start.quote_at.saturating_add(width);
     let mut value = String::new();
-    loop {
+    // each pass consumes at least one character, so a bounded loop catches a step that stalls
+    for _ in 0..=cursor.bytes.len() {
         let Some(character) = cursor.character(at) else {
             return Err(LiteralError::Syntax);
         };
@@ -102,6 +108,7 @@ fn scan_text(cursor: &mut Cursor<'_>, start: TextStart) -> Result<String, Litera
         value.push(character);
         at = at.saturating_add(character.len_utf8());
     }
+    Err(LiteralError::Syntax)
 }
 
 fn triple_quote(cursor: &Cursor<'_>, quote_at: usize) -> bool {

@@ -3,7 +3,8 @@ use super::{Cursor, LiteralError, MAX_LITERAL_DEPTH};
 // outside brackets a newline ends the expression, so a value may not continue on the next line
 pub(super) fn skip_trivia(cursor: &mut Cursor<'_>, depth: usize) -> Result<bool, LiteralError> {
     let mut crossed_line = false;
-    loop {
+    // each pass consumes at least one byte, so a bounded loop catches a step that stalls
+    for _ in 0..=cursor.bytes.len() {
         match cursor.bytes.get(cursor.at).copied() {
             Some(b' ' | b'\t' | b'\x0c') => cursor.at = cursor.at.saturating_add(1),
             Some(b'\n' | b'\r') => {
@@ -15,6 +16,7 @@ pub(super) fn skip_trivia(cursor: &mut Cursor<'_>, depth: usize) -> Result<bool,
             _other => return Ok(crossed_line),
         }
     }
+    Err(LiteralError::Syntax)
 }
 
 fn skip_comment(cursor: &mut Cursor<'_>) {
