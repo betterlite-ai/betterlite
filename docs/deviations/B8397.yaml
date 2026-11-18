@@ -30,6 +30,15 @@ deviations:
   - what: get_generic_data does not wrap its lookup in LiteLLM's call_with_db_reconnect_retry, so a transport error fails the single try and reaches the failure sink instead of reconnecting once and replaying the read.
     why: TableOps reads through B714's writer-pinned handles, which hand out a shared client, while B872's reconnect helper needs a mutable DbReconnect client; wiring it belongs to the task that owns the client trait, and the helper and fault classification already exist on main.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4768-L4773
+  - what: Every pool acquisition, query and transaction in table_ops runs under a finite deadline, 10 seconds for a connection and 30 for a statement, and fails with a typed timeout; the Prisma awaits LiteLLM makes have no deadline of their own.
+    why: A drained pool or a lock wait would otherwise hold the request open until the driver or the client gives up; the deadline turns it into the failure the retry policy and the sink already handle. TableSettings carries the two defaults, so a caller can change them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
+  - what: The automatic @updatedAt stamp is written only when an update carries at least one column, so an explicit empty update map leaves updated_at unchanged instead of writing the current time.
+    why: The stamp exists for the data a caller writes; an explicit empty payload has no data behind it, so betterlite keeps the call a no-op. Every caller that reaches these branches through LiteLLM's dispatchers supplies at least one changed column.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
+  - what: The team upsert is two statements, an UPDATE filtered on the resolved team_id followed by an INSERT of the create row when no row matched, where Prisma issues one atomic upsert.
+    why: The two statements keep Prisma's where/create/update payloads separate in typed SQL, so a payload team_id different from the lookup team_id reaches only the written row; two callers creating the same team at once can have the later insert fail on the unique key where Prisma's upsert would update.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5510-L5516
 kept_bugs:
   - what: Every failed table operation is retried three times within ten seconds, including failures no retry can fix, such as a missing row or a value the database rejects on every attempt.
     why: The backoff decorator catches Exception, and a working setup relies on it for transient database faults; LiteLLM never classifies errors, so neither does betterlite.
