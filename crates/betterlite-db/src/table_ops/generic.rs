@@ -3,12 +3,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use crate::database_replica::client::DatabaseClient;
 use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::identity_rows::user::LiteLLMUserTable;
-use crate::resource_rows::config::ConfigRow;
 
 use super::access::{
     CONFIG_ATTRIBUTE, KEY_ATTRIBUTE, SPEND_ATTRIBUTE, TablePoolAccess, USER_ATTRIBUTE,
 };
-use super::rows::{RowDecoder, RowError, SpendLogRow};
+use super::rows::{ConfigParamRow, RowDecoder, RowError, SpendLogRow};
 use super::{GENERIC_RETRY, OperationCallType, TableOps, TableOpsError};
 
 const USER_FIRST_SQL: &str =
@@ -70,8 +69,8 @@ where
     pub async fn generic_config(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, TableOpsError<Client::Error>> {
-        self.find_generic(CONFIG_SOURCE, param_name, ConfigRow::decode_row)
+    ) -> Result<Option<ConfigParamRow>, TableOpsError<Client::Error>> {
+        self.find_generic(CONFIG_SOURCE, param_name, ConfigParamRow::decode_row)
             .await
     }
 

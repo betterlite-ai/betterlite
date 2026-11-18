@@ -3,8 +3,8 @@ use std::error::Error;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_db::database_replica::client::DatabaseClient;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_db::resource_rows::config::ConfigRow;
 use betterlite_db::table_ops::access::TablePoolAccess;
+use betterlite_db::table_ops::rows::ConfigParamRow;
 use betterlite_db::table_ops::{ConfigParamInvalidator, InvalidateFuture, TableOps, TableOpsError};
 
 use super::{ConfigChangePublisher, ConfigParamCache};
@@ -16,12 +16,12 @@ pub trait ConfigParamStore {
     async fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, TableOpsError<Self::ClientError>>;
+    ) -> Result<Option<ConfigParamRow>, TableOpsError<Self::ClientError>>;
 
     async fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigRow>, TableOpsError<Self::ClientError>>;
+    ) -> Result<Vec<ConfigParamRow>, TableOpsError<Self::ClientError>>;
 
     async fn user_row(
         &self,
@@ -46,14 +46,14 @@ where
     async fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, TableOpsError<Self::ClientError>> {
+    ) -> Result<Option<ConfigParamRow>, TableOpsError<Self::ClientError>> {
         self.operations.generic_config(param_name).await
     }
 
     async fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigRow>, TableOpsError<Self::ClientError>> {
+    ) -> Result<Vec<ConfigParamRow>, TableOpsError<Self::ClientError>> {
         self.operations.configs_named(param_names).await
     }
 

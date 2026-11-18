@@ -9,9 +9,8 @@ use std::error::Error;
 use betterlite_cache::backend::memory::MemoryCacheOps;
 use betterlite_cache::dual_cache::{CacheOptions, DualCache, DualCacheError};
 use betterlite_db::postgres_store::errors::DbError;
-use betterlite_db::resource_rows::config::ConfigRow;
 use betterlite_db::table_ops::TableOpsError;
-use betterlite_db::table_ops::rows::RowError;
+use betterlite_db::table_ops::rows::{ConfigParamRow, RowError};
 use betterlite_models::decisions::Json;
 
 pub use store::{ConfigParamStore, TableConfigParamStore};
@@ -93,7 +92,7 @@ impl<Memory: MemoryCacheOps> ConfigParamCache<'_, Memory> {
         &self,
         store: &Store,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, ConfigParamCacheError<Store::ClientError>>
+    ) -> Result<Option<ConfigParamRow>, ConfigParamCacheError<Store::ClientError>>
     where
         Store: ConfigParamStore + ?Sized,
     {
@@ -159,7 +158,7 @@ impl<Memory: MemoryCacheOps> ConfigParamCache<'_, Memory> {
                 return;
             }
         };
-        let by_name: BTreeMap<&str, &ConfigRow> = rows
+        let by_name: BTreeMap<&str, &ConfigParamRow> = rows
             .iter()
             .map(|row| (row.param_name.as_str(), row))
             .collect();
@@ -220,7 +219,7 @@ where
     Ok(())
 }
 
-fn pack_row<ClientError>(row: &ConfigRow) -> Result<Json, ConfigParamCacheError<ClientError>>
+fn pack_row<ClientError>(row: &ConfigParamRow) -> Result<Json, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
 {
@@ -231,7 +230,7 @@ where
 
 fn unpack_row<ClientError>(
     cached: &Json,
-) -> Result<Option<ConfigRow>, ConfigParamCacheError<ClientError>>
+) -> Result<Option<ConfigParamRow>, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
 {

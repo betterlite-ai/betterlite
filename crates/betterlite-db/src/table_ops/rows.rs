@@ -9,7 +9,7 @@ use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::identity_rows::user::LiteLLMUserTable;
 use crate::key_repository::decode::{TokenDecodeError, decode_token_record};
 use crate::postgres_store::diagnostics::DriverError;
-use crate::resource_rows::config::ConfigRow;
+use crate::resource_repository::config::{ConfigDecodeError, decode_config_json};
 use crate::team_repository::decoder::{TeamRecord, TeamRecordError, decode_team_record};
 use crate::team_rows::team::LiteLLMTeamTable;
 use crate::user_repository::projection::{UserRecordError, decode_user_record};
@@ -28,6 +28,8 @@ pub enum RowError {
     Team(#[source] TeamRecordError),
     #[error("the stored row does not match its model")]
     Model(#[source] serde_json::Error),
+    #[error("the stored config value is not valid JSON text")]
+    Config(#[source] ConfigDecodeError),
     #[error("the stored row is not a JSON object")]
     NotAnObject,
 }
@@ -61,9 +63,26 @@ impl RowDecoder for LiteLLMVerificationToken {
     }
 }
 
-impl RowDecoder for ConfigRow {
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigParamRow {
+    pub param_name: String,
+    pub param_value: JsonData,
+}
+
+// insert_data stores json.dumps(param), so a JSON text value becomes the value it encodes
+impl RowDecoder for ConfigParamRow {
     fn decode_row(text: &str) -> Result<Self, RowError> {
-        serde_json::from_str(text).map_err(RowError::Model)
+        let stored: Self = serde_json::from_str(text).map_err(RowError::Model)?;
+        match stored.param_value {
+            JsonData::String(raw) => Ok(Self {
+                param_name: stored.param_name,
+                param_value: decode_config_json(raw.as_bytes()).map_err(RowError::Config)?,
+            }),
+            param_value => Ok(Self {
+                param_name: stored.param_name,
+                param_value,
+            }),
+        }
     }
 }
 

@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
-use betterlite_db::resource_rows::config::ConfigRow;
 use betterlite_db::table_ops::TableOpsError;
+use betterlite_db::table_ops::rows::ConfigParamRow;
 
 use crate::config_param_cache::{ConfigParamCache, ConfigParamStore};
 
@@ -23,7 +23,7 @@ where
 
 #[derive(Default)]
 pub(super) struct FakeStore {
-    pub(super) rows: Mutex<BTreeMap<String, ConfigRow>>,
+    pub(super) rows: Mutex<BTreeMap<String, ConfigParamRow>>,
     pub(super) users: Mutex<BTreeMap<String, LiteLLMUserTable>>,
     pub(super) param_reads: AtomicUsize,
     pub(super) batch_reads: AtomicUsize,
@@ -70,7 +70,7 @@ impl ConfigParamStore for FakeStore {
     async fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigRow>, TableOpsError<Infallible>> {
+    ) -> Result<Option<ConfigParamRow>, TableOpsError<Infallible>> {
         self.param_reads.fetch_add(1, Ordering::SeqCst);
         Ok(lookup(&self.rows, param_name))
     }
@@ -78,7 +78,7 @@ impl ConfigParamStore for FakeStore {
     async fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigRow>, TableOpsError<Infallible>> {
+    ) -> Result<Vec<ConfigParamRow>, TableOpsError<Infallible>> {
         self.batch_reads.fetch_add(1, Ordering::SeqCst);
         *self
             .last_batch
@@ -142,7 +142,7 @@ impl Harness {
     }
 }
 
-pub(super) fn config_row(name: &str, value: &str) -> ConfigRow {
+pub(super) fn config_row(name: &str, value: &str) -> ConfigParamRow {
     let text = format!(r#"{{"param_name":"{name}","param_value":{value}}}"#);
     serde_json::from_str(&text).expect("the config row parses")
 }
