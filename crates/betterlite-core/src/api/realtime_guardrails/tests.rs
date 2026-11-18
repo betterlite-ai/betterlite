@@ -463,10 +463,19 @@ async fn realtime_guardrail_close_failure_is_returned_after_the_count() {
     fixture.close_failure = true;
     let mut guardrail = blocking_guardrail();
     guardrail.policy.on_violation = Some(OnViolation::EndSession);
-    let error = one_block(&fixture, &guardrail, "hello")
+    let guardrails: Vec<&dyn RealtimeGuardrail<Error = TestFailure>> = vec![&guardrail];
+    let mut state = fixture.state();
+    let mut runner: RealtimeGuardrails<'_, Split, TestFailure> = RealtimeGuardrails {
+        state: &mut state,
+        provider: None,
+        guardrails: &guardrails,
+    };
+    let error = runner
+        .run_realtime_guardrails("hello", None, None, None)
         .await
         .expect_err("the backend close fails");
     assert!(matches!(error, RealtimeGuardrailsError::Close(_)));
+    assert_eq!(runner.state.setup.violation_count, 1);
     assert_eq!(fixture.backend.sent().len(), 3);
     assert!(
         logs.messages()
