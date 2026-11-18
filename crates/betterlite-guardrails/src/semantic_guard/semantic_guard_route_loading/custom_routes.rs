@@ -187,8 +187,20 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     let pattern = Regex::new(PYYAML_NON_TEXT_SCALAR).ok();
     // the document is probed once for its shape, then parsed again as the routes it holds
     match parse_yaml::<GuardrailValue>(input.as_ref(), options.clone())? {
-        GuardrailValue::Array(_) => decode_list(input.as_ref(), options, pattern.as_ref()),
-        GuardrailValue::Object(_) => decode_mapping(input.as_ref(), options, pattern.as_ref()),
+        GuardrailValue::Array(_) => {
+            let raw: Vec<RawDefinition> = parse_yaml(input.as_ref(), options.clone())?;
+            let texts: Option<Vec<RawDefinitionText>> = parse_yaml(input.as_ref(), options).ok();
+            definitions(raw, texts, pattern.as_ref())
+        }
+        GuardrailValue::Object(_) => {
+            let raw: RawDefinition = parse_yaml(input.as_ref(), options.clone())?;
+            let text: Option<RawDefinitionText> = parse_yaml(input.as_ref(), options).ok();
+            definitions(
+                vec![raw],
+                text.map(|scalars| vec![scalars]),
+                pattern.as_ref(),
+            )
+        }
         GuardrailValue::Null
         | GuardrailValue::Boolean(_)
         | GuardrailValue::SignedInteger(_)
@@ -196,26 +208,6 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
         | GuardrailValue::Decimal(_)
         | GuardrailValue::Text(_) => Err(CustomRoutesError::InvalidFormat),
     }
-}
-
-fn decode_list(
-    input: &[u8],
-    options: Options,
-    pattern: Option<&Regex>,
-) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
-    let raw: Vec<RawDefinition> = parse_yaml(input, options.clone())?;
-    let texts: Option<Vec<RawDefinitionText>> = parse_yaml(input, options).ok();
-    definitions(raw, texts, pattern)
-}
-
-fn decode_mapping(
-    input: &[u8],
-    options: Options,
-    pattern: Option<&Regex>,
-) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
-    let raw: RawDefinition = parse_yaml(input, options.clone())?;
-    let text: Option<RawDefinitionText> = parse_yaml(input, options).ok();
-    definitions(vec![raw], text.map(|scalars| vec![scalars]), pattern)
 }
 
 fn parse_yaml<T>(input: &[u8], options: Options) -> Result<T, CustomRoutesError>
