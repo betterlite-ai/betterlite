@@ -182,7 +182,9 @@ def _feature_values(order_features: list[OrderFeatureName]) -> dict[str, object]
 
 
 def _pools(config: ConfigInput | None) -> dict[str, PoolView]:
-    declared: Mapping[str, TierValue] = DEFAULT_TIER_MODELS if config is None or config.tier_models is None else config.tier_models
+    declared: Mapping[str, TierValue] = (
+        DEFAULT_TIER_MODELS if config is None or config.tier_models is None else config.tier_models
+    )
     pools: dict[str, PoolView] = {}
     for tier, pool in declared.items():
         if isinstance(pool, list):
