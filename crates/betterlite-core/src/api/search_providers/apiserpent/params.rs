@@ -78,7 +78,7 @@ impl ApiserpentParams {
             }
             if optional_params
                 .get(name)
-                .is_none_or(|value| value.is_null())
+                .is_none_or(serde_json::Value::is_null)
             {
                 continue;
             }
@@ -162,13 +162,13 @@ fn text(optional_params: &Object, name: &'static str) -> Result<String, Apiserpe
 fn number(optional_params: &Object, name: &'static str) -> Result<i64, ApiserpentSearchError> {
     optional_params
         .get(name)
-        .and_then(|value| value.as_i64())
+        .and_then(serde_json::Value::as_i64)
         .ok_or(ApiserpentSearchError::OptionType { field: name })
 }
 
 fn boolean(optional_params: &Object, name: &'static str) -> Result<bool, ApiserpentSearchError> {
     optional_params
         .get(name)
-        .and_then(|value| value.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .ok_or(ApiserpentSearchError::OptionType { field: name })
 }

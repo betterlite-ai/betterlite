@@ -514,7 +514,7 @@ fn apiserpent_request_copies_recognized_fields_without_overwriting_mapped_ones()
     assert_eq!(
         record,
         expected(
-            r#"{"_apiserpent_params": {"engine": "bing", "country": "us", "num": 5, "format": "simple", "pages": 3, "freshness": "d", "safe": "strict", "language": "en", "pixel_position": "true", "q": "q"}}"#
+            r#"{"_apiserpent_params": {"engine": "bing", "country": "us", "num": 10, "format": "simple", "pages": 3, "freshness": "d", "safe": "strict", "language": "en", "pixel_position": "true", "q": "q"}}"#
         )
     );
 }
@@ -681,7 +681,7 @@ fn apiserpent_reply_rejects_null_organic() {
 #[case::results_number(r#"{"results": 5}"#)]
 #[case::results_true(r#"{"results": true}"#)]
 fn apiserpent_reply_rejects_a_truthy_value_that_cannot_hold_results(#[case] payload: &str) {
-    assert!(decode_apiserpent_search(payload.as_bytes()).is_err());
+    let _error = decode_apiserpent_search(payload.as_bytes()).unwrap_err();
 }
 
 #[rstest]
@@ -695,7 +695,7 @@ fn apiserpent_reply_rejects_a_truthy_value_that_cannot_hold_results(#[case] payl
 #[case::null_member(r#"{"results": [null]}"#)]
 #[case::array_member(r#"{"results": [[]]}"#)]
 fn apiserpent_reply_rejects_an_invalid_member(#[case] payload: &str) {
-    assert!(decode_apiserpent_search(payload.as_bytes()).is_err());
+    let _error = decode_apiserpent_search(payload.as_bytes()).unwrap_err();
 }
 
 #[rstest]

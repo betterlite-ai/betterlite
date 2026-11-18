@@ -17,17 +17,10 @@ TransformResponse = Callable[[httpx.Response, Logging | None], SearchResponse]
 
 
 class ApiserpentConfig(Protocol):
-    @property
-    def validate_environment(self) -> ValidateEnvironment: ...
-
-    @property
-    def get_complete_url(self) -> CompleteUrl: ...
-
-    @property
-    def transform_search_request(self) -> TransformRequest: ...
-
-    @property
-    def transform_search_response(self) -> TransformResponse: ...
+    validate_environment: ValidateEnvironment
+    get_complete_url: CompleteUrl
+    transform_search_request: TransformRequest
+    transform_search_response: TransformResponse
 
 
 class Input(TypedDict):
@@ -68,6 +61,11 @@ def run(input_value: Input) -> JsonValue:
     url = view.get_complete_url(input_value["api_base"], input_value["optional_params"], params)
     text = input_value["reply"]
     response = None if text is None else reply_value(text, view)
-    return REPLY.validate_python(
-        {"headers": headers, "params": params, "url": url, "response": response}
-    )
+    decoded_headers = REPLY.validate_python(headers)
+    decoded_params = REPLY.validate_python(params)
+    return {
+        "headers": decoded_headers,
+        "params": decoded_params,
+        "url": url,
+        "response": response,
+    }

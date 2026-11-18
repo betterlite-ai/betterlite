@@ -128,5 +128,5 @@ fn is_falsey(raw: &RawValue) -> bool {
 
 fn is_zero(text: &str) -> bool {
     serde_json::from_str::<Number>(text)
-        .is_ok_and(|number| number.as_f64().is_some_and(|value| value == 0.0))
+        .is_ok_and(|number| number.as_f64().is_some_and(|value| value == 0.0_f64))
 }

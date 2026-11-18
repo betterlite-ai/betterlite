@@ -4,5 +4,7 @@ use betterlite_core::api::search_providers::apiserpent::reply::decode_apiserpent
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {
-    drop(decode_apiserpent_search(data));
+    if let Ok(response) = decode_apiserpent_search(data) {
+        drop(response.results);
+    }
 });
