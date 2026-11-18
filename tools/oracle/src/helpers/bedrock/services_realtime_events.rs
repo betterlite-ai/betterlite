@@ -1,7 +1,9 @@
 use std::fmt::Display;
 
+use betterlite_bedrock::realtime_events::decode::decode_realtime_client_preface;
 use betterlite_bedrock::realtime_events::dispatch::RealtimeEvents;
 use betterlite_bedrock::realtime_events::error::EventError;
+use betterlite_bedrock::realtime_events::logging::should_log_event;
 use betterlite_bedrock::realtime_events::scope::EventScope;
 use betterlite_bedrock::realtime_session::RealtimeSession;
 use betterlite_core::api::realtime_contracts::events::{
@@ -11,6 +13,7 @@ use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 use super::services_realtime_session::FixedIds;
@@ -156,7 +159,9 @@ fn run_step(
         Step::ClientMessages { initial, received } => {
             handlers::client_messages(initial.clone(), received.clone(), redactor)
         }
-        Step::ParseClientMessage { message } => Ok(handlers::parse_client(message)),
+        Step::ParseClientMessage { message } => Ok(StepOutput::Other(json!({
+            "parsed": decode_realtime_client_preface(message.as_bytes()),
+        }))),
         Step::Pending { scope } => Ok(handlers::pending(scope)),
         Step::ProviderFailure {
             class_name,
@@ -164,7 +169,12 @@ fn run_step(
             scope,
         } => Ok(handlers::provider(class_name, message, scope, redactor)),
         Step::Ack(ack) => handlers::ack(ack, ids, redactor),
-        Step::ShouldLog { configured, event } => Ok(handlers::should_log(configured, event)),
+        Step::ShouldLog { configured, event } => {
+            let types = handlers::logged_types(configured);
+            Ok(StepOutput::Other(
+                json!({ "logged": should_log_event(&types, event) }),
+            ))
+        }
     }
 }
 

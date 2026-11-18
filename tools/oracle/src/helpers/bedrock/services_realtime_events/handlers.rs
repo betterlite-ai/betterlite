@@ -8,11 +8,9 @@ use betterlite_bedrock::realtime_events::ack::{AckError, SessionAck};
 use betterlite_bedrock::realtime_events::client::{
     ClientError, ClientMessages, RealtimeClientWebSocket,
 };
-use betterlite_bedrock::realtime_events::decode::decode_realtime_client_preface;
 use betterlite_bedrock::realtime_events::failure::{
     ProviderFailure, ProviderStreamError, raise_provider_failure,
 };
-use betterlite_bedrock::realtime_events::logging::should_log_event;
 use betterlite_bedrock::realtime_events::scope::EventScope;
 use betterlite_bedrock::realtime_events::stream::{
     BedrockBidirectionalStream, BedrockInputStream, BedrockOutputChunk, BedrockOutputStream,
@@ -21,7 +19,6 @@ use betterlite_bedrock::realtime_events::stream::{
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use indexmap::IndexMap;
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
@@ -29,7 +26,6 @@ use super::{AckStep, MODEL, StepOutput, failure};
 use betterlite_oracle_helper_api::error::HelperError;
 
 // The receive frames, the ack payloads and the Bedrock stream of one case stand in for two SDK clients
-#[derive(Default)]
 struct Transport {
     frames: Mutex<VecDeque<Option<String>>>,
     receive_calls: AtomicU32,
@@ -123,8 +119,11 @@ pub(super) fn client_messages(
     redactor: &Redactor,
 ) -> Result<StepOutput, Box<HelperError>> {
     let transport = Transport {
-        frames: Mutex::new(received.into()),
-        ..Transport::default()
+        frames: Mutex::new(VecDeque::from(received)),
+        receive_calls: AtomicU32::new(0),
+        sent: Mutex::new(Vec::new()),
+        send_error: None,
+        stream_error: None,
     };
     let mut messages = ClientMessages {
         client: &transport,
@@ -143,10 +142,6 @@ pub(super) fn client_messages(
         "receive_calls": transport.receive_calls.load(Ordering::SeqCst),
         "after_end": after_end,
     })))
-}
-
-pub(super) fn parse_client(message: &str) -> StepOutput {
-    StepOutput::Other(json!({ "parsed": decode_realtime_client_preface(message.as_bytes()) }))
 }
 
 pub(super) fn pending(scope: &EventScope) -> StepOutput {
@@ -192,9 +187,11 @@ pub(super) fn ack(
     redactor: &Redactor,
 ) -> Result<StepOutput, Box<HelperError>> {
     let transport = Transport {
+        frames: Mutex::new(VecDeque::new()),
+        receive_calls: AtomicU32::new(0),
+        sent: Mutex::new(Vec::new()),
         send_error: ack.send_error.clone(),
         stream_error: ack.stream_error.clone(),
-        ..Transport::default()
     };
     let mut scope = ack.scope.clone();
     let mut session = SessionAck {
@@ -238,15 +235,7 @@ fn sent_payload(transport: &Transport) -> Result<Option<serde_json::Value>, Box<
         .map_err(failure)
 }
 
-pub(super) fn should_log(
-    configured: &serde_json::Value,
-    event: &IndexMap<String, Json>,
-) -> StepOutput {
-    let types = logged_types(configured);
-    StepOutput::Other(json!({ "logged": should_log_event(&types, event) }))
-}
-
-fn logged_types(configured: &serde_json::Value) -> LoggedEventTypes {
+pub(super) fn logged_types(configured: &serde_json::Value) -> LoggedEventTypes {
     match configured {
         serde_json::Value::String(star) if star.as_str() == "*" => LoggedEventTypes::All,
         serde_json::Value::Array(items) => LoggedEventTypes::Only(
