@@ -15,6 +15,7 @@ use betterlite_db::table_ops::TableOpsError;
 use betterlite_db::table_ops::rows::{ConfigParamRow, RowError};
 use betterlite_models::decisions::Json;
 
+use serde::{Serialize, de::DeserializeOwned};
 use store::ConfigParamStore;
 
 pub const CONFIG_CACHE_PREFIX: &str = "litellm_config:param:";
@@ -114,7 +115,7 @@ impl<Memory: MemoryCacheOps> ConfigParamCache<'_, Memory> {
         }
         let row = store.find_param(param_name).await?;
         let value = match &row {
-            Some(found) => pack_row(found)?,
+            Some(found) => convert_json(found)?,
             None => Json::Text(MISS_MARKER.to_owned()),
         };
         self.cache
@@ -180,7 +181,7 @@ impl<Memory: MemoryCacheOps> ConfigParamCache<'_, Memory> {
             .collect();
         for param_name in param_names {
             let value = match by_name.get(param_name.as_str()) {
-                Some(row) => match pack_row::<Infallible>(row) {
+                Some(row) => match convert_json::<_, Json, Infallible>(row) {
                     Ok(packed) => packed,
                     Err(error) => {
                         tracing::debug!(error = %error, "a prefetched config param cannot be cached");
@@ -235,12 +236,16 @@ where
     Ok(())
 }
 
-fn pack_row<ClientError>(row: &ConfigParamRow) -> Result<Json, ConfigParamCacheError<ClientError>>
+fn convert_json<Source, Target, ClientError>(
+    value: &Source,
+) -> Result<Target, ConfigParamCacheError<ClientError>>
 where
     ClientError: Error + Send + Sync + 'static,
+    Source: Serialize,
+    Target: DeserializeOwned,
 {
     let text =
-        serde_json::to_string(row).map_err(|source| ConfigParamCacheError::Decode { source })?;
+        serde_json::to_string(value).map_err(|source| ConfigParamCacheError::Decode { source })?;
     serde_json::from_str(&text).map_err(|source| ConfigParamCacheError::Decode { source })
 }
 
@@ -253,9 +258,5 @@ where
     let Json::Object(_) = cached else {
         return Ok(None);
     };
-    let text =
-        serde_json::to_string(cached).map_err(|source| ConfigParamCacheError::Decode { source })?;
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(|source| ConfigParamCacheError::Decode { source })
+    convert_json(cached).map(Some)
 }

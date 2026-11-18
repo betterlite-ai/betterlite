@@ -99,6 +99,15 @@ enum BudgetMap {
     Object(BTreeMap<String, JsonData>),
 }
 
+impl BudgetMap {
+    fn decode(self) -> Result<Option<BTreeMap<String, JsonData>>, serde_json::Error> {
+        match self {
+            Self::Text(raw) => serde_json::from_str(&raw),
+            Self::Object(fields) => Ok(Some(fields)),
+        }
+    }
+}
+
 #[derive(Deserialize)]
 struct BudgetRecord {
     model_max_budget: Option<BudgetMap>,
@@ -109,11 +118,12 @@ struct BudgetRecord {
 impl RowDecoder for LiteLLMBudgetTableFull {
     fn decode_row(text: &str) -> Result<Self, RowError> {
         let mut stored: BudgetRecord = serde_json::from_str(text).map_err(RowError::Model)?;
-        stored.row.budget.model_max_budget = match stored.model_max_budget {
-            Some(BudgetMap::Text(raw)) => serde_json::from_str(&raw).map_err(RowError::Model)?,
-            Some(BudgetMap::Object(fields)) => Some(fields),
-            None => None,
-        };
+        stored.row.budget.model_max_budget = stored
+            .model_max_budget
+            .map(BudgetMap::decode)
+            .transpose()
+            .map_err(RowError::Model)?
+            .flatten();
         Ok(stored.row)
     }
 }

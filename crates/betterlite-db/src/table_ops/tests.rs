@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use rstest::rstest;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::time::Duration;
@@ -166,52 +167,48 @@ fn null_and_bool_values_bind_their_column_types() {
     assert_eq!(flag.parameters.values.len(), 2);
 }
 
-#[test]
-fn scalar_values_reject_the_wrong_column_type() {
-    let cases = [
-        (TeamColumn::Blocked, TokenValue::Text(String::from("true"))),
-        (
-            TeamColumn::Blocked,
-            TokenValue::KeyHash(KeyHash::from("hash")),
-        ),
-        (TeamColumn::TeamAlias, TokenValue::Bool(true)),
-        (TeamColumn::TeamAlias, TokenValue::Integer(5)),
-        (
-            TeamColumn::TeamAlias,
-            TokenValue::TextArray(vec![String::from("value")]),
-        ),
-    ];
-    for (column, value) in cases {
-        let payload = BTreeMap::from([
-            (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
-            (column, value),
-        ]);
-        assert!(matches!(
-            sql::insert::<Infallible, TeamColumn>(&payload, InsertConflict::Keep),
-            Err(TableOpsError::WrongType { .. })
-        ));
+#[rstest]
+#[case(TeamColumn::Blocked, TokenValue::Text(String::from("true")))]
+#[case(TeamColumn::Blocked, TokenValue::KeyHash(KeyHash::from("hash")))]
+#[case(TeamColumn::TeamAlias, TokenValue::Bool(true))]
+#[case(TeamColumn::TeamAlias, TokenValue::Integer(5))]
+#[case(TeamColumn::TeamAlias, TokenValue::TextArray(vec![String::from("value")]))]
+fn scalar_values_reject_the_wrong_column_type(
+    #[case] column: TeamColumn,
+    #[case] value: TokenValue,
+) {
+    let payload = BTreeMap::from([
+        (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
+        (column, value),
+    ]);
+    assert!(matches!(
+        sql::insert::<Infallible, TeamColumn>(&payload, InsertConflict::Keep),
+        Err(TableOpsError::WrongType { .. })
+    ));
+}
+
+#[rstest]
+#[case(r#", "model_max_budget":{"gpt":1}"#, true)]
+#[case(r#", "model_max_budget":"{\"gpt\":1}""#, true)]
+#[case(r#", "model_max_budget":null"#, false)]
+#[case("", false)]
+fn budget_maps_decode_from_objects_text_and_null(#[case] field: &str, #[case] populated: bool) {
+    use crate::budget_permission_rows::LiteLLMBudgetTableFull;
+    use crate::table_ops::rows::RowDecoder as _;
+
+    let text = format!(r#"{{"budget_id":"b-1","created_at":"2024-01-01T00:00:00"{field}}}"#);
+    let row = LiteLLMBudgetTableFull::decode_row(&text).unwrap();
+    assert_eq!(row.budget.budget_id.as_deref(), Some("b-1"));
+    assert_eq!(row.budget.model_max_budget.is_some(), populated);
+    if let Some(fields) = row.budget.model_max_budget {
+        assert_eq!(serde_json::to_string(&fields).unwrap(), r#"{"gpt":1}"#);
     }
 }
 
 #[test]
-fn budget_maps_decode_from_objects_text_and_null() {
+fn invalid_budget_map_text_is_rejected() {
     use crate::budget_permission_rows::LiteLLMBudgetTableFull;
     use crate::table_ops::rows::RowDecoder as _;
-
-    for (field, populated) in [
-        (r#", "model_max_budget":{"gpt":1}"#, true),
-        (r#", "model_max_budget":"{\"gpt\":1}""#, true),
-        (r#", "model_max_budget":null"#, false),
-        ("", false),
-    ] {
-        let text = format!(r#"{{"budget_id":"b-1","created_at":"2024-01-01T00:00:00"{field}}}"#);
-        let row = LiteLLMBudgetTableFull::decode_row(&text).unwrap();
-        assert_eq!(row.budget.budget_id.as_deref(), Some("b-1"));
-        assert_eq!(row.budget.model_max_budget.is_some(), populated);
-        if let Some(fields) = row.budget.model_max_budget {
-            assert_eq!(serde_json::to_string(&fields).unwrap(), r#"{"gpt":1}"#);
-        }
-    }
     assert!(
         LiteLLMBudgetTableFull::decode_row(
             r#"{"created_at":"2024-01-01T00:00:00","model_max_budget":"invalid"}"#

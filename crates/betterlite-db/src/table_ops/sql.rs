@@ -27,6 +27,35 @@ impl Bound {
             Self::Array(value) => value,
         }
     }
+
+    fn encode(value: &TokenValue, kind: TokenSqlType) -> Result<Self, serde_json::Error> {
+        let bound = match value {
+            TokenValue::Text(text) => Self::Text(Some(text.clone())),
+            TokenValue::KeyHash(hash) => Self::Text(Some(String::from(hash.expose_secret()))),
+            TokenValue::Bool(flag) => Self::Bool(Some(*flag)),
+            TokenValue::Integer(number) => Self::Integer(Some(*number)),
+            TokenValue::TextArray(items) => Self::Array(Some(items.clone())),
+            TokenValue::Number(number) => Self::Text(Some(number.to_string())),
+            TokenValue::Json(json) => Self::Text(Some(serde_json::to_string(json)?)),
+            TokenValue::Timestamp(timestamp) => Self::Text(Some(
+                timestamp
+                    .utc()
+                    .naive_utc()
+                    .format("%Y-%m-%dT%H:%M:%S%.f")
+                    .to_string(),
+            )),
+            TokenValue::Null => match kind {
+                TokenSqlType::Boolean => Self::Bool(None),
+                TokenSqlType::BigInt => Self::Integer(None),
+                TokenSqlType::TextArray => Self::Array(None),
+                TokenSqlType::Text
+                | TokenSqlType::DoublePrecision
+                | TokenSqlType::Json
+                | TokenSqlType::Timestamp => Self::Text(None),
+            },
+        };
+        Ok(bound)
+    }
 }
 
 #[derive(Default)]
@@ -39,6 +68,31 @@ impl Parameters {
         self.values.push(bound);
         self.values.len()
     }
+
+    fn bind<ClientError>(
+        &mut self,
+        column: &'static str,
+        value: &TokenValue,
+        kind: TokenSqlType,
+    ) -> Result<String, TableOpsError<ClientError>>
+    where
+        ClientError: Error + Send + Sync + 'static,
+    {
+        if !valid_kind(kind, value) {
+            return Err(TableOpsError::WrongType { column });
+        }
+        let bound = Bound::encode(value, kind)
+            .map_err(|source| TableOpsError::Encode { column, source })?;
+        let cast = match kind {
+            TokenSqlType::Text | TokenSqlType::Boolean | TokenSqlType::TextArray => "",
+            TokenSqlType::BigInt => "::bigint",
+            TokenSqlType::DoublePrecision => "::text::double precision",
+            TokenSqlType::Json => "::text::jsonb",
+            TokenSqlType::Timestamp => "::text::timestamp(3)",
+        };
+        let index = self.push(bound);
+        Ok(format!("${index}{cast}"))
+    }
 }
 
 pub(super) struct Statement {
@@ -46,111 +100,22 @@ pub(super) struct Statement {
     pub(super) parameters: Parameters,
 }
 
-pub(super) fn bind_literal<ClientError>(
-    parameters: &mut Parameters,
-    column: &'static str,
-    value: &TokenValue,
-    kind: TokenSqlType,
-) -> Result<String, TableOpsError<ClientError>>
-where
-    ClientError: Error + Send + Sync + 'static,
-{
-    let (bound, cast) = match kind {
-        TokenSqlType::Text
-        | TokenSqlType::Boolean
-        | TokenSqlType::BigInt
-        | TokenSqlType::TextArray => {
-            let scalar = scalar_bound(column, value, kind)?;
-            let cast = if matches!(kind, TokenSqlType::BigInt) {
-                "::bigint"
-            } else {
-                ""
-            };
-            (scalar, cast)
-        }
-        TokenSqlType::DoublePrecision => (
-            Bound::Text(encoded_text(column, value)?),
-            "::text::double precision",
-        ),
-        TokenSqlType::Json => (Bound::Text(encoded_text(column, value)?), "::text::jsonb"),
-        TokenSqlType::Timestamp => (
-            Bound::Text(encoded_text(column, value)?),
-            "::text::timestamp(3)",
-        ),
-    };
-    let index = parameters.push(bound);
-    Ok(format!("${index}{cast}"))
-}
-
-fn scalar_bound<ClientError>(
-    column: &'static str,
-    value: &TokenValue,
-    kind: TokenSqlType,
-) -> Result<Bound, TableOpsError<ClientError>>
-where
-    ClientError: Error + Send + Sync + 'static,
-{
-    match value {
-        TokenValue::Text(text) if matches!(kind, TokenSqlType::Text) => {
-            Ok(Bound::Text(Some(text.clone())))
-        }
-        TokenValue::KeyHash(hash) if matches!(kind, TokenSqlType::Text) => {
-            Ok(Bound::Text(Some(String::from(hash.expose_secret()))))
-        }
-        TokenValue::Bool(flag) if matches!(kind, TokenSqlType::Boolean) => {
-            Ok(Bound::Bool(Some(*flag)))
-        }
-        TokenValue::Integer(number) if matches!(kind, TokenSqlType::BigInt) => {
-            Ok(Bound::Integer(Some(*number)))
-        }
-        TokenValue::TextArray(items) if matches!(kind, TokenSqlType::TextArray) => {
-            Ok(Bound::Array(Some(items.clone())))
-        }
-        TokenValue::Null => match kind {
-            TokenSqlType::Text => Ok(Bound::Text(None)),
-            TokenSqlType::Boolean => Ok(Bound::Bool(None)),
-            TokenSqlType::BigInt => Ok(Bound::Integer(None)),
-            TokenSqlType::TextArray => Ok(Bound::Array(None)),
-            TokenSqlType::DoublePrecision | TokenSqlType::Json | TokenSqlType::Timestamp => {
-                Err(TableOpsError::WrongType { column })
-            }
-        },
-        TokenValue::Text(_)
-        | TokenValue::KeyHash(_)
-        | TokenValue::Bool(_)
-        | TokenValue::Integer(_)
-        | TokenValue::Number(_)
-        | TokenValue::Json(_)
-        | TokenValue::Timestamp(_)
-        | TokenValue::TextArray(_) => Err(TableOpsError::WrongType { column }),
+const fn valid_kind(kind: TokenSqlType, value: &TokenValue) -> bool {
+    if matches!(value, TokenValue::Null) {
+        return true;
     }
-}
-
-fn encoded_text<ClientError>(
-    column: &'static str,
-    value: &TokenValue,
-) -> Result<Option<String>, TableOpsError<ClientError>>
-where
-    ClientError: Error + Send + Sync + 'static,
-{
-    match value {
-        TokenValue::Number(number) => Ok(Some(number.to_string())),
-        TokenValue::Json(json) => serde_json::to_string(json)
-            .map(Some)
-            .map_err(|source| TableOpsError::Encode { column, source }),
-        TokenValue::Timestamp(timestamp) => Ok(Some(
-            timestamp
-                .utc()
-                .naive_utc()
-                .format("%Y-%m-%dT%H:%M:%S%.f")
-                .to_string(),
-        )),
-        TokenValue::Text(text) => Ok(Some(text.clone())),
-        TokenValue::Null => Ok(None),
-        TokenValue::KeyHash(_)
-        | TokenValue::Bool(_)
-        | TokenValue::Integer(_)
-        | TokenValue::TextArray(_) => Err(TableOpsError::WrongType { column }),
+    match kind {
+        TokenSqlType::Text => matches!(value, TokenValue::Text(_) | TokenValue::KeyHash(_)),
+        TokenSqlType::Boolean => matches!(value, TokenValue::Bool(_)),
+        TokenSqlType::BigInt => matches!(value, TokenValue::Integer(_)),
+        TokenSqlType::TextArray => matches!(value, TokenValue::TextArray(_)),
+        TokenSqlType::DoublePrecision | TokenSqlType::Json | TokenSqlType::Timestamp => matches!(
+            value,
+            TokenValue::Number(_)
+                | TokenValue::Json(_)
+                | TokenValue::Timestamp(_)
+                | TokenValue::Text(_)
+        ),
     }
 }
 
@@ -162,13 +127,15 @@ where
     ClientError: Error + Send + Sync + 'static,
     Column: TableColumn,
 {
-    let mut bound = Vec::with_capacity(payload.len());
-    for (column, value) in payload {
-        let (name, kind) = column.sql_definition();
-        let placeholder = bind_literal(parameters, name, value, kind)?;
-        bound.push((name, placeholder));
-    }
-    Ok(bound)
+    payload
+        .iter()
+        .map(|(column, value)| {
+            let (name, kind) = column.sql_definition();
+            parameters
+                .bind(name, value, kind)
+                .map(|marker| (name, marker))
+        })
+        .collect()
 }
 
 // what Prisma does when the inserted row's key already exists
