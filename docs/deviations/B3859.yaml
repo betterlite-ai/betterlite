@@ -1,0 +1,18 @@
+task: B3859
+deviations:
+  - what: Guardrail start_time and end_time are float seconds (Unix timestamps); both are converted to datetime and then to nanoseconds for OTel span timing.
+    why: LiteLLM populates guardrail_information with float seconds; datetime.fromtimestamp() handles the conversion, and _to_ns() standardizes timestamps to nanoseconds as required by the OTel SDK.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2022-L2044
+  - what: Guardrail spans are named exactly "guardrail" rather than derived from guardrail_name or mode.
+    why: LiteLLM stamps all guardrail invocations with the same span name; individual guardrails are distinguished by the guardrail_name and guardrail_mode attributes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2047
+  - what: Both _handle_failure and async_post_call_failure_hook call end() on the same proxy span; betterlite replicates this double-close.
+    why: _handle_failure unconditionally closes the span when its name is LITELLM_PROXY_REQUEST_SPAN_NAME, and async_post_call_failure_hook independently closes it after appending the Failed Proxy Server Request child.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2203-L2208
+  - what: Guardrail violation_categories and usage are serialized to JSON before being set as span attributes.
+    why: OTel span attributes do not accept nested sequences or mappings directly; JSON serialization preserves their structure as strings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2105
+  - what: The raw-request span is skipped entirely in semconv mode.
+    why: Semconv mode records raw request data through the primary span's attributes instead of a separate child span.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1467-L1469
+kept_bugs: []
