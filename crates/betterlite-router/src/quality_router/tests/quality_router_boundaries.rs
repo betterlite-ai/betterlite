@@ -163,6 +163,24 @@ fn keyword_matching_ignores_case_in_the_message_and_the_keyword() {
     assert_eq!(route.decision, keyword_decision("qr", "one", "code", 1));
 }
 
+// the kept bug docs/deviations/B338.yaml records: a keyword also matches inside a longer word
+#[test]
+fn a_keyword_matches_inside_a_longer_word() {
+    let router = router_with(
+        &["one"],
+        Some(table(&[("SIMPLE", 1)])),
+        None,
+        &[keyword(deployment("one", 1), "code")],
+    );
+    let request = messages(r#"[{"role":"user","content":"please encode this"}]"#);
+    let mut metadata = None;
+    let route = router
+        .pre_route(Some(&request), &mut metadata)
+        .unwrap()
+        .unwrap();
+    assert_eq!(route.decision, keyword_decision("qr", "one", "code", 1));
+}
+
 #[test]
 fn a_metadata_object_without_a_decision_gains_the_routers_decision() {
     let router = router_with(
