@@ -20,7 +20,7 @@ description: >-
   fallback configuration in deliberate routing failures. For persisted ownership use
   database.seed.dashboard: {} from B9740, plus B860's users and keys with disjoint user IDs and
   internal_user roles. B9740 installs the independent final pinned schema, including
-  LiteLLM_ManagedObjectTable; B860's historical baseline alone lacks that table. B5076 supplies
+  LiteLLM_ManagedObjectTable; B860's historical baseline alone lacks that table. B9942 supplies
   the Python Prisma client. Let the runner inject database_url and schema-update settings.
   Create ownership rows through POST /containers, never SQL or a mocked ownership service.
 
@@ -199,7 +199,7 @@ out_of_scope:
   - "Handler factory binary/upload processors and access adapter: B3371; every other live factory function and route registration: B3372. Its get_all_route_types and _get_container_provider_config have no caller at the pin, as B3372 records."
   - "Router registration, plans and direct SDK selection: B7430; executor construction: B8631; production server adapters, mounts and the existing basic route HTTP matrices: B8635, beneath B8610's composition root."
   - "OpenAI transforms B522, Azure overrides B547, base Azure URL/auth B2200, ID encoding/decoding B903 and generic router fallback B6021 are dependencies reached through B8635, not new B094 implementations."
-  - "Independent final-schema fixture support: B9740; isolated databases and principal seeds: B860; Prisma boot tooling: B5076. No fixture registry or product schema is changed here."
+  - "Independent final-schema fixture support: B9740; isolated databases and principal seeds: B860; Prisma boot tooling: B9942. No fixture registry or product schema is changed here."
   - "Python package exports and native Python calls: B7880/B7881. Deepgram WebSocket handoffs naming B094 are stale: B3628 owns those routes, B8606 their mount and B3653 their billing."
 pitfalls:
   - "A native Azure ID carries no deployment payload; the stored unified_object_id must recover model_id before the router selects credentials."

@@ -1,14 +1,14 @@
 id: B2320
 milestone: M4 keys, spend and management
 title: Combined key reads and deprecated-token grace lookup
-status: todo
+status: done
 depends_on: [B171, B713, B714, B715, B721, B722, B856, B860, B2314, B2323]
 file: tasks/B2320-combined-key-read.yaml
 covers:
   - "litellm/proxy/utils.py"
 parent: B124
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2419
