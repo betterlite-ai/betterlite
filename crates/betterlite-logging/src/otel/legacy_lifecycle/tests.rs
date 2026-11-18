@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::{Duration, SystemTime};
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -40,6 +41,7 @@ const PAYLOAD: &str = r#"{
     "response_time": 1.0,
     "model_map_information": {"model_map_key": "", "model_map_value": null},
     "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "secret request"}],
     "api_base": "https://api.openai.com",
     "metadata": {},
     "saved_cache_cost": 0.0,
@@ -155,6 +157,14 @@ fn callback_logger_success_event_writes_the_primary_and_raw_spans() {
     let spans = rig.spans();
     assert_eq!(spans[0].status, opentelemetry::trace::Status::Ok);
     assert_eq!(
+        spans[0].start_time,
+        SystemTime::UNIX_EPOCH + Duration::from_secs(1_704_067_200)
+    );
+    assert_eq!(
+        spans[0].end_time,
+        SystemTime::UNIX_EPOCH + Duration::from_millis(1_704_067_201_500)
+    );
+    assert_eq!(
         spans[1].parent_span_id,
         spans[0].span_context.span_id(),
         "the raw request span is a child of the primary span"
@@ -175,6 +185,41 @@ fn callback_logger_failure_event_writes_an_error_span() {
         spans[0].status,
         opentelemetry::trace::Status::Error { .. }
     ));
+}
+
+#[test]
+fn callback_logger_dynamic_turn_off_redacts_span_content() {
+    let rig = Rig::new();
+    let logger = LegacyOtelLogger::new(Arc::new(rig.lifecycle(None)));
+    logger
+        .log_success_event(&event("call-unredacted"))
+        .expect("unredacted success event");
+    assert!(
+        rig.span("litellm_request")
+            .attributes
+            .iter()
+            .any(|attribute| format!("{:?}", attribute.value).contains("secret request"))
+    );
+
+    for value in [Json::Bool(true), Json::Text(" true ".to_owned())] {
+        let rig = Rig::new();
+        let logger = LegacyOtelLogger::new(Arc::new(rig.lifecycle(None)));
+        let mut request = event("call-redacted");
+        request.dynamic_params = Arc::new(Json::Object(IndexMap::from([(
+            "turn_off_message_logging".to_owned(),
+            value,
+        )])));
+
+        logger.log_success_event(&request).expect("success event");
+
+        let span = rig.span("litellm_request");
+        assert!(
+            !span
+                .attributes
+                .iter()
+                .any(|attribute| format!("{:?}", attribute.value).contains("secret request"))
+        );
+    }
 }
 
 #[tokio::test]

@@ -17,6 +17,7 @@ use betterlite_logging::otel::legacy_policy::config::OpenTelemetryConfig;
 use betterlite_logging::otel::legacy_policy::span_time::SpanTime;
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
+use betterlite_logging::otel::plumbing::events::{Clock, SystemClock};
 use betterlite_logging::otel::plumbing::exporters::HttpClients;
 use betterlite_logging::otel::v2_callback::live_span::{LiveSpan, RootSpans};
 use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
@@ -78,6 +79,23 @@ impl Rig {
         dynamic: Option<Arc<dyn DynamicOtel>>,
         use_request_span: bool,
     ) -> LegacyLifecycle {
+        self.with_clock(
+            config,
+            callback_name,
+            dynamic,
+            use_request_span,
+            Box::new(SystemClock),
+        )
+    }
+
+    pub(super) fn with_clock(
+        &self,
+        config: OpenTelemetryConfig,
+        callback_name: Option<&str>,
+        dynamic: Option<Arc<dyn DynamicOtel>>,
+        use_request_span: bool,
+        clock: Box<dyn Clock>,
+    ) -> LegacyLifecycle {
         let init = LegacyOtelInit {
             config: Some(config),
             callback_name: callback_name.map(str::to_owned),
@@ -100,6 +118,7 @@ impl Rig {
                 dynamic: dynamic.unwrap_or_else(|| Arc::new(BaseDynamic)),
                 live: Arc::clone(&self.roots),
                 use_request_span,
+                clock,
                 ..LegacyLifecycleOptions::default()
             },
         )

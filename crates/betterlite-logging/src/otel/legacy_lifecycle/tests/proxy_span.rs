@@ -48,6 +48,25 @@ fn proxy_span_success_leaves_external_parent_spans_open() {
 }
 
 #[test]
+fn proxy_span_success_does_not_close_an_ended_proxy_again() {
+    let rig = Rig::new();
+    let lifecycle = rig.in_memory(None);
+    let proxy = rig.parent(&lifecycle, PROXY);
+    proxy.lock().end_with_timestamp(instant(END - 0.5));
+    let mut kwargs = simple_kwargs("call-ended-proxy");
+    carry(&mut kwargs, &proxy);
+
+    lifecycle
+        .handle_success(&call(&kwargs))
+        .expect("success lifecycle");
+
+    let span = rig.span(PROXY);
+    assert_eq!(span.status, Status::Unset);
+    assert_eq!(span.end_time, instant(END - 0.5));
+    assert_eq!(attribute(&span, "http.response.status_code"), None);
+}
+
+#[test]
 fn proxy_span_team_attributes_are_stamped_before_the_close() {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);

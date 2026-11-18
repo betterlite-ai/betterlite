@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_logging::otel::legacy_lifecycle::tracer::{DynamicOtel, TracerChoice};
+use betterlite_logging::otel::legacy_lifecycle::tracer::{
+    BaseDynamicOtel, DynamicOtel, TracerChoice,
+};
 use betterlite_logging::otel::legacy_policy::config::OpenTelemetryConfig;
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 
@@ -102,4 +104,12 @@ fn tracer_selection_falls_back_to_the_global_tracer() {
         choose(&lifecycle, &simple_kwargs("call-6")),
         TracerChoice::Global
     ));
+}
+
+#[test]
+fn dynamic_base_hooks_return_no_override() {
+    let dynamic = BaseDynamicOtel;
+    let params = MetadataMap::new();
+    assert!(dynamic.construct_dynamic_otel_headers(&params).is_none());
+    assert!(dynamic.construct_dynamic_otel_config(&params).is_none());
 }
