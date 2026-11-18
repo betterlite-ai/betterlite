@@ -105,14 +105,13 @@ fn tier_model_fields(config: &Config, tier: Option<&str>) -> Result<Fields, Oper
     let tier_name = tier.ok_or_else(|| OperationError::InvalidRequest {
         message: "tier is required for tier_model".to_owned(),
     })?;
-    let tier = ComplexityTier::built_in(tier_name)
+    let pipeline_tier = ComplexityTier::built_in(tier_name)
         .map_or_else(|| Tier::Named(tier_name.to_owned()), Tier::BuiltIn);
-    let model =
-        config
-            .single_model_for_tier(&tier)
-            .map_err(|source| OperationError::InvalidRequest {
-                message: source.to_string(),
-            })?;
+    let model = config
+        .single_model_for_tier(&pipeline_tier)
+        .map_err(|source| OperationError::InvalidRequest {
+            message: source.to_string(),
+        })?;
     Ok(Fields {
         tier: None,
         score: None,
