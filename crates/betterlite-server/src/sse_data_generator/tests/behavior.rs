@@ -530,6 +530,7 @@ fn plain_text_becomes_data_frame(#[case] text: &str, #[case] expected: &str) {
     vec![Bytes::from_static(b"\xe2")],
     &["data: \u{fffd}\n\n", DONE_FRAME]
 )]
+#[case::empty(vec![Bytes::new()], &["data: \n\n", DONE_FRAME])]
 fn bytes_replace_invalid_utf8(#[case] chunks: Vec<Bytes>, #[case] expected: &[&str]) {
     let items = chunks
         .into_iter()

@@ -179,6 +179,9 @@ where
 {
     match item {
         StreamItem::Chunk(chunk) => Output::Item(sse_data_frame(&serialize_chunk(&chunk))),
+        StreamItem::Bytes(bytes) if bytes.is_empty() => {
+            text_output(drive, String::new(), TextSource::Bytes)
+        }
         StreamItem::Bytes(bytes) => bytes_output(drive, &bytes, false),
         StreamItem::Text(text) => text_output(drive, text, TextSource::Text),
     }
