@@ -78,7 +78,7 @@ where
             messages: &transformed.messages,
             user_continue_message,
             cache_points,
-            modify_params: input.settings.modify_params,
+            modify_params: input.settings.messages.modify_params,
             remote: media.remote,
             new_id: media.new_id,
         },
