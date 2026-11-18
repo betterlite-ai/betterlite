@@ -109,13 +109,13 @@ impl CorpusImport for VertexRagDataImport {
             let (client, operation) = handle;
             let start = move || async move { Ok::<_, GaxError>(operation) };
             let query = move |name: String| {
-                let client = client.clone();
+                let poll_client = client.clone();
                 async move {
-                    let operation = client.get_operation().set_name(name).send().await?;
+                    let polled = poll_client.get_operation().set_name(name).send().await?;
                     Ok::<_, GaxError>(Operation::<
                         ImportRagFilesResponse,
                         ImportRagFilesOperationMetadata,
-                    >::new(operation))
+                    >::new(polled))
                 }
             };
             let poller = new_poller(

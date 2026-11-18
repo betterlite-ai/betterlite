@@ -302,16 +302,16 @@ pub(super) fn provider_from_settings(
 // the paused clock must show the future pending until its deadline and resolving exactly at it
 pub(super) async fn resolve_at_deadline<F: Future>(future: F, deadline: Duration) -> F::Output {
     let started = Instant::now();
-    let mut future = std::pin::pin!(future);
+    let mut pinned = std::pin::pin!(future);
     if deadline > Duration::ZERO {
         let early = timeout(
             deadline.saturating_sub(Duration::from_secs(1)),
-            future.as_mut(),
+            pinned.as_mut(),
         )
         .await;
         assert!(early.is_err(), "the future resolved before {deadline:?}");
     }
-    let output = timeout(Duration::from_secs(2), future.as_mut())
+    let output = timeout(Duration::from_secs(2), pinned.as_mut())
         .await
         .expect("the future resolves at its deadline");
     assert_eq!(
