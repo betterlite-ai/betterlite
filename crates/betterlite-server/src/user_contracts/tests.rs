@@ -141,6 +141,29 @@ fn update_valid_selection() {
             .supplied,
         BTreeSet::new()
     );
+    let blank_row = update(r#"{"users": [{"user_id": "alice", "max_budget": ""}]}"#)
+        .expect("a blank row budget becomes null");
+    assert!(
+        blank_row.users.expect("the users list")[0]
+            .fields
+            .max_budget
+            .is_none()
+    );
+    let blank_updates = update(r#"{"all_users": true, "user_updates": {"max_budget": ""}}"#)
+        .expect("a blank updates budget becomes null");
+    assert!(
+        blank_updates
+            .user_updates
+            .expect("the decoded updates")
+            .max_budget
+            .is_none()
+    );
+    let forbidden = update(r#"{"users": [{"user_id": "alice", "user_role": "customer"}]}"#)
+        .expect_err("the literal rejects the customer role");
+    assert_eq!(
+        rejection_text(&forbidden),
+        "user_role customer is not allowed"
+    );
 }
 
 #[test]
@@ -361,6 +384,9 @@ fn new_bounds_and_extras() {
     let blank_budget = new_users(r#"{"users": [{"user_id": "u", "max_budget": ""}]}"#)
         .expect("an empty max_budget becomes null");
     assert!(blank_budget.users[0].request.max_budget.is_none());
+    let forbidden = new_users(r#"{"users": [{"user_id": "u", "user_role": "team"}]}"#)
+        .expect_err("the literal rejects the team role");
+    assert_eq!(rejection_text(&forbidden), "user_role team is not allowed");
 }
 
 #[test]
