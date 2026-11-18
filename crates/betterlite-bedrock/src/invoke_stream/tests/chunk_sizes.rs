@@ -104,11 +104,11 @@ fn keeps_a_full_read_and_drops_the_tail_at_a_failure() {
 
 // A chunk size past the 1 MiB cap yields the body in capped pieces instead of buffering all of it first.
 fn caps_a_huge_size() {
-    let body = vec![b'x'; 1_048_577];
-    let pieces = read(apply(pending(vec![Ok(body)]), Some(4_194_304)).head.chunks);
+    let body = vec![b'x'; 0x10_0001];
+    let pieces = read(apply(pending(vec![Ok(body)]), Some(0x40_0000)).head.chunks);
     let lengths: Vec<usize> = pieces
         .iter()
         .map(|piece| piece.as_ref().map_or(0, Vec::len))
         .collect();
-    assert_eq!(lengths, vec![1_048_576, 1]);
+    assert_eq!(lengths, vec![0x10_0000, 1]);
 }
