@@ -1,0 +1,4 @@
+general_settings:
+  spend_capture_rate_check:
+    threshold: "0.75"
+    lookback_days: "7"

@@ -1,5 +1,4 @@
 use betterlite_db::budget_permission_rows::JsonData;
-use betterlite_roi::records::ROIReport;
 use betterlite_roi::settings::DEFAULT_PROMPT;
 use betterlite_roi::settings::ROISettings;
 use betterlite_roi::settings::SettingsError;
@@ -23,8 +22,8 @@ use super::error::InternalError;
 use super::error::RoiSettingsError;
 use super::repository::SettingsRepository;
 
-pub(super) const SETTINGS_KEY: &str = "roi_calculator_settings";
-pub(super) const REPORT_KEY: &str = "roi_calculator_report";
+pub const SETTINGS_KEY: &str = "roi_calculator_settings";
+pub const REPORT_KEY: &str = "roi_calculator_report";
 pub(super) const DEFAULT_GITHUB_API_URL: &str = "https://api.github.com";
 
 const DECRYPT: DecryptPolicy = DecryptPolicy {
@@ -44,7 +43,7 @@ pub enum StoredSettingsError {
 
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
-pub(super) struct StoredSettings {
+pub struct StoredSettings {
     pub(super) github_api_url: String,
     pub(super) github_token: String,
     pub(super) estimator_key: String,
@@ -124,34 +123,35 @@ where
     }
 }
 
-async fn stored_param(
+pub async fn load_parameter<T, F>(
     repository: &dyn SettingsRepository,
     key: &str,
-) -> Result<Option<JsonData>, RoiSettingsError> {
-    repository
-        .param(key)
-        .await
-        .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))
-}
-
-fn decode_parameter<T, F>(parameter: &JsonData, invalid: F) -> Result<T, RoiSettingsError>
+    invalid: F,
+) -> Result<Option<T>, RoiSettingsError>
 where
     T: DeserializeOwned,
     F: FnOnce(serde_json::Error) -> RoiSettingsError,
 {
-    serde_json::from_slice(&serde_json::to_vec(parameter).map_err(InternalError::Encode)?)
-        .map_err(invalid)
+    let stored = repository
+        .param(key)
+        .await
+        .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))?;
+    let Some(parameter) = stored else {
+        return Ok(None);
+    };
+    let bytes = serde_json::to_vec(&parameter).map_err(InternalError::Encode)?;
+    serde_json::from_slice(&bytes).map(Some).map_err(invalid)
 }
 
-pub(super) async fn load_stored(
+pub async fn load_stored(
     repository: &dyn SettingsRepository,
 ) -> Result<StoredSettings, RoiSettingsError> {
-    let Some(parameter) = stored_param(repository, SETTINGS_KEY).await? else {
+    let invalid = |source| RoiSettingsError::StoredSettings(StoredSettingsError::Decode(source));
+    let Some(stored) =
+        load_parameter::<StoredSettings, _>(repository, SETTINGS_KEY, invalid).await?
+    else {
         return Ok(StoredSettings::default());
     };
-    let stored: StoredSettings = decode_parameter(&parameter, |source| {
-        RoiSettingsError::StoredSettings(StoredSettingsError::Decode(source))
-    })?;
     stored.check_bounds()?;
     Ok(stored)
 }
@@ -176,7 +176,7 @@ pub(super) fn validate_settings(settings: ROISettings) -> Result<ROISettings, Ro
         .map_err(|source| RoiSettingsError::StoredSettings(StoredSettingsError::Validate(source)))
 }
 
-pub(super) async fn load_settings(
+pub async fn load_settings(
     repository: &dyn SettingsRepository,
     cipher: &dyn SettingsCipher,
 ) -> Result<ROISettings, RoiSettingsError> {
@@ -185,7 +185,7 @@ pub(super) async fn load_settings(
     validate_settings(settings)
 }
 
-pub(super) async fn save_settings(
+pub async fn save_settings(
     repository: &dyn SettingsRepository,
     stored: &StoredSettings,
 ) -> Result<(), RoiSettingsError> {
@@ -195,14 +195,4 @@ pub(super) async fn save_settings(
         .set_param(SETTINGS_KEY, value)
         .await
         .map_err(|error| RoiSettingsError::Internal(InternalError::Config(error)))
-}
-
-pub async fn load_report(
-    repository: &dyn SettingsRepository,
-) -> Result<Option<ROIReport>, RoiSettingsError> {
-    let Some(parameter) = stored_param(repository, REPORT_KEY).await? else {
-        return Ok(None);
-    };
-    let report = decode_parameter(&parameter, RoiSettingsError::StoredReport)?;
-    Ok(Some(report))
 }

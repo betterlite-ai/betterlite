@@ -10,9 +10,7 @@ description: >-
   while service successes log only for RESET_BUDGET_JOB service type.
 
   Proxy failures resolve exception information via B253's StandardLoggingPayloadSetup.get_error_information
-  and build error_code, error_class, exception message and traceback fields. User context comes from
-  B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key with fallback to minimal
-  fields (request_route, team_id, user_id, end_user_id) when proxy utilities are unavailable. Proxy
+  and build error_code, error_class, exception message and traceback fields. Proxy
   hook payloads use ERROR status and attach trace context from B3930's span accessors. Proxy failure
   hook has no event_metadata parameter.
 
@@ -21,6 +19,16 @@ description: >-
   INFO for successes). The DD_LOGGED_SUCCESS_SERVICE_TYPES constant lists service types that produce
   success records; only RESET_BUDGET_JOB appears at the pin. Service hooks do not attach trace context.
   Exceptions during logging are caught and logged for diagnostics only.
+
+  The user context is an argument of async_post_call_failure_hook, `caller_metadata: IndexMap<String, Json>`
+  holding the StandardLoggingUserAPIKeyMetadata fields, and goes into the message's user_api_key_dict field
+  unchanged and in its order. LiteLLM gets it from LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key.
+  B1106 builds that function in betterlite-core, and betterlite-core depends on betterlite-logging, so this
+  module never calls it and takes no UserAPIKeyAuth. The server-side code that runs the hook holds the caller's
+  UserAPIKeyAuth and fills the map with B1106's function, the way B8395's FailureKey.logged_key_metadata already
+  carries the same metadata into the server failure hook and B3977's Rubrik hook takes it. LiteLLM's fallback to
+  request_route, team_id, user_id and end_user_id runs only when litellm.proxy can't be imported (SDK-only), and
+  only the proxy calls this hook, so there is no fallback branch here.
 scope:
   paths:
     - crates/betterlite-logging/src/datadog.rs
@@ -41,7 +49,7 @@ dod:
     proof: [success-types]
   - text: async_post_call_failure_hook extracts error information via B253's StandardLoggingPayloadSetup.get_error_information, converting error_code to HTTP status code when present and numeric.
     proof: [proxy-error-extraction]
-  - text: Proxy failure hook builds user_context from B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key when available, falling back to minimal fields (request_route, team_id, user_id, end_user_id) when proxy utilities are unavailable.
+  - text: The proxy failure message's user_api_key_dict field is the caller_metadata argument, unchanged and in its order.
     proof: [proxy-user-context]
   - text: Proxy failure hook enqueues payload with ERROR status and flushes queue when batch size is reached.
     proof: [proxy-queueing-flush]
@@ -55,7 +63,7 @@ dod:
     proof: [trace-context-attachment]
   - text: All hooks catch exceptions during logging and log them via verbose_logger.exception for diagnostics; exceptions do not propagate.
     proof: [exception-handling]
-  - text: Every mutant in error extraction, user context fallback, service filtering and metadata merging is caught by a test.
+  - text: Every mutant in error extraction, user context, service filtering and metadata merging is caught by a test.
     proof: [mutants]
 checks:
   optional: [mutants]
@@ -67,7 +75,7 @@ checks:
       why: proxy failure error extraction tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_proxy_error_extraction_behavior($|::)/)'
     - id: proxy-user-context
-      why: proxy failure user context resolution or fallback tests fail or do not exist
+      why: the proxy failure message does not carry caller_metadata as its user_api_key_dict field
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_proxy_user_context_behavior($|::)/)'
     - id: proxy-queueing-flush
       why: proxy failure queueing and batch-size flush tests fail or do not exist
@@ -97,14 +105,6 @@ deviations:
       when the code is a string digit. Betterlite preserves this behavior for compatibility.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L308-L315
   - what: >-
-      User context extraction from B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key
-      provides sanitized principal fields. When proxy utilities are unavailable or exception occurs,
-      fallback uses minimal fields (request_route, team_id, user_id, end_user_id) from user_api_key_dict.
-    why: >-
-      LiteLLM uses the same fallback pattern to handle cases where proxy is not available (e.g. SDK-only mode);
-      betterlite retains the fallback behavior but uses B1106's sanitized values as the primary path.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog.py#L317-L337
-  - what: >-
       Proxy failure hook flushes queue when batch size is reached; service hooks enqueue events
       without immediate flush. Periodic_flush timeout handles delayed flushing for service events.
     why: >-
@@ -124,11 +124,11 @@ out_of_scope:
   - B3933's flush_queue method and inherited CustomBatchLogger state are used but not implemented here.
   - B192's safe_dumps function is called but not implemented here.
   - B253's StandardLoggingPayloadSetup.get_error_information is called but not implemented here.
-  - B1106's LiteLLMProxyRequestSetup.get_sanitized_user_information_from_key is called but not implemented here.
+  - B1106's get_sanitized_user_information_from_key runs in the server-side caller that fills caller_metadata; this module never calls it.
   - B012's service dispatcher that calls these hooks and supplies ServiceLoggerPayload.
 pitfalls:
   - "Proxy failure hook checks error_code after extracting it via B253; if error_code is absent or non-numeric (not all-digits string), status_code remains None."
-  - "User context fallback only extracts fields that exist on user_api_key_dict via hasattr checks; missing fields are omitted rather than set to None."
+  - "The message field stays named user_api_key_dict, as DatadogProxyFailureHookJsonMessage names it, even though it now holds the caller_metadata map."
   - "Proxy hook flushes if batch size >= self.batch_size; service hooks do NOT flush. Only periodic_flush drains service events."
   - "Service success hook returns silently (without logging) if payload.service is not in DD_LOGGED_SUCCESS_SERVICE_TYPES; this is intentional filtering."
   - "Service hooks merge event_metadata as a dict into the payload dict before JSON serialization; event_metadata is None-safe (or {} handles None). Proxy failure hook has no event_metadata parameter."
