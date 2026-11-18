@@ -118,8 +118,10 @@ fn sagemaker_chat<R>(
     context: &ChatContext<'_>,
     handler: &dyn ChatCompletionHandler<Reply = R>,
 ) -> Result<Completion<R>, EnterpriseError> {
-    let call = passthrough(&context.base, context.base.custom_llm_provider);
-    Ok(Completion::Handler(handler.complete(&call)?))
+    Ok(Completion::Handler(handler.complete(&passthrough(
+        &context.base,
+        context.base.custom_llm_provider,
+    ))?))
 }
 
 // _complete_sagemaker: no key and no base, as the AWS values travel in optional params
