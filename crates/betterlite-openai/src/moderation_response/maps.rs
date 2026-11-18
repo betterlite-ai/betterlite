@@ -57,6 +57,16 @@ fn optional_boolean(raw: &IndexMap<String, Value>, name: &str) -> Result<Option<
     }
 }
 
+// the SDK types seven categories as text-only and the other six as text or image
+const IMAGE_CATEGORIES: [&str; 6] = [
+    "self_harm",
+    "self_harm_instructions",
+    "self_harm_intent",
+    "sexual",
+    "violence",
+    "violence_graphic",
+];
+
 fn applied(raw: &IndexMap<String, Value>, name: &str) -> Result<Vec<AppliedInputType>, String> {
     let Some(value) = field(raw, name) else {
         return Err(format!("the {name} applied input types are missing"));
@@ -67,8 +77,12 @@ fn applied(raw: &IndexMap<String, Value>, name: &str) -> Result<Vec<AppliedInput
     items
         .iter()
         .map(|item| {
-            serde_json::from_value(item.clone())
-                .map_err(|_error| format!("the {name} applied input type is not text or image"))
+            let input_type: AppliedInputType = serde_json::from_value(item.clone())
+                .map_err(|_error| format!("the {name} applied input type is not text or image"))?;
+            if input_type == AppliedInputType::Image && !IMAGE_CATEGORIES.contains(&name) {
+                return Err(format!("the {name} applied input type is text only"));
+            }
+            Ok(input_type)
         })
         .collect()
 }
