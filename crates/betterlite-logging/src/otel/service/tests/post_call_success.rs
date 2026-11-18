@@ -86,16 +86,16 @@ fn otel_legacy_service_callbacks_behavior_tests_dynamic_params() {
     let recorder = Arc::new(RecordingDynamic::default());
     let dynamic: Arc<dyn DynamicOtel> = recorder.clone();
     let lifecycle = rig.lifecycle_with_dynamic(dynamic);
-    let mut details = details("call-y", Some(vec![guardrail_entry()]), None);
+    let mut call_details = details("call-y", Some(vec![guardrail_entry()]), None);
     let params = MetadataMap::from([(
         "team_id".to_owned(),
         OtelModelValue::String("team-dynamic".to_owned()),
     )]);
-    details.insert(
+    call_details.insert(
         "standard_callback_dynamic_params".to_owned(),
-        OtelModelValue::Object(params.clone()),
+        OtelModelValue::Object(params),
     );
-    async_post_call_success_hook(&lifecycle, &details, None).expect("success hook");
+    async_post_call_success_hook(&lifecycle, &call_details, None).expect("success hook");
     let seen = recorder.params_seen.lock().expect("recording lock");
     let recorded = seen.first().expect("the dynamic config hook was consulted");
     assert_eq!(
