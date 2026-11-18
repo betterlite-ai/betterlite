@@ -16,6 +16,7 @@ use crate::deployment_catalog::lookup::CatalogResolver;
 use crate::deployment_catalog::types::{Authority, CandidateView};
 use crate::deployment_clients::clients::{CachedClients, ClientClock, ClientKind};
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::least_busy::LeastBusy;
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::Response;
@@ -29,6 +30,7 @@ use crate::router_core::route::{
 use crate::router_core::services::{Cancelled, RouteServices};
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
 use crate::routing_groups::group::RoutingGroup;
+use crate::routing_value_store::{RoutingValueStore, StoreSettings};
 use crate::static_eligibility::request::RequestFacts;
 use crate::static_eligibility::tokens::TokenLimits;
 use crate::strategy::StrategyContext;
@@ -41,6 +43,29 @@ use crate::strategy_dispatch::types::{Resolution, StrategyOverride};
 pub(crate) struct NoServices;
 
 impl RouteServices for NoServices {}
+
+// A router that keeps least-busy counters in the given service.
+pub(crate) struct Counted(pub(crate) Arc<LeastBusy>);
+
+impl RouteServices for Counted {
+    fn least_busy(&self) -> Option<Arc<LeastBusy>> {
+        Some(Arc::clone(&self.0))
+    }
+}
+
+// An empty local in-flight store whose clock never advances.
+pub(crate) fn in_flight_store() -> RoutingValueStore {
+    RoutingValueStore::new(
+        StoreSettings {
+            max_size_in_memory: Some(200),
+            default_ttl_seconds: None,
+            max_size_per_item: Some(1024),
+            loaded_max_size_per_item_kib: 1024,
+        },
+        Arc::new(|| 0.0),
+    )
+    .unwrap()
+}
 
 // A model registry that declares no context window.
 pub(crate) struct NoLimits;
@@ -159,6 +184,7 @@ pub(crate) fn strategy_context<'context>(
 ) -> StrategyContext<'context> {
     StrategyContext {
         deployments,
+        model_group: route.request.model,
         route,
         dispatch,
         resolution,
@@ -205,11 +231,11 @@ pub(super) fn with_info(
     .unwrap()
 }
 
-pub(super) fn deployment(group: &str, id: &str, params: &[(&str, Json)]) -> DeploymentSpec {
+pub(crate) fn deployment(group: &str, id: &str, params: &[(&str, Json)]) -> DeploymentSpec {
     with_info(group, id, params, &[])
 }
 
-pub(super) fn group_and_ids(deployments: &[(&str, &str)]) -> Vec<DeploymentSpec> {
+pub(crate) fn group_and_ids(deployments: &[(&str, &str)]) -> Vec<DeploymentSpec> {
     deployments
         .iter()
         .map(|(group, id)| deployment(group, id, &[]))

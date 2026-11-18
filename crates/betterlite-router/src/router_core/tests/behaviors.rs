@@ -1,22 +1,26 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
-    Fixture, LastOnly, NoServices, RequestSetup, body, clock, deployment, group_and_ids, hidden,
-    metadata, number, object, paused, picked, run_healthy, run_route, run_simple, seeded, text,
-    weighted, with_info,
+    Counted, Fixture, LastOnly, NoServices, RequestSetup, body, clock, deployment, group_and_ids,
+    hidden, in_flight_store, metadata, number, object, paused, picked, run_healthy, run_route,
+    run_simple, seeded, text, weighted, with_info,
 };
 use crate::deployment_catalog::types::{AliasSource, AliasStep, Candidates};
 use crate::deployment_clients::clients::{CachedClient, CachedClients, ClientCredential};
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::least_busy::identity::request_count_key;
+use crate::least_busy::{IN_FLIGHT_COUNT_TTL_SECONDS, LeastBusy};
 use crate::router_core::attempt::AttemptResult;
 use crate::router_core::headers::{
     apply_response_model_id, ensure_additional_headers, prepare_response,
     response_has_hidden_params, response_total_token_count, write_hidden_params,
 };
 use crate::router_core::pipeline::HealthyDeployments;
+use crate::routing_value_store::{RouteKey, RouteValue, StoreRead};
 use crate::strategy::Strategy;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 
@@ -365,4 +369,64 @@ pub(super) async fn override_pre_call_absent() {
     let result = override_attempt(RoutingStrategy::LeastBusy, "least-busy").await;
     assert_eq!(result.override_pre_call, None);
     assert!(result.bindings.dynamic_callbacks.is_empty());
+}
+
+// the local count under one deployment, zero when the counter was never written
+fn in_flight(service: &LeastBusy, key: &RouteKey) -> i64 {
+    match service.local.get(key).unwrap() {
+        StoreRead::Value(RouteValue::Counter(count)) => count,
+        StoreRead::Missing => 0,
+        StoreRead::Value(_) => panic!("the in-flight value is not a counter"),
+    }
+}
+
+// get_available_deployments: the attempt lands on the deployment holding the fewest in-flight calls, holds its own
+// count until release_least_busy, and a dropped attempt gives this worker's count back
+pub(super) async fn least_busy_picks_lowest_count() {
+    let fixture = Fixture::plain(group_and_ids(&[("gpt-4o", "a"), ("gpt-4o", "b")]));
+    let service = Arc::new(LeastBusy {
+        local: in_flight_store(),
+        shared: None,
+    });
+    let busy_key = request_count_key("gpt-4o", "b").unwrap();
+    service
+        .local
+        .set(
+            &busy_key,
+            &RouteValue::Counter(3),
+            Some(IN_FLIGHT_COUNT_TTL_SECONDS),
+        )
+        .unwrap();
+    let counted = Counted(Arc::clone(&service));
+    let mut random = seeded();
+    let setup = RequestSetup::new("gpt-4o");
+    let mut result = run_route(
+        &fixture,
+        &setup,
+        &counted,
+        RoutingStrategy::LeastBusy,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(result.strategy, Some(Strategy::LeastBusy));
+    let picked_key = request_count_key("gpt-4o", "a").unwrap();
+    assert_eq!(in_flight(&service, &picked_key), 1);
+    assert!(result.release_least_busy().await.is_none());
+    assert_eq!(in_flight(&service, &picked_key), 0);
+    {
+        let dropped = run_route(
+            &fixture,
+            &setup,
+            &counted,
+            RoutingStrategy::LeastBusy,
+            &mut random,
+        )
+        .await
+        .unwrap();
+        assert_eq!(picked(&dropped), "a");
+        assert_eq!(in_flight(&service, &picked_key), 1);
+    }
+    assert_eq!(in_flight(&service, &picked_key), 0);
 }
