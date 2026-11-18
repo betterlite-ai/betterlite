@@ -1,0 +1,33 @@
+task: B314
+deviations:
+  - what: An attempt releases its in-flight count exactly once, through the guard pre_call returns; LiteLLM decrements the counter on every success or failure callback for the same attempt, and a second callback floors the counter, which erases another call's contribution.
+    why: The task requires one release per started call on success, mapped failure or a cancelled stream, and a second decrement would make a concurrent call invisible to the selector.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L125-L151
+  - what: A guard dropped without release only decrements this worker's counter; the shared counter keeps the call until its one-hour ttl.
+    why: A drop cannot await, so it cannot write the shared tier. The normal close path calls release, which decrements both tiers, and the drop is the backstop for a stream whose task is already gone.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L201-L217
+  - what: When this worker's counter rejects the write, the shared counter is not written, where LiteLLM's async path still writes it because async_increment_cache reports a local failure as None rather than raising.
+    why: One accounting path serves both callback flavors, and it follows the sync _increment, which stops at the first failed write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L201-L215
+  - what: The shared count's floor is a second increment after a negative result, not an atomic INCRBY, floor and EXPIRE script, so two concurrent releases with no matching start can leave a positive shared count instead of zero.
+    why: B304 exposes increment, not a floor script. The corrective increment only runs on a release the ownership guard would not produce, so the shared tier stays in step with the local one in normal traffic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L99-L104
+  - what: A shared read the B304 breaker refuses becomes an unreadable warning and the local fallback without a Redis attempt, where LiteLLM attempts every read and warns per failure.
+    why: The shared tier is B304's observed store, whose breaker is shared with every other routing key, and an open breaker is one more way the shared tier can be unavailable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L168-L181
+  - what: Warnings are returned values on the selection and on the started call, not log lines written through verbose_router_logger.
+    why: Router logging is the request boundary's job and this service has no logger. The fallback path itself is the same, and the caller decides where the warning lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L94-L110
+  - what: A counter key longer than 1024 bytes is an error naming the byte count; LiteLLM hands any length to Redis.
+    why: B304's typed RouteKey bounds every routing key at 1024 bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L47-L48
+  - what: A healthy deployment without model_info.id makes the selection fail with a typed error naming its pool index; LiteLLM lets the KeyError or ValidationError from _request_count_keys escape the call.
+    why: The pool order is known at the call site, so the error names the deployment instead of a dict lookup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L68-L72
+kept_bugs:
+  - what: A local counter driven below zero is written back as zero, hiding any other call still in flight under that deployment.
+    why: LiteLLM's _increment does exactly that, and the local tier the oracle compares keeps the same result. The ownership guard prevents it in betterlite's own traffic, so the clamp only shows on a counter someone else reset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L193-L194
+  - what: A local read whose length differs from the key list is treated as this worker holding no calls at all, so a stale or partial read routes to a busy deployment.
+    why: LiteLLM's _local_counts answers the same way, and the same rule is carried so a short read cannot panic a selection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L79-L83
