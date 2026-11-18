@@ -6,7 +6,6 @@ use super::error::RealtimeSenderError;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_guardrail_policy::{
     TRANSCRIPTION_EVENT_HOOKS, disable_auto_response_message, guardrails_run_for_hooks,
-    inject_auto_response_disable,
 };
 
 impl<Config, CallbackError> RealtimeSender<'_, Config, CallbackError>
@@ -22,21 +21,6 @@ where
         if root.contains_key("setup") {
             self.state.response.session_configuration_request = Some(message.to_owned());
         }
-    }
-
-    // The guardrail flag flips before the setup send: a failed send still counts as the one folded disable
-    pub(super) fn fold_auto_response_disable(
-        &mut self,
-        setup_message: &str,
-    ) -> Result<String, RealtimeSenderError<Config::Error, CallbackError>> {
-        let injected = inject_auto_response_disable(
-            setup_message,
-            &mut self.state.setup.turn_detection_update_sent.0,
-            self.guardrails,
-            &self.state.request_data,
-        )
-        .map_err(|source| RealtimeSenderError::GuardrailSetup { source })?;
-        Ok(injected.unwrap_or_else(|| setup_message.to_owned()))
     }
 
     // LiteLLM retries the VAD disable on the next opportunity until the provider transformation actually delivers it

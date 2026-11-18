@@ -5,6 +5,7 @@ use super::SenderFuture;
 use super::error::RealtimeSenderError;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
+use crate::api::realtime_guardrail_policy::inject_auto_response_disable;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FrameKind {
@@ -30,7 +31,13 @@ where
                 self.send_frame(RealtimeMessage::Text(enforced)).await?;
                 return Ok(true);
             };
-            let transformed = self.transform(provider, &enforced)?;
+            let transformed = provider
+                .transform_realtime_request(
+                    &enforced,
+                    &self.state.model,
+                    self.state.response.session_configuration_request.as_deref(),
+                )
+                .map_err(|source| RealtimeSenderError::Transform { source })?;
             let mut sent = false;
             for frame in transformed {
                 sent |= self.deliver_frame(provider, frame).await?;
@@ -58,20 +65,6 @@ where
         }
     }
 
-    fn transform(
-        &self,
-        provider: &Config,
-        message: &str,
-    ) -> Result<Vec<RealtimeMessage>, RealtimeSenderError<Config::Error, CallbackError>> {
-        provider
-            .transform_realtime_request(
-                message,
-                &self.state.model,
-                self.state.response.session_configuration_request.as_deref(),
-            )
-            .map_err(|source| RealtimeSenderError::Transform { source })
-    }
-
     async fn send_frame(
         &mut self,
         frame: RealtimeMessage,
@@ -94,7 +87,15 @@ where
                 );
                 return Ok(false);
             }
-            let message = self.fold_auto_response_disable(&text)?;
+            // Setup injection commits its flag before sending, unlike the setup cache below
+            let injected = inject_auto_response_disable(
+                &text,
+                &mut self.state.setup.turn_detection_update_sent.0,
+                self.guardrails,
+                &self.state.request_data,
+            )
+            .map_err(|source| RealtimeSenderError::GuardrailSetup { source })?;
+            let message = injected.unwrap_or(text);
             self.send_frame(RealtimeMessage::Text(message.clone()))
                 .await?;
             self.cache_session_configuration(&message);

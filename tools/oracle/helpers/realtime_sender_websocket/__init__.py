@@ -38,8 +38,6 @@ async def apply(probe: Probe, op: Operation) -> JsonValue:
             case "cache":
                 probe.cache_setup(op["text"])
                 return {"ok": True}
-            case other:
-                raise ValueError(f"unknown operation kind: {other}")
     except SendFailureError as error:
         return {"error": str(error)}
     except AttributeError:
@@ -86,7 +84,9 @@ async def exchange(
         return await session(input_value, upstream, socket)
 
 
-async def bounded(input_value: Input, upstream: Upstream, server: socketserver.TCPServer) -> JsonValue:
+async def bounded(
+    input_value: Input, upstream: Upstream, server: socketserver.TCPServer
+) -> JsonValue:
     call = exchange(input_value, upstream, server)
     return await asyncio.wait_for(call, DEADLINE_SECONDS)
 

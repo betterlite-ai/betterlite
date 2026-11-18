@@ -1,5 +1,6 @@
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypeAlias, TypedDict
 
+from litellm.types.guardrails import GuardrailEventHooks
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -10,10 +11,17 @@ MAX_TEXT_BYTES = 16 * 1024
 MAX_CAPTURE_BYTES = 1024 * 1024
 
 
-class Frame(TypedDict):
-    kind: Literal["text", "binary"]
-    text: NotRequired[str]
-    bytes: NotRequired[list[int]]
+class TextFrame(TypedDict):
+    kind: Literal["text"]
+    text: str
+
+
+class BinaryFrame(TypedDict):
+    kind: Literal["binary"]
+    bytes: list[int]
+
+
+Frame: TypeAlias = TextFrame | BinaryFrame
 
 
 class ProviderDocument(TypedDict):
@@ -26,12 +34,19 @@ class ProviderDocument(TypedDict):
 
 class GuardrailDocument(TypedDict):
     custom: bool
-    runs_for: list[str]
+    runs_for: list[GuardrailEventHooks]
 
 
-class Operation(TypedDict):
-    kind: str
-    text: NotRequired[str]
+class TextOperation(TypedDict):
+    kind: Literal["send", "event", "cache"]
+    text: str
+
+
+class DisableOperation(TypedDict):
+    kind: Literal["disable"]
+
+
+Operation: TypeAlias = TextOperation | DisableOperation
 
 
 class Input(TypedDict):
@@ -50,7 +65,11 @@ def checked(input_value: Input) -> None:
     provider = input_value["provider"]
     batches = [] if provider is None else provider["transforms"]
     frames = [frame for batch in batches for frame in batch]
-    texts = [operation["text"] for operation in input_value["operations"] if "text" in operation]
+    texts = [
+        operation["text"]
+        for operation in input_value["operations"]
+        if operation["kind"] != "disable"
+    ]
     sizes = [len(text) for text in texts] + [
         len(frame["text"]) if frame["kind"] == "text" else len(frame["bytes"])
         for frame in frames

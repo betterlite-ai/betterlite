@@ -127,7 +127,9 @@ class Upstream:
                 case str():
                     self.frames.append(recorded("text", message.encode("utf-8")))
                 case bytes():
-                    self.frames.append({"wire": "binary", "payload": {"kind": "bytes", "bytes": list(message)}})
+                    self.frames.append(
+                        {"wire": "binary", "payload": {"kind": "bytes", "bytes": list(message)}}
+                    )
             self.arrived.set()
 
     async def wait_for(self, delivered: int) -> None:
