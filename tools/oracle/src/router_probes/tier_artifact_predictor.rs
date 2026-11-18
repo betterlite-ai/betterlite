@@ -68,7 +68,7 @@ enum Bytes {
 #[serde(transparent)]
 pub struct Output(Box<Fields>);
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 struct Fields {
     cohort: Option<String>,
     status: Option<String>,
@@ -87,24 +87,26 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let payload = &input.0;
-    let mut fields = Fields {
-        cohort: None,
-        status: None,
-        tier: None,
-        score: None,
-        signals: None,
-        cause: None,
-        probabilities: None,
-        threshold: None,
-        predicted_tier: None,
-        request_type: None,
-    };
+    let mut fields = Fields::default();
     match payload.function {
         Function::SimilarityCohort => cohort_fields(payload, &mut fields)?,
         Function::Predict => predict_fields(payload, &mut fields)?,
         Function::Classify => classify_fields(payload, &mut fields)?,
-        Function::Startup => startup_fields(payload, &mut fields)?,
-        Function::ParseArtifact => parse_fields(payload, &mut fields)?,
+        Function::Startup => {
+            let config = section::Config {
+                artifact: artifact_source(payload),
+                success_threshold: threshold(payload.threshold.as_deref())?,
+            };
+            fields.status = Some(status_text(startup_accepted(&config)).to_owned());
+        }
+        Function::ParseArtifact => {
+            let artifact = parse_artifact(&artifact_bytes(payload)?);
+            fields.status = Some(status_text(artifact.is_ok()).to_owned());
+            fields.threshold = artifact
+                .ok()
+                .map(|artifact| number(artifact.routing_threshold))
+                .transpose()?;
+        }
     }
     Ok(ProbeOutput::TierArtifactPredictor(Output(Box::new(fields))))
 }
@@ -190,31 +192,12 @@ fn classify_fields(payload: &Payload, fields: &mut Fields) -> Result<(), Operati
     Ok(())
 }
 
-fn startup_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
-    let config = section::Config {
-        artifact: artifact_source(payload),
-        success_threshold: threshold(payload.threshold.as_deref())?,
-    };
-    fields.status = Some(status_text(startup_accepted(&config)).to_owned());
-    Ok(())
-}
-
 fn startup_accepted(config: &section::Config) -> bool {
     config.validate("heuristic_v2_success_threshold").is_ok()
         && resolve_tier_artifact(&config.artifact)
             .and_then(|artifact| TierSuccessPredictor::new(artifact, config.success_threshold))
             .and_then(TierArtifactPredictor::new)
             .is_ok()
-}
-
-fn parse_fields(payload: &Payload, fields: &mut Fields) -> Result<(), OperationError> {
-    let artifact = parse_artifact(&artifact_bytes(payload)?);
-    fields.status = Some(status_text(artifact.is_ok()).to_owned());
-    fields.threshold = artifact
-        .ok()
-        .map(|artifact| number(artifact.routing_threshold))
-        .transpose()?;
-    Ok(())
 }
 
 fn status_text(accepted: bool) -> &'static str {

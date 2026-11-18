@@ -1,7 +1,7 @@
 use std::mem::take;
 
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
+use serde_with::{As, FromInto};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
@@ -23,17 +23,17 @@ pub struct Artifact {
     pub cohort_statistics: Vec<CohortStatistic>,
     #[serde(
         default = "default_domain_prior_mass",
-        deserialize_with = "statistic_number"
+        deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize"
     )]
     pub domain_prior_mass: f64,
     #[serde(
         default = "default_cohort_prior_mass",
-        deserialize_with = "statistic_number"
+        deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize"
     )]
     pub cohort_prior_mass: f64,
     #[serde(
         default = "default_routing_threshold",
-        deserialize_with = "statistic_number"
+        deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize"
     )]
     pub routing_threshold: f64,
     #[serde(default)]
@@ -47,18 +47,18 @@ pub struct Artifact {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct GlobalStatistic {
     pub tier: u32,
-    #[serde(deserialize_with = "statistic_number")]
+    #[serde(deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize")]
     pub successes: f64,
-    #[serde(deserialize_with = "statistic_number")]
+    #[serde(deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize")]
     pub observations: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DomainStatistic {
     pub tier: u32,
-    #[serde(deserialize_with = "statistic_number")]
+    #[serde(deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize")]
     pub successes: f64,
-    #[serde(deserialize_with = "statistic_number")]
+    #[serde(deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize")]
     pub observations: f64,
     pub request_type: String,
 }
@@ -66,9 +66,9 @@ pub struct DomainStatistic {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CohortStatistic {
     pub tier: u32,
-    #[serde(deserialize_with = "statistic_number")]
+    #[serde(deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize")]
     pub successes: f64,
-    #[serde(deserialize_with = "statistic_number")]
+    #[serde(deserialize_with = "As::<FromInto<StatisticNumber>>::deserialize")]
     pub observations: f64,
     pub cohort: String,
 }
@@ -153,12 +153,24 @@ fn default_success_definition() -> String {
     DEFAULT_SUCCESS_DEFINITION.to_owned()
 }
 
-// Number handles serde_json arbitrary_precision floats buffered inside a tagged probe or untagged config.
-fn statistic_number<'de, D>(deserializer: D) -> Result<f64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    serde_json::Number::deserialize(deserializer)?
-        .as_f64()
-        .ok_or_else(|| D::Error::custom("the statistic must be a finite number"))
+// Number handles arbitrary_precision floats buffered inside tagged probes and untagged configs.
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "serde_json::Number")]
+struct StatisticNumber(f64);
+
+impl TryFrom<serde_json::Number> for StatisticNumber {
+    type Error = &'static str;
+
+    fn try_from(number: serde_json::Number) -> Result<Self, Self::Error> {
+        number
+            .as_f64()
+            .map(Self)
+            .ok_or("the statistic must be a finite number")
+    }
+}
+
+impl From<StatisticNumber> for f64 {
+    fn from(number: StatisticNumber) -> Self {
+        number.0
+    }
 }

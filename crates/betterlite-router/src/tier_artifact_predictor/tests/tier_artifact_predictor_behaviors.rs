@@ -158,8 +158,8 @@ fn tier_artifact_predictor_behaviors(#[case] behavior: Behavior) {
         Behavior::DomainPosterior => domain_posterior(),
         Behavior::CohortPosterior => cohort_posterior(),
         Behavior::Monotone => monotone(),
-        Behavior::ThresholdDefault => threshold_default(),
-        Behavior::ThresholdOverride => threshold_override(),
+        Behavior::ThresholdDefault => threshold_choice(None, 0.75_f64, TierNumber::Four),
+        Behavior::ThresholdOverride => threshold_choice(Some(0.5_f64), 0.5_f64, TierNumber::Three),
         Behavior::FirstTierAtThreshold => first_tier_at_threshold(),
         Behavior::LastTierFallback => last_tier_fallback(),
         Behavior::Signals => signals(),
@@ -309,17 +309,7 @@ fn monotone() {
     assert_eq!(prediction.required_tier, TierNumber::Three);
 }
 
-fn threshold_default() {
-    let predictor = predictor(statistics(
-        (0.0_f64, 6.0_f64),
-        (2.0_f64, 6.0_f64),
-        (1.0_f64, 2.0_f64),
-        (4.0_f64, 6.0_f64),
-    ));
-    assert_eq!(predictor.threshold.to_bits(), 0.75_f64.to_bits());
-}
-
-fn threshold_override() {
+fn threshold_choice(threshold: Option<f64>, expected: f64, tier: TierNumber) {
     let artifact = artifact_with(statistics(
         (0.0_f64, 6.0_f64),
         (2.0_f64, 6.0_f64),
@@ -327,13 +317,13 @@ fn threshold_override() {
         (4.0_f64, 6.0_f64),
     ));
     let predictor =
-        TierSuccessPredictor::new(artifact, Some(0.5_f64)).expect("the pinned patterns compile");
-    assert_eq!(predictor.threshold.to_bits(), 0.5_f64.to_bits());
+        TierSuccessPredictor::new(artifact, threshold).expect("the pinned patterns compile");
+    assert_eq!(predictor.threshold.to_bits(), expected.to_bits());
     assert_eq!(
         predictor
             .predict("Hello.", RequestType::General)
             .required_tier,
-        TierNumber::Three
+        tier
     );
 }
 

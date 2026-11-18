@@ -156,7 +156,14 @@ async fn tier_artifact_predictor_boundaries(#[case] boundary: Boundary) {
         Boundary::ThresholdOutside { threshold } => threshold_outside(threshold),
         Boundary::DuplicateGlobalStatistic => duplicate_global_statistic(),
         Boundary::MissingGlobalStatistic => missing_global_statistic(),
-        Boundary::DuplicateDomainStatistic => duplicate_domain_statistic(),
+        Boundary::DuplicateDomainStatistic => {
+            let fields = ", \"domain_statistics\": [{\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}, {\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}]";
+            assert_duplicate(
+                parse_error(&four_global(), fields),
+                "domain_statistics[1]",
+                "MEDIUM",
+            );
+        }
         Boundary::DuplicateCohortStatistic => duplicate_cohort_statistic(),
         Boundary::UnknownRequestType => unknown_request_type(),
         Boundary::EmptyCohort => empty_cohort(),
@@ -445,11 +452,15 @@ fn duplicate_global_statistic() {
         error.to_string(),
         "the tier artifact declares statistic global_statistics[1] twice for tier SIMPLE"
     );
+    assert_duplicate(error, "global_statistics[1]", "SIMPLE");
+}
+
+fn assert_duplicate(error: PredictorError, expected_field: &str, expected_tier: &str) {
     let PredictorError::DuplicateStatistic { field, tier } = error else {
         panic!("unexpected error: {error:?}");
     };
-    assert_eq!(field, "global_statistics[1]");
-    assert_eq!(tier, "SIMPLE");
+    assert_eq!(field, expected_field);
+    assert_eq!(tier, expected_tier);
 }
 
 fn missing_global_statistic() {
@@ -466,16 +477,6 @@ fn missing_global_statistic() {
 
 fn four_global() -> String {
     super::global_json([(1.0, 2.0), (2.0, 6.0), (1.0, 2.0), (4.0, 6.0)])
-}
-
-fn duplicate_domain_statistic() {
-    let fields = ", \"domain_statistics\": [{\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}, {\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0, \"request_type\": \"general\"}]";
-    let error = parse_error(&four_global(), fields);
-    let PredictorError::DuplicateStatistic { field, tier } = error else {
-        panic!("unexpected error: {error:?}");
-    };
-    assert_eq!(field, "domain_statistics[1]");
-    assert_eq!(tier, "MEDIUM");
 }
 
 fn duplicate_cohort_statistic() {
