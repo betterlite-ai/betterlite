@@ -1,23 +1,32 @@
 task: B314
 deviations:
   - what: >-
-      A config with routing_strategy least-busy answers RoutingError::NotBuilt naming the entry for every route,
-      instead of selecting by in-flight count, and no attempt outside this service starts or releases a count,
-      where get_available_deployments picks the least busy deployment and the logging handler counts every
-      attempt from the pre-call, success and failure callbacks. The production route cannot reach the counters:
-      StrategyContext carries only deployments, route, dispatch and resolution, and the RouteServices trait the
-      route exposes has no counters accessor, while no production code constructs RouterCounters.
+      An attempt's count starts when the route settles on the deployment, not from log_pre_api_call just before
+      the provider call, so a deployment the route picked and never called holds a count until the attempt result
+      is released or dropped.
     why: >-
-      The seam is outside this task's scope. Passing the B360 and B390 stores to the strategy arm needs
-      crates/betterlite-router/src/strategy.rs or crates/betterlite-router/src/router_core/services.rs, and
-      running pre_call and release per attempt needs the request execution path that delivers B016's success and
-      failure events. Replacing the stub in scope would also break B016's pipeline-level not-built cases at
-      crates/betterlite-router/src/router_core/tests.rs:123 and router_core/tests/boundaries.rs:152-165, both
-      outside scope. This service, its ownership guard and its oracle cases are built and tested against the
-      same LiteLLM behavior; the wiring is owned by the task that installs B304's counters in the server and
-      passes them into the route context, which B304's text assigns to B019 (io-token-limits) and which no
-      current task owns.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L122-L166
+      The route call is betterlite's per-call boundary and the attempt result owns the count from the moment the
+      deployment is chosen. The guard releases it once, where LiteLLM lets both the success and the failure
+      callback decrement the counter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L122-L123
+  - what: >-
+      Every attempt a server-built router routes holds an in-flight count while it runs, whatever routing strategy
+      the config names, where LiteLLM registers the least-busy handler as a callback only when it builds a
+      least-busy selector for the configured strategy or a routing group, and builds a per-request override
+      selector without registering it.
+    why: >-
+      betterlite keeps one counter set for the process and the route carries no per-strategy callback registration.
+      The counters are only read by least-busy, and a request that overrides its strategy to least-busy then reads
+      the live counts instead of an empty cache.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1350-L1360
+  - what: >-
+      An attempt the route starts carries no call type, so a batch retrieve routed through a server holds an
+      in-flight count, where _deployment_ref skips aretrieve_batch and retrieve_batch. The B016 attempt facts carry
+      the call type, and pre_call skips those two there.
+    why: >-
+      RouteRequest has no call type, and the request boundary that knows the endpoint belongs to the inference
+      path rather than this task. The skip itself is built and tested on the event path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L51-L53
   - what: An attempt releases its in-flight count exactly once, through the guard pre_call returns; LiteLLM decrements the counter on every success or failure callback for the same attempt, and a second callback floors the counter, which erases another call's contribution.
     why: The task requires one release per started call on success, mapped failure or a cancelled stream, and a second decrement would make a concurrent call invisible to the selector.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L125-L151
@@ -34,10 +43,10 @@ deviations:
     why: The shared tier is B304's observed store, whose breaker is shared with every other routing key, and an open breaker is one more way the shared tier can be unavailable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L168-L181
   - what: Warnings are returned values on the selection and on the started call, not log lines written through verbose_router_logger.
-    why: Router logging is the request boundary's job and this service has no logger. The fallback path itself is the same, and the caller decides where the warning lands.
+    why: Router logging is the request boundary's job and this service has no logger. The fallback path itself is the same, and the route logs the returned warning through tracing where it starts or reads the counts.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L94-L110
-  - what: A counter key longer than 1024 bytes is an error naming the byte count; LiteLLM hands any length to Redis.
-    why: B304's typed RouteKey bounds every routing key at 1024 bytes.
+  - what: A counter key longer than 1024 bytes is an error naming the byte count when a selection reads it, and an attempt that cannot build its key is logged and goes uncounted; LiteLLM hands any length to Redis.
+    why: B304's typed RouteKey bounds every routing key at 1024 bytes. The attempt path treats the unbuildable key the way _warn_unwritable treats a failed write, since accounting never fails a request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L47-L48
   - what: A healthy deployment without model_info.id makes the selection fail with a typed error naming its pool index; LiteLLM lets the KeyError or ValidationError from _request_count_keys escape the call.
     why: The pool order is known at the call site, so the error names the deployment instead of a dict lookup.
@@ -52,3 +61,4 @@ kept_bugs:
   - what: A local read whose length differs from the key list is treated as this worker holding no calls at all, so a stale or partial read routes to a busy deployment.
     why: LiteLLM's _local_counts answers the same way, and the same rule is carried so a short read cannot panic a selection.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L79-L83
+
