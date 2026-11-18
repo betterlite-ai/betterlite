@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Final, NotRequired, TypedDict
 
@@ -12,7 +12,7 @@ from litellm.proxy.policy_engine.response_retrieval import (
 from litellm.router import Router
 from litellm.types.proxy.policy_engine import Policy, PolicyAttachment
 from litellm.types.proxy.policy_engine.pipeline_types import GuardrailPipeline
-from litellm.types.router import RouterModelGroupAliasItem
+from litellm.types.router import Deployment, LiteLLM_Params, ModelInfo, RouterModelGroupAliasItem
 from pydantic import JsonValue, TypeAdapter
 from typing_extensions import override
 
@@ -66,9 +66,6 @@ class Output(TypedDict):
 
 INPUT: Final[TypeAdapter[Input]] = TypeAdapter(Input)
 METADATA: Final[TypeAdapter[Metadata]] = TypeAdapter(Metadata)
-DEPLOYMENTS: Final[TypeAdapter[list[dict[str, JsonValue]]]] = TypeAdapter(
-    list[dict[str, JsonValue]]
-)
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
@@ -89,7 +86,7 @@ class Warnings(logging.Handler):
 
 
 @contextmanager
-def capturing(logger: logging.Logger) -> Iterator[Warnings]:
+def capturing(logger: logging.Logger) -> Generator[Warnings, None, None]:
     warnings = Warnings()
     level = logger.level
     handlers = logger.handlers[:]
@@ -118,34 +115,33 @@ def install(call: Input) -> None:
 def build_router(call: RouterInput | None) -> Router | None:
     if call is None:
         return None
-    deployments = DEPLOYMENTS.validate_python(
-        [
-            {
-                "model_name": model_name,
-                "litellm_params": {"model": "openai/gpt-4o"},
-                "model_info": {"id": model_id},
-            }
-            for model_id, model_name in call["deployments"].items()
-        ]
-    )
     aliases: dict[str, str | RouterModelGroupAliasItem] = {}
     aliases.update(call["aliases"])
-    return Router(model_list=deployments, model_group_alias=aliases)
+    router = Router(model_group_alias=aliases)
+    for model_id, model_name in call["deployments"].items():
+        router.add_deployment(
+            Deployment(
+                model_name=model_name,
+                litellm_params=LiteLLM_Params(model="openai/gpt-4o"),
+                model_info=ModelInfo(id=model_id),
+            )
+        )
+    return router
 
 
 def rendered_bucket(base: dict[str, JsonValue], view: Metadata) -> dict[str, JsonValue]:
     rendered = dict(base)
     pipelines = view.get("_guardrail_pipelines")
     if pipelines is not None:
-        rendered["_guardrail_pipelines"] = JSON.validate_python(
-            [
-                [policy_name, JSON.validate_json(pipeline.model_dump_json())]
-                for policy_name, pipeline in pipelines
-            ]
-        )
+        stored: list[list[JsonValue]] = [
+            [policy_name, JSON.validate_json(pipeline.model_dump_json())]
+            for policy_name, pipeline in pipelines
+        ]
+        rendered["_guardrail_pipelines"] = JSON.validate_python(stored)
     managed = view.get("_pipeline_managed_guardrails")
     if managed is not None:
-        rendered["_pipeline_managed_guardrails"] = JSON.validate_python(sorted(managed))
+        managed_names: list[str] = sorted(managed)
+        rendered["_pipeline_managed_guardrails"] = JSON.validate_python(managed_names)
     policies = view.get("applied_policies")
     if policies is not None:
         rendered["applied_policies"] = JSON.validate_python(policies)
