@@ -40,11 +40,11 @@ probes:
             {"model_name": "aaa",
              "litellm_params": {"model": "openai/aaa"},
              "model_info": {"litellm_routing_preferences": {"quality_tier": 2},
-                            "input_cost_per_token": 0.1000000000000000001}},
+                            "input_cost_per_token": "0.1000000000000000001"}},
             {"model_name": "zzz",
              "litellm_params": {"model": "openai/zzz"},
              "model_info": {"litellm_routing_preferences": {"quality_tier": 2},
-                            "input_cost_per_token": 0.1}}
+                            "input_cost_per_token": "0.1"}}
           ]}
         messages:
           - role: user

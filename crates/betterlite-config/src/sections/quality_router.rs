@@ -35,13 +35,9 @@ struct RawParams {
 #[derive(Debug, Default, Deserialize)]
 struct RawInfo {
     litellm_routing_preferences: Option<RawPreferences>,
-    input_cost_per_token: Option<RawPrice>,
+    // a quoted price is read as its written text, so Decimal keeps every digit the file declares
+    input_cost_per_token: Option<RawNumber>,
 }
-
-// a price arrives as the scalar's written text, so Decimal reads the digits the file holds
-#[derive(Debug, Deserialize)]
-#[serde(transparent)]
-struct RawPrice(String);
 
 #[derive(Debug, Deserialize)]
 struct RawRouterConfig {
@@ -148,11 +144,12 @@ impl RawDeployment {
             })
             .transpose()?;
         let cost_path = format!("{prefix}.model_info.input_cost_per_token");
-        let price = self
-            .model_info
-            .input_cost_per_token
-            .map(|price| RawNumber::Text(price.0));
-        let input_cost_per_token = resolve_number(price, &cost_path, lookup, parse_money)?;
+        let input_cost_per_token = resolve_number(
+            self.model_info.input_cost_per_token,
+            &cost_path,
+            lookup,
+            parse_money,
+        )?;
         Ok(Deployment {
             model_name,
             config,

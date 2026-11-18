@@ -201,17 +201,39 @@ fn an_environment_reference_names_a_deployment() {
 }
 
 #[test]
-fn a_price_keeps_the_digits_the_file_writes() {
+fn a_quoted_price_keeps_the_digits_the_file_writes() {
     let source = "\
 model_list:
   - model_name: priced
     model_info:
-      input_cost_per_token: 0.1000000000000000001
+      input_cost_per_token: \"0.1000000000000000001\"
 ";
     let resolved = settings(source, &[]).unwrap();
     assert_eq!(
         resolved.deployments[0].input_cost_per_token,
         Some("0.1000000000000000001".parse().unwrap())
+    );
+}
+
+#[test]
+fn a_tagged_price_is_read_as_its_number() {
+    let source = "\
+model_list:
+  - model_name: fractional
+    model_info:
+      input_cost_per_token: !!float 1e-6
+  - model_name: whole
+    model_info:
+      input_cost_per_token: !!int 5
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some(Decimal::new(1, 6))
+    );
+    assert_eq!(
+        resolved.deployments[1].input_cost_per_token,
+        Some(Decimal::new(5, 0))
     );
 }
 
@@ -329,7 +351,7 @@ fn an_unknown_router_config_key_is_preserved_and_accepted() {
     let config = deployment.config.unwrap();
     assert_eq!(
         config.extras,
-        BTreeMap::from([("mystery".to_owned(), Json::Number(Number::from(1)))])
+        BTreeMap::from([("mystery".to_owned(), Json::Number(Number::from(1_i64)))])
     );
 }
 

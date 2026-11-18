@@ -283,10 +283,7 @@ fn large_orders_keep_more_precision_than_python_floats() {
     assert_eq!(route.model, "zzz");
 }
 
-// both literals become the same f64 in LiteLLM, so its name tiebreak picks aaa; the loaded Decimal keeps zzz cheaper
-#[test]
-fn decimal_prices_keep_digits_past_float_precision() {
-    let source = "\
+const DECIMAL_PRICE_CONFIG: &str = "\
 model_list:
   - model_name: qr
     litellm_params:
@@ -298,15 +295,19 @@ model_list:
       model: openai/aaa
     model_info:
       litellm_routing_preferences: {quality_tier: 2}
-      input_cost_per_token: 0.1000000000000000001
+      input_cost_per_token: \"0.1000000000000000001\"
   - model_name: zzz
     litellm_params:
       model: openai/zzz
     model_info:
       litellm_routing_preferences: {quality_tier: 2}
-      input_cost_per_token: 0.1
+      input_cost_per_token: \"0.1\"
 ";
-    let settings = text_settings(source).unwrap();
+
+// both string prices become the same float in LiteLLM, so its name tiebreak picks aaa; the loaded Decimal keeps zzz cheaper
+#[test]
+fn decimal_prices_keep_digits_past_float_precision() {
+    let settings = text_settings(DECIMAL_PRICE_CONFIG).unwrap();
     let aaa = settings
         .deployments
         .iter()
