@@ -369,6 +369,7 @@ fn a_limit_is_read_from_a_numeric_string() {
 
 #[rstest]
 #[case(JsonValue::String("abc".to_owned()), 2)]
+#[case(JsonValue::String("0_1".to_owned()), 2)]
 #[case(JsonValue::Bool(true), 2)]
 #[case(JsonValue::from(1.5_f64), 2)]
 #[case(JsonValue::Null, 2)]
