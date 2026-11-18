@@ -12,7 +12,7 @@ description: >-
   zero unimplemented LiteLLM functions in B091's two covered files, so this task
   owns integration evidence and test infrastructure, not their production logic.
 
-  Use B5076's independent database pair and the existing HTTP request/steps case
+  Use B860's independent database pair, booted through B9942's Prisma client, and the existing HTTP request/steps case
   format. Run the built betterlite binary against pinned LiteLLM, without
   --self-check as parity proof. Register no route and do not call FastAPI handlers
   through helpers. The architect supplies the fixture attachment and startup
@@ -54,7 +54,7 @@ description: >-
   Supply their users, teams and keys through the existing seed fields; the extension
   fails on a missing referenced fixture principal instead of updating zero rows.
   The DDL adds the pinned object_permission_id relation columns when the baseline
-  lacks them, without changing the shared baseline.sql. Reuse B5076's connection,
+  lacks them, without changing the shared baseline.sql. Reuse B860's connection,
   provisioning deadline and cleanup; this is private fixture data, not a migration.
 
   Add tools/oracle/src/search_http.rs and its directory for test support. Tests

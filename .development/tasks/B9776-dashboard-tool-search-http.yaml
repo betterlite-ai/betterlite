@@ -42,7 +42,7 @@ description: >-
   entire displayed result. /responses and /openai/v1/responses are existing B080 aliases,
   but the panel never chooses them.
 
-  Use B1630 save/read transcripts on independent B860/B5076 databases with
+  Use B1630 save/read transcripts on independent B860/B9942 databases with
   store_model_in_db=true; a fixed boot configuration can provide the enabled filter test
   without timing a background reload. Add a non-admin write and an unauthenticated panel
   test, matching source status,error.type,param,code and content-type. Retain tool names,

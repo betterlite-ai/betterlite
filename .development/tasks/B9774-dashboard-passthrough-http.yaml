@@ -7,7 +7,7 @@ description: >-
   write cases stop at missing DB/key. This part supplies database-backed form transactions
   described in B150-route-audit.md, about 450 new case lines.
 
-  Start B1630 transcripts on B860/B5076's separate databases with
+  Start B1630 transcripts on B860/B9942's separate databases with
   general_settings.store_model_in_db=true. All page calls carry the session Bearer key.
   GET /config/pass_through_endpoint has no query/team argument and returns endpoints with
   id,path,target,headers,methods,auth,include_subpath,cost_per_request,timeout,guardrails and

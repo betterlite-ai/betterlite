@@ -20,7 +20,7 @@ description: >-
   converting empty text controls to null, and Reset PATCHes all three null. The page uses
   PATCH success only, not an uploaded filename or an invented response data envelope.
 
-  Build B1630 transcripts on B860/B5076's separate fixture databases with
+  Build B1630 transcripts on B860/B9942's separate fixture databases with
   general_settings.store_model_in_db=true. Save three fixed public http(s) URLs, fetch
   them with the page bearer, change only one visible URL while still submitting the full
   three-key object, clear one input to null and finally reset all three. Include an initial
