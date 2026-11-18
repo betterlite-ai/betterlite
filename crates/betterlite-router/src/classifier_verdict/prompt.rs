@@ -59,11 +59,6 @@ pub fn sectioned_prompt(
     sections.join("\n\n")
 }
 
-#[must_use]
-pub fn operator_examples_section(classification_examples: Option<&str>) -> Option<String> {
-    classification_examples.map(|examples| format!("{CALIBRATION_EXAMPLES_HEADING}\n{examples}"))
-}
-
 pub fn built_in_prompt(
     labeled: &[(ComplexityTier, &str)],
     rubric: ClassificationRubric,
@@ -103,7 +98,9 @@ pub fn built_in_tier_prompt(
         RUBRIC_BODY
     };
     let bullets = tier_bullets(labeled, preset);
-    let examples = operator_examples_section(classification_examples).or(default_examples);
+    let examples = classification_examples
+        .map(|examples| format!("{CALIBRATION_EXAMPLES_HEADING}\n{examples}"))
+        .or(default_examples);
     let instructions = classification_prompt.unwrap_or(default_instructions);
     Ok(sectioned_prompt(
         instructions,
@@ -128,7 +125,8 @@ pub fn custom_tier_prompt(
         lines.push(format!("- {}: {criterion}", definition.name));
     }
     let bullets = lines.join("\n");
-    let examples = operator_examples_section(classification_examples);
+    let examples = classification_examples
+        .map(|examples| format!("{CALIBRATION_EXAMPLES_HEADING}\n{examples}"));
     let instructions = classification_prompt.unwrap_or(RUBRIC_BODY);
     Ok(sectioned_prompt(
         instructions,
