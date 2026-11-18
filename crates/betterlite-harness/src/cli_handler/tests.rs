@@ -28,6 +28,7 @@ use crate::handlers::BaseHarnessHandler as _;
 use crate::options::OpenCodeOptions;
 use crate::payloads::decode_json_line;
 use crate::sandbox::local::LocalSandbox;
+use crate::sandbox::local::process::PROCESS_KILL_GRACE;
 use crate::sandbox::{Process as _, Sandbox, SandboxCommand};
 use crate::transformation::{
     BaseCLIHarnessConfig, BaseHarnessConfig, HarnessSessionSetup, HarnessTurnRequest,
@@ -159,7 +160,7 @@ fn tempdir() -> TempDir {
 }
 
 fn sandbox_with_env(root: &Path, env: &BTreeMap<String, SecretString>) -> LocalSandbox {
-    LocalSandbox::new(root, env, root.to_path_buf()).unwrap()
+    LocalSandbox::new(root, env, root.to_path_buf(), PROCESS_KILL_GRACE).unwrap()
 }
 
 fn context(sandbox: LocalSandbox) -> SessionContext<LocalSandbox> {

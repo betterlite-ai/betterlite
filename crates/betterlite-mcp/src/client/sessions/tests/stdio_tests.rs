@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use std::{env, fs, process};
 
+use tokio::io::AsyncReadExt as _;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -17,7 +18,9 @@ use crate::client::sessions::negotiate::{
 };
 use crate::client::sessions::run::run_with_session;
 use crate::client::sessions::runtime::{McpRuntime as _, SessionOptions};
-use crate::client::sessions::stdio::StdioStreams;
+use crate::client::sessions::stdio::{
+    FORCE_KILL_TIMEOUT, SDK_SHUTDOWN, StdioShutdown, StdioStreams,
+};
 use crate::client::sessions::stdio_runtime::{StdioRuntime, StdioSessionFactory};
 use crate::client::sessions::transport::{
     StdioConfig, StdioServerParameters, TransportContext as _, TransportType,
@@ -25,6 +28,9 @@ use crate::client::sessions::transport::{
 use crate::credentials::{McpAuthType, McpClient as CredentialClient};
 
 use super::fixture::tls_policy;
+
+// These servers set no trap or print ready once their traps are set, so SIGTERM may come soon after stdin closes
+const QUICK_TERMINATION: Duration = Duration::from_millis(100);
 
 struct TestInit {
     version: &'static str,
@@ -120,18 +126,24 @@ async fn a_stdio_server_child_that_ignores_term_is_killed_after_the_leader_exits
     drop(fs::remove_file(&pid_file));
     let pid_path = pid_file.display().to_string();
     let script = format!(
-        "/bin/sh -c 'trap \"\" TERM; while :; do /bin/sleep 0.1; done' & echo $! > {pid_path}; trap 'exit 0' TERM; wait"
+        "/bin/sh -c 'trap \"\" TERM; printf ready; while :; do /bin/sleep 0.1; done' & echo $! > {pid_path}; trap 'exit 0' TERM; wait"
     );
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: StdioShutdown {
+            termination: QUICK_TERMINATION,
+            force_kill: Duration::from_millis(300),
+        },
     };
     let mut transport = runtime.stdio_client(parameters(
         "/bin/sh",
         vec!["-c".to_owned(), script],
         BTreeMap::new(),
     ));
-    let streams = transport.enter().await.unwrap();
+    let mut streams = transport.enter().await.unwrap();
     let leader = streams.pid;
+    let mut ready = [0_u8; 5];
+    streams.stdout.read_exact(&mut ready).await.unwrap();
     drop(streams);
     wait_for(
         || fs::read_to_string(&pid_file).is_ok_and(|pid| pid.ends_with('\n')),
@@ -160,6 +172,10 @@ async fn a_leader_that_exits_first_still_sweeps_its_surviving_child() {
     let script = format!("/bin/sleep 60 & echo $! > {pid_path}; exit 0");
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: StdioShutdown {
+            termination: QUICK_TERMINATION,
+            force_kill: FORCE_KILL_TIMEOUT,
+        },
     };
     let mut transport = runtime.stdio_client(parameters(
         "/bin/sh",
@@ -191,15 +207,21 @@ async fn a_leader_that_exits_first_still_sweeps_its_surviving_child() {
 async fn a_stdio_server_that_ignores_term_is_killed_after_the_force_window() {
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: StdioShutdown {
+            termination: QUICK_TERMINATION,
+            force_kill: Duration::from_millis(300),
+        },
     };
-    let script = "trap '' TERM; while :; do /bin/sleep 0.1; done";
+    let script = "trap '' TERM; printf ready; while :; do /bin/sleep 0.1; done";
     let mut transport = runtime.stdio_client(parameters(
         "/bin/sh",
         vec!["-c".to_owned(), script.to_owned()],
         BTreeMap::new(),
     ));
-    let streams = transport.enter().await.unwrap();
+    let mut streams = transport.enter().await.unwrap();
     let pid = streams.pid;
+    let mut ready = [0_u8; 5];
+    streams.stdout.read_exact(&mut ready).await.unwrap();
     drop(streams);
     transport.exit().await.unwrap();
     assert!(!process_exists(pid));
@@ -209,6 +231,10 @@ async fn a_stdio_server_that_ignores_term_is_killed_after_the_force_window() {
 async fn the_stdio_server_dies_when_its_owner_exits() {
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: StdioShutdown {
+            termination: QUICK_TERMINATION,
+            force_kill: FORCE_KILL_TIMEOUT,
+        },
     };
     let mut transport = runtime.stdio_client(parameters(
         "/bin/sleep",
@@ -226,6 +252,7 @@ async fn the_stdio_server_dies_when_its_owner_exits() {
 async fn the_stdio_server_dies_when_its_owner_is_dropped() {
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: SDK_SHUTDOWN,
     };
     let mut transport = runtime.stdio_client(parameters(
         "/bin/sleep",
@@ -288,18 +315,24 @@ async fn a_stdio_server_that_traps_term_finishes_before_the_kill() {
     drop(fs::remove_file(&marker));
     let marker_path = marker.display().to_string();
     let script = format!(
-        "trap 'printf done > {marker_path}; exit 0' TERM; while :; do /bin/sleep 0.1; done"
+        "trap 'printf done > {marker_path}; exit 0' TERM; printf ready; while :; do /bin/sleep 0.1; done"
     );
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: StdioShutdown {
+            termination: QUICK_TERMINATION,
+            force_kill: FORCE_KILL_TIMEOUT,
+        },
     };
     let mut transport = runtime.stdio_client(parameters(
         "/bin/sh",
         vec!["-c".to_owned(), script],
         BTreeMap::new(),
     ));
-    let streams = transport.enter().await.unwrap();
+    let mut streams = transport.enter().await.unwrap();
     let pid = streams.pid;
+    let mut ready = [0_u8; 5];
+    streams.stdout.read_exact(&mut ready).await.unwrap();
     drop(streams);
     transport.exit().await.unwrap();
     assert!(marker.exists(), "the server did not finish on SIGTERM");
@@ -315,6 +348,7 @@ async fn a_stdio_server_that_exits_on_stdin_eof_finishes_before_the_kill() {
     let marker_path = marker.display().to_string();
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
+        shutdown: SDK_SHUTDOWN,
     };
     let pid = Arc::clone(&runtime.factory.pid);
     let mut client = session_client(

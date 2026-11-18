@@ -17,10 +17,11 @@ use super::error::SandboxError;
 use crate::errors::{CappedOperation, HarnessError};
 use crate::sandbox::{CompletedRun, Process, SandboxCommand};
 
-const PROCESS_KILL_GRACE_SECONDS: u64 = 5;
+pub const PROCESS_KILL_GRACE: Duration = Duration::from_secs(5);
 
 pub(super) struct OwnedChild {
     child: Mutex<Child>,
+    kill_grace: Duration,
 }
 
 impl OwnedChild {
@@ -71,9 +72,7 @@ impl OwnedChild {
 
     pub(super) async fn kill(&self) -> Result<(), HarnessError> {
         drop(self.signal(Signal::TERM));
-        if let Ok(result) =
-            timeout(Duration::from_secs(PROCESS_KILL_GRACE_SECONDS), self.wait()).await
-        {
+        if let Ok(result) = timeout(self.kill_grace, self.wait()).await {
             result?;
         } else {
             self.signal(Signal::KILL)?;
@@ -125,6 +124,7 @@ pub(super) fn start(
     command: &SandboxCommand,
     cwd: &str,
     environment: &BTreeMap<String, SecretString>,
+    kill_grace: Duration,
 ) -> Result<SubprocessHandle, HarnessError> {
     let name = command.argv.first().ok_or(SandboxError::EmptyCommand)?;
     let mut child = tokio_process::Command::new(name)
@@ -152,6 +152,7 @@ pub(super) fn start(
     Ok(SubprocessHandle {
         child: Arc::new(OwnedChild {
             child: Mutex::new(child),
+            kill_grace,
         }),
         stdin,
         stdout,
