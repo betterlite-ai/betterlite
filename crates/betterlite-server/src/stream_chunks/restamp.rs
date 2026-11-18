@@ -93,14 +93,14 @@ fn log_mismatch(
     fallback_attempted: bool,
 ) {
     let call_id = match request_data.get(CALL_ID_KEY) {
+        None | Some(Json::Null) => String::from("None"),
         Some(Json::Text(text)) => text.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
-        None | Some(Json::Null) => String::from("None"),
     };
     let downstream = match downstream {
+        None | Some(Json::Null) => String::from("None"),
         Some(Json::Text(text)) => text.clone(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
-        None | Some(Json::Null) => String::from("None"),
     };
     tracing::debug!(
         "litellm_call_id={call_id}: streaming chunk model mismatch - target={target} downstream={downstream} fallback_was_attempted={fallback_attempted}. Overriding chunk model to target."
