@@ -19,14 +19,7 @@ pub async fn batch_upsert_tools<Client>(
 ) where
     Client: GenericClient + Sync,
 {
-    let mut data: Vec<(&ToolDiscoveryItem, &str)> = Vec::with_capacity(items.len());
-    for item in items {
-        if let Some(name) = item.tool_name.as_deref()
-            && !name.is_empty()
-        {
-            data.push((item, name));
-        }
-    }
+    let data = named_items(items);
     if data.is_empty() {
         return;
     }
@@ -62,4 +55,16 @@ pub async fn batch_upsert_tools<Client>(
         }
     }
     tracing::debug!("tool_registry_writer: upserted {count} tool(s)");
+}
+
+fn named_items(items: &[ToolDiscoveryItem]) -> Vec<(&ToolDiscoveryItem, &str)> {
+    let mut data = Vec::with_capacity(items.len());
+    for item in items {
+        if let Some(name) = item.tool_name.as_deref()
+            && !name.is_empty()
+        {
+            data.push((item, name));
+        }
+    }
+    data
 }

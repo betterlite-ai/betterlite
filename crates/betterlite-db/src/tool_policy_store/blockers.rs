@@ -3,6 +3,22 @@ use deadpool_postgres::GenericClient;
 const FIND_SQL: &str = "SELECT COALESCE(\"blocked_tools\", ARRAY[]::text[]) AS blocked_tools FROM \"LiteLLM_ObjectPermissionTable\" WHERE \"object_permission_id\" = $1";
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_ObjectPermissionTable\" SET \"blocked_tools\" = $2 WHERE \"object_permission_id\" = $1";
 
+#[derive(Clone, Copy)]
+enum BlockedChange {
+    Add,
+    Remove,
+}
+
+impl BlockedChange {
+    const fn operation(self) -> &'static str {
+        match self {
+            Self::Add => "add_tool_to_object_permission_blocked",
+            Self::Remove => "remove_tool_from_object_permission_blocked",
+        }
+    }
+}
+
+// ast-grep-ignore: no-long-names
 pub async fn add_tool_to_object_permission_blocked<Client>(
     client: Option<&Client>,
     object_permission_id: &str,
@@ -14,41 +30,10 @@ where
     if object_permission_id.is_empty() || tool_name.is_empty() {
         return false;
     }
-    let Some(connected) = client else {
-        tracing::error!(
-            "tool_registry_writer add_tool_to_object_permission_blocked error: no database connection"
-        );
-        return false;
-    };
-    let current = match blocked_tools_of(connected, object_permission_id).await {
-        Ok(Some(current)) => current,
-        Ok(None) => return false,
-        Err(error) => {
-            tracing::error!(
-                "tool_registry_writer add_tool_to_object_permission_blocked error: {error}"
-            );
-            return false;
-        }
-    };
-    if current.iter().any(|blocked| blocked.as_str() == tool_name) {
-        return true;
-    }
-    let mut listed = current;
-    listed.push(tool_name.to_owned());
-    match connected
-        .execute(UPDATE_SQL, &[&object_permission_id, &listed])
-        .await
-    {
-        Ok(_) => true,
-        Err(error) => {
-            tracing::error!(
-                "tool_registry_writer add_tool_to_object_permission_blocked error: {error}"
-            );
-            false
-        }
-    }
+    change_blocked_tools(client, object_permission_id, tool_name, BlockedChange::Add).await
 }
 
+// ast-grep-ignore: no-long-names
 pub async fn remove_tool_from_object_permission_blocked<Client>(
     client: Option<&Client>,
     object_permission_id: &str,
@@ -60,38 +45,55 @@ where
     if object_permission_id.is_empty() || tool_name.is_empty() {
         return false;
     }
+    change_blocked_tools(
+        client,
+        object_permission_id,
+        tool_name,
+        BlockedChange::Remove,
+    )
+    .await
+}
+
+async fn change_blocked_tools<Client>(
+    client: Option<&Client>,
+    object_permission_id: &str,
+    tool_name: &str,
+    change: BlockedChange,
+) -> bool
+where
+    Client: GenericClient + Sync,
+{
     let Some(connected) = client else {
         tracing::error!(
-            "tool_registry_writer remove_tool_from_object_permission_blocked error: no database connection"
+            "tool_registry_writer {} error: no database connection",
+            change.operation()
         );
         return false;
     };
-    let current = match blocked_tools_of(connected, object_permission_id).await {
+    let mut current = match blocked_tools_of(connected, object_permission_id).await {
         Ok(Some(current)) => current,
         Ok(None) => return false,
         Err(error) => {
-            tracing::error!(
-                "tool_registry_writer remove_tool_from_object_permission_blocked error: {error}"
-            );
+            tracing::error!("tool_registry_writer {} error: {error}", change.operation());
             return false;
         }
     };
-    if !current.iter().any(|blocked| blocked.as_str() == tool_name) {
-        return false;
+    let listed = current.iter().any(|blocked| blocked.as_str() == tool_name);
+    match (change, listed) {
+        (BlockedChange::Add, true) => return true,
+        (BlockedChange::Remove, false) => return false,
+        (BlockedChange::Add, false) => current.push(tool_name.to_owned()),
+        (BlockedChange::Remove, true) => {
+            current.retain(|blocked| blocked.as_str() != tool_name);
+        }
     }
-    let remaining: Vec<String> = current
-        .into_iter()
-        .filter(|blocked| blocked.as_str() != tool_name)
-        .collect();
     match connected
-        .execute(UPDATE_SQL, &[&object_permission_id, &remaining])
+        .execute(UPDATE_SQL, &[&object_permission_id, &current])
         .await
     {
         Ok(_) => true,
         Err(error) => {
-            tracing::error!(
-                "tool_registry_writer remove_tool_from_object_permission_blocked error: {error}"
-            );
+            tracing::error!("tool_registry_writer {} error: {error}", change.operation());
             false
         }
     }
