@@ -1,7 +1,7 @@
 id: B8910
 milestone: M7 observability
 title: OTel logger factory and published provider ownership
-status: todo
+status: done
 depends_on: [B3840, B3842, B3844, B3847, B3849, B3850, B3851, B3853, B3854, B8250, B3857]
 file: tasks/B8910-otel-logger-runtime.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/litellm_core_utils/litellm_logging.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2347

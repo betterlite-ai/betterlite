@@ -2589,6 +2589,7 @@ dependencies = [
  "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
@@ -4203,6 +4204,7 @@ dependencies = [
  "betterlite-core",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
@@ -4486,6 +4488,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "betterlite-models",
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
