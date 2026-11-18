@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use uuid::Uuid;
 
 use crate::tool_records::records::{ToolInputPolicy, ToolOutputPolicy};
 
@@ -33,4 +34,17 @@ pub struct BlockedToolRow {
     pub object_permission_id: String,
     #[serde(default)]
     pub blocked_tools: Option<Vec<String>>,
+}
+
+pub trait ToolIdGenerator: Send + Sync {
+    fn next_tool_id(&self) -> String;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct UuidToolIdGenerator;
+
+impl ToolIdGenerator for UuidToolIdGenerator {
+    fn next_tool_id(&self) -> String {
+        Uuid::new_v4().to_string()
+    }
 }

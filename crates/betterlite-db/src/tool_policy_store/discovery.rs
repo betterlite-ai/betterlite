@@ -1,8 +1,11 @@
-use chrono::{DateTime, Utc};
-use deadpool_postgres::GenericClient;
-use uuid::Uuid;
+use std::time::Duration;
 
-use super::records::ToolDiscoveryItem;
+use chrono::{DateTime, Utc};
+use deadpool_postgres::Client;
+use tokio_postgres::types::ToSql;
+
+use super::deadline::bounded_statement;
+use super::records::{ToolDiscoveryItem, ToolIdGenerator};
 
 const UPSERT_SQL: &str = r#"INSERT INTO "LiteLLM_ToolTable" AS tool
     ("tool_id", "tool_name", "origin", "input_policy", "output_policy", "call_count", "created_by", "updated_by", "key_hash", "team_id", "key_alias", "user_agent", "last_used_at")
@@ -12,13 +15,13 @@ ON CONFLICT ("tool_name") DO UPDATE SET
     "updated_at" = $9,
     "last_used_at" = $9"#;
 
-pub async fn batch_upsert_tools<Client>(
+pub async fn batch_upsert_tools(
     client: Option<&Client>,
+    ids: &dyn ToolIdGenerator,
+    deadline: Duration,
     items: &[ToolDiscoveryItem],
     now: DateTime<Utc>,
-) where
-    Client: GenericClient + Sync,
-{
+) {
     let data = named_items(items);
     if data.is_empty() {
         return;
@@ -27,34 +30,46 @@ pub async fn batch_upsert_tools<Client>(
         tracing::error!("tool_registry_writer batch_upsert_tools error: no database connection");
         return;
     };
-    let used_at = now.naive_utc();
     let count = data.len();
-    for (item, tool_name) in data {
-        let tool_id = Uuid::new_v4().to_string();
-        let origin = item.origin.as_deref().unwrap_or("user_defined");
-        let created_by = item.created_by.as_deref().unwrap_or("system");
-        let written = connected
-            .execute(
-                UPSERT_SQL,
-                &[
-                    &tool_id,
-                    &tool_name,
-                    &origin,
-                    &created_by,
-                    &item.key_hash,
-                    &item.team_id,
-                    &item.key_alias,
-                    &item.user_agent,
-                    &used_at,
-                ],
-            )
-            .await;
-        if let Err(error) = written {
-            tracing::error!("tool_registry_writer batch_upsert_tools error: {error}");
-            return;
-        }
+    if !upsert_all(connected, ids, deadline, &data, now).await {
+        return;
     }
     tracing::debug!("tool_registry_writer: upserted {count} tool(s)");
+}
+
+async fn upsert_all(
+    client: &Client,
+    ids: &dyn ToolIdGenerator,
+    deadline: Duration,
+    items: &[(&ToolDiscoveryItem, &str)],
+    now: DateTime<Utc>,
+) -> bool {
+    let used_at = now.naive_utc();
+    for &(item, tool_name) in items {
+        let tool_id = ids.next_tool_id();
+        let origin = item.origin.as_deref().unwrap_or("user_defined");
+        let created_by = item.created_by.as_deref().unwrap_or("system");
+        let params: [&(dyn ToSql + Sync); 9] = [
+            &tool_id,
+            &tool_name,
+            &origin,
+            &created_by,
+            &item.key_hash,
+            &item.team_id,
+            &item.key_alias,
+            &item.user_agent,
+            &used_at,
+        ];
+        let work = client.execute(UPSERT_SQL, &params);
+        match bounded_statement(client, deadline, work).await {
+            Ok(_) => (),
+            Err(failure) => {
+                tracing::error!("tool_registry_writer batch_upsert_tools error: {failure}");
+                return false;
+            }
+        }
+    }
+    true
 }
 
 fn named_items(items: &[ToolDiscoveryItem]) -> Vec<(&ToolDiscoveryItem, &str)> {
