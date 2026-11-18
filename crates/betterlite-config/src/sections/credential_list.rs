@@ -15,7 +15,7 @@ pub struct CredentialListSettings {
     pub credentials: Vec<CredentialItem>,
 }
 
-// the settings are boxed so a new section adds one pointer to Sections, which sits in clippy's 16384-byte large_futures limit for a db-admin future
+// boxed so a new section adds one pointer to Sections, not 24 inline bytes that reached clippy's 16384-byte large_futures threshold in a db-admin future
 pub type Settings = Box<CredentialListSettings>;
 
 impl Section for Raw {
