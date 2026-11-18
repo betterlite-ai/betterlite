@@ -163,7 +163,7 @@ async def recorded_sleep(
     raise SleepInterruptedError(delay)
 
 
-# RedisCache's constructor needs a host or url and connects; the dataclass skips it and sets only the state the pipeline reads
+# RedisCache's constructor needs a host or url and connects; the dataclass sets only the state the pipeline reads
 @dataclass
 class FakeStore(RedisCache):
     values: dict[str, float]
