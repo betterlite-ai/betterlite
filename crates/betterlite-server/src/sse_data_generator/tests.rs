@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use super::*;
 use async_trait::async_trait;
 use futures_util::StreamExt as _;
@@ -69,19 +71,6 @@ impl StreamCleanup<()> for NoCleanup {
 }
 
 #[test]
-fn request_flag_requires_json_true() {
-    assert!(flag(
-        &[("enabled".to_owned(), Json::Bool(true)).into()],
-        "enabled"
-    ));
-    assert!(!flag(
-        &[("enabled".to_owned(), Json::Text("true".to_owned())).into()],
-        "enabled"
-    ));
-    assert!(!flag(&JsonObject::new(), "enabled"));
-}
-
-#[test]
 fn failure_frame_preserves_null_and_missing_fields() {
     let failure = StreamFailure {
         message: "bad request".to_owned(),
@@ -95,18 +84,6 @@ fn failure_frame_preserves_null_and_missing_fields() {
     assert!(frame.contains("\"param\":null"));
     assert!(frame.contains("\"code\":\"422\""));
     assert!(!frame.contains("[DONE]"));
-}
-
-#[test]
-fn stream_failure_displays_its_message() {
-    let failure = StreamFailure {
-        message: "failed".to_owned(),
-        error_type: None,
-        param: FailureParam::Missing,
-        status_code: None,
-        kind: FailureKind::Other,
-    };
-    assert_eq!(failure.to_string(), "failed");
 }
 
 #[test]

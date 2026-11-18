@@ -1,4 +1,3 @@
-use std::fmt;
 use std::io;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -49,12 +48,6 @@ pub struct StreamFailure {
     pub param: FailureParam,
     pub status_code: Option<u16>,
     pub kind: FailureKind,
-}
-
-impl fmt::Display for StreamFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.message)
-    }
 }
 
 pub struct StreamSource {
@@ -165,9 +158,18 @@ impl<Key: Send + Sync + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Ke
         let requested = client_requested_model(&request_data);
         let mut fallback = fallback_metadata(&response.hidden);
         let include = include_fallback_errors(self.expose_fallback_errors, &request_data);
-        let raw = flag(&request_data, "_litellm_raw_sse_stream");
-        let strip = flag(&request_data, "_litellm_strip_stream_usage");
-        let skip_done = flag(&request_data, "_litellm_skip_openai_stream_done");
+        let raw = matches!(
+            request_data.get("_litellm_raw_sse_stream"),
+            Some(Json::Bool(true))
+        );
+        let strip = matches!(
+            request_data.get("_litellm_strip_stream_usage"),
+            Some(Json::Bool(true))
+        );
+        let skip_done = matches!(
+            request_data.get("_litellm_skip_openai_stream_done"),
+            Some(Json::Bool(true))
+        );
         let wrapped = self.hooks.needs_iterator_wrap();
         let mut items = response.items;
         if wrapped {
@@ -239,7 +241,8 @@ impl<Key: Send + Sync + 'static> AsyncDataGenerator<Key> for SseDataGenerator<Ke
                         Beat::Ping => yield Ok(Bytes::from_static(b": ping\n\n")),
                         Beat::Item(Err(failure)) => {
                             tracing::error!(
-                                "litellm.proxy.proxy_server.async_data_generator(): Exception occured - {failure}"
+                                "litellm.proxy.proxy_server.async_data_generator(): Exception occurred - {}",
+                                failure.message
                             );
                             let hooked = hooks
                                 .failure_hook(
@@ -460,10 +463,6 @@ impl<Key> Drop for CleanupGuard<Key> {
     }
 }
 
-fn flag(data: &JsonObject, key: &str) -> bool {
-    matches!(data.get(key), Some(Json::Bool(true)))
-}
-
 fn unix_timestamp() -> i64 {
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -512,5 +511,4 @@ fn failure_frame(failure: &StreamFailure) -> String {
     )
 }
 
-#[cfg(test)]
 mod tests;
