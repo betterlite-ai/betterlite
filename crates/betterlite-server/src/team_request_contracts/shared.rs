@@ -36,8 +36,9 @@ pub(crate) fn to_data<T>(value: &T) -> Result<JsonData, TeamContractError>
 where
     T: Serialize + ?Sized,
 {
-    let data = serde_json::to_value(value).map_err(ContractError::from)?;
-    Ok(serde_json::from_value(data).map_err(ContractError::from)?)
+    serde_json::from_value(serde_json::to_value(value).map_err(ContractError::from)?)
+        .map_err(ContractError::from)
+        .map_err(TeamContractError::from)
 }
 
 pub(crate) fn to_object<T>(value: &T) -> Result<Fields, TeamContractError>

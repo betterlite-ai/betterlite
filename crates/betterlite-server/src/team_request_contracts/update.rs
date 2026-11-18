@@ -59,11 +59,6 @@ pub struct UpdateTeamFields {
 }
 
 #[derive(Deserialize)]
-struct TeamIdInput {
-    team_id: String,
-}
-
-#[derive(Deserialize)]
 struct OptionalTeamIdInput {
     team_id: Option<String>,
 }
@@ -86,20 +81,6 @@ pub struct PatchTeamRequest {
     pub(crate) raw: JsonData,
 }
 
-impl UpdateTeamRequest {
-    pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
-        let data = normalized(value)?;
-        let team_id: TeamIdInput = decode_request(&data)?;
-        let fields: UpdateTeamFields = decode_request(&data)?;
-        validate_router_settings(fields.router_settings.as_ref())?;
-        Ok(Self {
-            team_id: team_id.team_id,
-            fields,
-            raw: data,
-        })
-    }
-}
-
 impl PatchTeamRequest {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
         let data = normalized(value)?;
@@ -111,6 +92,22 @@ impl PatchTeamRequest {
             fields,
             raw: data,
         })
+    }
+}
+
+impl UpdateTeamRequest {
+    pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
+        let patch = PatchTeamRequest::from_value(value)?;
+        match patch.team_id {
+            Some(team_id) => Ok(Self {
+                team_id,
+                fields: patch.fields,
+                raw: patch.raw,
+            }),
+            None => Err(TeamContractError::Validation {
+                message: "team_id: Input should be a valid string".to_owned(),
+            }),
+        }
     }
 }
 

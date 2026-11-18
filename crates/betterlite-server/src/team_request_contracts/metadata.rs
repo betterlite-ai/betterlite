@@ -4,31 +4,22 @@ use serde::{Deserialize, Serialize};
 use super::TeamContractError;
 use super::shared::decode_request;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct TeamMetadataFieldSchema {
     pub key: String,
     pub label: Option<String>,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct TeamMetadataFieldInput {
-    key: String,
-    label: Option<String>,
-}
-
 impl TeamMetadataFieldSchema {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
-        let input: TeamMetadataFieldInput = decode_request(value)?;
-        if input.key.is_empty() {
+        let field: Self = decode_request(value)?;
+        if field.key.is_empty() {
             return Err(TeamContractError::Validation {
                 message: "String should have at least 1 character".to_owned(),
             });
         }
-        Ok(Self {
-            key: input.key,
-            label: input.label,
-        })
+        Ok(field)
     }
 }
 
@@ -45,11 +36,15 @@ struct TeamMetadataSchemaInput {
 impl TeamMetadataSchemaResponse {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
         let input: TeamMetadataSchemaInput = decode_request(value)?;
-        let fields = input
-            .fields
-            .iter()
-            .map(TeamMetadataFieldSchema::from_value)
-            .collect::<Result<Vec<TeamMetadataFieldSchema>, TeamContractError>>()?;
-        Ok(Self { fields })
+        Ok(Self {
+            fields: field_schemas(&input.fields)?,
+        })
     }
+}
+
+fn field_schemas(items: &[JsonData]) -> Result<Vec<TeamMetadataFieldSchema>, TeamContractError> {
+    items
+        .iter()
+        .map(TeamMetadataFieldSchema::from_value)
+        .collect()
 }

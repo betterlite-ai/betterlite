@@ -30,16 +30,22 @@ struct TeamListCounts {
 
 impl TeamListItem {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
-        let team = LiteLLMTeamTable::try_from(value.clone())?;
         let counts: TeamListCounts = decode_request(value)?;
-        Ok(Self {
+        let team = LiteLLMTeamTable::try_from(value.clone())?;
+        Ok(counts.with_team(team))
+    }
+}
+
+impl TeamListCounts {
+    fn with_team(self, team: LiteLLMTeamTable) -> TeamListItem {
+        TeamListItem {
             team,
-            members_count: counts.members_count,
-            keys_count: counts.keys_count,
-            access_group_models: counts.access_group_models,
-            access_group_mcp_server_ids: counts.access_group_mcp_server_ids,
-            access_group_agent_ids: counts.access_group_agent_ids,
-        })
+            members_count: self.members_count,
+            keys_count: self.keys_count,
+            access_group_models: self.access_group_models,
+            access_group_mcp_server_ids: self.access_group_mcp_server_ids,
+            access_group_agent_ids: self.access_group_agent_ids,
+        }
     }
 }
 
@@ -59,10 +65,7 @@ const DELETION_KEYS: [&str; 5] = [
     "litellm_changed_by",
 ];
 
-// The declared union: Python's smart union validates every member and keeps the candidates whose
-// fields all match, scoring each by how many of the row's keys it declares; the enriched member,
-// the bare table and the audit row win ties in that order, so a row reads as deleted only when it
-// names more deletion audit fields than enriched ones and is a valid audit row.
+// The smart union scores each member by declared keys, preferring enriched over live over deleted on ties.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum TeamListEntry {
@@ -97,7 +100,7 @@ impl TeamListEntry {
             (Err(_), Ok(row)) if deleted_matched > 0 => Ok(Self::Deleted(row)),
             (Err(_), _) => match LiteLLMTeamTable::try_from(value.clone()) {
                 Ok(team) => Ok(Self::Live(team)),
-                Err(error) => Err(error.into()),
+                Err(error) => Err(TeamContractError::Row(error)),
             },
         }
     }
@@ -124,17 +127,16 @@ struct TeamListInput {
 impl TeamListResponse {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
         let input: TeamListInput = decode_request(value)?;
-        let teams = input
-            .teams
-            .iter()
-            .map(TeamListEntry::from_value)
-            .collect::<Result<Vec<TeamListEntry>, TeamContractError>>()?;
-        Ok(Self {
-            teams,
+        let mut response = Self {
+            teams: Vec::with_capacity(input.teams.len()),
             total: input.total,
             page: input.page,
             page_size: input.page_size,
             total_pages: input.total_pages,
-        })
+        };
+        for row in &input.teams {
+            response.teams.push(TeamListEntry::from_value(row)?);
+        }
+        Ok(response)
     }
 }
