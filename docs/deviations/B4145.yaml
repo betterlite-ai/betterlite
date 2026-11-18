@@ -39,4 +39,7 @@ deviations:
   - what: A stored param_value string over 1 MiB or nested deeper than 64 levels reads as no schedule, because the string is decoded with the config crate's bounded decoder.
     why: The bound is B725's ConfigRepository::get_param limit for the same column, so one stored value cannot be readable by one code path and not the other; an interval config is a few bytes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/periodic_reload_schedule.py#L93-L102
+  - what: 'The interval writes store compact JSON, so clear_reload_interval writes {"interval_hours":null}, where LiteLLM safe_dumps goes through json.dumps with its default separators and writes a space after the colon and the comma.'
+    why: Every read path in both implementations parses the value as JSON, so the whitespace never reaches a caller; betterlite writes through B192's shared dumper, and docs/compatibility.md excludes json.dumps formatting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L93
 kept_bugs: []
