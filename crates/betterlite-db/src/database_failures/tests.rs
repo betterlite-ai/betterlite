@@ -326,52 +326,35 @@ async fn cancellation_resistant_lookup_returns_deadline() {
     drain(&tasks).await;
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn abandoned_failure_consumed() {
+    let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
     let blocking = TaskTracker::new();
-    let tracker = fake_tracker();
     let (release, blocker) = std::sync::mpsc::sync_channel::<()>(1);
-    let finished = Arc::new(AtomicBool::new(false));
-    let lookup_finished = Arc::clone(&finished);
+    let produced = Arc::new(AtomicBool::new(false));
+    let lookup_produced = Arc::clone(&produced);
     let join = blocking.spawn_blocking(move || {
         blocker.recv().expect("the test releases the lookup");
-        lookup_finished.store(true, Ordering::SeqCst);
-    });
-    let lookup = async move {
-        join.await.expect("the blocking lookup joins");
+        lookup_produced.store(true, Ordering::SeqCst);
         Err::<i32, DbLookupError>(DbLookupError::Database(database_error(
             ErrorType::Other,
             "the abandoned lookup failed",
         )))
-    };
-    let lookup_request = request("slow", Some(0.02), 10.0, &tracker);
-    let result = bounded_db_lookup(lookup, lookup_request, &tasks).await;
-    let first_hit = *tracker
-        .last_hit
-        .lock()
-        .expect("the stall tracker is not poisoned");
-    let answered_early = finished.load(Ordering::SeqCst);
-    tracker.clock.advance(Duration::from_secs(1));
+    });
+    drop(tasks.spawn(consume_abandoned_lookup(join)));
+    assert!(
+        !produced.load(Ordering::SeqCst),
+        "the abandoned lookup is still waiting"
+    );
     release.send(()).expect("the lookup is still waiting");
     blocking.close();
     blocking.wait().await;
-    let error = result.expect_err("the abandoned lookup cannot answer in time");
-    assert_deadline(&error, "slow", 0.02);
-    assert!(
-        !answered_early,
-        "the abandoned lookup cannot answer in time"
-    );
-    assert!(finished.load(Ordering::SeqCst));
-    assert!(first_hit.is_some());
-    assert_eq!(
-        *tracker
-            .last_hit
-            .lock()
-            .expect("the stall tracker is not poisoned"),
-        first_hit
-    );
     drain(&tasks).await;
+    assert!(produced.load(Ordering::SeqCst));
+    let text = logs.text();
+    assert!(text.contains("an abandoned database lookup failed"));
+    assert!(text.contains("the abandoned lookup failed"));
 }
 
 #[tokio::test(start_paused = true)]

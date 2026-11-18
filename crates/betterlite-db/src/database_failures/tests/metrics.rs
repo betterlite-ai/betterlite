@@ -322,10 +322,14 @@ async fn proxy_args_second_dictionary() {
     );
 }
 
+fn traceparent(value: &str) -> Json {
+    Json::Text(format!("00-{value}-b7ad6b7169203331-01"))
+}
+
 fn spanned(value: &str) -> Json {
     Json::Object(IndexMap::from([(
         PARENT_SPAN_KEY.to_owned(),
-        Json::Text(format!("00-{value}-b7ad6b7169203331-01")),
+        traceparent(value),
     )]))
 }
 
@@ -345,7 +349,7 @@ async fn proxy_span_uses_shared_resolver() {
                 spanned(params_trace),
             )])),
         ),
-        (PARENT_SPAN_KEY.to_owned(), spanned(top_level_trace)),
+        (PARENT_SPAN_KEY.to_owned(), traceparent(top_level_trace)),
     ]));
     let params_only = Json::Object(IndexMap::from([
         (
@@ -355,11 +359,11 @@ async fn proxy_span_uses_shared_resolver() {
                 spanned(params_trace),
             )])),
         ),
-        (PARENT_SPAN_KEY.to_owned(), spanned(top_level_trace)),
+        (PARENT_SPAN_KEY.to_owned(), traceparent(top_level_trace)),
     ]));
     let top_level_only = Json::Object(IndexMap::from([(
         PARENT_SPAN_KEY.to_owned(),
-        spanned(top_level_trace),
+        traceparent(top_level_trace),
     )]));
     let from_metadata = DbMetricCall {
         function_name: "PROXY_batch_write",
