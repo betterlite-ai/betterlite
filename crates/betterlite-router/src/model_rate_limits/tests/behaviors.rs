@@ -12,7 +12,7 @@ pub(super) fn run(name: &str) {
     run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 19] = [
+const CASES: [(&str, fn()); 20] = [
     ("limits_disabled_allows", || {
         super::runtime().block_on(limits_disabled_allows());
     }),
@@ -33,6 +33,9 @@ const CASES: [(&str, fn()); 19] = [
     }),
     ("remote_failure_allows_without_rpm", || {
         super::runtime().block_on(remote_failure_allows_without_rpm());
+    }),
+    ("no_remote_reads_local_only", || {
+        super::runtime().block_on(no_remote_reads_local_only());
     }),
     ("rpm_increments_first_and_rejects_over_limit", || {
         super::runtime().block_on(rpm_increments_first_and_rejects_over_limit());
@@ -161,6 +164,20 @@ async fn breaker_open_falls_back_to_local() {
     assert_eq!(
         cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
         1
+    );
+}
+
+async fn no_remote_reads_local_only() {
+    let cache = Arc::new(FakeCache::without_remote().seed_local(&tpm_key("openai/gpt-4o"), 4));
+    let check = service(Arc::clone(&cache), None);
+    let deployment = with_param(spec("gpt-4o", "a", "openai/gpt-4o"), "tpm", 5);
+    check
+        .async_pre_call_check(&deployment, &mut request())
+        .await
+        .unwrap();
+    assert_eq!(
+        cache.remote_reads.load(std::sync::atomic::Ordering::SeqCst),
+        0
     );
 }
 

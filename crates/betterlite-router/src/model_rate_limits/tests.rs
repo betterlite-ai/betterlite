@@ -19,6 +19,7 @@ fn runtime() -> Runtime {
 #[case::tpm_local_at_limit_skips_remote("tpm_local_at_limit_skips_remote")]
 #[case::breaker_open_falls_back_to_local("breaker_open_falls_back_to_local")]
 #[case::remote_failure_allows_without_rpm("remote_failure_allows_without_rpm")]
+#[case::no_remote_reads_local_only("no_remote_reads_local_only")]
 #[case::rpm_increments_first_and_rejects_over_limit("rpm_increments_first_and_rejects_over_limit")]
 #[case::success_event_counts_tpm_usage("success_event_counts_tpm_usage")]
 #[case::success_event_skips_absent_fields("success_event_skips_absent_fields")]
