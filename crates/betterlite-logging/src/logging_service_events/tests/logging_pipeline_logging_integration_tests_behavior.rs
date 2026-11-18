@@ -7,6 +7,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::{Body, Bytes, to_bytes};
 use axum::extract::Request;
+use axum::http::HeaderMap;
 use axum::middleware::from_fn_with_state;
 use axum::response::Response;
 use axum::routing::post;
@@ -782,8 +783,14 @@ fn tracing_sink_logs_the_service_event() {
     );
 }
 
-async fn chat_answer() -> &'static str {
-    "{\"id\":\"chat-1\"}"
+async fn chat_answer(headers: HeaderMap) -> Response {
+    let mut response = Response::new(Body::from("{\"id\":\"chat-1\"}"));
+    if let Some(value) = headers.get("x-litellm-call-id") {
+        response
+            .headers_mut()
+            .insert("x-seen-call-id", value.clone());
+    }
+    response
 }
 
 async fn streamed_answer() -> Response {
@@ -822,7 +829,7 @@ async fn middleware_records_one_pre_call_and_one_terminal_event() {
         .unwrap();
     let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response.headers()["x-litellm-call-id"], "generated-call");
+    assert_eq!(response.headers()["x-seen-call-id"], "generated-call");
     let length = response.headers()["content-length"]
         .to_str()
         .unwrap()
@@ -849,7 +856,7 @@ async fn middleware_keeps_the_client_call_id() {
         .body(Body::empty())
         .unwrap();
     let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
-    assert_eq!(response.headers()["x-litellm-call-id"], "call-7");
+    assert_eq!(response.headers()["x-seen-call-id"], "call-7");
     harness.pipeline.worker.flush().await;
     let events = harness.sink.recorded();
     assert_eq!(events.len(), 2);
@@ -886,7 +893,7 @@ async fn middleware_leaves_a_foreign_path_untracked() {
         .unwrap();
     let response = event_app(&harness.pipeline).oneshot(request).await.unwrap();
     assert_eq!(response.status(), StatusCode::OK);
-    assert!(!response.headers().contains_key("x-litellm-call-id"));
+    assert!(!response.headers().contains_key("x-seen-call-id"));
     harness.pipeline.worker.flush().await;
     assert!(harness.sink.recorded().is_empty());
 }
