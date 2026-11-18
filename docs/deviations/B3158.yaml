@@ -1,3 +1,75 @@
 task: B3158
-deviations: []
-kept_bugs: []
+deviations:
+  - what: >-
+      Validation failure details carry type, loc and msg only. pydantic's input, url and ctx keys
+      are left out of both the ROISettings errors and the request body errors.
+    why: >-
+      input echoes the submitted value, so a rejected github_token or estimator_key would come back
+      in the response body. type and loc keep the part a client branches on, and the other
+      management endpoints in betterlite answer with the same three fields.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L385-L386
+  - what: >-
+      A body field with the wrong JSON type fails with type value_error and serde's message
+      ("invalid type: string \"soon\", expected i64") instead of pydantic's int_type, string_type or
+      list_type and its "Input should be a valid ..." text. The status and the body.<field> loc are
+      the same.
+    why: >-
+      The body is decoded through serde into ROISettingsUpdate, and docs/compatibility.md accepts a
+      value of the wrong type as an error that names the field. pydantic's per-type codes describe
+      Python's runtime, which the Rust types do not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L107-L118
+  - what: >-
+      The write-admin check and the database check run before the body is decoded. A caller without
+      proxy admin gets 403, and a proxy with no database gets 500, for a malformed JSON body where
+      LiteLLM's FastAPI reads and parses the body first and answers 422.
+    why: >-
+      FastAPI parses the body in get_request_handler before solve_dependencies resolves the auth and
+      repository dependencies. Checking the caller before reading untrusted input is the order every
+      other betterlite route uses, and a caller that may not write cannot rely on the validation
+      answer for a request it is refused.
+    link: ""
+  - what: >-
+      JSON that Python's json module accepts but RFC 8259 does not is rejected as json_invalid at
+      body: the NaN and Infinity literals, and an object with a duplicate key.
+    why: >-
+      serde_json follows the standard, and docs/compatibility.md keeps standard JSON on the wire.
+      Python keeps the last duplicate key and parses NaN, which pydantic then reports as
+      finite_number.
+    link: ""
+  - what: >-
+      A stored secret that does not decrypt reads as empty and the failure is recorded at debug.
+      LiteLLM returns the same empty value and decrypt_value_helper also writes the exception at
+      error level.
+    why: >-
+      The task's DoD asks for no warning on a crypto failure and for decrypt_value_helper's result
+      to be kept. The public response reports the secret as absent either way; logging an exception
+      for a value betterlite already treats as unset only fills the operator log on every read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L180-L217
+kept_bugs:
+  - what: >-
+      A stored settings object with a key outside _StoredSettings loads, and the next PUT writes the
+      object back without that key. StoredSettings ignores unknown fields on read and drops them on
+      save the same way.
+    why: >-
+      The task requires extra="ignore". A proxy reading settings written by a newer version keeps
+      working, and the later save from the older version loses the newer key, which is the behavior
+      a working setup has today.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L52-L62
+  - what: >-
+      The explicit null github_api_url check runs after both settings loads, so a null URL request
+      against stored settings that do not load returns 500 "Stored ROI Calculator settings are
+      invalid." instead of 422.
+    why: >-
+      The order in LiteLLM is stored, current, then the null check, and only a damaged database
+      reaches the 500. put_null_url pins the 422 over loadable settings and
+      put_null_url_reports_broken_stored_settings_first pins the 500 over settings that do not load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L342-L345
+  - what: >-
+      A stored token or estimator key that does not decrypt is treated as absent. The request
+      succeeds, the public response reports has_github_token or has_estimator_key false, and the
+      unreadable ciphertext stays in the row until a PUT supplies a new secret.
+    why: >-
+      A proxy whose salt key changed still serves the settings route, and a request that did not
+      supply a token does not overwrite the stored ciphertext. The cost is that the UI shows no
+      token while the row still holds one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/roi_calculator_endpoints.py#L181-L187

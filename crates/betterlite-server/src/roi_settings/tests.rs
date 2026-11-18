@@ -1,39 +1,24 @@
 #![cfg(test)]
-use super::*;
 
-#[derive(Default)]
-struct EmptyCatalog;
+use axum::http::StatusCode;
 
-impl RouterCatalog for EmptyCatalog {
-    fn model_names(&self) -> Vec<String> {
-        Vec::new()
-    }
+use super::support::call;
+use super::support::get_request;
+use super::support::put_request;
+use super::support::settings_app;
 
-    fn deployments(&self, _: &str) -> Vec<RouterEstimatorDeployment> {
-        Vec::new()
-    }
+#[tokio::test]
+async fn oneshot_get_without_a_caller_is_unauthorized() {
+    let reply = call(settings_app(None, None), get_request(None)).await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
 }
 
 #[tokio::test]
-async fn oneshot_get_requires_authentication() {
-    use tower::ServiceExt as _;
-
-    let state = RoiSettingsState::new(
-        None,
-        Arc::new(EmptyCatalog),
-        CipherSettings {
-            signing_key: None,
-            algorithm: betterlite_secrets::secret_codec::Algorithm::XSalsa20Poly1305,
-        },
-    );
-    let response = router(state)
-        .oneshot(
-            http::Request::builder()
-                .uri("/roi-calculator/settings")
-                .body(axum::body::Body::empty())
-                .expect("valid request"),
-        )
-        .await
-        .expect("router response");
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+async fn oneshot_put_without_a_caller_is_unauthorized() {
+    let reply = call(
+        settings_app(None, None),
+        put_request(None, r#"{"backfill_days":10}"#),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNAUTHORIZED);
 }

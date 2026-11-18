@@ -1,7 +1,13 @@
-include!("roi_settings/part1.rs");
-include!("roi_settings/part2.rs");
-include!("roi_settings/part3.rs");
-include!("roi_settings/part4.rs");
-#[cfg(test)]
-include!("roi_settings/tests/cases.rs");
+pub mod auth;
+pub mod deployments;
+pub mod error;
+pub mod patch;
+pub mod public;
+pub mod repository;
+pub mod route;
+pub mod state;
+pub mod store;
+
+include!("roi_settings/tests/declarations.rs");
+
 mod tests;
