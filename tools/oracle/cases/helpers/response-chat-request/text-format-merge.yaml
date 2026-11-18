@@ -1,0 +1,87 @@
+kind: helper
+name: text-format-merge
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: user, content: hello}]
+    optional_params: {verbosity: low, response_format: {type: json_schema, json_schema: {}}}
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: null
+calls:
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {verbosity: low, response_format: {type: json_schema, json_schema: {name: answer, schema: {type: object, properties: {}}, strict: true}}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {response_format: {type: json_object}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {response_format: {type: text}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {response_format: {type: vendor}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {response_format: json_schema}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {response_format: {type: json_schema, json_schema: {name: null, schema: null, strict: null}}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {text: {verbosity: high, include: [logprobs]}, verbosity: low}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {user: "abcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcdeabcde"}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {user: "0123456789012345678901234567890123456789012345678901234567890123"}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+env: {}
+compare:
+  ignore: []

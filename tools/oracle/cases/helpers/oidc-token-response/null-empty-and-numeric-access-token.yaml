@@ -1,0 +1,19 @@
+kind: helper
+name: oidc-token-response-null-empty-and-numeric-access-token
+call:
+  oidc_token_response:
+    body: '{"access_token": null, "token_type": "Bearer"}'
+calls:
+  - oidc_token_response:
+      body: '{"access_token": "", "token_type": "Bearer"}'
+  - oidc_token_response:
+      body: '{"access_token": 42}'
+  - oidc_token_response:
+      body: '{"access_token": true}'
+  - oidc_token_response:
+      body: '{"access_token": ["nested"]}'
+  - oidc_token_response:
+      body: "{}"
+env: {}
+compare:
+  ignore: []
