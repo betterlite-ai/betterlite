@@ -1,0 +1,16 @@
+kind: probe
+name: case-insensitive-search
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        rules:
+          - pattern: "^CLAUDE-"
+            model_info: {litellm_provider: anthropic}
+        queries:
+          - {query: routing, model: claude-3-5-sonnet}
+          - {query: routing, model: Claude-3}
+compare:
+  ignore: []
+  expected_difference: []

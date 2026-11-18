@@ -1,0 +1,30 @@
+kind: probe
+name: fill-missing-provider-filter
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        rules:
+          - pattern: "gemini"
+            model_info: {litellm_provider: vertex_ai, supports_pdf: true}
+            fill_missing_for_providers: [vertex_ai]
+          - pattern: "gemini-3"
+            model_info: {supports_pdf: false, max_tokens: null}
+            fill_missing_for_providers: [vertex_ai, gemini]
+          - pattern: "^route$"
+            model_info: {litellm_provider: openai}
+            fill_missing_for_providers: [openai]
+          - pattern: "^plain$"
+            model_info: {mode: chat}
+        queries:
+          - {query: fill_missing, model: gemini-3-pro, provider: vertex_ai}
+          - {query: fill_missing, model: gemini-3, provider: gemini}
+          - {query: fill_missing, model: gemini, provider: Vertex_AI}
+          - {query: fill_missing, model: gemini-3, provider: ""}
+          - {query: fill_missing, model: "", provider: vertex_ai}
+          - {query: fill_missing, model: route, provider: openai}
+          - {query: fill_missing, model: plain, provider: openai}
+compare:
+  ignore: []
+  expected_difference: []
