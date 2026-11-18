@@ -70,7 +70,6 @@ fn disconnect_marked(request_data: &JsonObject) -> bool {
         .is_some_and(|value| *value == Json::Bool(true))
 }
 
-#[derive(Default)]
 struct LogState {
     details: Option<JsonObject>,
     armed: bool,
@@ -90,13 +89,38 @@ pub(super) struct FakeLogging {
 }
 
 impl FakeLogging {
-    pub(super) fn new(details: Option<JsonObject>) -> Self {
+    pub(super) const fn new(details: Option<JsonObject>) -> Self {
         Self {
             state: Mutex::new(LogState {
                 details,
-                ..LogState::default()
+                armed: false,
+                baseline_active: false,
+                assemble: None,
+                dispatch: None,
+                invalidate: None,
+                events: Vec::new(),
+                fired: 0,
+                fired_with: None,
+                dispatched: Vec::new(),
+                assembled: None,
             }),
         }
+    }
+
+    fn with_event<T, F>(&self, event: &str, record: F) -> T
+    where
+        F: FnOnce(&mut LogState) -> T,
+    {
+        let mut state = self.state.lock().unwrap();
+        state.events.push(event.to_owned());
+        record(&mut state)
+    }
+
+    fn record_dispatch(&self, response: JsonObject) -> Result<(), CleanupError> {
+        self.with_event("dispatch", |state| {
+            state.dispatched.push(response);
+            state.dispatch.clone().unwrap_or(Ok(()))
+        })
     }
 
     pub(super) fn with_armed(self, armed: bool) -> Self {
@@ -151,9 +175,7 @@ impl FakeLogging {
 
 impl RequestLogging for FakeLogging {
     fn call_details(&self, _request_data: &JsonObject) -> Option<JsonObject> {
-        let mut state = self.state.lock().unwrap();
-        state.events.push("details".to_owned());
-        state.details.clone()
+        self.with_event("details", |state| state.details.clone())
     }
 
     fn edit_call_details(&self, _request_data: &JsonObject, edit: fn(&mut JsonObject)) {
@@ -166,13 +188,14 @@ impl RequestLogging for FakeLogging {
 
     fn deferred_logging_armed(&self, _request_data: &JsonObject) -> bool {
         let mut state = self.state.lock().unwrap();
-        state.events.push(format!("armed:{}", state.armed));
-        state.armed
+        let armed = state.armed;
+        state.events.push(format!("armed:{armed}"));
+        armed
     }
 
     fn fire_deferred_logging(&self, request_data: &JsonObject) {
         let mut state = self.state.lock().unwrap();
-        state.fired += 1;
+        state.fired = state.fired.saturating_add(1);
         state
             .events
             .push(format!("fire:{}", disconnect_marked(request_data)));
@@ -180,9 +203,7 @@ impl RequestLogging for FakeLogging {
     }
 
     fn baseline_cache_active(&self, _request_data: &JsonObject) -> bool {
-        let mut state = self.state.lock().unwrap();
-        state.events.push("baseline".to_owned());
-        state.baseline_active
+        self.with_event("baseline", |state| state.baseline_active)
     }
 
     fn invalidate_baseline<'call>(
@@ -196,6 +217,7 @@ impl RequestLogging for FakeLogging {
             .events
             .push(format!("invalidate:{reason}:{completed}"));
         let outcome = state.invalidate.clone().unwrap_or(Ok(()));
+        drop(state);
         Box::pin(async move { outcome })
     }
 
@@ -205,14 +227,14 @@ impl RequestLogging for FakeLogging {
         chunks: &'call [JsonObject],
         messages: Option<&'call [Json]>,
     ) -> CleanupFuture<'call, Result<Option<JsonObject>, CleanupError>> {
-        let mut state = self.state.lock().unwrap();
-        state.events.push("assemble".to_owned());
-        state.assembled = Some((
-            chunks.len(),
-            messages.map(<[Json]>::to_vec),
-            disconnect_marked(request_data),
-        ));
-        let outcome = state.assemble.clone().unwrap_or(Ok(None));
+        let outcome = self.with_event("assemble", |state| {
+            state.assembled = Some((
+                chunks.len(),
+                messages.map(<[Json]>::to_vec),
+                disconnect_marked(request_data),
+            ));
+            state.assemble.clone().unwrap_or(Ok(None))
+        });
         Box::pin(async move { outcome })
     }
 
@@ -221,11 +243,7 @@ impl RequestLogging for FakeLogging {
         _request_data: &'call JsonObject,
         response: JsonObject,
     ) -> CleanupFuture<'call, Result<(), CleanupError>> {
-        let mut state = self.state.lock().unwrap();
-        state.events.push("dispatch".to_owned());
-        state.dispatched.push(response);
-        let outcome = state.dispatch.clone().unwrap_or(Ok(()));
-        Box::pin(async move { outcome })
+        Box::pin(async move { self.record_dispatch(response) })
     }
 }
 
@@ -284,6 +302,7 @@ impl SlotRelease<String> for FakeSlots {
         } else {
             Ok(())
         };
+        drop(state);
         Box::pin(async move { outcome })
     }
 }
@@ -316,18 +335,13 @@ pub(super) enum Ending {
 }
 
 pub(super) fn cleanup_outcome(ending: Ending) -> CleanupOutcome<String> {
-    let (stream_completed, client_disconnected) = match ending {
-        Ending::Completed => (true, false),
-        Ending::Disconnected => (false, true),
-        Ending::Failed => (false, false),
-    };
     CleanupOutcome {
         request: None,
         request_data: object(&[("litellm_call_id", text("call-1"))]),
         key: "deployment-1".to_owned(),
         response: None,
-        stream_completed,
-        client_disconnected,
+        stream_completed: matches!(ending, Ending::Completed),
+        client_disconnected: matches!(ending, Ending::Disconnected),
     }
 }
 
@@ -345,12 +359,16 @@ pub(super) fn disconnect_cleanup(
 
 pub(super) fn billable_outcome() -> CleanupOutcome<String> {
     let mut outcome = cleanup_outcome(Ending::Disconnected);
-    outcome.response = Some(snapshot(
+    outcome.response = Some(billable_snapshot());
+    outcome
+}
+
+fn billable_snapshot() -> Arc<dyn StreamSnapshot> {
+    snapshot(
         vec![object(&[("model", text("alias"))])],
         Some(vec![text("hi")]),
         Some("gpt-4o"),
-    ));
-    outcome
+    )
 }
 
 #[derive(Clone, Default)]
