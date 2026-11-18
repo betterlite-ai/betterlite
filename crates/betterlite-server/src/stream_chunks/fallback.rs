@@ -26,10 +26,9 @@ pub fn client_requested_model(request_data: &JsonObject) -> String {
 #[must_use]
 pub fn is_positive_int_like(value: Option<&Json>) -> bool {
     match value {
-        None | Some(Json::Null | Json::Bool(_)) => false,
         Some(Json::Number(number)) => positive_number(number),
         Some(Json::Text(text)) => positive_int_text(text),
-        Some(Json::List(_) | Json::Object(_)) => false,
+        None | Some(Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_)) => false,
     }
 }
 
