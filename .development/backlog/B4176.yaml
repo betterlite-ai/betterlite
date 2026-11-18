@@ -1,14 +1,14 @@
 id: B4176
 milestone: M8 platform
 title: HTTP worker options and development reload
-status: done
+status: todo
 depends_on: [B003, B012]
 file: tasks/B4176-worker-options-reload.yaml
 covers:
   - "litellm/proxy/proxy_cli.py"
 parent: B121
 split_from: B121
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2369
+pr: null
