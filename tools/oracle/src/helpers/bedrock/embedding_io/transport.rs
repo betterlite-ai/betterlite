@@ -169,6 +169,13 @@ impl Factory {
             .unwrap_or_else(PoisonError::into_inner)
             .push(call);
     }
+
+    fn client(&self) -> FixtureClient {
+        FixtureClient {
+            reply: self.reply.clone(),
+            records: Arc::clone(&self.records),
+        }
+    }
 }
 
 impl ClientFactory for Factory {
@@ -180,10 +187,7 @@ impl ClientFactory for Factory {
             provider: None,
             timeout,
         });
-        FixtureClient {
-            reply: self.reply.clone(),
-            records: Arc::clone(&self.records),
-        }
+        self.client()
     }
 
     fn async_client(&self, provider: &str, timeout: Option<Timeout>) -> Self::Client {
@@ -192,10 +196,7 @@ impl ClientFactory for Factory {
             provider: Some(provider.to_owned()),
             timeout,
         });
-        FixtureClient {
-            reply: self.reply.clone(),
-            records: Arc::clone(&self.records),
-        }
+        self.client()
     }
 }
 

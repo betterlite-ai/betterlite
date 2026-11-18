@@ -7,8 +7,8 @@ import botocore.auth  # type: ignore[import-untyped]  # https://github.com/Berri
 from litellm.llms.bedrock.embed import embedding as embedding_module
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from .support import set_environment
 from .types import Keys, SignedRequest
+from .views import set_environment
 
 
 class KeysObject:
@@ -28,7 +28,7 @@ class PreparedView(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     method: str
     url: str
-    headers: dict[str, str]
+    headers: dict[str, JsonValue]
 
 
 Signer = Callable[[KeysObject, str, Mapping[str, str], str], Prepared]
@@ -41,4 +41,9 @@ def signed_embedding_request(case: SignedRequest) -> JsonValue:
     prepared = PreparedView.model_validate(
         sign(KeysObject(case["credentials"]), case["url"], case["headers"], case["region"])
     )
-    return {"method": prepared.method, "url": prepared.url, "headers": prepared.headers}
+    answer: dict[str, JsonValue] = {
+        "method": prepared.method,
+        "url": prepared.url,
+        "headers": prepared.headers,
+    }
+    return answer

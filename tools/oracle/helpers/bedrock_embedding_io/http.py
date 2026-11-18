@@ -12,9 +12,8 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, HTTPHandler
 from litellm.types.utils import LlmProviders
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from .support import BODY, set_environment
 from .types import HttpRequest
-from .views import failure_value
+from .views import BODY, failure_value, set_environment
 
 Client = HTTPHandler | AsyncHTTPHandler | None
 
@@ -130,10 +129,6 @@ def request_value(case: HttpRequest, request: httpx.Request) -> dict[str, JsonVa
     }
 
 
-def factory_value(call: FactoryCall) -> dict[str, JsonValue]:
-    return {"kind": call.kind, "provider": call.provider, "timeout": call.timeout}
-
-
 def chosen_client(case: HttpRequest, fixture: Fixture) -> Client:
     transport = httpx.MockTransport(partial(fixture.respond, fixture.supplied))
     supplied = case["supplied"]
@@ -177,7 +172,12 @@ def provider_json_response(case: HttpRequest) -> JsonValue:
     fixture = Fixture(case)
     configure(fixture)
     value = run_call(case, fixture)
-    factory: list[JsonValue] = [factory_value(call) for call in fixture.factory_calls]
+    factory: list[JsonValue] = [
+        BODY.validate_python(
+            {"kind": call.kind, "provider": call.provider, "timeout": call.timeout}
+        )
+        for call in fixture.factory_calls
+    ]
     return {
         "factory": factory,
         "supplied_requests": fixture.supplied,

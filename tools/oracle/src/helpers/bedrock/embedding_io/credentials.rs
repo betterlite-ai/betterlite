@@ -37,7 +37,9 @@ pub(crate) fn run(case: &Case) -> Result<Value, Failure> {
         &secrets,
         |settings: &AwsSettings, region: &str| {
             source.record(settings, region);
-            ready(Ok::<Credentials, CredentialError>(source.credentials()))
+            ready(Ok::<Credentials, CredentialError>(
+                source.credentials.clone(),
+            ))
         },
     ))??;
     let calls = source.calls();
@@ -194,10 +196,6 @@ impl Source {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    fn credentials(&self) -> Credentials {
-        self.credentials.clone()
     }
 }
 

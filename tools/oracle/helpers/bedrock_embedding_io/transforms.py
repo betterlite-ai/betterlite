@@ -27,7 +27,7 @@ def unmapped_value(case: TransformRequest) -> dict[str, JsonValue]:
 def transform_case(case: TransformRequest) -> JsonValue:
     try:
         response = Transformer().replied(case)
-    except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L250
+    except Exception as error:  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L250
         message = str(error)
         if not message.startswith(UNMAPPED):
             raise

@@ -70,6 +70,11 @@ fn call<'source>(
 
 fn provider_detail(error: &BedrockError, names: &BTreeSet<String>) -> Result<Value, Failure> {
     let provider = &error.error;
+    let headers = match error.headers.as_ref() {
+        None => Value::Null,
+        Some(ErrorHeaders::Http(pairs)) => serde_json::to_value(filtered_headers(pairs, names))?,
+        Some(ErrorHeaders::Mapping(entries)) => serde_json::to_value(entries)?,
+    };
     Ok(json!({
         "kind": "error",
         "status_code": provider.status_code,
@@ -83,22 +88,11 @@ fn provider_detail(error: &BedrockError, names: &BTreeSet<String>) -> Result<Val
                 "url": provider.response.request.url,
             },
         },
-        "headers": headers_value(error.headers.as_ref(), names)?,
+        "headers": headers,
         "body": provider.body,
         "response_text": error_response_text(&error.response_body),
         "response_headers": filtered_headers(&error.response_headers, names),
     }))
-}
-
-fn headers_value(
-    headers: Option<&ErrorHeaders>,
-    names: &BTreeSet<String>,
-) -> Result<Value, Failure> {
-    match headers {
-        None => Ok(Value::Null),
-        Some(ErrorHeaders::Http(pairs)) => Ok(Value::Object(filtered_headers(pairs, names))),
-        Some(ErrorHeaders::Mapping(entries)) => Ok(serde_json::to_value(entries)?),
-    }
 }
 
 fn filtered_headers(pairs: &[(String, String)], names: &BTreeSet<String>) -> Object {

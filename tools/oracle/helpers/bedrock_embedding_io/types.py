@@ -1,5 +1,6 @@
 from typing import Literal, NotRequired, TypedDict
 
+from litellm.constants import BEDROCK_EMBEDDING_PROVIDERS_LITERAL as PROVIDERS
 from pydantic import JsonValue
 
 
@@ -47,7 +48,7 @@ class HttpRequest(TypedDict):
 class TransformRequest(TypedDict):
     function: Literal["embedding_usage", "async_embedding_single_arn"]
     model: str
-    provider: Literal["amazon", "cohere", "nova", "twelvelabs"]
+    provider: PROVIDERS
     response_list: list[dict[str, JsonValue]]
     batch_data: NotRequired[list[dict[str, JsonValue]] | None]
     is_async_invoke: NotRequired[bool]

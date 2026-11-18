@@ -19,4 +19,8 @@ def run(input_value: Input) -> JsonValue:
         return http_error(input_value)
     if input_value["function"] == "embedding_credentials":
         return embedding_credentials(input_value)
-    return transform_case(input_value)
+    if input_value["function"] == "embedding_usage":
+        return transform_case(input_value)
+    if input_value["function"] == "async_embedding_single_arn":
+        return transform_case(input_value)
+    raise ValueError("the input names no bedrock embedding function")

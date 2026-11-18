@@ -1,13 +1,13 @@
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.embed.embedding import BedrockEmbedding
 from litellm.types.llms.bedrock import AwsAuthParams
 from pydantic import JsonValue, TypeAdapter
 
-from .support import set_environment
 from .types import CredentialRequest, Keys
+from .views import set_environment
 
 RECORD: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 TAGS: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
@@ -60,8 +60,14 @@ class Loader(BedrockEmbedding):
         self, optional_params: dict[str, JsonValue], bearer_token: str | None
     ) -> tuple[Credentials | None, str]:
         if bearer_token is None:
-            return self._load_credentials(optional_params, None)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L67-L106
-        return self._load_credentials(optional_params, bearer_token)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L67-L106
+            return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L67-L106
+                tuple[Credentials | None, str],
+                self._load_credentials(optional_params, None),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L67-L106
+            )
+        return cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L67-L106
+            tuple[Credentials | None, str],
+            self._load_credentials(optional_params, bearer_token),  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L67-L106
+        )
 
 
 def embedding_credentials(case: CredentialRequest) -> JsonValue:

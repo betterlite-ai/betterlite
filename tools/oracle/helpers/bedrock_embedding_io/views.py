@@ -1,7 +1,16 @@
+import os
+
 import httpx
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.types.utils import EmbeddingResponse
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
+
+BODY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+def set_environment(environment: dict[str, str]) -> None:
+    os.environ.clear()
+    os.environ.update(environment)
 
 
 class RecordView(BaseModel):
