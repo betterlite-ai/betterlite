@@ -1,0 +1,122 @@
+kind: helper
+name: realtime-input-collection
+call:
+  realtime_session_state:
+    model: ""
+    logged_event_types: null
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    force_transcription_model: null
+    request_data: null
+    user_api_key_dict: null
+    provider: null
+    store: []
+    inputs:
+      - kind: record
+        values:
+          type: conversation.item.create
+          item:
+            role: user
+            content:
+              - {type: input_text, text: hello}
+              - {type: input_audio, audio: placeholder}
+              - {type: input_text, text: ""}
+              - {type: input_text}
+      - kind: record
+        values:
+          type: conversation.item.create
+          item: {role: assistant, content: [{type: input_text, text: ignored}]}
+      - kind: text
+        text: '{"type":"conversation.item.create","item":"hello"}'
+      - kind: text
+        text: '{"type":"conversation.item.create","item":{"role":"user","content":[{"type":"input_text","text":"second"}]}}'
+      - kind: text
+        text: not json
+      - kind: text
+        text: "[1]"
+      - kind: text
+        text: '{"type":"session.update","session":"hello"}'
+      - kind: text
+        text: '{"type":"session.update","session":{"instructions":"be brief","type":"transcription"}}'
+      - kind: record
+        values: {type: response.create}
+    backend_events: []
+    usage_events: []
+    flush: false
+calls:
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store: []
+      inputs:
+        - kind: record
+          values:
+            type: session.update
+            session:
+              instructions: first prompt
+              tools: [{type: function, name: tool_a}]
+        - kind: record
+          values:
+            type: session.update
+            session: {tools: [], instructions: ""}
+        - kind: record
+          values:
+            type: session.update
+            session:
+              tools: [{type: function, name: tool_b}, {type: function, name: tool_c}]
+        - kind: record
+          values:
+            type: session.update
+            session: {tools: {name: not_a_list}}
+      backend_events: []
+      usage_events: []
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store: []
+      inputs: []
+      backend_events:
+        - {type: conversation.item.input_audio_transcription.completed, transcript: "What is the weather today?", item_id: item_1}
+        - {type: conversation.item.input_audio_transcription.completed, transcript: ""}
+        - {type: conversation.item.input_audio_transcription.completed}
+        - {type: response.done, transcript: ignored}
+        - {type: session.created, session: {type: transcription}}
+        - {type: response.created}
+        - {type: session.updated, session: {type: realtime}}
+      usage_events: []
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store: []
+      inputs: []
+      backend_events:
+        - {type: transcription_session.created}
+        - {type: transcription_session.updated}
+        - {type: session.created}
+        - {type: session.created, session: null}
+        - {type: session.created, session: hello}
+        - {type: session.updated, session: {type: realtime}}
+      usage_events: []
+      flush: false
+env: {}
+compare: {ignore: []}

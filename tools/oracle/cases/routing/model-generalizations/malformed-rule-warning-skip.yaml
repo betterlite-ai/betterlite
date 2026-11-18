@@ -1,0 +1,18 @@
+kind: probe
+name: malformed-rule-warning-skip
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        rules:
+          - name: broken
+            pattern: "^broken"
+          - pattern: "^ok-"
+            model_info: {litellm_provider: openai}
+        queries:
+          - {query: routing, model: ok-1}
+          - {query: routing, model: broken-1}
+compare:
+  ignore: []
+  expected_difference: []
