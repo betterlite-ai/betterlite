@@ -7,17 +7,23 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_secret_managers::secret_lookup::SecretLookup;
+use betterlite_secret_managers::secret_lookup::manager::ManagerState;
 use betterlite_secret_managers::secret_lookup::ports::{
     AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
     OidcTokenCache,
 };
+use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient;
+use betterlite_secret_managers::secret_read_dispatch::protocols::SyncSecretReader;
+use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
+use betterlite_secret_managers::secret_types::{KeyManagementSystem, SecretAccessMode};
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 use tokio::runtime::{Builder, Runtime};
 
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::transport::{
-    ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
+    ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, ReplyRequest, Timeout,
+    TransferError,
 };
 use crate::credentials::error::CredentialError;
 
@@ -81,10 +87,25 @@ impl Reply {
     }
 
     pub(super) fn status(status: u16, pairs: &[(&str, &str)], body: &str) -> Self {
+        Self::redirected(status, pairs, body, "POST", "")
+    }
+
+    // an empty url leaves the request url to the transport, which fills in the url it was sent
+    pub(super) fn redirected(
+        status: u16,
+        pairs: &[(&str, &str)],
+        body: &str,
+        method: &str,
+        url: &str,
+    ) -> Self {
         Self::Answer(EmbeddingReply {
             status,
             headers: headers(pairs),
             body: body.as_bytes().to_vec(),
+            request: ReplyRequest {
+                method: method.to_owned(),
+                url: url.to_owned(),
+            },
         })
     }
 }
@@ -113,12 +134,18 @@ impl EmbeddingTransport for FixtureClient {
         &self,
         request: EmbeddingRequest,
     ) -> impl Future<Output = Result<EmbeddingReply, TransferError>> + Send {
-        self.seen.lock().unwrap().push(request);
         let reply = match &self.reply {
-            Reply::Answer(reply) => Ok(reply.clone()),
+            Reply::Answer(reply) => {
+                let mut answer = reply.clone();
+                if answer.request.url.is_empty() {
+                    answer.request.url = request.url.clone();
+                }
+                Ok(answer)
+            }
             Reply::Timeout => Err(TransferError::Timeout),
             Reply::Failed => Err(TransferError::Failed(TransportError::Closed)),
         };
+        self.seen.lock().unwrap().push(request);
         ready(reply)
     }
 }
@@ -236,6 +263,56 @@ impl OidcClock for NoOidc {
 pub(super) fn no_secrets() -> SecretLookup {
     SecretLookup {
         manager: None,
+        oidc_http: Arc::new(NoOidc),
+        azure_tokens: Arc::new(NoOidc),
+        clock: Arc::new(NoOidc),
+        oidc_cache: OidcTokenCache::default(),
+    }
+}
+
+// a Vault reader records the thread it was read on and answers the region secret
+pub(super) struct ManagedReader {
+    region: String,
+    reads: Mutex<Vec<(String, bool)>>,
+}
+
+impl ManagedReader {
+    pub(super) fn new(region: &str) -> Self {
+        Self {
+            region: region.to_owned(),
+            reads: Mutex::new(Vec::new()),
+        }
+    }
+
+    pub(super) fn reads(&self) -> Vec<(String, bool)> {
+        self.reads.lock().unwrap().clone()
+    }
+}
+
+impl SyncSecretReader for ManagedReader {
+    fn sync_read_secret(&self, secret_name: &str) -> Option<SecretString> {
+        let on_runtime = tokio::runtime::Handle::try_current().is_ok();
+        self.reads
+            .lock()
+            .unwrap()
+            .push((secret_name.to_owned(), on_runtime));
+        assert!(
+            !on_runtime,
+            "a managed secret read must not run on the tokio runtime"
+        );
+        (secret_name == "AWS_REGION_NAME").then(|| SecretString::from(self.region.clone()))
+    }
+}
+
+pub(super) fn managed_secrets(reader: Arc<ManagedReader>) -> SecretLookup {
+    SecretLookup {
+        manager: Some(ManagerState {
+            client: SecretManagerClient::Vault(reader),
+            settings: Some(SecretManagerSettings::default()),
+            system: Some(KeyManagementSystem::HashicorpVault),
+            access_mode: SecretAccessMode::ReadOnly,
+            hosted_keys: None,
+        }),
         oidc_http: Arc::new(NoOidc),
         azure_tokens: Arc::new(NoOidc),
         clock: Arc::new(NoOidc),

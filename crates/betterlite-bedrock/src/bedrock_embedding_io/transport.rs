@@ -39,10 +39,18 @@ impl fmt::Debug for EmbeddingRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReplyRequest {
+    pub method: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EmbeddingReply {
     pub status: u16,
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+    // the request that produced this reply, after the transport's redirects
+    pub request: ReplyRequest,
 }
 
 #[derive(Debug, Error)]
@@ -137,7 +145,7 @@ where
     };
     // httpx raise_for_status raises for every status outside 2xx
     if !(200..300).contains(&reply.status) {
-        return Err(provider_error(call.url, &reply)?);
+        return Err(provider_error(&reply)?);
     }
     Ok(decode_embedding_response(&reply.body)?)
 }
@@ -185,11 +193,11 @@ fn timeout_error() -> Result<EmbeddingIoError, HeaderError> {
     })
 }
 
-fn provider_error(url: &str, reply: &EmbeddingReply) -> Result<EmbeddingIoError, HeaderError> {
+fn provider_error(reply: &EmbeddingReply) -> Result<EmbeddingIoError, HeaderError> {
     let message = response_text(&reply.body);
     let request = ErrorRequest {
-        method: "POST".to_owned(),
-        url: url.to_owned(),
+        method: reply.request.method.clone(),
+        url: reply.request.url.clone(),
     };
     let response = ErrorResponse {
         status_code: reply.status,

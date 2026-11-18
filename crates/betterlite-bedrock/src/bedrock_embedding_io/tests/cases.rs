@@ -19,8 +19,8 @@ use crate::bedrock_embedding_io::error::EmbeddingIoError;
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
-    ClientKind, EmbeddingCall, EmbeddingReply as TransportReply, EmbeddingRequest, SuppliedClient,
-    Timeout, TransferError, post_embedding,
+    ClientKind, EmbeddingCall, EmbeddingReply as TransportReply, EmbeddingRequest, ReplyRequest,
+    SuppliedClient, Timeout, TransferError, post_embedding,
 };
 use crate::bedrock_settings::{ErrorHeaders, ResponseBody};
 use crate::signing::request::AwsSignedRequest;
@@ -361,6 +361,10 @@ fn non_utf8_error_body_names_the_byte_count() {
         status: 400,
         headers: Vec::new(),
         body: vec![0xff, 0xfe],
+        request: ReplyRequest {
+            method: "POST".to_owned(),
+            url: String::new(),
+        },
     });
     let error = run_direct(false, &Factory::new(reply), &data, None)
         .expect_err("a non-UTF-8 error body is still a provider error");
@@ -371,6 +375,21 @@ fn non_utf8_error_body_names_the_byte_count() {
     assert_eq!(error.error.status_code, 400);
 }
 
+fn redirect_error_keeps_the_final_request() {
+    let data = object(BODY);
+    let final_url = "https://bedrock-runtime.us-west-2.amazonaws.com/final";
+    let reply = Reply::redirected(404, &[], r#"{"message":"missing"}"#, "GET", final_url);
+    let error = run_direct(false, &Factory::new(reply), &data, None)
+        .expect_err("the redirect target's status fails");
+    let EmbeddingIoError::Provider { error, .. } = error else {
+        panic!("a redirect target error is a bedrock error");
+    };
+    assert_eq!(error.error.response.status_code, 404);
+    assert_eq!(error.error.response.request.method, "GET");
+    assert_eq!(error.error.response.request.url, final_url);
+    assert_eq!(error.error.message, r#"{"message":"missing"}"#);
+}
+
 fn http_error() {
     provider_status_is_a_bedrock_error();
     provider_status_on_the_async_path_is_a_bedrock_error();
@@ -379,6 +398,7 @@ fn http_error() {
     transport_failure_stays_a_transport_error();
     malformed_success_body_is_a_decode_error();
     non_utf8_error_body_names_the_byte_count();
+    redirect_error_keeps_the_final_request();
 }
 
 fn reply_json(reply: &EmbeddingReply) -> Json {
