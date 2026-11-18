@@ -28,10 +28,10 @@ pub fn jsonify_object(
         let JsonData::Object(_) = value else {
             continue;
         };
-        *value = match encoder.encode(value) {
-            Ok(json) => JsonData::String(json),
-            Err(_) => JsonData::String(String::from(FAILED_TO_SERIALIZE_JSON)),
-        };
+        *value = encoder.encode(value).map_or_else(
+            |_| JsonData::String(String::from(FAILED_TO_SERIALIZE_JSON)),
+            |json| JsonData::String(json),
+        );
     }
     converted
 }

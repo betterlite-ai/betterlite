@@ -2,7 +2,7 @@ use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenSqlType;
 
 use super::KeyUserWriteError;
-use super::columns::{UserColumn, UserColumnOp, UserUpdateOps};
+use super::columns::{UserColumn, UserColumnDef, UserColumnOp, UserUpdateOps};
 use super::sql::{Parameter, Statement, parameter_for};
 
 pub(super) fn assignments(columns: &[String], placeholders: &[String]) -> Vec<String> {
@@ -43,10 +43,27 @@ fn assignment(
         UserColumnOp::Multiply(value) => ("*", value),
         UserColumnOp::Divide(value) => ("/", value),
     };
+    let (cast, operand) = numeric_operand(definition, value)?;
+    let index = statement.parameters.len().saturating_add(1);
+    statement.parameters.push(Parameter::Text(Some(operand)));
+    Ok(format!(
+        "\"{}\" = r.\"{}\" {operator} ${index}::text::{cast}",
+        definition.name, definition.name
+    ))
+}
+
+fn numeric_operand(
+    definition: UserColumnDef,
+    value: &TokenValue,
+) -> Result<(&'static str, String), KeyUserWriteError> {
     let cast = match definition.sql_type {
         TokenSqlType::DoublePrecision => "double precision",
         TokenSqlType::BigInt => "bigint",
-        _ => {
+        TokenSqlType::Text
+        | TokenSqlType::Boolean
+        | TokenSqlType::Json
+        | TokenSqlType::Timestamp
+        | TokenSqlType::TextArray => {
             return Err(KeyUserWriteError::NonNumericUpdate {
                 column: definition.name,
             });
@@ -55,16 +72,17 @@ fn assignment(
     let operand = match value {
         TokenValue::Integer(number) => number.to_string(),
         TokenValue::Number(number) => number.to_string(),
-        _ => {
+        TokenValue::Text(_)
+        | TokenValue::KeyHash(_)
+        | TokenValue::Bool(_)
+        | TokenValue::Json(_)
+        | TokenValue::Timestamp(_)
+        | TokenValue::TextArray(_)
+        | TokenValue::Null => {
             return Err(KeyUserWriteError::NonNumericUpdate {
                 column: definition.name,
             });
         }
     };
-    let index = statement.parameters.len().saturating_add(1);
-    statement.parameters.push(Parameter::Text(Some(operand)));
-    Ok(format!(
-        "\"{}\" = r.\"{}\" {operator} ${index}::text::{cast}",
-        definition.name, definition.name
-    ))
+    Ok((cast, operand))
 }

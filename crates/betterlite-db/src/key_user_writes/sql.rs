@@ -105,6 +105,7 @@ pub(super) fn upsert_key(
     ))
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum UserConflict<'update> {
     Reject,
     Upsert(&'update UserUpdateOps),
@@ -291,8 +292,5 @@ where
         .map_err(|driver| KeyUserWriteError::Database {
             source: backend::<WriteRowError>(driver),
         })?;
-    match row {
-        Some(found) => rows::row_json(&found),
-        None => Ok(JsonData::Null),
-    }
+    row.map_or_else(|| Ok(JsonData::Null), |found| rows::row_json(&found))
 }

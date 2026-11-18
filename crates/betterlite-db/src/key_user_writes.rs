@@ -12,6 +12,7 @@ mod writes;
 
 use secrecy::SecretString;
 use thiserror::Error;
+use tokio_postgres::error::SqlState;
 
 use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::identity_rows::user::LiteLLMUserTable;
@@ -21,7 +22,7 @@ use crate::postgres_store::errors::DbError;
 use crate::tool_spend::RetryPause;
 use crate::user_repository::projection::UserRecordError;
 
-use columns::{UserUpdateOps, UserWrite};
+use columns::{UserColumn, UserUpdateOps, UserWrite};
 use retry::{FailureSink, WriteClock};
 
 #[derive(Debug, Error)]
@@ -103,4 +104,40 @@ pub struct KeyUpdateResult {
 pub struct UserUpdateResult {
     pub user_id: String,
     pub data: LiteLLMUserTable,
+}
+
+const ORGANIZATION_FOREIGN_KEY: &str = "LiteLLM_UserTable_organization_id_fkey";
+
+// only the named organization foreign key becomes the 400 that points at /organization/new; any other failure keeps its type
+fn translate_organization_error(error: KeyUserWriteError, fields: &UserWrite) -> KeyUserWriteError {
+    let KeyUserWriteError::Database { source } = error else {
+        return error;
+    };
+    if !is_named_organization_failure(&source) {
+        return KeyUserWriteError::Database { source };
+    }
+    match fields.text(UserColumn::OrganizationId) {
+        Some(organization_id) => KeyUserWriteError::OrganizationMissing {
+            organization_id: organization_id.to_owned(),
+            source,
+        },
+        None => KeyUserWriteError::Database { source },
+    }
+}
+
+fn is_named_organization_failure(error: &DbError<WriteRowError>) -> bool {
+    match error {
+        DbError::SqlState {
+            code, constraint, ..
+        } => {
+            code == &SqlState::FOREIGN_KEY_VIOLATION
+                && constraint.as_deref() == Some(ORGANIZATION_FOREIGN_KEY)
+        }
+        DbError::NoDbConnected
+        | DbError::Pool { .. }
+        | DbError::Backend { .. }
+        | DbError::InvalidRecord { .. }
+        | DbError::CreateNull
+        | DbError::UniqueViolation { .. } => false,
+    }
 }

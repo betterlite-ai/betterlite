@@ -43,116 +43,36 @@ pub struct UserColumnDef {
 impl UserColumn {
     #[must_use]
     pub const fn definition(self) -> UserColumnDef {
-        match self {
-            Self::UserId => UserColumnDef {
-                name: "user_id",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::UserAlias => UserColumnDef {
-                name: "user_alias",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::TeamId => UserColumnDef {
-                name: "team_id",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::SsoUserId => UserColumnDef {
-                name: "sso_user_id",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::OrganizationId => UserColumnDef {
-                name: "organization_id",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::ObjectPermissionId => UserColumnDef {
-                name: "object_permission_id",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::Password => UserColumnDef {
-                name: "password",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::PasswordResetRequired => UserColumnDef {
-                name: "password_reset_required",
-                sql_type: TokenSqlType::Boolean,
-            },
-            Self::LastBreachCheckAt => UserColumnDef {
-                name: "last_breach_check_at",
-                sql_type: TokenSqlType::Timestamp,
-            },
-            Self::Teams => UserColumnDef {
-                name: "teams",
-                sql_type: TokenSqlType::TextArray,
-            },
-            Self::UserRole => UserColumnDef {
-                name: "user_role",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::MaxBudget => UserColumnDef {
-                name: "max_budget",
-                sql_type: TokenSqlType::DoublePrecision,
-            },
-            Self::Spend => UserColumnDef {
-                name: "spend",
-                sql_type: TokenSqlType::DoublePrecision,
-            },
-            Self::UserEmail => UserColumnDef {
-                name: "user_email",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::Models => UserColumnDef {
-                name: "models",
-                sql_type: TokenSqlType::TextArray,
-            },
-            Self::Metadata => UserColumnDef {
-                name: "metadata",
-                sql_type: TokenSqlType::Json,
-            },
-            Self::MaxParallelRequests => UserColumnDef {
-                name: "max_parallel_requests",
-                sql_type: TokenSqlType::BigInt,
-            },
-            Self::TpmLimit => UserColumnDef {
-                name: "tpm_limit",
-                sql_type: TokenSqlType::BigInt,
-            },
-            Self::RpmLimit => UserColumnDef {
-                name: "rpm_limit",
-                sql_type: TokenSqlType::BigInt,
-            },
-            Self::BudgetDuration => UserColumnDef {
-                name: "budget_duration",
-                sql_type: TokenSqlType::Text,
-            },
-            Self::BudgetResetAt => UserColumnDef {
-                name: "budget_reset_at",
-                sql_type: TokenSqlType::Timestamp,
-            },
-            Self::AllowedCacheControls => UserColumnDef {
-                name: "allowed_cache_controls",
-                sql_type: TokenSqlType::TextArray,
-            },
-            Self::Policies => UserColumnDef {
-                name: "policies",
-                sql_type: TokenSqlType::TextArray,
-            },
-            Self::ModelSpend => UserColumnDef {
-                name: "model_spend",
-                sql_type: TokenSqlType::Json,
-            },
-            Self::ModelMaxBudget => UserColumnDef {
-                name: "model_max_budget",
-                sql_type: TokenSqlType::Json,
-            },
-            Self::CreatedAt => UserColumnDef {
-                name: "created_at",
-                sql_type: TokenSqlType::Timestamp,
-            },
-            Self::UpdatedAt => UserColumnDef {
-                name: "updated_at",
-                sql_type: TokenSqlType::Timestamp,
-            },
-        }
+        let (name, sql_type) = match self {
+            Self::UserId => ("user_id", TokenSqlType::Text),
+            Self::UserAlias => ("user_alias", TokenSqlType::Text),
+            Self::TeamId => ("team_id", TokenSqlType::Text),
+            Self::SsoUserId => ("sso_user_id", TokenSqlType::Text),
+            Self::OrganizationId => ("organization_id", TokenSqlType::Text),
+            Self::ObjectPermissionId => ("object_permission_id", TokenSqlType::Text),
+            Self::Password => ("password", TokenSqlType::Text),
+            Self::PasswordResetRequired => ("password_reset_required", TokenSqlType::Boolean),
+            Self::LastBreachCheckAt => ("last_breach_check_at", TokenSqlType::Timestamp),
+            Self::Teams => ("teams", TokenSqlType::TextArray),
+            Self::UserRole => ("user_role", TokenSqlType::Text),
+            Self::MaxBudget => ("max_budget", TokenSqlType::DoublePrecision),
+            Self::Spend => ("spend", TokenSqlType::DoublePrecision),
+            Self::UserEmail => ("user_email", TokenSqlType::Text),
+            Self::Models => ("models", TokenSqlType::TextArray),
+            Self::Metadata => ("metadata", TokenSqlType::Json),
+            Self::MaxParallelRequests => ("max_parallel_requests", TokenSqlType::BigInt),
+            Self::TpmLimit => ("tpm_limit", TokenSqlType::BigInt),
+            Self::RpmLimit => ("rpm_limit", TokenSqlType::BigInt),
+            Self::BudgetDuration => ("budget_duration", TokenSqlType::Text),
+            Self::BudgetResetAt => ("budget_reset_at", TokenSqlType::Timestamp),
+            Self::AllowedCacheControls => ("allowed_cache_controls", TokenSqlType::TextArray),
+            Self::Policies => ("policies", TokenSqlType::TextArray),
+            Self::ModelSpend => ("model_spend", TokenSqlType::Json),
+            Self::ModelMaxBudget => ("model_max_budget", TokenSqlType::Json),
+            Self::CreatedAt => ("created_at", TokenSqlType::Timestamp),
+            Self::UpdatedAt => ("updated_at", TokenSqlType::Timestamp),
+        };
+        UserColumnDef { name, sql_type }
     }
 }
 
@@ -168,7 +88,6 @@ impl UserWrite {
         }
     }
 
-    #[must_use]
     pub(super) fn bindings(
         &self,
     ) -> impl Iterator<Item = (&'static str, TokenSqlType, &TokenValue)> {
