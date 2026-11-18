@@ -226,13 +226,9 @@ async def failure_call(
     )
 
 
-def line_order(line: SpanLine) -> tuple[int, int, str]:
-    return (int(line["start"]), int(line["end"]), line["name"])
-
-
 def read_spans(exporter: InMemorySpanExporter) -> list[SpanLine]:
     spans = exporter.get_finished_spans()
-    names: dict[int, str] = {}
+    names: dict[int, str] = {0: ""}
     for span in spans:
         context = span.get_span_context()
         if context is not None:
@@ -243,7 +239,7 @@ def read_spans(exporter: InMemorySpanExporter) -> list[SpanLine]:
         lines.append(
             SpanLine(
                 name=span.name,
-                parent=names.get(parent_id, ""),
+                parent=names[parent_id],
                 kind=span.kind.name,
                 status=span.status.status_code.name,
                 start=str(span.start_time),
@@ -255,8 +251,12 @@ def read_spans(exporter: InMemorySpanExporter) -> list[SpanLine]:
                 ],
             )
         )
-    lines.sort(key=line_order)
-    return lines
+    rows: list[tuple[int, int, str, str, int]] = [
+        (int(line["start"]), int(line["end"]), line["name"], line["parent"], index)
+        for index, line in enumerate(lines)
+    ]
+    rows.sort()
+    return [lines[row[4]] for row in rows]
 
 
 def run(input_value: Scenario) -> JsonValue:
@@ -268,8 +268,10 @@ def run(input_value: Scenario) -> JsonValue:
         tracer_provider=provider,
     )
     spec = input_value.get("parent")
+    parent_start = None if spec is None else spec.get("start")
+    start = input_value["start_time"] if parent_start is None else parent_start
     parent = None if spec is None else provider.get_tracer("b3858").start_span(
-        spec["name"], start_time=int(spec.get("start", input_value["start_time"]) * 1e9)
+        spec["name"], start_time=int(start * 1e9)
     )
     match input_value["function"]:
         case "service_success":
@@ -289,6 +291,7 @@ def run(input_value: Scenario) -> JsonValue:
             exception = None if spec_exception is None else exception_of(spec_exception)
             logger.record_error_attributes_on_span(parent, exception, input_value["status_code"])
     if parent is not None:
-        end = input_value["end_time"] if spec is None else spec.get("end", input_value["end_time"])
+        parent_end = None if spec is None else spec.get("end")
+        end = input_value["end_time"] if parent_end is None else parent_end
         parent.end(end_time=int(end * 1e9))
     return DICT.validate_python({"spans": read_spans(exporter)})  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1052
