@@ -190,8 +190,8 @@ fn is_connection_reply(code: Option<&str>, detail: Option<&str>) -> bool {
     match code {
         Some("NOAUTH" | "WRONGPASS") => true,
         Some("ERR") => match detail {
-            Some(detail) => matches!(
-                detail,
+            Some(text) => matches!(
+                text,
                 "max number of clients reached"
                     | "invalid password"
                     | "AUTH <password> called without any password configured for the default user. Are you sure your configuration is correct?"
