@@ -42,8 +42,8 @@ async fn get_settings(
     State(state): State<RoiSettingsState>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Json<ROISettingsResponse>, RoiSettingsError> {
-    let caller = caller.as_ref().map(|extension| &extension.0);
-    require_admin(caller, READ_ROLES, READ_FORBIDDEN)?;
+    let context = caller.as_ref().map(|extension| &extension.0);
+    require_admin(context, READ_ROLES, READ_FORBIDDEN)?;
     let Some(repository) = state.repository.as_deref() else {
         return Err(RoiSettingsError::Internal(InternalError::DbNotConnected));
     };
@@ -56,8 +56,8 @@ async fn update_settings(
     caller: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Result<Json<ROISettingsResponse>, RoiSettingsError> {
-    let caller = caller.as_ref().map(|extension| &extension.0);
-    require_admin(caller, WRITE_ROLES, WRITE_FORBIDDEN)?;
+    let context = caller.as_ref().map(|extension| &extension.0);
+    require_admin(context, WRITE_ROLES, WRITE_FORBIDDEN)?;
     let Some(repository) = state.repository.as_deref() else {
         return Err(RoiSettingsError::Internal(InternalError::DbNotConnected));
     };
