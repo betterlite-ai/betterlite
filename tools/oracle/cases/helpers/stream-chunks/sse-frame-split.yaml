@@ -1,0 +1,18 @@
+kind: helper
+name: stream-chunks-sse-frame-split
+call:
+  b8602:
+    function: frames
+    payloads: ["{\"a\":1}", "[DONE]", ""]
+    buffers:
+      - "data: a\n\nrest"
+      - "data: b\r\n\r\nc\n\nd"
+      - "a\r\rb\n\nc"
+      - "no delimiter"
+      - ""
+      - "\n\n"
+      - "ab\r\n\r\ncd\n\nef"
+      - "ab\n\ncd\r\n\r\nef"
+    endings: ["x\n\n", "x\r\n\r\n", "x\r\r", "x\n", "x", "", "\n\n", "\n\nx"]
+env: {}
+compare: {ignore: []}

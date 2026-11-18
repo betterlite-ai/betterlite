@@ -1,0 +1,482 @@
+kind: helper
+name: stream-chunks-serialize-drops-nulls
+call:
+  b8602:
+    function: chunk_view
+    view: serialized
+    chunks:
+      - kind: stream
+        body:
+          id: chatcmpl-1
+          object: chat.completion.chunk
+          created: 1
+          model: gpt-4o
+          system_fingerprint: null
+          choices:
+            - index: 0
+              delta: {content: hi, role: assistant}
+              finish_reason: null
+      - kind: stream
+        body:
+          id: chatcmpl-2
+          object: chat.completion.chunk
+          created: 2
+          model: gpt-4o
+          provider_specific_fields: {cache_read_input_tokens: 3}
+          choices:
+            - index: 0
+              delta: {}
+      - kind: stream
+        body:
+          id: chatcmpl-psf-1
+          object: chat.completion.chunk
+          created: 10
+          model: gpt-4o
+          provider_specific_fields:
+            nullable: null
+            nested: {a: null, b: 1}
+            items: [null, {c: null}]
+          choices:
+            - index: 0
+              delta: {content: hi, role: assistant}
+      - kind: stream
+        body:
+          id: chatcmpl-psf-2
+          object: chat.completion.chunk
+          created: 11
+          model: gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: hi
+                role: assistant
+                provider_specific_fields:
+                  nullable: null
+                  nested: {a: null, b: 1}
+      - kind: stream
+        body:
+          id: chatcmpl-audio
+          object: chat.completion.chunk
+          created: 44
+          model: gpt-4o-audio-preview
+          choices:
+            - index: 0
+              delta:
+                role: assistant
+                content: null
+                audio:
+                  id: audio_1
+                  data: ZGF0YQ==
+                  expires_at: 1700000000
+                  transcript: hi
+                  extra_null: null
+                  extra_obj: {a: null}
+                extra_null: null
+              finish_reason: null
+      - kind: full
+        body:
+          id: chatcmpl-psf-3
+          object: chat.completion
+          created: 12
+          model: gpt-4o
+          choices:
+            - index: 0
+              finish_reason: stop
+              provider_specific_fields: {nullable: null}
+              message:
+                role: assistant
+                content: hi
+                provider_specific_fields:
+                  nullable: null
+                  nested: {a: null, b: 1}
+      - kind: stream
+        body:
+          id: chatcmpl-psf-4
+          object: chat.completion.chunk
+          created: 13
+          model: gpt-4o
+          choices:
+            - index: 0
+              delta:
+                content: hi
+                role: assistant
+                tool_calls:
+                  - index: 0
+                    type: function
+                    function: {name: null, arguments: "{}"}
+                thinking_blocks:
+                  - {type: thinking, thinking: t, signature: null}
+              logprobs:
+                content:
+                  - token: hi
+                    bytes: null
+                    logprob: -0.1
+                    top_logprobs:
+                      - {token: hi, bytes: null, logprob: -0.1}
+      - kind: full
+        body:
+          id: chatcmpl-psf-5
+          object: chat.completion
+          created: 14
+          model: gpt-4o
+          choices:
+            - index: 0
+              finish_reason: stop
+              message:
+                role: assistant
+                content: hi
+                reasoning_items:
+                  - {type: reasoning, id: rs-1, encrypted_content: null, summary: []}
+      - kind: stream
+        body:
+          id: chatcmpl-detail-1
+          object: chat.completion.chunk
+          created: 20
+          model: gpt-4o
+          choices: []
+          usage:
+            prompt_tokens: 3
+            completion_tokens: 4
+            total_tokens: 7
+            prompt_tokens_details:
+              cached_tokens: 0
+              audio_tokens: null
+              text_tokens: 1
+              cache_creation_token_details: {ephemeral_5m_input_tokens: 2, ephemeral_1h_input_tokens: null}
+              cached_tokens_details: null
+              extra_null: null
+              nested: {a: null}
+            completion_tokens_details: {reasoning_tokens: 0, audio_tokens: null, extra_null: null}
+            server_tool_use: {web_search_requests: 1, browser_open_requests: null}
+            cost: null
+      - kind: full
+        body:
+          id: chatcmpl-detail-2
+          object: chat.completion
+          created: 21
+          model: gpt-4o
+          choices:
+            - index: 0
+              finish_reason: stop
+              message: {role: assistant, content: hi}
+          usage:
+            prompt_tokens: 3
+            completion_tokens: 4
+            total_tokens: 7
+            prompt_tokens_details: {cached_tokens: 0, audio_tokens: null, cached_tokens_details: null}
+            completion_tokens_details: {reasoning_tokens: 0, audio_tokens: null}
+            server_tool_use: {web_search_requests: 1, browser_open_requests: null}
+      - kind: event
+        body:
+          type: response.created
+          nullable: null
+          response:
+            id: resp_1
+            created_at: 5
+            status: in_progress
+            error: null
+            incomplete_details: null
+            instructions: null
+            metadata: {trace: null, n: 1}
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            reasoning: {effort: null, summary: null}
+            text: {format: {type: text, extra: null}, verbosity: null, extra_null: null, unknown: {a: null}}
+            tool_choice: {type: allowed_tools, mode: auto, tools: [], extra_null: null, unknown: {a: null}}
+            tools:
+              - type: function
+                name: f
+                description: null
+                parameters: {a: null}
+                strict: null
+                extra_null: null
+            truncation: null
+            usage:
+              input_tokens: 3
+              output_tokens: 4
+              total_tokens: 7
+              cost: null
+              input_tokens_details: {cached_tokens: 0, audio_tokens: null, cached_tokens_details: null, cache_creation_token_details: {ephemeral_5m_input_tokens: null, ephemeral_1h_input_tokens: 2}, nested: {a: null}}
+              output_tokens_details: {reasoning_tokens: null, text_tokens: 2}
+            user: null
+            store: null
+            extra_null: null
+            nested_extra: {a: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_text_dict
+            created_at: 40
+            status: in_progress
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            text: {format: {type: future_format, nullable: null}, nullable: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_text_schema
+            created_at: 41
+            status: in_progress
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            text:
+              format: {type: json_schema, name: n, schema: {type: object, x: null}, nullable: null}
+              verbosity: null
+              nullable: null
+              obj: {a: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_text_ok
+            created_at: 42
+            status: in_progress
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            text: {format: {type: text, extra: null}, verbosity: null, extra_null: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_tools
+            created_at: 22
+            output: []
+            tools:
+              - type: web_search
+                search_context_size: null
+                filters: {allowed_domains: null, extra_null: null}
+                user_location:
+                  type: approximate
+                  city: null
+                  country: US
+                  region: null
+                  timezone: null
+                  extra_null: null
+                  nested: {a: null}
+                extra_null: null
+              - type: file_search
+                vector_store_ids: [vs_1]
+                max_num_results: null
+                filters:
+                  type: and
+                  filters:
+                    - {type: eq, key: k, value: v, extra_null: null}
+                    - {type: or, filters: [], extra_null: null}
+                    - {plain: true, nested: {a: null}}
+                  extra_null: null
+                ranking_options:
+                  ranker: null
+                  score_threshold: null
+                  hybrid_search: {embedding_weight: 0.5, text_weight: 0.5, extra_null: null}
+                  extra_null: null
+                extra_null: null
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_tool_kinds
+            created_at: 23
+            output: []
+            tools:
+              - type: mcp
+                server_label: srv
+                allowed_tools: {read_only: true, tool_names: [read]}
+                require_approval:
+                  always: {read_only: false, tool_names: [write]}
+              - type: code_interpreter
+                container:
+                  type: auto
+                  network_policy:
+                    type: allowlist
+                    allowed_domains: [a.example]
+                    domain_secrets:
+                      - {domain: d.example, name: n, value: v}
+              - type: image_generation
+                input_image_mask: {image_url: "data:x"}
+              - type: custom
+                name: c
+                format: {type: grammar, definition: d, syntax: lark}
+              - type: namespace
+                description: d
+                name: n
+                tools:
+                  - {type: function, name: f, parameters: {a: null}}
+                  - {type: custom, name: c2, format: {type: text}}
+              - type: shell
+                environment:
+                  type: container_auto
+                  network_policy: {type: disabled}
+                  skills:
+                    - {type: skill_reference, skill_id: s}
+                    - type: inline
+                      name: i
+                      description: id
+                      source: {type: base64, data: eA==, media_type: application/zip}
+              - type: web_search_preview
+                user_location: {type: approximate, country: US}
+              - type: tool_search
+                parameters: {a: null}
+              - {type: local_shell}
+              - {type: computer}
+              - {type: computer_use_preview, display_height: 10, display_width: 20, environment: browser}
+              - {type: apply_patch}
+              - {type: programmatic_tool_calling}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_tool_calls
+            created_at: 24
+            output: []
+            tools:
+              - type: function_call
+                arguments: "{}"
+                call_id: call_1
+                name: f
+                caller: {type: program, caller_id: p}
+              - type: function_call
+                arguments: "{}"
+                call_id: call_2
+                name: g
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_tools_mixed
+            created_at: 25
+            output: []
+            tools:
+              - type: web_search
+                user_location: {type: approximate, city: null, country: US}
+                extra_null: null
+              - {type: unknown_tool, extra_null: null}
+      - kind: event
+        body:
+          type: response.in_progress
+          response: {id: resp_2, created_at: 6, error: null, instructions: null, output: []}
+      - kind: event
+        body:
+          type: response.completed
+          response: {id: resp_3, created_at: 7, error: null, output: [], usage: {input_tokens: 1, input_tokens_details: {cached_tokens: 2, audio_tokens: null}, output_tokens: 1, total_tokens: 2, cost: null}}
+      - kind: event
+        body:
+          type: response.failed
+          response: {id: resp_4, created_at: 8, error: {code: null}, output: []}
+      - kind: event
+        body:
+          type: response.incomplete
+          response: {id: resp_5, created_at: 9, incomplete_details: {reason: null}, output: []}
+      - kind: event
+        body:
+          type: response.output_item.added
+          output_index: 0
+          item_id: null
+          item:
+            type: message
+            id: msg_1
+            status: in_progress
+            role: assistant
+            content: []
+            extra_null: null
+            nested: {a: null}
+      - kind: event
+        body:
+          type: response.output_item.done
+          output_index: 1
+          item:
+            type: function_call
+            call_id: call_1
+            name: f
+            arguments: "{}"
+            id: null
+            status: null
+            extra_null: null
+            nested: {a: null}
+      - kind: event
+        body:
+          type: response.content_part.added
+          item_id: msg_1
+          output_index: 0
+          content_index: 0
+          part: {type: output_text, text: "", annotations: [], extra_null: null, nested: {a: null}}
+      - kind: event
+        body:
+          type: response.reasoning_summary_part.added
+          item_id: rs_1
+          output_index: 0
+          summary_index: 0
+          part: {type: summary_text, text: "", extra_null: null, nested: {a: null}}
+      - kind: event
+        body:
+          type: response.reasoning_summary_part.done
+          item_id: rs_1
+          output_index: 0
+          sequence_number: 2
+          summary_index: 0
+          part: {type: summary_text, text: "t", extra_null: null, nested: {a: null}}
+      - kind: event
+        body:
+          type: response.content_part.done
+          item_id: msg_1
+          output_index: 0
+          content_index: 0
+          sequence_number: 3
+          part:
+            type: output_text
+            text: hi
+            annotations:
+              - {type: url_citation, url: u, start_index: 0, end_index: 1, extra_null: null, nested: {a: null}}
+            logprobs:
+              - token: hi
+                logprob: -0.5
+                bytes: []
+                top_logprobs: [{token: hi, logprob: -0.5, bytes: [], extra: null}]
+                extra: null
+            extra_null: null
+      - kind: event
+        body:
+          type: error
+          sequence_number: 4
+          error:
+            type: invalid_request_error
+            code: bad_request
+            message: "no"
+            param: null
+            extra_null: null
+            nested: {a: null}
+      - kind: event
+        body:
+          type: response.shell_call.in_progress
+          nullable: null
+          provider_specific_fields:
+            nullable: null
+            nested: {a: null}
+          nested: {a: null}
+          items: [null]
+      - kind: full
+        body:
+          id: chatcmpl-3
+          object: chat.completion
+          created: 3
+          model: gpt-4o
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant}
+      - kind: plain
+        body:
+          model: gpt-4o
+          extra: {a: null}
+env: {}
+compare: {ignore: []}
