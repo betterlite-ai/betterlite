@@ -1,0 +1,39 @@
+kind: helper
+name: ownership_transfer_denied
+call:
+  key_delegation:
+    calls:
+      - check: ownership
+        body: {key: sk-oracle, user_id: null}
+        existing_user_id: owner
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle, user_id: ""}
+        existing_user_id: owner
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle, user_id: intruder}
+        existing_user_id: owner
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle, user_id: owner}
+        existing_user_id: owner
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle}
+        existing_user_id: owner
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle, user_id: someone}
+        existing_user_id: owner
+        caller: {role: proxy_admin, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle, user_id: owner}
+        existing_user_id: null
+        caller: {role: internal_user, is_session_token: false, is_ui_session_team_key: false}
+      - check: ownership
+        body: {key: sk-oracle, user_id: null}
+        existing_user_id: owner
+        caller: {role: proxy_admin, is_session_token: true, is_ui_session_team_key: false}
+env: {}
+compare: {ignore: []}
