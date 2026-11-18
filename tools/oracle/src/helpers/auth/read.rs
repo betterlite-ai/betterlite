@@ -1,9 +1,8 @@
+use std::error::Error;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_auth::auth_read::budget_failure::{
-    BudgetLookupFailure, FailureClass, log_budget_lookup_failure,
-};
+use betterlite_auth::auth_read::budget_failure::{ExpectedLookupMiss, log_budget_lookup_failure};
 use betterlite_auth::auth_read::membership::{
     SharedMembershipLoad, member_allowed_models, membership_from_shared_load,
 };
@@ -77,14 +76,17 @@ fn failure_report(exact_exception: bool, message: &str) -> HelperResult {
     let captured = Records::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_config_error()?;
-    let class = if exact_exception {
-        FailureClass::Exception
-    } else {
-        FailureClass::Named
-    };
-    let failure = BudgetLookupFailure { class, message };
     with_default(subscriber, || {
-        log_budget_lookup_failure(&redactor, "user", &failure);
+        let failure: Box<dyn Error + 'static> = if exact_exception {
+            Box::new(ExpectedLookupMiss {
+                message: message.to_owned(),
+            })
+        } else {
+            Box::new(NamedFailure {
+                message: message.to_owned(),
+            })
+        };
+        log_budget_lookup_failure(&redactor, "user", failure.as_ref());
     });
     let records = captured
         .0
@@ -97,6 +99,12 @@ fn failure_report(exact_exception: bool, message: &str) -> HelperResult {
         "level": first.map(|record| record.level.as_str()),
         "hint": records.iter().any(|record| !record.hint.is_empty()),
     }))
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("{message}")]
+struct NamedFailure {
+    message: String,
 }
 
 #[derive(Clone, Default)]

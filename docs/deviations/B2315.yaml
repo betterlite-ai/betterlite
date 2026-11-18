@@ -10,11 +10,12 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L415-L435
   - what: >-
       The log sentence is betterlite's own wording and the entity, hint and redacted cause are
-      structured tracing fields, where LiteLLM interpolates them into one printf-style string.
+      structured tracing fields carrying the failure's full source chain, where LiteLLM
+      interpolates the exception's own text into one printf-style string.
     why: >-
-      The task keeps entity, the unpopulated cache and the per-request database access in the
-      event; the exact words are betterlite's, as the oracle only compares severity and hint
-      presence.
+      A typed failure keeps its cause, so a wrapped repository error still shows the schema or
+      connection detail that decides the hint; a single unsourced exception logs the same text
+      either way, and the oracle compares severity and hint presence.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L430-L435
 kept_bugs:
   - what: >-
