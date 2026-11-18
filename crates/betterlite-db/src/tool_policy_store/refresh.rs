@@ -11,11 +11,12 @@ use crate::database_faults::{DbError, ErrorType};
 use crate::postgres_store::errors::{DbError as NativeDbError, backend};
 use crate::postgres_store::session::PostgresStore;
 use crate::tool_records::decode::decode_tool_record;
+use crate::tool_records::records::LiteLLMToolTableRow;
 
-use super::deadline::{StatementFailure, bounded_statement};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement};
 use super::errors::ToolPolicyStoreError;
 use super::records::BlockedToolRow;
-use super::registry::{ToolPolicyMaps, ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
+use super::registry::{ToolPolicyRegistry, blocked_tools_map, tool_policy_maps};
 
 const TOOLS_SQL: &str =
     "SELECT row_to_json(entry)::text AS row_text FROM \"LiteLLM_ToolTable\" AS entry";
@@ -29,7 +30,7 @@ const PERMISSIONS_LOOKUP: &str = "object permission blocked_tools";
 pub struct ToolPolicyStore<'store> {
     pub database: &'store PostgresStore,
     pub registry: &'store Mutex<ToolPolicyRegistry>,
-    pub deadline: Duration,
+    pub bounds: StatementBounds<'store>,
 }
 
 enum ReadFault {
@@ -59,11 +60,16 @@ impl ReadFault {
         }
     }
 
-    fn into_store_error(self, deadline: Duration) -> ToolPolicyStoreError {
+    fn into_store_error(
+        self,
+        deadline: Duration,
+        reconnect: Option<Box<DbError>>,
+    ) -> ToolPolicyStoreError {
         match self {
             Self::Native(source) => ToolPolicyStoreError::Read {
                 error_type: error_type_of(&source),
                 source,
+                reconnect,
             },
             Self::Expired(lookup) => ToolPolicyStoreError::Deadline { lookup, deadline },
         }
@@ -101,7 +107,14 @@ async fn sync_tool_policy<Client>(
 where
     Client: DbReconnect + Send,
 {
-    let maps = load_policy_maps(store.database, reconnect.as_deref_mut(), store.deadline).await?;
+    let texts = load_rows(
+        reconnect.as_deref_mut(),
+        store.bounds,
+        TOOLS_REASON,
+        move || read_tool_texts(store.database, store.bounds),
+    )
+    .await?;
+    let maps = tool_policy_maps(&decode_tools(&texts)?);
     let tool_count = maps.input_policies.len();
     {
         let mut registry = store
@@ -112,7 +125,7 @@ where
         registry.output_policies = maps.output_policies;
     }
     let blocked_tools =
-        load_blocked_tools(store.database, reconnect.as_deref_mut(), store.deadline).await?;
+        load_blocked_tools(store.database, reconnect.as_deref_mut(), store.bounds).await?;
     let permission_count = blocked_tools.len();
     let mut registry = store
         .registry
@@ -126,38 +139,33 @@ where
     Ok(())
 }
 
-async fn load_policy_maps<Client>(
-    database: &PostgresStore,
-    reconnect: Option<&mut Client>,
-    deadline: Duration,
-) -> Result<ToolPolicyMaps, ToolPolicyStoreError>
-where
-    Client: DbReconnect + Send,
-{
-    let texts = load_rows(reconnect, deadline, TOOLS_REASON, move || {
-        read_tool_rows(database, deadline)
-    })
-    .await?;
+fn decode_tools(texts: &[String]) -> Result<Vec<LiteLLMToolTableRow>, ToolPolicyStoreError> {
     let mut tools = Vec::with_capacity(texts.len());
-    for text in &texts {
+    for text in texts {
         tools.push(
             decode_tool_record(text.as_bytes())
                 .map_err(|source| ToolPolicyStoreError::Record { source })?,
         );
     }
-    Ok(tool_policy_maps(&tools))
+    Ok(tools)
 }
 
 pub(super) async fn load_blocked_tools<Client>(
     database: &PostgresStore,
     reconnect: Option<&mut Client>,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
 ) -> Result<BTreeMap<String, Vec<String>>, ToolPolicyStoreError>
 where
     Client: DbReconnect + Send,
 {
-    let rows = load_rows(reconnect, deadline, PERMISSIONS_REASON, move || {
-        read_blocked_rows(database, deadline)
+    let rows = load_rows(reconnect, bounds, PERMISSIONS_REASON, move || {
+        read_rows(
+            database,
+            PERMISSIONS_SQL,
+            PERMISSIONS_LOOKUP,
+            bounds,
+            blocked_tool_row,
+        )
     })
     .await?;
     Ok(blocked_tools_map(&rows))
@@ -165,7 +173,7 @@ where
 
 async fn load_rows<Rows, Read, ReadFuture, Client>(
     reconnect: Option<&mut Client>,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     reason: &'static str,
     read: Read,
 ) -> Result<Vec<Rows>, ToolPolicyStoreError>
@@ -185,7 +193,7 @@ where
                 match read().await {
                     Ok(rows) => Ok(rows),
                     Err(fault) => {
-                        let classified = fault.classify(deadline);
+                        let classified = fault.classify(bounds.deadline);
                         *last_fault.lock().unwrap_or_else(PoisonError::into_inner) = Some(fault);
                         Err(classified)
                     }
@@ -200,7 +208,7 @@ where
         )
         .await
     };
-    rows.map_err(|classified| read_failure(last_fault, classified, deadline))
+    rows.map_err(|classified| read_failure(last_fault, classified, bounds.deadline))
 }
 
 fn read_failure(
@@ -212,53 +220,51 @@ fn read_failure(
         .into_inner()
         .unwrap_or_else(PoisonError::into_inner)
     {
-        Some(fault) => fault.into_store_error(deadline),
+        Some(fault) => fault.into_store_error(deadline, classified.cause),
         None => ToolPolicyStoreError::ClassifiedRead { source: classified },
     }
 }
 
-async fn read_rows(
+async fn read_rows<T, Map>(
     database: &PostgresStore,
     sql: &str,
     lookup: &'static str,
-    deadline: Duration,
-) -> Result<Vec<tokio_postgres::Row>, ReadFault> {
-    let client = match timeout(deadline, database.session()).await {
+    bounds: StatementBounds<'_>,
+    map: Map,
+) -> Result<Vec<T>, ReadFault>
+where
+    T: Send,
+    Map: Fn(&tokio_postgres::Row) -> Result<T, ReadFault> + Send,
+{
+    let client = match timeout(bounds.deadline, database.session()).await {
         Ok(Ok(client)) => client,
         Ok(Err(source)) => return Err(ReadFault::Native(source)),
         Err(_elapsed) => return Err(ReadFault::Expired(lookup)),
     };
-    match bounded_statement(&client, deadline, client.query(sql, &[])).await {
-        Ok(rows) => Ok(rows),
+    match bounded_statement(&client, bounds, client.query(sql, &[])).await {
+        Ok(rows) => Ok(rows.iter().map(map).collect()),
         Err(StatementFailure::Driver(source)) => Err(ReadFault::Native(backend(source))),
-        Err(StatementFailure::Expired(_elapsed)) => Err(ReadFault::Expired(lookup)),
+        Err(StatementFailure::Expired {
+            cancelled: false, ..
+        }) => {
+            // taking the client out of the pool and dropping it aborts the connection task
+            let detached = deadpool_postgres::Object::take(client);
+            drop(detached);
+            Err(ReadFault::Expired(lookup))
+        }
+        Err(StatementFailure::Expired { .. }) => Err(ReadFault::Expired(lookup)),
     }
 }
 
-async fn read_tool_rows(
+async fn read_tool_texts(
     database: &PostgresStore,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
 ) -> Result<Vec<String>, ReadFault> {
-    let rows = read_rows(database, TOOLS_SQL, TOOLS_LOOKUP, deadline).await?;
-    let mut texts = Vec::with_capacity(rows.len());
-    for row in &rows {
-        texts.push(
-            row.try_get::<_, String>("row_text")
-                .map_err(|source| ReadFault::Native(backend(source)))?,
-        );
-    }
-    Ok(texts)
-}
-
-async fn read_blocked_rows(
-    database: &PostgresStore,
-    deadline: Duration,
-) -> Result<Vec<BlockedToolRow>, ReadFault> {
-    read_rows(database, PERMISSIONS_SQL, PERMISSIONS_LOOKUP, deadline)
-        .await?
-        .iter()
-        .map(blocked_tool_row)
-        .collect()
+    read_rows(database, TOOLS_SQL, TOOLS_LOOKUP, bounds, |row| {
+        row.try_get::<_, String>("row_text")
+            .map_err(|source| ReadFault::Native(backend(source)))
+    })
+    .await
 }
 
 fn blocked_tool_row(row: &tokio_postgres::Row) -> Result<BlockedToolRow, ReadFault> {

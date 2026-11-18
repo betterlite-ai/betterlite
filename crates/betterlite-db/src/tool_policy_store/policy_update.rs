@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
 use tokio::time::timeout;
@@ -8,7 +6,7 @@ use tokio_postgres::types::ToSql;
 use crate::tool_records::queries::get_tool;
 use crate::tool_records::records::{LiteLLMToolTableRow, ToolInputPolicy, ToolOutputPolicy};
 
-use super::deadline::{bounded_statement, cancel_statement};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement, cancel_statement};
 use super::records::{ToolIdGenerator, ToolPolicyUpdate};
 
 const UPSERT_SQL: &str = r#"INSERT INTO "LiteLLM_ToolTable" AS tool
@@ -21,9 +19,9 @@ ON CONFLICT ("tool_name") DO UPDATE SET
     "output_policy" = COALESCE($8::text, tool."output_policy")"#;
 
 pub async fn update_tool_policy(
-    client: Option<&Client>,
+    client: Option<Client>,
     ids: &dyn ToolIdGenerator,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     update: &ToolPolicyUpdate<'_>,
     now: DateTime<Utc>,
 ) -> Option<LiteLLMToolTableRow> {
@@ -31,19 +29,45 @@ pub async fn update_tool_policy(
         tracing::error!("tool_registry_writer update_tool_policy error: no database connection");
         return None;
     };
-    if !write_policy(connected, ids, deadline, update, now).await {
-        return None;
+    match write_policy(&connected, ids, bounds, update, now).await {
+        Ok(()) => (),
+        Err(failure) => {
+            tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
+            if let StatementFailure::Expired {
+                cancelled: false, ..
+            } = failure
+            {
+                // taking the client out of the pool and dropping it aborts the connection task
+                let detached = deadpool_postgres::Object::take(connected);
+                drop(detached);
+            }
+            return None;
+        }
     }
-    read_back(connected, deadline, update.tool_name).await
+    match read_back(&connected, bounds, update.tool_name).await {
+        Ok(row) => row,
+        Err(failure) => {
+            tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
+            if let StatementFailure::Expired {
+                cancelled: false, ..
+            } = failure
+            {
+                // taking the client out of the pool and dropping it aborts the connection task
+                let detached = deadpool_postgres::Object::take(connected);
+                drop(detached);
+            }
+            None
+        }
+    }
 }
 
 async fn write_policy(
     client: &Client,
     ids: &dyn ToolIdGenerator,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     update: &ToolPolicyUpdate<'_>,
     now: DateTime<Utc>,
-) -> bool {
+) -> Result<(), StatementFailure> {
     let updated_by = update.updated_by.unwrap_or("system");
     let created_input = update.input_policy.unwrap_or_default();
     let created_output = update.output_policy.unwrap_or_default();
@@ -61,30 +85,21 @@ async fn write_policy(
         &input_update,
         &output_update,
     ];
-    let work = client.execute(UPSERT_SQL, &params);
-    match bounded_statement(client, deadline, work).await {
-        Ok(_) => true,
-        Err(failure) => {
-            tracing::error!("tool_registry_writer update_tool_policy error: {failure}");
-            false
-        }
-    }
+    bounded_statement(client, bounds, client.execute(UPSERT_SQL, &params)).await?;
+    Ok(())
 }
 
 async fn read_back(
     client: &Client,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     tool_name: &str,
-) -> Option<LiteLLMToolTableRow> {
-    match timeout(deadline, get_tool(Some(client), tool_name)).await {
-        Ok(row) => row,
-        Err(_elapsed) => {
-            cancel_statement(client, deadline).await;
-            tracing::error!(
-                "tool_registry_writer update_tool_policy error: the read back did not finish within {deadline:?}"
-            );
-            None
-        }
+) -> Result<Option<LiteLLMToolTableRow>, StatementFailure> {
+    match timeout(bounds.deadline, get_tool(Some(client), tool_name)).await {
+        Ok(row) => Ok(row),
+        Err(_deadline_elapsed) => Err(StatementFailure::Expired {
+            deadline: bounds.deadline,
+            cancelled: cancel_statement(client, bounds).await,
+        }),
     }
 }
 

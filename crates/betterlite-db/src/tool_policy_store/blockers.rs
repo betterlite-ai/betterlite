@@ -1,8 +1,6 @@
-use std::time::Duration;
-
 use deadpool_postgres::Client;
 
-use super::deadline::{StatementFailure, bounded_statement};
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement};
 
 const FIND_SQL: &str = "SELECT COALESCE(\"blocked_tools\", ARRAY[]::text[]) AS blocked_tools FROM \"LiteLLM_ObjectPermissionTable\" WHERE \"object_permission_id\" = $1";
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_ObjectPermissionTable\" SET \"blocked_tools\" = $2 WHERE \"object_permission_id\" = $1";
@@ -29,8 +27,8 @@ enum BlockedList {
 }
 
 pub async fn change_blocked_tools(
-    client: Option<&Client>,
-    deadline: Duration,
+    client: Option<Client>,
+    bounds: StatementBounds<'_>,
     object_permission_id: &str,
     tool_name: &str,
     change: BlockedChange,
@@ -47,9 +45,21 @@ pub async fn change_blocked_tools(
     };
     let operation = change.operation();
     let mut current =
-        match read_blocked_list(connected, deadline, object_permission_id, operation).await {
-            BlockedList::Listed(current) => current,
-            BlockedList::Missing | BlockedList::Unreadable => return false,
+        match read_blocked_list(&connected, bounds, object_permission_id, operation).await {
+            Ok(BlockedList::Listed(current)) => current,
+            Ok(BlockedList::Missing | BlockedList::Unreadable) => return false,
+            Err(failure) => {
+                tracing::error!("tool_registry_writer {operation} error: {failure}");
+                if let StatementFailure::Expired {
+                    cancelled: false, ..
+                } = failure
+                {
+                    // taking the client out of the pool and dropping it aborts the connection task
+                    let detached = deadpool_postgres::Object::take(connected);
+                    drop(detached);
+                }
+                return false;
+            }
         };
     let listed = current.iter().any(|blocked| blocked.as_str() == tool_name);
     match (change, listed) {
@@ -60,10 +70,24 @@ pub async fn change_blocked_tools(
             current.retain(|blocked| blocked.as_str() != tool_name);
         }
     }
-    match write_blocked_list(connected, deadline, object_permission_id, &current).await {
+    match bounded_statement(
+        &connected,
+        bounds,
+        connected.execute(UPDATE_SQL, &[&object_permission_id, &current]),
+    )
+    .await
+    {
         Ok(_) => true,
         Err(failure) => {
             tracing::error!("tool_registry_writer {operation} error: {failure}");
+            if let StatementFailure::Expired {
+                cancelled: false, ..
+            } = failure
+            {
+                // taking the client out of the pool and dropping it aborts the connection task
+                let detached = deadpool_postgres::Object::take(connected);
+                drop(detached);
+            }
             false
         }
     }
@@ -71,45 +95,24 @@ pub async fn change_blocked_tools(
 
 async fn read_blocked_list(
     client: &Client,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     object_permission_id: &str,
     operation: &str,
-) -> BlockedList {
-    let found = match bounded_statement(
+) -> Result<BlockedList, StatementFailure> {
+    let found = bounded_statement(
         client,
-        deadline,
+        bounds,
         client.query_opt(FIND_SQL, &[&object_permission_id]),
     )
-    .await
-    {
-        Ok(found) => found,
-        Err(failure) => {
-            tracing::error!("tool_registry_writer {operation} error: {failure}");
-            return BlockedList::Unreadable;
-        }
-    };
+    .await?;
     match found {
         Some(row) => match row.try_get("blocked_tools") {
-            Ok(current) => BlockedList::Listed(current),
+            Ok(current) => Ok(BlockedList::Listed(current)),
             Err(error) => {
                 tracing::error!("tool_registry_writer {operation} error: {error}");
-                BlockedList::Unreadable
+                Ok(BlockedList::Unreadable)
             }
         },
-        None => BlockedList::Missing,
+        None => Ok(BlockedList::Missing),
     }
-}
-
-async fn write_blocked_list(
-    client: &Client,
-    deadline: Duration,
-    object_permission_id: &str,
-    blocked: &[String],
-) -> Result<u64, StatementFailure> {
-    bounded_statement(
-        client,
-        deadline,
-        client.execute(UPDATE_SQL, &[&object_permission_id, &blocked]),
-    )
-    .await
 }

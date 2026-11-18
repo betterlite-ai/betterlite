@@ -1,10 +1,8 @@
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Client;
 use tokio_postgres::types::ToSql;
 
-use super::deadline::bounded_statement;
+use super::deadline::{StatementBounds, StatementFailure, bounded_statement};
 use super::records::{ToolDiscoveryItem, ToolIdGenerator};
 
 const UPSERT_SQL: &str = r#"INSERT INTO "LiteLLM_ToolTable" AS tool
@@ -16,9 +14,9 @@ ON CONFLICT ("tool_name") DO UPDATE SET
     "last_used_at" = $9"#;
 
 pub async fn batch_upsert_tools(
-    client: Option<&Client>,
+    client: Option<Client>,
     ids: &dyn ToolIdGenerator,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     items: &[ToolDiscoveryItem],
     now: DateTime<Utc>,
 ) {
@@ -31,19 +29,29 @@ pub async fn batch_upsert_tools(
         return;
     };
     let count = data.len();
-    if !upsert_all(connected, ids, deadline, &data, now).await {
-        return;
+    match upsert_all(&connected, ids, bounds, &data, now).await {
+        Ok(()) => tracing::debug!("tool_registry_writer: upserted {count} tool(s)"),
+        Err(failure) => {
+            tracing::error!("tool_registry_writer batch_upsert_tools error: {failure}");
+            if let StatementFailure::Expired {
+                cancelled: false, ..
+            } = failure
+            {
+                // taking the client out of the pool and dropping it aborts the connection task
+                let detached = deadpool_postgres::Object::take(connected);
+                drop(detached);
+            }
+        }
     }
-    tracing::debug!("tool_registry_writer: upserted {count} tool(s)");
 }
 
 async fn upsert_all(
     client: &Client,
     ids: &dyn ToolIdGenerator,
-    deadline: Duration,
+    bounds: StatementBounds<'_>,
     items: &[(&ToolDiscoveryItem, &str)],
     now: DateTime<Utc>,
-) -> bool {
+) -> Result<(), StatementFailure> {
     let used_at = now.naive_utc();
     for &(item, tool_name) in items {
         let tool_id = ids.next_tool_id();
@@ -60,16 +68,9 @@ async fn upsert_all(
             &item.user_agent,
             &used_at,
         ];
-        let work = client.execute(UPSERT_SQL, &params);
-        match bounded_statement(client, deadline, work).await {
-            Ok(_) => (),
-            Err(failure) => {
-                tracing::error!("tool_registry_writer batch_upsert_tools error: {failure}");
-                return false;
-            }
-        }
+        bounded_statement(client, bounds, client.execute(UPSERT_SQL, &params)).await?;
     }
-    true
+    Ok(())
 }
 
 fn named_items(items: &[ToolDiscoveryItem]) -> Vec<(&ToolDiscoveryItem, &str)> {

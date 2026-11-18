@@ -11,6 +11,7 @@ pub enum ToolPolicyStoreError {
         error_type: ErrorType,
         #[source]
         source: NativeDbError,
+        reconnect: Option<Box<DbError>>,
     },
     #[error("the tool policy read failed with only its classification: {source}")]
     ClassifiedRead {

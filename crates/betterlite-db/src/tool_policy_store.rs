@@ -1,5 +1,5 @@
 pub mod blockers;
-mod deadline;
+pub mod deadline;
 pub mod discovery;
 pub mod errors;
 pub mod policy_update;
