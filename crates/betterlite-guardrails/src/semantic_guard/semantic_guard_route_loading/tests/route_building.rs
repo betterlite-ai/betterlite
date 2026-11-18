@@ -333,6 +333,39 @@ fn a_file_merge_alias_keeps_merged_route_fields() {
 }
 
 #[test]
+fn a_scalar_after_a_flow_mapping_is_quoted_in_its_sequence() {
+    let source = b"- route_name: x\n  utterances: [{a: b}, 1e309]\n";
+    assert_eq!(
+        quote_pyyaml_text_scalars(source).as_ref(),
+        b"- route_name: 'x'\n  utterances: [{a: b}, '1e309']\n"
+    );
+}
+
+#[test]
+fn a_merged_route_after_an_alias_quotes_its_utterances() {
+    let (_folder, path) = routes_file(
+        "- &defaults {route_name: base_route, utterances: [base utterance], description: merged description, similarity_threshold: 0.8}\n- <<: *defaults\n  route_name: alias route\n  utterances: [1e309]\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap()[1],
+        route("alias route", Some("merged description"), &["1e309"], 0.8)
+    );
+}
+
+#[test]
+fn an_aliased_pyyaml_text_scalar_is_read_as_text() {
+    let (_folder, path) = routes_file(
+        "- route_name: first\n  utterances: [\"a\"]\n  metadata: {note: &n 1e3}\n- route_name: *n\n  utterances: [*n]\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap()[1],
+        route("1e3", None, &["1e3"], 0.5)
+    );
+}
+
+#[test]
 fn a_pyyaml_timestamp_or_sexagesimal_scalar_stays_text() {
     let (_folder, path) = routes_file(
         "- route_name: 2020-01-01\n  description: 1:30\n  utterances:\n    - 2020-01-01\n    - 1:30\n    - 1:30.5\n",

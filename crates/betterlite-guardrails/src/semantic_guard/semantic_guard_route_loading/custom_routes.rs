@@ -2,10 +2,13 @@ use std::borrow::Cow;
 use std::fs::File;
 use std::io::{self, Read as _};
 use std::path::Path;
+use std::str::from_utf8;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use regex::Regex;
+use serde::de::DeserializeOwned;
 use serde_saphyr::NonFiniteFloatPolicy;
+use serde_saphyr::Options;
 use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle, Span, SpannedEventReceiver};
 
 use super::definition::{
@@ -53,7 +56,9 @@ impl PyYamlTextSpans<'_> {
     fn scalar_context(&mut self, text: Option<&str>) -> bool {
         match self.collections.last_mut() {
             Some(YamlCollection::Mapping { key }) => match (key.take(), text) {
-                (Some(field), _) => is_route_text_field(&field),
+                (Some(field), _) => {
+                    matches!(field.as_str(), "route_name" | "description" | "utterances")
+                }
                 (None, Some(scalar)) => {
                     *key = Some(scalar.to_owned());
                     false
@@ -70,7 +75,7 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
     fn on_event(&mut self, ev: Event<'input>, span: Span) {
         match ev {
             Event::MappingStart(..) => {
-                let _ = self.scalar_context(None);
+                self.scalar_context(None);
                 self.collections.push(YamlCollection::Mapping { key: None });
             }
             Event::SequenceStart(..) => {
@@ -78,11 +83,8 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
                 self.collections
                     .push(YamlCollection::Sequence { quote_text });
             }
-            Event::MappingEnd => {
-                let _ = self.collections.pop();
-            }
-            Event::SequenceEnd => {
-                let _ = self.collections.pop();
+            Event::MappingEnd | Event::SequenceEnd => {
+                drop(self.collections.pop());
             }
             Event::Scalar(text, ScalarStyle::Plain, _, None) => {
                 if self.scalar_context(Some(text.as_ref()))
@@ -92,19 +94,24 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
                 }
             }
             Event::Scalar(text, ..) => {
-                let _ = self.scalar_context(Some(text.as_ref()));
+                self.scalar_context(Some(text.as_ref()));
             }
             Event::Alias(_) => {
-                let _ = self.scalar_context(None);
+                self.scalar_context(None);
             }
-            _ => {}
+            Event::StreamStart
+            | Event::StreamEnd
+            | Event::DocumentStart(..)
+            | Event::DocumentEnd
+            | Event::Comment(..)
+            | _ => {}
         }
     }
 }
 
 #[must_use]
 pub(super) fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
-    let Ok(source) = std::str::from_utf8(bytes) else {
+    let Ok(source) = from_utf8(bytes) else {
         return Cow::Borrowed(bytes);
     };
     let Ok(non_text) = Regex::new(PYYAML_NON_TEXT_SCALAR) else {
@@ -132,10 +139,6 @@ pub(super) fn quote_pyyaml_text_scalars(bytes: &[u8]) -> Cow<'_, [u8]> {
         || Cow::Borrowed(bytes),
         |rewritten| Cow::Owned(rewritten.into_bytes()),
     )
-}
-
-fn is_route_text_field(field: &str) -> bool {
-    matches!(field, "route_name" | "description" | "utterances")
 }
 
 fn rewritten_source(source: &str, spans: &[(Span, String)]) -> Option<String> {
@@ -183,39 +186,9 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     };
     let pattern = Regex::new(PYYAML_NON_TEXT_SCALAR).ok();
     // the document is probed once for its shape, then parsed again as the routes it holds
-    let document: GuardrailValue =
-        serde_saphyr::from_slice_with_options(input.as_ref(), options.clone()).map_err(
-            |source| CustomRoutesError::Yaml {
-                source: Box::new(source),
-            },
-        )?;
-    match document {
-        GuardrailValue::Array(_) => {
-            let raw: Vec<RawDefinition> =
-                serde_saphyr::from_slice_with_options(input.as_ref(), options.clone()).map_err(
-                    |source| CustomRoutesError::Yaml {
-                        source: Box::new(source),
-                    },
-                )?;
-            let texts: Option<Vec<RawDefinitionText>> =
-                serde_saphyr::from_slice_with_options(input.as_ref(), options).ok();
-            definitions(raw, texts, pattern.as_ref())
-        }
-        GuardrailValue::Object(_) => {
-            let raw: RawDefinition =
-                serde_saphyr::from_slice_with_options(input.as_ref(), options.clone()).map_err(
-                    |source| CustomRoutesError::Yaml {
-                        source: Box::new(source),
-                    },
-                )?;
-            let text: Option<RawDefinitionText> =
-                serde_saphyr::from_slice_with_options(input.as_ref(), options).ok();
-            definitions(
-                vec![raw],
-                text.map(|scalars| vec![scalars]),
-                pattern.as_ref(),
-            )
-        }
+    match parse_yaml::<GuardrailValue>(input.as_ref(), options.clone())? {
+        GuardrailValue::Array(_) => decode_list(input.as_ref(), options, pattern.as_ref()),
+        GuardrailValue::Object(_) => decode_mapping(input.as_ref(), options, pattern.as_ref()),
         GuardrailValue::Null
         | GuardrailValue::Boolean(_)
         | GuardrailValue::SignedInteger(_)
@@ -223,6 +196,37 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
         | GuardrailValue::Decimal(_)
         | GuardrailValue::Text(_) => Err(CustomRoutesError::InvalidFormat),
     }
+}
+
+fn decode_list(
+    input: &[u8],
+    options: Options,
+    pattern: Option<&Regex>,
+) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
+    let raw: Vec<RawDefinition> = parse_yaml(input, options.clone())?;
+    let texts: Option<Vec<RawDefinitionText>> = parse_yaml(input, options).ok();
+    definitions(raw, texts, pattern)
+}
+
+fn decode_mapping(
+    input: &[u8],
+    options: Options,
+    pattern: Option<&Regex>,
+) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
+    let raw: RawDefinition = parse_yaml(input, options.clone())?;
+    let text: Option<RawDefinitionText> = parse_yaml(input, options).ok();
+    definitions(vec![raw], text.map(|scalars| vec![scalars]), pattern)
+}
+
+fn parse_yaml<T>(input: &[u8], options: Options) -> Result<T, CustomRoutesError>
+where
+    T: DeserializeOwned,
+{
+    serde_saphyr::from_slice_with_options(input, options).map_err(|source| {
+        CustomRoutesError::Yaml {
+            source: Box::new(source),
+        }
+    })
 }
 
 pub fn load(path: &Path) -> Result<Vec<RouteDefinition>, RouteLoadError> {
@@ -256,9 +260,9 @@ fn definitions(
     pattern: Option<&Regex>,
 ) -> Result<Vec<RouteDefinition>, CustomRoutesError> {
     let mut parsed = Vec::with_capacity(raw.len());
-    let mut texts = texts.unwrap_or_default().into_iter();
+    let mut remaining_texts = texts.unwrap_or_default().into_iter();
     for (index, item) in raw.into_iter().enumerate() {
-        let text = texts.next();
+        let text = remaining_texts.next();
         parsed.push(
             item.with_pyyaml_scalars(text.as_ref(), pattern)
                 .into_definition()
