@@ -205,10 +205,10 @@ async fn discovery_keeps_the_first_identity_and_increments_the_count() {
     batch_upsert_tools(Some(&client), ids, DEADLINE, &[second], later_instant()).await;
     drop(client);
     let tool = stored_tool(&db, "search").await;
+    let tool_id = tool.tool_id.as_str();
     assert!(
-        uuid::Uuid::parse_str(&tool.tool_id).is_ok(),
-        "the generated tool id is a uuid, got {}",
-        tool.tool_id
+        uuid::Uuid::parse_str(tool_id).is_ok(),
+        "the generated tool id is a uuid, got {tool_id}"
     );
     assert_eq!(tool.origin.as_deref(), Some("system"));
     assert_eq!(tool.created_by.as_deref(), Some("seed"));
