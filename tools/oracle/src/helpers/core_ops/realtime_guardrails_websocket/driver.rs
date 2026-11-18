@@ -73,6 +73,30 @@ struct Session {
     timeline: Timeline,
 }
 
+impl Session {
+    // One scripted runner call; the runner borrows the state and is dropped before the frames are read
+    async fn run(
+        &mut self,
+        callbacks: &[&dyn RealtimeGuardrail<Error = ScriptedError>],
+        document: &RunDocument,
+    ) -> Result<bool, RealtimeGuardrailsError<ScriptedError, ScriptedError>> {
+        let mut runner: RealtimeGuardrails<'_, ScriptedConfig, ScriptedError> =
+            RealtimeGuardrails {
+                state: &mut self.state,
+                provider: None,
+                guardrails: callbacks,
+            };
+        runner
+            .run_realtime_guardrails(
+                &document.transcript,
+                document.item_id.as_deref(),
+                document.pre_block_backend_message.as_deref(),
+                document.event_hooks.as_deref(),
+            )
+            .await
+    }
+}
+
 pub(crate) fn drive(input: &Input) -> HelperResult {
     input
         .check()
@@ -102,7 +126,7 @@ async fn observe(input: &Input) -> Result<Value, Failure> {
     let callbacks = callback_list(input, &guardrails)?;
     let runs = run_all(&mut session, &callbacks, &input.runs).await;
     let (checks, applied) = recorded_records(&records);
-    Ok(report(&session, runs, checks, applied))
+    Ok(report(&session, &runs, &checks, &applied))
 }
 
 fn callback_list<'run>(
@@ -129,37 +153,24 @@ async fn run_all(
 ) -> Vec<Value> {
     let mut outcomes = Vec::new();
     for document in runs {
-        let outcome = {
-            let mut runner: RealtimeGuardrails<'_, ScriptedConfig, ScriptedError> =
-                RealtimeGuardrails {
-                    state: &mut session.state,
-                    provider: None,
-                    guardrails: callbacks,
-                };
-            runner
-                .run_realtime_guardrails(
-                    &document.transcript,
-                    document.item_id.as_deref(),
-                    document.pre_block_backend_message.as_deref(),
-                    document.event_hooks.as_deref(),
-                )
-                .await
-        };
+        let outcome = session.run(callbacks, document).await;
         let (backend, client) = frame_log(session);
         match outcome {
-            Ok(blocked) => outcomes.push(json!({
-                "blocked": blocked,
-                "error": Value::Null,
-                "backend": backend,
-                "client": client,
-            })),
+            Ok(blocked) => {
+                outcomes.push(outcome_frame(
+                    Some(blocked),
+                    &Value::Null,
+                    &backend,
+                    &client,
+                ));
+            }
             Err(error) => {
-                outcomes.push(json!({
-                    "blocked": Value::Null,
-                    "error": label(&error),
-                    "backend": backend,
-                    "client": client,
-                }));
+                outcomes.push(outcome_frame(
+                    None,
+                    &Value::from(label(&error)),
+                    &backend,
+                    &client,
+                ));
                 break;
             }
         }
@@ -167,7 +178,21 @@ async fn run_all(
     outcomes
 }
 
-fn report(session: &Session, runs: Vec<Value>, checks: Vec<Value>, applied: Vec<Value>) -> Value {
+fn outcome_frame(
+    blocked: Option<bool>,
+    error: &Value,
+    backend: &[Value],
+    client: &[Value],
+) -> Value {
+    json!({
+        "blocked": blocked,
+        "error": error,
+        "backend": backend,
+        "client": client,
+    })
+}
+
+fn report(session: &Session, runs: &[Value], checks: &[Value], applied: &[Value]) -> Value {
     json!({
         "runs": runs,
         "timeline": session.timeline.locked().clone(),

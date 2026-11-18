@@ -44,8 +44,8 @@ impl ScriptedGuardrail {
     }
 
     // A raised exception with a status_code or a ValueError blocks; every other exception is unexpected, detail or not
-    fn failure(raised: &Option<Raised>) -> GuardrailFailure<ScriptedError> {
-        let raised = raised.clone().unwrap_or_default();
+    fn failure(raised: Option<&Raised>) -> GuardrailFailure<ScriptedError> {
+        let raised = raised.cloned().unwrap_or_default();
         if raised.status_code.is_some() || raised.value_error {
             GuardrailFailure::Blocked(GuardrailViolation {
                 detail: raised.detail.unwrap_or(Json::Null),
@@ -92,7 +92,7 @@ impl RealtimeGuardrail for ScriptedGuardrail {
     fn apply_guardrail(&self, input: GuardrailInput) -> GuardrailApplication<'_, ScriptedError> {
         self.records.locked().applied.push(input);
         let outcome = self.document.outcome;
-        let failure = Self::failure(&self.document.raised);
+        let failure = Self::failure(self.document.raised.as_ref());
         Box::pin(async move {
             match outcome {
                 Outcome::Clean => Ok(GuardrailTexts::default()),
