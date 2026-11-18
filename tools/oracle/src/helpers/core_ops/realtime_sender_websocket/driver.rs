@@ -5,9 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
-use betterlite_core::api::realtime_contracts::transport::{
-    RealtimeEventNormalizer, WebSocketScope,
-};
+use betterlite_core::api::realtime_contracts::transport::WebSocketScope;
 use betterlite_core::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
 use betterlite_core::api::realtime_sender::RealtimeSender;
 use betterlite_core::api::realtime_sender::error::RealtimeSenderError;
@@ -96,7 +94,7 @@ async fn run_operations(
     let callbacks = streaming
         .guards
         .iter()
-        .map(|guard| guard as &dyn RealtimeGuardrailCallback<Error = ScriptError>)
+        .map(|guard| -> &dyn RealtimeGuardrailCallback<Error = ScriptError> { guard })
         .collect::<Vec<_>>();
     let mut results = Vec::new();
     let mut upstream = Vec::new();
@@ -152,12 +150,14 @@ fn connection(input: &Input, client: ClientSink, backend: WireBackend) -> Connec
         backend: Some(Box::new(backend)),
         logging: None,
         logging_worker: None,
-        provider_config: input.provider.as_ref().map(|document| {
-            Box::new(ProviderView {
-                requires_session_configuration: document.requires_session_configuration,
-            }) as Box<dyn RealtimeProviderConfig>
-        }),
-        event_normalizer: Some(Box::new(Normalizer) as Box<dyn RealtimeEventNormalizer>),
+        provider_config: input.provider.as_ref().map(
+            |document| -> Box<dyn RealtimeProviderConfig> {
+                Box::new(ProviderView {
+                    requires_session_configuration: document.requires_session_configuration,
+                })
+            },
+        ),
+        event_normalizer: Some(Box::new(Normalizer)),
         logged_real_time_event_types: LoggedEventTypes::Default,
         model: input.model.clone(),
         user_api_key_dict: None,
