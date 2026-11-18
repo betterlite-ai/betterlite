@@ -8,8 +8,8 @@ use tokio_postgres::error::SqlState;
 use tracing::subscriber::set_default;
 
 use super::support::{
-    Harness, Ports, alias_update, capture_logs, failing_key_write, fixed_now, key_column,
-    key_write, user_alias_update, user_column, user_write,
+    Harness, Ports, RecordedFailure, alias_update, capture_logs, failing_key_write, fixed_now,
+    key_column, key_write, user_alias_update, user_column, user_write,
 };
 use crate::budget_permission_rows::{JsonData, PermissionList, Timestamp};
 use crate::key_repository::table::TokenValue;
@@ -62,6 +62,11 @@ pub(super) async fn user_column_text(
         format!("SELECT \"{column}\"::text FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = $1");
     let row = client.query_opt(sql.as_str(), &[&user_id]).await.unwrap()?;
     row.try_get::<_, Option<String>>(0).unwrap()
+}
+
+async fn assert_stored_alias(client: &Client, user_id: &str, expected: &str) {
+    let stored = user_column_text(client, "user_alias", user_id).await;
+    assert_eq!(stored.as_deref(), Some(expected));
 }
 
 #[tokio::test]
@@ -220,22 +225,11 @@ async fn user_conflict_no_update() {
     harness.close().await;
 }
 
-#[tokio::test]
-async fn user_organization_fk_400() {
-    let harness = Harness::start().await;
-    let client = harness.client().await;
-    let ports = Ports::new(Duration::ZERO);
-    let writes = service(&client, &ports);
-    let orphan = user_column(
-        "user-orphan",
-        UserColumn::OrganizationId,
-        TokenValue::Text(String::from("missing-org")),
-    );
-    let error = writes.insert_user(&orphan).await.unwrap_err();
+fn assert_organization_missing(error: &KeyUserWriteError) {
     let KeyUserWriteError::OrganizationMissing {
         organization_id,
         source,
-    } = &error
+    } = error
     else {
         panic!("expected the organization translation, got {error}");
     };
@@ -251,6 +245,21 @@ async fn user_organization_fk_400() {
         constraint.as_deref(),
         Some("LiteLLM_UserTable_organization_id_fkey")
     );
+}
+
+#[tokio::test]
+async fn user_organization_fk_400() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let orphan = user_column(
+        "user-orphan",
+        UserColumn::OrganizationId,
+        TokenValue::Text(String::from("missing-org")),
+    );
+    let error = writes.insert_user(&orphan).await.unwrap_err();
+    assert_organization_missing(&error);
     assert_eq!(error.http_status(), Some(400));
     assert_eq!(
         error.to_string(),
@@ -272,10 +281,7 @@ async fn user_organization_fk_400() {
     harness.close().await;
 }
 
-#[tokio::test]
-async fn user_other_fk_failures_keep_their_type() {
-    let harness = Harness::start().await;
-    let client = harness.client().await;
+async fn user_in_organization(client: &Client) -> UserWrite {
     client
         .execute(
             "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"max_budget\", \"created_by\", \"updated_by\") VALUES ($1, $2, $3, $4)",
@@ -290,8 +296,6 @@ async fn user_other_fk_failures_keep_their_type() {
         )
         .await
         .unwrap();
-    let ports = Ports::new(Duration::ZERO);
-    let writes = service(&client, &ports);
     let mut fields = user_column(
         "user-team",
         UserColumn::OrganizationId,
@@ -301,6 +305,16 @@ async fn user_other_fk_failures_keep_their_type() {
         UserColumn::TeamId,
         TokenValue::Text(String::from("missing-team")),
     );
+    fields
+}
+
+#[tokio::test]
+async fn user_other_fk_failures_keep_their_type() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let fields = user_in_organization(&client).await;
     let error = writes.insert_user(&fields).await.unwrap_err();
     let KeyUserWriteError::Database {
         source: DbError::SqlState {
@@ -512,45 +526,29 @@ async fn user_update_map_precedence() {
         .insert_user(&user_write("user-a", "first"))
         .await
         .unwrap();
-    let explicit = UserUpdate {
-        user_id: None,
-        fields: user_write("user-a", "from-data"),
-        update_fields: Some(user_alias_update("explicit")),
-        custom_update_fields: Some(UserUpdateOps::from(&user_alias_update("custom"))),
-    };
-    writes.update_user(&explicit).await.unwrap();
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-a")
-            .await
-            .as_deref(),
-        Some("explicit")
-    );
-    let custom = UserUpdate {
-        user_id: None,
-        fields: user_write("user-a", "from-data"),
-        update_fields: None,
-        custom_update_fields: Some(UserUpdateOps::from(&user_alias_update("custom"))),
-    };
-    writes.update_user(&custom).await.unwrap();
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-a")
-            .await
-            .as_deref(),
-        Some("custom")
-    );
-    let plain = UserUpdate {
-        user_id: None,
-        fields: user_write("user-a", "from-data"),
-        update_fields: None,
-        custom_update_fields: None,
-    };
-    writes.update_user(&plain).await.unwrap();
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-a")
-            .await
-            .as_deref(),
-        Some("from-data")
-    );
+    let cases = [
+        (
+            Some(user_alias_update("explicit")),
+            Some(UserUpdateOps::from(&user_alias_update("custom"))),
+            "explicit",
+        ),
+        (
+            None,
+            Some(UserUpdateOps::from(&user_alias_update("custom"))),
+            "custom",
+        ),
+        (None, None, "from-data"),
+    ];
+    for (update_fields, custom_update_fields, expected) in cases {
+        let request = UserUpdate {
+            user_id: None,
+            fields: user_write("user-a", "from-data"),
+            update_fields,
+            custom_update_fields,
+        };
+        writes.update_user(&request).await.unwrap();
+        assert_stored_alias(&client, "user-a", expected).await;
+    }
     harness.close().await;
 }
 
@@ -603,18 +601,8 @@ async fn user_id_dispatch_precedence() {
     };
     let result = writes.update_user(&request).await.unwrap();
     assert_eq!(result.user_id, "user-a");
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-a")
-            .await
-            .as_deref(),
-        Some("explicit")
-    );
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-b")
-            .await
-            .as_deref(),
-        Some("b")
-    );
+    assert_stored_alias(&client, "user-a", "explicit").await;
+    assert_stored_alias(&client, "user-b", "b").await;
     assert_eq!(
         row_count(&client, "LiteLLM_UserTable", "user_id", "user-b").await,
         1
@@ -730,21 +718,7 @@ fn assert_backoff_log(captured: &str) {
     );
 }
 
-#[tokio::test]
-async fn retry_events_and_jitter() {
-    let harness = Harness::start().await;
-    let client = harness.client().await;
-    let ports = Ports::new(Duration::from_secs(1));
-    let writes = service(&client, &ports);
-    let (logs, subscriber) = capture_logs();
-    let guard = set_default(subscriber);
-    let error = writes
-        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
-        .await
-        .unwrap_err();
-    drop(guard);
-    assert!(matches!(error, KeyUserWriteError::Database { .. }));
-    let events = ports.sink.events();
+fn assert_first_insert_event(events: &[RecordedFailure], error: &KeyUserWriteError) {
     assert_eq!(events.len(), 3);
     assert_eq!(events[0].call_type, CallType::InsertData);
     assert_eq!(events[0].duration, Duration::from_secs(1));
@@ -765,6 +739,24 @@ async fn retry_events_and_jitter() {
         Some("22P02")
     );
     assert!(events[0].source.is_some());
+}
+
+#[tokio::test]
+async fn retry_events_and_jitter() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::from_secs(1));
+    let writes = service(&client, &ports);
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
+    let error = writes
+        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
+        .await
+        .unwrap_err();
+    drop(guard);
+    assert!(matches!(error, KeyUserWriteError::Database { .. }));
+    let events = ports.sink.events();
+    assert_first_insert_event(&events, &error);
     assert_eq!(
         ports.pause.delays(),
         vec![Duration::from_millis(500), Duration::from_secs(1)]
@@ -783,14 +775,7 @@ async fn retry_events_and_jitter() {
     harness.close().await;
 }
 
-#[tokio::test]
-async fn insert_logs_redact_token_and_name_the_table() {
-    let harness = Harness::start().await;
-    let client = harness.client().await;
-    let ports = Ports::new(Duration::ZERO);
-    let writes = service(&client, &ports);
-    let (logs, subscriber) = capture_logs();
-    let guard = set_default(subscriber);
+async fn perform_logged_writes(writes: &KeyUserWrites<'_, Client>) {
     writes
         .insert_key(&SecretString::from("sk-secret"), &key_write("logged"))
         .await
@@ -812,6 +797,17 @@ async fn insert_logs_redact_token_and_name_the_table() {
         })
         .await
         .unwrap();
+}
+
+#[tokio::test]
+async fn insert_logs_redact_token_and_name_the_table() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
+    perform_logged_writes(&writes).await;
     drop(guard);
     let captured = logs.contents();
     assert!(!captured.contains("sk-secret"), "{captured}");

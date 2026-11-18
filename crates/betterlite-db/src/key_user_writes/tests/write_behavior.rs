@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
+use deadpool_postgres::Client;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
@@ -11,9 +12,10 @@ use tracing::subscriber::set_default;
 use super::postgres::{row_count, service, user_column_text};
 use super::support::{
     BrokenSink, Harness, Ports, SinkBehaviour, alias_update, capture_logs, failing_key_write,
-    fixed_now, key_column, key_write, user_alias_update, user_column, user_write,
+    fixed_now, key_column, key_write, user_column, user_write,
 };
 use crate::budget_permission_rows::Timestamp;
+use crate::identity_rows::user::LiteLLMUserTable;
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_user_writes::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
@@ -23,7 +25,7 @@ use crate::key_user_writes::writes::report_failure;
 use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate, WritePorts};
 
 #[tokio::test]
-async fn null_list_columns_decode_as_empty() {
+async fn key_null_list_columns_decode_as_empty() {
     let harness = Harness::start().await;
     let client = harness.client().await;
     let ports = Ports::new(Duration::ZERO);
@@ -53,21 +55,15 @@ async fn null_list_columns_decode_as_empty() {
         .expect("updated row");
     assert!(updated.models.is_empty());
     assert_eq!(updated.key_alias.as_deref(), Some("changed"));
-    client
-        .execute(
-            "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\", \"models\", \"teams\", \"allowed_cache_controls\") VALUES ($1, $2, NULL, NULL, NULL)",
-            &[&"user-null-lists", &"stored"],
-        )
-        .await
-        .unwrap();
-    let inserted_user = writes
-        .insert_user(&user_write("user-null-lists", "ignored"))
-        .await
-        .unwrap();
-    assert!(inserted_user.models.is_empty());
-    assert!(inserted_user.teams.is_empty());
-    assert!(inserted_user.allowed_cache_controls.is_empty());
-    assert_eq!(inserted_user.user_alias.as_deref(), Some("stored"));
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn fresh_user_models_column_defaults_to_empty_object() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
     let fresh = writes
         .insert_user(&user_write("user-fresh", "fresh"))
         .await
@@ -79,24 +75,40 @@ async fn null_list_columns_decode_as_empty() {
             .as_deref(),
         Some("{}")
     );
-    let updated_user = writes
+    harness.close().await;
+}
+
+async fn update_user_stamp(
+    writes: &KeyUserWrites<'_, Client>,
+    user_id: &str,
+    update: Option<UserWrite>,
+) -> LiteLLMUserTable {
+    writes
         .update_user(&UserUpdate {
             user_id: None,
-            fields: user_write("user-null-lists", "ignored"),
-            update_fields: Some(user_alias_update("changed")),
+            fields: user_write(user_id, "from-data"),
+            update_fields: update,
             custom_update_fields: None,
         })
         .await
         .unwrap()
-        .data;
-    assert!(updated_user.models.is_empty());
-    assert!(updated_user.allowed_cache_controls.is_empty());
-    assert_eq!(updated_user.user_alias.as_deref(), Some("changed"));
-    harness.close().await;
+        .data
+}
+
+fn user_updated_at(stamp: Timestamp) -> UserWrite {
+    UserWrite(BTreeMap::from([(
+        UserColumn::UpdatedAt,
+        TokenValue::Timestamp(stamp),
+    )]))
+}
+
+async fn assert_stored_updated_at(client: &Client, expected: &str) {
+    let stored = user_column_text(client, "updated_at", "user-stamp").await;
+    assert_eq!(stored.as_deref(), Some(expected));
 }
 
 #[tokio::test]
-async fn update_timestamps_follow_prisma() {
+async fn key_update_stamps_updated_at() {
     let harness = Harness::start().await;
     let client = harness.client().await;
     let ports = Ports::new(Duration::ZERO);
@@ -130,6 +142,15 @@ async fn update_timestamps_follow_prisma() {
         carried.updated_at.map(Timestamp::utc),
         Some(fixed_now() + chrono::Duration::hours(1))
     );
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn user_update_timestamps_follow_columns() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
     client
         .execute(
             "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\", \"updated_at\") VALUES ($1, $2, '1999-01-01 00:00:00')",
@@ -137,64 +158,41 @@ async fn update_timestamps_follow_prisma() {
         )
         .await
         .unwrap();
-    let empty = writes
-        .update_user(&UserUpdate {
-            user_id: None,
-            fields: user_write("user-stamp", "from-data"),
-            update_fields: Some(UserWrite::default()),
-            custom_update_fields: None,
-        })
-        .await
-        .unwrap()
-        .data;
+    let empty = update_user_stamp(&writes, "user-stamp", Some(UserWrite::default())).await;
     assert_eq!(
         empty.updated_at.map(Timestamp::utc),
         Some(chrono::DateTime::from_timestamp(915_148_800, 0).unwrap())
     );
+    assert!(empty.models.is_empty());
+    assert!(empty.teams.is_empty());
+    assert!(empty.allowed_cache_controls.is_empty());
+    assert_stored_updated_at(&client, "1999-01-01 00:00:00").await;
+    let stamped = update_user_stamp(&writes, "user-stamp", None).await;
+    assert_eq!(stamped.updated_at.map(Timestamp::utc), Some(fixed_now()));
+    assert_stored_updated_at(&client, "1970-01-01 00:00:00").await;
+    let explicit = Timestamp::Aware((fixed_now() + chrono::Duration::hours(1)).fixed_offset());
+    let carried = update_user_stamp(&writes, "user-stamp", Some(user_updated_at(explicit))).await;
     assert_eq!(
-        user_column_text(&client, "updated_at", "user-stamp")
-            .await
-            .as_deref(),
-        Some("1999-01-01 00:00:00")
-    );
-    let user_stamped = writes
-        .update_user(&UserUpdate {
-            user_id: None,
-            fields: user_write("user-stamp", "from-data"),
-            update_fields: None,
-            custom_update_fields: None,
-        })
-        .await
-        .unwrap()
-        .data;
-    assert_eq!(
-        user_stamped.updated_at.map(Timestamp::utc),
-        Some(fixed_now())
-    );
-    assert_eq!(
-        user_column_text(&client, "updated_at", "user-stamp")
-            .await
-            .as_deref(),
-        Some("1970-01-01 00:00:00")
-    );
-    let user_carried = writes
-        .update_user(&UserUpdate {
-            user_id: None,
-            fields: user_write("user-stamp", "from-data"),
-            update_fields: Some(UserWrite(BTreeMap::from([(
-                UserColumn::UpdatedAt,
-                TokenValue::Timestamp(explicit),
-            )]))),
-            custom_update_fields: None,
-        })
-        .await
-        .unwrap()
-        .data;
-    assert_eq!(
-        user_carried.updated_at.map(Timestamp::utc),
+        carried.updated_at.map(Timestamp::utc),
         Some(fixed_now() + chrono::Duration::hours(1))
     );
     harness.close().await;
+}
+
+async fn apply_user_ops(
+    writes: &KeyUserWrites<'_, Client>,
+    ops: UserUpdateOps,
+) -> LiteLLMUserTable {
+    writes
+        .update_user(&UserUpdate {
+            user_id: None,
+            fields: user_write("user-ops", "ops"),
+            update_fields: None,
+            custom_update_fields: Some(ops),
+        })
+        .await
+        .unwrap()
+        .data
 }
 
 #[tokio::test]
@@ -211,42 +209,54 @@ async fn custom_update_operations_apply_atomically() {
         .0
         .insert(UserColumn::MaxParallelRequests, TokenValue::Integer(1));
     writes.insert_user(&seeded).await.unwrap();
-    let incremented = writes
-        .update_user(&UserUpdate {
-            user_id: None,
-            fields: user_write("user-ops", "ops"),
-            update_fields: None,
-            custom_update_fields: Some(UserUpdateOps(BTreeMap::from([(
-                UserColumn::Spend,
-                UserColumnOp::Increment(TokenValue::Number(Decimal::new(3, 0))),
-            )]))),
-        })
-        .await
-        .unwrap()
-        .data;
+    let increment = UserUpdateOps(BTreeMap::from([(
+        UserColumn::Spend,
+        UserColumnOp::Increment(TokenValue::Number(Decimal::new(3, 0))),
+    )]));
+    let incremented = apply_user_ops(&writes, increment).await;
     assert_eq!(incremented.spend, Decimal::new(5, 0));
-    let multiplied = writes
-        .update_user(&UserUpdate {
-            user_id: None,
-            fields: user_write("user-ops", "ops"),
-            update_fields: None,
-            custom_update_fields: Some(UserUpdateOps(BTreeMap::from([
-                (
-                    UserColumn::Spend,
-                    UserColumnOp::Multiply(TokenValue::Number(Decimal::new(2, 0))),
-                ),
-                (
-                    UserColumn::MaxParallelRequests,
-                    UserColumnOp::Increment(TokenValue::Integer(2)),
-                ),
-            ]))),
-        })
-        .await
-        .unwrap()
-        .data;
+    let multiply = UserUpdateOps(BTreeMap::from([
+        (
+            UserColumn::Spend,
+            UserColumnOp::Multiply(TokenValue::Number(Decimal::new(2, 0))),
+        ),
+        (
+            UserColumn::MaxParallelRequests,
+            UserColumnOp::Increment(TokenValue::Integer(2)),
+        ),
+    ]));
+    let multiplied = apply_user_ops(&writes, multiply).await;
     assert_eq!(multiplied.spend, Decimal::new(10, 0));
     assert_eq!(multiplied.max_parallel_requests, Some(3));
     harness.close().await;
+}
+
+async fn update_user_with_new_id(
+    writes: &KeyUserWrites<'_, Client>,
+    client: &Client,
+    old: &str,
+    new: &str,
+    alias: &str,
+) {
+    let renamed = writes
+        .update_user(&UserUpdate {
+            user_id: Some(String::from(old)),
+            fields: user_write(new, alias),
+            update_fields: None,
+            custom_update_fields: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(renamed.user_id, old);
+    assert_eq!(renamed.data.user_id, new);
+    assert_eq!(
+        user_column_text(client, "user_alias", new).await.as_deref(),
+        Some(alias)
+    );
+    assert_eq!(
+        row_count(client, "LiteLLM_UserTable", "user_id", old).await,
+        0
+    );
 }
 
 #[tokio::test]
@@ -259,48 +269,8 @@ async fn explicit_user_id_renames_and_inserts() {
         .insert_user(&user_write("user-old", "old"))
         .await
         .unwrap();
-    let renamed = writes
-        .update_user(&UserUpdate {
-            user_id: Some(String::from("user-old")),
-            fields: user_write("user-new", "renamed"),
-            update_fields: None,
-            custom_update_fields: None,
-        })
-        .await
-        .unwrap();
-    assert_eq!(renamed.user_id, "user-old");
-    assert_eq!(renamed.data.user_id, "user-new");
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-new")
-            .await
-            .as_deref(),
-        Some("renamed")
-    );
-    assert_eq!(
-        row_count(&client, "LiteLLM_UserTable", "user_id", "user-old").await,
-        0
-    );
-    let created = writes
-        .update_user(&UserUpdate {
-            user_id: Some(String::from("user-absent")),
-            fields: user_write("user-created", "created"),
-            update_fields: None,
-            custom_update_fields: None,
-        })
-        .await
-        .unwrap();
-    assert_eq!(created.user_id, "user-absent");
-    assert_eq!(created.data.user_id, "user-created");
-    assert_eq!(
-        user_column_text(&client, "user_alias", "user-created")
-            .await
-            .as_deref(),
-        Some("created")
-    );
-    assert_eq!(
-        row_count(&client, "LiteLLM_UserTable", "user_id", "user-absent").await,
-        0
-    );
+    update_user_with_new_id(&writes, &client, "user-old", "user-new", "renamed").await;
+    update_user_with_new_id(&writes, &client, "user-absent", "user-created", "created").await;
     harness.close().await;
 }
 
