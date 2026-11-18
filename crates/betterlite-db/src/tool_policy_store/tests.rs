@@ -435,7 +435,10 @@ async fn a_failed_reconnect_keeps_its_typed_cause() {
             panic!("expected a typed read error with its reconnect cause, got {other:?}")
         }
     }
-    let state = registry.lock().unwrap_or_else(PoisonError::into_inner);
+    let state = registry
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     assert!(!state.initialized);
 }
 
