@@ -103,12 +103,14 @@ description: >-
 scope:
   paths:
   - crates/betterlite-foundry/Cargo.toml
+  - Cargo.lock
   - crates/betterlite-foundry/src/anthropic.rs
   - crates/betterlite-foundry/src/anthropic/**
   - crates/betterlite-foundry/src/anthropic_messages/environment.rs
   - crates/betterlite-anthropic/src/chat_call.rs
   - crates/betterlite-anthropic/src/chat_call/**
   - tools/oracle/Cargo.toml
+  - tools/oracle/src/helpers/foundry/Cargo.toml
   - tools/oracle/src/helpers/foundry/anthropic.rs
   - tools/oracle/src/helpers/foundry/anthropic/**
   - tools/oracle/helpers/foundry_anthropic.py
