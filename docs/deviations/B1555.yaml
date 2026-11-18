@@ -53,6 +53,15 @@ deviations:
       The trait hands transform_search_response only &self and the response, so the request the
       reply belongs to is remembered on the config.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L166-L172
+  - what: >-
+      A pretty, no_redirect, no_html or skip_disambig request option holding an integer outside the
+      signed 64-bit range fails the request with an OptionType error that names the field. LiteLLM
+      copies the option into the query and urlencode sends its full decimal text upstream.
+    why: >-
+      The four flags are stored as i64, and a value outside a field's type is an error here under
+      docs/compatibility.md. Python's int is unbounded, so the source's declared int accepts the
+      value betterlite refuses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/duckduckgo/search/transformation.py#L131-L134
 kept_bugs:
   - what: >-
       The comment at the response transform gives Answer priority after the abstract, but the
