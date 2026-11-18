@@ -59,7 +59,10 @@ async fn tls_timeout_stops_server_work_while_the_lock_stays_held(#[case] batch: 
             .await
             .unwrap_err()
     };
-    assert!(matches!(error, TableOpsError::Timeout { .. }));
+    let expected_operation = if batch { "statement" } else { "query" };
+    assert!(
+        matches!(error, TableOpsError::Timeout { operation, .. } if operation == expected_operation)
+    );
     assert_eq!(front.pool.status().size, 0);
     let observer = harness.pool.get().await.unwrap();
     tokio::time::timeout(Duration::from_secs(2), async {
