@@ -66,7 +66,7 @@ description: >-
   way. `RegistryAgentSync` implements B8231's `AgentSync`: `cached(key)` is the registry's get_agent_by_id(key), then
   get_agent_by_name(key); `load_locked(key)` takes B4776's reconcile() guard, checks cached again (true when found now),
   then reads one row with B4777's AGENT_SELECT_SQL and `WHERE a.agent_id = $1`, then by agent_name, decodes it with
-  B4777's row codec, registers it and returns true, or false when no row. `ProxyDbObjects` implements B8231's
+  B4777's row codec, registers it and returns true, or false when no row. `ProxyDbObjects` (pub: B9948's models read-through uses it too) implements B8231's
   `DbObjects`: enabled is true only when a database store exists, general_settings.store_model_in_db is exactly true,
   and B8380's should_load_db_object allows the object type. `SharedAgents` holds `registry: Arc<AgentRegistry>` and
   `read_through: Arc<RegistryReadThrough<AgentResync<RegistryAgentSync, ProxyDbObjects>>>` (read B8231 for AgentResync's
