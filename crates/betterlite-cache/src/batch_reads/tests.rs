@@ -14,16 +14,15 @@ use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache_values::error::RedisCacheValuesError;
 use serde_json::Number;
 use tokio_util::task::TaskTracker;
-use tracing::instrument::WithSubscriber;
+use tracing::instrument::WithSubscriber as _;
 use tracing::subscriber::with_default;
 
-use self::support::redis::{
-    FakeRedis, RejectingGate, Reply, connect_cache, connect_cache_with_gate, local_memory,
-    settings_for_tests, write,
+use self::support::{
+    FailingMemory, FakeRedis, RejectingGate, Reply, capture_logs, captured, connect_cache,
+    connect_cache_with_gate, local_memory, settings_for_tests, write,
 };
-use self::support::{FailingMemory, capture_logs, captured};
 use super::shared::shared_read_failure;
-use super::{BatchReadOptions, BatchReads, BatchReadsError, PendingBatchRead};
+use super::{BatchReadOptions, BatchReads as _, BatchReadsError, PendingBatchRead};
 use crate::backend::memory::MemoryCacheOps;
 use crate::backend::memory::local::LocalMemoryOps;
 use crate::dual_cache::{DualCache, DualCacheSettings, Ttl};
@@ -59,7 +58,7 @@ where
 fn settings_with_expiry(expiry: f64) -> DualCacheSettings {
     DualCacheSettings {
         batch_cache_expiry: Some(expiry),
-        ..settings_for_tests(Some(30.0))
+        ..settings_for_tests(Some(30.0_f64))
     }
 }
 
@@ -73,7 +72,7 @@ async fn with_settings(
 }
 
 async fn with_redis(server: &FakeRedis) -> (DualCache<LocalMemoryOps>, Arc<RedisCache>) {
-    with_settings(server, settings_for_tests(Some(30.0))).await
+    with_settings(server, settings_for_tests(Some(30.0_f64))).await
 }
 
 async fn with_rejecting_redis(server: &FakeRedis) -> DualCache<LocalMemoryOps> {
@@ -81,7 +80,7 @@ async fn with_rejecting_redis(server: &FakeRedis) -> DualCache<LocalMemoryOps> {
     DualCache::new(
         local_memory(1000.0),
         Some(redis),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     )
 }
 
@@ -95,80 +94,115 @@ fn batch_for(redis: &Arc<RedisCache>) -> Arc<RedisBatch> {
 
 #[test]
 fn reserve_skips_memory_hits() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let result = vec![Some(text("served")), None];
     let (due, previous) = cache.reserve_redis_batch_keys(100.0, &keys(&["hit", "miss"]), &result);
     assert_eq!(due, keys(&["miss"]));
     assert_eq!(previous, BTreeMap::from([("miss".to_owned(), None)]));
     assert_eq!(access_time(&cache, "hit"), None);
-    assert_eq!(access_time(&cache, "miss"), Some(100.0));
+    assert_eq!(access_time(&cache, "miss"), Some(100.0_f64));
 }
 
 #[test]
 fn reserve_first_read_is_due() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let (due, previous) = cache.reserve_redis_batch_keys(100.0, &keys(&["key"]), &[None]);
     assert_eq!(due, keys(&["key"]));
     assert_eq!(previous, BTreeMap::from([("key".to_owned(), None)]));
-    assert_eq!(access_time(&cache, "key"), Some(100.0));
+    assert_eq!(access_time(&cache, "key"), Some(100.0_f64));
 }
 
 #[test]
 fn reserve_inside_the_expiry_stays_throttled() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let reserved = keys(&["key"]);
     let (first, _) = cache.reserve_redis_batch_keys(100.0, &reserved, &[None]);
     assert_eq!(first, reserved);
     let (second, previous) = cache.reserve_redis_batch_keys(105.0, &reserved, &[None]);
     assert!(second.is_empty());
     assert!(previous.is_empty());
-    assert_eq!(access_time(&cache, "key"), Some(100.0));
+    assert_eq!(access_time(&cache, "key"), Some(100.0_f64));
 }
 
 #[test]
 fn reserve_at_the_expiry_is_due() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let reserved = keys(&["key"]);
     cache.reserve_redis_batch_keys(100.0, &reserved, &[None]);
     let (due, previous) = cache.reserve_redis_batch_keys(110.0, &reserved, &[None]);
     assert_eq!(due, reserved);
-    assert_eq!(previous, BTreeMap::from([("key".to_owned(), Some(100.0))]));
-    assert_eq!(access_time(&cache, "key"), Some(110.0));
+    assert_eq!(
+        previous,
+        BTreeMap::from([("key".to_owned(), Some(100.0_f64))])
+    );
+    assert_eq!(access_time(&cache, "key"), Some(110.0_f64));
 }
 
 #[test]
 fn reserve_past_the_expiry_is_due() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let reserved = keys(&["key"]);
     cache.reserve_redis_batch_keys(100.0, &reserved, &[None]);
     let (due, _) = cache.reserve_redis_batch_keys(111.0, &reserved, &[None]);
     assert_eq!(due, reserved);
-    assert_eq!(access_time(&cache, "key"), Some(111.0));
+    assert_eq!(access_time(&cache, "key"), Some(111.0_f64));
 }
 
 #[test]
 fn reserve_rollback_restores_previous_time() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let reserved = keys(&["key"]);
     cache.reserve_redis_batch_keys(100.0, &reserved, &[None]);
     let (_due, previous) = cache.reserve_redis_batch_keys(200.0, &reserved, &[None]);
-    assert_eq!(access_time(&cache, "key"), Some(200.0));
+    assert_eq!(access_time(&cache, "key"), Some(200.0_f64));
     cache.rollback_redis_batch_keys(&previous);
-    assert_eq!(access_time(&cache, "key"), Some(100.0));
+    assert_eq!(access_time(&cache, "key"), Some(100.0_f64));
 }
 
 #[test]
 fn reserve_rollback_removes_new_time() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let (_due, previous) = cache.reserve_redis_batch_keys(100.0, &keys(&["key"]), &[None]);
-    assert_eq!(access_time(&cache, "key"), Some(100.0));
+    assert_eq!(access_time(&cache, "key"), Some(100.0_f64));
     cache.rollback_redis_batch_keys(&previous);
     assert_eq!(access_time(&cache, "key"), None);
 }
 
 #[test]
 fn reserve_duplicate_keys_are_due_once() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let (due, previous) =
         cache.reserve_redis_batch_keys(100.0, &keys(&["key", "key"]), &[None, None]);
     assert_eq!(due, keys(&["key"]));
@@ -177,7 +211,11 @@ fn reserve_duplicate_keys_are_due_once() {
 
 #[test]
 fn reserve_reads_without_redis_returns_empty() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let (due, previous) = cache.reserve_redis_batch_reads(&keys(&["a", "b"]));
     assert!(due.is_empty());
     assert!(previous.is_empty());
@@ -245,7 +283,11 @@ async fn sync_read_local_only_skips_redis() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sync_read_without_redis_returns_memory() {
-    let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let cache = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     cache.set_cache("a", &text("value-a"), write(None, true));
     let read = cache
         .batch_get_cache(&keys(&["a", "b"]), false)
@@ -349,7 +391,7 @@ async fn sync_read_circuit_open_returns_memory_and_rolls_back() {
         cache.batch_get_cache(&keys(&["a", "b"]), false)
     });
     assert_eq!(read, Some(vec![Some(text("memory-a")), None]));
-    assert_eq!(access_time(&cache, "b"), Some(100.0));
+    assert_eq!(access_time(&cache, "b"), Some(100.0_f64));
     let log = captured(&bytes);
     assert!(
         log.contains("LiteLLM Cache: batch_get_cache served from memory only"),
@@ -517,7 +559,7 @@ async fn async_read_circuit_open_returns_memory() {
         .with_subscriber(subscriber)
         .await;
     assert_eq!(read, Some(vec![Some(text("memory-a")), None]));
-    assert_eq!(access_time(&cache, "b"), Some(100.0));
+    assert_eq!(access_time(&cache, "b"), Some(100.0_f64));
     let log = captured(&bytes);
     assert!(
         log.contains("LiteLLM Cache: async_batch_get_cache served from memory only"),
@@ -646,7 +688,7 @@ async fn shared_read_merges_keys_on_one_client() {
     let cache_b = DualCache::new(
         local_memory(1000.0),
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     server.script(
         "MGET",
@@ -683,7 +725,7 @@ async fn shared_read_with_no_due_keys_issues_no_redis_read() {
     let cache_b = DualCache::new(
         local_memory(1000.0),
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     cache_a.set_cache("a", &text("memory-a"), write(None, true));
     cache_b.set_cache("b", &text("memory-b"), write(None, true));
@@ -723,7 +765,11 @@ async fn shared_read_reads_other_clients_on_their_own() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn shared_read_without_shared_redis_reads_every_cache_on_its_own() {
     let server = FakeRedis::start().await;
-    let memory_only = DualCache::new(local_memory(1000.0), None, settings_for_tests(Some(30.0)));
+    let memory_only = DualCache::new(
+        local_memory(1000.0),
+        None,
+        settings_for_tests(Some(30.0_f64)),
+    );
     let (cache_b, _redis) = with_redis(&server).await;
     server.script(
         "MGET",
@@ -748,12 +794,12 @@ async fn shared_read_circuit_open_keeps_memory_results() {
     let cache_a = DualCache::new(
         local_memory(1000.0),
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     let cache_b = DualCache::new(
         local_memory(1000.0),
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     cache_a.set_cache("a1", &text("memory-a1"), write(None, true));
     let keys_a = keys(&["a1", "a2"]);
@@ -773,37 +819,39 @@ async fn shared_read_circuit_open_keeps_memory_results() {
     assert!(server.commands("MGET").is_empty());
 }
 
+// one prepared cache with a reserved Redis key and one served from memory alone
+fn prepared_pair<Memory>(
+    cache: &DualCache<Memory>,
+) -> Vec<(usize, &DualCache<Memory>, PendingBatchRead)>
+where
+    Memory: MemoryCacheOps,
+{
+    let reserved = PendingBatchRead {
+        keys: keys(&["a"]),
+        result: vec![None],
+        redis_keys: keys(&["a"]),
+        previous_access_times: BTreeMap::from([("a".to_owned(), None)]),
+    };
+    let memory_only = PendingBatchRead {
+        keys: keys(&["b"]),
+        result: vec![Some(text("memory-b"))],
+        redis_keys: Vec::new(),
+        previous_access_times: BTreeMap::new(),
+    };
+    vec![(0_usize, cache, reserved), (1_usize, cache, memory_only)]
+}
+
 #[test]
 fn shared_read_failure_sets_none_only_for_caches_with_redis_keys() {
     let cache = DualCache::new(local_memory(1000.0), None, settings_for_tests(None));
     cache.reserve_redis_batch_keys(100.0, &keys(&["a"]), &[None]);
-    let prepared = vec![
-        (
-            0_usize,
-            &cache,
-            PendingBatchRead {
-                keys: keys(&["a"]),
-                result: vec![None],
-                redis_keys: keys(&["a"]),
-                previous_access_times: BTreeMap::from([("a".to_owned(), None)]),
-            },
-        ),
-        (
-            1_usize,
-            &cache,
-            PendingBatchRead {
-                keys: keys(&["b"]),
-                result: vec![Some(text("memory-b"))],
-                redis_keys: Vec::new(),
-                previous_access_times: BTreeMap::new(),
-            },
-        ),
-    ];
+    let prepared = prepared_pair(&cache);
     let mut slots: BTreeMap<usize, Option<Vec<Option<Json>>>> = BTreeMap::from([
         (0, Some(vec![None])),
         (1, Some(vec![Some(text("memory-b"))])),
     ]);
-    let error = BatchReadsError::RedisValues(RedisCacheValuesError::TtlOutOfRange { seconds: 1.0 });
+    let error =
+        BatchReadsError::RedisValues(RedisCacheValuesError::TtlOutOfRange { seconds: 1.0_f64 });
     let (subscriber, bytes) = capture_logs();
     with_default(subscriber, || {
         shared_read_failure(&error, &prepared, &mut slots)
@@ -834,12 +882,12 @@ async fn shared_read_prepare_failure_leaves_slot_none() {
     let cache_a = DualCache::new(
         working,
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     let cache_b = DualCache::new(
         failing,
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     server.script(
         "MGET",
@@ -875,12 +923,12 @@ async fn shared_read_apply_failure_sets_none_and_logs() {
     let cache_a = DualCache::new(
         working,
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     let cache_b = DualCache::new(
         failing,
         Some(Arc::clone(&redis)),
-        settings_for_tests(Some(30.0)),
+        settings_for_tests(Some(30.0_f64)),
     );
     server.script(
         "MGET",
