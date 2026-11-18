@@ -5,7 +5,7 @@ use serde::de::Error as _;
 use serde_json::Number;
 use serde_json::Value;
 
-use super::{AppliedInputType, ModerationResponse, ModerationResponseError};
+use super::{AppliedInputType, ModerationResponse, ModerationResponseError, ModerationResult};
 
 // the SDK's dump keeps the provider's alias keys beside its field names, so the raw maps come first, typed
 #[derive(Deserialize)]
@@ -43,21 +43,10 @@ const IMAGE_CATEGORIES: [&str; 6] = [
 ];
 
 impl ProviderMaps {
-    pub(super) fn parse(bytes: &[u8]) -> Result<Self, ModerationResponseError> {
-        serde_json::from_slice(bytes).map_err(|source| ModerationResponseError::Decode { source })
-    }
-
     // the typed record cannot say which score failed, so every score goes through B204's exact parser first
     pub(super) fn check_scores(&self) -> Result<(), ModerationResponseError> {
         for result in &self.results {
-            for (category, score) in &result.category_scores {
-                parse_decimal_lexeme(&score.to_string()).map_err(|source| {
-                    ModerationResponseError::Decimal {
-                        category: category.clone(),
-                        source,
-                    }
-                })?;
-            }
+            result.check_scores()?;
         }
         Ok(())
     }
@@ -68,25 +57,55 @@ impl ProviderMaps {
         response: &mut ModerationResponse,
     ) -> Result<(), ModerationResponseError> {
         for (result, raw) in response.results.iter_mut().zip(&self.results) {
-            for alias in ALIASES {
-                if let Some(value) = raw.categories.get(alias) {
-                    let value = value.map_or(Value::Null, Value::Bool);
-                    result.categories.extra.insert(alias.to_owned(), value);
-                }
-                if let Some(inputs) = raw.category_applied_input_types.get(alias) {
-                    let value = serde_json::to_value(inputs)
-                        .map_err(|source| ModerationResponseError::Decode { source })?;
-                    result
-                        .category_applied_input_types
-                        .extra
-                        .insert(alias.to_owned(), value);
-                }
-                if let Some(score) = raw.category_scores.get(alias) {
-                    let value = Value::Number(score.clone());
-                    result.category_scores.extra.insert(alias.to_owned(), value);
-                }
-            }
+            raw.keep_alias_keys(result)?;
         }
+        Ok(())
+    }
+}
+
+impl ResultMaps {
+    fn check_scores(&self) -> Result<(), ModerationResponseError> {
+        for (category, score) in &self.category_scores {
+            parse_decimal_lexeme(&score.to_string()).map_err(|source| {
+                ModerationResponseError::Decimal {
+                    category: category.clone(),
+                    source,
+                }
+            })?;
+        }
+        Ok(())
+    }
+
+    fn keep_alias_keys(
+        &self,
+        result: &mut ModerationResult,
+    ) -> Result<(), ModerationResponseError> {
+        let categories = self
+            .categories
+            .iter()
+            .filter(|(alias, _)| ALIASES.contains(&alias.as_str()))
+            .map(|(alias, flag)| (alias.clone(), flag.map_or(Value::Null, Value::Bool)));
+        result.categories.extra.extend(categories);
+        let input_types = self
+            .category_applied_input_types
+            .iter()
+            .filter(|(alias, _)| ALIASES.contains(&alias.as_str()))
+            .map(|(alias, inputs)| {
+                serde_json::to_value(inputs)
+                    .map(|value| (alias.clone(), value))
+                    .map_err(|source| ModerationResponseError::Decode { source })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        result
+            .category_applied_input_types
+            .extra
+            .extend(input_types);
+        let scores = self
+            .category_scores
+            .iter()
+            .filter(|(alias, _)| ALIASES.contains(&alias.as_str()))
+            .map(|(alias, score)| (alias.clone(), Value::Number(score.clone())));
+        result.category_scores.extra.extend(scores);
         Ok(())
     }
 }

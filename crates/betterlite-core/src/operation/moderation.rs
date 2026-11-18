@@ -56,13 +56,13 @@ pub struct ModerationFailure {
 }
 
 impl ModerationFailure {
-    fn plain(status: u16, error_type: &str, message: String) -> Self {
+    pub fn plain(status: u16, error_type: Option<&str>, message: &str) -> Self {
         Self {
             status,
-            error_type: Some(error_type.to_owned()),
+            error_type: error_type.map(str::to_owned),
             param: None,
             code: None,
-            message,
+            message: message.to_owned(),
         }
     }
 }
@@ -72,61 +72,49 @@ pub fn route_error(error: &ModerationError, redactor: &Redactor) -> ModerationFa
     let message = redactor.redact_internal_details(&error.to_string());
     match error {
         ModerationError::Provider { response } => provider_route(response, redactor),
-        ModerationError::Request(request) => request_route(request, message),
-        ModerationError::Response(response) => response_route(response, message),
-        ModerationError::MissingApiKey => {
-            ModerationFailure::plain(401, "authentication_error", message)
-        }
-        ModerationError::UnsupportedProvider { .. } => {
-            ModerationFailure::plain(501, "internal_server_error", message)
-        }
-        ModerationError::Http { source } => transport_route(source, message),
-        ModerationError::Endpoint { .. } => {
-            ModerationFailure::plain(500, "internal_server_error", message)
-        }
-    }
-}
-
-fn request_route(error: &ModerationRequestError, message: String) -> ModerationFailure {
-    match error {
-        ModerationRequestError::Body { .. } | ModerationRequestError::Unsupported { .. } => {
-            ModerationFailure::plain(400, "invalid_request_error", message)
-        }
-        ModerationRequestError::Encode { .. } => {
-            ModerationFailure::plain(500, "internal_server_error", message)
-        }
-    }
-}
-
-fn response_route(error: &ModerationResponseError, message: String) -> ModerationFailure {
-    match error {
-        ModerationResponseError::Decimal { .. } => ModerationFailure {
+        ModerationError::Request(request) => request_route(request, &message),
+        ModerationError::Response(ModerationResponseError::Decimal { .. }) => ModerationFailure {
             status: 502,
             error_type: Some(String::from("bad_gateway")),
             param: Some(String::from("category_scores")),
             code: Some(String::from("decimal_out_of_range")),
             message,
         },
-        ModerationResponseError::Decode { .. } => {
-            ModerationFailure::plain(500, "internal_server_error", message)
+        ModerationError::Response(ModerationResponseError::Decode { .. }) => {
+            ModerationFailure::plain(500, Some("internal_server_error"), &message)
+        }
+        ModerationError::MissingApiKey => {
+            ModerationFailure::plain(401, Some("authentication_error"), &message)
+        }
+        ModerationError::UnsupportedProvider { .. } => {
+            ModerationFailure::plain(501, Some("internal_server_error"), &message)
+        }
+        ModerationError::Http { source } => transport_route(source, &message),
+        ModerationError::Endpoint { .. } => {
+            ModerationFailure::plain(500, Some("internal_server_error"), &message)
+        }
+    }
+}
+
+fn request_route(error: &ModerationRequestError, message: &str) -> ModerationFailure {
+    match error {
+        ModerationRequestError::Body { .. } | ModerationRequestError::Unsupported { .. } => {
+            ModerationFailure::plain(400, Some("invalid_request_error"), message)
+        }
+        ModerationRequestError::Encode { .. } => {
+            ModerationFailure::plain(500, Some("internal_server_error"), message)
         }
     }
 }
 
 // litellm.Timeout keeps openai.APITimeoutError's absent type and param, and the proxy answers 408
-fn transport_route(error: &HttpError, message: String) -> ModerationFailure {
+fn transport_route(error: &HttpError, message: &str) -> ModerationFailure {
     let status = match error {
         HttpError::Timeout => 408,
         // openai.APIConnectionError also carries no type or param
         _ => 500,
     };
-    ModerationFailure {
-        status,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    }
+    ModerationFailure::plain(status, None, message)
 }
 
 // proxy_server.py's moderation handler answers the SDK exception's own type and param, and str(status_code) as the code
@@ -145,8 +133,8 @@ fn provider_route(response: &UpstreamResponse, redactor: &Redactor) -> Moderatio
         // status_error builds a Status error for every response
         other => ModerationFailure::plain(
             500,
-            "internal_server_error",
-            redactor.redact_internal_details(&other.to_string()),
+            Some("internal_server_error"),
+            &redactor.redact_internal_details(&other.to_string()),
         ),
     }
 }

@@ -61,8 +61,8 @@ fn moderations_moderation_tests_behavior(#[case] body: Vec<u8>) {
     assert_eq!(response.id, "modr-1");
     assert_eq!(response.model, "omni-moderation-latest");
     let result = response.results.first().expect("result");
-    assert!(!result.categories.harassment);
-    assert!(!result.categories.harassment_threatening);
+    assert!(!result.categories.harassment.0);
+    assert!(!result.categories.harassment_threatening.0);
     assert_eq!(result.categories.illicit, Some(false));
     assert_eq!(
         result.category_applied_input_types.self_harm,
@@ -96,8 +96,8 @@ fn a_category_the_provider_flags_true_stays_true() {
     let mut result = result_with(every_category(json!(0.5)));
     result["categories"]["hate"] = json!(true);
     let response = ModerationResponse::parse(&body_with(result)).expect("moderation response");
-    assert!(response.results[0].categories.hate);
-    assert!(!response.results[0].categories.harassment);
+    assert!(response.results[0].categories.hate.0);
+    assert!(!response.results[0].categories.harassment.0);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn a_score_is_kept_exactly_or_refused(#[case] score: &str, #[case] expected: &st
     if expected.is_empty() {
         let error = ModerationResponse::parse(&body).expect_err("out of range score");
         assert!(
-            matches!(error, ModerationResponseError::Decimal { category, .. } if category == "hate"),
+            matches!(&error, ModerationResponseError::Decimal { category, .. } if category.as_str() == "hate"),
             "{error}"
         );
         return;

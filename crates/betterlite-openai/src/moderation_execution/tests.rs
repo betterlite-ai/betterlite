@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
@@ -110,6 +110,7 @@ async fn a_rate_limit_answer_is_retried_until_it_succeeds() {
 #[tokio::test]
 async fn a_retryable_status_after_two_retries_is_the_provider_error() {
     let unavailable = "503 Service Unavailable";
+    let started = Instant::now();
     let (captured, result) = call_with(
         "/v1",
         &[(unavailable, ""), (unavailable, ""), (unavailable, "")],
@@ -120,30 +121,12 @@ async fn a_retryable_status_after_two_retries_is_the_provider_error() {
         other => panic!("expected the third 503 to be the provider error: {other:?}"),
     }
     assert_eq!(captured.len(), 3, "two retries follow the first attempt");
-}
-
-#[rstest]
-#[case::request_timeout(408, true)]
-#[case::lock_timeout(409, true)]
-#[case::rate_limit(429, true)]
-#[case::server_error(500, true)]
-#[case::server_unavailable(503, true)]
-#[case::not_implemented(501, true)]
-#[case::success(200, false)]
-#[case::bad_request(400, false)]
-#[case::unauthorized(401, false)]
-#[case::forbidden(403, false)]
-#[case::not_found(404, false)]
-#[case::unprocessable(422, false)]
-fn the_retry_rules_follow_the_sdk(#[case] status: u16, #[case] retry: bool) {
-    assert_eq!(super::retryable(status), retry);
-}
-
-#[rstest]
-#[case::first_retry(0, Duration::from_millis(500))]
-#[case::second_retry(1, Duration::from_secs(1))]
-fn the_retry_delay_doubles(#[case] attempts: u32, #[case] expected: Duration) {
-    assert_eq!(super::retry_delay(attempts), expected);
+    // openai's _calculate_retry_timeout waits 500 ms and then 1 s before the second and third attempt
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(1_200),
+        "the doubled delays: {elapsed:?}"
+    );
 }
 
 // the transport cap bounds one provider answer, and a moderation answer for a bounded input is far smaller

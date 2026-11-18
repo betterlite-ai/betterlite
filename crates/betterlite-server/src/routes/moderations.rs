@@ -152,12 +152,13 @@ async fn execute(
     deployment: &ChatDeployment,
     call_id: &str,
 ) -> Response {
+    let calls: Arc<dyn ModerationCall> = Arc::clone(&state.calls);
     let operation = Operation::Moderation(DispatchRequest {
         call_id: call_id.to_owned(),
         model_id: deployment.model_id.clone(),
         request: Box::new(request),
         dispatch: Arc::clone(&state.dispatch),
-        calls: Arc::clone(&state.calls),
+        calls,
     });
     let context = DispatchContext::start(CallInputs {
         now: SystemTime::now,
@@ -168,15 +169,21 @@ async fn execute(
     let redactor = &state.calls.executor.redactor;
     match state.dispatch.execute(operation, &context).await {
         Ok(CallResult::Moderation(result)) => answered(state, result, call_id),
-        Ok(_) => dispatch_failure(
-            DispatchError::NotBuilt {
-                entry: "moderation",
-            },
+        Ok(_) => render_failure(
+            &dispatch_failure(
+                DispatchError::NotBuilt {
+                    entry: "moderation",
+                },
+                redactor,
+            ),
             call_id,
             state.include_call_id,
-            redactor,
         ),
-        Err(error) => dispatch_failure(error, call_id, state.include_call_id, redactor),
+        Err(error) => render_failure(
+            &dispatch_failure(error, redactor),
+            call_id,
+            state.include_call_id,
+        ),
     }
 }
 

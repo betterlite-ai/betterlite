@@ -90,6 +90,14 @@ deviations:
     provider stretch three attempts past that deadline; the status list covers what the moderation endpoints answer.
   link: https://github.com/openai/openai-python/blob/v2.54.0/src/openai/_base_client.py#L821-L863
 - what: >-
+    A moderation call retries a retryable answer at most twice: DEFAULT_MAX_RETRIES in litellm_settings or the
+    environment is not read for moderation, so an operator who sets another value still gets two retries.
+  why: >-
+    The plan bounds each moderation call, and two is the SDK default a stock LiteLLM setup uses; betterlite resolves
+    the configured value in its azure_endpoints section for the clients that take a retry count, and moderation keeps
+    the default.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L81
+- what: >-
     A provider answer larger than 32 MiB ends the moderation call as a 500 with a null type and param, the shape of an
     APIConnectionError; LiteLLM's SDK reads whatever body the provider sends.
   why: >-

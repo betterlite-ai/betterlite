@@ -24,30 +24,35 @@ pub struct ModerationResult {
     pub extra: IndexMap<String, Value>,
 }
 
+// a category is a JSON bool; the newtype keeps the struct's plain bool fields inside clippy's limit
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(transparent)]
+pub struct CategoryFlag(pub bool);
+
 // the provider names a category "harassment/threatening"; LiteLLM dumps the SDK model, which writes the field name and keeps the provider's key
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ModerationCategories {
-    pub harassment: bool,
+    pub harassment: CategoryFlag,
     #[serde(alias = "harassment/threatening")]
-    pub harassment_threatening: bool,
-    pub hate: bool,
+    pub harassment_threatening: CategoryFlag,
+    pub hate: CategoryFlag,
     #[serde(alias = "hate/threatening")]
-    pub hate_threatening: bool,
+    pub hate_threatening: CategoryFlag,
     pub illicit: Option<bool>,
     #[serde(alias = "illicit/violent")]
     pub illicit_violent: Option<bool>,
     #[serde(alias = "self-harm")]
-    pub self_harm: bool,
+    pub self_harm: CategoryFlag,
     #[serde(alias = "self-harm/instructions")]
-    pub self_harm_instructions: bool,
+    pub self_harm_instructions: CategoryFlag,
     #[serde(alias = "self-harm/intent")]
-    pub self_harm_intent: bool,
-    pub sexual: bool,
+    pub self_harm_intent: CategoryFlag,
+    pub sexual: CategoryFlag,
     #[serde(alias = "sexual/minors")]
-    pub sexual_minors: bool,
-    pub violence: bool,
+    pub sexual_minors: CategoryFlag,
+    pub violence: CategoryFlag,
     #[serde(alias = "violence/graphic")]
-    pub violence_graphic: bool,
+    pub violence_graphic: CategoryFlag,
     #[serde(flatten)]
     pub extra: IndexMap<String, Value>,
 }
@@ -159,7 +164,8 @@ pub enum ModerationResponseError {
 
 impl ModerationResponse {
     pub fn parse(bytes: &[u8]) -> Result<Self, ModerationResponseError> {
-        let provider = maps::ProviderMaps::parse(bytes)?;
+        let provider: maps::ProviderMaps = serde_json::from_slice(bytes)
+            .map_err(|source| ModerationResponseError::Decode { source })?;
         provider.check_scores()?;
         let mut response: Self = serde_json::from_slice(bytes)
             .map_err(|source| ModerationResponseError::Decode { source })?;

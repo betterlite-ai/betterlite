@@ -80,7 +80,7 @@ fn json_error() -> serde_json::Error {
     Some("input"),
     Some("400")
 )]
-#[case::unparseable_body(provider(400, "plain text"), 400, None, None, Some("400"))]
+#[case::unparsable_body(provider(400, "plain text"), 400, None, None, Some("400"))]
 #[case::body(
     ModerationError::Request(ModerationRequestError::Body { source: json_error() }),
     400,

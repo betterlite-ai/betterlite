@@ -4,13 +4,14 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, UpstreamResponse};
 use secrecy::SecretString;
 use thiserror::Error;
+use tokio::time::sleep;
 
 use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
 use crate::chat::execution::ChatExecutor;
 use crate::moderation_request::{ModerationRequest, ModerationRequestError};
 use crate::moderation_response::{ModerationResponse, ModerationResponseError};
 
-// LiteLLM's _get_openai_client passes DEFAULT_MAX_RETRIES, two unless the environment overrides it, and the SDK's initial retry delay
+// LiteLLM's _get_openai_client passes DEFAULT_MAX_RETRIES, two unless the environment overrides it; moderation keeps the two, as docs/deviations/B015.yaml records
 const MAX_RETRIES: u32 = 2;
 const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
 
@@ -61,8 +62,10 @@ pub async fn send(
             .await
             .map_err(|source| ModerationError::Http { source })?;
         if upstream.status >= 400 {
-            if attempts < MAX_RETRIES && retryable(upstream.status) {
-                tokio::time::sleep(retry_delay(attempts)).await;
+            // openai's _should_retry without a telling response header: request timeouts, lock timeouts, rate limits and 5xx retry
+            if attempts < MAX_RETRIES && matches!(upstream.status, 408 | 409 | 429 | 500..=599) {
+                // openai's _calculate_retry_timeout: the initial delay doubled per retry
+                sleep(INITIAL_RETRY_DELAY.saturating_mul(1 << attempts)).await;
                 attempts = attempts.saturating_add(1);
                 continue;
             }
@@ -78,16 +81,6 @@ pub async fn send(
             upstream_time,
         });
     }
-}
-
-// openai's _should_retry without a telling response header: request timeouts, lock timeouts, rate limits and 5xx retry
-const fn retryable(status: u16) -> bool {
-    matches!(status, 408 | 409 | 429 | 500..=599)
-}
-
-// openai's _calculate_retry_timeout: the initial delay doubled per retry
-const fn retry_delay(attempts: u32) -> Duration {
-    INITIAL_RETRY_DELAY.saturating_mul(1 << attempts)
 }
 
 fn post(

@@ -15,17 +15,7 @@ pub(super) fn render_failure(
     include_call_id: bool,
 ) -> Response {
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let body = error_body(failure, call_id, include_call_id);
-    (
-        status,
-        failure_headers(None, None, call_id, None),
-        Json(body),
-    )
-        .into_response()
-}
-
-fn error_body(failure: &ModerationFailure, call_id: &str, include_call_id: bool) -> ErrorBody {
-    ErrorBody {
+    let body = ErrorBody {
         error: ErrorObject {
             message: failure.message.clone(),
             error_type: failure.error_type.clone(),
@@ -37,7 +27,13 @@ fn error_body(failure: &ModerationFailure, call_id: &str, include_call_id: bool)
             provider_specific_fields: None,
             litellm_call_id: error_body_call_id(include_call_id, Some(call_id)).map(str::to_owned),
         },
-    }
+    };
+    (
+        status,
+        failure_headers(None, None, call_id, None),
+        Json(body),
+    )
+        .into_response()
 }
 
 // the plan's model-less refusal and the router's unknown-model refusal share the 400 shape
@@ -62,13 +58,9 @@ pub(super) fn refusal(model: Option<&str>) -> ModerationFailure {
     }
 }
 
-pub(super) fn dispatch_failure(
-    error: DispatchError,
-    call_id: &str,
-    include_call_id: bool,
-    redactor: &Redactor,
-) -> Response {
-    let failure = match error {
+pub(super) fn dispatch_failure(error: DispatchError, redactor: &Redactor) -> ModerationFailure {
+    match error {
+        DispatchError::MissingDeployment { model_id } => refusal(Some(&model_id)),
         DispatchError::Rejected {
             status,
             error_type,
@@ -82,21 +74,13 @@ pub(super) fn dispatch_failure(
             code: Some(code),
             message,
         },
-        DispatchError::MissingDeployment { model_id } => refusal(Some(&model_id)),
-        DispatchError::DeadlineExpired { .. } => ModerationFailure {
-            status: 408,
-            error_type: None,
-            param: None,
-            code: None,
-            message: String::from("the moderation call passed its deadline"),
-        },
-        other => ModerationFailure {
-            status: 500,
-            error_type: Some(String::from("internal_server_error")),
-            param: None,
-            code: None,
-            message: redactor.redact_internal_details(&other.to_string()),
-        },
-    };
-    render_failure(&failure, call_id, include_call_id)
+        DispatchError::DeadlineExpired { .. } => {
+            ModerationFailure::plain(408, None, "the moderation call passed its deadline")
+        }
+        other => ModerationFailure::plain(
+            500,
+            Some("internal_server_error"),
+            &redactor.redact_internal_details(&other.to_string()),
+        ),
+    }
 }
