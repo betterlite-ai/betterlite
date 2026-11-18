@@ -29,8 +29,9 @@ kept_bugs:
       not name; B962 copies the chain lookup as it stands.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L84-L101
   - what: >-
-      A mapped deployment whose accepted set excludes every chain step, or is empty, receives the chain floor
-      even though no level of its accepted set matches it; "none" is never degraded to.
+      A mapped deployment whose accepted set is empty, or holds only "none", receives the chain floor
+      (high for max, high for xhigh, low for minimal) instead of a level it declared, and "none" is never
+      a degradation target.
     why: >-
       LiteLLM documents the chain floor as the pre-metadata fallback every deployment kept, so a working
       deployment may rely on receiving it; B962 copies the floor.
