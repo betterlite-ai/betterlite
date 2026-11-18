@@ -1,6 +1,7 @@
 use betterlite_openai::search::records::SearchResponse;
 use serde_json::json;
 
+use crate::search::error::AzureSearchError;
 use crate::search::{AzureSearchConfig, DOCS_URL, UPSTREAM_ERROR_STATUS};
 
 use super::support::{model_settings, transform};
@@ -125,8 +126,12 @@ fn incomplete_without_results_raises() {
     assert_incomplete(&config, &empty_reason, "unknown reason");
 }
 
+fn error_for(config: &AzureSearchConfig<'_>, body: &str, status: u16) -> AzureSearchError {
+    transform(config, body, status, &[]).unwrap_err()
+}
+
 fn assert_incomplete(config: &AzureSearchConfig<'_>, body: &str, reason: &str) {
-    let error = transform(config, body, 200, &[]).unwrap_err();
+    let error = error_for(config, body, 200);
     assert_eq!(error.status_code(), Some(UPSTREAM_ERROR_STATUS));
     assert_eq!(
         error.to_string(),
@@ -175,11 +180,8 @@ fn the_envelope_requires_output() {
 }
 
 fn assert_schema_failure(config: &AzureSearchConfig<'_>, body: &str, status: u16) {
-    let error = transform(config, body, status, &[]).unwrap_err();
+    let error = error_for(config, body, status);
     assert_eq!(error.status_code(), Some(status));
-    assert!(
-        error
-            .to_string()
-            .contains("response does not match the Foundry Responses API schema")
-    );
+    let message = error.to_string();
+    assert!(message.contains("response does not match the Foundry Responses API schema"));
 }

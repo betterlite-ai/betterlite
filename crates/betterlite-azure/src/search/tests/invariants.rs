@@ -325,6 +325,14 @@ impl Grant for StubGrant {
     }
 }
 
+impl StubGrants {
+    const fn grant(&self) -> StubGrant {
+        StubGrant {
+            outcome: self.outcome,
+        }
+    }
+}
+
 impl Grants for StubGrants {
     type Grant<'grants>
         = StubGrant
@@ -335,44 +343,34 @@ impl Grants for StubGrants {
         &'grants self,
         _record: &ClientSecretRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(StubGrant {
-            outcome: self.outcome,
-        })
+        Ok(self.grant())
     }
 
     fn certificate<'grants>(
         &'grants self,
         _record: &CertificateRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(StubGrant {
-            outcome: self.outcome,
-        })
+        Ok(self.grant())
     }
 
     fn username_password<'grants>(
         &'grants self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(StubGrant {
-            outcome: self.outcome,
-        })
+        Ok(self.grant())
     }
 
     fn workload<'grants>(
         &'grants self,
         _record: &WorkloadRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(StubGrant {
-            outcome: self.outcome,
-        })
+        Ok(self.grant())
     }
 
     fn managed_identity<'grants>(
         &'grants self,
         _record: &ManagedIdentityRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Ok(StubGrant {
-            outcome: self.outcome,
-        })
+        Ok(self.grant())
     }
 }

@@ -43,10 +43,8 @@ pub(super) fn model_settings() -> Settings {
 
 pub(super) fn connection_settings() -> Settings {
     Settings {
-        project_endpoint: None,
-        model: Some(String::from(MODEL)),
         connection_id: Some(String::from("connection-1")),
-        token: None,
+        ..model_settings()
     }
 }
 
@@ -62,18 +60,14 @@ pub(super) fn token_settings(token: &str) -> Settings {
 pub(super) fn endpoint_settings(endpoint: &str) -> Settings {
     Settings {
         project_endpoint: Some(String::from(endpoint)),
-        model: Some(String::from(MODEL)),
-        connection_id: None,
-        token: None,
+        ..model_settings()
     }
 }
 
 pub(super) fn endpoint_token_settings(endpoint: &str, token: &str) -> Settings {
     Settings {
         project_endpoint: Some(String::from(endpoint)),
-        model: Some(String::from(MODEL)),
-        connection_id: None,
-        token: Some(SecretString::from(token)),
+        ..token_settings(token)
     }
 }
 

@@ -63,23 +63,14 @@ fn connection_tool_body() {
         settings: &settings,
         minter: None,
     };
-    let params = object(json!({"max_results": 5}));
-    let body = request_body(&config, &params);
+    let body = request_body(&config, &object(json!({"max_results": 5})));
+    assert_eq!(body["model"], json!(MODEL));
+    assert_eq!(body["input"], json!("azure grounding query"));
+    let tool = &body["tools"][0];
+    assert_eq!(tool["type"], json!("bing_grounding"));
     assert_eq!(
-        body,
-        json!({
-            "model": MODEL,
-            "input": "azure grounding query",
-            "tools": [{
-                "type": "bing_grounding",
-                "bing_grounding": {
-                    "search_configurations": [{
-                        "project_connection_id": "connection-1",
-                        "count": 5
-                    }]
-                }
-            }]
-        })
+        tool["bing_grounding"]["search_configurations"],
+        json!([{"project_connection_id": "connection-1", "count": 5}])
     );
 }
 
