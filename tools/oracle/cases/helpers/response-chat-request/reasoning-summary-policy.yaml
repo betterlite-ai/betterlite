@@ -1,0 +1,55 @@
+kind: helper
+name: reasoning-summary-policy
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: user, content: hello}]
+    optional_params: {reasoning_effort: low}
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: null
+calls:
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {reasoning_effort: low}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: true
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {reasoning_effort: {effort: high, summary: auto}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: true
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {reasoning_effort: {effort: high}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {reasoning_effort: null}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {extra_body: {reasoning_effort: medium}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: true
+      client: null
+env: {}
+compare:
+  ignore: []

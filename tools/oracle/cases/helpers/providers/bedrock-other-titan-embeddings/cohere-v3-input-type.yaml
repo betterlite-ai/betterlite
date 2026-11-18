@@ -1,0 +1,48 @@
+kind: helper
+name: cohere-v3-input-type
+call:
+  bedrock_other_titan_embeddings:
+    function: cohere_v3_input_type
+    model: cohere.embed-english-v3
+    input: [first text, second text]
+    non_default:
+      encoding_format: [base64, int8, custom]
+      dimensions: 512
+    optional_params:
+      truncate: END
+      input_type: search_query
+      model: caller-model
+      extra: dropped
+calls:
+  - bedrock_other_titan_embeddings:
+      function: cohere_v3_input_type
+      model: cohere.embed-english-v3
+      input: [hello world]
+      non_default:
+        encoding_format: float
+      optional_params: {}
+  - bedrock_other_titan_embeddings:
+      function: cohere_v3_input_type
+      model: cohere.embed-english-v3
+      input: [hello, "data:image/png;base64,aGVsbG8="]
+      non_default: {}
+      optional_params:
+        truncate: NONE
+  - bedrock_other_titan_embeddings:
+      function: cohere_v3_input_type
+      model: cohere.embed-v4
+      input: ["data:image/png;base64,aGVsbG8="]
+      non_default:
+        encoding_format: base64
+        dimensions: 256
+      optional_params:
+        input_type: image
+  - bedrock_other_titan_embeddings:
+      function: cohere_v3_input_type
+      model: cohere.embed-english-v3
+      input: []
+      non_default: {}
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

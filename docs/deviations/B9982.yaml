@@ -1,0 +1,49 @@
+task: B9982
+deviations:
+  - what: >-
+      Responses output recovery splits a recorded SSE string only at LF, CRLF and CR, so a data line whose JSON string
+      holds a raw U+0085, U+2028 or U+2029 stays whole and its output item or response.completed is kept. VT, FF and
+      U+001C to U+001E no longer end a line either.
+    why: >-
+      LiteLLM's raw_sse.splitlines() cuts such a line into fragments that fail to parse and drops the event, losing an
+      output item or the completed output. JSON allows these characters unescaped in a string, and an SSE line ends only
+      at CR, LF or CRLF.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L843
+  - what: >-
+      The Anthropic stream restamper cuts a frame into lines only at LF, CRLF and CR, so a message_start line holding a
+      raw U+0085, U+2028 or U+2029 inside a JSON string is restamped with the requested model.
+    why: >-
+      LiteLLM's frame.splitlines(keepends=True) cuts that line, leaves it unrestamped and shows the client the
+      deployment's model name. This replaces B980's kept_bugs row for the same split.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/anthropic_endpoints/streaming_model_restamp.py#L55
+  - what: >-
+      The guardrail stream-event scan (anthropic_stream_chunk_events) splits text and bytes chunks only at LF, CRLF and
+      CR, so an event holding a raw U+0085, U+2028 or U+2029 inside a JSON string is read.
+    why: LiteLLM's block.splitlines() cuts that event's line and the usage scan never sees the event.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/utils.py#L25
+  - what: >-
+      The Google GenAI guardrail splits the joined SSE text only at LF, CRLF and CR, so a chunk whose part text holds a
+      raw U+0085, U+2028 or U+2029 reaches the guardrail. A line that is not one JSON object is read as the data fields
+      it holds, cut at every data: outside a JSON string, so two frames a separator keeps on one line still give both
+      their texts, as the oracle case holds LiteLLM's splitlines to doing.
+    why: LiteLLM's sse_text.splitlines() drops that chunk's text, so the guardrail never checks it.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L122
+  - what: >-
+      The TinyFish SSE run_id scan splits frames only at LF, CRLF and CR, so a run frame holding a raw U+0085, U+2028
+      or U+2029 inside a JSON string still gives its run_id.
+    why: LiteLLM's splitlines() drops that frame and logs the request without cost.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/tinyfish_passthrough_logging_handler.py#L83
+  - what: >-
+      LineDecoder, the line reader behind every iter_lines and aiter_lines port, ends a line only at LF, CRLF and CR,
+      where httpx 0.28.1's LineDecoder also ends one at VT, FF, U+001C to U+001E, U+0085, U+2028 and U+2029.
+    why: >-
+      A streamed SSE or JSON line holding one of those raw inside a string is cut into fragments that fail to parse,
+      and the chunk is lost.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/chat/handler.py#L68
+kept_bugs: []

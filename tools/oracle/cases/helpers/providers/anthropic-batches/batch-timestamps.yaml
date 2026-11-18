@@ -1,0 +1,29 @@
+kind: helper
+name: anthropic-batches-timestamps
+call:
+  anthropic_batches:
+    lifecycle:
+      now: 1704067200
+      bodies:
+        - '{"id":"b","processing_status":"in_progress","created_at":"1970-01-01T00:00:00Z"}'
+        - '{"id":"b","processing_status":"ended","ended_at":"2024-01-01T00:00:00Z","archived_at":"2024-01-04T00:00:00Z","expires_at":"2024-01-05T00:00:00Z"}'
+        - '{"id":"b","processing_status":"canceling","cancel_initiated_at":"2024-01-02T00:00:00Z","ended_at":"2024-01-03T00:00:00Z"}'
+        - '{"id":"b","processing_status":"in_progress","archived_at":"1970-01-01T00:00:00Z"}'
+        - '{"id":"b","created_at":12345}'
+        - '{"id":"b","processing_status":null,"created_at":"1970-01-01T00:00:00Z"}'
+        - '{"created_at":"2024-01-01T00:00:00"}'
+        - '{"created_at":"2024-01-01"}'
+        - '{"created_at":"20240101"}'
+        - '{"created_at":"2024-01-01T00:00:00,5Z"}'
+        - '{"created_at":"2024-01-01T00:00:00.1234567Z"}'
+        - '{"created_at":"2024-01-01T00:00:00+0200"}'
+        - '{"created_at":"2024-01-01T00:00:00+02"}'
+        - '{"created_at":"2024-01-01T"}'
+        - '{"created_at":"2024-02-30T00:00:00Z"}'
+        - '{"created_at":"2024-01-01T24:00:00Z"}'
+        - '{"created_at":"2024-01-01T00:00:00+24:00"}'
+        - '{"created_at":"not-a-date"}'
+        - '{"created_at":""}'
+        - '{"created_at":"1969-12-31T23:59:59.5Z","processing_status":"in_progress"}'
+env: {TZ: UTC}
+compare: {ignore: []}

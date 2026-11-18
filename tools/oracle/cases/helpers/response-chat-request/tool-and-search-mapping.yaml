@@ -1,0 +1,100 @@
+kind: helper
+name: tool-and-search-mapping
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: user, content: hello}]
+    optional_params:
+      tools: [{type: function, function: {name: lookup}}]
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: null
+calls:
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        tools:
+          - type: function
+            function: {name: lookup, description: Find, parameters: {type: object, properties: {}}, strict: true}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        tools:
+          - type: custom
+            custom: {name: grammar_tool, description: Pick, format: {type: grammar, grammar: {definition: "start: x", syntax: lark}}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        tools:
+          - type: custom
+            custom: {format: {type: grammar, definition: "start: y"}}
+          - type: custom
+            custom: {name: flat_tool, description: null}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        tools:
+          - {type: web_search}
+          - {type: vendor, vendor: {x: 1}}
+          - {type: function, function: x}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        web_search_options: {}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        tools: [{type: function, function: {name: lookup}}]
+        web_search_options: {type: web_search_preview, search_context_size: high}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        web_search_options: "on"
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        web_search_options: null
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+env: {}
+compare:
+  ignore: []

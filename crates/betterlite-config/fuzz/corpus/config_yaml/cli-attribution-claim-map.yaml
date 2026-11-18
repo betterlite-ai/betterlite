@@ -1,0 +1,5 @@
+environment_variables:
+  CLI_SSO_CLAIM_MAP: 'employment_type->acme_employment_type,org_info.department->metadata.department,org_info\.department->flat_department'
+  LITELLM_CLI_SSO_CLAIM_MAP: 'label->display_name'
+litellm_settings:
+  drop_params: false
