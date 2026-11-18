@@ -104,7 +104,7 @@ pub(crate) fn run(
             fields.status = Some(status_text(artifact.is_ok()).to_owned());
             fields.threshold = artifact
                 .ok()
-                .map(|artifact| number(artifact.routing_threshold))
+                .map(|validated| number(validated.routing_threshold))
                 .transpose()?;
         }
     }
@@ -200,7 +200,7 @@ fn startup_accepted(config: &section::Config) -> bool {
             .is_ok()
 }
 
-fn status_text(accepted: bool) -> &'static str {
+const fn status_text(accepted: bool) -> &'static str {
     if accepted { "accepted" } else { "rejected" }
 }
 
@@ -223,10 +223,10 @@ fn expanded(content: &str, pad: &str, pad_len: u64) -> Result<Vec<u8>, Operation
         .len()
         .checked_mul(repetitions)
         .and_then(|extra| content.len().checked_add(extra));
-    let Some(total) = total else {
+    let Some(expanded_len) = total else {
         return Err(invalid("the padded artifact overflows this platform"));
     };
-    if total > MAX_EXPANDED_BYTES {
+    if expanded_len > MAX_EXPANDED_BYTES {
         return Err(invalid(&format!(
             "artifact over {MAX_EXPANDED_BYTES} bytes"
         )));

@@ -17,7 +17,7 @@ const CONFIG_SEED: &str = include_str!(
 fn inline_artifact() -> Artifact {
     let global_statistics = [1_u32, 2, 3, 4]
         .into_iter()
-        .zip([0.0_f64, 1.0, 2.0, 3.0])
+        .zip([0.0_f64, 1.0_f64, 2.0_f64, 3.0_f64])
         .map(|(tier, successes)| GlobalStatistic {
             tier,
             successes,
