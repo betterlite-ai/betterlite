@@ -102,5 +102,5 @@ pitfalls:
   - "_complete_sap passes the request api_key to the config, and B5845's validate_environment treats a non-empty key as the SAP service key."
   - "The watsonx embedding arm copies token only when the credentials carry the key, while watsonx_text copies it when it is not None."
   - "The SAP cases script every reply in the case field upstream, a list the mock answers in arrival order: the token reply, the deployments reply and the configurations reply in the order LiteLLM sends them, then the chat or embedding reply. A request past the end fails with provider answer sequence exhausted. Only case env values get the mock address, through {{upstream}}, so put it in the service key URLs in the env; reply bodies are sent as written."
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 2250, max_new_expects: 0}
 review_level: security
