@@ -872,6 +872,41 @@ fn a_failed_lookup_proceeds_and_reports_the_failure() {
 }
 
 #[test]
+fn model_limit_handles_configured_failed_absent_and_unmatched_lookups() {
+    let limits = ApiLimits::default();
+    let matched_names = names(&["whisper"]);
+    let configured = FixedRouter {
+        limit: UploadLimit::Configured(1.0),
+    };
+    let failed = FixedRouter {
+        limit: UploadLimit::Failed,
+    };
+    let absent = FixedRouter {
+        limit: UploadLimit::Absent,
+    };
+
+    for (router, router_names, bytes, expect_failure) in [
+        (&configured, &matched_names, 1_048_577, true),
+        (&failed, &matched_names, 2_097_152, false),
+        (&absent, &matched_names, 2_097_152, false),
+        (&configured, &names(&["other"]), 2_097_152, false),
+    ] {
+        let mut data = request_with_model();
+        let result = check_file_size_under_limit(UploadSizeCheck {
+            request_data: &mut data,
+            file_size: Some(bytes),
+            router_names,
+            router: Some(router),
+            limits: &limits,
+        });
+        assert_eq!(result.is_err(), expect_failure);
+        if matches!(router.limit, UploadLimit::Failed) {
+            assert!(result.unwrap().lookup_failed);
+        }
+    }
+}
+
+#[test]
 fn an_unset_limit_caps_at_the_api_limit() {
     let mut data = request_with_model();
     let outcome = check_file_size_under_limit(UploadSizeCheck {
