@@ -57,9 +57,9 @@ pub fn delta_chunks(
 struct ByteCount(usize);
 
 impl io::Write for ByteCount {
-    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
-        self.0 = self.0.saturating_add(data.len());
-        Ok(data.len())
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0 = self.0.saturating_add(buf.len());
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

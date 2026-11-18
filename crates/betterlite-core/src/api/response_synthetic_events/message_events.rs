@@ -106,14 +106,14 @@ fn text_like_part_events(
             item_id: context.item_id.to_owned(),
             output_index: context.output_index,
             content_index: context.content_index,
-            text: text.to_owned(),
+            text: text.clone(),
             extra: Extra::new(),
         }),
         DeltaKind::Refusal => KnownResponseEvent::RefusalDone(RefusalDoneEvent {
             item_id: context.item_id.to_owned(),
             output_index: context.output_index,
             content_index: context.content_index,
-            refusal: text.to_owned(),
+            refusal: text.clone(),
             extra: Extra::new(),
         }),
     };
