@@ -218,7 +218,7 @@ async fn aws_credential_resolver_adapter_returns_resolved_credentials() {
         AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest,
         OidcResponse, OidcTokenCache,
     };
-    use secrecy::SecretString;
+    use secrecy::{ExposeSecret as _, SecretString};
     use std::collections::BTreeMap;
     use std::io;
     use std::sync::{Arc, Mutex};
