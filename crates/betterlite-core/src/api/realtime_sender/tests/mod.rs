@@ -33,7 +33,6 @@ mod setup;
 
 const SETUP_FRAME: &str = r#"{"setup":{"model":"models/gemini-live","generationConfig":{"responseModalities":["AUDIO"]}}}"#;
 const SECOND_SETUP: &str = r#"{"setup":{"model":"models/gemini-live","systemInstruction":{"parts":[{"text":"be brief"}]}}}"#;
-const INJECTED_SETUP: &str = r#"{"setup":{"model":"models/gemini-live","generationConfig":{"responseModalities":["AUDIO"]},"realtimeInputConfig":{"automaticActivityDetection":{"disabled":true}}}}"#;
 const CONTENT_FRAME: &str = r#"{"realtimeInput":{"mediaChunks":[{"mimeType":"audio/pcm"}]}}"#;
 const BINARY_FRAME: &[u8] = b"binary-frame";
 const FLAT_UPDATE: &str = r#"{"type":"session.update","session":{"input_audio_transcription":{"model":"forbidden","language":"en"},"instructions":"keep"}}"#;
@@ -198,17 +197,32 @@ impl RealtimeProviderConfig for ScriptedProvider {
     }
 }
 
-#[derive(Default)]
-struct BackendData {
-    sent: Vec<RealtimeMessage>,
+struct SendData<Item> {
+    sent: Vec<Item>,
     failures: Vec<usize>,
     attempts: usize,
 }
 
-#[derive(Clone, Default)]
-struct BackendLog(Arc<Mutex<BackendData>>);
+impl<Item> Default for SendData<Item> {
+    fn default() -> Self {
+        Self {
+            sent: Vec::new(),
+            failures: Vec::new(),
+            attempts: 0,
+        }
+    }
+}
 
-impl BackendLog {
+#[derive(Clone)]
+struct SendLog<Item>(Arc<Mutex<SendData<Item>>>);
+
+impl<Item> Default for SendLog<Item> {
+    fn default() -> Self {
+        Self(Arc::new(Mutex::new(SendData::default())))
+    }
+}
+
+impl<Item> SendLog<Item> {
     fn fail_on(&self, index: usize) {
         lock(&self.0).failures.push(index);
     }
@@ -217,10 +231,35 @@ impl BackendLog {
         lock(&self.0).attempts
     }
 
-    fn sent(&self) -> Vec<RealtimeMessage> {
+    // An injected attempt index fails before the frame reaches the socket, so a failed attempt is never recorded
+    fn begin(&self, target: &str) -> Result<(), WebSocketError> {
+        let mut data = lock(&self.0);
+        let index = data.attempts;
+        data.attempts = data.attempts.saturating_add(1);
+        if data.failures.contains(&index) {
+            return Err(WebSocketError {
+                message: format!("the scripted {target} send {index} failed"),
+            });
+        }
+        Ok(())
+    }
+
+    fn push(&self, item: Item) {
+        lock(&self.0).sent.push(item);
+    }
+}
+
+impl<Item> SendLog<Item>
+where
+    Item: Clone,
+{
+    fn sent(&self) -> Vec<Item> {
         lock(&self.0).sent.clone()
     }
 }
+
+type BackendLog = SendLog<RealtimeMessage>;
+type ClientLog = SendLog<String>;
 
 struct MockBackend {
     log: BackendLog,
@@ -230,17 +269,10 @@ struct MockBackend {
 #[async_trait]
 impl RealtimeBackend for MockBackend {
     async fn send(&mut self, message: RealtimeMessage) -> Result<(), WebSocketError> {
-        let mut data = lock(&self.log.0);
-        let index = data.attempts;
-        data.attempts = data.attempts.saturating_add(1);
-        if data.failures.contains(&index) {
-            return Err(WebSocketError {
-                message: format!("the scripted backend send {index} failed"),
-            });
-        }
+        self.log.begin("backend")?;
         self.timeline
             .record(format!("backend:{}", frame_label(&message)));
-        data.sent.push(message);
+        self.log.push(message);
         Ok(())
     }
 
@@ -255,30 +287,6 @@ impl RealtimeBackend for MockBackend {
     }
 }
 
-#[derive(Default)]
-struct ClientData {
-    sent: Vec<String>,
-    failures: Vec<usize>,
-    attempts: usize,
-}
-
-#[derive(Clone, Default)]
-struct ClientLog(Arc<Mutex<ClientData>>);
-
-impl ClientLog {
-    fn fail_on(&self, index: usize) {
-        lock(&self.0).failures.push(index);
-    }
-
-    fn attempts(&self) -> usize {
-        lock(&self.0).attempts
-    }
-
-    fn sent_texts(&self) -> Vec<String> {
-        lock(&self.0).sent.clone()
-    }
-}
-
 struct MockClient {
     log: ClientLog,
     timeline: Timeline,
@@ -288,16 +296,9 @@ struct MockClient {
 #[async_trait]
 impl ClientWebSocket for MockClient {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        let mut state = lock(&self.log.0);
-        let index = state.attempts;
-        state.attempts = state.attempts.saturating_add(1);
-        if state.failures.contains(&index) {
-            return Err(WebSocketError {
-                message: format!("the scripted client send {index} failed"),
-            });
-        }
+        self.log.begin("client")?;
         self.timeline.record(format!("client:{data}"));
-        state.sent.push(data.to_owned());
+        self.log.push(data.to_owned());
         Ok(())
     }
 
@@ -395,9 +396,9 @@ impl RealtimeGuardrailCallback for PreCallGuardrail {
     fn should_run_guardrail(
         &self,
         _data: &RequestData,
-        _event: GuardrailEventHooks,
+        event: GuardrailEventHooks,
     ) -> Result<bool, Infallible> {
-        Ok(true)
+        Ok(event == GuardrailEventHooks::PreCall)
     }
 }
 

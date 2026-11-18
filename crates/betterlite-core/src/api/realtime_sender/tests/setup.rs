@@ -93,7 +93,7 @@ async fn failed_setup_send_keeps_the_injection_flag() {
         script.setup.push(parsed(SETUP_FRAME));
         script
             .transforms
-            .push_back(vec![RealtimeMessage::Text(INJECTED_SETUP.to_owned())]);
+            .push_back(vec![RealtimeMessage::Text(SETUP_FRAME.to_owned())]);
     }
     fixture.backend_log.fail_on(0);
     {

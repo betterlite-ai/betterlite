@@ -29,7 +29,7 @@ async fn realtime_client_send_translation() {
     let delta = parsed(r#"{"type":"response.output_text.delta","delta":"hi"}"#);
     assert!(sender.send_event_to_client(&delta, "raw").await.unwrap());
     assert_eq!(
-        fixture.client_log.sent_texts(),
+        fixture.client_log.sent(),
         vec![r#"{"type":"response.text.delta","delta":"hi"}"#.to_owned()]
     );
 }
@@ -52,10 +52,7 @@ async fn nonobject_events_are_forwarded_untranslated() {
             .await
             .unwrap()
     );
-    assert_eq!(
-        fixture.client_log.sent_texts(),
-        vec!["raw-frame".to_owned()]
-    );
+    assert_eq!(fixture.client_log.sent(), vec!["raw-frame".to_owned()]);
 }
 
 #[tokio::test]
@@ -77,7 +74,7 @@ async fn normalizer_drops_and_renames_before_sending() {
     let renamed = parsed(r#"{"type":"old.type","value":1}"#);
     assert!(sender.send_event_to_client(&renamed, "raw").await.unwrap());
     assert_eq!(
-        fixture.client_log.sent_texts(),
+        fixture.client_log.sent(),
         vec![r#"{"type":"new.type","value":1}"#.to_owned()]
     );
     assert_eq!(
@@ -108,7 +105,7 @@ async fn beta_translation_failure_falls_back() {
     );
     assert_eq!(fixture.client_log.attempts(), 1);
     assert_eq!(
-        fixture.client_log.sent_texts(),
+        fixture.client_log.sent(),
         vec![r#"{"type":["not","hashable"]}"#.to_owned()]
     );
 }
@@ -129,7 +126,7 @@ async fn beta_send_failure_falls_back_to_the_untranslated_event() {
     assert!(sender.send_event_to_client(&delta, "unused").await.unwrap());
     assert_eq!(fixture.client_log.attempts(), 2);
     assert_eq!(
-        fixture.client_log.sent_texts(),
+        fixture.client_log.sent(),
         vec![r#"{"type":"response.output_text.delta","delta":"hi"}"#.to_owned()]
     );
 }
