@@ -58,6 +58,9 @@ def normalized(raw: Iterable[tuple[str, str, str]]) -> list[tuple[str, str, str]
 
 def test_async_signature_matches() -> None:
     read = probe("async_get_available_deployment")
+    names = [row[0] for row in read["ours"]]
+    assert "input_value" in names
+    assert "input" not in names
     assert normalized(read["ours"]) == normalized(read["theirs"])
 
 
