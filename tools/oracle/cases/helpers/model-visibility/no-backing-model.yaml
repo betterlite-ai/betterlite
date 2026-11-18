@@ -1,0 +1,26 @@
+kind: helper
+name: model-visibility-no-backing-model
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: team-only
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: t1
+          team_id: team-a
+          discoverable: false
+      - model_name: global-hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: g1
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      model_names: [team-only, global-hidden]
+      user_role: internal_user
+      team_id: team-b
+env: {}
+compare: {ignore: []}

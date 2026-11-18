@@ -1,0 +1,34 @@
+kind: helper
+name: prometheus-failure-bounded-model-non-string-collapse
+call:
+  b3880:
+    function: bounded_requested_model_label
+    requested_model: [1, 2]
+    router_originated: true
+    catalog:
+      recognized: []
+      team_public: []
+      patterns: []
+      team_patterns: []
+calls:
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: 7
+      router_originated: true
+      catalog: null
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: {name: "gpt-4o"}
+      router_originated: false
+      catalog:
+        recognized: []
+        team_public: []
+        patterns: []
+        team_patterns: []
+  - b3880:
+      function: bounded_requested_model_label
+      requested_model: true
+      router_originated: true
+      catalog: null
+env: {}
+compare: {ignore: []}
