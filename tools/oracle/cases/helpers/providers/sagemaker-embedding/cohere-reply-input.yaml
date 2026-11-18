@@ -1,0 +1,17 @@
+kind: helper
+name: cohere-reply-input
+call:
+  b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5, 1.5]], \"meta\": {\"billed_units\": {\"input_tokens\": 4}}}", "input": ["one two"], "request_data": {}}
+calls:
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]], \"meta\": {\"billed_units\": {\"input_tokens\": 4, \"images\": 2}}}", "input": null, "request_data": {"texts": ["alpha beta"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]], \"meta\": {\"billed_units\": {\"images\": 2}}}", "input": [], "request_data": {"images": ["http://x"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": {\"float\": [[0.5], [1.5]], \"int8\": [[3.5]]}, \"response_type\": \"embeddings_by_type\", \"meta\": {\"billed_units\": {\"input_tokens\": 1}}}", "input": "solo", "request_data": {}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]], \"meta\": {\"billed_units\": {\"input_tokens\": 2}}}", "input": ["one two"], "request_data": {"texts": ["ignored"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]], \"meta\": {}}", "input": ["one two"], "request_data": {"texts": ["ignored", "ignored ignored"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]], \"meta\": {}}", "input": null, "request_data": {"texts": ["alpha beta"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]]}", "input": [], "request_data": {"texts": [], "images": ["aGVsbG8="]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]]}", "input": "solo", "request_data": {"texts": ["ignored"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]]}", "input": null, "request_data": {"texts": ["ab", "cde"], "images": ["ignored"]}}
+  - b5961: {"function": "cohere_reply", "model": "endpoint", "body": "{\"embeddings\": [[0.5]]}", "input": null, "request_data": {}}
+env: {}
+compare: {ignore: []}
