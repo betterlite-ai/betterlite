@@ -928,12 +928,12 @@ fn sse_marker_lines_do_not_complete_the_response() {
 }
 
 #[test]
-fn sse_handles_carriage_return_line_ends() {
-    let body = [text(0, "hello"), done()].join("\r\n");
+fn sse_handles_carriage_return_line_ends_and_unicode_separators() {
+    let body = [text(0, "a\u{2028}b"), done()].join("\r\n");
     let reply = Fixture::new()
         .transform(200, &headers(SSE_TYPE), &body, &ApiLimits::default())
         .expect("the stream recovers");
-    assert_eq!(typed(&reply).output_text(), "hello");
+    assert_eq!(typed(&reply).output_text(), "a\u{2028}b");
 }
 
 fn limits(max_event_bytes: usize, max_items: usize) -> ApiLimits {
