@@ -10,11 +10,11 @@ pub(super) fn resolve(
     litellm_params: &Params,
     common: &mut CommonRequest,
 ) {
-    let Some(policy) = policy else {
+    let Some(owner) = policy else {
         return;
     };
     let caller = common.request_metadata.as_ref().map(request_value);
-    let resolved = policy.resolve(litellm_params, caller.as_ref());
+    let resolved = owner.resolve(litellm_params, caller.as_ref());
     common.request_metadata = resolved.map(|pairs| {
         Json::Object(
             pairs

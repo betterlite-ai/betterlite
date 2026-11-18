@@ -1,6 +1,7 @@
 use super::support::{
     CLAUDE_3_5, CLAUDE_4_5, Call, Outcome, Settings, expected, field, remote, run,
 };
+use crate::converse_request::ConverseMessageSettings;
 
 const DROP_THINKING_WARNING: &str = "Dropping 'thinking' param because the last assistant message with tool_calls has no thinking_blocks. The model won't use extended thinking for this turn.";
 
@@ -35,8 +36,10 @@ const THINKING_ENABLED: &str = r#"{"thinking": {"type": "enabled", "budget_token
 const THINKING_DISABLED: &str = r#"{"thinking": {"type": "disabled"}}"#;
 const MODIFYING: Settings = Settings {
     global_drop: false,
-    modify_params: true,
-    neutralize: false,
+    messages: ConverseMessageSettings {
+        modify_params: true,
+        neutralize_orphans: false,
+    },
 };
 
 // A turn whose own tool history carries no thinking drops the param, and the caller options lose it too.
@@ -72,13 +75,13 @@ fn thinking_kept_without_modify_params() {
     assert_thinking_kept(&kept, &warnings);
 
     // One assistant message with thinking keeps the param enabled for the whole turn.
-    let call = Call {
+    let thought_call = Call {
         messages: THOUGHT_TURN,
         settings: MODIFYING,
         ..Call::new(CLAUDE_4_5, &enabled)
     };
-    let (thought, warnings) = run(&call, &remote(&[]));
-    assert_thinking_kept(&thought, &warnings);
+    let (thought, thought_warnings) = run(&thought_call, &remote(&[]));
+    assert_thinking_kept(&thought, &thought_warnings);
 }
 
 fn disabled_thinking_gate() {
@@ -95,11 +98,14 @@ fn disabled_thinking_gate() {
     assert!(!warnings.contains("thinking is always on"), "{warnings}");
 
     // On an always-on model the disabled block is dropped and leaves no response path behind.
-    let (removed, warnings) = run(&Call::new(CLAUDE_4_5, THINKING_DISABLED), &remote(&[]));
+    let (removed, removed_warnings) = run(&Call::new(CLAUDE_4_5, THINKING_DISABLED), &remote(&[]));
     assert!(field(removed.body(), "additionalModelRequestFields").is_none());
     assert!(field(removed.body(), "additionalModelResponseFieldPaths").is_none());
-    assert!(warnings.contains("thinking is always on"), "{warnings}");
-    assert!(warnings.contains(CLAUDE_4_5), "{warnings}");
+    assert!(
+        removed_warnings.contains("thinking is always on"),
+        "{removed_warnings}"
+    );
+    assert!(removed_warnings.contains(CLAUDE_4_5), "{removed_warnings}");
 }
 
 fn thinking_with_tools() -> String {

@@ -40,7 +40,7 @@ pub(super) fn value_of(record: &RequestRecord) -> Result<ParamValue, ConverseReq
 }
 
 fn decimal_number(number: &Decimal) -> Result<Number, ConverseRequestError> {
-    Number::from_str(&number.to_string()).map_err(|_| ConverseRequestError::FieldType {
+    Number::from_str(&number.to_string()).map_err(|_error| ConverseRequestError::FieldType {
         field: "params",
         expected: "a number this process can carry",
     })
@@ -55,7 +55,7 @@ fn tagged_value(text: &str) -> Result<ParamValue, ConverseRequestError> {
         return Ok(ParamValue::Text(tagged.to_owned()));
     };
     Ok(ParamValue::Number(Number::from_str(literal).map_err(
-        |_| ConverseRequestError::FieldType {
+        |_error| ConverseRequestError::FieldType {
             field: "params",
             expected: "a number this process can carry",
         },

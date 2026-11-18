@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::mem::take;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::anthropic_capability_catalog::DropParams;
@@ -151,23 +152,20 @@ where
 
 // The supported fields keep the caller's order; everything else is a request field.
 fn split_additional(inference_params: &mut ParamMap) -> ParamMap {
-    let unsupported: Vec<String> = inference_params
-        .keys()
-        .filter(|key| {
-            !(INFERENCE_FIELDS.contains(&key.as_str())
-                || TOOL_FIELDS.contains(&key.as_str())
-                || CONFIG_FIELDS.contains(&key.as_str()))
-        })
-        .cloned()
-        .collect();
-    unsupported
-        .into_iter()
-        .filter_map(|key| {
-            inference_params
-                .shift_remove(&key)
-                .map(|value| (key, value))
-        })
-        .collect()
+    let mut supported = ParamMap::new();
+    let mut additional = ParamMap::new();
+    for (key, value) in take(inference_params) {
+        if INFERENCE_FIELDS.contains(&key.as_str())
+            || TOOL_FIELDS.contains(&key.as_str())
+            || CONFIG_FIELDS.contains(&key.as_str())
+        {
+            supported.insert(key, value);
+        } else {
+            additional.insert(key, value);
+        }
+    }
+    *inference_params = supported;
+    additional
 }
 
 // A mapping with no members left is absent, and a format that is not an object is discarded.
@@ -177,25 +175,25 @@ fn split_output_config(value: Option<ParamValue>) -> (Option<ParamValue>, Option
     };
     let candidate = fields
         .shift_remove(FORMAT_FIELD)
-        .filter(|value| matches!(value, ParamValue::Mapping(_)));
+        .filter(|entry| matches!(entry, ParamValue::Mapping(_)));
     let remaining = (!fields.is_empty()).then_some(ParamValue::Mapping(fields));
     (remaining, candidate)
 }
 
 fn metadata_value(value: Option<ParamValue>) -> Result<Option<Json>, ConverseRequestError> {
-    let Some(value) = value.filter(|entry| !matches!(entry, ParamValue::Null)) else {
+    let Some(present) = value.filter(|present| !matches!(present, ParamValue::Null)) else {
         return Ok(None);
     };
-    let value = match value {
+    let filtered = match present {
         ParamValue::Mapping(mut fields) => {
             // The record projection drops a null member before LiteLLM validates; this keeps the rest in caller order.
-            fields.retain(|_, entry| !matches!(entry, ParamValue::Null));
+            fields.retain(|_, member| !matches!(member, ParamValue::Null));
             ParamValue::Mapping(fields)
         }
-        value => value,
+        other => other,
     };
     // serde_json sorts an object's keys here, and the pair selection keeps the first pairs in caller order.
-    let encoded = json_of(&value);
+    let encoded = json_of(&filtered);
     validate_request_metadata(&request_value(&encoded))?;
     Ok(Some(encoded))
 }

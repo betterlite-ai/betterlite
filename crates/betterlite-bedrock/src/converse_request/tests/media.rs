@@ -1,4 +1,4 @@
-use std::io::{self, Read as _, Write as _};
+use std::io::{Read as _, Write as _};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::str;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -29,14 +29,7 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let recorded = Arc::clone(&requests);
         let halted = Arc::clone(&stop);
-        scope.spawn(move || {
-            while !halted.load(Ordering::SeqCst) {
-                let Ok((stream, _)) = listener.accept() else {
-                    return;
-                };
-                serve(stream, &recorded, body);
-            }
-        });
+        scope.spawn(move || accept_requests(&listener, &halted, &recorded, body));
         Self {
             address,
             requests,
@@ -61,6 +54,20 @@ impl Drop for Server {
         self.stop.store(true, Ordering::SeqCst);
         // A blocking accept returns only for a connection, so the drop connects once to wake it.
         let _wake = TcpStream::connect(self.address);
+    }
+}
+
+fn accept_requests(
+    listener: &TcpListener,
+    stop: &AtomicBool,
+    requests: &Mutex<Vec<String>>,
+    body: &'static [u8],
+) {
+    while !stop.load(Ordering::SeqCst) {
+        let Ok((stream, _)) = listener.accept() else {
+            return;
+        };
+        serve(stream, requests, body);
     }
 }
 
@@ -129,12 +136,13 @@ fn converse_request_media_fetch() {
         assert_eq!(server.request_count(), 1);
 
         let unreachable = Server::start(scope, PNG);
-        let messages = image_messages(&unreachable.url("/image.png"));
-        let call = Call {
-            messages: &messages,
+        let unreachable_messages = image_messages(&unreachable.url("/image.png"));
+        let refusing_call = Call {
+            messages: &unreachable_messages,
             ..Call::new(CLAUDE_3_5, "{}")
         };
-        let (refused, _warnings) = run(&call, &remote_for(Refusing, &["127.0.0.1"], 50.0));
+        let (refused, _refusing_warnings) =
+            run(&refusing_call, &remote_for(Refusing, &["127.0.0.1"], 50.0));
         assert!(matches!(
             processor_error(refused.error()),
             Some(ProcessorError::Image { block: 0, .. })

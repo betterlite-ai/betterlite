@@ -153,7 +153,7 @@ fn append_injection(
     let Some(points) = prepared.additional.shift_remove(CACHE_INJECTION_FIELD) else {
         return Ok(());
     };
-    let ParamValue::List(points) = points else {
+    let ParamValue::List(entries) = points else {
         if matches!(points, ParamValue::Null) {
             return Ok(());
         }
@@ -162,10 +162,10 @@ fn append_injection(
             expected: "a list",
         });
     };
-    if points.is_empty() || tools.is_empty() || !request.accepts_cache_points {
+    if entries.is_empty() || tools.is_empty() || !request.accepts_cache_points {
         return Ok(());
     }
-    place_point(request, &points, tools, litellm_params)
+    place_point(request, &entries, tools, litellm_params)
 }
 
 fn place_point(
@@ -207,10 +207,10 @@ fn cache_point(
     request: &ToolsRequest<'_>,
 ) -> Result<Json, ConverseRequestError> {
     let block = build_cache_point_block(control, Some(request.model), request.model_cost)?;
-    let block: Json = transcode(&block)?;
+    let encoded: Json = transcode(&block)?;
     Ok(Json::Object(Object::from_iter([(
         CACHE_POINT_FIELD.to_owned(),
-        block,
+        encoded,
     )])))
 }
 
@@ -227,9 +227,9 @@ fn tool_config(
         .shift_remove(TOOL_CHOICE_FIELD)
         .filter(|value| !matches!(value, ParamValue::Null));
     let mut fields = Object::from_iter([(TOOL_CONFIG_TOOLS_FIELD.to_owned(), Json::List(tools))]);
-    if let Some(choice) = choice {
-        let choice: Json = transcode(&choice)?;
-        fields.insert(TOOL_CHOICE_CAMEL_FIELD.to_owned(), choice);
+    if let Some(selected) = choice {
+        let encoded: Json = transcode(&selected)?;
+        fields.insert(TOOL_CHOICE_CAMEL_FIELD.to_owned(), encoded);
         drop_tool_choice_type(&mut prepared.additional);
     }
     Ok(Some(Json::Object(fields)))

@@ -63,6 +63,7 @@ pub(super) async fn convert_messages<Lookup, R, Ids>(
     media: &ConverseMedia<'_, R, Ids>,
 ) -> Result<Vec<Json>, ConverseRequestError>
 where
+    Lookup: Sync,
     R: Resolve,
     Ids: Fn() -> String + Sync,
 {

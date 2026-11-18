@@ -42,11 +42,12 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::converse_request::error::ConverseRequestError;
 use crate::converse_request::{
-    ConverseMedia, ConverseRequestInput, ConverseRequestOutcome, ConverseSettings, converse_request,
+    ConverseMedia, ConverseMessageSettings, ConverseRequestInput, ConverseRequestOutcome,
+    ConverseSettings, converse_request,
 };
 use crate::event_frames::beta::BetaHeader;
 use crate::mantle_inputs::region::split_region_prefix;
-use crate::model_routes::{ParamMap, ParamValue};
+use crate::model_routes::ParamMap;
 use crate::request_policy::BedrockRequestPolicy;
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
@@ -97,7 +98,10 @@ pub(super) fn messages(source: &str) -> Vec<Message> {
     serde_json::from_str(source).expect("the messages parse")
 }
 
-pub(super) fn value<T: serde::Serialize>(value: &T) -> Json {
+pub(super) fn value<T>(value: &T) -> Json
+where
+    T: serde::Serialize,
+{
     let encoded = serde_json::to_string(value).expect("the value renders");
     serde_json::from_str(&encoded).expect("the rendered value reads back")
 }
@@ -107,14 +111,14 @@ pub(super) fn expected(source: &str) -> Json {
 }
 
 pub(super) fn field<'value>(value: &'value Json, name: &str) -> Option<&'value Json> {
-    value.as_object().and_then(|fields| fields.get(name))
+    let fields = value.as_object()?;
+    fields.get(name)
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Settings {
     pub(super) global_drop: bool,
-    pub(super) modify_params: bool,
-    pub(super) neutralize: bool,
+    pub(super) messages: ConverseMessageSettings,
 }
 
 pub(super) struct Call<'request> {
@@ -142,8 +146,10 @@ impl<'request> Call<'request> {
             answers: "{}",
             settings: Settings {
                 global_drop: false,
-                modify_params: false,
-                neutralize: false,
+                messages: ConverseMessageSettings {
+                    modify_params: false,
+                    neutralize_orphans: false,
+                },
             },
         }
     }
@@ -323,12 +329,12 @@ impl Warnings {
 }
 
 impl io::Write for Warnings {
-    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(bytes);
-        Ok(bytes.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -336,7 +342,10 @@ impl io::Write for Warnings {
     }
 }
 
-pub(super) fn run<R: Resolve>(call: &Call<'_>, remote: &RemoteImage<R>) -> (Outcome, String) {
+pub(super) fn run<R>(call: &Call<'_>, remote: &RemoteImage<R>) -> (Outcome, String)
+where
+    R: Resolve,
+{
     run_on(&runtime(), call, remote)
 }
 
@@ -390,8 +399,7 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
             headers: Some(&self.headers),
             settings: ConverseSettings {
                 global_drop: self.call.settings.global_drop,
-                modify_params: self.call.settings.modify_params,
-                neutralize_orphans: self.call.settings.neutralize,
+                messages: self.call.settings.messages,
                 request_metadata: self.policy.as_ref(),
             },
             model_cost: &self.model_cost,
@@ -407,11 +415,14 @@ impl<'setup, 'request, R: Resolve> Session<'setup, 'request, R> {
     }
 }
 
-pub(super) fn run_on<R: Resolve>(
+pub(super) fn run_on<R>(
     runtime: &Runtime,
     call: &Call<'_>,
     remote: &RemoteImage<R>,
-) -> (Outcome, String) {
+) -> (Outcome, String)
+where
+    R: Resolve,
+{
     let mut session = Session::new(call, remote);
     let warnings = Warnings::default();
     let assembled = {
@@ -434,7 +445,14 @@ pub(super) fn run_on<R: Resolve>(
 pub(super) fn processor_error(error: &ConverseRequestError) -> Option<&ProcessorError> {
     match error {
         ConverseRequestError::Processor(source) => Some(source),
-        _ => None,
+        ConverseRequestError::Messages(_)
+        | ConverseRequestError::Params(_)
+        | ConverseRequestError::Tools(_)
+        | ConverseRequestError::Capability(_)
+        | ConverseRequestError::Options(_)
+        | ConverseRequestError::Metadata(_)
+        | ConverseRequestError::Records(_)
+        | ConverseRequestError::FieldType { .. } => None,
     }
 }
 
@@ -442,7 +460,10 @@ pub(super) fn remote(allowed: &[&str]) -> RemoteImage<SystemResolver> {
     remote_for(SystemResolver, allowed, 50.0)
 }
 
-pub(super) fn remote_for<R: Resolve>(resolver: R, allowed: &[&str], max_mb: f64) -> RemoteImage<R> {
+pub(super) fn remote_for<R>(resolver: R, allowed: &[&str], max_mb: f64) -> RemoteImage<R>
+where
+    R: Resolve,
+{
     let policy = Arc::new(
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .expect("the proxy policy resolves"),

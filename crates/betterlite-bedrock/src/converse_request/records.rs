@@ -41,7 +41,7 @@ fn record_value(value: &ParamValue) -> RequestRecord {
         ParamValue::Mapping(fields) => RequestRecord::Object(
             fields
                 .iter()
-                .map(|(key, value)| (key.clone(), record_value(value)))
+                .map(|(key, member)| (key.clone(), record_value(member)))
                 .collect(),
         ),
     }

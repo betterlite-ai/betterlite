@@ -1,6 +1,7 @@
 use betterlite_prompts::bedrock_processor::error::ProcessorError;
 
 use crate::converse_options::error::ConverseOptionsError;
+use crate::converse_request::ConverseMessageSettings;
 use crate::converse_request::error::ConverseRequestError;
 
 use super::support::{
@@ -153,7 +154,7 @@ pub(super) fn inline_document_image() {
         ))
     );
 
-    let call = Call {
+    let refusing_call = Call {
         messages: r#"[{"role": "user", "content": [{"type": "document", "source": {
             "type": "url",
             "url": "https://example.com/a.pdf",
@@ -161,7 +162,7 @@ pub(super) fn inline_document_image() {
         }}]}]"#,
         ..Call::new(CLAUDE_3_5, "{}")
     };
-    let (refused, _warnings) = run(&call, &remote(&[]));
+    let (refused, _refused_warnings) = run(&refusing_call, &remote(&[]));
     assert!(matches!(
         processor_error(refused.error()),
         Some(ProcessorError::DocumentSourceNotBase64 { block: 0 })
@@ -204,8 +205,10 @@ fn global_drop_warns_on_unadvertised_effort() {
     let call = Call {
         settings: Settings {
             global_drop: true,
-            modify_params: false,
-            neutralize: false,
+            messages: ConverseMessageSettings {
+                modify_params: false,
+                neutralize_orphans: false,
+            },
         },
         ..Call::new(CLAUDE_4_5, EFFORT_OPTIONS)
     };

@@ -286,10 +286,10 @@ fn uncached_model_places_no_breakpoint() {
     let tools = field(uncached.body(), "toolConfig")
         .and_then(|config| field(config, "tools"))
         .expect("the toolConfig carries tools");
-    let Json::List(tools) = tools else {
+    let Json::List(entries) = tools else {
         panic!("the toolConfig tools are a list");
     };
-    assert_eq!(tools.len(), 1);
+    assert_eq!(entries.len(), 1);
     assert_eq!(uncached.litellm_params, Some(expected(TOOL_LITELLM)));
 }
 
@@ -343,7 +343,7 @@ fn tool_names_round_trip_through_the_response_mapping() {
     assert_eq!(sent, ["a_lookup", "a123lookup"]);
     let restored: Vec<&str> = sent
         .iter()
-        .map(|name| get_bedrock_tool_name(&outcome.tool_name_mappings, *name))
+        .map(|name| get_bedrock_tool_name(&outcome.tool_name_mappings, name))
         .collect();
     assert_eq!(restored, ["_lookup", "123lookup"]);
 }
@@ -355,7 +355,7 @@ fn tool_schema_keeps_a_large_bound() {
         .and_then(|config| field(config, "tools"))
         .and_then(|tools| match tools {
             Json::List(items) => items.first(),
-            _ => None,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
         })
         .expect("the toolConfig carries a tool");
     let maximum = field(tool, "toolSpec")

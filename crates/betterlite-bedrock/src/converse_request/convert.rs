@@ -1,4 +1,4 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 
 use crate::request_policy::{Params, RequestValue};
 
@@ -18,7 +18,7 @@ pub(super) fn request_value(value: &Json) -> RequestValue {
     }
 }
 
-pub(super) fn request_params(fields: &betterlite_prompts::arguments::json::Object) -> Params {
+pub(super) fn request_params(fields: &Object) -> Params {
     fields
         .iter()
         .map(|(key, value)| (key.clone(), request_value(value)))

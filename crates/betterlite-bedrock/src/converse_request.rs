@@ -41,7 +41,7 @@ use crate::request_policy::{BedrockRequestPolicy, Params};
 const DROP_PARAMS_FIELD: &str = "drop_params";
 
 // The Converse body fields every request carries, in the order the pinned module inserts them.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CommonRequest {
     #[serde(rename = "inferenceConfig")]
     pub inference_config: Object,
@@ -71,7 +71,7 @@ pub struct CommonRequest {
     pub output_config: Option<Json>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ConverseRequestBody {
     pub messages: Vec<Json>,
     #[serde(flatten)]
@@ -87,10 +87,16 @@ pub struct ConverseRequestOutcome {
 #[derive(Clone, Copy, Debug)]
 pub struct ConverseSettings<'request> {
     pub global_drop: bool,
-    pub modify_params: bool,
-    pub neutralize_orphans: bool,
+    pub messages: ConverseMessageSettings,
     // Some policy owns requestMetadata: the caller's copy is replaced even when nothing resolves.
     pub request_metadata: Option<&'request BedrockRequestPolicy>,
+}
+
+// The two switches the message policies read; grouping keeps the settings to one bool besides them.
+#[derive(Clone, Copy, Debug)]
+pub struct ConverseMessageSettings {
+    pub modify_params: bool,
+    pub neutralize_orphans: bool,
 }
 
 pub struct ConverseRequestInput<'request, Lookup> {
@@ -171,14 +177,14 @@ where
         &ConverseMessagePolicy {
             model: Some(input.model),
             model_cost: input.model_cost,
-            neutralize: input.settings.neutralize_orphans,
-            modify_params: input.settings.modify_params,
+            neutralize: input.settings.messages.neutralize_orphans,
+            modify_params: input.settings.messages.modify_params,
         },
     )?;
     thinking::apply_history_policy(
         &transformed.messages,
         &mut *input.optional_params,
-        input.settings.modify_params,
+        input.settings.messages.modify_params,
     )?;
     thinking::drop_disabled(
         input.model,
