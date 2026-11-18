@@ -67,7 +67,7 @@ impl TracerChoice {
 // LiteLLM tests the dynamic params for truthiness; an absent or empty bucket is unset, any other shape is an error
 #[must_use]
 pub fn dynamic_params(kwargs: &MetadataMap) -> Result<Option<&MetadataMap>, LegacyLifecycleError> {
-    match kwargs.get("dynamic_params") {
+    match kwargs.get("standard_callback_dynamic_params") {
         None | Some(OtelModelValue::Null(())) => Ok(None),
         Some(OtelModelValue::Object(fields)) if fields.is_empty() => Ok(None),
         Some(OtelModelValue::Object(fields)) => Ok(Some(fields)),

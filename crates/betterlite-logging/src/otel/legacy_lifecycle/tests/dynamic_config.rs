@@ -104,7 +104,7 @@ fn dynamic_config_rejects_a_non_object_bucket() {
     );
     let mut kwargs = simple_kwargs("call-5");
     kwargs.insert(
-        "dynamic_params".to_owned(),
+        "standard_callback_dynamic_params".to_owned(),
         OtelModelValue::String("pk".to_owned()),
     );
     assert!(dynamic_params(&kwargs).is_err());

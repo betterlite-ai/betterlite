@@ -95,26 +95,6 @@ impl Rig {
         )
     }
 
-    pub(super) fn with_clock(
-        &self,
-        config: OpenTelemetryConfig,
-        callback_name: Option<&str>,
-        dynamic: Option<Arc<dyn DynamicOtel>>,
-        use_request_span: bool,
-        clock: Box<dyn Clock>,
-    ) -> LegacyLifecycle {
-        self.with_services(
-            config,
-            callback_name,
-            dynamic,
-            use_request_span,
-            clock,
-            None,
-            None,
-            Vec::new(),
-        )
-    }
-
     pub(super) fn with_services(
         &self,
         config: OpenTelemetryConfig,
@@ -223,7 +203,7 @@ impl DynamicOtel for ProbeDynamic {
 
 pub(super) fn with_dynamic(mut kwargs: MetadataMap, params: serde_json::Value) -> MetadataMap {
     kwargs.insert(
-        "dynamic_params".to_owned(),
+        "standard_callback_dynamic_params".to_owned(),
         serde_json::from_value(params).expect("dynamic params fixture"),
     );
     kwargs

@@ -292,12 +292,15 @@ fn legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity() {
 fn legacy_lifecycle_uses_the_clock_for_missing_span_times() {
     let rig = Rig::new();
     let clock_time = instant(START + 12.25);
-    let lifecycle = rig.with_clock(
+    let lifecycle = rig.with_services(
         in_memory_config(),
         None,
         None,
         false,
         Box::new(FixedClock(clock_time)),
+        None,
+        None,
+        Vec::new(),
     );
     let kwargs = simple_kwargs("call-missing-times");
     let mut lifecycle_call = call(&kwargs);

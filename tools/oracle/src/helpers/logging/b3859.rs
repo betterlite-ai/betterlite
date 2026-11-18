@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::{
-    LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall, instant_from_ns,
+    DEFAULT_HANDLER_CLASS_NAME, LegacyLifecycle, LegacyLifecycleOptions, LifecycleCall,
+    instant_from_ns,
 };
 use betterlite_logging::otel::legacy_lifecycle::tracer::{DynamicOtel, TracerChoice};
 use betterlite_logging::otel::legacy_policy::capture::LoggingFlags;
@@ -12,6 +13,7 @@ use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::model::vocabulary::semconv::OTELSemconvCategory;
+use betterlite_logging::otel::plumbing::events::SystemClock;
 use betterlite_logging::otel::plumbing::exporters::HttpClients;
 use betterlite_logging::otel::v2_callback::live_span::{LiveSpan, RootSpans};
 use betterlite_logging::otel_provider_assembly::legacy_otel_init::{
@@ -107,7 +109,12 @@ impl Helper for Op {
                     headers: input.dynamic_headers.clone(),
                 }),
                 live: Arc::clone(&roots),
-                ..LegacyLifecycleOptions::default()
+                metrics: None,
+                events: None,
+                failure_counters: Vec::new(),
+                handler_class_name: DEFAULT_HANDLER_CLASS_NAME.to_owned(),
+                use_request_span: false,
+                clock: Box::new(SystemClock),
             },
         );
         let mut kwargs = input.kwargs.clone();
