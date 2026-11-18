@@ -176,6 +176,19 @@ fn an_explicit_tool_call_index_leaves_the_counter_alone() {
     assert_eq!(calls[1].kind.as_deref(), Some("function"));
 }
 
+// each unindexed call takes the next counter value, so the second one is 1
+#[test]
+fn two_tool_calls_without_indexes_are_numbered_in_order() {
+    let chunk = chat(
+        r#"{"id": "1", "created": 2, "choices": [{"delta": {"tool_calls": [{"function": {}}, {"function": {}}]}}]}"#,
+    )
+    .unwrap();
+    let calls = chunk.choices[0].delta.tool_calls.as_ref().unwrap();
+
+    assert_eq!(calls[0].index, 0);
+    assert_eq!(calls[1].index, 1);
+}
+
 #[test]
 fn a_missing_token_and_index_read_as_empty_and_zero() {
     let chunk = token("{}").unwrap();
