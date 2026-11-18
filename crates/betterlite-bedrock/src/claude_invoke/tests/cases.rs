@@ -14,7 +14,7 @@ use crate::claude_invoke::beta::InvokeBetaError;
 use crate::claude_invoke::documents::DocumentError;
 use crate::claude_invoke::error::ClaudeInvokeError;
 use crate::claude_invoke::params::MapParamsError;
-use crate::claude_invoke::tools::ToolSearchToolsError;
+use crate::claude_invoke::tools::{ToolSearchToolsError, normalize_tool_search_tools};
 use crate::claude_invoke::{STRIPS_BILLING_METADATA, USES_ASYNC_TRANSFORM_REQUEST};
 use betterlite_prompts::media::error::MediaError;
 use betterlite_prompts::media::limits::MAX_REMOTE_URLS;
@@ -358,6 +358,13 @@ fn tool_search_cases(fixture: &Fixture, session: &mut Session<'_>) {
         }
         Err(other) => panic!("unexpected error: {other}"),
     }
+    // A tool type that names neither search shape passes through untouched.
+    let mut ordinary = map_of(r#"{"tools": [{"type": "custom", "name": "kept"}]}"#);
+    normalize_tool_search_tools(&mut ordinary).expect("ordinary tools normalize");
+    assert_eq!(
+        ordinary.get("tools"),
+        Some(&json(r#"[{"type": "custom", "name": "kept"}]"#))
+    );
 }
 
 pub(super) fn inline_document() {
