@@ -38,7 +38,7 @@ pub enum PromptCountError {
         #[from]
         source: CountError,
     },
-    #[error("the {encoding} tokenizer could not be built: {source}")]
+    #[error("the tokenizer could not be built: {source}")]
     Engine {
         #[from]
         source: EngineError,

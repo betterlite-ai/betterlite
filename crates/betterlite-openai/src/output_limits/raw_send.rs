@@ -74,7 +74,7 @@ pub async fn send_raw_chat_async(
 ) -> Result<RawChatResponse, RawChatError> {
     let started = (now)();
     let created = transport.create(data, timeout).await;
-    let timed_out = |message| RawChatError::Timeout {
+    let timed_out = |message: String| RawChatError::Timeout {
         message: timeout_message(&message, timeout, (now)().saturating_sub(started)),
     };
     answer(created, timed_out, data, recovery).await
@@ -88,7 +88,7 @@ async fn answer<F>(
     recovery: &Recovery<'_>,
 ) -> Result<RawChatResponse, RawChatError>
 where
-    F: FnOnce(String) -> RawChatError,
+    F: Fn(String) -> RawChatError,
 {
     match created {
         Ok(response) => Ok(response),
