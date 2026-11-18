@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -82,30 +83,32 @@ fn open(input: &Input) -> DriverFuture<'_, Value> {
     })
 }
 
-async fn run_operations(
-    input: &Input,
+fn run_operations<'driver>(
+    input: &'driver Input,
     address: SocketAddr,
-    receiver: &mut Receiver<Recorded>,
-) -> Result<Value, Failure> {
-    let (socket, _) = connect_async(format!("ws://{address}"))
-        .await
-        .map_err(|error| failure("TransportError", error.to_string()))?;
-    let mut streaming = session(input, socket);
-    let callbacks = streaming
-        .guards
-        .iter()
-        .map(|guard| -> &dyn RealtimeGuardrailCallback<Error = ScriptError> { guard })
-        .collect::<Vec<_>>();
-    let mut results = Vec::new();
-    let mut upstream = Vec::new();
-    for operation in &input.operations {
-        let state = &mut streaming.state;
-        let provider = streaming.provider.as_ref();
-        results.push(apply(state, provider, &callbacks, operation).await?);
-        let delivered = streaming.backend_log.locked().delivered;
-        settle(receiver, &mut upstream, delivered).await?;
-    }
-    Ok(snapshot(&streaming, results, upstream))
+    receiver: &'driver mut Receiver<Recorded>,
+) -> DriverFuture<'driver, Value> {
+    Box::pin(async move {
+        let (socket, _) = connect_async(format!("ws://{address}"))
+            .await
+            .map_err(|error| failure("TransportError", error.to_string()))?;
+        let mut streaming = session(input, socket);
+        let callbacks = streaming
+            .guards
+            .iter()
+            .map(|guard| -> &dyn RealtimeGuardrailCallback<Error = ScriptError> { guard })
+            .collect::<Vec<_>>();
+        let mut results = Vec::new();
+        let mut upstream = Vec::new();
+        for operation in &input.operations {
+            let state = &mut streaming.state;
+            let provider = streaming.provider.as_ref();
+            results.push(apply(state, provider, &callbacks, operation).await?);
+            let delivered = streaming.backend_log.locked().delivered;
+            settle(receiver, &mut upstream, delivered).await?;
+        }
+        Ok(snapshot(&streaming, results, upstream))
+    })
 }
 
 fn session(input: &Input, socket: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Session {
@@ -201,7 +204,7 @@ fn outcome<ConfigError>(
     result: Result<bool, RealtimeSenderError<ConfigError, ScriptError>>,
 ) -> Value
 where
-    ConfigError: std::error::Error + 'static,
+    ConfigError: Error + 'static,
 {
     match result {
         Ok(sent) => json!({ "ok": sent }),
@@ -256,14 +259,14 @@ fn snapshot(session: &Session, results: Vec<Value>, upstream: Vec<Recorded>) -> 
         .response
         .session_configuration_request
         .as_deref()
-        .map(|text| recorded("text", text.as_bytes()).payload);
+        .map(|text| recorded("text", text).payload);
     let timeline = session.timeline.locked().clone();
     let sent = session
         .client_log
         .locked()
         .sent
         .iter()
-        .map(|text| recorded("text", text.as_bytes()))
+        .map(|text| recorded("text", text))
         .collect::<Vec<_>>();
     json!({
         "results": results, "timeline": timeline, "upstream": upstream, "client": sent,

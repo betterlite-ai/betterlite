@@ -3,7 +3,7 @@ pub mod error;
 mod backend;
 mod client;
 pub mod enforce;
-mod setup;
+mod methods;
 mod tests;
 
 use std::convert::Infallible;

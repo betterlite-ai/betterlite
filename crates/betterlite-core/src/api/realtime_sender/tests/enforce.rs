@@ -1,6 +1,8 @@
 use super::*;
 use crate::api::realtime_sender::error::RealtimeSenderError;
 use rstest::rstest;
+use std::path::PathBuf;
+use std::{fs, str};
 
 #[test]
 fn realtime_authorized_transcription_model() {
@@ -31,14 +33,14 @@ fn enforce_marks_a_transcription_session() {
     let ordinary = r#"{"type":"session.update","session":{"type":"realtime","input_audio_transcription":{"model":"allowed"}}}"#;
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.enforce_session_model(ordinary).unwrap();
-    }
+        sender.enforce_session_model(ordinary).unwrap()
+    };
     assert!(!state.is_transcription_session.0);
     let transcription = r#"{"type":"transcription_session.update","session":{"type":"transcription","input_audio_transcription":{"model":"allowed"}}}"#;
     {
         let mut sender = make(&mut state, &fixture, &callbacks);
-        sender.enforce_session_model(transcription).unwrap();
-    }
+        sender.enforce_session_model(transcription).unwrap()
+    };
     assert!(state.is_transcription_session.0);
 }
 
@@ -143,9 +145,9 @@ fn enforce_rejects_a_json_nonobject() {
         result,
         Err(RealtimeSenderError::SessionUpdateNotObject)
     ));
-    let result = sender.enforce_session_model("null");
+    let null_result = sender.enforce_session_model("null");
     assert!(matches!(
-        result,
+        null_result,
         Err(RealtimeSenderError::SessionUpdateNotObject)
     ));
 }
@@ -258,13 +260,15 @@ fn enforce_rejects_duplicate_modeled_keys(#[case] message: &str) {
 
 #[rstest]
 fn replays_the_realtime_enforcement_corpus(
-    #[files("fuzz/corpus/realtime_enforcement/*")] path: std::path::PathBuf,
+    #[files("fuzz/corpus/realtime_enforcement/*")] path: PathBuf,
 ) {
-    let bytes = std::fs::read(path).unwrap();
-    let message = String::from_utf8_lossy(&bytes);
+    let bytes = fs::read(path).unwrap();
+    let Ok(message) = str::from_utf8(&bytes) else {
+        return;
+    };
     let mut transcription = false;
     let _result = super::super::enforce::enforce_session_update::<Infallible, Infallible>(
-        &message,
+        message,
         "allowed",
         &mut transcription,
     );

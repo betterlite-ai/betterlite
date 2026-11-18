@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::iter::once;
 use std::sync::Mutex;
 
 use betterlite_oracle_runner::case::helper::HelperCase;
@@ -83,7 +84,7 @@ fn enforced_frames_are_bounded_before_send() {
 
 fn cases(source: &str) -> Vec<Input> {
     let case: HelperCase = serde_saphyr::from_str(source).unwrap();
-    std::iter::once(case.call)
+    once(case.call)
         .chain(case.calls)
         .map(|call| serde_json::from_value(call.input).unwrap())
         .collect()

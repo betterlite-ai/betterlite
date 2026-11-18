@@ -1,10 +1,10 @@
+use std::error::Error;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use super::RealtimeSender;
 use super::error::RealtimeSenderError;
-use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 
 type Map = IndexMap<String, Json>;
 
@@ -140,35 +140,14 @@ impl Session {
     }
 }
 
-// LiteLLM rewrites every transcription model a session update carries and dumps the frame only after a rewrite
-impl<Config, CallbackError> RealtimeSender<'_, Config, CallbackError>
-where
-    Config: BaseRealtimeConfig,
-    CallbackError: std::error::Error + 'static,
-{
-    pub fn enforce_session_model(
-        &mut self,
-        message: &str,
-    ) -> Result<String, RealtimeSenderError<Config::Error, CallbackError>> {
-        let Some(authorized_model) = self.state.force_transcription_model.clone() else {
-            return Ok(message.to_owned());
-        };
-        enforce_session_update(
-            message,
-            &authorized_model,
-            &mut self.state.is_transcription_session.0,
-        )
-    }
-}
-
 pub fn enforce_session_update<ConfigError, CallbackError>(
     message: &str,
     authorized_model: &str,
     is_transcription: &mut bool,
 ) -> Result<String, RealtimeSenderError<ConfigError, CallbackError>>
 where
-    ConfigError: std::error::Error + 'static,
-    CallbackError: std::error::Error + 'static,
+    ConfigError: Error + 'static,
+    CallbackError: Error + 'static,
 {
     if nests_deeper_than(message, MAX_NESTING) {
         return Err(RealtimeSenderError::SessionUpdateTooDeep);

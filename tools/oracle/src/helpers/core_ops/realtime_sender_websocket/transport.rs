@@ -36,9 +36,9 @@ pub(crate) struct Recorded {
 }
 
 // A text frame is compared as the JSON it encodes, because each side re-encodes a rewritten frame its own way
-pub(crate) fn recorded(wire: &'static str, data: &[u8]) -> Recorded {
-    let payload = serde_json::from_slice::<Json>(data).map_or_else(
-        |_error| json!({"kind": "text", "text": String::from_utf8_lossy(data)}),
+pub(crate) fn recorded(wire: &'static str, data: &str) -> Recorded {
+    let payload = serde_json::from_str::<Json>(data).map_or_else(
+        |_error| json!({"kind": "text", "text": data}),
         |value| json!({"kind": "json", "value": value}),
     );
     Recorded { wire, payload }
@@ -109,6 +109,7 @@ impl ClientWebSocket for ClientSink {
         }
         capture(&log.capture, &[data.len()])?;
         log.sent.push(data.to_owned());
+        drop(log);
         Ok(())
     }
 
@@ -174,7 +175,7 @@ pub(crate) async fn relay(listener: TcpListener, sender: Sender<Recorded>) {
     };
     while let Some(Ok(message)) = socket.next().await {
         let frame = match message {
-            Message::Text(text) => recorded("text", text.as_str().as_bytes()),
+            Message::Text(text) => recorded("text", text.as_str()),
             Message::Binary(data) => binary_recorded(&data),
             Message::Ping(_) | Message::Pong(_) | Message::Close(_) | Message::Frame(_) => {
                 continue;
@@ -197,5 +198,6 @@ pub(crate) fn capture(budget: &Mutex<usize>, sizes: &[usize]) -> Result<(), WebS
         });
     }
     *captured = total;
+    drop(captured);
     Ok(())
 }

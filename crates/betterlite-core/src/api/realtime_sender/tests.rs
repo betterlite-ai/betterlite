@@ -63,7 +63,7 @@ fn frame_label(message: &RealtimeMessage) -> String {
     }
 }
 
-fn cached<'state>(state: &'state RealtimeStreaming) -> Option<&'state str> {
+fn cached(state: &RealtimeStreaming) -> Option<&str> {
     state.response.session_configuration_request.as_deref()
 }
 
@@ -241,6 +241,7 @@ impl<Item> SendLog<Item> {
                 message: format!("the scripted {target} send {index} failed"),
             });
         }
+        drop(data);
         Ok(())
     }
 
@@ -446,9 +447,8 @@ impl RealtimeEventNormalizer for Normalizer {
     }
 
     fn normalize(&self, event: Json) -> Json {
-        let mut fields = match event {
-            Json::Object(fields) => fields,
-            other => return other,
+        let Json::Object(mut fields) = event else {
+            return event;
         };
         let renamed = match fields.get("type") {
             Some(Json::Text(kind)) => self
@@ -458,8 +458,8 @@ impl RealtimeEventNormalizer for Normalizer {
                 .map(|(_, to)| to.clone()),
             _ => None,
         };
-        if let Some(renamed) = renamed {
-            fields.insert("type".to_owned(), Json::Text(renamed));
+        if let Some(replacement) = renamed {
+            fields.insert("type".to_owned(), Json::Text(replacement));
         }
         Json::Object(fields)
     }
