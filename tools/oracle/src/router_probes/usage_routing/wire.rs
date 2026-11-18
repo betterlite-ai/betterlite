@@ -15,8 +15,7 @@ pub struct Input {
     pub steps: Vec<Step>,
 }
 
-// A deployment as get_available_deployments reads it: the id, and one tpm and rpm limit at each level the
-// pinned fallback walks, so a case can say which slot a limit sits in.
+// A deployment as get_available_deployments reads it: the id and a tpm and rpm limit at each fallback level.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Entry {

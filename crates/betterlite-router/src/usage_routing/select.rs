@@ -5,17 +5,14 @@ use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::error::RoutingError;
 use crate::usage_routing::window::{Counts, UsageWindows, window_keys};
 
-// The two minute maps get_available_deployments reads; a map the cache does not hold is the cold window where
-// every deployment starts at zero.
+// The two minute maps get_available_deployments reads; a map the cache does not hold is the cold window.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct WindowCounts<'counts> {
     pub tpm: Option<&'counts Counts>,
     pub rpm: Option<&'counts Counts>,
 }
 
-// get_available_deployments: among the deployments neither a tpm nor an rpm limit rules out, the lowest absolute
-// tpm takes the pick and an equal count keeps the one seen first.
-#[must_use]
+// get_available_deployments: the lowest absolute tpm among the deployments no limit rules out, first seen on a tie.
 pub fn select_counts(
     counts: &WindowCounts<'_>,
     deployments: &[DeploymentSpec],
@@ -55,9 +52,7 @@ pub fn select_counts(
     Ok(selected)
 }
 
-// get_available_deployments with its two cache reads in front of it: a read the store fails is the cold window
-// LiteLLM's cache reports once it swallows the failure.
-#[must_use]
+// get_available_deployments with its two cache reads; a read the store fails is the cold window.
 pub fn select(
     windows: &dyn UsageWindows,
     group: &str,

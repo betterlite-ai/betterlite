@@ -18,8 +18,7 @@ pub trait UsageWindows {
     fn write(&self, key: &str, counts: &Counts, ttl_seconds: i64) -> Result<(), WindowError>;
 }
 
-// log_success_event's f"{model_group}:tpm:{datetime.now().strftime('%H-%M')}" pair. The label reads the UTC
-// minute, so every instance buckets a request into the same window whatever its host clock's zone is.
+// log_success_event's key pair; the label is the UTC minute, so every instance buckets a request alike.
 #[must_use]
 pub fn window_keys(group: &str, now: DateTime<Utc>) -> (String, String) {
     let minute = now.format("%H-%M");

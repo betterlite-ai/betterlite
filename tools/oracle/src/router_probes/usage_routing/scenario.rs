@@ -20,8 +20,7 @@ use crate::router_probes::usage_routing::wire::{
     Entry, Input, Observation, Output, Step, StepKind,
 };
 
-// The window store log_success_event writes and get_available_deployments reads, with the failures a gate step
-// injects the way a cache that raises hands them to DualCache.
+// The window store log_success_event writes and get_available_deployments reads, with gate steps injecting failures.
 #[derive(Debug, Default)]
 struct Windows {
     counts: Mutex<BTreeMap<String, Counts>>,
@@ -36,10 +35,6 @@ impl Windows {
             .store(step.fail_reads.unwrap_or(false), Ordering::Relaxed);
         self.fail_writes
             .store(step.fail_writes.unwrap_or(false), Ordering::Relaxed);
-    }
-
-    fn ttl(&self, key: &str) -> Option<i64> {
-        self.ttls.lock().ok()?.get(key).copied()
     }
 }
 
@@ -156,8 +151,7 @@ fn apply(
     }
 }
 
-// the metadata and model_info a routed call's kwargs carry; a step without a deployment id leaves model_info
-// empty, which the callback skips
+// the metadata and model_info a routed call's kwargs carry; a step without a deployment id leaves model_info empty
 fn success_params(group: &str, step: &Step) -> JsonMap {
     let mut params = JsonMap::new();
     if step.metadata.unwrap_or(true) {
@@ -228,7 +222,14 @@ fn observed(windows: &Windows, input: &Input, now: DateTime<Utc>) -> Observation
 // a read the cache fails reports the key as absent, which is what DualCache hands back after it swallows one
 fn window(key: &str, windows: &Windows) -> (Option<Vec<(String, i64)>>, Option<i64>) {
     match windows.read(key) {
-        Ok(Some(counts)) => (Some(counts.into_iter().collect()), windows.ttl(key)),
+        Ok(Some(counts)) => (
+            Some(counts.into_iter().collect()),
+            windows
+                .ttls
+                .lock()
+                .ok()
+                .and_then(|ttls| ttls.get(key).copied()),
+        ),
         Ok(None) | Err(_) => (None, None),
     }
 }

@@ -6,8 +6,7 @@ use crate::router_predicates::source_text::source_text;
 use crate::router_predicates::success_key::success_minute_key;
 use crate::usage_routing::window::{UsageWindows, window_keys};
 
-// One successful response as log_success_event and async_log_success_event read it: the deployment the call
-// names, its usage's token count when the response carries one, and the call type that skips a batch retrieve.
+// One successful response as the success callbacks read it: the deployment, its tokens and the call type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SuccessUse<'use_> {
     pub call_type: Option<&'use_ str>,
@@ -15,8 +14,7 @@ pub struct SuccessUse<'use_> {
     pub total_tokens: Option<i64>,
 }
 
-// The read-modify-write both success callbacks run, tpm first and then rpm. A read or write the store fails
-// leaves the stored window as it was; docs/deviations/B317.yaml records both answers against LiteLLM's cache.
+// The read-modify-write both success callbacks run; docs/deviations/B317.yaml records the store-failure answers.
 pub fn record_success(
     windows: &dyn UsageWindows,
     ttl_seconds: i64,

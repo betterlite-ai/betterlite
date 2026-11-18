@@ -8,8 +8,7 @@ use crate::usage_routing::select::{WindowCounts, select_counts};
 
 mod tests;
 
-// A route reaches no usage window store, so every deployment enters the window at zero, the cold-cache base case
-// get_available_deployments starts from; the tokens the request declares are what a tpm limit can still rule out.
+// A route reaches no usage window store, so every deployment enters the window at zero; the estimate still counts.
 pub(super) fn select<R>(
     context: &StrategyContext<'_>,
     _random: &mut R,
