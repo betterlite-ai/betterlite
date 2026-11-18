@@ -7,10 +7,9 @@ use betterlite_models::decisions::Json;
 use betterlite_tokenizer::reservation::RequestBody;
 
 use crate::deployment_identity::spec::DeploymentSpec;
-use crate::io_token_reservations::error::IoPreCallError;
+use crate::io_token_reservations::error::{IoChannel, IoPreCallError, RateLimitExceeded};
 use crate::io_token_reservations::limits::IoDeployment;
 use crate::io_token_reservations::reservation::IoReservation;
-use crate::model_rate_limits::error::{RateLimitChannel, RateLimitExceeded};
 use crate::model_rate_limits::service::IoTokenReservationHook;
 use crate::model_rate_limits::tests::support::{
     FakeCache, WithRateLimits, rpm_key, service, spec, tpm_key, with_extra, with_param,
@@ -111,13 +110,9 @@ impl IoTokenReservationHook for RefusingIo {
     ) -> Result<Option<IoReservation>, IoPreCallError> {
         match self.0 {
             Refusal::RateLimit => Err(IoPreCallError::RateLimit(RateLimitExceeded {
-                channel: RateLimitChannel::Tpm,
+                channel: IoChannel::Itpm,
                 limit: 10,
                 current: 10,
-                model_id: String::from("a"),
-                model: String::from("openai/a"),
-                model_group: String::from("gpt-4o"),
-                num_retries: None,
             })),
             Refusal::OutputCap => Err(IoPreCallError::OutputCap { field: "itpm" }),
         }
