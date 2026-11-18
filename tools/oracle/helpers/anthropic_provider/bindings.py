@@ -57,8 +57,8 @@ class NativeBindings(MainFields):
         get_encoding = self._get_encoding
         chat = self.anthropic_chat_completions
         legacy = self.base_llm_http_handler
-        self._CompletionDispatchContext = FixedContext(context)
-        self._get_encoding = partial(str, encoding)
+        self._CompletionDispatchContext: ContextFactory = FixedContext(context)
+        self._get_encoding: Callable[[], str] = partial(str, encoding)
         self.anthropic_chat_completions = recorder
         self.base_llm_http_handler = recorder
         try:

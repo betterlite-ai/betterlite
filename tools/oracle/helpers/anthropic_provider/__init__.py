@@ -2,9 +2,9 @@ import litellm
 from litellm.llms.anthropic import get_anthropic_config
 from pydantic import JsonValue, TypeAdapter
 
+from . import native
 from .bindings import environment
 from .completion import complete
-from .native import count_or_batch, files
 from .types import Case, Input, Observation
 
 
@@ -18,10 +18,11 @@ def observe(supplied: Input) -> Observation:
                 "result": config.__name__, "post_call": False,
                 "post_matches": True, "request": None,
             }
-        case "count" | "batch_create" | "batch_retrieve":
-            return count_or_batch(supplied)
-        case "batch_results" | "upload" | "retrieve" | "list" | "delete" | "content":
-            return files(supplied)
+        case (
+            "count" | "batch_create" | "batch_retrieve" | "batch_results"
+            | "upload" | "retrieve" | "list" | "delete" | "content"
+        ):
+            return native.observe(supplied)
 
 
 def run(input_value: Case) -> JsonValue:
