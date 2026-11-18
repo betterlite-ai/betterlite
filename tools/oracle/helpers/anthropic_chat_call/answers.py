@@ -97,8 +97,11 @@ def post_call_value(recorder: Recorder) -> JsonValue:
 
 
 def logged_call_value(recorder: Recorder) -> JsonValue:
-    body = recorder.post_body
-    parsed_body = JSON.validate_json(body) if isinstance(body, str) else body
+    match recorder.post_body:
+        case str() as body:
+            parsed_body = JSON.validate_json(body)
+        case body:
+            parsed_body = body
     answer: JsonObject = {
         "input": recorder.post_input,
         "body": parsed_body,
