@@ -5,7 +5,7 @@ use betterlite_config::types::Config;
 use betterlite_router::least_busy::LeastBusy;
 use betterlite_router::routing_state_store::Settings as SharedSettings;
 use betterlite_router::routing_state_store::error::StateStoreError;
-use betterlite_router::routing_state_store::{BreakerClock, RedisSettings, RoutingStateStore};
+use betterlite_router::routing_state_store::{RedisSettings, RoutingStateStore};
 use betterlite_router::routing_value_store::Clock;
 
 use crate::routing::redis_failure_policy::policy_settings;
@@ -32,7 +32,8 @@ pub fn build(config: &Config) -> Option<Arc<LeastBusy>> {
 // a shared store that cannot be built leaves this worker's counters alone, as a router without Redis keeps them
 fn shared_store(config: &Config) -> Option<RoutingStateStore> {
     let settings = shared_settings(config)?;
-    match RoutingStateStore::new(&settings, breaker_clock()) {
+    let opened = Instant::now();
+    match RoutingStateStore::new(&settings, Arc::new(move || opened.elapsed())) {
         Ok(store) => Some(store),
         Err(error) => {
             tracing::error!(%error, "the least-busy shared counter store cannot be built");
@@ -63,9 +64,4 @@ fn wall_clock() -> Clock {
             .duration_since(UNIX_EPOCH)
             .map_or(0.0, |since| since.as_secs_f64())
     })
-}
-
-fn breaker_clock() -> BreakerClock {
-    let start = Instant::now();
-    Arc::new(move || start.elapsed())
 }

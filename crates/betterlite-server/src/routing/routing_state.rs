@@ -11,8 +11,7 @@ use crate::routing::model_generalizations::GeneralizationServices;
 
 mod tests;
 
-// The routing state one server serves: the fallback_generalizations rules its loaded config installed, and the
-// in-flight counters every attempt updates.
+// The routing state one server serves: the generalization rules its config installed, and the in-flight counters
 #[derive(Default)]
 pub struct RoutingState {
     generalizations: GeneralizationServices,

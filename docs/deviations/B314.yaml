@@ -61,4 +61,3 @@ kept_bugs:
   - what: A local read whose length differs from the key list is treated as this worker holding no calls at all, so a stale or partial read routes to a busy deployment.
     why: LiteLLM's _local_counts answers the same way, and the same rule is carried so a short read cannot panic a selection.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/least_busy.py#L79-L83
-
