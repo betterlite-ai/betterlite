@@ -5,7 +5,7 @@ use std::time::Duration;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::chatgpt_responses::{
-    ChatGptResponsesError, ResponsesConfig, transform_response_api_response,
+    ChatGptResponsesError, ResponsesConfig, transform_reply,
 };
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -168,7 +168,7 @@ fn request_value(input: &Input) -> Result<Value, Box<HelperError>> {
         header_settings: settings,
     };
     let request = config
-        .transform_responses_api_request(
+        .transform_request(
             &input.model,
             &ResponsesInput::Text(input.input.clone()),
             &input.options,
@@ -185,7 +185,7 @@ fn response_value(input: &Input) -> HelperResult {
         mut state,
     } = Fixture::new()?;
     let env = pre_post_env(&redactor, &sink)?;
-    let reply = transform_response_api_response(
+    let reply = transform_reply(
         &RawResponse {
             status: input.status,
             headers: &input.headers,

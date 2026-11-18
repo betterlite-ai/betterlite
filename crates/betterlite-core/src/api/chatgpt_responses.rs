@@ -164,7 +164,7 @@ impl<A: Authenticator> ResponsesConfig<A> {
     }
 
     // the request is forced into the Codex shape after B507's own preparation
-    pub fn transform_responses_api_request(
+    pub fn transform_request(
         &self,
         model: &str,
         input: &ResponsesInput,
@@ -198,8 +198,8 @@ impl<A: Authenticator> ResponsesConfig<A> {
     }
 }
 
-// LiteLLM's transform_response_api_response: buffered SSE is recovered here, and anything else is B508's
-pub fn transform_response_api_response(
+// LiteLLM's response transform: buffered SSE is recovered here, and anything else is B508's
+pub fn transform_reply(
     reply: &RawResponse<'_>,
     now: i64,
     state: &mut LoggingState,

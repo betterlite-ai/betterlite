@@ -35,7 +35,7 @@ use secrecy::SecretString;
 use super::recovery;
 use super::{
     ChatGptResponsesError, EnvironmentRequest, PROVIDER, ResponsesConfig,
-    SUPPORTS_NATIVE_WEBSOCKET, transform_response_api_response,
+    SUPPORTS_NATIVE_WEBSOCKET, transform_reply,
 };
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 use crate::api::responses_sse_recovery::ResponsesSseRecoveryError;
@@ -44,6 +44,8 @@ const NOW: i64 = 1_700_000_000;
 const BASE: &str = "BASE INSTRUCTIONS";
 const ENCRYPTED: &str = "reasoning.encrypted_content";
 const AUTH_BASE: &str = "https://auth.test/codex";
+const JSON_TYPE: &str = "application/json";
+const SSE_TYPE: &str = "text/event-stream";
 
 #[derive(Clone, Copy)]
 enum Token {
@@ -105,8 +107,11 @@ impl SessionIdentity for FixedSession {
 
 fn settings() -> HeaderSettings {
     HeaderSettings {
+        originator_override: None,
+        user_agent_override: None,
+        user_agent_suffix: None,
         default_instructions_override: Some(String::from(BASE)),
-        ..HeaderSettings::default()
+        terminal: String::new(),
     }
 }
 
@@ -141,7 +146,7 @@ fn request_options(text: &str) -> Object {
 }
 
 fn transform_request(options: &Object) -> Result<Object, ChatGptResponsesError> {
-    config(Token::Good).transform_responses_api_request(
+    config(Token::Good).transform_request(
         "gpt-5",
         &ResponsesInput::Text(String::from("hi")),
         options,
@@ -209,7 +214,7 @@ impl Fixture {
             now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
                 .expect("the clock parses"),
         };
-        transform_response_api_response(
+        transform_reply(
             &RawResponse {
                 status,
                 headers,
@@ -223,26 +228,9 @@ impl Fixture {
     }
 }
 
-fn json_headers() -> IndexMap<String, String> {
+fn headers(content_type: &str) -> IndexMap<String, String> {
     IndexMap::from([
-        (
-            String::from("content-type"),
-            String::from("application/json"),
-        ),
-        (String::from("x-request-id"), String::from("req-1")),
-        (
-            String::from("x-ratelimit-remaining-requests"),
-            String::from("9"),
-        ),
-    ])
-}
-
-fn sse_headers() -> IndexMap<String, String> {
-    IndexMap::from([
-        (
-            String::from("content-type"),
-            String::from("text/event-stream"),
-        ),
+        (String::from("content-type"), String::from(content_type)),
         (String::from("x-request-id"), String::from("req-1")),
         (
             String::from("x-ratelimit-remaining-requests"),
@@ -259,6 +247,10 @@ fn completed(response: &str) -> String {
     event(&format!(
         r#"{{"type":"response.completed","response":{response}}}"#
     ))
+}
+
+fn done() -> String {
+    completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#)
 }
 
 fn item(index: i64, id: &str) -> String {
@@ -619,12 +611,12 @@ fn request_propagates_input_failures() {
 #[test]
 fn a_json_reply_is_decoded_by_the_models_transform() {
     let body = r#"{"id":"resp_1","created_at":1700000000,"model":"gpt-5","object":"response","status":"completed","output":[]}"#;
-    let reply =
-        transformed(200, &json_headers(), &[String::from(body)]).expect("the JSON reply decodes");
+    let reply = transformed(200, &headers(JSON_TYPE), &[String::from(body)])
+        .expect("the JSON reply decodes");
     let response = typed(&reply);
     assert_eq!(response.id, "resp_1");
     assert_eq!(response.created_at, NOW);
-    assert_eq!(reply.headers, json_headers());
+    assert_eq!(reply.headers, headers(JSON_TYPE));
     assert_eq!(
         reply
             .additional_headers
@@ -643,7 +635,11 @@ fn a_json_reply_is_decoded_by_the_models_transform() {
 
 #[test]
 fn a_json_body_that_is_not_json_keeps_the_provider_status() {
-    let error = expect_error(transformed(502, &json_headers(), &[String::from("nope")]));
+    let error = expect_error(transformed(
+        502,
+        &headers(JSON_TYPE),
+        &[String::from("nope")],
+    ));
     assert_eq!(error.http_status(), Some(502));
     assert_eq!(provider_error(error), (502, String::from("nope")));
 }
@@ -651,7 +647,7 @@ fn a_json_body_that_is_not_json_keeps_the_provider_status() {
 #[test]
 fn a_json_body_without_created_at_keeps_the_provider_status() {
     let body = String::from(r#"{"id":"resp_1","output":[]}"#);
-    let error = expect_error(transformed(400, &json_headers(), &[body.clone()]));
+    let error = expect_error(transformed(400, &headers(JSON_TYPE), &[body.clone()]));
     assert_eq!(error.http_status(), Some(400));
     assert_eq!(provider_error(error), (400, body));
 }
@@ -667,11 +663,11 @@ fn a_json_body_without_created_at_keeps_the_provider_status() {
 #[case::inline_data_word(None, "x data: {}", false)]
 #[case::plain_json(None, "{\"a\": 1}", false)]
 fn sse_detection(#[case] content_type: Option<&str>, #[case] body: &str, #[case] expected: bool) {
-    let mut headers = IndexMap::new();
+    let mut sent = IndexMap::new();
     if let Some(value) = content_type {
-        headers.insert(String::from("Content-Type"), String::from(value));
+        sent.insert(String::from("Content-Type"), String::from(value));
     }
-    assert_eq!(recovery::should_parse_as_sse(&headers, body), expected);
+    assert_eq!(recovery::should_parse_as_sse(&sent, body), expected);
 }
 
 #[test]
@@ -680,7 +676,7 @@ fn sse_recovers_text_only_output() {
         text(0, "hello"),
         completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response","output":[]}"#),
     ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let response = typed(&reply);
     assert_eq!(response.id, "resp_1");
     assert_eq!(response.created_at, NOW);
@@ -696,10 +692,24 @@ fn sse_keeps_a_nonempty_completed_output() {
             r#"{"id":"resp_1","created_at":1700000000,"object":"response","output":[{"id":"done"}]}"#,
         ),
     ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let response = typed(&reply);
     assert_eq!(response.output_text(), "");
     assert_eq!(output_ids(response), vec![String::from("done")]);
+}
+
+#[test]
+fn sse_keeps_an_output_that_is_not_a_list_as_sent() {
+    let body = vec![
+        text(0, "ignored"),
+        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response","output":"kept"}"#),
+    ];
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
+    let fields = lax(&reply);
+    assert_eq!(
+        fields.get("output"),
+        Some(&Json::Text(String::from("kept")))
+    );
 }
 
 #[test]
@@ -708,9 +718,9 @@ fn sse_real_items_replace_text_at_the_same_index() {
         text(0, "synthetic"),
         item(1, "real-one"),
         item(0, "real-zero"),
-        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#),
+        done(),
     ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let response = typed(&reply);
     assert_eq!(
         output_ids(response),
@@ -721,12 +731,8 @@ fn sse_real_items_replace_text_at_the_same_index() {
 
 #[test]
 fn sse_keeps_text_at_an_index_without_a_real_item() {
-    let body = vec![
-        item(0, "real"),
-        text(1, "kept"),
-        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#),
-    ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let body = vec![item(0, "real"), text(1, "kept"), done()];
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let response = typed(&reply);
     assert_eq!(response.output_text(), "kept");
     assert_eq!(
@@ -746,7 +752,7 @@ fn sse_stops_at_the_first_completed_event() {
         ),
         item(0, "later"),
     ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let response = typed(&reply);
     assert_eq!(response.id, "resp_first");
     assert_eq!(output_ids(response), vec![String::from("first")]);
@@ -758,7 +764,7 @@ fn sse_stops_at_a_completed_event_with_a_malformed_response() {
         event(r#"{"type":"response.completed","response":[]}"#),
         completed(r#"{"id":"resp_later","created_at":1700000000,"object":"response"}"#),
     ];
-    let error = expect_error(transformed(200, &sse_headers(), &body));
+    let error = expect_error(transformed(200, &headers(SSE_TYPE), &body));
     assert_eq!(error.http_status(), Some(200));
     let (status, message) = provider_error(error);
     assert_eq!(status, 200);
@@ -770,9 +776,9 @@ fn sse_a_failure_before_a_completion_is_not_an_error() {
     let body = vec![
         event(r#"{"type":"response.failed","error":{"message":"transient"}}"#),
         text(0, "recovered"),
-        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#),
+        done(),
     ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     assert_eq!(typed(&reply).output_text(), "recovered");
 }
 
@@ -782,7 +788,7 @@ fn sse_reports_the_most_recent_failure_message() {
         event(r#"{"type":"response.failed","error":{"message":"first"}}"#),
         event(r#"{"type":"error","error":"second"}"#),
     ];
-    let error = expect_error(transformed(500, &sse_headers(), &body));
+    let error = expect_error(transformed(500, &headers(SSE_TYPE), &body));
     assert_eq!(error.http_status(), Some(500));
     assert_eq!(provider_error(error), (500, String::from("second")));
 }
@@ -792,8 +798,17 @@ fn sse_reads_a_failure_from_the_response_field() {
     let body = vec![event(
         r#"{"type":"response.failed","response":{"error":{"code":"x"}}}"#,
     )];
-    let error = expect_error(transformed(502, &sse_headers(), &body));
+    let error = expect_error(transformed(502, &headers(SSE_TYPE), &body));
     assert_eq!(provider_error(error), (502, String::from("{'code': 'x'}")));
+}
+
+#[test]
+fn sse_falls_back_to_the_response_error_when_the_event_error_is_null() {
+    let body = vec![event(
+        r#"{"type":"response.failed","error":null,"response":{"error":"fallback"}}"#,
+    )];
+    let error = expect_error(transformed(500, &headers(SSE_TYPE), &body));
+    assert_eq!(provider_error(error), (500, String::from("fallback")));
 }
 
 #[rstest]
@@ -807,7 +822,7 @@ fn sse_converts_created_at(#[case] created_at: &str, #[case] expected: i64) {
     let response =
         format!(r#"{{"id":"resp_1","created_at":{created_at},"object":"response","output":[]}}"#);
     let body = vec![completed(&response)];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     assert_eq!(typed(&reply).created_at, expected);
 }
 
@@ -816,7 +831,7 @@ fn sse_rejects_a_created_at_that_cannot_be_converted() {
     let body = vec![completed(
         r#"{"id":"resp_1","created_at":"inf","object":"response","output":[]}"#,
     )];
-    let error = expect_error(transformed(200, &sse_headers(), &body));
+    let error = expect_error(transformed(200, &headers(SSE_TYPE), &body));
     assert!(matches!(error, ChatGptResponsesError::CreatedAt(_)));
     assert_eq!(error.http_status(), None);
 }
@@ -824,7 +839,7 @@ fn sse_rejects_a_created_at_that_cannot_be_converted() {
 #[test]
 fn sse_keeps_a_payload_no_record_holds() {
     let body = vec![completed(r#"{"created_at":5,"object":"response"}"#)];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let fields = lax(&reply);
     assert_eq!(fields.get("created_at"), Some(&Json::Number(5.into())));
     assert_eq!(
@@ -840,7 +855,7 @@ fn sse_fills_the_output_of_a_payload_no_record_holds() {
         text(0, "recovered"),
         completed(r#"{"created_at":5,"object":"response"}"#),
     ];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
     let fields = lax(&reply);
     let Some(Json::List(output)) = fields.get("output") else {
         panic!("the recovered output fills the payload");
@@ -850,11 +865,9 @@ fn sse_fills_the_output_of_a_payload_no_record_holds() {
 
 #[test]
 fn sse_attaches_raw_and_processed_headers() {
-    let body = vec![completed(
-        r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#,
-    )];
-    let reply = transformed(200, &sse_headers(), &body).expect("the stream recovers");
-    assert_eq!(reply.headers, sse_headers());
+    let body = vec![done()];
+    let reply = transformed(200, &headers(SSE_TYPE), &body).expect("the stream recovers");
+    assert_eq!(reply.headers, headers(SSE_TYPE));
     assert_eq!(reply.additional_headers.get("x-request-id"), None);
     assert_eq!(
         reply.additional_headers.get("llm_provider-x-request-id"),
@@ -871,12 +884,9 @@ fn sse_attaches_raw_and_processed_headers() {
 #[test]
 fn sse_records_the_post_call_point() {
     let mut fixture = Fixture::new();
-    let body = vec![completed(
-        r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#,
-    )]
-    .join("\n");
+    let body = vec![done()].join("\n");
     fixture
-        .transform(200, &sse_headers(), &body, &ApiLimits::default())
+        .transform(200, &headers(SSE_TYPE), &body, &ApiLimits::default())
         .expect("the stream recovers");
     let details = &fixture.state.model_call_details;
     assert!(matches!(
@@ -903,19 +913,15 @@ fn sse_marker_lines_do_not_complete_the_response() {
         String::from("event: response.completed"),
         String::from("data: [DONE]"),
     ];
-    let error = expect_error(transformed(200, &sse_headers(), &body));
+    let error = expect_error(transformed(200, &headers(SSE_TYPE), &body));
     assert_eq!(provider_error(error).1, body.join("\n"));
 }
 
 #[test]
 fn sse_handles_carriage_return_line_ends() {
-    let body = [
-        text(0, "hello"),
-        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#),
-    ]
-    .join("\r\n");
+    let body = [text(0, "hello"), done()].join("\r\n");
     let reply = Fixture::new()
-        .transform(200, &sse_headers(), &body, &ApiLimits::default())
+        .transform(200, &headers(SSE_TYPE), &body, &ApiLimits::default())
         .expect("the stream recovers");
     assert_eq!(typed(&reply).output_text(), "hello");
 }
@@ -930,12 +936,10 @@ fn limits(max_event_bytes: usize, max_items: usize) -> ApiLimits {
 
 #[test]
 fn sse_rejects_an_event_over_the_boundary() {
-    let body = vec![completed(
-        r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#,
-    )];
+    let body = vec![done()];
     let error = expect_error(Fixture::new().transform(
         200,
-        &sse_headers(),
+        &headers(SSE_TYPE),
         &body.join("\n"),
         &limits(8, 64 * 1024),
     ));
@@ -950,14 +954,10 @@ fn sse_rejects_an_event_over_the_boundary() {
 
 #[test]
 fn sse_rejects_more_items_than_the_boundary() {
-    let body = vec![
-        item(0, "zero"),
-        item(1, "one"),
-        completed(r#"{"id":"resp_1","created_at":1700000000,"object":"response"}"#),
-    ];
+    let body = vec![item(0, "zero"), item(1, "one"), done()];
     let error = expect_error(Fixture::new().transform(
         200,
-        &sse_headers(),
+        &headers(SSE_TYPE),
         &body.join("\n"),
         &limits(1024 * 1024, 1),
     ));
@@ -983,18 +983,4 @@ fn recovery_errors_without_a_status_stay_statusless() {
     assert_eq!(encode.http_status(), None);
     let generic = ChatGptResponsesError::Transform(OpenAiError::MissingKey { key: "x" });
     assert_eq!(generic.http_status(), None);
-}
-
-// Python truthiness decides whether a completed output and an event's error are present
-#[test]
-fn truthiness_matches_python() {
-    assert!(recovery::is_truthy(&Body::Bool(true)));
-    assert!(!recovery::is_truthy(&Body::Bool(false)));
-    assert!(recovery::is_truthy(&Body::Number(1.into())));
-    assert!(!recovery::is_truthy(&Body::Number(0.into())));
-    assert!(recovery::is_truthy(&Body::Text(String::from("x"))));
-    assert!(!recovery::is_truthy(&Body::Text(String::new())));
-    assert!(recovery::is_truthy(&Body::List(vec![Body::Null])));
-    assert!(!recovery::is_truthy(&Body::List(Vec::new())));
-    assert!(!recovery::is_truthy(&Body::Object(Object::new())));
 }

@@ -108,7 +108,11 @@ fn build_completed(
         return Ok(None);
     };
     let mut payload = given.clone();
-    if !payload.get("output").is_some_and(is_truthy) {
+    let missing_output = match payload.get("output") {
+        Some(Json::List(items)) => items.is_empty(),
+        None | Some(_) => true,
+    };
+    if missing_output {
         let merged = merged_output_items(output_items, text_only_items, limits)
             .map_err(|source| ChatGptResponsesError::Recovery { source })?;
         if !merged.is_empty() {
@@ -142,31 +146,19 @@ fn decode_completed(payload: &IndexMap<String, Json>) -> Result<ReplyBody, ChatG
 
 // _extract_error_message: the event's own error wins, then the failed response's, and the latest one is kept
 fn error_message_of(parsed: &IndexMap<String, Json>) -> Option<String> {
-    let error = parsed
-        .get("error")
-        .filter(|value| is_truthy(*value))
-        .or_else(|| match parsed.get("response") {
-            Some(Json::Object(response)) => response.get("error").filter(|value| is_truthy(*value)),
+    let error = match parsed.get("error") {
+        Some(Json::Null) | None => match parsed.get("response") {
+            Some(Json::Object(response)) => response.get("error"),
             None | Some(_) => None,
-        })?;
-    match error {
-        Json::Object(fields) => match fields.get("message").filter(|value| is_truthy(*value)) {
-            Some(message) => Some(value_text(message)),
-            None | Some(_) => Some(value_text(error)),
         },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Some(value_text(error))
-        }
-    }
-}
-
-pub(super) fn is_truthy(value: &Json) -> bool {
-    match value {
-        Json::Null | Json::Bool(false) => false,
-        Json::Bool(true) => true,
-        Json::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
+        Some(error) => Some(error),
+    }?;
+    match error {
+        Json::Null => None,
+        value @ Json::Object(fields) => match fields.get("message") {
+            Some(Json::Null) | None => Some(value_text(value)),
+            Some(message) => Some(value_text(message)),
+        },
+        value => Some(value_text(value)),
     }
 }
