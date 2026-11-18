@@ -18,7 +18,8 @@ description: >-
   HTTP401 detail.error Admin-only endpoint. Your user role=<role>. Authorized callers without a
   database get HTTP400 common database detail, unlike info's500. Query all rows with both relations,
   without a route sort or pagination, and convert every row through the same response helper. Info
-  and list catch every exception, log their route exception, and call B124 handle_exception_on_proxy:
+  and list catch every exception, log their route exception, and call B2400's handle_exception_on_proxy
+  (betterlite-server api::proxy_endpoint_support):
   existing ProxyException fields survive, HTTP errors become internal_server_error with original
   status/detail and openai_error_param, other errors use status_code or500. These helpers are called
   here, unlike routes that have their own unrelated mapping.

@@ -1,0 +1,3 @@
+router_settings:
+  routing_strategy_args:
+    ttl: soon

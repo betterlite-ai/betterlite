@@ -22,7 +22,8 @@ description: >-
   Non-admin users cannot create keys for non-existent teams.; proxy admins continue with no team.
   Run B771 key_generation_check for KEY_GENERATE, then B772 team limits when a row exists, then B772
   project limits for nonnull project_id. Finally B773 performs common generation with data/caller/
-  changed_by/team row. This route catches every exception, logs it, and calls B124 handle_exception_on_proxy:
+  changed_by/team row. This route catches every exception, logs it, and calls B2400's handle_exception_on_proxy
+  (betterlite-server api::proxy_endpoint_support):
   HTTP errors retain status/detail but use internal_server_error; ProxyException survives; others
   use status_code or500 and internal_server_error with openai_error_param.
 

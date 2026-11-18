@@ -1,0 +1,12 @@
+kind: helper
+name: model-visibility-healthy-only-default
+call:
+  model_visibility:
+    function: hidden_unhealthy_model_names
+    model_list: []
+    model_group_alias: {}
+    arguments:
+      health:
+        unhealthy_names: [hidden]
+env: {}
+compare: {ignore: []}

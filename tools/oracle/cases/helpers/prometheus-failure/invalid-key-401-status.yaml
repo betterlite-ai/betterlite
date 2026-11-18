@@ -1,0 +1,26 @@
+kind: helper
+name: prometheus-failure-invalid-key-401-status
+call:
+  b3880:
+    function: is_invalid_api_key_request
+    status_code: 401
+    exception: null
+calls:
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: 401
+      exception:
+        kind: scripted
+        message: "no auth header"
+        status_code: null
+        code: null
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: 403
+      exception: null
+  - b3880:
+      function: is_invalid_api_key_request
+      status_code: null
+      exception: null
+env: {}
+compare: {ignore: []}

@@ -431,6 +431,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "messages_thinking"
+path = "fuzz_targets/messages_thinking.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "duckduckgo_reply"
 path = "fuzz_targets/duckduckgo_reply.rs"
 test = false

@@ -10,7 +10,9 @@ description: >-
   ConfigError::Unsupported). Second, the parts had no route when they were planned, so they only have helper cases;
   this task adds the booted-proxy HTTP cases that show the configured guardrails really run on a chat request. It
   registers no route, no guardrail kind and no class: B8613 installs B8666's callbacks, B8399 runs the proxy hooks,
-  B3683 starts the config guardrails, and B004/B005 mount the chat paths.
+  B3683 starts the config guardrails, and B004/B005 mount the chat paths. The pre_call guardrails reach chat
+  in two steps: B8803 makes routes/chat.rs run B8801's shared pre-call step with B8802's production ports, and
+  B8805's PreCallHooks port runs B8393's PreCallHook over shared.proxy_logging (B8399).
 
 
   Config section azure_content_safety (crates/betterlite-config/src/sections/azure_content_safety.rs and its folder;
