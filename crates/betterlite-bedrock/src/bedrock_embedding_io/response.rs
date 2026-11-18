@@ -58,65 +58,72 @@ pub fn transform_response(
         && response_list.len() == 1
         && reply.contains_key("invocationArn")
     {
-        return async_response(reply, model, provider);
+        if matches!(
+            provider,
+            BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon
+        ) {
+            return Ok(EmbeddingReply {
+                object: RESPONSE_OBJECT,
+                data: vec![EmbeddingRecord {
+                    object: EMBEDDING_OBJECT.to_owned(),
+                    embedding: EmbeddingVector::Floats(Vec::new()),
+                    index: 0,
+                }],
+                model: model.to_owned(),
+                usage: EmbeddingUsage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                    prompt_tokens_details: None,
+                },
+                invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
+            });
+        }
+        return provider_response(provider, model, response_list, Some(reply), batch_data);
     }
-    regular_response(response_list, model, provider, batch_data)
+    if let Some(reply) = titan_response(response_list, model, batch_data)? {
+        return Ok(reply);
+    }
+    provider_response(provider, model, response_list, None, batch_data)
 }
 
-fn async_response(
-    reply: &Object,
-    model: &str,
-    provider: BedrockEmbeddingProvider,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    if let BedrockEmbeddingProvider::Twelvelabs = provider {
-        let input = parse_one::<Params>(reply)?;
-        let response = marengo::transform_async_response(&input, model);
-        provider_embedding_reply(ProviderResponse::Marengo(response))
-    } else if let BedrockEmbeddingProvider::Nova = provider {
-        let input = parse_one::<Params>(reply)?;
-        let response = nova::transform_invoke_response(&input, model);
-        provider_embedding_reply(ProviderResponse::Nova(response))
-    } else {
-        Ok(EmbeddingReply {
-            object: RESPONSE_OBJECT,
-            data: vec![EmbeddingRecord {
-                object: EMBEDDING_OBJECT.to_owned(),
-                embedding: EmbeddingVector::Floats(Vec::new()),
-                index: 0,
-            }],
-            model: model.to_owned(),
-            usage: EmbeddingUsage {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_tokens: 0,
-                prompt_tokens_details: None,
-            },
-            invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
-        })
-    }
-}
-
-fn regular_response(
+fn titan_response(
     response_list: &[Object],
     model: &str,
-    provider: BedrockEmbeddingProvider,
     batch_data: Option<&[Object]>,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
+) -> Result<Option<EmbeddingReply>, EmbeddingIoError> {
     match model {
         TITAN_MULTIMODAL_MODEL => {
             let response = multimodal::transform_response(response_list, model, batch_data)?;
-            Ok(titan_embedding_reply(response))
+            Ok(Some(titan_embedding_reply(response)))
         }
         TITAN_G1_MODEL | TITAN_G1_LEGACY_MODEL => {
             let response = titan::transform_response(response_list, model, titan::plain_embedding)?;
-            Ok(titan_embedding_reply(response))
+            Ok(Some(titan_embedding_reply(response)))
         }
         TITAN_V2_MODEL => {
             let response = titan::transform_response(response_list, model, v2::by_type_embedding)?;
-            Ok(titan_embedding_reply(response))
+            Ok(Some(titan_embedding_reply(response)))
         }
-        _ => match provider {
-            BedrockEmbeddingProvider::Twelvelabs => {
+        _ => Ok(None),
+    }
+}
+
+fn provider_response(
+    provider: BedrockEmbeddingProvider,
+    model: &str,
+    response_list: &[Object],
+    async_reply: Option<&Object>,
+    batch_data: Option<&[Object]>,
+) -> Result<EmbeddingReply, EmbeddingIoError> {
+    match provider {
+        BedrockEmbeddingProvider::Twelvelabs => match async_reply {
+            Some(reply) => {
+                let input = parse_one::<Params>(reply)?;
+                let response = marengo::transform_async_response(&input, model);
+                provider_embedding_reply(ProviderResponse::Marengo(response))
+            }
+            None => {
                 let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
                 let batch = batch_data
                     .map(parse_list::<MarengoBilledRequest>)
@@ -124,17 +131,24 @@ fn regular_response(
                 let response = marengo::transform_response(&replies, model, batch.as_deref())?;
                 provider_embedding_reply(ProviderResponse::Marengo(response))
             }
-            BedrockEmbeddingProvider::Nova => {
+        },
+        BedrockEmbeddingProvider::Nova => match async_reply {
+            Some(reply) => {
+                let input = parse_one::<Params>(reply)?;
+                let response = nova::transform_invoke_response(&input, model);
+                provider_embedding_reply(ProviderResponse::Nova(response))
+            }
+            None => {
                 let replies = parse_list::<Params>(response_list)?;
                 let batch = batch_data.map(parse_list::<Params>).transpose()?;
                 let response = nova::transform_response(&replies, model, batch.as_deref())?;
                 provider_embedding_reply(ProviderResponse::Nova(response))
             }
-            BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
-                Err(EmbeddingIoError::Unmapped {
-                    model: model.to_owned(),
-                })
-            }
         },
+        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
+            Err(EmbeddingIoError::Unmapped {
+                model: model.to_owned(),
+            })
+        }
     }
 }
