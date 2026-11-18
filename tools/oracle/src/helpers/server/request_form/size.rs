@@ -4,7 +4,7 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_form::file_size::{UploadSizeCheck, check_file_size_under_limit};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::json;
 

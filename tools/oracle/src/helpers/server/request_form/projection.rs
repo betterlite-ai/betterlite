@@ -1,6 +1,6 @@
 use betterlite_core::api::request_form::convert::{FileData, FileDataValue, FileTuple};
 use betterlite_core::api::request_form::values::{FormFields, FormValue, UploadFile};
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Map, Number, Value};
 use std::str;

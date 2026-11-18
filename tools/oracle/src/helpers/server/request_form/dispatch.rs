@@ -1,6 +1,6 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::DecodedJson;
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::api::request_form::{RequestFormBody, RequestFormError, get_request_body};
 use serde_json::json;
