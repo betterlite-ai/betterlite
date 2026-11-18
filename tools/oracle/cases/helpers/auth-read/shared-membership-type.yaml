@@ -1,0 +1,28 @@
+kind: helper
+name: auth-read-shared-membership-type
+call:
+  auth_read:
+    kind: shared_typed
+    membership:
+      user_id: user-1
+      team_id: team-1
+      litellm_budget_table:
+        allowed_models: ["model-a"]
+calls:
+  - auth_read:
+      kind: shared_subtype
+      membership: {user_id: user-2, team_id: team-1}
+  - auth_read:
+      kind: shared_foreign
+      payload:
+        user_id: user-1
+        team_id: team-1
+        litellm_budget_table: {allowed_models: ["model-a"]}
+  - auth_read:
+      kind: shared_foreign
+      payload: [user-1, team-1]
+  - auth_read:
+      kind: shared_foreign
+      payload: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: output_policy_independent_of_blocking
+call:
+  tool_policy:
+    tools:
+      - {tool_id: t1, tool_name: mixed, input_policy: trusted, output_policy: untrusted}
+      - {tool_id: t2, tool_name: reverse, input_policy: untrusted, output_policy: trusted}
+      - {tool_id: t3, tool_name: blocked-input, input_policy: blocked, output_policy: trusted}
+    permissions:
+      - {object_permission_id: perm-1, blocked_tools: [blocked-input]}
+    queries:
+      - {tool_names: [mixed, reverse, blocked-input], key_permission_id: perm-1, team_permission_id: null}
+    output_tools: [mixed, reverse, blocked-input, unknown]
+env: {}
+compare: {ignore: []}
