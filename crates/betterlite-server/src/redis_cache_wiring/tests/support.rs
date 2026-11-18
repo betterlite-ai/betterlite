@@ -217,6 +217,7 @@ pub(crate) fn reply_error(reply: &[u8]) -> RedisError {
         .expect_err("the reply is an error")
 }
 
+#[derive(Clone)]
 pub(crate) struct LogLine {
     pub(crate) level: Level,
     pub(crate) message: String,
