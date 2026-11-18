@@ -47,10 +47,8 @@ impl Section for Raw {
 
 // Python's int() strips surrounding whitespace and raises on an empty or malformed value at import
 fn locks_max_size_from_text(text: &str) -> Result<i64, ConfigError> {
+    let path = LOCKS_MAX_SIZE_VARIABLE.to_owned();
     text.trim()
         .parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: LOCKS_MAX_SIZE_VARIABLE.to_owned(),
-            source,
-        })
+        .map_err(|source| ConfigError::InvalidInteger { path, source })
 }

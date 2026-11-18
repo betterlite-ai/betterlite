@@ -64,25 +64,22 @@ impl SpendCounterRows for SqlSpendCounterRows {
         &self,
         lookup: SpendRowLookup<'_>,
     ) -> Result<Option<SpendRow>, SpendRowsError> {
+        let store = &self.store;
         match lookup {
-            SpendRowLookup::Key(token) => json_row(&self.store, KEY_SPEND_SQL, &[&token]).await,
+            SpendRowLookup::Key(token) => json_row(store, KEY_SPEND_SQL, &[&token]).await,
             SpendRowLookup::TeamMember { user_id, team_id } => {
-                json_row(&self.store, TEAM_MEMBER_SPEND_SQL, &[&user_id, &team_id]).await
+                json_row(store, TEAM_MEMBER_SPEND_SQL, &[&user_id, &team_id]).await
             }
-            SpendRowLookup::Team(team_id) => {
-                json_row(&self.store, TEAM_SPEND_SQL, &[&team_id]).await
-            }
-            SpendRowLookup::User(user_id) => {
-                json_row(&self.store, USER_SPEND_SQL, &[&user_id]).await
-            }
+            SpendRowLookup::Team(team_id) => json_row(store, TEAM_SPEND_SQL, &[&team_id]).await,
+            SpendRowLookup::User(user_id) => json_row(store, USER_SPEND_SQL, &[&user_id]).await,
             SpendRowLookup::Organization(organization_id) => {
-                json_row(&self.store, ORGANIZATION_SPEND_SQL, &[&organization_id]).await
+                json_row(store, ORGANIZATION_SPEND_SQL, &[&organization_id]).await
             }
             SpendRowLookup::Project(project_id) => {
-                json_row(&self.store, PROJECT_SPEND_SQL, &[&project_id]).await
+                json_row(store, PROJECT_SPEND_SQL, &[&project_id]).await
             }
             SpendRowLookup::EndUser(user_id) => {
-                json_row(&self.store, END_USER_SPEND_SQL, &[&user_id]).await
+                json_row(store, END_USER_SPEND_SQL, &[&user_id]).await
             }
         }
     }
@@ -112,15 +109,12 @@ impl SpendCounterRows for SqlSpendCounterRows {
         let starts = window_start.naive_utc();
         let sum: Option<SpendSumRow> =
             json_row(&self.store, statement, &[&entity_id, &starts]).await?;
-        match sum {
-            Some(row) => Ok(vec![SpendAggregateRow::Attribute {
-                sum: Some(JsonData::Object(BTreeMap::from([(
-                    "spend".to_owned(),
-                    row.spend.unwrap_or(JsonData::Null),
-                )]))),
-            }]),
-            None => Ok(Vec::new()),
-        }
+        let Some(row) = sum else {
+            return Ok(Vec::new());
+        };
+        let spend = row.spend.unwrap_or(JsonData::Null);
+        let sum = JsonData::Object(BTreeMap::from([("spend".to_owned(), spend)]));
+        Ok(vec![SpendAggregateRow::Attribute { sum: Some(sum) }])
     }
 }
 
@@ -138,8 +132,8 @@ where
     Record: DeserializeOwned,
 {
     let client = store.session().await.map_err(SpendRowsError::Database)?;
-    let found = client
-        .query_opt(statement, parameters)
+    let query = client.query_opt(statement, parameters);
+    let found = query
         .await
         .map_err(|source| SpendRowsError::Database(backend(source)))?;
     let Some(row) = found else {
