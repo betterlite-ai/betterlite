@@ -163,3 +163,22 @@ async fn native_preparation_error_retains_its_variant_and_status() {
         RequestError::ToolList(ToolListError::NotList)
     ));
 }
+
+#[tokio::test]
+async fn native_legacy_stream_overrides_extra_body() {
+    let observed = support::run(
+        Surface::Legacy,
+        false,
+        true,
+        ChatConfigTag::Anthropic,
+        r#"{"stream":true,"extra_body":{"stream":false}}"#,
+    )
+    .await;
+    assert_eq!(observed.posts, 1);
+    assert_eq!(observed.body["stream"], true);
+    assert!(observed.body.get("extra_body").is_none());
+    assert_eq!(
+        observed.content.as_deref(),
+        Some("data: {\"completion\":\"legacy answer\",\"stop_reason\":\"stop_sequence\"}\n\n")
+    );
+}

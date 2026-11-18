@@ -83,10 +83,10 @@ where
     };
     let mut body =
         transform_request(&source, &call.model, &messages, optional, settings.defaults).await?;
+    body.extend(extra_body);
     if call.stream {
         body.insert("stream".to_owned(), Json::Bool(true));
     }
-    body.extend(extra_body);
     let mut headers = HeaderMap::new();
     for (name, value) in &call.headers {
         let mut value = HeaderValue::try_from(value.expose_secret())?;

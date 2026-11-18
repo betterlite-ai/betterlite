@@ -136,9 +136,14 @@ async fn server(listener: TcpListener, answer: &'static str) -> (Value, String) 
                 .map(|value| value.trim().to_owned())
         })
         .unwrap();
-    let body = serde_json::from_slice(&input[end..end + length]).unwrap();
+    let body: Value = serde_json::from_slice(&input[end..end + length]).unwrap();
+    let (content_type, answer) = if body.get("stream") == Some(&Value::Bool(true)) {
+        ("text/event-stream", format!("data: {answer}\n\n"))
+    } else {
+        ("application/json", answer.to_owned())
+    };
     let reply = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
+        "HTTP/1.1 200 OK\r\ncontent-type: {content_type}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{answer}",
         answer.len()
     );
     socket.write_all(reply.as_bytes()).await.unwrap();
@@ -285,6 +290,10 @@ pub(super) async fn run(
         serde_json::from_str::<IndexMap<String, betterlite_models::decisions::Json>>(options)
             .unwrap(),
     );
+    call.stream = matches!(
+        call.optional_params.get("stream"),
+        Some(betterlite_models::decisions::Json::Bool(true))
+    );
     let globals = Globals::default();
     let environment = Environment::default();
     let completion = CompletionSettings {
@@ -360,6 +369,22 @@ pub(super) async fn run(
         ),
         Ok(Outcome::Completion(Reply::Legacy(super::super::legacy::Reply::Buffered(reply)))) => {
             (reply.choices[0].message.content.clone(), None, true, None)
+        }
+        Ok(Outcome::Completion(Reply::Legacy(super::super::legacy::Reply::Stream {
+            response,
+            ..
+        }))) => {
+            let reply = timeout(TIMEOUT, (*response).buffered(65536))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(reply.headers["content-type"], "text/event-stream");
+            (
+                Some(String::from_utf8(reply.body).unwrap()),
+                None,
+                true,
+                None,
+            )
         }
         Err(DispatchError::Completion(Failure::Chat(error))) => {
             (None, error.status_code(), false, None)
