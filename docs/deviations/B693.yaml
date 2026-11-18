@@ -1,0 +1,12 @@
+task: B693
+deviations:
+  - what: A request that times out fails with a BedrockError carrying status 408 and the message "Timeout error occurred."; LiteLLM's HTTPHandler turns the httpx timeout into litellm.Timeout first, so its error carries that handler's message and model name instead.
+    why: betterlite implements the owned 408 branch directly with the same status code. The Python class, message and request come from the HTTP handler that does its wrapping before embedding.py's own except clause can run, and that handler is a separate layer betterlite does not reproduce here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
+  - what: A provider error body whose bytes are not UTF-8 reports a message naming its byte count, such as "3 bytes that are not UTF-8"; LiteLLM reports err.response.text, which its HTTP client decodes with replacement characters.
+    why: Rust strings hold only UTF-8, so the same bytes cannot be carried through the message as text. The status code, the headers and the response object stay as LiteLLM builds them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L131-L138
+  - what: A 2xx body that is not valid JSON fails with a typed Decode error, and valid JSON that is not an object fails the same way; LiteLLM's response.json() raises json.JSONDecodeError for the first and hands the list or scalar back for the second, leaving any failure to the caller.
+    why: _make_sync_call and _make_async_call declare a dict return, and betterlite decodes the body into that declared object shape. A non-object JSON value is outside the declared type, which docs/compatibility.md turns into an error that names the field rather than a pass-through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L142
+kept_bugs: []
