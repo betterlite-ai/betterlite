@@ -191,6 +191,20 @@ fn an_empty_logged_input_falls_to_the_body_texts() {
 }
 
 #[test]
+fn an_empty_text_logged_input_falls_to_the_body_texts() {
+    let reply = transform_response(
+        br#"{"embeddings": [[0.5]]}"#,
+        "cohere.embed-english-v3",
+        Some(&input(r#""""#)),
+        &object(r#"{"texts": ["one two"]}"#),
+        &Words,
+    )
+    .unwrap();
+
+    assert_eq!(reply.usage.prompt_tokens, 2);
+}
+
+#[test]
 fn empty_body_texts_fall_to_the_body_images() {
     let reply = transform_response(
         br#"{"embeddings": [[0.5]]}"#,
