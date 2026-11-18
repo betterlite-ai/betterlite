@@ -8,8 +8,9 @@ use crate::database_replica::routing::RouteError;
 use crate::postgres_store::diagnostics::{DriverError, PoolFailure};
 use crate::postgres_store::errors::DbError;
 
+use super::rows::RowError;
 use super::sql::Statement;
-use super::{TableOps, TableOpsError};
+use super::{OperationCallType, RetryPolicy, TableOps, TableOpsError};
 
 pub const USER_ATTRIBUTE: &str = "litellm_usertable";
 pub const KEY_ATTRIBUTE: &str = "litellm_verificationtoken";
@@ -107,6 +108,30 @@ where
             .await?
             .into_iter()
             .next())
+    }
+
+    // every read branch is one retried query plus its own row decoder
+    pub(super) async fn query_rows<Row, Parse>(
+        &self,
+        attribute: &str,
+        method: &str,
+        sql: &str,
+        parameters: &[&(dyn ToSql + Sync)],
+        policy: RetryPolicy,
+        call_type: OperationCallType,
+        parse: Parse,
+    ) -> Result<Vec<Row>, TableOpsError<Client::Error>>
+    where
+        Row: Send,
+        Parse: Fn(&str) -> Result<Row, RowError> + Send + Sync,
+    {
+        self.attempt_with(policy, call_type, || async {
+            let rows = self.text_rows(attribute, method, sql, parameters).await?;
+            rows.iter()
+                .map(|text| parse(text).map_err(TableOpsError::from))
+                .collect()
+        })
+        .await
     }
 
     pub(super) async fn run_upsert(
