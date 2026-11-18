@@ -1,0 +1,88 @@
+kind: helper
+name: realtime-client-send-translation
+call:
+  realtime_sender_websocket:
+    model: openai/gpt-4o-realtime-preview
+    force_transcription_model: null
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    provider: null
+    guardrails: []
+    backend_failures: []
+    client_failures: []
+    operations:
+      - kind: event
+        text: '{"type": "response.output_text.done", "text": "hi"}'
+      - kind: event
+        text: '{"type": "conversation.item.added"}'
+      - kind: event
+        text: '[1, 2]'
+      - kind: event
+        text: '"hello"'
+      - kind: event
+        text: '{"type": "response.output_text.delta", "delta": "x"}'
+calls:
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: [1]
+      operations:
+        - kind: event
+          text: '{"type": "response.output_text.done", "text": "hi"}'
+        - kind: event
+          text: '{"type": "response.output_text.delta", "delta": "y"}'
+        - kind: event
+          text: '{"type": "response.output_text.delta", "delta": "z"}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: true
+      backend_uses_beta_protocol: true
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: []
+      operations:
+        - kind: event
+          text: '{"type": "conversation.item.done", "item_id": "x"}'
+        - kind: event
+          text: '{"type": "response.output_text.done", "text": "hi"}'
+        - kind: event
+          text: '{"type": "conversation.item.added"}'
+        - kind: event
+          text: '[1, 2]'
+        - kind: event
+          text: '{"type": "response.text.delta", "delta": "x"}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: true
+      backend_uses_beta_protocol: true
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: [0]
+      operations:
+        - kind: event
+          text: '{"type": "response.text.delta", "delta": "x"}'
+        - kind: event
+          text: '{"type": "conversation.item.done"}'
+  - realtime_sender_websocket:
+      model: openai/gpt-4o-realtime-preview
+      force_transcription_model: null
+      client_wants_beta: true
+      backend_uses_beta_protocol: true
+      provider: null
+      guardrails: []
+      backend_failures: []
+      client_failures: [0, 1]
+      operations:
+        - kind: event
+          text: '{"type": "response.text.delta", "delta": "x"}'
+env: {}
+compare: {ignore: []}

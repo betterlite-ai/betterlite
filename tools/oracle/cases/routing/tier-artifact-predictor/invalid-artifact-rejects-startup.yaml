@@ -1,0 +1,58 @@
+kind: probe
+name: invalid-artifact-rejects-startup
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: startup
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 2, observations: 1}
+            - {tier: 2, successes: 1, observations: 2}
+            - {tier: 3, successes: 1, observations: 2}
+            - {tier: 4, successes: 1, observations: 2}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: startup
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 8, observations: 10}
+            - {tier: 2, successes: 5, observations: 10}
+            - {tier: 3, successes: 3, observations: 10}
+            - {tier: 4, successes: 1, observations: 10}
+          routing_threshold: 0.6
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: startup
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 8, observations: 10}
+            - {tier: 2, successes: 5, observations: 10}
+            - {tier: 3, successes: 3, observations: 10}
+            - {tier: 4, successes: 1, observations: 10}
+          routing_threshold: 0.6
+        threshold: '1.5'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: startup
+        artifact_name: arc_agi
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: startup
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 1, observations: 2}
+            - {tier: 2, successes: 2, observations: 6}
+            - {tier: 3, successes: 1, observations: 2}
+            - {tier: 4, successes: 3, observations: 6}
+          routing_threshold: 1.5
+compare: {ignore: []}
