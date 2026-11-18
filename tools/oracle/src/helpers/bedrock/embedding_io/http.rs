@@ -56,7 +56,7 @@ pub(crate) fn http_error(case: &HttpRequest) -> Result<Value, Box<HelperError>> 
             }
             provider_detail(&error, &names).map_err(Into::into)
         }
-        Err(error) => Err(Failure::Embedding(error).into()),
+        Err(error) => Err(Box::<HelperError>::from(Failure::Embedding(error))),
     }
 }
 

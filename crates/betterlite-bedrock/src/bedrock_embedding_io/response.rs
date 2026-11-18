@@ -63,7 +63,30 @@ pub fn transform_response(
     if let Some(response) = titan_response(response_list, model, batch_data)? {
         return Ok(titan_embedding_reply(response));
     }
-    provider_reply(response_list, model, provider, batch_data)
+    let response = match provider {
+        BedrockEmbeddingProvider::Twelvelabs => {
+            let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
+            let batch = batch_data
+                .map(parse_list::<MarengoBilledRequest>)
+                .transpose()?;
+            ProviderResponse::Marengo(marengo::transform_response(
+                &replies,
+                model,
+                batch.as_deref(),
+            )?)
+        }
+        BedrockEmbeddingProvider::Nova => {
+            let replies = parse_list::<Params>(response_list)?;
+            let batch = batch_data.map(parse_list::<Params>).transpose()?;
+            ProviderResponse::Nova(nova::transform_response(&replies, model, batch.as_deref())?)
+        }
+        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
+            return Err(EmbeddingIoError::Unmapped {
+                model: model.to_owned(),
+            });
+        }
+    };
+    provider_embedding_reply(response)
 }
 
 fn async_reply(
@@ -113,36 +136,4 @@ fn titan_response(
         _ => return Ok(None),
     };
     Ok(Some(response))
-}
-
-fn provider_reply(
-    response_list: &[Object],
-    model: &str,
-    provider: BedrockEmbeddingProvider,
-    batch_data: Option<&[Object]>,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let response = match provider {
-        BedrockEmbeddingProvider::Twelvelabs => {
-            let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
-            let batch = batch_data
-                .map(parse_list::<MarengoBilledRequest>)
-                .transpose()?;
-            ProviderResponse::Marengo(marengo::transform_response(
-                &replies,
-                model,
-                batch.as_deref(),
-            )?)
-        }
-        BedrockEmbeddingProvider::Nova => {
-            let replies = parse_list::<Params>(response_list)?;
-            let batch = batch_data.map(parse_list::<Params>).transpose()?;
-            ProviderResponse::Nova(nova::transform_response(&replies, model, batch.as_deref())?)
-        }
-        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon => {
-            return Err(EmbeddingIoError::Unmapped {
-                model: model.to_owned(),
-            });
-        }
-    };
-    provider_embedding_reply(response)
 }
