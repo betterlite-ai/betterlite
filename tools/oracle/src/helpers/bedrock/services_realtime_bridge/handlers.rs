@@ -91,7 +91,13 @@ fn pump_outcome(pump: &PumpResult<'_>) -> BridgeView {
     BridgeView {
         outcome,
         error,
-        ..BridgeView::default()
+        sent_to_bedrock: Vec::new(),
+        sent_to_client: Vec::new(),
+        closed_input: false,
+        closed_client: None,
+        scope: None,
+        state: None,
+        logged: Vec::new(),
     }
 }
 

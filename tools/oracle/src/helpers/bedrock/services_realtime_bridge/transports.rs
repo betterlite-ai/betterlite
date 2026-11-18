@@ -237,7 +237,7 @@ impl TransportStream {
         let input = TransportInput {
             state: Arc::clone(&state),
         };
-        Self { input, state }
+        Self { state, input }
     }
 }
 

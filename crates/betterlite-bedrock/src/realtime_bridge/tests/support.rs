@@ -75,8 +75,8 @@ pub(super) fn logged_types() -> LoggedEventTypes {
     LoggedEventTypes::Default
 }
 
-type ClientRun = Result<ForwardEnd, ClientForwardError<io::Error>>;
-type ProviderRun = Result<ForwardEnd, ProviderForwardError<io::Error>>;
+pub(super) type ClientRun = Result<ForwardEnd, ClientForwardError<io::Error>>;
+pub(super) type ProviderRun = Result<ForwardEnd, ProviderForwardError<io::Error>>;
 
 fn session(ids: &CountingIds) -> Mutex<RealtimeInput> {
     Mutex::new(RealtimeInput {

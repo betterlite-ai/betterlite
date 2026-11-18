@@ -6,8 +6,7 @@ use crate::realtime_bridge::error::ClientForwardError;
 use crate::realtime_input::error::InputError;
 
 const SESSION_UPDATE: &str = r#"{"type": "session.update", "session": {}}"#;
-// A session that is not an object: LiteLLM's session_config.get raises AttributeError, and the typed
-// decoder would read an empty array positionally into the all-default config, so the pump rejects it.
+// A non-object session raises in LiteLLM's session_config.get, and the typed decoder would read an array as defaults
 const MALFORMED_SESSION_UPDATE: &str = r#"{"type":"session.update","session":[]}"#;
 const AUDIO_APPEND: &str = r#"{"type":"input_audio_buffer.append","audio":"AAAA"}"#;
 const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;

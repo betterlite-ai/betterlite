@@ -35,27 +35,16 @@ struct CaseFlag(bool);
 #[serde(deny_unknown_fields)]
 struct Run {
     kind: Kind,
-    #[serde(default)]
     trace_id: Option<String>,
-    #[serde(default)]
     initial: Option<String>,
-    #[serde(default)]
     frames: Vec<Option<String>>,
-    #[serde(default)]
     chunks: Vec<Chunk>,
-    #[serde(default)]
     await_error: Option<String>,
-    #[serde(default)]
     block: CaseFlag,
-    #[serde(default)]
     cancel: CaseFlag,
-    #[serde(default)]
     bedrock_send_failures: Vec<usize>,
-    #[serde(default)]
     receive_failures: Vec<usize>,
-    #[serde(default)]
     client_send_failures: Vec<usize>,
-    #[serde(default)]
     bedrock_close_error: CaseFlag,
 }
 
@@ -71,7 +60,6 @@ enum Kind {
 #[serde(deny_unknown_fields)]
 struct Chunk {
     kind: ChunkKind,
-    #[serde(default)]
     text: String,
 }
 
@@ -91,7 +79,7 @@ struct Runs {
     runs: Vec<BridgeView>,
 }
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Debug, Serialize)]
 struct BridgeView {
     outcome: &'static str,
     error: Option<&'static str>,
