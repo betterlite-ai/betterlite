@@ -167,9 +167,7 @@ fn not_found_display_is_the_detail_error() {
 fn not_found_detail_serializes_as_the_error_object() {
     let error = ProxyModelNotFoundError::new("/chat/completions", "gpt-x", true);
     assert_eq!(
-        serde_json::to_value(&error.detail).unwrap(),
-        serde_json::json!({
-            "error": "/chat/completions: Invalid model name passed in model=gpt-x. Call `/v1/models` to view available models for your key."
-        })
+        serde_json::to_string(&error.detail).unwrap(),
+        r#"{"error":"/chat/completions: Invalid model name passed in model=gpt-x. Call `/v1/models` to view available models for your key."}"#
     );
 }
