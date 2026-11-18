@@ -7,7 +7,7 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::worker_options_reload::{
-    LogConfig, LoopType, Settings, UvicornSettings, resolve_log_level,
+    LogConfig, Settings, UvicornSettings, resolve_log_level,
 };
 
 fn load(environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -239,9 +239,4 @@ fn a_malformed_hot_reload_flag_fails_the_load() {
         load(&[("LITELLM_DEV_ENV_HOT_RELOAD", "sometimes")]),
         Err(ConfigError::Environment { .. })
     ));
-}
-
-#[test]
-fn loop_type_renders_uvloop() {
-    assert_eq!(LoopType::Uvloop.to_string(), "uvloop");
 }

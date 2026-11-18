@@ -88,21 +88,6 @@ fn healthcheck_override(timeout_worker_healthcheck: Option<i64>) -> UvicornOverr
     }
 }
 
-fn limits_override(
-    max_requests: Option<i64>,
-    max_requests_jitter: Option<i64>,
-) -> UvicornOverrides {
-    UvicornOverrides {
-        host: None,
-        port: None,
-        log_config: None,
-        keepalive_timeout: None,
-        timeout_worker_healthcheck: None,
-        max_requests,
-        max_requests_jitter,
-    }
-}
-
 fn resolved(
     base: &UvicornSettings,
     overrides: &UvicornOverrides,
@@ -232,7 +217,10 @@ fn worker_options_uvicorn_settings_warn_about_the_healthcheck_timeout(
 fn worker_options_uvicorn_settings_carry_the_request_limit_and_its_jitter() {
     let (settings, warnings) = resolved(
         &base_with_limits(Some(100), Some(10)),
-        &limits_override(Some(500), None),
+        &UvicornOverrides {
+            max_requests: Some(500),
+            ..no_overrides()
+        },
     );
     assert_eq!(settings.limit_max_requests, Some(500));
     assert_eq!(settings.limit_max_requests_jitter, Some(10));
@@ -243,7 +231,10 @@ fn worker_options_uvicorn_settings_carry_the_request_limit_and_its_jitter() {
 fn worker_options_uvicorn_settings_take_a_flag_jitter_over_the_config() {
     let (settings, warnings) = resolved(
         &base_with_limits(Some(100), Some(10)),
-        &limits_override(None, Some(25)),
+        &UvicornOverrides {
+            max_requests_jitter: Some(25),
+            ..no_overrides()
+        },
     );
     assert_eq!(settings.limit_max_requests, Some(100));
     assert_eq!(settings.limit_max_requests_jitter, Some(25));

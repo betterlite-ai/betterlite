@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
-use std::fmt;
 use std::path::PathBuf;
 
 use betterlite_db::database_diagnostics::level::{LogLevel, parse_level};
+use betterlite_env::{EnvError, flag, number};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -90,14 +90,6 @@ pub enum LoopType {
     Uvloop,
 }
 
-impl fmt::Display for LoopType {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Uvloop => formatter.write_str("uvloop"),
-        }
-    }
-}
-
 // LiteLLM calls getattr(logging, level.upper()), which fails on a name logging does not define
 pub fn resolve_log_level(level: &str) -> Result<LogLevel, ConfigError> {
     parse_level(level).map_err(|_source| ConfigError::InvalidScalar {
@@ -116,13 +108,13 @@ impl Section for Raw {
         Ok(Settings {
             worker_options: UvicornSettings {
                 host: variable(lookup, HOST_VARIABLE).unwrap_or_else(|| DEFAULT_HOST.to_owned()),
-                port: port(lookup)?,
+                port: parse(lookup, PORT_VARIABLE, number::<u16>)?.unwrap_or(DEFAULT_PORT),
                 server_header: false,
                 log_config: log_config(lookup)?,
-                timeout_keep_alive: seconds(lookup, KEEPALIVE_VARIABLE)?,
-                timeout_worker_healthcheck: seconds(lookup, HEALTHCHECK_VARIABLE)?,
-                limit_max_requests: seconds(lookup, MAX_REQUESTS_VARIABLE)?,
-                limit_max_requests_jitter: seconds(lookup, JITTER_VARIABLE)?,
+                timeout_keep_alive: parse(lookup, KEEPALIVE_VARIABLE, number::<i64>)?,
+                timeout_worker_healthcheck: parse(lookup, HEALTHCHECK_VARIABLE, number::<i64>)?,
+                limit_max_requests: parse(lookup, MAX_REQUESTS_VARIABLE, number::<i64>)?,
+                limit_max_requests_jitter: parse(lookup, JITTER_VARIABLE, number::<i64>)?,
                 loop_type: None,
             },
             dev_reload: ReloadSettings {
@@ -130,7 +122,7 @@ impl Section for Raw {
                 reload_dirs: Vec::new(),
                 reload_includes: Vec::new(),
                 extra_paths: BTreeSet::new(),
-                env_hot_reload: flag(lookup, HOT_RELOAD_VARIABLE)?,
+                env_hot_reload: parse(lookup, HOT_RELOAD_VARIABLE, flag)?.unwrap_or_default(),
             },
         })
     }
@@ -147,47 +139,19 @@ where
     }
 }
 
-fn seconds<L>(lookup: &L, name: &str) -> Result<Option<i64>, ConfigError>
+// the parser is one of betterlite_env's readers, so the empty-value rule and the error shape stay shared
+fn parse<L, T>(
+    lookup: &L,
+    name: &str,
+    parser: fn(&str, &str) -> Result<Option<T>, EnvError>,
+) -> Result<Option<T>, ConfigError>
 where
     L: EnvironmentLookup,
 {
-    match variable(lookup, name) {
-        Some(value) => Ok(betterlite_env::number::<i64>(name, &value)?),
-        None => Ok(None),
-    }
-}
-
-fn flag<L>(lookup: &L, name: &str) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match variable(lookup, name) {
-        Some(value) => Ok(betterlite_env::flag(name, &value)?.unwrap_or_default()),
-        None => Ok(false),
-    }
-}
-
-fn port<L>(lookup: &L) -> Result<u16, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    match variable(lookup, PORT_VARIABLE) {
-        Some(value) => {
-            let parsed = betterlite_env::number::<u16>(PORT_VARIABLE, &value)?;
-            Ok(parsed.unwrap_or(DEFAULT_PORT))
-        }
-        None => Ok(DEFAULT_PORT),
-    }
-}
-
-fn json_logs<L>(lookup: &L) -> bool
-where
-    L: EnvironmentLookup,
-{
-    match variable(lookup, JSON_LOGS_VARIABLE) {
-        Some(value) => value.to_lowercase() == "true",
-        None => false,
-    }
+    let Some(value) = variable(lookup, name) else {
+        return Ok(None);
+    };
+    Ok(parser(name, &value)?)
 }
 
 fn log_config<L>(lookup: &L) -> Result<LogConfig, ConfigError>
@@ -199,7 +163,9 @@ where
         .as_deref()
         .map(resolve_log_level)
         .transpose()?;
-    if json_logs(lookup) {
+    let json =
+        variable(lookup, JSON_LOGS_VARIABLE).is_some_and(|value| value.to_lowercase() == "true");
+    if json {
         return Ok(LogConfig::Json);
     }
     Ok(level.map_or(LogConfig::Builtin, LogConfig::Level))
