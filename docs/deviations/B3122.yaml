@@ -15,4 +15,7 @@ deviations:
   - what: read_exact reads through the injected port whose get carries no ttl, where LiteLLM's _read_exact passes ttl=1 to DualCache.async_get_cache so a local entry older than a second reads as absent.
     why: The port models the cache as a plain key-value store, so the one-second freshness LiteLLM enforces on reads is carried by the one-second local_only copy written beside the 24-hour entry instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L56-L64
+  - what: An observation whose CacheObservation fields fail validation, such as a non-finite or negative clock reading, is dropped without a write instead of raising a ValidationError out of the logging callback.
+    why: parse_observed_cache already guarantees a 64-hex fingerprint and positive cache tokens, so the guard only fires for a broken injected clock; dropping it keeps the shared logging path alive and avoids storing a JSON null for a non-finite time where LiteLLM's model_dump_json would raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_cache_prediction.py#L132-L140
 kept_bugs: []
