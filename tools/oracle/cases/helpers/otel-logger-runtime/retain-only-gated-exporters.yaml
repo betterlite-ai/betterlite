@@ -1,0 +1,27 @@
+kind: helper
+name: retain-only-gated-exporters
+call:
+  b8910:
+    function: only_the_gated_exporter
+    config:
+      exporters:
+        - kind: otlp_http
+          endpoint: https://otlp.nr-data.net
+          requires_headers: true
+        - endpoint: https://collector.example/v1/traces
+          headers: authorization=Bearer operator
+        - {}
+      mapper_names: [genai]
+      capture_message_content: no_content
+calls:
+  - b8910:
+      function: only_the_gated_exporter
+      config:
+        exporters:
+          - {}
+          - endpoint: https://collector.example/v1/traces
+        mapper_names: [genai]
+        capture_message_content: no_content
+env: {}
+compare:
+  ignore: []

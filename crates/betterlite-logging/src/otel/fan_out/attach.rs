@@ -64,6 +64,27 @@ pub fn operator_sink_scopes(
     scoped
 }
 
+// the processor a provider is built with, because a built provider cannot gain one later
+#[must_use]
+pub fn tenant_fan_out_processor(
+    factories: Arc<ExporterFactories>,
+    scope: Arc<dyn RequestScopeSource>,
+    configs: &[Settings],
+    excluded_db_systems: BTreeSet<String>,
+) -> TenantFanOutSpanProcessor {
+    let operator_sinks = operator_sink_scopes(configs, &factories);
+    let build: Arc<dyn DestinationProcessorFactory> =
+        Arc::new(ExporterDestinationFactory { factories });
+    let settings = FanOutSettings {
+        operator_sinks,
+        excluded_db_systems,
+        shutdown_drain: SHUTDOWN_DRAIN,
+        pending_drains: MAX_PENDING_DRAINS,
+        drain_pool: None,
+    };
+    TenantFanOutSpanProcessor::new(scope, build, settings)
+}
+
 #[must_use]
 pub fn attach_tenant_fan_out(
     registry: &mut TenantFanOutRegistry,
@@ -75,17 +96,12 @@ pub fn attach_tenant_fan_out(
     if registry.fan_out.is_some() {
         return false;
     }
-    let operator_sinks = operator_sink_scopes(configs, &factories);
-    let build: Arc<dyn DestinationProcessorFactory> =
-        Arc::new(ExporterDestinationFactory { factories });
-    let settings = FanOutSettings {
-        operator_sinks,
+    registry.fan_out = Some(tenant_fan_out_processor(
+        factories,
+        scope,
+        configs,
         excluded_db_systems,
-        shutdown_drain: SHUTDOWN_DRAIN,
-        pending_drains: MAX_PENDING_DRAINS,
-        drain_pool: None,
-    };
-    registry.fan_out = Some(TenantFanOutSpanProcessor::new(scope, build, settings));
+    ));
     true
 }
 

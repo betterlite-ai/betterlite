@@ -1,0 +1,58 @@
+kind: helper
+name: response-defaults
+call:
+  user_contracts:
+    calls:
+      - function: user_update_result
+        body: {"success": true, "extra": 1}
+      - function: user_update_result
+        body: {"user_id": "u"}
+      - function: user_update_result
+        body: {"user_id": "u", "user_email": "e", "success": false, "error": "boom", "updated_user": {"a": 1}}
+      - function: bulk_update_response
+        body: {"results": [{"success": true}], "total_requested": 1, "successful_updates": 1, "failed_updates": 0}
+      - function: bulk_update_response
+        body: {"results": [], "total_requested": 0}
+      - function: user_delete_result
+        body: {"user_id": "u", "success": false}
+      - function: user_delete_result
+        body: {"user_id": "u", "success": true, "teams_removed": ["t"], "user_email": "e", "error": null}
+      - function: bulk_delete_response
+        body: {"data": [{"user_id": "u", "success": true}]}
+      - function: bulk_delete_response
+        body: {"data": []}
+      - function: user_create_result
+        body: {"success": false, "extra": true}
+      - function: user_create_result
+        body: {"success": true, "teams": []}
+      - function: user_create_result
+        body: {"success": true, "teams": null, "key": "sk-1"}
+      - function: bulk_new_meta
+        body: {"total_requested": 2, "created": 1, "failed": 1}
+      - function: bulk_new_response
+        body: {"data": [], "meta": {"total_requested": 0, "created": 0, "failed": 0}}
+      - function: bulk_new_response
+        body: {"data": [{"success": true, "teams": ["t"], "key": "sk-1"}], "meta": {"total_requested": 1, "created": 1, "failed": 0}}
+      - function: user_list_response
+        body: {"users": [{"user_id": "u"}], "total": 1, "page": 1, "page_size": 25, "total_pages": 1}
+      - function: user_list_response
+        body: {"users": [{"user_id": "u", "key_count": 3, "spend": 2, "teams": ["t"], "models": ["m"], "metadata": {"a": 1}, "organization_memberships": [], "object_permission": null}], "total": 1, "page": 2, "page_size": 25, "total_pages": 1}
+      - function: user_list_response
+        body: {"users": []}
+      - function: user_search_where
+        body: {"OR": [{"user_id": {"contains": "Al", "mode": "insensitive"}}, {"user_email": {"contains": "ex", "mode": "insensitive"}}]}
+      - function: user_search_where
+        body: {"OR": []}
+      - function: user_search_where
+        body: {"OR": [{"user_id": {"contains": "Al", "mode": "insensitive"}, "extra": 1}]}
+      - function: user_search_where
+        body: {"OR": [{"user_id": {"contains": "Al", "mode": "sensitive"}}]}
+      - function: user_search_where
+        body: {"OR": [{}]}
+      - function: user_search_where
+        body: {"OR": [{"user_id": null}]}
+      - function: user_search_where
+        body: {"OR": [{"user_id": {"contains": "Al", "mode": "insensitive", "junk": 1}}], "AND": []}
+    queries: []
+env: {}
+compare: {ignore: []}
