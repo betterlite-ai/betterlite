@@ -50,8 +50,11 @@ deviations:
       failure. `RedisCache.error()`, `ClientReuseError` and `LiveClientError` are transparent
       `thiserror` wrappers whose `source()` returns the inner error's own source, so a source
       walk reaches the io error only when redis attached one. The `RedisError` itself, whose
-      kind says `Io`, is never a link in that walk.
+      kind says `Io`, is never a link in that walk. The gate starts the walk at the error it
+      was handed, so an error whose own node is the only classifier, a bare `io::Error` for
+      one, records nothing either.
     why: >-
       The task reads the error through `source()`, and reaching the hidden wrapper fields
-      would match every betterlite-redis error enum inside the server wiring.
+      would match every betterlite-redis error enum inside the server wiring. Every cache
+      call site hands over one of those wrappers, so the bare root is not reachable there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L341
