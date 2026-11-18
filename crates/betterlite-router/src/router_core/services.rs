@@ -1,5 +1,6 @@
 use crate::cooldown_state::filter::HealthInputs;
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::generalization_integration::model_generalizations::ModelGeneralizations;
 use crate::prompt_affinity::service::PromptAffinity;
 use crate::routing_groups::group::RoutingGroup;
 
@@ -42,6 +43,12 @@ pub trait RouteServices: Send + Sync {
     // Router.add_optional_pre_call_checks leaves PromptCachingDeploymentCheck out unless the config names it
     #[must_use]
     fn prompt_affinity(&self) -> Option<&PromptAffinity> {
+        None
+    }
+
+    // The fallback_generalizations rules a stage fills into each deployment, absent on a router without them
+    #[must_use]
+    fn model_generalizations(&self) -> Option<&ModelGeneralizations> {
         None
     }
 
