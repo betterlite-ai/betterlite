@@ -166,7 +166,9 @@ async fn run_step(
             Ok(step_output(step.kind))
         }
         StepKind::Redis => {
-            *cache.mode.lock().unwrap_or_else(PoisonError::into_inner) = step.redis;
+            if step.redis != RedisMode::None {
+                *cache.mode.lock().unwrap_or_else(PoisonError::into_inner) = step.redis;
+            }
             Ok(step_output(step.kind))
         }
     }
