@@ -1,0 +1,30 @@
+kind: probe
+name: latency-observations-failure-penalty
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      latency_observations:
+        settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 3, ttft_percentile: null}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, elapsed_millis: 1000, usage: {completion_tokens: 1, total_tokens: 2}}
+          - {kind: failure, now_millis: 0, model_group: gpt, deployment_id: dep-a}
+          - {kind: failure, now_millis: 0, model_group: gpt, deployment_id: dep-a, failure: other}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, call_type: retrieve_batch, elapsed_millis: 500}
+          - {kind: failure, now_millis: 0, model_group: gpt, deployment_id: dep-a, call_type: aretrieve_batch}
+          - {kind: failure, now_millis: 0, channels: none, model_group: gpt, deployment_id: dep-a}
+          - {kind: failure, now_millis: 0, channels: litellm_metadata, metadata_group: gpt, deployment_id: dep-a}
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, elapsed_millis: 2000, usage: {completion_tokens: 2, total_tokens: 3}}
+          - {kind: failure, now_millis: 0, model_group: gpt, deployment_id: dep-a}
+          - {kind: view, now_millis: 0, model_group: gpt}
+          - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: latency, statistic: mean}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      latency_observations:
+        settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 0, ttft_percentile: null}
+        steps:
+          - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, elapsed_millis: 1000, usage: {completion_tokens: 1, total_tokens: 2}}
+          - {kind: failure, now_millis: 0, model_group: gpt, deployment_id: dep-a}
+          - {kind: view, now_millis: 0, model_group: gpt}
+compare: {ignore: []}
