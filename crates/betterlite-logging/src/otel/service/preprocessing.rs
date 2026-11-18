@@ -13,7 +13,7 @@ const RECEIVED_AT_KEY: &str = "litellm_received_at";
 const DATE_TIME: &str = "%Y-%m-%d %H:%M:%S%.f";
 
 pub fn set_preprocessing_duration(span: Option<&LiveSpan>, container: &MetadataMap) {
-    let Some(span) = span else {
+    let Some(target) = span else {
         return;
     };
     let Some(first_handoff) = container
@@ -31,14 +31,15 @@ pub fn set_preprocessing_duration(span: Option<&LiveSpan>, container: &MetadataM
     // float operators are denied; both mul_adds compute the same bits as Python's (end - start) * 1000.0
     let duration_ms = start.mul_add(-1.0, end).mul_add(1000.0, 0.0);
     // clock skew -> omit rather than emit a negative latency
-    if duration_ms < 0.0 {
+    if duration_ms < 0.0_f64 {
         return;
     }
     // a NaN or infinite duration cannot be an OTel attribute, and Python's float would carry it
     let Some(number) = serde_json::Number::from_f64(duration_ms) else {
         return;
     };
-    span.lock()
+    target
+        .lock()
         .safe_set_attribute(litellm::PREPROCESSING_MS, &OtelModelValue::Number(number));
 }
 
@@ -85,5 +86,6 @@ fn parse_datetime(text: &str) -> Option<f64> {
     let utc = naive.and_utc();
     let seconds = Decimal::from(utc.timestamp());
     let nanos = Decimal::new(i64::from(utc.timestamp_subsec_nanos()), 9);
-    seconds.checked_add(nanos).and_then(|total| total.to_f64())
+    let total = seconds.checked_add(nanos)?;
+    total.to_f64()
 }

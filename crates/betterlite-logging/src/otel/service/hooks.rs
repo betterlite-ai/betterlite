@@ -35,7 +35,7 @@ pub fn async_service_success_hook(
     let Some(span) = begin_service_span(lifecycle, call, start_ns, environment) else {
         return;
     };
-    write_event_metadata(&mut *span.lock(), call.event_metadata, true);
+    write_event_metadata(&mut span.lock(), call.event_metadata, true);
     span.lock().set_status(Status::Ok);
     span.lock().end_with_timestamp(instant_from_ns(end_ns));
 }
@@ -107,7 +107,7 @@ fn start_service_span(
         .with_start_time(instant_from_ns(start_ns));
     let span = LiveSpan::from(lifecycle.tracer.build_with_context(builder, &context));
     write_service_attributes(
-        &mut *span.lock(),
+        &mut span.lock(),
         call.payload,
         &data.service_name,
         attributes,

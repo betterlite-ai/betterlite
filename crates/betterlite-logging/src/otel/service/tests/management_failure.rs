@@ -1,9 +1,9 @@
 use opentelemetry::trace::Status;
 use opentelemetry_sdk::trace::SpanData;
 
-use super::fixtures::{error_config, exception, kwargs};
+use super::fixtures::{error_config, exception};
 use super::support::{
-    Rig, START, attribute, event_attribute, i64_attribute, instant, text_attribute,
+    Rig, START, attribute, event_attribute, i64_attribute, instant, kwargs, text_attribute,
 };
 use crate::otel::legacy_policy::span_time::SpanTime;
 use crate::otel::service::management::{ManagementPayload, async_management_failure_hook};

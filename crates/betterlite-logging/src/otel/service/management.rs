@@ -32,21 +32,21 @@ pub fn async_management_success_hook(
     payload: &ManagementPayload,
     parent: Option<&LiveSpan>,
 ) {
-    let Some(parent) = parent else {
+    let Some(server) = parent else {
         return;
     };
     let start_ns = to_ns(payload.start_time, lifecycle.now_ns());
     let end_ns = to_ns(payload.end_time, lifecycle.now_ns());
-    let span = start_endpoint_span(lifecycle, payload, parent, start_ns);
-    write_call_attributes(&mut *span.lock(), "request", &payload.request_data);
+    let span = start_endpoint_span(lifecycle, payload, server, start_ns);
+    write_call_attributes(&mut span.lock(), "request", &payload.request_data);
     if let Some(response) = &payload.response {
-        write_call_attributes(&mut *span.lock(), "response", response);
+        write_call_attributes(&mut span.lock(), "response", response);
     }
     span.lock().set_status(Status::Ok);
     span.lock().end_with_timestamp(instant_from_ns(end_ns));
-    set_response_status_code(Some(parent), Some(200));
-    parent.lock().set_status(Status::Ok);
-    parent.lock().end_with_timestamp(instant_from_ns(end_ns));
+    set_response_status_code(Some(server), Some(200));
+    server.lock().set_status(Status::Ok);
+    server.lock().end_with_timestamp(instant_from_ns(end_ns));
 }
 
 pub fn async_management_failure_hook(
@@ -55,13 +55,13 @@ pub fn async_management_failure_hook(
     parent: Option<&LiveSpan>,
     info: &ErrorInformationConfig,
 ) {
-    let Some(parent) = parent else {
+    let Some(server) = parent else {
         return;
     };
     let start_ns = timing::whole_second_ns(payload.start_time, lifecycle.now_ns());
     let end_ns = timing::whole_second_ns(payload.end_time, lifecycle.now_ns());
-    let span = start_endpoint_span(lifecycle, payload, parent, start_ns);
-    write_call_attributes(&mut *span.lock(), "request", &payload.request_data);
+    let span = start_endpoint_span(lifecycle, payload, server, start_ns);
+    write_call_attributes(&mut span.lock(), "request", &payload.request_data);
     let mut target = span.lock();
     target.safe_set_attribute(
         "exception",
@@ -74,13 +74,13 @@ pub fn async_management_failure_hook(
         &error_info::logging_context(info, payload.exception.as_ref()),
         None,
     );
-    parent.lock().set_status(Status::error(""));
+    server.lock().set_status(Status::error(""));
     record_exception_on_span(
-        &mut *parent.lock(),
+        &mut *server.lock(),
         error_info::recorded_exception(payload.exception.as_ref()).as_ref(),
         &error_info::error_payload(&information),
     );
-    parent.lock().end_with_timestamp(instant_from_ns(end_ns));
+    server.lock().end_with_timestamp(instant_from_ns(end_ns));
 }
 
 fn start_endpoint_span(

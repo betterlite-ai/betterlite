@@ -12,7 +12,7 @@ pub fn record_error_attributes(
     status_code: i64,
     info: &ErrorInformationConfig,
 ) {
-    let Some(span) = span else {
+    let Some(target) = span else {
         return;
     };
     if exception.is_none() {
@@ -23,7 +23,7 @@ pub fn record_error_attributes(
     information.error_code = Some(Some(status_code.to_string()));
     // no exception key in the kwargs, so no exception event
     record_exception_on_span(
-        &mut *span.lock(),
+        &mut *target.lock(),
         None,
         &error_info::error_payload(&information),
     );

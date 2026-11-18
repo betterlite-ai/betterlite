@@ -141,8 +141,8 @@ fn request_metadata(model_call_details: &MetadataMap) -> Option<&OtelModelValue>
 
 // _get_span_context returns a context holding the request's parent span; only a live span can parent a child here
 fn guardrail_parent(lifecycle: &LegacyLifecycle, context: Option<&Context>) -> Option<LiveSpan> {
-    let context = context?;
-    let span_context = context.span().span_context().clone();
+    let resolved = context?;
+    let span_context = resolved.span().span_context().clone();
     span_context
         .is_valid()
         .then(|| lifecycle.live.get(span_context.span_id()))
