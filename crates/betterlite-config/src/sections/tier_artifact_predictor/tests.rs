@@ -109,7 +109,7 @@ fn deployments_stay_aligned_with_the_model_list() {
 }
 
 #[rstest]
-#[case::absent("", ArtifactSource::default())]
+#[case::absent("        {}\n", ArtifactSource::default())]
 #[case::null("        heuristic_v2_artifact: null\n", ArtifactSource::default())]
 #[case::builtin(
     "        heuristic_v2_artifact: ultrafeedback\n",
@@ -299,7 +299,7 @@ fn an_inline_artifact_number_does_not_resolve_from_the_environment() {
 }
 
 #[rstest]
-#[case::absent("", None)]
+#[case::absent("        {}\n", None)]
 #[case::null("        heuristic_v2_success_threshold: null\n", None)]
 #[case::zero("        heuristic_v2_success_threshold: 0\n", Some(0.0_f64))]
 #[case::one("        heuristic_v2_success_threshold: 1\n", Some(1.0_f64))]
