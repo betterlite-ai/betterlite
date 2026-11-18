@@ -1,10 +1,7 @@
 task: B373
 deviations:
-  - what: A pattern naming a character with `\N{...}` is accepted by LiteLLM and scored as one literal, while betterlite refuses it as an invalid regex, inside or outside a class.
-    why: Resolving a Unicode character name needs the full name table, which the maintained Rust parser does not carry; a refused construct fails validation with a message naming the pattern instead of scoring a work estimate betterlite cannot match on.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
-  - what: A lone surrogate escape (`\uD800`, `\U0000D800`, or in a class) is accepted by LiteLLM and scored as one literal, while betterlite refuses it as an invalid regex.
-    why: A Rust char cannot hold a surrogate code point and a pattern carrying one matches nothing, so copying the accepted estimate would validate a pattern betterlite cannot reproduce; the refusal names the pattern.
+  - what: A pattern naming a character by name (`\N{...}`) or a lone surrogate escape (`\uD800`, `\U0000D800`, or in a class) is accepted by LiteLLM and scored as one literal, while betterlite refuses it as an invalid regex.
+    why: Resolving a Unicode name needs the full name table, which the maintained Rust parser does not carry, and a Rust char cannot hold a surrogate; the refusal names the pattern instead of scoring an estimate betterlite cannot match on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
   - what: An octal escape above `\377` (`\400`, `\777`, and the same inside a class) is a syntax error in LiteLLM, while betterlite reads it as the character with that code point and scores it.
     why: Python caps octal escapes at 255; the Rust parser's octal support has no cap, so the normalizer leaves these escapes to it; a working LiteLLM configuration cannot contain one because `re.compile` refuses it, so accepting it changes no valid setup.
@@ -26,5 +23,11 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L802
   - what: LiteLLM emits FutureWarnings from `re.compile` and again from `sre_parse.parse` for classes it reads as possible nested sets or set operations (`[a&&b]`, `[a~~b]`, `[a-b--c]`, `[[:alpha:]]`, `[[a]]`), while betterlite validates them silently.
     why: The warning is CPython's parser anticipating a future syntax change and changes neither the accepted pattern nor the work estimate, and betterlite has no warning channel a config load raises it through; every class that LiteLLM accepts here keeps the same characters and work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
+  - what: A pattern longer than 4096 characters is read and scored by LiteLLM, while betterlite refuses it as an invalid regex before normalizing it.
+    why: The bound keeps the normalizer's and the parser's work linear in what an operator declares, so a paste of a megabyte cannot spend time before the work budget applies; padding a short verbose pattern past the bound is the one shape that loses a score it would otherwise keep.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798
+  - what: Python's inline ASCII flag (`(?a)`, `(?a:...)`, and a combined spec carrying it) is read and scored by LiteLLM, while betterlite refuses it as an unsupported regex construct.
+    why: The Rust matcher has no ASCII mode to carry the flag into, and dropping it would silently widen `\w`, `\d`, `\s` and case folding to Unicode, so the construct is refused by name instead; the kept flags (`i`, `m`, `s`, `u`, `x`) are the ones the matcher reads.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800
 kept_bugs: []
