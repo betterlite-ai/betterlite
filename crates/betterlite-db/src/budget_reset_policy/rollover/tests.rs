@@ -86,6 +86,14 @@ fn rollover_carried_spend_under_the_cap_is_zero() {
 }
 
 #[test]
+fn rollover_carried_spend_that_overflows_carries_nothing() {
+    assert_eq!(
+        carried_spend(Some(Decimal::MAX), Some(Decimal::MIN)),
+        Decimal::ZERO
+    );
+}
+
+#[test]
 fn rollover_carried_spend_without_spend_is_zero() {
     assert_eq!(
         carried_spend(None, Some(Decimal::from(100_i32))),
