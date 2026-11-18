@@ -76,9 +76,8 @@ fn model_id(state: &LoggingState) -> JsonValue {
     params
         .get("id")
         .and_then(|value| {
-            serde_json::to_value(value)
-                .ok()
-                .and_then(|plain| serde_json::from_value(plain).ok())
+            let plain = serde_json::to_value(value).ok()?;
+            serde_json::from_value(plain).ok()
         })
         .unwrap_or(JsonValue::Null)
 }
