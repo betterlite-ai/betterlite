@@ -125,10 +125,8 @@ def start_redis(script: Script | None) -> tuple[socketserver.ThreadingTCPServer,
 
 
 def sent(script: Script) -> list[JsonValue]:
-    keys: list[JsonValue] = []
-    for args in script.received:
-        if args[0].upper() == "MGET":
-            keys.append(list(args[1:]))
+    mgets = [args for args in script.received if args[0].upper() == "MGET"]
+    keys: list[JsonValue] = [list(args[1:]) for args in mgets]
     return keys
 
 
