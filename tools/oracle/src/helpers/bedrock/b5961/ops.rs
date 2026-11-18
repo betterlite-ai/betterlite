@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use betterlite_bedrock::sagemaker_embedding::cohere::{self, CohereRequestError};
+use betterlite_bedrock::sagemaker_embedding::cohere::{self, CohereReplyError, CohereRequestError};
 use betterlite_bedrock::sagemaker_embedding::hf::{self, HfReplyError};
 use betterlite_bedrock::sagemaker_embedding::{self, EmbeddingConfig};
 use betterlite_bedrock::sagemaker_stream::events::EventState;
@@ -10,7 +10,6 @@ use betterlite_bedrock::sagemaker_stream::{
 use betterlite_http::error::HttpError;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
-use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_tokenizer::engine::error::EngineError;
 use serde_json::{Value, json};
@@ -198,10 +197,10 @@ pub(crate) enum Failure {
     #[error(transparent)]
     CohereRequest(#[from] CohereRequestError),
     #[error(transparent)]
-    CohereReply(#[from] CohereLegacyEmbeddingError),
+    CohereReply(#[from] CohereReplyError),
     #[error("the stream chunk is not hex: {source}")]
     Hex {
-        #[source]
+        #[from]
         source: hex::FromHexError,
     },
 }
