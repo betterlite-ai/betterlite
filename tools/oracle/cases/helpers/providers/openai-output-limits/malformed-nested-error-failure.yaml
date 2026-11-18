@@ -7,4 +7,5 @@ call:
       body:
         message: '{"detail":[{"loc":["body","temperature"]},5]}'
       data: {"model": "gpt-3.5-turbo", "temperature": 2, "messages": []}
+compare: {ignore: []}
 env: {}

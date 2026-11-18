@@ -8,4 +8,5 @@ call:
       timeout: 2.5
       outcome:
         kind: timeout
+compare: {ignore: []}
 env: {}

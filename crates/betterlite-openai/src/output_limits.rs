@@ -133,7 +133,7 @@ fn present(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(flag) => *flag,
-        Value::Number(number) => number.as_f64().is_none_or(|value| value != 0.0_f64),
+        Value::Number(number) => number.as_f64().is_none_or(|float| float != 0.0_f64),
         Value::String(text) => !text.is_empty(),
         Value::Array(items) => !items.is_empty(),
         Value::Object(fields) => !fields.is_empty(),
