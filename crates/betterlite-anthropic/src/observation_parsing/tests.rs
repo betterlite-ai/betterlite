@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::Path;
+
 use betterlite_logging::cache_observer::{ObservationParser, WireRequest};
 use betterlite_models::decisions::Json;
 use http::{HeaderMap, HeaderValue};
@@ -41,13 +44,21 @@ fn response(cached: i64, creation: i64, split: Option<(i64, i64)>) -> Json {
         None => String::new(),
     };
     let encoded = format!(
-        r#"{{"model":"claude-3-5-sonnet","usage":{{"prompt_tokens":1000,"prompt_tokens_details":{{"cached_tokens":{cached},"cache_creation_tokens":{creation}{details}}}},"choices":[{{"finish_reason":"stop"}}]}}"#
+        r#"{{"model":"claude-3-5-sonnet","usage":{{"prompt_tokens":1000,"prompt_tokens_details":{{"cached_tokens":{cached},"cache_creation_tokens":{creation}{details}}}}},"choices":[{{"finish_reason":"stop"}}]}}"#
     );
     json(&encoded)
 }
 
 fn hit() -> Json {
     response(100, 0, None)
+}
+
+fn wire_request<'wire>(
+    url: &'wire Url,
+    headers: &'wire HeaderMap,
+    body: &'wire [u8],
+) -> WireRequest<'wire> {
+    WireRequest { url, headers, body }
 }
 
 #[test]
@@ -102,11 +113,7 @@ fn parse_observed_cache_scopes_by_caller_key(
 fn parse_observed_cache_accepts_native_recipients(#[case] recipient: &str) {
     let url = Url::parse(recipient).unwrap();
     let headers = headers();
-    let wire = WireRequest {
-        url: &url,
-        headers: &headers,
-        body: BODY.as_bytes(),
-    };
+    let wire = wire_request(&url, &headers, BODY.as_bytes());
     assert!(parse_observed_cache(&wire, &hit(), "caller", "deployment").is_some());
 }
 
@@ -119,11 +126,7 @@ fn parse_observed_cache_accepts_native_recipients(#[case] recipient: &str) {
 fn parse_observed_cache_rejects_non_native_recipients(#[case] recipient: &str) {
     let url = Url::parse(recipient).unwrap();
     let headers = headers();
-    let wire = WireRequest {
-        url: &url,
-        headers: &headers,
-        body: BODY.as_bytes(),
-    };
+    let wire = wire_request(&url, &headers, BODY.as_bytes());
     assert!(parse_observed_cache(&wire, &hit(), "caller", "deployment").is_none());
 }
 
@@ -255,11 +258,7 @@ fn parse_observed_cache_rejects_a_non_utf8_body() {
 fn parse_observed_cache_rejects_unsupported_bodies(#[case] body: &str) {
     let url = Url::parse(NATIVE_URL).unwrap();
     let headers = headers();
-    let wire = WireRequest {
-        url: &url,
-        headers: &headers,
-        body: body.as_bytes(),
-    };
+    let wire = wire_request(&url, &headers, body.as_bytes());
     assert!(parse_observed_cache(&wire, &hit(), "caller", "deployment").is_none());
 }
 
@@ -375,13 +374,8 @@ fn parse_observed_cache_ignores_fields_outside_the_response_model() {
 fn parse_observed_cache_rejects_incomplete_responses(#[case] response: &str) {
     let url = Url::parse(NATIVE_URL).unwrap();
     let headers = headers();
-    let wire = WireRequest {
-        url: &url,
-        headers: &headers,
-        body: BODY.as_bytes(),
-    };
-    let observed = parse_observed_cache(&wire, &json(response), "caller", "deployment");
-    assert!(observed.is_none());
+    let wire = wire_request(&url, &headers, BODY.as_bytes());
+    assert!(parse_observed_cache(&wire, &json(response), "caller", "deployment").is_none());
 }
 
 #[test]
@@ -405,4 +399,21 @@ fn parse_observed_cache_parser_maps_the_ported_evidence() {
         carried.scope,
         cache_scope("caller", "deployment", API_KEY, "claude-3-5-sonnet")
     );
+}
+
+#[test]
+fn replays_the_observed_cache_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/observed_cache_decoder");
+    let outcomes: Vec<bool> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| {
+            let bytes = fs::read(entry.unwrap().path()).unwrap();
+            let url = Url::parse(NATIVE_URL).unwrap();
+            let headers = headers();
+            let wire = wire_request(&url, &headers, &bytes);
+            parse_observed_cache(&wire, &hit(), "caller", "deployment").is_some()
+        })
+        .collect();
+    assert!(outcomes.contains(&true));
+    assert!(outcomes.contains(&false));
 }

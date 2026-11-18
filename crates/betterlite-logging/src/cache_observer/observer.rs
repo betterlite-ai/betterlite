@@ -13,7 +13,7 @@ use super::{
 use crate::fields::payload::StandardLoggingPayload;
 use crate::fields::status::LoggingStatus;
 
-const NANOS_PER_SECOND: f64 = 0.000_000_001;
+const SECONDS_PER_NANOSECOND: f64 = 0.000_000_001;
 
 // the strict event LiteLLM validates; the proxy fills it while the wire request is still known
 pub struct SuccessEvent<'event> {
@@ -55,9 +55,7 @@ impl PromptCacheObserver {
             return;
         };
         let now = (self.clock)();
-        let Some(started) = unix_seconds(event.first_api_call_start_time) else {
-            return;
-        };
+        let started = unix_seconds(event.first_api_call_start_time);
         if started > now {
             return;
         }
@@ -128,8 +126,8 @@ fn claimed_ids(event: &SuccessEvent<'_>) -> Option<(String, String)> {
 }
 
 // datetime.timestamp(): whole seconds plus the sub-second part as a float
-fn unix_seconds(time: DateTime<FixedOffset>) -> Option<f64> {
-    let seconds = time.timestamp().to_f64()?;
-    let fraction = f64::from(time.timestamp_subsec_nanos()).mul(NANOS_PER_SECOND);
-    Some(seconds.add(fraction))
+fn unix_seconds(time: DateTime<FixedOffset>) -> f64 {
+    let seconds = time.timestamp().to_f64().unwrap_or_default();
+    let fraction = f64::from(time.timestamp_subsec_nanos()).mul(SECONDS_PER_NANOSECOND);
+    seconds.add(fraction)
 }

@@ -5,6 +5,7 @@ use betterlite_logging::cache_observer::{
 };
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use url::Url;
 
@@ -13,6 +14,7 @@ use crate::cache_prediction_targets::headers::supported_prediction_headers;
 use crate::cache_prediction_targets::scope::cache_scope;
 use crate::cache_prediction_targets::target::supported_provider_key;
 use crate::credentials::ANTHROPIC_VERSION;
+use crate::headers::response::process_anthropic_headers;
 
 mod tests;
 
@@ -21,6 +23,7 @@ const NATIVE_PATH: &str = "/v1/messages";
 const NATIVE_PORT: u16 = 443;
 const API_KEY_HEADER: &str = "x-api-key";
 const VERSION_HEADER: &str = "anthropic-version";
+const PROJECTED_PREFIX: &str = "llm_provider-";
 const FIVE_MINUTE_TTL: u32 = 300;
 const ONE_HOUR_TTL: u32 = 3_600;
 const NATIVE_HEADERS: [&str; 9] = [
@@ -119,7 +122,12 @@ pub fn parse_observed_cache(
     )?;
     Some(ObservedCachePrefix {
         prefix,
-        scope: cache_scope(caller_key_hash, deployment_id, &provider_key, &model),
+        scope: cache_scope(
+            caller_key_hash,
+            deployment_id,
+            provider_key.expose_secret(),
+            &model,
+        ),
         cached_tokens: cache_tokens,
         cache_creation_tokens: usage.prompt_tokens_details.cache_creation_tokens,
     })
@@ -141,15 +149,19 @@ fn native_headers(headers: &HeaderMap) -> bool {
         && supported_prediction_headers(headers)
 }
 
-// httpx joins a repeated header's values with ", " before LiteLLM validates the dict
-fn native_credentials(headers: &HeaderMap) -> Option<String> {
-    let version = joined_header(headers, VERSION_HEADER)?;
+// process_anthropic_headers joins each repeated header with ", " as httpx does before LiteLLM validates it
+fn native_credentials(headers: &HeaderMap) -> Option<SecretString> {
+    let projected = process_anthropic_headers(headers);
+    let version = projected.get(&format!("{PROJECTED_PREFIX}{VERSION_HEADER}"))?;
     if version.as_bytes() != ANTHROPIC_VERSION.as_bytes() {
         return None;
     }
-    let key = joined_header(headers, API_KEY_HEADER)?;
-    let provider = key.as_str();
-    if !supported_provider_key(provider) {
+    let key = SecretString::from(
+        projected
+            .get(&format!("{PROJECTED_PREFIX}{API_KEY_HEADER}"))?
+            .clone(),
+    );
+    if !supported_provider_key(key.expose_secret()) {
         return None;
     }
     Some(key)
@@ -220,16 +232,4 @@ impl ObservationParser for ObservedCacheParser {
             cache_creation_tokens: observed.cache_creation_tokens,
         })
     }
-}
-
-fn joined_header(headers: &HeaderMap, name: &str) -> Option<String> {
-    let values: Vec<&str> = headers
-        .get_all(name)
-        .iter()
-        .filter_map(|value| value.to_str().ok())
-        .collect();
-    if values.is_empty() {
-        return None;
-    }
-    Some(values.join(", "))
 }

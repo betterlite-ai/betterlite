@@ -84,9 +84,9 @@ impl CacheObservation {
                 .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'));
         let counts_ok = self.cached_tokens > 0;
         let times_ok = self.observed_at.is_finite()
-            && self.observed_at >= 0.0
+            && self.observed_at >= 0.0_f64
             && self.expires_at.is_finite()
-            && self.expires_at >= 0.0;
+            && self.expires_at >= 0.0_f64;
         (fingerprint_ok && counts_ok && times_ok).then_some(self)
     }
 }
@@ -148,6 +148,6 @@ pub async fn lookup(
     observations
         .iter()
         .find(|found| found.expires_at > checked_at)
-        .or(observations.first())
+        .or_else(|| observations.first())
         .cloned()
 }

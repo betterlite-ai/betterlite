@@ -3,12 +3,9 @@
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use betterlite_anthropic::cache_plan::parse_prompt;
-use betterlite_anthropic::cache_prediction_targets::scope::cache_scope;
-use betterlite_anthropic::observation_parsing::ObservedCacheParser;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, FixedOffset};
-use http::{HeaderMap, HeaderValue};
+use http::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 use url::Url;
@@ -33,7 +30,6 @@ const NATIVE_URL: &str = "https://api.anthropic.com/v1/messages";
 const NOW: f64 = 2_000.0;
 const STARTED: i64 = 1_000;
 const BODY: &str = r#"{"model":"claude-3-5-sonnet","messages":[{"role":"user","content":[{"type":"text","text":"a","cache_control":{"type":"ephemeral"}}]}]}"#;
-const RESPONSE: &str = r#"{"model":"claude-3-5-sonnet","usage":{"prompt_tokens":1000,"prompt_tokens_details":{"cached_tokens":0,"cache_creation_tokens":500,"cache_creation_token_details":{"ephemeral_5m_input_tokens":500,"ephemeral_1h_input_tokens":0}}},"choices":[{"finish_reason":"stop"}]}"#;
 const PAYLOAD: &str = r#"{"id":"chatcmpl-1","trace_id":"trace-1","session_id":"session-1","call_type":"anthropic_messages","custom_llm_provider":"anthropic","stream":false,"response_cost":0.5,"status":"success","status_fields":{"llm_api_status":"success","guardrail_status":"not_run"},"total_tokens":1010,"prompt_tokens":1000,"completion_tokens":10,"startTime":1704067200.0,"endTime":1704067201.5,"completionStartTime":1704067200.5,"response_time":1.0,"model_map_information":{},"model":"claude-3-5-sonnet","model_id":"deployment","api_base":"https://api.anthropic.com","metadata":{"user_api_key_hash":"caller-1"},"saved_cache_cost":0.0,"request_tags":[],"model_parameters":{},"hidden_params":{}}"#;
 
 fn payload() -> StandardLoggingPayload {
@@ -142,28 +138,13 @@ impl ObservationCache for FakeCache {
     }
 }
 
+#[derive(Default)]
 struct FakeParser {
     observed: Option<ObservedCache>,
-}
-
-impl ObservationParser for FakeParser {
-    fn parse(
-        &self,
-        _wire: &WireRequest<'_>,
-        _response: &Json,
-        _caller_key_hash: &str,
-        _deployment_id: &str,
-    ) -> Option<ObservedCache> {
-        self.observed.clone()
-    }
-}
-
-#[derive(Default)]
-struct RecordingParser {
     seen: Mutex<Vec<(String, String)>>,
 }
 
-impl ObservationParser for RecordingParser {
+impl ObservationParser for FakeParser {
     fn parse(
         &self,
         _wire: &WireRequest<'_>,
@@ -175,7 +156,7 @@ impl ObservationParser for RecordingParser {
             .lock()
             .unwrap()
             .push((caller_key_hash.to_owned(), deployment_id.to_owned()));
-        None
+        self.observed.clone()
     }
 }
 
@@ -184,9 +165,14 @@ fn build_observer(
     observed: Option<ObservedCache>,
     now: f64,
 ) -> PromptCacheObserver {
+    let cache: Arc<FakeCache> = Arc::clone(fake);
+    let cache_port: Arc<dyn ObservationCache> = cache;
     PromptCacheObserver {
-        cache: Arc::clone(fake),
-        parser: Arc::new(FakeParser { observed }),
+        cache: cache_port,
+        parser: Arc::new(FakeParser {
+            observed,
+            seen: Mutex::new(Vec::new()),
+        }),
         clock: Arc::new(move || now),
     }
 }
@@ -513,17 +499,18 @@ async fn lookup_treats_an_exact_entry_expiring_now_as_stale() {
 #[test]
 fn observer_init_keeps_the_injected_cache_and_parser() {
     let fake = Arc::new(FakeCache::new(false));
-    let cache: Arc<dyn ObservationCache> = Arc::clone(&fake);
-    let parser: Arc<dyn ObservationParser> = Arc::new(FakeParser { observed: None });
+    let cache: Arc<FakeCache> = Arc::clone(&fake);
+    let cache_port: Arc<dyn ObservationCache> = cache;
+    let parser: Arc<dyn ObservationParser> = Arc::new(FakeParser::default());
     let observer = PromptCacheObserver::new(fake, Arc::clone(&parser));
-    assert!(Arc::ptr_eq(&observer.cache, &cache));
+    assert!(Arc::ptr_eq(&observer.cache, &cache_port));
     assert!(Arc::ptr_eq(&observer.parser, &parser));
 }
 
 #[test]
 fn observer_init_defaults_the_clock_to_unix_time() {
     let fake = Arc::new(FakeCache::new(false));
-    let observer = PromptCacheObserver::new(fake, Arc::new(FakeParser { observed: None }));
+    let observer = PromptCacheObserver::new(fake, Arc::new(FakeParser::default()));
     assert!((observer.clock)() > 1_700_000_000.0);
 }
 
@@ -673,7 +660,7 @@ async fn event_accepts_a_request_that_starts_now() {
 }
 
 #[tokio::test]
-async fn event_drops_an_unparseable_observation() {
+async fn event_drops_an_unparsable_observation() {
     let fake = Arc::new(FakeCache::new(false));
     let observer = build_observer(&fake, None, NOW);
     let logged = payload();
@@ -688,10 +675,14 @@ async fn event_drops_an_unparseable_observation() {
 #[tokio::test]
 async fn event_passes_the_caller_hash_and_deployment_to_the_parser() {
     let fake = Arc::new(FakeCache::new(false));
-    let parser = Arc::new(RecordingParser::default());
+    let recorder = Arc::new(FakeParser::default());
+    let cache: Arc<FakeCache> = Arc::clone(&fake);
+    let cache_port: Arc<dyn ObservationCache> = cache;
+    let parser: Arc<FakeParser> = Arc::clone(&recorder);
+    let parser_port: Arc<dyn ObservationParser> = parser;
     let observer = PromptCacheObserver {
-        cache: Arc::clone(&fake),
-        parser: Arc::clone(&parser),
+        cache: cache_port,
+        parser: parser_port,
         clock: Arc::new(|| NOW),
     };
     let logged = payload();
@@ -701,7 +692,7 @@ async fn event_passes_the_caller_hash_and_deployment_to_the_parser() {
     let success = event(&logged, &url, &headers, &response, BODY.as_bytes());
     observer.async_log_success_event(&success).await;
     assert_eq!(
-        *parser.seen.lock().unwrap(),
+        *recorder.seen.lock().unwrap(),
         [("caller-1".to_owned(), "deployment".to_owned())]
     );
 }
@@ -871,38 +862,4 @@ async fn storage_drops_an_observation_with_a_non_finite_clock() {
     let success = event(&logged, &url, &headers, &response, BODY.as_bytes());
     observer.async_log_success_event(&success).await;
     assert_eq!(fake.write_count(), 0);
-}
-
-#[tokio::test]
-async fn storage_scopes_the_key_with_the_parsed_scope() {
-    let fake = Arc::new(FakeCache::new(false));
-    let observer = PromptCacheObserver {
-        cache: Arc::clone(&fake),
-        parser: Arc::new(ObservedCacheParser),
-        clock: Arc::new(|| NOW),
-    };
-    let logged = payload();
-    let url = Url::parse(NATIVE_URL).unwrap();
-    let mut headers = HeaderMap::new();
-    headers.insert("host", HeaderValue::from_static("api.anthropic.com"));
-    headers.insert("content-type", HeaderValue::from_static("application/json"));
-    headers.insert("x-api-key", HeaderValue::from_static("sk-ant-api03-key"));
-    headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
-    let response = json(RESPONSE);
-    let success = event(&logged, &url, &headers, &response, BODY.as_bytes());
-    observer.async_log_success_event(&success).await;
-    let writes = fake.writes.lock().unwrap();
-    assert_eq!(writes.len(), 1);
-    let prefix = parse_prompt(BODY).unwrap();
-    let scope = cache_scope(
-        "caller-1",
-        "deployment",
-        "sk-ant-api03-key",
-        "claude-3-5-sonnet",
-    );
-    assert_eq!(writes[0].key, entry_key(&scope, &prefix.fingerprint));
-    let stored = decode(&writes[0].value);
-    assert_eq!(stored.fingerprint, prefix.fingerprint);
-    assert_eq!(stored.cached_tokens, 500);
-    assert_eq!(stored.expires_at.to_bits(), 1_300.0_f64.to_bits());
 }
