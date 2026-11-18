@@ -12,7 +12,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
-use tokio::task::JoinSet;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio_postgres::{Config, NoTls};
 use tokio_util::task::TaskTracker;
 
@@ -380,7 +380,7 @@ async fn cancelled_child_not_queried_for_exception() {
 async fn abandoned_panic_logged() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
-    let handle: tokio::task::JoinHandle<Result<(), DbLookupError>> =
+    let handle: JoinHandle<Result<(), DbLookupError>> =
         tasks.spawn(async { panic!("the abandoned lookup panicked") });
     consume_abandoned_lookup(handle).await;
     drain(&tasks).await;
@@ -391,8 +391,7 @@ async fn abandoned_panic_logged() {
 async fn abandoned_cancellation_silent() {
     let (logs, _guard) = capture_logs();
     let tasks = TaskTracker::new();
-    let handle: tokio::task::JoinHandle<Result<(), DbLookupError>> =
-        tasks.spawn(std::future::pending());
+    let handle: JoinHandle<Result<(), DbLookupError>> = tasks.spawn(std::future::pending());
     handle.abort();
     consume_abandoned_lookup(handle).await;
     drain(&tasks).await;
