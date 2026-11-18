@@ -1,0 +1,11 @@
+kind: helper
+name: custom-routes-file-mixed-case-null-utterance
+call:
+  b3808:
+    function: build_routes
+    custom_routes_file: |-
+      - route_name: null-text
+        utterances: [NuLL]
+    global_threshold: 0.5
+env: {}
+compare: {ignore: []}
