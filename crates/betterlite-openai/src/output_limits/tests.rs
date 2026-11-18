@@ -296,7 +296,7 @@ async fn prompt_token_count() {
         )]
     );
     absent_or_unlisted_messages(&recorder).await;
-    count_with_runtime_tokenizer().await;
+    Box::pin(count_with_runtime_tokenizer()).await;
 }
 
 async fn absent_or_unlisted_messages(recorder: &Recorder) {
@@ -443,7 +443,7 @@ async fn output_limits_cases(#[case] scenario: Scenario) {
         Scenario::OutputLimitCaseInsensitive => output_limit_case_insensitive(),
         Scenario::EmptyLengthCompletion => empty_length_completion().await,
         Scenario::SingleLengthStreamChunk => single_length_stream_chunk().await,
-        Scenario::PromptTokenCount => prompt_token_count().await,
+        Scenario::PromptTokenCount => Box::pin(prompt_token_count()).await,
         Scenario::UnrelatedError => raw_send::unrelated_error().await,
         Scenario::MalformedNestedErrorFailure => malformed_nested_error_failure(),
         Scenario::AzureRawSendHeaders => raw_send::azure_raw_send_headers().await,

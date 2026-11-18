@@ -80,8 +80,11 @@ class Scripted:
                     request=request,
                 )
             case "status":
+                status = self.outcome.get("status")
+                if status is None:
+                    raise ValueError("the status outcome needs a status")
                 return httpx.Response(
-                    self.outcome["status"],
+                    status,
                     headers=self.outcome.get("headers"),
                     json=self.outcome.get("body"),
                     request=request,
