@@ -33,8 +33,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
 fn classify_records(case: &ClassifyRecords) -> HelperResult {
     let mut kinds = Vec::with_capacity(case.records.len());
     for record in &case.records {
-        let record: BatchRecord = serde_json::from_value(record.clone())?;
-        kinds.push(json!(classify_batch_record(&record)));
+        let parsed_record: BatchRecord = serde_json::from_value(record.clone())?;
+        kinds.push(json!(classify_batch_record(&parsed_record)));
     }
     Ok(json!({ "kinds": kinds }))
 }
@@ -120,5 +120,6 @@ const fn embedding_class(error: &BatchEmbeddingError) -> &'static str {
         | BatchEmbeddingError::InputNotString { .. } => "ValueError",
         BatchEmbeddingError::TokenizedInput { .. }
         | BatchEmbeddingError::UnsupportedModel { .. } => "NotImplementedError",
+        BatchEmbeddingError::Titan(_) => "TypeError",
     }
 }

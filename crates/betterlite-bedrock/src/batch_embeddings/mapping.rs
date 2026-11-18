@@ -1,9 +1,12 @@
-use serde::{Deserialize, Serialize};
+use betterlite_prompts::arguments::json::{Json, Object};
+use serde::Deserialize;
+use serde_json::Number;
 
 use super::error::BatchEmbeddingError;
 use super::input::{EmbeddingInput, coerce_input_to_string};
 use super::titan::is_titan_v2_embed_model;
 use crate::bedrock_model_capabilities::ModelInfoLookup;
+use crate::titan_embeddings::v2::{map_openai_params, transform_request};
 
 // An OpenAI /v1/embeddings body, with the params the Titan v2 mapping reads and nothing else
 #[derive(Debug, Deserialize)]
@@ -16,7 +19,7 @@ pub struct EmbeddingRequest {
     pub encoding_format: Setting<String>,
 }
 
-// A request key kept apart as absent, null or a value: the Titan body drops it, keeps a null, or reads a value
+// A request key kept apart as absent, null or a value, so only the keys the record carried reach the V2 mapper
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 #[serde(from = "Option<T>")]
 pub enum Setting<T> {
@@ -32,38 +35,30 @@ impl<T> From<Option<T>> for Setting<T> {
     }
 }
 
-// The Titan v2 InvokeModel modelInput: inputText plus whichever inference params the request set
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InvokeModelBody {
-    pub input_text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dimensions: Option<Dimensions>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub embedding_types: Option<Vec<EmbeddingType>>,
+// The body minus model and input, as the V2 config reads it; a null value stays a null entry
+fn non_default_params(request: &EmbeddingRequest) -> Object {
+    let mut params = Object::new();
+    if let Setting::Null = request.dimensions {
+        params.insert(String::from("dimensions"), Json::Null);
+    }
+    if let Setting::Value(size) = request.dimensions {
+        params.insert(String::from("dimensions"), Json::Number(Number::from(size)));
+    }
+    if let Setting::Null = &request.encoding_format {
+        params.insert(String::from("encoding_format"), Json::Null);
+    }
+    if let Setting::Value(format) = &request.encoding_format {
+        params.insert(String::from("encoding_format"), Json::Text(format.clone()));
+    }
+    params
 }
 
-// A dimensions the request set: null stays null in the body and an integer carries its size
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(untagged)]
-pub enum Dimensions {
-    Value(i64),
-    Null,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EmbeddingType {
-    Binary,
-    Float,
-}
-
-// An OpenAI /v1/embeddings body as the Titan v2 InvokeModel modelInput; every other embedding model is refused first
+// The Titan v2 InvokeModel modelInput, mapped and built by B627's shared config and request constructor
 pub async fn map_embedding_to_bedrock<Lookup>(
     openai_request_body: &EmbeddingRequest,
     model: &str,
     lookup: &Lookup,
-) -> Result<InvokeModelBody, BatchEmbeddingError>
+) -> Result<Object, BatchEmbeddingError>
 where
     Lookup: ModelInfoLookup,
 {
@@ -73,29 +68,7 @@ where
         });
     }
     let input_text = coerce_input_to_string(openai_request_body.input.as_ref(), model)?;
-    let dimensions = match openai_request_body.dimensions {
-        Setting::Absent => None,
-        Setting::Null => Some(Dimensions::Null),
-        Setting::Value(size) => Some(Dimensions::Value(size)),
-    };
-    // a present encoding_format always asks for embeddingTypes, and only base64 leaves the float default
-    let embedding_types = match &openai_request_body.encoding_format {
-        Setting::Absent => None,
-        Setting::Null => Some(vec![EmbeddingType::Float]),
-        Setting::Value(format) => Some(vec![embedding_type(format)]),
-    };
-    Ok(InvokeModelBody {
-        input_text,
-        dimensions,
-        embedding_types,
-    })
-}
-
-// base64 asks Bedrock for binary embeddings; LiteLLM reads every other value as float
-fn embedding_type(format: &str) -> EmbeddingType {
-    if format == "base64" {
-        EmbeddingType::Binary
-    } else {
-        EmbeddingType::Float
-    }
+    let inference_params =
+        map_openai_params(&non_default_params(openai_request_body), Object::new());
+    Ok(transform_request(&input_text, &inference_params)?)
 }

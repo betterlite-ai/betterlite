@@ -12,9 +12,7 @@ use betterlite_prompts::arguments::json::Json;
 use crate::batch_embeddings::classify::{BatchRecord, BatchRecordKind, classify_batch_record};
 use crate::batch_embeddings::error::BatchEmbeddingError;
 use crate::batch_embeddings::input::{EmbeddingInput, coerce_input_to_string};
-use crate::batch_embeddings::mapping::{
-    EmbeddingRequest, InvokeModelBody, map_embedding_to_bedrock,
-};
+use crate::batch_embeddings::mapping::{EmbeddingRequest, map_embedding_to_bedrock};
 use crate::batch_embeddings::titan::{is_titan_v2_embed_model, lookup_provider_specific_field};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 
@@ -318,11 +316,6 @@ fn schema(runtime: &Runtime, lookup: &Registry, model: &str) -> Option<String> {
     ))
 }
 
-fn body_json(body: &InvokeModelBody) -> Json {
-    let value = serde_json::to_value(body).expect("the mapped body serializes");
-    serde_json::from_value(value).expect("the mapped body is JSON")
-}
-
 fn map(
     runtime: &Runtime,
     lookup: &Registry,
@@ -334,7 +327,7 @@ fn map(
         model,
         lookup,
     ));
-    mapped.map(|body| body_json(&body))
+    mapped.map(Json::Object)
 }
 
 fn message_of(result: Result<String, BatchEmbeddingError>) -> String {
