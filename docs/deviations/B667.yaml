@@ -1,0 +1,24 @@
+task: B667
+deviations:
+  - what: The client and provider forwarding diagnostics name the direction and the redacted failure only; the raw first 200 characters of every client frame, Bedrock frame and Bedrock payload, and the Python traceback on a forwarding-ended line, are not logged.
+    why: Repository redaction rules prohibit logging realtime audio and text payloads and credential-bearing request bodies, and Rust tracing has no traceback to attach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L478-L549
+  - what: A client transform, ack readiness, input send or frame-encoding failure ends the client pump with a typed ClientForwardError variant, where LiteLLM lets the transform's exception, the input stream's exception or pydantic's ValidationError escape.
+    why: Rust reports failure through return values, so the bridge that joins both directions can tell which side failed without a Python exception class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L459-L511
+  - what: A provider readiness, receive, UTF-8 decoding or transform failure ends the provider pump with a typed ProviderForwardError variant carrying the source error, where LiteLLM lets the SDK exception, UnicodeDecodeError or the transform's exception escape.
+    why: The same return-value convention as the client direction, and the typed variant is what lets the bridge map a provider failure after both directions stop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L513-L589
+  - what: A Bedrock input frame that does not encode as JSON ends the client pump with ClientForwardError::Encode; LiteLLM passes the transform's string straight to the SDK constructor, so no equivalent step exists.
+    why: betterlite hands the stream a typed input frame and serializes it, so the serialization step needs a named failure instead of an unwrap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L470-L480
+kept_bugs:
+  - what: A closing frame whose send fails, and a failing input stream close, are swallowed with no log line, so a partially closed session looks the same as a clean one.
+    why: LiteLLM wraps every closing send and the close in contextlib.suppress(Exception), and a working bridge relies on a close failure never replacing the pump's own error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L504-L511
+  - what: A client send failure in the provider direction returns as if the provider stream ended; the failed event is not logged, already-applied state is kept, and the websocket stays open for the caller to close.
+    why: LiteLLM's send_to_client answers False, the pump returns, and a working bridge relies on the gone client being detected through the send rather than through an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L521-L529
+  - what: A provider failure leaves the client websocket open; only a receive() that returns None closes it, with code 1000.
+    why: LiteLLM closes the websocket only on normal end so the bridge can apply its fallback policy before the client sees a close, and the bridge owns the failure path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L556-L562
