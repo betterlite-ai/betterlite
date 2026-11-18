@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::{FinishClaim, SyncState, SyncStore, iso_format};
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_roi::records::{
     ROIEstimate, ROIEstimateStatus, ROIPullRecord, ROIReport, ROISyncPhase, ROISyncStatus,
@@ -21,18 +22,16 @@ async fn database() -> (PostgresFixture, Pool, SyncStore) {
     let url = Environment::parse_from(["sync-store-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        url.as_ref(),
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+    )
+    .resolve()
+    .await
+    .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
     let client = SyncStore::open(&pool).await.unwrap();
-    client
-        .client
-        .batch_execute(include_str!("schema.sql"))
-        .await
-        .unwrap();
     (fixture, pool, client)
 }
 

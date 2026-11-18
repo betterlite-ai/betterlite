@@ -1,0 +1,38 @@
+kind: helper
+name: bedrock-legacy-models-cohere-max-tokens
+call:
+  bedrock_legacy_models:
+    mappings:
+      cases:
+        - family: cohere
+          non_default: {max_tokens: 5, max_completion_tokens: 9}
+          optional: {}
+          model: cohere.command-text-v14
+          drop_params: false
+          global_drop_params: false
+        - family: cohere
+          non_default: {max_completion_tokens: 9, max_tokens: 5}
+          optional: {}
+          model: cohere.command-text-v14
+          drop_params: false
+          global_drop_params: false
+        - family: cohere
+          non_default:
+            stream: true
+            temperature: 0.2
+            frequency_penalty: 0.3
+            presence_penalty: 0.4
+            tools: []
+            seed: 7
+            n: 2
+            top_p: 0.5
+            stop: END
+            tool_choice: auto
+            extra_headers: {x: y}
+            unknown: 1
+          optional: {p: 0.9}
+          model: cohere.command-text-v14
+          drop_params: false
+          global_drop_params: false
+env: {}
+compare: {ignore: []}

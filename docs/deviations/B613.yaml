@@ -1,0 +1,15 @@
+task: B613
+deviations:
+- what: A Titan stop list element that is not a string is dropped instead of raising, so [5, "|"] keeps "|" where LiteLLM raises TypeError and fails the request.
+  why: The stop parameter is declared list[str] or str, so a value of another type is outside the declared types and betterlite's typed path refuses it before this mapper, as docs/compatibility.md says. Proven by crates/betterlite-bedrock/src/legacy_models/tests.rs titan_stop_filter, whose stop list carries a trailing 5 and keeps only the strings.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py#L76-L79
+kept_bugs:
+- what: AmazonAnthropicConfig.get_config keeps _abc_impl, a CPython ABC internal, because its filter drops dunder names but not _abc names.
+  why: The legacy_config_projection contract reproduces the concrete class dictionary for Claude2 exactly, so the private marker is projected rather than filtered.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude2_transformation.py#L45-L60
+- what: AmazonLlamaConfig's constructor keyword maxTokenCount is not a declared class attribute, so a configured value lands in the class dictionary under a name the Llama mapper never writes and stays for later calls.
+  why: A setup that configures the Llama default reads that value back through get_config, so the undeclared keyword and its persistence are carried rather than renamed.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_llama_transformation.py#L25-L35
+- what: The Titan stop filter reads the global litellm.drop_params switch and ignores the drop_params argument its mapper receives, so drop_params=False still filters while the global switch is on.
+  why: A working setup drives the filtering from the global switch, and the titan_stop_filter contract makes the method argument irrelevant, so both are kept as LiteLLM has them.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_titan_transformation.py#L72-L81
