@@ -115,12 +115,7 @@ impl RateLimitCache for FakeCache {
     }
 
     fn increment_local(&self, key: &str, by: i64, _ttl_seconds: u64) -> Option<i64> {
-        let mut local = self.local.lock().unwrap_or_else(PoisonError::into_inner);
-        let value = local.entry(key.to_owned()).or_insert(0);
-        *value = value.saturating_add(by);
-        let current = *value;
-        drop(local);
-        Some(current)
+        Some(bump(&self.local, key, by))
     }
 
     async fn increment(&self, key: &str, by: i64, ttl_seconds: u64) -> Option<i64> {
@@ -128,13 +123,17 @@ impl RateLimitCache for FakeCache {
         if !self.has_remote || self.mode != RemoteMode::Up {
             return local;
         }
-        let mut remote = self.remote.lock().unwrap_or_else(PoisonError::into_inner);
-        let value = remote.entry(key.to_owned()).or_insert(0);
-        *value = value.saturating_add(by);
-        let current = *value;
-        drop(remote);
-        Some(current)
+        Some(bump(&self.remote, key, by))
     }
+}
+
+fn bump(tier: &Mutex<BTreeMap<String, i64>>, key: &str, by: i64) -> i64 {
+    let mut values = tier.lock().unwrap_or_else(PoisonError::into_inner);
+    let value = values.entry(key.to_owned()).or_insert(0);
+    *value = value.saturating_add(by);
+    let current = *value;
+    drop(values);
+    current
 }
 
 #[derive(Debug, Default, Eq, PartialEq)]
