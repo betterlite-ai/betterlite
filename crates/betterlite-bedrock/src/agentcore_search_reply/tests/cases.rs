@@ -293,6 +293,7 @@ fn mcp_error_precedence() {
         r#"{"result":{"content":[{"type":"text","text":"[{\"title\":\"no\"}]"}],"isError":true}}"#;
     let error = decode(tool_error, 200).unwrap_err();
     assert_eq!(provider_status(&error), 502);
+    assert_eq!(error.status(), Some(502));
     assert_eq!(
         provider_message(&error),
         "AgentCore web search tool error: [{\"title\":\"no\"}]"
