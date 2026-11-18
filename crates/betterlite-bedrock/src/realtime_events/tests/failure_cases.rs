@@ -9,6 +9,9 @@ use crate::realtime_events::failure::{
 };
 use crate::realtime_events::scope::EventScope;
 
+// The seam's own exception type stands in for the SDK's here
+type Failure = ProviderFailure<io::Error>;
+
 pub(super) fn provider_failure_event() {
     mapped_classes();
     unknown_class();
@@ -32,7 +35,7 @@ fn mapped_classes() {
         ("ValidationException", 400),
     ];
     for (class_name, status) in expected {
-        let failure = ProviderFailure {
+        let failure = Failure {
             class_name: class_name.to_owned(),
             message: "boom".to_owned(),
             source: None,
@@ -57,7 +60,7 @@ fn mapped_classes() {
 }
 
 fn unknown_class() {
-    let error = as_bedrock_error(ProviderFailure {
+    let error = as_bedrock_error(Failure {
         class_name: "Throttling".to_owned(),
         message: SECRET.to_owned(),
         source: None,
@@ -69,10 +72,10 @@ fn unknown_class() {
 
 // The mapped error chain reaches the exception the seam caught, not just its message
 fn native_cause() {
-    let failure = ProviderFailure {
+    let failure = Failure {
         class_name: "ThrottlingException".to_owned(),
         message: "slow down".to_owned(),
-        source: Some(Box::new(io::Error::other("connection reset"))),
+        source: Some(io::Error::other("connection reset")),
     };
     let error = as_bedrock_error(failure);
     let cause = Error::source(&error).expect("the provider failure");
@@ -87,7 +90,7 @@ fn redaction() {
     let (log, _guard) = support::capture();
     let mut scope = EventScope::default();
     scope.commit();
-    let failure = ProviderFailure {
+    let failure = Failure {
         class_name: "ThrottlingException".to_owned(),
         message: format!("upstream said {SECRET}"),
         source: None,
@@ -107,7 +110,7 @@ fn redaction() {
     assert!(!log.text().contains(SECRET));
 
     let mut uncommitted = EventScope::default();
-    let failure = ProviderFailure {
+    let failure = Failure {
         class_name: "ValidationException".to_owned(),
         message: "bad".to_owned(),
         source: None,

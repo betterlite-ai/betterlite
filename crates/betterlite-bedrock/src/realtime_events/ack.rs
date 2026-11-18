@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
@@ -11,10 +13,11 @@ use crate::agentcore_stream::IdSource;
 use crate::realtime_session::RealtimeSession;
 use crate::realtime_session::records::SessionEventType;
 
+// The client's send failure ends the ack with False, so only the stream's error is a variant
 #[derive(Debug, Error)]
-pub enum AckError {
+pub enum AckError<S> {
     #[error(transparent)]
-    Stream(#[from] StreamError),
+    Stream(#[from] StreamError<S>),
     #[error("the client session.modalities is not a list of strings")]
     Modalities,
     #[error("the session.updated event does not encode as JSON")]
@@ -24,9 +27,13 @@ pub enum AckError {
     },
 }
 
-pub struct SessionAck<'state> {
-    pub client: &'state dyn RealtimeClientWebSocket,
-    pub stream: &'state dyn BedrockBidirectionalStream,
+pub struct SessionAck<'state, C, S>
+where
+    C: StdError + Send + Sync + 'static,
+    S: StdError + Send + Sync + 'static,
+{
+    pub client: &'state dyn RealtimeClientWebSocket<Error = C>,
+    pub stream: &'state dyn BedrockBidirectionalStream<Error = S>,
     pub scope: &'state mut EventScope,
     pub model: &'state str,
     pub trace_id: Option<&'state str>,
@@ -35,15 +42,36 @@ pub struct SessionAck<'state> {
     pub redactor: &'state Redactor,
 }
 
-impl SessionAck<'_> {
+impl<C, S> SessionAck<'_, C, S>
+where
+    C: StdError + Send + Sync + 'static,
+    S: StdError + Send + Sync + 'static,
+{
     // The stream must accept the session before the scope says the session is committed to it
-    pub async fn ack_session_update(&mut self) -> Result<bool, AckError> {
+    pub async fn ack_session_update(&mut self) -> Result<bool, AckError<S>> {
         self.stream.await_output().await?;
         self.scope.commit();
         let Some(trace_id) = self.trace_id else {
             return Ok(true);
         };
-        let modalities = modalities_of(self.message)?;
+        // _json_dict(parsed.get("session")).get("modalities"), validated as list[str] | None
+        let session = self.message.get("session").and_then(json_dict);
+        let modalities = match session.and_then(|session| session.get("modalities")) {
+            None | Some(Json::Null) => None,
+            Some(Json::List(items)) => {
+                let mut names = Vec::with_capacity(items.len());
+                for item in items {
+                    let Json::Text(name) = item else {
+                        return Err(AckError::Modalities);
+                    };
+                    names.push(name.clone());
+                }
+                Some(names)
+            }
+            Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
+                return Err(AckError::Modalities);
+            }
+        };
         let event = RealtimeSession::session_event(
             SessionEventType::Updated,
             Some(self.model),
@@ -59,30 +87,6 @@ impl SessionAck<'_> {
                 tracing::debug!("Client to Bedrock forwarding ended: {reported}");
                 Ok(false)
             }
-        }
-    }
-}
-
-// _json_dict(parsed.get("session")).get("modalities"), validated as list[str] | None
-fn modalities_of(message: &IndexMap<String, Json>) -> Result<Option<Vec<String>>, AckError> {
-    let session = message.get("session").and_then(json_dict);
-    let Some(modalities) = session.and_then(|session| session.get("modalities")) else {
-        return Ok(None);
-    };
-    match modalities {
-        Json::Null => Ok(None),
-        Json::List(items) => {
-            let mut names = Vec::with_capacity(items.len());
-            for item in items {
-                let Json::Text(name) = item else {
-                    return Err(AckError::Modalities);
-                };
-                names.push(name.clone());
-            }
-            Ok(Some(names))
-        }
-        Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            Err(AckError::Modalities)
         }
     }
 }

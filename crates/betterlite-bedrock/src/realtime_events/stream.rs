@@ -1,21 +1,25 @@
+use std::error::Error as StdError;
+
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("{message}")]
-pub struct StreamError {
+pub struct StreamError<E> {
     pub message: String,
     #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub source: Option<E>,
 }
 
-// The SDK protocols in handler.py; the native transport implements these and forwards the raw event JSON
+// The SDK protocols in handler.py; each native transport names the error type it reports
 #[async_trait]
 pub trait BedrockInputStream: Send + Sync {
-    async fn send(&self, event: Json) -> Result<(), StreamError>;
+    type Error: StdError + Send + Sync + 'static;
 
-    async fn close(&self) -> Result<(), StreamError>;
+    async fn send(&self, event: Json) -> Result<(), StreamError<Self::Error>>;
+
+    async fn close(&self) -> Result<(), StreamError<Self::Error>>;
 }
 
 pub trait BedrockPayloadPart: Send + Sync {
@@ -28,17 +32,27 @@ pub trait BedrockOutputChunk: Send + Sync {
 
 #[async_trait]
 pub trait BedrockOutputStream: Send + Sync {
-    async fn receive(&self) -> Result<Option<Box<dyn BedrockOutputChunk>>, StreamError>;
+    type Error: StdError + Send + Sync + 'static;
+
+    async fn receive(
+        &self,
+    ) -> Result<Option<Box<dyn BedrockOutputChunk>>, StreamError<Self::Error>>;
 }
 
 #[async_trait]
 pub trait BedrockBidirectionalStream: Send + Sync {
-    fn input_stream(&self) -> &dyn BedrockInputStream;
+    type Error: StdError + Send + Sync + 'static;
 
-    async fn await_output(&self) -> Result<(Json, Box<dyn BedrockOutputStream>), StreamError>;
+    fn input_stream(&self) -> &dyn BedrockInputStream<Error = Self::Error>;
+
+    async fn await_output(
+        &self,
+    ) -> Result<(Json, Box<dyn BedrockOutputStream<Error = Self::Error>>), StreamError<Self::Error>>;
 }
 
 #[async_trait]
 pub trait ClosableBedrockRuntimeClient: Send + Sync {
-    async fn close(&self) -> Result<(), StreamError>;
+    type Error: StdError + Send + Sync + 'static;
+
+    async fn close(&self) -> Result<(), StreamError<Self::Error>>;
 }

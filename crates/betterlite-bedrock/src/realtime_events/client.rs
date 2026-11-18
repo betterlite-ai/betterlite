@@ -1,34 +1,38 @@
+use std::error::Error as StdError;
+
 use async_trait::async_trait;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[error("{message}")]
-pub struct ClientError {
+pub struct ClientError<E> {
     pub message: String,
     #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub source: Option<E>,
 }
 
 // RealtimeClientWebSocket's transport surface; the bridge owns the concrete socket behind it
 #[async_trait]
 pub trait RealtimeClientWebSocket: Send + Sync {
-    async fn receive_text(&self) -> Result<String, ClientError>;
+    type Error: StdError + Send + Sync + 'static;
 
-    async fn send_text(&self, data: String) -> Result<(), ClientError>;
+    async fn receive_text(&self) -> Result<String, ClientError<Self::Error>>;
+
+    async fn send_text(&self, data: String) -> Result<(), ClientError<Self::Error>>;
 
     async fn close(&self, code: u16, reason: Option<String>);
 }
 
 // _client_messages as a pull-based iterator: the first frame is the preface the bridge already holds
-pub struct ClientMessages<'a> {
-    pub client: &'a dyn RealtimeClientWebSocket,
+pub struct ClientMessages<'a, E: StdError + Send + Sync + 'static> {
+    pub client: &'a dyn RealtimeClientWebSocket<Error = E>,
     pub initial: Option<String>,
     pub redactor: &'a Redactor,
     pub done: bool,
 }
 
-impl ClientMessages<'_> {
+impl<E: StdError + Send + Sync + 'static> ClientMessages<'_, E> {
     // A receive failure ends the generator: LiteLLM's iterator returns and never receives again
     pub async fn next(&mut self) -> Option<String> {
         if self.done {

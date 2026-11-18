@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
@@ -18,31 +20,34 @@ const BEDROCK_STREAM_ERROR_STATUS: [(&str, u16); 12] = [
     ("ValidationException", 400),
 ];
 
+// The seam catches the SDK's own exception type, so the failure names it instead of erasing it
 #[derive(Debug, Error)]
 #[error("{message}")]
-pub struct ProviderFailure {
+pub struct ProviderFailure<E> {
     pub class_name: String,
     pub message: String,
     #[source]
-    pub source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    pub source: Option<E>,
 }
 
 // The mapped error keeps the provider exception as its cause; an unknown one goes up as it arrived
 #[derive(Debug, Error)]
-pub enum ProviderStreamError {
+pub enum ProviderStreamError<E> {
     #[error("{message}")]
     Bedrock {
         message: String,
         status_code: u16,
         #[source]
-        failure: ProviderFailure,
+        failure: ProviderFailure<E>,
     },
     #[error(transparent)]
-    Unchanged(#[from] ProviderFailure),
+    Unchanged(#[from] ProviderFailure<E>),
 }
 
 #[must_use]
-pub fn as_bedrock_error(failure: ProviderFailure) -> ProviderStreamError {
+pub fn as_bedrock_error<E: StdError + 'static>(
+    failure: ProviderFailure<E>,
+) -> ProviderStreamError<E> {
     let status_code = BEDROCK_STREAM_ERROR_STATUS
         .iter()
         .find(|(name, _)| *name == failure.class_name.as_str())
@@ -57,11 +62,11 @@ pub fn as_bedrock_error(failure: ProviderFailure) -> ProviderStreamError {
     }
 }
 
-pub fn raise_provider_failure(
+pub fn raise_provider_failure<E: StdError + 'static>(
     scope: &mut EventScope,
-    failure: ProviderFailure,
+    failure: ProviderFailure<E>,
     redactor: &Redactor,
-) -> ProviderStreamError {
+) -> ProviderStreamError<E> {
     let error = as_bedrock_error(failure);
     let redacted = redactor.redact_string(&error.to_string());
     tracing::error!("Bedrock Realtime: provider stream failed: {redacted}");

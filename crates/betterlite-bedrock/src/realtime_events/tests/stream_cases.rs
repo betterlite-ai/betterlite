@@ -24,7 +24,7 @@ async fn client_messages() {
         received.push_back(support::Received::Error(format!("{SECRET} died")));
     }
     let redactor = support::redactor();
-    let mut messages = ClientMessages {
+    let mut messages: ClientMessages<'_, io::Error> = ClientMessages {
         client: &client,
         initial: Some(String::new()),
         redactor: &redactor,
@@ -46,7 +46,7 @@ async fn client_messages() {
     );
     assert!(!log.text().contains(SECRET));
     let fresh = support::FakeClient::new();
-    let mut empty = ClientMessages {
+    let mut empty: ClientMessages<'_, io::Error> = ClientMessages {
         client: &fresh,
         initial: None,
         redactor: &redactor,
@@ -57,17 +57,17 @@ async fn client_messages() {
 
 // The protocol errors keep the transport error they came from as their cause
 fn native_errors() {
-    let client = ClientError {
+    let client: ClientError<io::Error> = ClientError {
         message: "gone".to_owned(),
-        source: Some(Box::new(io::Error::other("socket closed"))),
+        source: Some(io::Error::other("socket closed")),
     };
     assert_eq!(
         client.source().expect("a connector cause").to_string(),
         "socket closed"
     );
-    let stream = StreamError {
+    let stream: StreamError<io::Error> = StreamError {
         message: "failed".to_owned(),
-        source: Some(Box::new(io::Error::other("tls"))),
+        source: Some(io::Error::other("tls")),
     };
     assert_eq!(
         stream.source().expect("a transport cause").to_string(),

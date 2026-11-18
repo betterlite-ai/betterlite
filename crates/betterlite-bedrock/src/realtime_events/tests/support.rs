@@ -202,7 +202,9 @@ impl FakeClient {
 
 #[async_trait]
 impl RealtimeClientWebSocket for FakeClient {
-    async fn receive_text(&self) -> Result<String, ClientError> {
+    type Error = io::Error;
+
+    async fn receive_text(&self) -> Result<String, ClientError<io::Error>> {
         let mut received = self.received.lock().unwrap();
         match received.pop_front() {
             Some(Received::Text(text)) => Ok(text),
@@ -217,7 +219,7 @@ impl RealtimeClientWebSocket for FakeClient {
         }
     }
 
-    async fn send_text(&self, data: String) -> Result<(), ClientError> {
+    async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
         self.sent.lock().unwrap().push(data);
         match &self.send_error {
             Some(message) => Err(ClientError {
@@ -235,11 +237,13 @@ pub(super) struct FakeInput;
 
 #[async_trait]
 impl BedrockInputStream for FakeInput {
-    async fn send(&self, _event: Json) -> Result<(), StreamError> {
+    type Error = io::Error;
+
+    async fn send(&self, _event: Json) -> Result<(), StreamError<io::Error>> {
         Ok(())
     }
 
-    async fn close(&self) -> Result<(), StreamError> {
+    async fn close(&self) -> Result<(), StreamError<io::Error>> {
         Ok(())
     }
 }
@@ -248,7 +252,9 @@ pub(super) struct FakeOutput;
 
 #[async_trait]
 impl BedrockOutputStream for FakeOutput {
-    async fn receive(&self) -> Result<Option<Box<dyn BedrockOutputChunk>>, StreamError> {
+    type Error = io::Error;
+
+    async fn receive(&self) -> Result<Option<Box<dyn BedrockOutputChunk>>, StreamError<io::Error>> {
         Ok(None)
     }
 }
@@ -275,11 +281,16 @@ impl FakeStream {
 
 #[async_trait]
 impl BedrockBidirectionalStream for FakeStream {
-    fn input_stream(&self) -> &dyn BedrockInputStream {
+    type Error = io::Error;
+
+    fn input_stream(&self) -> &dyn BedrockInputStream<Error = io::Error> {
         &self.input
     }
 
-    async fn await_output(&self) -> Result<(Json, Box<dyn BedrockOutputStream>), StreamError> {
+    async fn await_output(
+        &self,
+    ) -> Result<(Json, Box<dyn BedrockOutputStream<Error = io::Error>>), StreamError<io::Error>>
+    {
         *self.awaited.lock().unwrap() += 1;
         match &self.error {
             Some(message) => Err(StreamError {
@@ -297,7 +308,9 @@ pub(super) struct Closable {
 
 #[async_trait]
 impl ClosableBedrockRuntimeClient for Closable {
-    async fn close(&self) -> Result<(), StreamError> {
+    type Error = io::Error;
+
+    async fn close(&self) -> Result<(), StreamError<io::Error>> {
         match &self.error {
             Some(message) => Err(StreamError {
                 message: message.clone(),
@@ -329,9 +342,9 @@ impl AckSetup {
         }
     }
 
-    pub(super) async fn run(&mut self) -> Result<bool, AckError> {
+    pub(super) async fn run(&mut self) -> Result<bool, AckError<io::Error>> {
         let redactor = redactor();
-        let mut ack = SessionAck {
+        let mut ack: SessionAck<'_, io::Error, io::Error> = SessionAck {
             client: &self.client,
             stream: &self.stream,
             scope: &mut self.scope,

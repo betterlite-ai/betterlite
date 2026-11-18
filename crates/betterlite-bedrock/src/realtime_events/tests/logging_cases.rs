@@ -1,3 +1,5 @@
+use std::io;
+
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 
 use super::support::{self, SECRET};
@@ -83,12 +85,12 @@ fn only_selection() {
 
 async fn close_client() {
     let (log, _guard) = support::capture();
-    close_bedrock_client(None).await;
+    close_bedrock_client::<io::Error>(None).await;
     assert!(!log.text().contains("closed SDK client"));
-    close_bedrock_client(Some(&support::Closable { error: None })).await;
+    close_bedrock_client::<io::Error>(Some(&support::Closable { error: None })).await;
     assert!(log.text().contains("Bedrock Realtime: closed SDK client"));
     let before = log.text();
-    close_bedrock_client(Some(&support::Closable {
+    close_bedrock_client::<io::Error>(Some(&support::Closable {
         error: Some(SECRET.to_owned()),
     }))
     .await;
