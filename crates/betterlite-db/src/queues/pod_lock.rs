@@ -221,7 +221,7 @@ impl<C: LockCache> PodLockManager<C> {
         allow_reentrant: bool,
     ) -> Result<Acquisition, LockCacheError> {
         tracing::debug!(
-            pod_id = %self.pod_id,
+            pod_id = self.pod_id.as_ref(),
             lock_key,
             ttl = lease_ttl,
             "Pod attempting to acquire Redis lock for cronjob_id"
@@ -240,7 +240,7 @@ impl<C: LockCache> PodLockManager<C> {
             return Ok(Acquisition::Reentrant);
         }
         tracing::info!(
-            pod_id = %self.pod_id,
+            pod_id = self.pod_id.as_ref(),
             lock_key,
             holder = %owner,
             "Pod could not acquire Redis lock for cronjob_id, held by another pod"
@@ -285,7 +285,7 @@ impl<C: LockCache> PodLockManager<C> {
     fn emit(&self, call_type: PodLockCallType, cronjob_id: &str) {
         self.events.emit(PodLockEvent {
             call_type,
-            gauge_labels: format!("{cronjob_id}:{}", self.pod_id),
+            gauge_labels: format!("{cronjob_id}:{}", self.pod_id.as_ref()),
             gauge_value: match call_type {
                 PodLockCallType::Acquired => 1.0,
                 PodLockCallType::Released => 0.0,

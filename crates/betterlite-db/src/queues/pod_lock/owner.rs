@@ -1,4 +1,3 @@
-use std::fmt::{self, Display, Formatter};
 use std::str::{self, Utf8Error};
 
 use uuid::{Uuid, Variant, Version};
@@ -43,12 +42,6 @@ impl TryFrom<Uuid> for PodId {
 impl AsRef<str> for PodId {
     fn as_ref(&self) -> &str {
         &self.0
-    }
-}
-
-impl Display for PodId {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
     }
 }
 
