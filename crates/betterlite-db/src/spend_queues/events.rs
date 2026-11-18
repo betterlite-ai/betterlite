@@ -1,6 +1,6 @@
-// ServiceTypes.IN_MEMORY_SPEND_UPDATE_QUEUE and ServiceTypes.IN_MEMORY_DAILY_SPEND_UPDATE_QUEUE of litellm/types/services.py.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SpendQueueService {
+    // ServiceTypes.IN_MEMORY_SPEND_UPDATE_QUEUE and ServiceTypes.IN_MEMORY_DAILY_SPEND_UPDATE_QUEUE of litellm/types/services.py.
     InMemorySpendUpdateQueue,
     InMemoryDailySpendUpdateQueue,
 }
