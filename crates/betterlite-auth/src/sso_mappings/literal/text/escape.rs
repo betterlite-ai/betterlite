@@ -55,29 +55,21 @@ fn scan_plain_escape(
     match next {
         b'\n' => Ok(after),
         b'\r' => Ok(cursor.skip_newline_of(after)),
-        b'x' => push_code(cursor, after, 2, value),
-        b'u' if !bytes => push_code(cursor, after, 4, value),
-        b'U' if !bytes => push_code(cursor, after, 8, value),
+        b'x' => push_hex_escape(cursor, after, 2, value),
+        b'u' if !bytes => push_hex_escape(cursor, after, 4, value),
+        b'U' if !bytes => push_hex_escape(cursor, after, 8, value),
         b'N' if !bytes => Err(LiteralError::NamedEscape),
         _other => scan_short_escape(cursor, at, next, bytes, value),
     }
 }
 
-fn push_code(
+// the \x, \u and \U escapes read two, four or eight hex digits into one code point
+fn push_hex_escape(
     cursor: &Cursor<'_>,
-    digits_at: usize,
+    at: usize,
     width: usize,
     value: &mut String,
 ) -> Result<usize, LiteralError> {
-    let code = take_hex(cursor, digits_at, width)?;
-    let Some(character) = char::from_u32(code) else {
-        return Err(LiteralError::Syntax);
-    };
-    value.push(character);
-    Ok(digits_at.saturating_add(width))
-}
-
-fn take_hex(cursor: &Cursor<'_>, at: usize, width: usize) -> Result<u32, LiteralError> {
     let mut code = 0_u32;
     let mut index = 0_usize;
     while index < width {
@@ -90,7 +82,11 @@ fn take_hex(cursor: &Cursor<'_>, at: usize, width: usize) -> Result<u32, Literal
         code = code.saturating_mul(16).saturating_add(digit);
         index = index.saturating_add(1);
     }
-    Ok(code)
+    let Some(character) = char::from_u32(code) else {
+        return Err(LiteralError::Syntax);
+    };
+    value.push(character);
+    Ok(at.saturating_add(width))
 }
 
 fn scan_short_escape(

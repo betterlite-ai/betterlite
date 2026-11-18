@@ -18,15 +18,10 @@ pub fn has_unhashable_member(value: &Literal) -> bool {
     }
 }
 
+// a tuple's hash covers its elements, and the scalar values hash on their own
 fn unhashable(value: &Literal) -> bool {
-    match value {
-        Literal::List(_) | Literal::Set(_) | Literal::Dict(_) => true,
-        Literal::Tuple(items) => items.iter().any(unhashable),
-        Literal::None
-        | Literal::Bool(_)
-        | Literal::Number
-        | Literal::Ellipsis
-        | Literal::Bytes
-        | Literal::Str(_) => false,
+    if let Literal::Tuple(items) = value {
+        return items.iter().any(unhashable);
     }
+    matches!(value, Literal::List(_) | Literal::Set(_) | Literal::Dict(_))
 }
