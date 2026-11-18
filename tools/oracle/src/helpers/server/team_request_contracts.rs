@@ -148,10 +148,7 @@ const fn clocks() -> ResetClocks<'static> {
 
 fn reference_answer(document: &JsonData) -> HelperResult {
     let reference = TeamMemberRef::from_value(document).map_err(invalid)?;
-    Ok(json!({
-        "user_id": reference.user_id,
-        "user_email": reference.user_email,
-    }))
+    Ok(json!({"user_id": reference.user_id, "user_email": reference.user_email}))
 }
 
 fn budget_patch_answer(document: &JsonData, database: &TimeZoneDatabase) -> HelperResult {
@@ -186,11 +183,8 @@ fn team_list_answer(document: &JsonData) -> HelperResult {
     let response = TeamListResponse::from_value(document).map_err(invalid)?;
     let teams: Vec<Value> = response.teams.iter().map(entry_answer).collect();
     Ok(json!({
-        "teams": teams,
-        "total": response.total,
-        "page": response.page,
-        "page_size": response.page_size,
-        "total_pages": response.total_pages,
+        "teams": teams, "total": response.total, "page": response.page,
+        "page_size": response.page_size, "total_pages": response.total_pages,
     }))
 }
 
@@ -246,9 +240,5 @@ fn bulk_add_answer(document: &JsonData) -> HelperResult {
 }
 
 fn member_answer(member: &Member) -> Value {
-    json!({
-        "user_id": member.base.user_id,
-        "user_email": member.base.user_email,
-        "role": member.role,
-    })
+    json!({"user_id": member.base.user_id, "user_email": member.base.user_email, "role": member.role})
 }

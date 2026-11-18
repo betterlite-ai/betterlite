@@ -1,7 +1,7 @@
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use super::support::parse;
+use super::support::{object, parse};
 use crate::key_fields::values::{AllowedVectorStoreIndexItem, Amount, IndexPermission};
 use crate::team_request_contracts::shared::RequestProjection;
 use crate::team_request_contracts::update::{PatchTeamRequest, UpdateTeamRequest};
@@ -146,6 +146,21 @@ fn team_update_all_fields() {
         Some(Amount(Decimal::from(10_i64)))
     );
     assert_eq!(request.supplied().unwrap(), parse(UPDATE_FIELDS));
+    let resolved = request.resolved().unwrap();
+    let permission = object(object(&resolved).get("object_permission").unwrap());
+    assert_eq!(permission.len(), 12);
+    assert_eq!(permission.get("models"), Some(&parse(r#"["gpt-4o"]"#)));
+}
+
+#[test]
+fn patch_object_permission_projection() {
+    let body = r#"{"team_id": "t", "object_permission": {"models": ["gpt-4o"]}}"#;
+    let request = PatchTeamRequest::from_value(&parse(body)).unwrap();
+    assert_eq!(request.supplied().unwrap(), parse(body));
+    let resolved = request.resolved().unwrap();
+    let permission = object(object(&resolved).get("object_permission").unwrap());
+    assert_eq!(permission.len(), 12);
+    assert_eq!(permission.get("models"), Some(&parse(r#"["gpt-4o"]"#)));
 }
 
 #[rstest]

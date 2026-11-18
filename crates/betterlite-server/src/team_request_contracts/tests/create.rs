@@ -162,6 +162,11 @@ fn team_create_all_fields() {
             .and_then(|values| values.get("h")),
         Some(&parse("48"))
     );
+
+    let resolved = request.resolved().unwrap();
+    let permission = object(object(&resolved).get("object_permission").unwrap());
+    assert_eq!(permission.len(), 12);
+    assert_eq!(permission.get("models"), Some(&parse(r#"["gpt-4o"]"#)));
 }
 
 #[test]
@@ -177,6 +182,24 @@ fn create_blank_id_only() {
     let absent = NewTeamRequest::from_value(&parse("{}")).unwrap();
     assert_eq!(absent.team.team_id, None);
     assert_eq!(absent.supplied().unwrap(), parse("{}"));
+    let control =
+        NewTeamRequest::from_value(&parse(r#"{"team_id": "\u001c\u001d\u001e\u001f"}"#)).unwrap();
+    assert_eq!(control.team.team_id, None);
+    assert_eq!(control.supplied().unwrap(), parse(r#"{"team_id": null}"#));
+}
+
+#[test]
+fn non_object_documents_rejected() {
+    let array = NewTeamRequest::from_value(&parse("[1]")).unwrap_err();
+    assert_eq!(
+        array.to_string(),
+        "Input should be a valid dictionary or object"
+    );
+    let null = NewTeamRequest::from_value(&parse("null")).unwrap_err();
+    assert_eq!(
+        null.to_string(),
+        "Input should be a valid dictionary or object"
+    );
 }
 
 #[rstest]
