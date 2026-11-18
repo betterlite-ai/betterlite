@@ -83,6 +83,20 @@ fn a_server_reply_classifies_as_a_command_failure() {
 }
 
 #[test]
+fn a_bare_redis_connection_error_classifies_as_a_connection_failure() {
+    let error = bare_connection_error();
+    let (class, _causes) = classify(&error).expect("the error classifies");
+    assert_eq!(class, FailureClass::Connection);
+}
+
+#[test]
+fn a_bare_no_auth_reply_classifies_as_a_connection_failure() {
+    let error = bare_no_auth_error();
+    let (class, _causes) = classify(&error).expect("the reply classifies");
+    assert_eq!(class, FailureClass::Connection);
+}
+
+#[test]
 fn a_connection_error_chained_from_a_timeout_counts_as_a_timeout() {
     let clock = Arc::new(FakeClock::new());
     let gate = gate_with(settings(3), &clock);

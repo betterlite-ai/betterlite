@@ -5,13 +5,12 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_router::redis_failure_policy::RedisFailurePolicy;
 use betterlite_router::redis_failure_policy::classify::{
     Failure, FailureClass, MAX_CAUSE_DEPTH, is_health_failure,
 };
-use betterlite_router::redis_failure_policy::{RedisFailurePolicy, Settings};
 use redis::{ErrorKind, RedisError, ServerError, ServerErrorKind};
 use tokio::time::error::Elapsed;
 
@@ -73,7 +72,10 @@ impl BreakerGate for PolicyGate {
     }
 
     fn record_failure(&self, error: &(dyn StdError + Send + Sync)) {
-        let Some((class, causes)) = classify(error) else {
+        let Some(linked) = error.source() else {
+            return;
+        };
+        let Some((class, causes)) = classify(linked) else {
             return;
         };
         if !is_health_failure(class) {
@@ -89,7 +91,10 @@ impl BreakerGate for PolicyGate {
     }
 
     fn swallowed(&self, admission: &BreakerAdmission, error: &(dyn StdError + Send + Sync)) {
-        let Some((class, causes)) = classify(error) else {
+        let Some(linked) = error.source() else {
+            return;
+        };
+        let Some((class, causes)) = classify(linked) else {
             return;
         };
         if !is_health_failure(class) {
@@ -136,10 +141,9 @@ impl PolicyGate {
 }
 
 pub(crate) fn classify(
-    error: &(dyn StdError + Send + Sync),
+    error: &(dyn StdError + 'static),
 ) -> Option<(FailureClass, Vec<FailureClass>)> {
-    let root: &dyn StdError = error;
-    let mut current: Option<&dyn StdError> = Some(root);
+    let mut current: Option<&(dyn StdError + 'static)> = Some(error);
     let mut classes = Vec::new();
     for _ in 0..MAX_CAUSE_DEPTH {
         let Some(link) = current else {
@@ -157,10 +161,20 @@ pub(crate) fn classify(
 
 fn class_of(error: &(dyn StdError + 'static)) -> Option<FailureClass> {
     if let Some(redis) = error.downcast_ref::<RedisError>() {
-        return Some(redis_class(redis));
+        let kind = match redis.kind() {
+            ErrorKind::Server(kind) => Some(kind),
+            ErrorKind::Extension => None,
+            ErrorKind::Io => return Some(FailureClass::Connection),
+            _ => return Some(FailureClass::Other),
+        };
+        return Some(reply_class(kind, redis.code(), redis.detail()));
     }
     if let Some(server) = error.downcast_ref::<ServerError>() {
-        return Some(server_class(server));
+        return Some(reply_class(
+            server.kind(),
+            Some(server.code()),
+            server.details(),
+        ));
     }
     if let Some(io) = error.downcast_ref::<io::Error>() {
         return Some(io_class(io));
@@ -190,33 +204,25 @@ fn is_connection_reply(code: Option<&str>, detail: Option<&str>) -> bool {
     }
 }
 
-// The walk reaches the io error inside the RedisError next, so a timeout class comes from the cause.
-fn redis_class(error: &RedisError) -> FailureClass {
-    match error.kind() {
-        ErrorKind::Server(ServerErrorKind::BusyLoading) => FailureClass::BusyLoading,
-        ErrorKind::Server(ServerErrorKind::ClusterDown | ServerErrorKind::MasterDown) => {
-            FailureClass::ClusterDown
-        }
-        ErrorKind::Server(ServerErrorKind::ResponseError) | ErrorKind::Extension
-            if is_connection_reply(error.code(), error.detail()) =>
-        {
-            FailureClass::Connection
-        }
-        ErrorKind::Io => FailureClass::Connection,
-        ErrorKind::Server(_) | ErrorKind::Extension => FailureClass::Command,
-        _ => FailureClass::Other,
+// Known reply kinds and extension codes classify the same on both error surfaces.
+fn reply_class(
+    kind: Option<ServerErrorKind>,
+    code: Option<&str>,
+    detail: Option<&str>,
+) -> FailureClass {
+    if kind == Some(ServerErrorKind::BusyLoading) {
+        return FailureClass::BusyLoading;
     }
-}
-
-fn server_class(error: &ServerError) -> FailureClass {
-    match error.kind() {
-        Some(ServerErrorKind::BusyLoading) => FailureClass::BusyLoading,
-        Some(ServerErrorKind::ClusterDown | ServerErrorKind::MasterDown) => {
-            FailureClass::ClusterDown
-        }
-        _ if is_connection_reply(Some(error.code()), error.details()) => FailureClass::Connection,
-        Some(_) | None => FailureClass::Command,
+    if matches!(
+        kind,
+        Some(ServerErrorKind::ClusterDown | ServerErrorKind::MasterDown)
+    ) {
+        return FailureClass::ClusterDown;
     }
+    if is_connection_reply(code, detail) {
+        return FailureClass::Connection;
+    }
+    FailureClass::Command
 }
 
 fn io_class(error: &io::Error) -> FailureClass {
