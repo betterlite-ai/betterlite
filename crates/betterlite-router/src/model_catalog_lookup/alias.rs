@@ -37,22 +37,22 @@ impl AliasTarget {
         match self {
             Self::Name(target) => Ok(Some(target.as_str())),
             Self::Item { model, hidden } => {
-                let Some(hidden) = hidden else {
+                let Some(flag) = hidden else {
                     return Err(LookupError::MalformedAlias {
                         alias: alias.to_owned(),
                         field: "hidden",
                     });
                 };
-                if all && matches!(hidden, Json::Bool(true)) {
+                if all && matches!(flag, Json::Bool(true)) {
                     return Ok(None);
                 }
-                let Some(model) = model else {
+                let Some(raw) = model else {
                     return Err(LookupError::MalformedAlias {
                         alias: alias.to_owned(),
                         field: "model",
                     });
                 };
-                let Json::Text(target) = model else {
+                let Json::Text(target) = raw else {
                     return Ok(None);
                 };
                 Ok(Some(target))

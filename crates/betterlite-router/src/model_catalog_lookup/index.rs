@@ -33,10 +33,10 @@ fn index_team(catalog: &mut DeploymentCatalog, row: &DeploymentSpec, index: usiz
     let team = text(&row.model_info, "team_id").filter(|value| !value.is_empty());
     let public_name =
         text(&row.model_info, "team_public_model_name").filter(|value| !value.is_empty());
-    if let (Some(team), Some(public_name)) = (team, public_name) {
+    if let (Some(owner), Some(label)) = (team, public_name) {
         catalog
             .team_index
-            .entry((team.to_owned(), public_name.to_owned()))
+            .entry((owner.to_owned(), label.to_owned()))
             .or_default()
             .push(index);
     }

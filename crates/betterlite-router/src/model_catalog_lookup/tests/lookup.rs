@@ -134,7 +134,7 @@ fn missing_row_id() {
         named("gpt-4o", "a", "openai/gpt-4o"),
         named("gpt-4o", "b", "azure/gpt-4o"),
     ]);
-    snapshot.catalog.models[0].model_info.remove("id");
+    snapshot.catalog.models[0].model_info.shift_remove("id");
     let lookup = snapshot.lookup();
     assert_eq!(lookup.get_model_ids(Some("gpt-4o"), false), vec![text("b")]);
     assert_eq!(lookup.get_model_ids(None, false), vec![text("b")]);

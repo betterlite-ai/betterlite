@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use betterlite_models::decisions::Json;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
-use crate::deployment_catalog::lookup::early_deployments;
+use crate::deployment_catalog::lookup::{early_deployments, pattern_deployments};
 use crate::deployment_catalog::scope::litellm_model;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
@@ -41,10 +41,10 @@ fn listed_id(row: &DeploymentSpec, exclude_team_models: bool) -> bool {
 impl CatalogLookup<'_> {
     // Router.get_deployment: the id map only, which answers none for a miss.
     pub fn get_deployment(&self, model_id: &str) -> Result<Option<&DeploymentSpec>, LookupError> {
-        match self.catalog.id_index.get(model_id) {
-            Some(index) => row_at(self.catalog, *index).map(Some),
-            None => Ok(None),
-        }
+        self.catalog
+            .id_index
+            .get(model_id)
+            .map_or(Ok(None), |index| row_at(self.catalog, *index).map(Some))
     }
 
     // Router.get_deployment_by_model_group_name: the first sibling the name index lists, or none for a missing or empty index.
@@ -136,21 +136,21 @@ impl CatalogLookup<'_> {
         &self,
         model_id: Option<&str>,
     ) -> Result<Option<String>, LookupError> {
-        let Some(model_id) = model_id.filter(|id| !id.is_empty()) else {
+        let Some(id) = model_id.filter(|value| !value.is_empty()) else {
             return Ok(None);
         };
-        if self.catalog.model_names.contains(model_id) {
-            return Ok(Some(model_id.to_owned()));
+        if self.catalog.model_names.contains(id) {
+            return Ok(Some(id.to_owned()));
         }
-        if self.catalog.id_index.contains_key(model_id) {
+        if self.catalog.id_index.contains_key(id) {
             let named = self
-                .get_deployment(model_id)?
+                .get_deployment(id)?
                 .map(|deployment| deployment.model_name.as_str())
                 .filter(|name| !name.is_empty());
-            return Ok(Some(named.unwrap_or(model_id).to_owned()));
+            return Ok(Some(named.unwrap_or(id).to_owned()));
         }
         for deployment in self.get_model_list(None, None)? {
-            if provider_model_matches(litellm_model(&deployment), model_id)
+            if provider_model_matches(litellm_model(&deployment), id)
                 && !deployment.model_name.is_empty()
             {
                 return Ok(Some(deployment.model_name));
@@ -164,16 +164,83 @@ impl CatalogLookup<'_> {
         let mut names = Vec::new();
         for deployment in self.get_model_list(None, None)? {
             if is_team_specific_model(&deployment.model_info) {
-                if let Some(name) = team_specific_model(&deployment.model_info, team_id)
-                    .filter(|name| !name.is_empty())
-                {
-                    names.push(name.to_owned());
-                }
+                let public = team_specific_model(&deployment.model_info, team_id);
+                names.extend(public.filter(|name| !name.is_empty()).map(str::to_owned));
             } else {
                 names.push(deployment.model_name.clone());
             }
         }
         Ok(names)
+    }
+
+    // Router.get_model_list_from_model_alias: one alias for a named lookup, every alias in insertion order otherwise.
+    pub fn list_from_alias(
+        &self,
+        model_name: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupError> {
+        let targets: Vec<(&String, &AliasTarget)> = model_name.map_or_else(
+            || self.model_group_alias.iter().collect(),
+            |name| {
+                self.model_group_alias
+                    .get_key_value(name)
+                    .into_iter()
+                    .collect()
+            },
+        );
+        let mut returned = Vec::new();
+        for (alias, target) in targets {
+            let Some(model) = target.listed_model(alias, model_name.is_none())? else {
+                continue;
+            };
+            if self.routing_groups.callable_group(model).is_none() {
+                returned.extend(get_all_deployments(
+                    self.catalog,
+                    model,
+                    Some(alias.as_str()),
+                    None,
+                ));
+                continue;
+            }
+            let members = self.routing_groups.rows(Some(model), &|member| {
+                get_all_deployments(self.catalog, member, None, None)
+            });
+            for mut row in members {
+                alias.clone_into(&mut row.model_name);
+                returned.push(row);
+            }
+        }
+        Ok(returned)
+    }
+
+    // Router.get_model_list: the exact and team rows, the alias rows, the routing-group rows, then the wildcard rows.
+    pub fn get_model_list(
+        &self,
+        model_name: Option<&str>,
+        team_id: Option<&str>,
+    ) -> Result<Vec<DeploymentSpec>, LookupError> {
+        let mut returned = Vec::new();
+        if let Some(name) = model_name {
+            returned.extend(get_all_deployments(self.catalog, name, None, team_id));
+        }
+        returned.extend(self.list_from_alias(model_name)?);
+        returned.extend(self.routing_groups.rows(model_name, &|member| {
+            get_all_deployments(self.catalog, member, None, None)
+        }));
+        // the wildcard channel runs only when no other channel found the requested name, and the rows it finds are named after the request
+        if returned.is_empty()
+            && let Some(name) = model_name
+        {
+            let mut found =
+                pattern_deployments(self.catalog, self.inferred_provider, name, team_id)?;
+            for row in &mut found {
+                name.clone_into(&mut row.model_name);
+            }
+            returned.extend(found);
+        }
+        if model_name.is_none() {
+            returned.extend(self.catalog.models.iter().cloned());
+        }
+        Ok(returned)
     }
 }
 

@@ -71,7 +71,7 @@ fn catalog_rows(input: &Input) -> Result<DeploymentCatalog, Failure> {
 fn damage_rows(catalog: &mut DeploymentCatalog, input: &Input) {
     for index in &input.missing_ids {
         if let Some(row) = catalog.models.get_mut(*index) {
-            row.model_info.remove("id");
+            row.model_info.shift_remove("id");
         }
     }
     for index in &input.missing_info {

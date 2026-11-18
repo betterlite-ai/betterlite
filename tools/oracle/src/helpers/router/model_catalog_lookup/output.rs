@@ -57,17 +57,14 @@ fn call_answer(
 }
 
 fn deployment_value(lookup: &CatalogLookup<'_>, model_id: Option<&str>) -> Result<Value, Failure> {
-    match lookup.get_deployment(model_id.ok_or(Failure::Argument("model_id"))?)? {
-        Some(row) => Ok(deployment_row(row)),
-        None => Ok(Value::Null),
-    }
+    let row = lookup.get_deployment(model_id.ok_or(Failure::Argument("model_id"))?)?;
+    Ok(row.map_or(Value::Null, deployment_row))
 }
 
 fn group_value(lookup: &CatalogLookup<'_>, model_name: Option<&str>) -> Result<Value, Failure> {
-    match lookup.deployment_by_group_name(model_name.ok_or(Failure::Argument("model_name"))?)? {
-        Some(row) => Ok(deployment_row(row)),
-        None => Ok(Value::Null),
-    }
+    let row =
+        lookup.deployment_by_group_name(model_name.ok_or(Failure::Argument("model_name"))?)?;
+    Ok(row.map_or(Value::Null, deployment_row))
 }
 
 fn candidate_value(lookup: &CatalogLookup<'_>, arguments: &Arguments) -> Result<Value, Failure> {
