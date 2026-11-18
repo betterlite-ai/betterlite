@@ -367,16 +367,15 @@ impl LockCache for FakeLeaseCache {
                 operation: "set_owner_if_absent",
             }));
         }
-        let acquired = {
-            let mut lease = self.lease.lock().unwrap();
-            match &*lease {
-                Lease::Missing => {
-                    *lease = Lease::Held(owner.to_owned());
-                    true
-                }
-                Lease::Held(_) => false,
+        let mut lease = self.lease.lock().unwrap();
+        let acquired = match &*lease {
+            Lease::Missing => {
+                *lease = Lease::Held(owner.to_owned());
+                true
             }
+            Lease::Held(_) => false,
         };
+        drop(lease);
         ready(Ok(acquired))
     }
 
