@@ -812,8 +812,13 @@ async fn insert_logs_redact_token_and_name_the_table() {
     perform_logged_writes(&writes).await;
     drop(guard);
     let captured = logs.contents();
+    let hashed = hash_token("sk-secret");
     assert!(!captured.contains("sk-secret"), "{captured}");
-    assert!(captured.contains(&hash_token("sk-secret")), "{captured}");
+    assert!(captured.contains(&hashed), "{captured}");
+    assert!(
+        captured.contains(&format!(r#""token": "{hashed}""#)),
+        "{captured}"
+    );
     assert!(
         [
             "Data Inserted into Keys Table",
