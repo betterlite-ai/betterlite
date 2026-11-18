@@ -89,6 +89,18 @@ pub fn bare_model_entry(
     model_cost_entry(model_cost, stripped).unwrap_or_default()
 }
 
+// The entry's own value wins; the bare twin's answers only when the entry has none.
+fn own_then_bare<'map>(
+    model_info: &'map IndexMap<String, Json>,
+    bare: &'map IndexMap<String, Json>,
+    key: &str,
+) -> Option<&'map Json> {
+    model_info
+        .get(key)
+        .filter(|value| !matches!(value, Json::Null))
+        .or_else(|| bare.get(key).filter(|value| !matches!(value, Json::Null)))
+}
+
 // _declared_effort_flags: the entry's own flag, then the bare twin's, then nothing.
 #[must_use]
 pub fn declared_effort_flags(
@@ -96,18 +108,7 @@ pub fn declared_effort_flags(
     model_cost: &ModelCostMap,
 ) -> EffortFlags {
     let bare = bare_model_entry(model_info, model_cost);
-    let read = |flag: &str| {
-        let own = EffortFlag::read(
-            model_info
-                .get(flag)
-                .filter(|value| !matches!(value, Json::Null)),
-        );
-        if matches!(own, EffortFlag::Absent) {
-            EffortFlag::read(bare.get(flag).filter(|value| !matches!(value, Json::Null)))
-        } else {
-            own
-        }
-    };
+    let read = |flag: &str| EffortFlag::read(own_then_bare(model_info, &bare, flag));
     EffortFlags {
         none: read("supports_none_reasoning_effort"),
         minimal: read("supports_minimal_reasoning_effort"),
@@ -124,17 +125,7 @@ pub fn declared_reasoning_efforts(
     model_cost: &ModelCostMap,
 ) -> Option<Vec<ReasoningEffort>> {
     let bare = bare_model_entry(model_info, model_cost);
-    let raw = model_info
-        .get(DECLARED_EFFORTS_KEY)
-        .filter(|value| !matches!(value, Json::Null))
-        .map_or_else(
-            || {
-                bare.get(DECLARED_EFFORTS_KEY)
-                    .filter(|value| !matches!(value, Json::Null))
-            },
-            Some,
-        );
-    let Some(Json::List(entries)) = raw else {
+    let Some(Json::List(entries)) = own_then_bare(model_info, &bare, DECLARED_EFFORTS_KEY) else {
         return None;
     };
     let declared: Vec<ReasoningEffort> = entries

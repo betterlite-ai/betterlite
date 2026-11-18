@@ -162,7 +162,8 @@ pub fn intersect_supported_efforts(
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct GroupReasoningEfforts {
     pub supported: Option<Vec<ReasoningEffort>>,
-    pub(super) unknown: bool,
+    // Once a deployment answers None the aggregate stays None: a later known one must not revive it.
+    pub unknown: bool,
 }
 
 impl GroupReasoningEfforts {
