@@ -196,7 +196,7 @@ fn guardrail_spans_from_request_data_share_the_lifecycle_dedupe_state() {
     }))
     .expect("request data");
     lifecycle
-        .emit_guardrail_spans_from_request_data(&request_data, None)
+        .emit_request_guardrails(&request_data, None)
         .expect("request data guardrails");
     assert_eq!(
         guardrails(&rig).len(),

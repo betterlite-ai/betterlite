@@ -16,12 +16,12 @@ pub const LANGFUSE_OTEL: &str = "langfuse_otel";
 pub trait DynamicOtel: Send + Sync {
     fn construct_dynamic_otel_headers(
         &self,
-        standard_callback_dynamic_params: &MetadataMap,
+        dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>>;
 
     fn construct_dynamic_otel_config(
         &self,
-        standard_callback_dynamic_params: &MetadataMap,
+        dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig>;
 }
 
@@ -31,14 +31,14 @@ pub struct BaseDynamicOtel;
 impl DynamicOtel for BaseDynamicOtel {
     fn construct_dynamic_otel_headers(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>> {
         None
     }
 
     fn construct_dynamic_otel_config(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
         None
     }
@@ -67,7 +67,7 @@ impl TracerChoice {
 // LiteLLM tests the dynamic params for truthiness; an absent or empty bucket is unset, any other shape is an error
 #[must_use]
 pub fn dynamic_params(kwargs: &MetadataMap) -> Result<Option<&MetadataMap>, LegacyLifecycleError> {
-    match kwargs.get("standard_callback_dynamic_params") {
+    match kwargs.get("dynamic_params") {
         None | Some(OtelModelValue::Null(())) => Ok(None),
         Some(OtelModelValue::Object(fields)) if fields.is_empty() => Ok(None),
         Some(OtelModelValue::Object(fields)) => Ok(Some(fields)),

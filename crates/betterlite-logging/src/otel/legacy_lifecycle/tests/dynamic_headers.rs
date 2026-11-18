@@ -13,9 +13,9 @@ struct HeadersFromParams;
 impl DynamicOtel for HeadersFromParams {
     fn construct_dynamic_otel_headers(
         &self,
-        standard_callback_dynamic_params: &MetadataMap,
+        dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>> {
-        standard_callback_dynamic_params
+        dynamic_params
             .get("langfuse_public_key")
             .and_then(OtelModelValue::as_str)
             .map(|key| BTreeMap::from([("x-langfuse-public-key".to_owned(), key.to_owned())]))
@@ -23,7 +23,7 @@ impl DynamicOtel for HeadersFromParams {
 
     fn construct_dynamic_otel_config(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
         None
     }

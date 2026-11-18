@@ -151,11 +151,10 @@ impl CallbackLogger for LegacyOtelLogger {
 // the request-level kill switch redacts the payload before the span carries any content
 fn dynamic_turn_off(event: &LoggerEvent) -> bool {
     match &*event.dynamic_params {
-        Json::Object(fields) => match fields.get("turn_off_message_logging") {
-            Some(Json::Bool(flag)) => *flag,
-            Some(Json::Text(text)) => text.trim().eq_ignore_ascii_case("true"),
-            _ => false,
-        },
+        Json::Object(fields) => matches!(
+            fields.get("turn_off_message_logging"),
+            Some(Json::Bool(true))
+        ),
         _ => false,
     }
 }

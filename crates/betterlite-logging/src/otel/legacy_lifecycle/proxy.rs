@@ -18,27 +18,29 @@ impl LegacyLifecycle {
     }
 
     pub(super) fn stamp_proxy_team(&self, kwargs: &MetadataMap) {
-        let Some(span) = self.proxy_span(kwargs, false) else {
-            return;
-        };
-        if lifecycle::name_of(&span).as_deref() != Some(PROXY_REQUEST_SPAN_NAME) {
-            return;
-        }
-        if span.lock().is_recording() {
-            self.write_team_attributes_from_std_log(&mut *span.lock(), kwargs);
+        if let Some(span) = self.recording_proxy_span(kwargs, false) {
+            self.write_team_attributes_from_log(&mut *span.lock(), kwargs);
         }
     }
 
     pub(super) fn end_proxy_from_kwargs(&self, call: &LifecycleCall<'_>) {
-        let Some(span) = self.proxy_span(call.kwargs, true) else {
-            return;
-        };
-        if lifecycle::name_of(&span).as_deref() != Some(PROXY_REQUEST_SPAN_NAME) {
-            return;
-        }
-        if span.lock().is_recording() {
+        if let Some(span) = self.recording_proxy_span(call.kwargs, true) {
             self.close_proxy_ok(&span, call.end_time);
         }
+    }
+
+    fn recording_proxy_span(
+        &self,
+        kwargs: &MetadataMap,
+        with_litellm_metadata: bool,
+    ) -> Option<LiveSpan> {
+        let span = self.proxy_span(kwargs, with_litellm_metadata)?;
+        if lifecycle::name_of(&span).as_deref() != Some(PROXY_REQUEST_SPAN_NAME)
+            || !span.lock().is_recording()
+        {
+            return None;
+        }
+        Some(span)
     }
 
     pub(super) fn close_proxy_ok(&self, span: &LiveSpan, end_time: SpanTime) {

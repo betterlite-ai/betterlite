@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_logging::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS;
 use betterlite_logging::otel::legacy_lifecycle::lifecycle::instant_from_ns;
 use betterlite_logging::otel::legacy_policy::config::{Exporter, OpenTelemetryConfig, Signals};
 use betterlite_logging::otel::legacy_policy::span_time::{SpanTime, to_ns};
@@ -30,15 +31,26 @@ impl HttpClient for NoServer {
 pub(super) fn config(input: &Input) -> OpenTelemetryConfig {
     OpenTelemetryConfig {
         exporter: Exporter::InMemory,
+        endpoint: None,
         headers: input.config_headers.clone(),
-        signals: Signals::default(),
+        signals: Signals {
+            enable_metrics: false,
+            enable_events: false,
+        },
+        service_name: String::new(),
+        deployment_environment: String::new(),
+        model_id: String::new(),
+        ignore_context_propagation: false,
         skip_set_global: true,
+        capture_message_content: None,
         semconv_stability_opt_in: input
             .semconv
             .then_some(OTELSemconvCategory::GenAiLatestExperimental)
             .into_iter()
             .collect(),
-        ..OpenTelemetryConfig::default()
+        baggage_team_metadata_keys: Vec::new(),
+        baggage_metadata_keys: Vec::new(),
+        attributes: None,
     }
 }
 
@@ -53,7 +65,9 @@ pub(super) fn prepare(
         LegacyOtelInit {
             config: Some(config(input)),
             callback_name: input.callback_name.clone(),
-            ..LegacyOtelInit::default()
+            overrides: Default::default(),
+            injected: Default::default(),
+            max_dynamic_tracer_providers: MAX_DYNAMIC_TRACER_PROVIDERS,
         },
         &LegacyOtelEnvironment {
             env: &env,

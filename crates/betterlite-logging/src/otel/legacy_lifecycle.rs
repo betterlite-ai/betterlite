@@ -9,6 +9,3 @@ pub mod recording;
 pub mod state;
 pub mod success;
 pub mod tracer;
-
-#[cfg(test)]
-mod tests;

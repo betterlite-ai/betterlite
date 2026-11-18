@@ -129,7 +129,9 @@ impl Rig {
         let init = LegacyOtelInit {
             config: Some(config),
             callback_name: callback_name.map(str::to_owned),
-            ..LegacyOtelInit::default()
+            overrides: Default::default(),
+            injected: Default::default(),
+            max_dynamic_tracer_providers: betterlite_logging::otel::legacy_exporters::tracer_cache::MAX_DYNAMIC_TRACER_PROVIDERS,
         };
         let otel = init_legacy_otel(
             init,
@@ -152,7 +154,7 @@ impl Rig {
                 live: Arc::clone(&self.roots),
                 use_request_span,
                 clock,
-                ..LegacyLifecycleOptions::default()
+                handler_class_name: "OpenTelemetry".to_owned(),
             },
         )
     }
@@ -206,14 +208,14 @@ pub(super) struct ProbeDynamic {
 impl DynamicOtel for ProbeDynamic {
     fn construct_dynamic_otel_headers(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>> {
         self.headers.clone()
     }
 
     fn construct_dynamic_otel_config(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
         self.config.clone()
     }
@@ -221,7 +223,7 @@ impl DynamicOtel for ProbeDynamic {
 
 pub(super) fn with_dynamic(mut kwargs: MetadataMap, params: serde_json::Value) -> MetadataMap {
     kwargs.insert(
-        "standard_callback_dynamic_params".to_owned(),
+        "dynamic_params".to_owned(),
         serde_json::from_value(params).expect("dynamic params fixture"),
     );
     kwargs
@@ -232,14 +234,14 @@ struct BaseDynamic;
 impl DynamicOtel for BaseDynamic {
     fn construct_dynamic_otel_headers(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>> {
         None
     }
 
     fn construct_dynamic_otel_config(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
         None
     }
@@ -248,7 +250,22 @@ impl DynamicOtel for BaseDynamic {
 pub(super) fn in_memory_config() -> OpenTelemetryConfig {
     OpenTelemetryConfig {
         exporter: betterlite_logging::otel::legacy_policy::config::Exporter::InMemory,
-        ..OpenTelemetryConfig::default()
+        endpoint: None,
+        headers: None,
+        signals: betterlite_logging::otel::legacy_policy::config::Signals {
+            enable_metrics: false,
+            enable_events: false,
+        },
+        service_name: String::new(),
+        deployment_environment: String::new(),
+        model_id: String::new(),
+        ignore_context_propagation: false,
+        skip_set_global: false,
+        capture_message_content: None,
+        semconv_stability_opt_in: Default::default(),
+        baggage_team_metadata_keys: Vec::new(),
+        baggage_metadata_keys: Vec::new(),
+        attributes: None,
     }
 }
 

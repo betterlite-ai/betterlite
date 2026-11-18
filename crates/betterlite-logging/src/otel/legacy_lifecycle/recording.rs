@@ -40,7 +40,7 @@ impl LegacyLifecycle {
         record_exception_on_span(&mut *span.lock(), call.exception, payload);
     }
 
-    pub(super) fn write_team_attributes_from_std_log<S>(&self, span: &mut S, kwargs: &MetadataMap)
+    pub(super) fn write_team_attributes_from_log<S>(&self, span: &mut S, kwargs: &MetadataMap)
     where
         S: opentelemetry::trace::Span,
     {

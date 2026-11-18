@@ -11,7 +11,6 @@ use crate::otel::legacy_metrics::events::SemanticEventEmitter;
 use crate::otel::legacy_metrics::recorder::LegacyMetricRecorder;
 use crate::otel::legacy_policy::capture::{CapturePolicy, LoggingFlags};
 use crate::otel::legacy_policy::config::OpenTelemetryConfig;
-use crate::otel::legacy_policy::dedupe::ScopeValue;
 use crate::otel::legacy_policy::error_recording::RecordedException;
 use crate::otel::legacy_policy::semconv_attrs::{
     gen_ai_operation_name, semconv_latest_experimental,
@@ -25,7 +24,7 @@ use crate::otel::v2_callback::live_span::{LiveSpan, RootSpans};
 use crate::otel_provider_assembly::legacy_otel_init::LegacyOtel;
 
 use super::error::LegacyLifecycleError;
-use super::state::{RequestDedupe, request_key};
+use super::state::RequestDedupe;
 use super::tracer::{BaseDynamicOtel, DynamicOtel, TracerChoice};
 
 pub const DEFAULT_CALLBACK_NAME: &str = "opentelemetry";
@@ -120,10 +119,6 @@ impl LegacyLifecycle {
             self.dynamic.as_ref(),
             kwargs,
         )
-    }
-
-    pub(super) fn emit_once(&self, kwargs: &MetadataMap, scope: &[ScopeValue]) -> bool {
-        self.dedupe.emit_once(request_key(kwargs).as_deref(), scope)
     }
 
     pub(super) fn count_failure(&self) {

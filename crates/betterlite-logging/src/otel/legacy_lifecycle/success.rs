@@ -16,6 +16,7 @@ use super::error::LegacyLifecycleError;
 use super::lifecycle::{
     self, LegacyLifecycle, LifecycleCall, litellm_params, resolve_guardrail_context,
 };
+use super::state::request_key;
 
 pub const RAW_REQUEST_SPAN_NAME: &str = "raw_gen_ai_request";
 
@@ -49,7 +50,7 @@ impl LegacyLifecycle {
         let mut span = tracer.build_with_context(builder, parent_context);
         span.set_status(Status::Ok);
         set_raw_request_attributes(&mut span, call.kwargs);
-        self.write_team_attributes_from_std_log(&mut span, call.kwargs);
+        self.write_team_attributes_from_log(&mut span, call.kwargs);
         span.end_with_timestamp(lifecycle::instant_from_ns(to_ns(
             call.end_time,
             self.now_ns(),
@@ -59,7 +60,10 @@ impl LegacyLifecycle {
 
     pub fn handle_success(&self, call: &LifecycleCall<'_>) -> Result<(), LegacyLifecycleError> {
         // the sync and async callbacks both fire for a stream, and the skip path still closes the proxy span
-        if !self.emit_once(call.kwargs, &[ScopeValue::Text("success".to_owned())]) {
+        if !self.dedupe.emit_once(
+            request_key(call.kwargs).as_deref(),
+            &[ScopeValue::Text("success".to_owned())],
+        ) {
             self.end_proxy_from_kwargs(call);
             return Ok(());
         }

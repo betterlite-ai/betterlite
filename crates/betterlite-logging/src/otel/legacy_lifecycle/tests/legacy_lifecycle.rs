@@ -279,10 +279,10 @@ fn legacy_lifecycle_keeps_distinct_request_ids_independent() {
 fn legacy_lifecycle_evicts_the_oldest_dedupe_request_at_capacity() {
     let dedupe = RequestDedupe::new("OpenTelemetry".to_owned());
     let scope = [ScopeValue::Text("success".to_owned())];
-    for index in 0..10_000 {
+    assert!((0..10_000).all(|index| {
         let key = format!("call-{index}");
-        assert!(dedupe.emit_once(Some(&key), &scope));
-    }
+        dedupe.emit_once(Some(&key), &scope)
+    }));
 
     assert!(dedupe.emit_once(Some("call-0"), &scope));
     assert!(!dedupe.emit_once(Some("call-1"), &scope));

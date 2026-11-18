@@ -29,7 +29,9 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SpanData};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod harness;
 mod tests;
+use harness::{config, prepare};
 
 pub(crate) struct Op;
 
@@ -68,14 +70,14 @@ struct ProbeDynamic {
 impl DynamicOtel for ProbeDynamic {
     fn construct_dynamic_otel_headers(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>> {
         self.headers.clone()
     }
 
     fn construct_dynamic_otel_config(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
         self.config.clone()
     }
@@ -128,60 +130,6 @@ impl Helper for Op {
         end_parent(input, parent.as_ref());
         observed(choice.branch(), &exporter).or_value_error()
     }
-}
-
-fn config(input: &Input) -> OpenTelemetryConfig {
-    OpenTelemetryConfig {
-        exporter: Exporter::InMemory,
-        headers: input.config_headers.clone(),
-        signals: Signals::default(),
-        skip_set_global: true,
-        semconv_stability_opt_in: input
-            .semconv
-            .then_some(OTELSemconvCategory::GenAiLatestExperimental)
-            .into_iter()
-            .collect(),
-        ..OpenTelemetryConfig::default()
-    }
-}
-
-fn prepare(
-    input: &Input,
-    exporter: &InMemorySpanExporter,
-    roots: &RootSpans,
-) -> Result<(LegacyOtel, Option<LiveSpan>), String> {
-    let client: Arc<dyn HttpClient> = Arc::new(NoServer);
-    let env = BTreeMap::new();
-    let otel = init_legacy_otel(
-        LegacyOtelInit {
-            config: Some(config(input)),
-            callback_name: input.callback_name.clone(),
-            ..LegacyOtelInit::default()
-        },
-        &LegacyOtelEnvironment {
-            env: &env,
-            clients: HttpClients {
-                traces: Arc::clone(&client),
-                metrics: Arc::clone(&client),
-                logs: client,
-            },
-            shared_exporter: exporter.clone(),
-            globals: &GlobalProviders::default(),
-            proxy: None,
-        },
-    )
-    .map_err(|error| error.to_string())?;
-    let parent = input.parent.as_ref().map(|spec| {
-        let start = spec.start.unwrap_or(input.start_time);
-        let builder = otel
-            .tracer
-            .span_builder(spec.name.clone())
-            .with_start_time(instant_from_ns(to_ns(SpanTime::Seconds(start), 0)));
-        let live = LiveSpan::from(otel.tracer.build_with_context(builder, &Context::new()));
-        roots.register(&live);
-        live
-    });
-    Ok((otel, parent))
 }
 
 fn ambient_context(input: &Input, parent: Option<&LiveSpan>) -> Option<Context> {
@@ -285,7 +233,7 @@ fn guardrails(lifecycle: &LegacyLifecycle, input: &Input) -> Result<TracerChoice
         .handle_success(&call_of(input, &kwargs))
         .map_err(|error| error.to_string())?;
     lifecycle
-        .emit_guardrail_spans_from_request_data(&input.request_data, None)
+        .emit_request_guardrails(&input.request_data, None)
         .map_err(|error| error.to_string())?;
     lifecycle
         .tracer_choice(&kwargs)

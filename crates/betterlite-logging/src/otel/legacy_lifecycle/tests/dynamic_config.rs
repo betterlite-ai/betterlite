@@ -14,16 +14,16 @@ struct ConfigFromParams;
 impl DynamicOtel for ConfigFromParams {
     fn construct_dynamic_otel_headers(
         &self,
-        _standard_callback_dynamic_params: &MetadataMap,
+        _dynamic_params: &MetadataMap,
     ) -> Option<BTreeMap<String, String>> {
         None
     }
 
     fn construct_dynamic_otel_config(
         &self,
-        standard_callback_dynamic_params: &MetadataMap,
+        dynamic_params: &MetadataMap,
     ) -> Option<OpenTelemetryConfig> {
-        standard_callback_dynamic_params
+        dynamic_params
             .contains_key("langfuse_public_key")
             .then(in_memory_config)
     }
@@ -104,7 +104,7 @@ fn dynamic_config_rejects_a_non_object_bucket() {
     );
     let mut kwargs = simple_kwargs("call-5");
     kwargs.insert(
-        "standard_callback_dynamic_params".to_owned(),
+        "dynamic_params".to_owned(),
         OtelModelValue::String("pk".to_owned()),
     );
     assert!(dynamic_params(&kwargs).is_err());

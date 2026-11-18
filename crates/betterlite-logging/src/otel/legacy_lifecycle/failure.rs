@@ -10,11 +10,15 @@ use crate::otel::vocabulary::span_names::PROXY_REQUEST_SPAN_NAME;
 
 use super::error::LegacyLifecycleError;
 use super::lifecycle::{self, LegacyLifecycle, LifecycleCall, resolve_guardrail_context};
+use super::state::request_key;
 
 impl LegacyLifecycle {
     pub fn handle_failure(&self, call: &LifecycleCall<'_>) -> Result<(), LegacyLifecycleError> {
         // unlike the success path there is no proxy side effect to preserve on the skip path
-        if !self.emit_once(call.kwargs, &[ScopeValue::Text("failure".to_owned())]) {
+        if !self.dedupe.emit_once(
+            request_key(call.kwargs).as_deref(),
+            &[ScopeValue::Text("failure".to_owned())],
+        ) {
             return Ok(());
         }
         let parent = self.parent(call.kwargs)?;

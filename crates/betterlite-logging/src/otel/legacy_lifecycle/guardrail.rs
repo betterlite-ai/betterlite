@@ -14,7 +14,7 @@ use crate::private_json::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps};
 
 use super::error::LegacyLifecycleError;
 use super::lifecycle::{self, LegacyLifecycle, standard_logging_object};
-use super::state::scope_value;
+use super::state::{request_key, scope_value};
 
 pub const GUARDRAIL_SPAN_NAME: &str = "guardrail";
 
@@ -61,7 +61,10 @@ impl LegacyLifecycle {
             scope_value(start_value),
             scope_value(entry.get("guardrail_mode")),
         ];
-        if !self.emit_once(kwargs, &scope) {
+        if !self
+            .dedupe
+            .emit_once(request_key(kwargs).as_deref(), &scope)
+        {
             return Ok(());
         }
         let start = guardrail_time(start_value, "guardrail_information.start_time")?;
@@ -72,12 +75,12 @@ impl LegacyLifecycle {
         let mut span = tracer.build_with_context(builder, context);
         write_guardrail_identity(&mut span, entry);
         write_guardrail_payload(&mut span, entry)?;
-        self.write_team_attributes_from_std_log(&mut span, kwargs);
+        self.write_team_attributes_from_log(&mut span, kwargs);
         span.end_with_timestamp(lifecycle::instant_from_ns(to_ns(end, self.now_ns())));
         Ok(())
     }
 
-    pub fn emit_guardrail_spans_from_request_data(
+    pub fn emit_request_guardrails(
         &self,
         request_data: &MetadataMap,
         parent: Option<&LiveSpan>,
