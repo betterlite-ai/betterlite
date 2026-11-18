@@ -74,7 +74,10 @@ fn sap_chat<R>(
 ) -> Result<Completion<R>, EnterpriseError> {
     let base = &context.base;
     let mut optional_params = base.optional_params.clone();
-    if !optional_params.contains_key("model_version") {
+    if matches!(
+        optional_params.get("model_version"),
+        None | Some(Json::Null)
+    ) {
         optional_params.insert(
             String::from("model_version"),
             Json::Text(String::from(SAP_MODEL_VERSION)),

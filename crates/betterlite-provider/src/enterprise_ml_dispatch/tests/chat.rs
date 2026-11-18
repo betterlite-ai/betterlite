@@ -102,10 +102,10 @@ fn sap_chat_keeps_a_model_version_the_caller_set() {
 }
 
 #[test]
-fn sap_chat_keeps_a_null_model_version() {
+fn sap_chat_replaces_a_null_model_version() {
     assert_eq!(
         sap_model_version(object(r#"{"model_version":null}"#)),
-        object(r#"{"model_version":null}"#)
+        object(&format!(r#"{{"model_version":"{SAP_MODEL_VERSION}"}}"#))
     );
 }
 
