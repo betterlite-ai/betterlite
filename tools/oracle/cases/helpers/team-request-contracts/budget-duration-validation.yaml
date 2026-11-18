@@ -1,0 +1,18 @@
+kind: helper
+name: budget_duration_validation
+call:
+  team_request_contracts:
+    operation: budget_patch
+    document: {"user_id": "u", "budget_duration": "1d"}
+calls:
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "budget_duration": "1mo"}}
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "budget_duration": "bogus"}}
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "budget_duration": "0d"}}
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "budget_duration": ""}}
+  - team_request_contracts: {operation: budget_patch, document: {"user_id": "u", "budget_duration": null}}
+  - team_request_contracts: {operation: budget_patch, document: {"budget_duration": "bogus"}}
+  - team_request_contracts: {operation: bulk_update, document: {"members": [{"user_id": "a", "budget_duration": "bogus"}]}}
+  - team_request_contracts: {operation: bulk_update, document: {"members": [{"budget_duration": "1d"}]}}
+  - team_request_contracts: {operation: bulk_update, document: {"members": [{"user_id": "a", "max_budget_in_team": 1.5, "tpm_limit": 0, "allowed_models": []}]}}
+env: {}
+compare: {ignore: []}
