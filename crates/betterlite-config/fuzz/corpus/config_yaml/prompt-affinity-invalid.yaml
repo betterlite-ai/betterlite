@@ -1,0 +1,4 @@
+router_settings:
+  optional_pre_call_checks:
+    - prompt_caching
+    - 7

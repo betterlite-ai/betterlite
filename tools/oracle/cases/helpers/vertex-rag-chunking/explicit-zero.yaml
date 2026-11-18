@@ -1,0 +1,10 @@
+kind: helper
+name: explicit-zero
+call:
+  vertex_rag_chunking:
+    cases:
+      - chunking_strategy: {chunk_size: 0, chunk_overlap: 0}
+      - chunking_strategy: {chunk_size: 0}
+      - chunking_strategy: {chunk_overlap: 0}
+env: {}
+compare: {ignore: []}

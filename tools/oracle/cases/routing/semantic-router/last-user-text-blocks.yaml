@@ -1,0 +1,22 @@
+kind: probe
+name: last-user-text-blocks
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      semantic_router:
+        config: '{"routes": [{"name": "code", "utterances": ["write function"], "score_threshold": 0.5}]}'
+        default_model: fallback-model
+        embedding_model: openai/text-embedding-3-small
+        messages:
+          - {role: user, content: first}
+          - {role: assistant, content: reply}
+          - role: user
+            content:
+              - {type: text, text: write}
+              - {type: image_url, image_url: {url: "https://probe.invalid/x.png"}}
+              - {type: text, text: function}
+        vectors:
+          test: [1, 0]
+          write function: [1, 0]
+compare: {ignore: []}

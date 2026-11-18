@@ -1,0 +1,11 @@
+kind: helper
+name: member-request-contracts-organization-v2-unknown-key
+call:
+  b8412: {record: OrganizationUpdateRequestV2, value: {organization_alias: "alias", budget_id: "budget-1"}}
+calls:
+  - b8412: {record: OrganizationUpdateRequestV2, value: {organization_alias: "alias", metadata: null, max_budget: 12.5, tpm_limit: 100}}
+  - b8412: {record: OrganizationUpdateRequestV2, value: {}}
+  - b8412: {record: OrganizationUpdateRequestV2, value: {models: ["gpt-4"], budget_duration: "1d"}}
+  - b8412: {record: OrganizationUpdateRequestV2, value: {soft_budget: 1.5, max_parallel_requests: 4, model_max_budget: {gpt-4: 2.5}}}
+env: {}
+compare: {ignore: []}

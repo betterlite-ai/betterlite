@@ -1,0 +1,22 @@
+kind: helper
+name: chatgpt-responses-first-completed
+call:
+  chatgpt_responses:
+    step: response
+    environment: {}
+    model: gpt-5
+    input: hi
+    options: {}
+    body: |-
+      data: {"type":"response.completed","response":{"id":"resp_first","created_at":1700000000,"object":"response","output":[{"id":"first"}]}}
+      data: {"type":"response.completed","response":{"id":"resp_second","created_at":1700000000,"object":"response","output":[{"id":"second"}]}}
+      data: {"type":"response.output_item.done","output_index":0,"item":{"id":"later"}}
+    status: 200
+    headers: {}
+    now: 1700000000
+    api_base: "https://auth.test/codex"
+    access_token: "token-1"
+    account_id: "acct-1"
+env: {}
+compare:
+  ignore: []
