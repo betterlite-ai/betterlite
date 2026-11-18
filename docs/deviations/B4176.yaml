@@ -19,12 +19,15 @@ deviations:
       text is unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L425-L433
   - what: >-
-      A `LITELLM_LOG` value that is not a Python logging level name fails the config load with
-      ConfigError::InvalidScalar at LITELLM_LOG, where LiteLLM fails at import time with the AttributeError
-      from getattr(logging, name.upper()).
+      A `LITELLM_LOG` value that is not a Python logging level name is kept in the loaded settings as
+      LogConfig::Invalid(LogLevelError::Unknown) instead of failing the config load, and
+      resolve_uvicorn_settings returns that LogLevelError so startup refuses to run, where LiteLLM fails
+      at import time with the AttributeError from getattr(logging, name.upper()).
     why: >-
-      The level is resolved while the config section loads, so the error names the field as a typed config
-      error and echoes no value or Python repr. Both refuse to start; only the error shape differs.
+      betterlite's loader has one ConfigError shared by every section, and that enum holds no variant for a
+      per-section cause, so the section keeps its own typed error with the LevelError source and the builder
+      that turns the section into uvicorn arguments returns it. Both refuse to start; only the fallible step
+      and the error shape differ.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L642-L649
   - what: >-
       The reload watch list resolves the current directory and the config parent by canonicalizing them on

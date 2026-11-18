@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use betterlite_config::sections::worker_options_reload::{LogConfig, UvicornSettings};
+use betterlite_config::sections::worker_options_reload::{
+    LogConfig, LogLevelError, UvicornSettings,
+};
 
 use crate::worker_options::loop_type::{SysPlatform, resolve_loop_type};
 
@@ -21,12 +23,15 @@ pub struct UvicornOverrides {
     pub max_requests_jitter: Option<i64>,
 }
 
-#[must_use]
+// LiteLLM resolves LITELLM_LOG at import, before it reads the flag, so an unusable level ends the start here too
 pub fn resolve_uvicorn_settings(
     base: &UvicornSettings,
     overrides: &UvicornOverrides,
     warn: &mut dyn FnMut(&str),
-) -> UvicornSettings {
+) -> Result<UvicornSettings, LogLevelError> {
+    if let LogConfig::Invalid(error) = &base.log_config {
+        return Err(error.clone());
+    }
     let timeout_worker_healthcheck = overrides
         .timeout_worker_healthcheck
         .or(base.timeout_worker_healthcheck);
@@ -37,7 +42,7 @@ pub fn resolve_uvicorn_settings(
     let requested_jitter = overrides
         .max_requests_jitter
         .or(base.limit_max_requests_jitter);
-    UvicornSettings {
+    Ok(UvicornSettings {
         host: overrides.host.clone().unwrap_or_else(|| base.host.clone()),
         port: overrides.port.unwrap_or(base.port),
         server_header: false,
@@ -54,7 +59,7 @@ pub fn resolve_uvicorn_settings(
             warn,
         ),
         loop_type: resolve_loop_type(SysPlatform::current()),
-    }
+    })
 }
 
 #[must_use]

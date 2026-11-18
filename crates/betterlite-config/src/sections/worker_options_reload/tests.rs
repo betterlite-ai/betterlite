@@ -1,13 +1,14 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error as _;
 
-use betterlite_db::database_diagnostics::level::LogLevel;
+use betterlite_db::database_diagnostics::level::{LevelError, LogLevel};
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::worker_options_reload::{
-    LogConfig, Settings, UvicornSettings, resolve_log_level,
+    LogConfig, LogLevelError, Settings, UvicornSettings, resolve_log_level,
 };
 
 fn load(environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -184,24 +185,26 @@ fn json_logs_default_the_level_to_debug() {
 }
 
 #[test]
-fn an_unknown_log_level_fails_the_load() {
-    assert!(matches!(
-        load(&[("LITELLM_LOG", "verbose")]),
-        Err(ConfigError::InvalidScalar {
-            ref path,
-            value: false
-        }) if path == "LITELLM_LOG"
-    ));
+fn an_unknown_log_level_is_kept_with_its_cause() {
+    let settings = loaded(&[("LITELLM_LOG", "verbose")]);
+    let LogConfig::Invalid(LogLevelError::Unknown { value, source }) =
+        settings.worker_options.log_config
+    else {
+        panic!("an unknown LITELLM_LOG stays in the settings");
+    };
+    assert_eq!(value, "verbose");
+    assert_eq!(source, LevelError::Unknown);
 }
 
 #[test]
-fn an_unknown_log_level_fails_the_load_even_with_json_logs() {
+fn an_unknown_log_level_is_kept_even_with_json_logs() {
+    let settings = loaded(&[("JSON_LOGS", "true"), ("LITELLM_LOG", "verbose")]);
     assert!(matches!(
-        load(&[("JSON_LOGS", "true"), ("LITELLM_LOG", "verbose")]),
-        Err(ConfigError::InvalidScalar {
-            ref path,
-            value: false
-        }) if path == "LITELLM_LOG"
+        settings.worker_options.log_config,
+        LogConfig::Invalid(LogLevelError::Unknown {
+            ref value,
+            source: LevelError::Unknown
+        }) if value == "verbose"
     ));
 }
 
@@ -218,11 +221,20 @@ fn resolve_log_level_matches_pythons_logging_names(#[case] text: &str, #[case] e
 fn resolve_log_level_rejects_a_name_python_logging_lacks() {
     assert!(matches!(
         resolve_log_level("verbose"),
-        Err(ConfigError::InvalidScalar {
-            ref path,
-            value: false
-        }) if path == "LITELLM_LOG"
+        Err(LogLevelError::Unknown {
+            ref value,
+            source: LevelError::Unknown
+        }) if value == "verbose"
     ));
+}
+
+#[test]
+fn the_log_level_error_keeps_the_parsers_cause() {
+    let error = resolve_log_level("verbose").expect_err("verbose is not a logging level");
+    assert_eq!(
+        error.source().map(ToString::to_string).as_deref(),
+        Some("LITELLM_LOG is not a known log level")
+    );
 }
 
 #[test]

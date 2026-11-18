@@ -1,9 +1,10 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use betterlite_db::database_diagnostics::level::{LogLevel, parse_level};
+use betterlite_db::database_diagnostics::level::{LevelError, LogLevel, parse_level};
 use betterlite_env::{EnvError, flag, number};
 use serde::Deserialize;
+use thiserror::Error;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
@@ -76,6 +77,19 @@ pub enum LogConfig {
         level: LogLevel,
     },
     Level(LogLevel),
+    // the level is unusable, and the settings carry the typed error until the builder refuses to start
+    Invalid(LogLevelError),
+}
+
+// the load keeps this error so the cause survives, and resolve_uvicorn_settings returns it to the caller
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum LogLevelError {
+    #[error("LITELLM_LOG value {value:?} is not a logging level name")]
+    Unknown {
+        value: String,
+        #[source]
+        source: LevelError,
+    },
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -94,10 +108,10 @@ pub enum LoopType {
 }
 
 // LiteLLM calls getattr(logging, level.upper()), which fails on a name logging does not define
-pub fn resolve_log_level(level: &str) -> Result<LogLevel, ConfigError> {
-    parse_level(level).map_err(|_source| ConfigError::InvalidScalar {
-        path: LOG_LEVEL_VARIABLE.to_owned(),
-        value: false,
+pub fn resolve_log_level(level: &str) -> Result<LogLevel, LogLevelError> {
+    parse_level(level).map_err(|source| LogLevelError::Unknown {
+        value: level.to_owned(),
+        source,
     })
 }
 
@@ -113,7 +127,7 @@ impl Section for Raw {
                 host: variable(lookup, HOST_VARIABLE).unwrap_or_else(|| DEFAULT_HOST.to_owned()),
                 port: parse(lookup, PORT_VARIABLE, number::<u16>)?.unwrap_or(DEFAULT_PORT),
                 server_header: false,
-                log_config: log_config(lookup)?,
+                log_config: log_config(lookup),
                 timeout_keep_alive: parse(lookup, KEEPALIVE_VARIABLE, number::<i64>)?,
                 timeout_worker_healthcheck: parse(lookup, HEALTHCHECK_VARIABLE, number::<i64>)?,
                 limit_max_requests: parse(lookup, MAX_REQUESTS_VARIABLE, number::<i64>)?,
@@ -157,21 +171,23 @@ where
     Ok(parser(name, &value)?)
 }
 
-fn log_config<L>(lookup: &L) -> Result<LogConfig, ConfigError>
+fn log_config<L>(lookup: &L) -> LogConfig
 where
     L: EnvironmentLookup,
 {
     // LiteLLM's logging module resolves LITELLM_LOG even when JSON_LOGS gives uvicorn its JSON config
-    let level = variable(lookup, LOG_LEVEL_VARIABLE)
+    let resolved = variable(lookup, LOG_LEVEL_VARIABLE)
         .as_deref()
-        .map(resolve_log_level)
-        .transpose()?;
+        .map(resolve_log_level);
     let json =
         variable(lookup, JSON_LOGS_VARIABLE).is_some_and(|value| value.to_lowercase() == "true");
-    if json {
-        return Ok(LogConfig::Json {
-            level: level.unwrap_or(LogLevel::Debug),
-        });
+    match resolved {
+        Some(Err(error)) => LogConfig::Invalid(error),
+        Some(Ok(level)) if json => LogConfig::Json { level },
+        Some(Ok(level)) => LogConfig::Level(level),
+        None if json => LogConfig::Json {
+            level: LogLevel::Debug,
+        },
+        None => LogConfig::Builtin,
     }
-    Ok(level.map_or(LogConfig::Builtin, LogConfig::Level))
 }

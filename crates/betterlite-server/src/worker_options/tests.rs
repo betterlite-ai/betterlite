@@ -5,9 +5,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use betterlite_config::sections::worker_options_reload::{
-    LogConfig, LoopType, ReloadSettings, UvicornSettings,
+    LogConfig, LogLevelError, LoopType, ReloadSettings, UvicornSettings,
 };
-use betterlite_db::database_diagnostics::level::LogLevel;
+use betterlite_db::database_diagnostics::level::{LevelError, LogLevel};
 use rstest::rstest;
 use tempfile::TempDir;
 
@@ -94,7 +94,7 @@ fn resolved(
 ) -> (UvicornSettings, Vec<String>) {
     let mut warnings = Vec::new();
     let mut warn = |message: &str| warnings.push(message.to_owned());
-    let settings = resolve_uvicorn_settings(base, overrides, &mut warn);
+    let settings = resolve_uvicorn_settings(base, overrides, &mut warn).expect("uvicorn settings");
     (settings, warnings)
 }
 
@@ -197,6 +197,30 @@ fn worker_options_uvicorn_settings_resolve_the_log_config(
 ) {
     let (settings, _warnings) = resolved(&base_with_log(log_config), &log_override(flag));
     assert_eq!(settings.log_config, expected);
+}
+
+#[rstest]
+#[case::without_a_flag(None)]
+#[case::with_a_log_config_flag(Some(Path::new("/etc/logging.yaml")))]
+fn worker_options_uvicorn_settings_refuse_an_unknown_log_level(#[case] flag: Option<&Path>) {
+    let mut warnings = Vec::new();
+    let mut warn = |message: &str| warnings.push(message.to_owned());
+    let outcome = resolve_uvicorn_settings(
+        &base_with_log(LogConfig::Invalid(LogLevelError::Unknown {
+            value: "verbose".to_owned(),
+            source: LevelError::Unknown,
+        })),
+        &log_override(flag),
+        &mut warn,
+    );
+    assert!(matches!(
+        outcome,
+        Err(LogLevelError::Unknown {
+            ref value,
+            source: LevelError::Unknown
+        }) if value == "verbose"
+    ));
+    assert!(warnings.is_empty());
 }
 
 #[rstest]
