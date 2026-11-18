@@ -1,3 +1,4 @@
+use betterlite_logging::prometheus::failure::deployment_labels::UserApiKeyFacts;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -33,7 +34,6 @@ pub(crate) struct DeploymentLabelsInput {
     pub(crate) user_api_key_auth: Option<AuthInput>,
 }
 
-// the UserAPIKeyAuth attributes _extract_deployment_failure_label_values reaches through getattr
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct AuthInput {
@@ -42,6 +42,19 @@ pub(crate) struct AuthInput {
     pub(crate) key_alias: Option<String>,
     pub(crate) team_id: Option<String>,
     pub(crate) team_alias: Option<String>,
+}
+
+impl AuthInput {
+    pub(crate) fn facts(&self) -> UserApiKeyFacts {
+        UserApiKeyFacts {
+            key_alias: self.key_alias.clone(),
+            user_email: self.user_email.clone(),
+            team_id: self.team_id.clone(),
+            team_alias: self.team_alias.clone(),
+            hashed_key: self.api_key.clone(),
+            key_hash: None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -53,7 +66,7 @@ pub(crate) struct BoundedModelInput {
     pub(crate) catalog: Option<CatalogInput>,
 }
 
-// the proxy router _bounded_requested_model_label asks; its presence means llm_router exists
+// An absent catalog is a proxy with no llm_router.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CatalogInput {
