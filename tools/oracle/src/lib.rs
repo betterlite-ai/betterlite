@@ -30,7 +30,6 @@ pub mod model_insights_http;
 pub mod oracle_comparison_contracts;
 pub mod paths;
 pub mod process;
-pub mod redis_fixture;
 #[expect(
     clippy::mod_module_files,
     reason = "The probe operations live one per module, and mod.rs keeps their closed enum and dispatch together."
