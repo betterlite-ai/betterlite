@@ -149,11 +149,7 @@ where
     match operation.await {
         Ok(output) => {
             let times = event_times(clock, start_time);
-            schedule_success(
-                success_event(call, times, resolver),
-                Arc::clone(&sink),
-                tasks,
-            );
+            schedule_success(success_event(call, times, resolver), sink, tasks);
             Ok(output)
         }
         Err(error) => {
