@@ -172,7 +172,7 @@ where
                 safeguards: self.request.optional_params.get(SAFEGUARDS),
                 params,
                 headers: self.request.headers,
-                outgoing: body,
+                outgoing: &mut *body,
                 clear_thinking_injected: injected,
                 subclass_provider: None,
             },
