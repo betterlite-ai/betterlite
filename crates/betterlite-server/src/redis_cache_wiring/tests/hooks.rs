@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use betterlite_logging::logging_service_events::types::ServiceType;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
-use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
+use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks as _;
 use chrono::TimeDelta;
 use tracing::Level;
 use uuid::Uuid;

@@ -48,7 +48,7 @@ impl ServiceEventHooks {
         // the handle is dropped at once: the worker stops when the hooks drop the sender, and joining it could hang on a stalled sink
         let _worker = thread::Builder::new()
             .name("redis-service-events".to_owned())
-            .spawn(move || deliver(sink, events))
+            .spawn(move || deliver(&sink, &events))
             .map_err(|source| ServiceEventHooksError::Spawn { source })?;
         Ok(Self {
             sender,
@@ -61,6 +61,7 @@ impl ServiceEventHooks {
         let end_time = self.clock.now();
         let elapsed = TimeDelta::from_std(event.duration).unwrap_or(TimeDelta::MAX);
         let is_error = error.is_some();
+        let start_time = end_time.checked_sub_signed(elapsed).unwrap_or(end_time);
         let logged = LoggedServiceEvent {
             call_id: (self.call_ids)(),
             payload: ServiceLoggerPayload {
@@ -72,7 +73,7 @@ impl ServiceEventHooks {
                 caller: None,
                 event_metadata: None,
             },
-            start_time: end_time - elapsed,
+            start_time,
             end_time,
         };
         if let Err(failed) = self.sender.try_send(logged) {
@@ -95,7 +96,7 @@ impl ServiceHooks for ServiceEventHooks {
     }
 }
 
-fn deliver<S>(sink: Arc<S>, events: Receiver<LoggedServiceEvent>)
+fn deliver<S>(sink: &Arc<S>, events: &Receiver<LoggedServiceEvent>)
 where
     S: ServiceEventSink,
 {

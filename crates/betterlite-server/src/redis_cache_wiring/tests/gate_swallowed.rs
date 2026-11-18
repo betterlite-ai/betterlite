@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
 
 use super::super::gate::SWALLOWED_CALLS_KEPT;
 use super::support::{

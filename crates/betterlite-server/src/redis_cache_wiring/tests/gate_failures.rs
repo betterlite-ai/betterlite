@@ -5,11 +5,12 @@ use std::io;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
 use betterlite_router::redis_failure_policy::classify::FailureClass;
+use tokio::time::timeout;
 use tracing::Level;
 
-use crate::redis_cache_wiring::gate::classify;
+use crate::redis_cache_wiring::gate::failure_class::classify;
 
 use super::support::{
     Broken, FakeClock, OuterIo, OuterRedis, bare_busy_loading_error, bare_cluster_down_error,
@@ -279,7 +280,7 @@ fn a_bare_ldap_reply_counts_as_a_health_failure() {
 
 #[tokio::test]
 async fn a_connect_timeout_counts_as_a_timeout() {
-    let elapsed = tokio::time::timeout(Duration::ZERO, future::pending::<()>())
+    let elapsed = timeout(Duration::ZERO, future::pending::<()>())
         .await
         .expect_err("the timeout expires");
     let clock = Arc::new(FakeClock::new());

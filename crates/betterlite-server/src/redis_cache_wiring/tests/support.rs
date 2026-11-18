@@ -18,7 +18,7 @@ use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::cache_primitives::decode::DecodeError;
 use betterlite_redis::redis_cache::error::RedisCacheError;
 use betterlite_redis::redis_client_reuse::breaker::BreakerAdmission;
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
 use betterlite_redis::redis_client_reuse::error::ClientReuseError;
 use betterlite_redis::redis_client_reuse::service_event::ServiceEvent;
 use betterlite_redis::redis_client_reuse::service_hooks::ServiceHooks;
@@ -278,10 +278,13 @@ impl RecordingSink {
 
     // the worker thread delivers asynchronously, so a test waits for the events instead of reading once
     pub(crate) fn wait_for_events(&self, count: usize) -> Vec<LoggedServiceEvent> {
-        let guard = self.events.lock().unwrap_or_else(PoisonError::into_inner);
         let (events, _timed_out) = self
             .arrived
-            .wait_timeout_while(guard, SINK_WAIT, |pending| pending.len() < count)
+            .wait_timeout_while(
+                self.events.lock().unwrap_or_else(PoisonError::into_inner),
+                SINK_WAIT,
+                |pending| pending.len() < count,
+            )
             .unwrap_or_else(PoisonError::into_inner);
         events.clone()
     }

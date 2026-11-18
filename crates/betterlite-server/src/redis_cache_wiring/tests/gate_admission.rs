@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
+use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate as _;
 use betterlite_router::redis_failure_policy::State;
 
 use super::support::{
