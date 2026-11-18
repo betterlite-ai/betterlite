@@ -70,7 +70,7 @@ fn text(raw: Option<&Json>) -> Option<&str> {
     }
 }
 
-fn mapping(raw: Option<&Json>) -> Option<&JsonObject> {
+const fn mapping(raw: Option<&Json>) -> Option<&JsonObject> {
     match raw {
         Some(Json::Object(fields)) => Some(fields),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))

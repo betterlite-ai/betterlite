@@ -14,6 +14,6 @@ fn replays_the_model_deprecation_corpus(#[files("fuzz/corpus/model_deprecation/*
         return;
     };
     if let Some(date) = decode_deprecation_date(text) {
-        assert!((1..=9999).contains(&date.year()));
+        assert!((1_i32..=9_999_i32).contains(&date.year()));
     }
 }
