@@ -1,0 +1,57 @@
+task: B5630
+deviations:
+  - what: >-
+      The order of keys under `litellm_settings` doesn't matter, and every cache gets the
+      same TTL. `cache_params.default_redis_ttl` wins, else
+      `litellm_settings.default_redis_ttl`. LiteLLM walks the keys in YAML order, so a
+      `default_redis_ttl` written after `cache: true` misses the response cache but
+      reaches caches built later.
+    why: Settings resolve once at load, and a TTL that depends on YAML key order is an accident of the loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6304-L6372
+  - what: >-
+      A boolean `default_redis_ttl` fails the load, where Python's `int(True)` gives 1. Text
+      with a fraction is accepted and cut, where `int("60.5")` raises at startup.
+    why: "`resolve_number` is the shared reader for numbers, and it rejects booleans and reads text as a float."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L671-L674
+  - what: >-
+      A negative or text `redis_flush_size` fails the load. LiteLLM starts, then flushes on
+      every write for a negative value and raises `TypeError` at the first buffered write
+      for text.
+    why: B4327 takes a `usize`, and a load error tells the operator sooner.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L652-L655
+  - what: >-
+      A service event carries no `parent_otel_span` and no `caller`. LiteLLM sends both.
+    why: B4325's `ServiceEvent` has neither field, and Rust has no frame names to walk.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L213-L240
+  - what: >-
+      The swallow marker belongs to one admission. LiteLLM's ContextVar spans the whole
+      task, so when a guarded call swallows a failure inside another guarded call, the outer
+      call counts no success either. Here `batch_cache_write` still counts a success after
+      its inner pipeline swallowed a failure, and that resets the failure streak.
+    why: The rules forbid ContextVar style state, and `batch_cache_write` is the only nested guard in the file.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L434-L446
+  - what: >-
+      Failures reach B393's throttled log with the fixed text "Redis operation failed".
+      LiteLLM passes each method's own message to `log_redis_failure`.
+    why: "`BreakerGate` gets the error and no message. The method's own text still goes out on its plain `tracing` line."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L507-L554
+  - what: >-
+      A service event carries no `event_metadata` key. LiteLLM's `async_get_cache` and
+      `async_set_cache` send `event_metadata={"key": key}`, and a proxy callback that reads
+      it sees no key from betterlite.
+    why: >-
+      B012's `ServiceEventMetadata` has the gauge fields only, and its entry point takes no
+      extra metadata. Adding one is B012's change, not this task's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1136-L1161
+  - what: >-
+      A Redis error without a source records no failure, even though LiteLLM counts it as a
+      health failure. This covers the errors redis builds from a description alone, such as
+      `RedisError::from((ErrorKind::Io, "connection dropped"))` and an SSL handshake
+      failure. `RedisCache.error()`, `ClientReuseError` and `LiveClientError` are transparent
+      `thiserror` wrappers whose `source()` returns the inner error's own source, so a source
+      walk reaches the io error only when redis attached one. The `RedisError` itself, whose
+      kind says `Io`, is never a link in that walk.
+    why: >-
+      The task reads the error through `source()`, and reaching the hidden wrapper fields
+      would match every betterlite-redis error enum inside the server wiring.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L341
