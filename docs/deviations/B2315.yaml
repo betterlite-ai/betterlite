@@ -1,0 +1,28 @@
+task: B2315
+deviations:
+  - what: >-
+      Schema-failure logs recommend `betterlite-db-admin migrate`, redact credential values and
+      withhold database payloads: a chain holding a PostgreSQL error logs only its SQLSTATE and
+      its table, column and constraint names, where LiteLLM recommends `prisma db push` or
+      `prisma migrate deploy` and prints the exception text as given.
+    why: >-
+      betterlite uses native migrations and keeps secrets out of diagnostics; the ERROR severity,
+      the suppression rule and the five case-insensitive hint triggers stay compatible.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L415-L435
+  - what: >-
+      The log sentence is betterlite's own wording and the entity, hint and redacted cause are
+      structured tracing fields carrying the failure's full source chain, where LiteLLM
+      interpolates the exception's own text into one printf-style string.
+    why: >-
+      A typed failure keeps its cause, so a wrapped repository error still shows the schema or
+      connection detail that decides the hint; a single unsourced exception logs the same text
+      either way, and the oracle compares severity and hint presence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L430-L435
+kept_bugs:
+  - what: >-
+      _log_budget_lookup_failure's docstring promises a warning while its body logs at ERROR;
+      betterlite keeps the ERROR level.
+    why: >-
+      A working deployment wires its alerting to the level the code emits, and demoting the event
+      to a warning would hide a failed budget lookup on exactly the monitoring the code sets up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L415-L435

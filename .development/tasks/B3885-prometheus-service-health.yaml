@@ -1,18 +1,25 @@
 id: B3885
 title: Prometheus service health metrics
 description: >-
-  Port litellm/integrations/prometheus_services.py:1-278 to Rust in
-  crates/betterlite-prometheus to expose a service-specific histogram, counter and gauge
+  Port litellm/integrations/prometheus_services.py:1-278 to Rust in the module
+  prometheus_services of betterlite-logging (crates/betterlite-logging/src/prometheus_services.rs
+  and prometheus_services/). It sits in betterlite-logging, not betterlite-prometheus, because it
+  takes B012's ServiceType and ServiceLoggerPayload (betterlite-logging
+  logging_service_events::types) and betterlite-logging depends on betterlite-prometheus. It exposes a service-specific histogram, counter and gauge
   registry, consume the existing async service-event phase, reuse registered collectors,
   and preserve failure labels error_class/function_name and metadata-provided gauge
   labels/values.
 
-  Build PrometheusServicesLogger, which scans the configured service types and their
-  metrics from B012's DEFAULT_SERVICE_CONFIGS and initializes only those metrics needed
-  for each service. The logger stores collectors in a map from service name to a list of
-  Histogram, Counter, and Gauge objects. The registry lookup via is_metric_registered uses
-  prometheus_client's _names_to_collectors for O(1) lookup; _get_metric retrieves a metric
-  from the registry by name. The factory methods create_histogram, create_gauge and
+  Build PrometheusServicesLogger. It walks B012's ServiceType::ALL, looks up each
+  service's metrics in DEFAULT_SERVICE_CONFIGS and initializes only those metrics needed
+  for each service. B012 built ServiceType but not DEFAULT_SERVICE_CONFIGS or ServiceMetrics
+  (litellm/types/services.py L8-L11 and L61-L78), so this task adds both in its own module;
+  a service with no entry, or an entry with no metrics, gets DEFAULT_METRICS (counter and
+  histogram). The logger stores collectors in a map from service name to a list of
+  Histogram, Counter, and Gauge objects. Its constructor takes B3875's CollectorRegistry
+  (betterlite-prometheus collector_registry) and registers them there:
+  is_metric_registered is that registry's lookup by collector name, and _get_metric returns
+  the collector the lookup finds. The factory methods create_histogram, create_gauge and
   create_counter return existing metrics if already registered, or create new ones with
   the service name as the only label for histogram/gauge, or service name plus
   error_class/function_name for the failed_requests counter.
@@ -20,7 +27,8 @@ description: >-
   The emit methods observe_histogram, update_gauge and increment_counter call the
   underlying metric's labels(), observe(), set() or inc() methods. The latency_buckets
   are read from B3870's LATENCY_BUCKETS constant, or overridden by
-  litellm.prometheus_latency_buckets if set.
+  litellm_settings.prometheus_latency_buckets when set, the value B3875's prometheus_exporter
+  config section parses.
 
   Implement synchronous hooks service_success_hook and service_failure_hook, which
   iterate through the service's metric list, check type (isinstance Histogram/Counter),
@@ -43,8 +51,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-prometheus/src/service_health.rs
-    - crates/betterlite-prometheus/src/service_health/**
+    - crates/betterlite-logging/src/prometheus_services.rs
+    - crates/betterlite-logging/src/prometheus_services/**
   lint_tables: false
 
 references:
@@ -68,8 +76,9 @@ dod:
       litellm.prometheus_latency_buckets if set, and initializes metrics for every service
       in ServiceTypes, consulting DEFAULT_SERVICE_CONFIGS for which metrics to create.
     proof: [service-health-tests]
-  - text: is_metric_registered checks the registry's _names_to_collectors map for O(1) lookup,
-      falling back to collecting all metrics if the attribute is missing.
+  - text: is_metric_registered and _get_metric answer from B3875's CollectorRegistry lookup by
+      collector name, so a second PrometheusServicesLogger on the same registry reuses the
+      collectors the first one registered instead of failing on a duplicate.
     proof: [service-health-tests]
   - text: create_histogram, create_gauge and create_counter return existing registered metrics,
       or create new ones with service name as the only label (histogram/gauge), or service name
@@ -98,10 +107,10 @@ checks:
   commands:
     - id: service-health-tests
       why: Service health tests are missing or fail
-      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^service_health::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_services::/) - test(/replays_the_/)'
     - id: compile
       why: The crate does not compile
-      run: cargo build --locked -p betterlite-prometheus
+      run: cargo build --locked -p betterlite-logging
 
 oracle_cases: []
 
@@ -130,13 +139,14 @@ out_of_scope:
     mock_testing_failure_calls counters have no production caller; they support unit testing
     of the logger in isolation.
   - |-
-    Reading config values directly; B012 and B002 supply the service configuration and the
-    prometheus_latency_buckets setting.
+    Reading config values directly; the caller passes prometheus_latency_buckets from B3875's
+    prometheus_exporter config section.
   - |-
     Callback registration and dispatcher dispatch logic; B012 owns the service-event dispatch contract
     and invokes this part's hooks.
   - |-
-    Prometheus collector instantiation and native prometheus_client APIs; B3874 supplies those.
+    The collector types are B3874's (betterlite-prometheus collector_factory), and the registry
+    with its lookup by name is B3875's CollectorRegistry (betterlite-prometheus collector_registry).
 
 pitfalls:
   - |-
@@ -144,8 +154,9 @@ pitfalls:
     services are configured (only those in the dict get config). Always check the config dict before
     defaulting to DEFAULT_METRICS.
   - |-
-    _names_to_collectors is an internal prometheus_client detail; the fallback to collecting all metrics
-    must work when it is missing.
+    LiteLLM checks the name in REGISTRY._names_to_collectors and falls back to REGISTRY.collect()
+    when that attribute is missing; both answer what B3875's lookup by collector name answers, so
+    build no second lookup path.
   - |-
     The failed_requests and total_requests counters are both the Counter type and stored in the same
     list; they must be distinguished by metric name ("total_requests" in obj._name or "failed_requests"

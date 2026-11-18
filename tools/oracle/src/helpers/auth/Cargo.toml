@@ -21,6 +21,7 @@ betterlite-error = { path = "../../../../../crates/betterlite-error" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 chrono.workspace = true
 hex = "0.4.3"
