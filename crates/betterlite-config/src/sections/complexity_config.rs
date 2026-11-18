@@ -60,10 +60,13 @@ pub struct Config {
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct Settings {
+pub struct ComplexityConfigSettings {
     // index-aligned with model_list; None when the deployment configures none of these keys
     pub deployments: Vec<Option<Config>>,
 }
+
+// one pointer keeps Sections inside clippy's 16384-byte large_futures limit for the db-admin future
+pub type Settings = Box<ComplexityConfigSettings>;
 
 impl Section for Raw {
     type Settings = Settings;
@@ -82,7 +85,7 @@ impl Section for Raw {
                     .transpose()?,
             );
         }
-        Ok(Settings { deployments })
+        Ok(Box::new(ComplexityConfigSettings { deployments }))
     }
 }
 

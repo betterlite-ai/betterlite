@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::mem::size_of;
 
 use crate::sections::Section;
 use crate::sections::complexity_config::{Config, Raw, Settings};
@@ -30,6 +31,11 @@ fn only(keys: &str, variables: &[(&str, &str)]) -> Result<Option<Config>, String
         return Err(format!("one deployment expected, got {count}"));
     }
     Ok(deployments.pop().flatten())
+}
+
+#[test]
+fn the_section_settings_stay_behind_one_pointer() {
+    assert_eq!(size_of::<Settings>(), size_of::<usize>());
 }
 
 #[test]
