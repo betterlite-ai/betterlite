@@ -30,23 +30,21 @@ pub fn apply_disconnect_marks(target: &mut JsonObject) {
 }
 
 pub fn mark_request_disconnected(request_data: &mut JsonObject) {
-    if let Some(metadata) = metadata_object(request_data, "metadata") {
-        apply_disconnect_marks(metadata);
-    }
-    if let Some(params) = metadata_object(request_data, "litellm_params")
-        && let Some(metadata) = metadata_object(params, "metadata")
-    {
-        apply_disconnect_marks(metadata);
+    mark_nested(request_data, "metadata");
+    if let Some(params) = metadata_object(request_data, "litellm_params") {
+        mark_nested(params, "metadata");
     }
 }
 
 pub fn mark_details_disconnected(details: &mut JsonObject) {
-    if let Some(params) = metadata_object(details, "litellm_params")
-        && let Some(metadata) = metadata_object(params, "metadata")
-    {
-        apply_disconnect_marks(metadata);
+    if let Some(params) = metadata_object(details, "litellm_params") {
+        mark_nested(params, "metadata");
     }
-    if let Some(metadata) = metadata_object(details, "metadata") {
+    mark_nested(details, "metadata");
+}
+
+fn mark_nested(container: &mut JsonObject, key: &str) {
+    if let Some(metadata) = metadata_object(container, key) {
         apply_disconnect_marks(metadata);
     }
 }
