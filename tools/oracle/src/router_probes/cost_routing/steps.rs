@@ -45,31 +45,26 @@ pub(super) async fn apply(
 ) -> Result<Observation, ScenarioError> {
     match step.kind {
         // log_success_event and async_log_success_event are one map update, so both kinds run the same primitive
-        StepKind::Success | StepKind::SuccessSync => record(index, step, context).await,
+        StepKind::Success | StepKind::SuccessSync => {
+            let Some(deployment_id) = step.deployment_id.as_deref() else {
+                return Err(ScenarioError::Missing {
+                    what: "a deployment id",
+                });
+            };
+            context
+                .router
+                .record_success(&SuccessEvent {
+                    call_type: step.call_type.as_deref(),
+                    model_group: Some(context.group),
+                    deployment_id: Some(deployment_id),
+                    total_tokens: step.total_tokens.unwrap_or_default(),
+                })
+                .await;
+            Ok(Observation::Recorded { step: index })
+        }
         StepKind::Select => select(index, step, context).await,
         StepKind::State => Ok(state(index, context)),
     }
-}
-
-async fn record(
-    index: usize,
-    step: &Step,
-    context: &Context<'_>,
-) -> Result<Observation, ScenarioError> {
-    let deployment_id = step
-        .deployment_id
-        .as_deref()
-        .ok_or(ScenarioError::Missing {
-            what: "a deployment id",
-        })?;
-    let event = SuccessEvent {
-        call_type: step.call_type.as_deref(),
-        model_group: Some(context.group),
-        deployment_id: Some(deployment_id),
-        total_tokens: step.total_tokens.unwrap_or_default(),
-    };
-    context.router.record_success(&event).await;
-    Ok(Observation::Recorded { step: index })
 }
 
 async fn select(
