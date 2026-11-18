@@ -23,7 +23,7 @@ pub enum RequestFormError {
     MissingName,
     #[error("request form field is not valid UTF-8")]
     InvalidText,
-    #[error("unsupported content type: {0}")]
+    #[error("Unsupported content type: {0}")]
     UnsupportedContentType(String),
     #[error(transparent)]
     RequestBody(#[from] RequestBodyError),
@@ -120,15 +120,18 @@ fn decode_multipart(
     let marker = format!("--{boundary}").into_bytes();
     let mut remaining = bytes;
     let mut items = Vec::new();
-    let mut ended = false;
     loop {
-        let Some((start, marker_end)) = find_boundary(remaining, &marker) else {
-            break;
+        // every iteration starts at a delimiter (or the body start), so a marker at offset 0 is a delimiter here
+        let Some((start, marker_end)) = find_boundary(remaining, &marker, true) else {
+            return if items.is_empty() && bytes.is_empty() {
+                Ok(FormParts { items })
+            } else {
+                Err(RequestFormError::InvalidBody)
+            };
         };
         remaining = &remaining[start + marker_end..];
         if marker_end == marker.len() + 2 {
-            ended = true;
-            break;
+            return Ok(FormParts { items });
         }
         remaining = remaining
             .strip_prefix(b"\r\n")
@@ -137,9 +140,13 @@ fn decode_multipart(
             find_subslice(remaining, b"\r\n\r\n").ok_or(RequestFormError::InvalidBody)?;
         let headers = parse_headers(&remaining[..header_end])?;
         let payload_start = header_end + 4;
-        let (next_boundary, _end) = find_boundary(&remaining[payload_start..], &marker)
+        // inside a payload only a marker a CRLF introduces is a delimiter, so its two bytes belong to the payload
+        let (next_boundary, _end) = find_boundary(&remaining[payload_start..], &marker, false)
             .ok_or(RequestFormError::InvalidBody)?;
-        let payload_end = payload_start + next_boundary - 2;
+        let payload_end = payload_start
+            + next_boundary
+                .checked_sub(2)
+                .ok_or(RequestFormError::InvalidBody)?;
         let (name, filename) = disposition(&headers)?;
         let payload = &remaining[payload_start..payload_end];
         check_part_count(items.len() + 1, limits)?;
@@ -167,10 +174,6 @@ fn decode_multipart(
         items.push(FormPart { name, value });
         remaining = &remaining[payload_start + next_boundary..];
     }
-    if !ended && !bytes.is_empty() {
-        return Err(RequestFormError::InvalidBody);
-    }
-    Ok(FormParts { items })
 }
 
 fn check_part_count(count: usize, limits: &ApiLimits) -> Result<(), RequestFormError> {
@@ -235,10 +238,22 @@ fn disposition(headers: &[(String, String)]) -> Result<(String, Option<String>),
     ))
 }
 
-fn find_boundary(haystack: &[u8], marker: &[u8]) -> Option<(usize, usize)> {
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn find_boundary(haystack: &[u8], marker: &[u8], allow_start: bool) -> Option<(usize, usize)> {
     for (index, window) in haystack.windows(marker.len()).enumerate() {
-        if window != marker || (index != 0 && (index < 2 || &haystack[index - 2..index] != b"\r\n"))
-        {
+        if window != marker {
+            continue;
+        }
+        let introduced = match index.checked_sub(2) {
+            Some(prefix) => &haystack[prefix..index] == b"\r\n",
+            None => allow_start && index == 0,
+        };
+        if !introduced {
             continue;
         }
         let trailer = &haystack[index + marker.len()..];

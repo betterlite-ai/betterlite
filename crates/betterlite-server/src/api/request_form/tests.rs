@@ -1,20 +1,107 @@
 #![cfg(test)]
 
-use super::{RequestFormBody, RequestFormError, decode_request_form, get_request_body};
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
+
 use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::request_body::DecodedJson;
+use betterlite_core::api::request_form::annotations::{FormAnnotation, numeric_form_fields};
+use betterlite_core::api::request_form::coercion::coerce_numeric_form_fields;
+use betterlite_core::api::request_form::convert::{
+    ConvertError, FileDataValue, FileTuple, convert_uploads_to_file_data,
+};
+use betterlite_core::api::request_form::file_size::{
+    ModelUploadLimits, UploadLimit, UploadSizeCheck, check_file_size_under_limit,
+};
+use betterlite_core::api::request_form::metadata::{
+    MetadataValue, MetadataWarning, MetadataWarningKind, extract_nested_form_metadata,
+};
+use betterlite_core::api::request_form::values::{
+    FormError, FormFields, FormValue, NonFinite, UploadFile, get_form_data,
+};
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
+
+use super::{RequestFormBody, RequestFormError, decode_request_form, get_request_body};
+
+const URLENCODED: &[u8] = b"application/x-www-form-urlencoded";
+const MULTIPART: &[u8] = b"multipart/form-data; boundary=b";
+
+fn text_part(name: &str, value: &str) -> String {
+    format!("--b\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+}
+
+fn upload_part(name: &str, filename: &str, content: &str) -> String {
+    format!(
+        "--b\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: text/plain\r\n\r\n{content}\r\n"
+    )
+}
+
+fn decode_multipart_parts(body: String) -> FormFields {
+    let body = format!("{body}--b--\r\n");
+    let parts = decode_request_form(body.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
+    get_form_data(&parts).unwrap()
+}
+
+fn upload_value(filename: &str, content: &str) -> FormValue {
+    FormValue::Upload(UploadFile {
+        filename: filename.to_owned(),
+        content_type: Some("text/plain".to_owned()),
+        content: content.as_bytes().to_vec(),
+        size: Some(u64::try_from(content.len()).unwrap()),
+    })
+}
 
 #[test]
 fn repeated_plain_last_wins() {
-    let parts = decode_request_form(
-        b"model=first&model=last",
-        b"application/x-www-form-urlencoded",
-        &ApiLimits::default(),
-    )
-    .unwrap();
-    let fields = betterlite_core::api::request_form::values::get_form_data(&parts).unwrap();
+    let parts =
+        decode_request_form(b"model=first&model=last", URLENCODED, &ApiLimits::default()).unwrap();
+    let fields = get_form_data(&parts).unwrap();
     assert_eq!(
-        fields["model"],
-        betterlite_core::api::request_form::values::FormValue::Text("last".to_owned())
+        fields.get("model"),
+        Some(&FormValue::Text("last".to_owned()))
+    );
+
+    let fields = decode_multipart_parts(upload_part("a", "a.txt", "abc"));
+    let data = convert_uploads_to_file_data(&fields).unwrap();
+    assert_eq!(
+        data.get("a"),
+        Some(&FileDataValue::Files(vec![FileTuple {
+            filename: "a.txt".to_owned(),
+            content: b"abc".to_vec(),
+            content_type: Some("text/plain".to_owned()),
+        }]))
+    );
+}
+
+#[test]
+fn a_mixed_list_is_decided_by_its_first_entry() {
+    let fields = decode_multipart_parts(format!(
+        "{}{}",
+        text_part("files[]", "plain"),
+        upload_part("files[]", "a.txt", "a")
+    ));
+    let data = convert_uploads_to_file_data(&fields).unwrap();
+    assert_eq!(
+        data.get("files"),
+        Some(&FileDataValue::Unchanged(FormValue::List(vec![
+            FormValue::Text("plain".to_owned()),
+            upload_value("a.txt", "a"),
+        ])))
+    );
+
+    let fields = decode_multipart_parts(format!(
+        "{}{}",
+        upload_part("files[]", "a.txt", "a"),
+        text_part("files[]", "plain")
+    ));
+    assert_eq!(
+        convert_uploads_to_file_data(&fields).unwrap_err(),
+        ConvertError::MissingRead {
+            name: "files".to_owned(),
+            index: 1,
+        }
     );
 }
 
@@ -22,53 +109,93 @@ fn repeated_plain_last_wins() {
 fn array_form_preserves_order() {
     let parts = decode_request_form(
         b"timestamp_granularities%5B%5D=word&timestamp_granularities%5B%5D=segment",
-        b"application/x-www-form-urlencoded",
+        URLENCODED,
         &ApiLimits::default(),
     )
     .unwrap();
-    let fields = betterlite_core::api::request_form::values::get_form_data(&parts).unwrap();
+    let fields = get_form_data(&parts).unwrap();
     assert_eq!(
-        fields["timestamp_granularities"],
-        betterlite_core::api::request_form::values::FormValue::List(vec![
-            betterlite_core::api::request_form::values::FormValue::Text("word".to_owned()),
-            betterlite_core::api::request_form::values::FormValue::Text("segment".to_owned()),
-        ])
+        fields.get("timestamp_granularities"),
+        Some(&FormValue::List(vec![
+            FormValue::Text("word".to_owned()),
+            FormValue::Text("segment".to_owned()),
+        ]))
+    );
+
+    let leaf_first =
+        decode_request_form(b"x=leaf&x%5B%5D=child", URLENCODED, &ApiLimits::default()).unwrap();
+    assert_eq!(
+        get_form_data(&leaf_first).unwrap_err(),
+        FormError::ScalarAppend {
+            name: "x".to_owned(),
+        }
+    );
+
+    let child_first =
+        decode_request_form(b"x%5B%5D=child&x=leaf", URLENCODED, &ApiLimits::default()).unwrap();
+    assert_eq!(
+        get_form_data(&child_first).unwrap().get("x"),
+        Some(&FormValue::Text("leaf".to_owned()))
     );
 }
 
 #[test]
 fn numeric_form_coercion() {
-    use betterlite_core::api::request_form::{
-        annotations::{FormAnnotation, numeric_form_fields},
-        coercion::coerce_numeric_form_fields,
-        values::FormValue,
-    };
-    let annotations = [("count".to_owned(), FormAnnotation::Int)]
-        .into_iter()
-        .collect();
+    let annotations: betterlite_core::api::request_form::annotations::FormAnnotations = [
+        ("count".to_owned(), FormAnnotation::Int),
+        ("ratio".to_owned(), FormAnnotation::Float),
+        ("nan_ratio".to_owned(), FormAnnotation::Float),
+        (
+            "optional".to_owned(),
+            FormAnnotation::Union(vec![FormAnnotation::Int, FormAnnotation::NoneType]),
+        ),
+        ("flag".to_owned(), FormAnnotation::Other),
+        (
+            "pair".to_owned(),
+            FormAnnotation::Union(vec![FormAnnotation::Int, FormAnnotation::Float]),
+        ),
+    ]
+    .into_iter()
+    .collect();
     let numeric = numeric_form_fields(&annotations);
     let parts = decode_request_form(
-        b"count=%201_000%20",
-        b"application/x-www-form-urlencoded",
+        b"count=%207%20&ratio=1e2&nan_ratio=nan&optional=%2B3&flag=true&pair=2",
+        URLENCODED,
         &ApiLimits::default(),
     )
     .unwrap();
-    let fields = betterlite_core::api::request_form::values::get_form_data(&parts).unwrap();
+    let fields = get_form_data(&parts).unwrap();
+    let coerced = coerce_numeric_form_fields(&fields, &numeric);
     assert_eq!(
-        coerce_numeric_form_fields(&fields, &numeric)["count"],
-        FormValue::Number(serde_json::Number::from(1000))
+        coerced.get("count"),
+        Some(&FormValue::Number(serde_json::Number::from(7)))
     );
+    assert_eq!(
+        coerced.get("ratio"),
+        Some(&FormValue::Number(
+            serde_json::Number::from_f64(100.0).unwrap()
+        ))
+    );
+    assert_eq!(
+        coerced.get("nan_ratio"),
+        Some(&FormValue::NonFinite(NonFinite::Nan))
+    );
+    assert_eq!(
+        coerced.get("optional"),
+        Some(&FormValue::Number(serde_json::Number::from(3)))
+    );
+    assert_eq!(
+        coerced.get("flag"),
+        Some(&FormValue::Text("true".to_owned()))
+    );
+    assert_eq!(coerced.get("pair"), Some(&FormValue::Text("2".to_owned())));
 }
 
 #[test]
 fn nested_form_metadata() {
-    use betterlite_core::api::request_form::{
-        metadata::{MetadataValue, extract_nested_form_metadata},
-        values::{FormValue, get_form_data},
-    };
     let parts = decode_request_form(
-        b"litellm_metadata%5Ba%5D%5Bb%5D=v",
-        b"application/x-www-form-urlencoded",
+        b"litellm_metadata%5Ba%5D%5Bb%5D=v&litellm_metadata%5Bteam%5D=alpha&other=x",
+        URLENCODED,
         &ApiLimits::default(),
     )
     .unwrap();
@@ -76,34 +203,121 @@ fn nested_form_metadata() {
     let (metadata, warnings) = extract_nested_form_metadata(&fields, "litellm_metadata[");
     assert!(warnings.is_empty());
     let Some(MetadataValue::Object(child)) = metadata.get("a") else {
-        panic!("expected nested object");
+        panic!("expected a nested object");
     };
     assert_eq!(
         child.get("b"),
         Some(&MetadataValue::Leaf(FormValue::Text("v".to_owned())))
     );
+    assert_eq!(
+        metadata.get("team"),
+        Some(&MetadataValue::Leaf(FormValue::Text("alpha".to_owned())))
+    );
+    assert!(!metadata.contains_key("other"));
+
+    let fields = decode_multipart_parts(format!(
+        "{}{}{}",
+        text_part("litellm_metadata[a]", "leaf"),
+        text_part("litellm_metadata[a][b]", "deep"),
+        upload_part("litellm_metadata[file]", "a.txt", "abc")
+    ));
+    let (metadata, warnings) = extract_nested_form_metadata(&fields, "litellm_metadata[");
+    assert_eq!(
+        metadata.get("a"),
+        Some(&MetadataValue::Leaf(FormValue::Text("leaf".to_owned())))
+    );
+    assert_eq!(
+        warnings,
+        vec![
+            MetadataWarning {
+                kind: MetadataWarningKind::ParentNotObject,
+                subject: "litellm_metadata[a][b]".to_owned(),
+            },
+            MetadataWarning {
+                kind: MetadataWarningKind::UploadSkipped,
+                subject: "litellm_metadata[file]".to_owned(),
+            },
+        ]
+    );
 }
 
-#[test]
-fn upload_size_unset() {
-    use betterlite_core::api::request_form::file_size::{
-        UploadSizeCheck, check_file_size_under_limit,
-    };
-    use betterlite_models::{decisions::Json, model_registration::JsonObject};
-    use num_traits::ToPrimitive as _;
-    use std::collections::BTreeMap;
-    use std::collections::BTreeSet;
+struct FixedRouter {
+    limit: UploadLimit,
+}
+
+impl ModelUploadLimits for FixedRouter {
+    fn upload_limit_mebibytes(&self, _model: &str) -> UploadLimit {
+        self.limit
+    }
+}
+
+fn limits_of(router: Option<&FixedRouter>) -> Option<&dyn ModelUploadLimits> {
+    match router {
+        Some(fixed) => Some(fixed),
+        None => None,
+    }
+}
+
+fn size_mb_of(data: &JsonObject) -> Option<f64> {
+    match data.get("metadata") {
+        Some(Json::Object(metadata)) => match metadata.get("file_size_in_mb") {
+            Some(Json::Number(number)) => number.as_f64(),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+#[rstest]
+#[case::absent_size(None, 0.0)]
+#[case::one_mebibyte(Some(1_048_576), 1.0)]
+fn upload_size_unset(#[case] size: Option<u64>, #[case] expected_mb: f64) {
     let mut request_data = JsonObject::new();
     request_data.insert("model".to_owned(), Json::Text("whisper".to_owned()));
+    let mut metadata = JsonObject::new();
+    metadata.insert("team".to_owned(), Json::Text("t".to_owned()));
+    request_data.insert("metadata".to_owned(), Json::Object(metadata));
     let outcome = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut request_data,
-        file_size: Some(1_048_576),
+        file_size: size,
         router_names: &BTreeSet::new(),
         router: None,
         limits: &ApiLimits::default(),
     })
     .unwrap();
     assert!(outcome.proceeded);
+    assert_eq!(size_mb_of(&request_data), Some(expected_mb));
+    let Some(Json::Object(metadata)) = request_data.get("metadata") else {
+        panic!("metadata should stay an object");
+    };
+    assert_eq!(metadata.get("team"), Some(&Json::Text("t".to_owned())));
+}
+
+#[rstest]
+#[case::router_absent(&[], UploadLimit::Configured(1.0), 2_097_152, false)]
+#[case::model_outside_names(&["other"], UploadLimit::Configured(1.0), 2_097_152, false)]
+#[case::deployment_absent(&["whisper"], UploadLimit::Absent, 2_097_152, false)]
+#[case::lookup_failed(&["whisper"], UploadLimit::Failed, 2_097_152, true)]
+fn upload_size_skips_a_missing_model_limit(
+    #[case] router_names: &[&str],
+    #[case] limit: UploadLimit,
+    #[case] size: u64,
+    #[case] lookup_failed: bool,
+) {
+    let router = FixedRouter { limit };
+    let names: BTreeSet<String> = router_names.iter().map(|name| (*name).to_owned()).collect();
+    let mut request_data = JsonObject::new();
+    request_data.insert("model".to_owned(), Json::Text("whisper".to_owned()));
+    let outcome = check_file_size_under_limit(UploadSizeCheck {
+        request_data: &mut request_data,
+        file_size: Some(size),
+        router_names: &names,
+        router: Some(&router),
+        limits: &ApiLimits::default(),
+    })
+    .unwrap();
+    assert!(outcome.proceeded);
+    assert_eq!(outcome.lookup_failed, lookup_failed);
 }
 
 #[test]
@@ -112,52 +326,69 @@ fn request_body_dispatch() {
     use betterlite_core::api::request_body::RequestBodyInput;
     use std::collections::BTreeMap;
 
-    let input = RequestBodyInput {
-        method: "POST".to_owned(),
-        route_path: "/v1/chat/completions".to_owned(),
-        headers: BTreeMap::from([(
-            "content-type".to_owned(),
-            "multipart/form-data; boundary=test".to_owned(),
-        )]),
-        query_params: BTreeMap::new(),
-        body: b"--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n"
-            .to_vec(),
-        client_requested_model: None,
-        cached_body: None,
-        form_fields: None,
-    };
-    let result = super::super::request_body::read_request_body(
-        &input,
-        &Settings::default(),
-        &ApiLimits::default(),
-    )
-    .unwrap();
+    let limits = ApiLimits::default();
     assert_eq!(
-        result.body.get("x"),
-        Some(&serde_json::Value::String("1".to_owned()))
-    );
-    assert_eq!(
-        get_request_body("GET", "application/json", b"garbage", &ApiLimits::default()),
+        get_request_body("GET", "application/json", b"garbage", &limits),
         Ok(RequestFormBody::Empty)
     );
-    assert!(matches!(
-        get_request_body(
-            "POST",
-            "application/json",
-            br#"{"x":1}"#,
-            &ApiLimits::default()
-        ),
-        Ok(RequestFormBody::Json(_))
-    ));
     assert_eq!(
-        get_request_body("POST", "text/plain", b"x", &ApiLimits::default()),
+        get_request_body("DELETE", "application/json", br#"{"x":1}"#, &limits),
+        Ok(RequestFormBody::Empty)
+    );
+    assert_eq!(
+        get_request_body("PUT", "application/json", br#"{"x":1}"#, &limits),
+        Ok(RequestFormBody::Empty)
+    );
+    let Ok(RequestFormBody::Json(DecodedJson::Parsed { body, repaired })) =
+        get_request_body("POST", "application/json", br#"{"x":1}"#, &limits)
+    else {
+        panic!("a POST JSON body should parse");
+    };
+    assert!(!repaired);
+    assert_eq!(body.get("x"), Some(&serde_json::json!(1)));
+    assert_eq!(
+        get_request_body("POST", "text/plain", b"x", &limits),
         Err(RequestFormError::UnsupportedContentType(
             "text/plain".to_owned()
         ))
     );
     assert_eq!(
-        decode_request_form(b"", b"text/plain", &ApiLimits::default()),
-        Err(RequestFormError::ContentType)
+        get_request_body("POST", "", b"x", &limits),
+        Err(RequestFormError::UnsupportedContentType(String::new()))
+    );
+
+    let RequestFormBody::Form(urlencoded) =
+        get_request_body("POST", "application/x-www-form-urlencoded", b"x=1", &limits).unwrap()
+    else {
+        panic!("a urlencoded body should parse as form fields");
+    };
+    assert_eq!(urlencoded.get("x"), Some(&FormValue::Text("1".to_owned())));
+
+    let boundary = "multipart/form-data; boundary=test";
+    let body = b"--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n";
+    let RequestFormBody::Form(multipart) =
+        get_request_body("POST", boundary, body, &limits).unwrap()
+    else {
+        panic!("a multipart body should parse as form fields");
+    };
+    assert_eq!(multipart.get("x"), Some(&FormValue::Text("1".to_owned())));
+
+    let input = RequestBodyInput {
+        method: "POST".to_owned(),
+        route_path: "/v1/chat/completions".to_owned(),
+        headers: BTreeMap::from([("content-type".to_owned(), boundary.to_owned())]),
+        query_params: BTreeMap::new(),
+        body: body.to_vec(),
+        client_requested_model: None,
+        cached_body: None,
+        form_fields: None,
+    };
+    let result =
+        super::super::request_body::read_request_body(&input, &Settings::default(), &limits)
+            .unwrap();
+    assert_eq!(
+        result.body.get("x"),
+        Some(&serde_json::Value::String("1".to_owned()))
     );
 }
 
@@ -180,105 +411,106 @@ fn multipart_boundary_variants_are_checked() {
 }
 
 #[test]
+fn a_payload_that_starts_with_the_boundary_is_not_a_delimiter() {
+    let payload = b"--b\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n--b--\r\n--b--\r\n";
+    let parts = decode_request_form(payload, MULTIPART, &ApiLimits::default()).unwrap();
+    let fields = get_form_data(&parts).unwrap();
+    assert_eq!(fields.get("x"), Some(&FormValue::Text("--b--".to_owned())));
+}
+
+#[test]
 fn form_part_count_is_bounded() {
     let limits = ApiLimits {
         max_items: 1,
         ..ApiLimits::default()
     };
     assert_eq!(
-        decode_request_form(b"a=1&b=2", b"application/x-www-form-urlencoded", &limits),
+        decode_request_form(b"a=1&b=2", URLENCODED, &limits),
         Err(RequestFormError::TooManyParts)
     );
 }
 
-#[test]
-fn compatibility_deviations() {
-    use betterlite_core::api::request_form::file_size::{
-        ModelUploadLimits, UploadLimit, UploadSizeCheck, UploadSizeError,
-        check_file_size_under_limit,
-    };
-    use betterlite_models::{decisions::Json, model_registration::JsonObject};
-    use std::collections::BTreeSet;
-
-    struct Router(UploadLimit);
-    impl ModelUploadLimits for Router {
-        fn upload_limit_mebibytes(&self, _model: &str) -> UploadLimit {
-            self.0
-        }
-    }
-
-    let limits = ApiLimits::default();
-    let loaded = betterlite_config::loader::ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
-    }
-    .load("model_list:\n  - model_name: whisper\n    litellm_params:\n      max_file_size_mb: 1\n")
-    .unwrap();
-    let configured_mb = loaded.sections.request_form.limit_for_index(0).unwrap();
-    let router = Router(UploadLimit::Configured(configured_mb.to_f64().unwrap()));
-    let router_names = BTreeSet::from(["whisper".to_owned()]);
-    for bytes in [1_048_575, 1_048_576] {
-        let mut request_data = JsonObject::new();
-        request_data.insert("model".to_owned(), Json::Text("whisper".to_owned()));
-        assert!(
-            check_file_size_under_limit(UploadSizeCheck {
-                request_data: &mut request_data,
-                file_size: Some(bytes),
-                router_names: &router_names,
-                router: Some(&router),
-                limits: &limits,
-            })
-            .is_ok()
-        );
-    }
+fn whisper_request() -> JsonObject {
     let mut request_data = JsonObject::new();
     request_data.insert("model".to_owned(), Json::Text("whisper".to_owned()));
-    let error = check_file_size_under_limit(UploadSizeCheck {
-        request_data: &mut request_data,
-        file_size: Some(1_048_577),
-        router_names: &router_names,
-        router: Some(&router),
-        limits: &limits,
-    })
-    .unwrap_err();
-    assert_eq!(
-        error,
-        UploadSizeError::TooLarge {
-            size_mb: 1_048_577.0 / 1_048_576.0,
-            limit_mb: 1.0
-        }
-    );
-    assert_eq!(error.facts().status, 400);
+    request_data
+}
 
-    for bytes in [16_777_216, 16_777_217] {
-        let mut request_data = JsonObject::new();
-        let result = check_file_size_under_limit(UploadSizeCheck {
-            request_data: &mut request_data,
-            file_size: Some(bytes),
-            router_names: &BTreeSet::new(),
-            router: None,
-            limits: &limits,
-        });
-        if bytes == 16_777_216 {
-            assert!(result.is_ok());
-        } else {
-            assert!(matches!(
-                result,
-                Err(UploadSizeError::AboveSafetyCap { .. })
-            ));
+#[rstest]
+#[case::within_a_byte(Some(1.0), 1_048_575, None)]
+#[case::at_the_limit(Some(1.0), 1_048_576, None)]
+#[case::one_byte_over(Some(1.0), 1_048_577, Some((400, "bad_request", "file", "400")))]
+#[case::at_the_cap(None, 16_777_216, None)]
+#[case::above_the_cap(None, 16_777_217, Some((413, "invalid_request_error", "file", "request_too_large")))]
+fn compatibility_deviations(
+    #[case] configured_limit: Option<f64>,
+    #[case] bytes: u64,
+    #[case] expected: Option<(u16, &str, &str, &str)>,
+) {
+    let router = configured_limit.map(|limit| FixedRouter {
+        limit: UploadLimit::Configured(limit),
+    });
+    let router_names = match configured_limit {
+        Some(_limit) => BTreeSet::from(["whisper".to_owned()]),
+        None => BTreeSet::new(),
+    };
+    let mut request_data = whisper_request();
+    let result = check_file_size_under_limit(UploadSizeCheck {
+        request_data: &mut request_data,
+        file_size: Some(bytes),
+        router_names: &router_names,
+        router: limits_of(router.as_ref()),
+        limits: &ApiLimits::default(),
+    });
+    match (expected, result) {
+        (None, Ok(outcome)) => assert!(outcome.proceeded),
+        (Some(fields), Err(error)) => {
+            let facts = error.facts();
+            assert_eq!(
+                (facts.status, facts.error_type, facts.param, facts.code),
+                fields
+            );
         }
+        _other => panic!("the size check returned an unexpected outcome"),
     }
 }
 
 #[test]
-fn replays_corpus() {
-    for seed in [
-        include_bytes!("../../../fuzz/corpus/request_form/urlencoded").as_slice(),
-        include_bytes!("../../../fuzz/corpus/request_form/multipart").as_slice(),
-        include_bytes!("../../../fuzz/corpus/request_form/multipart-quoted").as_slice(),
-        include_bytes!("../../../fuzz/corpus/request_form/multipart-mismatch").as_slice(),
-    ] {
-        let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
-        let (header, body) = seed[2..].split_at(header_len);
-        let _ = decode_request_form(body, header, &ApiLimits::default());
+fn loaded_limit_reaches_file_size_checking() {
+    use betterlite_config::loader::ConfigLoader;
+    use std::collections::BTreeMap;
+
+    let loaded = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load("model_list:\n  - model_name: whisper\n    litellm_params:\n      max_file_size_mb: 1\n")
+    .unwrap();
+    let router = FixedRouter {
+        limit: UploadLimit::Configured(loaded.sections.request_form.deployments[0].unwrap()),
+    };
+    let mut request_data = whisper_request();
+    let error = check_file_size_under_limit(UploadSizeCheck {
+        request_data: &mut request_data,
+        file_size: Some(1_048_577),
+        router_names: &BTreeSet::from(["whisper".to_owned()]),
+        router: Some(&router),
+        limits: &ApiLimits::default(),
+    })
+    .unwrap_err();
+    assert_eq!(error.facts().status, 400);
+}
+
+const BOUNDARY_MISMATCH: &str = "multipart-mismatch";
+
+#[rstest]
+fn replays_corpus(#[files("fuzz/corpus/request_form/*")] path: PathBuf) {
+    let seed = std::fs::read(&path).unwrap();
+    let header_len = usize::from(u16::from_be_bytes([seed[0], seed[1]]));
+    let (header, body) = seed[2..].split_at(header_len);
+    let result = decode_request_form(body, header, &ApiLimits::default());
+    if Path::new(&path).file_stem().and_then(|stem| stem.to_str()) == Some(BOUNDARY_MISMATCH) {
+        assert_eq!(result, Err(RequestFormError::InvalidBody));
+    } else {
+        assert!(result.is_ok());
     }
 }
