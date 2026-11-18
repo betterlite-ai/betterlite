@@ -2,8 +2,10 @@
 
 use std::collections::VecDeque;
 use std::io;
+use std::str;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 use std::sync::PoisonError;
 
 use betterlite_redis::list_operations::error::RedisListOperationsError;
@@ -79,6 +81,10 @@ pub(crate) struct FakeList {
 }
 
 impl FakeList {
+    fn lock(&self) -> MutexGuard<'_, ListState> {
+        self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     pub(crate) fn with_entries(entries: &[&str]) -> Self {
         let mut state = ListState::default();
         state.entries = entries.iter().map(|entry| (*entry).to_owned()).collect();
@@ -130,6 +136,29 @@ impl FakeList {
             .cloned()
             .collect()
     }
+
+    fn append_blocking(&self, entry: &str) -> Result<(), GatewayRequestRedisError> {
+        let mut state = self.lock();
+        if let Some(remaining) = state.push_budget {
+            if remaining == 0 {
+                return Err(list_failure("async_rpush"));
+            }
+            state.push_budget = Some(remaining.saturating_sub(1));
+        }
+        state.pushed.push(entry.to_owned());
+        state.entries.push_back(entry.to_owned());
+        Ok(())
+    }
+
+    fn take_blocking(&self, count: usize) -> Result<Vec<String>, GatewayRequestRedisError> {
+        let mut state = self.lock();
+        state.take_calls.push(count);
+        if state.fail_take {
+            return Err(list_failure("async_lpop"));
+        }
+        let available = count.min(state.entries.len());
+        Ok(state.entries.drain(..available).collect())
+    }
 }
 
 fn list_failure(operation: &'static str) -> GatewayRequestRedisError {
@@ -141,36 +170,11 @@ fn list_failure(operation: &'static str) -> GatewayRequestRedisError {
 
 impl GatewayRequestsList for FakeList {
     fn append<'call>(&'call self, entry: &'call str) -> ListFuture<'call, ()> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(remaining) = state.push_budget {
-                if remaining == 0 {
-                    return Err(list_failure("async_rpush"));
-                }
-                state.push_budget = Some(remaining.saturating_sub(1));
-            }
-            state.pushed.push(entry.to_owned());
-            state.entries.push_back(entry.to_owned());
-            Ok(())
-        })
+        Box::pin(async move { self.append_blocking(entry) })
     }
 
     fn take<'call>(&'call self, count: usize) -> ListFuture<'call, Vec<String>> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.take_calls.push(count);
-            if state.fail_take {
-                return Err(list_failure("async_lpop"));
-            }
-            let mut taken = Vec::new();
-            while taken.len() < count {
-                let Some(entry) = state.entries.pop_front() else {
-                    break;
-                };
-                taken.push(entry);
-            }
-            Ok(taken)
-        })
+        Box::pin(async move { self.take_blocking(count) })
     }
 }
 
@@ -305,13 +309,14 @@ pub(crate) struct CapturedLogs(Arc<Mutex<Vec<u8>>>);
 
 impl CapturedLogs {
     pub(crate) fn text(&self) -> String {
-        String::from_utf8(
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        )
-        .unwrap()
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        str::from_utf8(&bytes)
+            .expect("the captured logs are UTF-8")
+            .to_owned()
     }
 }
 
