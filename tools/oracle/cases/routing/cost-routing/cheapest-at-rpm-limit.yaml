@@ -1,0 +1,17 @@
+kind: probe
+name: cost-routing-cheapest-at-rpm-limit
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost: {}
+        deployments:
+          - {id: a, model: openai/probe, input_cost_per_token: 0.125, output_cost_per_token: 0.125, params_rpm: 1}
+          - {id: b, model: openai/probe, input_cost_per_token: 0.5, output_cost_per_token: 0.5}
+        steps:
+          - {kind: success, now_millis: 1795003200000, deployment_id: a, total_tokens: 1}
+          - {kind: select, now_millis: 1795003200000}
+          - {kind: state, now_millis: 1795003200000}
+compare: {ignore: []}
