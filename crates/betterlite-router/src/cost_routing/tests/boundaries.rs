@@ -44,6 +44,7 @@ enum Boundary {
     MissingCatalogFieldDefaults,
     NonNumericLimitNamesField,
     NonNumericPriceNamesField,
+    OutOfRangePriceNamesField,
     BoolLimitIsRefused,
     RecordIsCancelledAtTheAwait,
     KeyAtLimit,
@@ -75,6 +76,7 @@ enum Boundary {
 #[case::missing_catalog_field_defaults(Boundary::MissingCatalogFieldDefaults)]
 #[case::non_numeric_limit_names_field(Boundary::NonNumericLimitNamesField)]
 #[case::non_numeric_price_names_field(Boundary::NonNumericPriceNamesField)]
+#[case::out_of_range_price_names_field(Boundary::OutOfRangePriceNamesField)]
 #[case::bool_limit_is_refused(Boundary::BoolLimitIsRefused)]
 #[case::record_is_cancelled_at_the_await(Boundary::RecordIsCancelledAtTheAwait)]
 #[case::key_at_limit(Boundary::KeyAtLimit)]
@@ -106,6 +108,7 @@ async fn cost_routing_boundaries(#[case] boundary: Boundary) {
         Boundary::MissingCatalogFieldDefaults => missing_catalog_field_defaults(),
         Boundary::NonNumericLimitNamesField => non_numeric_limit_names_field(),
         Boundary::NonNumericPriceNamesField => non_numeric_price_names_field(),
+        Boundary::OutOfRangePriceNamesField => out_of_range_price_names_field(),
         Boundary::BoolLimitIsRefused => bool_limit_is_refused(),
         Boundary::RecordIsCancelledAtTheAwait => record_is_cancelled_at_the_await().await,
         Boundary::KeyAtLimit => key_at_limit().await,
@@ -153,6 +156,18 @@ fn limited(limit: &str, value: &str) -> DeploymentSpec {
     spec("a", MODEL, &[(limit, number(value))], &[], &[])
 }
 
+fn rejected(costs: &ProbeCosts<'_>, pool: &[DeploymentSpec]) -> CostRoutingError {
+    router_at(MINUTE_MILLIS)
+        .select(costs, &selection(pool, 0))
+        .unwrap_err()
+}
+
+// a deployment whose own field carries a value no price or limit conversion accepts
+fn refused(field: &str, custom: Json) -> CostRoutingError {
+    let pool = [spec("a", MODEL, &[(field, custom)], &[], &[])];
+    rejected(&one("0.1", "0.1"), &pool)
+}
+
 fn minute_label_at_known_instant() {
     assert_eq!(minute_label(now(MINUTE_MILLIS)), MINUTE);
     assert_eq!(minute_label(now(MINUTE_MILLIS + 59_999)), MINUTE);
@@ -174,10 +189,9 @@ fn tpm_eligible_at_exact_limit() {
 }
 
 fn tpm_excluded_one_over() {
-    let router = seeded(&[("a", 100, 0)]);
     let pool = [limited(TPM, "100")];
     assert_eq!(
-        router.select(&one("0.1", "0.1"), &selection(&pool, 1)),
+        seeded(&[("a", 100, 0)]).select(&one("0.1", "0.1"), &selection(&pool, 1)),
         Ok(None)
     );
 }
@@ -196,21 +210,21 @@ fn estimate_alone_at_the_limit() {
 }
 
 fn rpm_eligible_at_exact_limit() {
-    let router = seeded(&[("a", 0, 4)]);
-    let pool = [limited(RPM, "5")];
-    assert_eq!(
-        router.select(&one("0.1", "0.1"), &selection(&pool, 0)),
-        Ok(Some(0))
-    );
+    for requests in [0, 4] {
+        let router = seeded(&[("a", 0, requests)]);
+        let pool = [limited(RPM, "5")];
+        assert_eq!(
+            router.select(&one("0.1", "0.1"), &selection(&pool, 0)),
+            Ok(Some(0))
+        );
+    }
 }
 
 fn rpm_excluded_one_over() {
-    let router = seeded(&[("a", 0, 5)]);
-    let pool = [limited(RPM, "5")];
-    assert_eq!(
-        router.select(&one("0.1", "0.1"), &selection(&pool, 0)),
-        Ok(None)
-    );
+    let pool = [limited(RPM, "5"), spec("b", MODEL, &[], &[], &[])];
+    // a is one request past its rpm, so the deployment without a limit answers
+    let picked = seeded(&[("a", 0, 5)]).select(&one("0.1", "0.1"), &selection(&pool, 0));
+    assert_eq!(picked, Ok(Some(1)));
 }
 
 fn missing_limits_are_unlimited() {
@@ -272,17 +286,15 @@ fn top_level_limit_wins() {
 
 fn litellm_params_limit_wins() {
     let router = seeded(&[("a", 50, 0)]);
-    let pool = [spec(
-        "a",
-        MODEL,
-        &[(TPM, number("100"))],
-        &[(TPM, number("1"))],
-        &[],
-    )];
-    assert_eq!(
-        router.select(&one("0.1", "0.1"), &selection(&pool, 0)),
-        Ok(Some(0))
-    );
+    // the model_info limit of 1 would skip a; the params limit of 100 keeps it eligible
+    let infos: [&[(&str, Json)]; 2] = [&[], &[(TPM, number("1"))]];
+    for info in infos {
+        let pool = [spec("a", MODEL, &[(TPM, number("100"))], info, &[])];
+        assert_eq!(
+            router.select(&one("0.1", "0.1"), &selection(&pool, 0)),
+            Ok(Some(0))
+        );
+    }
 }
 
 fn tie_keeps_pool_order() {
@@ -394,44 +406,42 @@ fn missing_catalog_field_defaults() {
 }
 
 fn non_numeric_limit_names_field() {
-    let router = router_at(MINUTE_MILLIS);
-    let pool = [spec("a", MODEL, &[(TPM, text("10"))], &[], &[])];
-    let error = router
-        .select(&one("0.1", "0.1"), &selection(&pool, 0))
-        .unwrap_err();
+    let error = refused(TPM, text("10"));
+    let message = "deployment a has a tpm that is not a number";
     assert_eq!(error.field(), TPM);
-    assert_eq!(
-        error,
-        CostRoutingError::NonNumeric {
-            deployment: "a".to_owned(),
-            field: TPM,
-        }
-    );
-    assert_eq!(
-        error.to_string(),
-        "deployment a has a tpm that is not a number"
-    );
+    assert_eq!(error.to_string(), message);
 }
 
 fn non_numeric_price_names_field() {
-    let router = router_at(MINUTE_MILLIS);
-    let custom = [spec("a", MODEL, &[(INPUT_COST, text("cheap"))], &[], &[])];
-    let error = router
-        .select(&one("0.1", "0.1"), &selection(&custom, 0))
-        .unwrap_err();
-    assert_eq!(error.field(), INPUT_COST);
+    for (field, custom) in [(INPUT_COST, text("cheap")), (OUTPUT_COST, Json::Bool(true))] {
+        let error = refused(field, custom);
+        assert_eq!(
+            error,
+            CostRoutingError::NonNumeric {
+                deployment: "a".to_owned(),
+                field,
+            }
+        );
+    }
     let pool = [spec("a", "openai/bad", &[], &[], &[])];
     let costs = ProbeCosts::new(&[("openai/bad", object(&[(OUTPUT_COST, Json::Bool(true))]))]);
-    let error = router.select(&costs, &selection(&pool, 0)).unwrap_err();
+    let error = rejected(&costs, &pool);
     assert_eq!(error.field(), OUTPUT_COST);
 }
 
-fn bool_limit_is_refused() {
+// a price Decimal cannot hold fails the selection with the field it names; LiteLLM ranks the float
+fn out_of_range_price_names_field() {
     let router = router_at(MINUTE_MILLIS);
-    let pool = [spec("a", MODEL, &[(TPM, Json::Bool(true))], &[], &[])];
+    let huge = number("100000000000000000000000000000");
+    let pool = [spec("a", MODEL, &[(INPUT_COST, huge)], &[], &[])];
     let error = router
         .select(&one("0.1", "0.1"), &selection(&pool, 0))
         .unwrap_err();
+    assert_eq!(error.field(), INPUT_COST);
+}
+
+fn bool_limit_is_refused() {
+    let error = refused(TPM, Json::Bool(true));
     assert_eq!(error.field(), TPM);
 }
 

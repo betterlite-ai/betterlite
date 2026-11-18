@@ -73,36 +73,15 @@ fn limit(
     name: &str,
     field: &'static str,
 ) -> Result<Option<Decimal>, CostRoutingError> {
-    let sources = [
+    let chosen = [
         deployment.extra.get(field),
         deployment.litellm_params.get(field),
         deployment.model_info.get(field),
-    ];
-    for source in sources {
-        let Some(value) = source else {
-            continue;
-        };
-        if !truthy(value) {
-            continue;
-        }
-        return match value {
-            Json::Number(number) => {
-                parse_decimal_lexeme(&number.to_string())
-                    .map(Some)
-                    .map_err(|_source| CostRoutingError::NonNumeric {
-                        deployment: name.to_owned(),
-                        field,
-                    })
-            }
-            Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-                Err(CostRoutingError::NonNumeric {
-                    deployment: name.to_owned(),
-                    field,
-                })
-            }
-        };
-    }
-    Ok(None)
+    ]
+    .into_iter()
+    .flatten()
+    .find(|value| truthy(value));
+    chosen.map(|value| amount(value, field, name)).transpose()
 }
 
 // The pinned metric: a litellm_params override while it is truthy, else the model cost map entry, else both defaults.
@@ -116,45 +95,46 @@ fn cost(
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,
     };
-    let input = rate(deployment, entry, INPUT_COST, name)?;
-    let output = rate(deployment, entry, OUTPUT_COST, name)?;
+    let input = rate(
+        deployment.litellm_params.get(INPUT_COST),
+        entry,
+        INPUT_COST,
+        name,
+    )?;
+    let output = rate(
+        deployment.litellm_params.get(OUTPUT_COST),
+        entry,
+        OUTPUT_COST,
+        name,
+    )?;
     Ok(input.saturating_add(output))
 }
 
 fn rate(
-    deployment: &DeploymentSpec,
+    custom: Option<&Json>,
     entry: Option<Catalog<'_>>,
     field: &'static str,
     name: &str,
 ) -> Result<Decimal, CostRoutingError> {
-    if let Some(value) = deployment
-        .litellm_params
-        .get(field)
-        .filter(|value| truthy(value))
-    {
-        return amount(value, field, name);
-    }
-    match entry.and_then(|catalog| catalog.price(field)) {
+    let configured = custom.filter(|value| truthy(value));
+    let catalog = entry.and_then(|catalog| catalog.price(field));
+    match configured.or(catalog) {
         None | Some(Json::Null) => Ok(DEFAULT_COST_PER_TOKEN),
         Some(value) => amount(value, field, name),
     }
 }
 
 fn amount(value: &Json, field: &'static str, name: &str) -> Result<Decimal, CostRoutingError> {
-    match value {
-        Json::Number(number) => parse_decimal_lexeme(&number.to_string()).map_err(|_source| {
-            CostRoutingError::NonNumeric {
-                deployment: name.to_owned(),
-                field,
-            }
-        }),
-        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Err(CostRoutingError::NonNumeric {
-                deployment: name.to_owned(),
-                field,
-            })
-        }
-    }
+    let Json::Number(number) = value else {
+        return Err(CostRoutingError::NonNumeric {
+            deployment: name.to_owned(),
+            field,
+        });
+    };
+    parse_decimal_lexeme(&number.to_string()).map_err(|_source| CostRoutingError::NonNumeric {
+        deployment: name.to_owned(),
+        field,
+    })
 }
 
 // item_tpm + input_tokens > tpm or item_rpm + 1 > rpm, with a missing limit standing in for float("inf").

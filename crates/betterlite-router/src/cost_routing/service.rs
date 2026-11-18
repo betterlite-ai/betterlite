@@ -69,8 +69,7 @@ impl OrderIndex {
         entries.insert(deployment_id.to_owned());
     }
 
-    // The pinned selector adds every healthy deployment it has not seen with this minute's zero usage. The map is only
-    // stored once a success writes it; until then each selection builds a fresh dict from the pool and keeps nothing.
+    // The map is stored only once a success writes it; a selection before that builds a throwaway dict and keeps nothing.
     fn ids(&mut self, model_group: &str, deployments: &[DeploymentSpec]) -> Vec<String> {
         let Some(entries) = self.groups.get_mut(model_group) else {
             return pool_ids(deployments);

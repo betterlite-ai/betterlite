@@ -223,9 +223,10 @@ fn picks_lowest_cost() {
 
 fn custom_price_beats_catalog() {
     let (router, _clock) = router_at(MINUTE_MILLIS);
-    let pool = [priced("a", MODEL, "0.01", "0.01"), deployment("b")];
+    let pool = [deployment("b"), priced("a", MODEL, "0.01", "0.01")];
     let costs = ProbeCosts::new(&[catalog(MODEL, "0.5", "0.5")]);
-    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+    // without the override both deployments read 0.5 + 0.5 and the tie keeps b
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
 }
 
 // item_cost is input_cost_per_token + output_cost_per_token, not a product with max_tokens or a single rate.
@@ -234,12 +235,15 @@ fn sums_input_and_output() {
     let pool = [
         spec("a", "openai/input", &[], &[], &[]),
         spec("b", "openai/output", &[], &[], &[]),
+        spec("c", "openai/balanced", &[], &[], &[]),
     ];
     let costs = ProbeCosts::new(&[
-        catalog("openai/input", "0.0000001", "0.9"),
-        catalog("openai/output", "0.1", "0.1"),
+        catalog("openai/input", "0.01", "0.9"),
+        catalog("openai/output", "0.9", "0.01"),
+        catalog("openai/balanced", "0.3", "0.3"),
     ]);
-    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+    // the sum picks c at 0.6, an input-only metric picks a and an output-only one picks b
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(2)));
 }
 
 // Python truthiness: a zero override is not a price, so the catalog entry fills both sides.
@@ -263,7 +267,8 @@ fn unknown_model_costs_ten() {
         spec("a", "openai/unknown", &[], &[], &[]),
         spec("b", "openai/known", &[], &[], &[]),
     ];
-    let costs = ProbeCosts::new(&[catalog("openai/known", "0.01", "0.01")]);
+    // the known model totals 9.9, so any default other than 5.0 changes the winner
+    let costs = ProbeCosts::new(&[catalog("openai/known", "4.95", "4.95")]);
     assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
 }
 
@@ -314,11 +319,24 @@ fn catalog_entry_from_unpriced_sibling() {
 fn catalog_entry_keeps_its_own_fields() {
     let (router, _clock) = router_at(MINUTE_MILLIS);
     let pool = [
-        spec("d1", MODEL, &[(INPUT_COST, number("0.25"))], &[], &[]),
-        spec("d2", MODEL, &[(OUTPUT_COST, number("0.25"))], &[], &[]),
+        spec(
+            "d1",
+            MODEL,
+            &[(INPUT_COST, number("0.25"))],
+            &[(OUTPUT_COST, number("0.3"))],
+            &[],
+        ),
+        spec("d2", MODEL, &[(INPUT_COST, number("0.3"))], &[], &[]),
+        spec(
+            "y",
+            "openai/other",
+            &[],
+            &[(INPUT_COST, number("1.45")), (OUTPUT_COST, number("1.45"))],
+            &[],
+        ),
     ];
     let costs = DeploymentCosts::from_deployments(&pool);
-    // d1 reads its own input and the 5.0 default output; d2 reads the masked input as the default, so both cost 5.25
+    // d1 reads its own input and the entry's output at 0.55; hiding that output would put y ahead of both
     assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
 }
 
