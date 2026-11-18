@@ -38,10 +38,6 @@ impl Windows {
             .store(step.fail_writes.unwrap_or(false), Ordering::Relaxed);
     }
 
-    fn window(&self, key: &str) -> Option<Counts> {
-        self.counts.lock().ok()?.get(key).cloned()
-    }
-
     fn ttl(&self, key: &str) -> Option<i64> {
         self.ttls.lock().ok()?.get(key).copied()
     }
