@@ -1,13 +1,23 @@
-from typing import TypeAlias
+from typing import Final, TypeAlias
 
 from litellm.proxy._types import UserAPIKeyAuth
 from pydantic import JsonValue
 
-from .logger import LOGGER
-from .values import JSON_ADAPTER, OBJECT_ADAPTER, AuthCase, Input
+from .answers import OBJECT_ADAPTER, AuthCase, Input
+from .logger import LOGGER, emitted_labels
 
 ParamsMetadata: TypeAlias = dict[str, JsonValue | UserAPIKeyAuth]
 RequestObject: TypeAlias = dict[str, JsonValue | ParamsMetadata | dict[str, ParamsMetadata]]
+
+DEPLOYMENT_LABEL_KEYS: Final = (
+    "api_key_alias",
+    "user_email",
+    "team",
+    "team_alias",
+    "hashed_api_key",
+    "client_ip",
+    "user_agent",
+)
 
 
 def build_auth(case: AuthCase) -> UserAPIKeyAuth:
@@ -40,7 +50,13 @@ def deployment_request(input_value: Input) -> RequestObject:
 
 
 def deployment_answer(input_value: Input) -> JsonValue:
-    labels = LOGGER._extract_deployment_failure_label_values(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2703
+    LOGGER.set_llm_deployment_failure_metrics(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2794
         deployment_request(input_value)
     )
-    return JSON_ADAPTER.validate_python(labels)
+    labels = emitted_labels()
+    if labels is None:
+        raise ValueError("litellm emitted no deployment failure labels")
+    answer: dict[str, JsonValue] = {
+        key: None if labels[key] == "None" else labels[key] for key in DEPLOYMENT_LABEL_KEYS
+    }
+    return answer
