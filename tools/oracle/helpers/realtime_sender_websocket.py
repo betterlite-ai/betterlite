@@ -247,17 +247,13 @@ async def apply(probe: Probe, op: Operation) -> JsonValue:
         return {"error": "non-object"}
 
 
-def callbacks_from(documents: list[GuardrailDocument]) -> list[CustomLogger]:
+async def session(input_value: Input, upstream: Upstream, socket: ClientConnection) -> JsonValue:
     callbacks: list[CustomLogger] = []
-    for document in documents:
+    for document in input_value["guardrails"]:
         hooks = [GuardrailEventHooks(name) for name in document["runs_for"]]
         custom = CustomGuardrail(guardrail_name=None, event_hook=hooks, default_on=True)
         callbacks.append(custom if document["custom"] else CustomLogger())
-    return callbacks
-
-
-async def session(input_value: Input, upstream: Upstream, socket: ClientConnection) -> JsonValue:
-    litellm.callbacks = [*callbacks_from(input_value["guardrails"])]
+    litellm.callbacks = [*callbacks]
     timeline: list[str] = []
     provider_document = input_value["provider"]
     provider = None if provider_document is None else ScriptedProvider(provider_document, timeline)
