@@ -4,18 +4,17 @@ use std::time::Duration;
 
 use deadpool_postgres::GenericClient as _;
 
-use super::support::{Database, RecordingEvictor, instant, seed_row};
+use super::support::{Database, RecordingEvictor, hold_every_connection, instant, seed_row};
 use crate::reload_schedule::RELOAD_CONFIG_PARAM_NAME;
-use crate::reload_schedule::store::{ReloadScheduleError, ScheduleDeadlines, record_manual_reload};
+use crate::reload_schedule::store::{
+    ReloadScheduleError, ScheduleDeadlines, clear_reload_interval, read_reload_schedule,
+    record_manual_reload, write_reload_interval,
+};
 
 #[tokio::test]
 async fn manual_reload_gives_up_when_the_pool_has_no_connection_left() {
     let database = Database::provision().await;
-    // the pool holds four connections, so holding all four leaves the write waiting for a fifth
-    let _first = database.store.session().await.unwrap();
-    let _second = database.store.session().await.unwrap();
-    let _third = database.store.session().await.unwrap();
-    let _fourth = database.store.session().await.unwrap();
+    let _held = hold_every_connection(&database).await;
     let evictor = RecordingEvictor::default();
     let deadlines = ScheduleDeadlines {
         acquire: Duration::from_millis(50),
@@ -75,5 +74,59 @@ async fn manual_reload_gives_up_when_the_config_row_stays_locked() {
     ));
     assert!(evictor.names().is_empty());
     drop(blocker);
+    database.close().await;
+}
+
+#[tokio::test]
+async fn repository_read_gives_up_when_the_pool_has_no_connection_left() {
+    let database = Database::provision().await;
+    let _held = hold_every_connection(&database).await;
+    let deadlines = ScheduleDeadlines {
+        acquire: Duration::from_millis(50),
+        statement: Duration::from_millis(50),
+    };
+    let error = read_reload_schedule(Some(database.client()), deadlines)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ReloadScheduleError::Timeout {
+            operation: "read_reload_schedule",
+            ..
+        }
+    ));
+    database.close().await;
+}
+
+#[tokio::test]
+async fn repository_writes_give_up_when_the_pool_has_no_connection_left() {
+    let database = Database::provision().await;
+    let _held = hold_every_connection(&database).await;
+    let evictor = RecordingEvictor::default();
+    let deadlines = ScheduleDeadlines {
+        acquire: Duration::from_millis(50),
+        statement: Duration::from_millis(50),
+    };
+    let write = write_reload_interval(Some(database.client()), &evictor, 8, deadlines)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        write,
+        ReloadScheduleError::Timeout {
+            operation: "write_reload_interval",
+            ..
+        }
+    ));
+    let clear = clear_reload_interval(Some(database.client()), &evictor, deadlines)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        clear,
+        ReloadScheduleError::Timeout {
+            operation: "clear_reload_interval",
+            ..
+        }
+    ));
+    assert!(evictor.names().is_empty());
     database.close().await;
 }

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{NaiveDate, NaiveDateTime};
 use clap::Parser;
-use deadpool_postgres::{GenericClient as _, Manager, Pool};
+use deadpool_postgres::{Client, GenericClient as _, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use tokio::task::yield_now;
@@ -20,6 +20,8 @@ use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::session::PostgresStore;
 use crate::reload_schedule::RELOAD_CONFIG_PARAM_NAME;
 use crate::reload_schedule::evictor::{ConfigParamEvictor, EvictError, EvictFuture};
+
+const POOL_SIZE: usize = 4;
 
 const SEED_SQL: &str = r#"INSERT INTO "LiteLLM_Config" ("param_name", "param_value", "last_run_at", "reload_revision")
 VALUES ($1, $2::text::jsonb, $3, $4)"#;
@@ -53,7 +55,7 @@ impl Database {
         .unwrap();
         let config = fixture.options.url.expose_secret().parse().unwrap();
         let pool = Pool::builder(Manager::new(config, NoTls))
-            .max_size(4)
+            .max_size(POOL_SIZE)
             .build()
             .unwrap();
         Self {
@@ -168,4 +170,13 @@ pub(crate) fn instant() -> NaiveDateTime {
 
 pub(crate) fn serialized_interval(hours: u32) -> JsonData {
     JsonData::String(format!("{{\"interval_hours\": {hours}}}"))
+}
+
+// the pool holds POOL_SIZE connections, so holding all of them leaves the next acquisition waiting
+pub(crate) async fn hold_every_connection(database: &Database) -> Vec<Client> {
+    let mut held = Vec::new();
+    for _slot in 0..POOL_SIZE {
+        held.push(database.store.session().await.unwrap());
+    }
+    held
 }

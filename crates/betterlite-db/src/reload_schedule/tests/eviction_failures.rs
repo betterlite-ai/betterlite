@@ -28,9 +28,14 @@ fn evicted_param_name(error: &EvictError) -> &str {
 async fn write_interval_reports_a_failed_eviction_after_storing_the_interval() {
     let database = Database::provision().await;
     let evictor = FailingEvictor;
-    let error = write_reload_interval(Some(database.client()), &evictor, 8)
-        .await
-        .unwrap_err();
+    let error = write_reload_interval(
+        Some(database.client()),
+        &evictor,
+        8,
+        ScheduleDeadlines::default(),
+    )
+    .await
+    .unwrap_err();
     let failure = eviction_failure(error);
     assert_eq!(evicted_param_name(&failure), RELOAD_CONFIG_PARAM_NAME);
     assert_eq!(
@@ -45,9 +50,13 @@ async fn clear_interval_reports_a_failed_eviction_after_clearing_the_interval() 
     let database = Database::provision().await;
     seed_row(&database, Some(serialized_interval(6)), Some(instant()), 4).await;
     let evictor = FailingEvictor;
-    let error = clear_reload_interval(Some(database.client()), &evictor)
-        .await
-        .unwrap_err();
+    let error = clear_reload_interval(
+        Some(database.client()),
+        &evictor,
+        ScheduleDeadlines::default(),
+    )
+    .await
+    .unwrap_err();
     let failure = eviction_failure(error);
     assert_eq!(evicted_param_name(&failure), RELOAD_CONFIG_PARAM_NAME);
     assert_eq!(

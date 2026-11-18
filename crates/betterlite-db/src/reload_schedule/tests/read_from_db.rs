@@ -7,12 +7,14 @@ use crate::budget_permission_rows::JsonData;
 use crate::postgres_store::errors::DbError;
 use crate::reload_schedule::ReloadSchedule;
 use crate::reload_schedule::parse_schedule::ParseScheduleError;
-use crate::reload_schedule::store::{ReloadScheduleError, read_reload_schedule};
+use crate::reload_schedule::store::{ReloadScheduleError, ScheduleDeadlines, read_reload_schedule};
 
 #[tokio::test]
 async fn read_from_db_returns_none_without_a_row() {
     let database = Database::provision().await;
-    let schedule = read_reload_schedule(Some(database.client())).await.unwrap();
+    let schedule = read_reload_schedule(Some(database.client()), ScheduleDeadlines::default())
+        .await
+        .unwrap();
     assert_eq!(schedule, None);
     database.close().await;
 }
@@ -21,7 +23,9 @@ async fn read_from_db_returns_none_without_a_row() {
 async fn read_from_db_parses_a_serialized_row() {
     let database = Database::provision().await;
     seed_row(&database, Some(serialized_interval(8)), Some(instant()), 3).await;
-    let schedule = read_reload_schedule(Some(database.client())).await.unwrap();
+    let schedule = read_reload_schedule(Some(database.client()), ScheduleDeadlines::default())
+        .await
+        .unwrap();
     assert_eq!(
         schedule,
         Some(ReloadSchedule {
@@ -42,7 +46,7 @@ async fn read_from_db_parses_a_decoded_object_row() {
         JsonData::Number(serde_json::Number::from(6_i32)),
     );
     seed_row(&database, Some(JsonData::Object(fields)), None, 0).await;
-    let schedule = read_reload_schedule(Some(database.client()))
+    let schedule = read_reload_schedule(Some(database.client()), ScheduleDeadlines::default())
         .await
         .unwrap()
         .unwrap();
@@ -55,7 +59,7 @@ async fn read_from_db_parses_a_decoded_object_row() {
 async fn read_from_db_leaves_a_null_param_value_without_a_schedule() {
     let database = Database::provision().await;
     seed_row(&database, None, Some(instant()), 5).await;
-    let schedule = read_reload_schedule(Some(database.client()))
+    let schedule = read_reload_schedule(Some(database.client()), ScheduleDeadlines::default())
         .await
         .unwrap()
         .unwrap();
@@ -75,7 +79,7 @@ async fn read_from_db_reports_a_revision_past_u32() {
         i64::from(u32::MAX) + 1,
     )
     .await;
-    let error = read_reload_schedule(Some(database.client()))
+    let error = read_reload_schedule(Some(database.client()), ScheduleDeadlines::default())
         .await
         .unwrap_err();
     assert!(matches!(
@@ -88,7 +92,9 @@ async fn read_from_db_reports_a_revision_past_u32() {
 
 #[tokio::test]
 async fn read_from_db_reports_a_missing_database() {
-    let error = read_reload_schedule(None).await.unwrap_err();
+    let error = read_reload_schedule(None, ScheduleDeadlines::default())
+        .await
+        .unwrap_err();
     assert!(matches!(
         error,
         ReloadScheduleError::Database(DbError::NoDbConnected)

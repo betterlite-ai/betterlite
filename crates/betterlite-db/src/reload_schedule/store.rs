@@ -121,12 +121,21 @@ async fn bounded_query(
 
 pub async fn read_reload_schedule(
     client: Option<PrismaClient<'_>>,
+    deadlines: ScheduleDeadlines,
 ) -> Result<Option<ReloadSchedule>, ReloadScheduleError> {
-    let rows = ConfigRepository::new(client, false)
-        .table()?
-        .as_ref()
-        .find::<ReloadConfigRow>(KeyFilter::Equal(RELOAD_CONFIG_PARAM_NAME))
-        .await?;
+    let repository = ConfigRepository::new(client, false);
+    let rows = timeout(
+        deadlines.statement,
+        repository
+            .table()?
+            .as_ref()
+            .find::<ReloadConfigRow>(KeyFilter::Equal(RELOAD_CONFIG_PARAM_NAME)),
+    )
+    .await
+    .map_err(|_elapsed| ReloadScheduleError::Timeout {
+        operation: "read_reload_schedule",
+        deadline: deadlines.statement,
+    })??;
     rows.first()
         .map(parse_reload_schedule)
         .transpose()
@@ -149,6 +158,7 @@ enum IntervalWrite {
 async fn store_interval(
     client: Option<PrismaClient<'_>>,
     write: IntervalWrite,
+    deadlines: ScheduleDeadlines,
 ) -> Result<(), ReloadScheduleError> {
     let interval_hours = match write {
         IntervalWrite::Create(hours) => Some(hours),
@@ -159,27 +169,37 @@ async fn store_interval(
     let repository = ConfigRepository::new(client, true);
     match write {
         IntervalWrite::Create(_) => {
-            repository
-                .table()?
-                .upsert(
+            timeout(
+                deadlines.statement,
+                repository.table()?.upsert(
                     RELOAD_CONFIG_PARAM_NAME.to_owned(),
                     ConfigWrite {
                         param_name: RELOAD_CONFIG_PARAM_NAME.to_owned(),
                         param_value: JsonData::String(param_value),
                     },
-                )
-                .await?;
+                ),
+            )
+            .await
+            .map_err(|_elapsed| ReloadScheduleError::Timeout {
+                operation: "write_reload_interval",
+                deadline: deadlines.statement,
+            })??;
         }
         IntervalWrite::Clear => {
-            repository
-                .table()?
-                .update_many(
+            timeout(
+                deadlines.statement,
+                repository.table()?.update_many(
                     ConfigUpdate {
                         param_value: Some(JsonData::String(param_value)),
                     },
                     RELOAD_CONFIG_PARAM_NAME.to_owned(),
-                )
-                .await?;
+                ),
+            )
+            .await
+            .map_err(|_elapsed| ReloadScheduleError::Timeout {
+                operation: "clear_reload_interval",
+                deadline: deadlines.statement,
+            })??;
         }
     }
     Ok(())
@@ -189,16 +209,18 @@ pub async fn write_reload_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
     interval_hours: u32,
+    deadlines: ScheduleDeadlines,
 ) -> Result<(), ReloadScheduleError> {
-    store_interval(client, IntervalWrite::Create(interval_hours)).await?;
+    store_interval(client, IntervalWrite::Create(interval_hours), deadlines).await?;
     evict_reload_config(evictor).await
 }
 
 pub async fn clear_reload_interval(
     client: Option<PrismaClient<'_>>,
     evictor: &dyn ConfigParamEvictor,
+    deadlines: ScheduleDeadlines,
 ) -> Result<(), ReloadScheduleError> {
-    store_interval(client, IntervalWrite::Clear).await?;
+    store_interval(client, IntervalWrite::Clear, deadlines).await?;
     evict_reload_config(evictor).await
 }
 
