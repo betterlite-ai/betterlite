@@ -372,7 +372,7 @@ async fn tag_end_user_group_adapters_unwrapped(#[case] adapter: AuthReadAdapter)
 
 #[test]
 fn presence_distinguishes_omitted_null_and_value() {
-    let present = Presence::Value(0);
+    let present: Presence<i64> = Presence::Value(0);
     assert_eq!(present.value(), Some(&0));
     assert_eq!(Presence::<i64>::Null.value(), None);
     assert_eq!(Presence::<i64>::Omitted.value(), None);
