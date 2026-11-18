@@ -302,7 +302,8 @@ async fn increment_and_release() {
 async fn clamp_after_reset() {
     let server = FakeRedis::try_start().await.unwrap();
     let shared = shared_store(&server, 100);
-    let service = service(local_store(&TestClock::default()), Some(shared.clone()));
+    let resetter = shared_store(&server, 100);
+    let service = service(local_store(&TestClock::default()), Some(shared));
     let started = service
         .pre_call(&facts(Some(GROUP), Some("a"), None))
         .await
@@ -316,7 +317,7 @@ async fn clamp_after_reset() {
             Some(IN_FLIGHT_COUNT_TTL_SECONDS),
         )
         .unwrap();
-    let reset = shared
+    let reset = resetter
         .compare_and_set(
             &key,
             &StoreRead::Value(RouteValue::Counter(1)),
