@@ -21,8 +21,7 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::Mutex;
-use std::sync::PoisonError;
+use std::sync::{Mutex, PoisonError::into_inner};
 use std::time::Duration;
 
 pub(crate) struct Op;
@@ -37,21 +36,11 @@ enum Action {
 
 #[derive(Default, Deserialize)]
 #[serde(default)]
-struct DebugFlags {
+struct Flags {
     verbose: bool,
     request_debug: bool,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct CaptureFlags {
     log_raw_request_response: bool,
     raw_request_only: bool,
-}
-
-#[derive(Default, Deserialize)]
-#[serde(default)]
-struct FailureFlags {
     failing_callback: bool,
     failing_logger_fn: bool,
 }
@@ -66,11 +55,7 @@ pub(crate) struct Input {
     #[serde(default)]
     litellm_params: IndexMap<String, Json>,
     #[serde(flatten)]
-    debug: DebugFlags,
-    #[serde(flatten)]
-    capture: CaptureFlags,
-    #[serde(flatten)]
-    failures: FailureFlags,
+    flags: Flags,
     #[serde(default)]
     turn_off_message_logging: bool,
     #[serde(rename = "input", default = "default_input")]
@@ -100,15 +85,8 @@ struct Recorder {
 }
 
 impl Recorder {
-    fn record(&self, entry: Value) {
-        self.events
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(entry);
-    }
-
     fn finish(&self, entry: Value) -> Result<(), PrePostError> {
-        self.record(entry);
+        self.events.lock().unwrap_or_else(into_inner).push(entry);
         if self.failing {
             return Err(PrePostError::CallbackFailed {
                 message: "callback exploded".to_owned(),
@@ -132,7 +110,8 @@ impl LogSink for Recorder {
             LogLevel::Warning => "warning",
             LogLevel::Error => "error",
         };
-        self.record(serde_json::json!({
+        let mut events = self.events.lock().unwrap_or_else(into_inner);
+        events.push(serde_json::json!({
             "kind": "log",
             "level": level,
             "message": record.message,
@@ -167,10 +146,10 @@ impl Helper for Op {
         let scrubber =
             Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| failure(error.to_string()))?;
         let mut state = build_state(input, &scrubber)?;
-        state.litellm_request_debug = input.debug.request_debug;
+        state.litellm_request_debug = input.flags.request_debug;
         let recorder = Recorder {
             events: Mutex::new(Vec::new()),
-            failing: input.failures.failing_callback,
+            failing: input.flags.failing_callback,
         };
         let error = dispatch(input, &mut state, &recorder, &scrubber)?;
         Ok(output(&state, &recorder, &error))
@@ -199,8 +178,8 @@ fn build_state(input: &Input, redactor: &Redactor) -> Result<LoggingState, Box<H
         "messages": input.messages,
         "litellm_params": input.litellm_params,
         "request_logging": {
-            "log_raw_request_response": input.capture.log_raw_request_response,
-            "raw_request_only": input.capture.raw_request_only,
+            "log_raw_request_response": input.flags.log_raw_request_response,
+            "raw_request_only": input.flags.raw_request_only,
         },
     }))
     .map_err(|error| failure(error.to_string()))?;
@@ -224,14 +203,14 @@ fn dispatch(
     scrubber: &Redactor,
 ) -> Result<Value, Box<HelperError>> {
     let callbacks = [InputCallback::Logger(recorder)];
-    let failing_logger_fn = input.failures.failing_logger_fn;
     let logger_fn = |details: &Json| {
-        recorder.record(serde_json::json!({
+        let mut events = recorder.events.lock().unwrap_or_else(into_inner);
+        events.push(serde_json::json!({
             "kind": "logger_fn",
             "log_event_type": detail(details, "log_event_type"),
             "input": detail(details, "input"),
         }));
-        if failing_logger_fn {
+        if input.flags.failing_logger_fn {
             return Err(PrePostError::CallbackFailed {
                 message: "logger_fn exploded".to_owned(),
             });
@@ -240,7 +219,7 @@ fn dispatch(
     };
     let env = PrePostEnv {
         debug: DebugSettings {
-            verbose: input.debug.verbose,
+            verbose: input.flags.verbose,
             json_logs: false,
         },
         globals: GlobalFlags {
@@ -286,11 +265,7 @@ fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) ->
 fn output(state: &LoggingState, recorder: &Recorder, error: &Value) -> Value {
     let details = &state.model_call_details;
     let set = |name: &str| !matches!(details.get(name), None | Some(Json::Null));
-    let events = recorder
-        .events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
+    let events = recorder.events.lock().unwrap_or_else(into_inner).clone();
     serde_json::json!({
         "events": events,
         "details": {
