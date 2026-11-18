@@ -86,7 +86,7 @@ where
     Key: Send + Sync + 'static,
 {
     fn finalize(&self, outcome: CleanupOutcome<Key>) {
-        let cleanup = DisconnectCleanup {
+        let cleanup = Self {
             logging: Arc::clone(&self.logging),
             slots: Arc::clone(&self.slots),
             tracker: self.tracker.clone(),
