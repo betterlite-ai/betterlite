@@ -215,7 +215,7 @@ fn governed_model_group(data: &RetrievalData, deps: &RetrievalDependencies<'_>) 
     }
 }
 
-fn log_attached(data: &RetrievalData, model_group: &str, added: &PolicyPipelines) {
+fn log_attached(data: &RetrievalData, model_group: &str, added: &[(String, GuardrailPipeline)]) {
     let names = added
         .iter()
         .map(|(policy_name, _)| policy_name.as_str())

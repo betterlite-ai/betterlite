@@ -6,6 +6,7 @@ use super::{
     GUARDRAIL_PIPELINES, PIPELINE_MANAGED_GUARDRAILS, PolicyPipelines, RESPONSE_ID,
     ResponseRetrievalError, RetrievalData,
 };
+use crate::pipeline::GuardrailPipeline;
 use crate::pipeline::json_value::JsonValue;
 use crate::resolver::pipelines::pipeline_managed_guardrails;
 
@@ -73,7 +74,7 @@ pub(super) fn decode_policy_pipelines(
 
 pub(super) fn new_pipelines(
     data: &mut RetrievalData,
-    pipelines: &PolicyPipelines,
+    pipelines: &[(String, GuardrailPipeline)],
 ) -> Result<Option<(PolicyPipelines, PolicyPipelines)>, ResponseRetrievalError> {
     let name = metadata_name(data);
     let bucket = bucket_mut(data, name)?;
@@ -96,7 +97,7 @@ pub(super) fn new_pipelines(
 pub(super) fn attach_new_pipelines(
     data: &mut RetrievalData,
     already_attached: PolicyPipelines,
-    added: &PolicyPipelines,
+    added: &[(String, GuardrailPipeline)],
     sources: &BTreeMap<String, String>,
 ) -> Result<(), ResponseRetrievalError> {
     store_pipelines(data, already_attached, added)?;
@@ -106,7 +107,7 @@ pub(super) fn attach_new_pipelines(
 fn store_pipelines(
     data: &mut RetrievalData,
     already_attached: PolicyPipelines,
-    added: &PolicyPipelines,
+    added: &[(String, GuardrailPipeline)],
 ) -> Result<(), ResponseRetrievalError> {
     let mut pipelines = already_attached;
     pipelines.extend(added.iter().cloned());
@@ -126,7 +127,7 @@ fn store_pipelines(
 
 fn add_headers(
     data: &mut RetrievalData,
-    added: &PolicyPipelines,
+    added: &[(String, GuardrailPipeline)],
     sources: &BTreeMap<String, String>,
 ) -> Result<(), ResponseRetrievalError> {
     for (policy_name, _) in added {
