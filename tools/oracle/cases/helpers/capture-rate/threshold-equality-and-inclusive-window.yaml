@@ -1,0 +1,31 @@
+kind: helper
+name: threshold-equality-and-inclusive-window
+call:
+  capture_rate:
+    cases:
+      equality_at_the_default_threshold:
+        function: report
+        provider: openai
+        start_date: "2026-11-16"
+        end_date: "2026-11-16"
+        threshold: 0.9
+        captured_by_day: {"2026-11-16": 90.0}
+        billed_by_day: {"2026-11-16": 100.0}
+      equality_at_a_configured_threshold:
+        function: report
+        provider: openai
+        start_date: "2026-11-16"
+        end_date: "2026-11-16"
+        threshold: 0.5
+        captured_by_day: {"2026-11-16": 1.0}
+        billed_by_day: {"2026-11-16": 2.0}
+      inclusive_window_counts_both_ends:
+        function: report
+        provider: openai
+        start_date: "2026-11-10"
+        end_date: "2026-11-12"
+        threshold: 0.9
+        captured_by_day: {"2026-11-10": 1.0, "2026-11-12": 2.0}
+        billed_by_day: {"2026-11-10": 2.0, "2026-11-11": 1.0, "2026-11-12": 1.0}
+env: {}
+compare: {ignore: []}

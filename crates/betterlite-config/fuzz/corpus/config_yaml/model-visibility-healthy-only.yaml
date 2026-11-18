@@ -1,0 +1,8 @@
+model_list:
+  - model_name: hidden-model
+    litellm_params:
+      model: openai/gpt-4o
+    model_info:
+      discoverable: false
+general_settings:
+  model_list_healthy_only: true

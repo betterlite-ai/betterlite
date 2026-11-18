@@ -48,6 +48,7 @@ pub mod key_context;
 pub mod key_rotation;
 pub mod master_database_auth;
 pub mod model_grant_intersection;
+pub mod model_read_through;
 pub mod oauth_tokens;
 pub mod organization_route_policy;
 pub mod ptu_rollup;
@@ -122,6 +123,7 @@ pub struct ServerState {
     pub key_rotation: key_rotation::Slot,
     pub master_database_auth: master_database_auth::Slot,
     pub model_grant_intersection: model_grant_intersection::Slot,
+    pub model_read_through: model_read_through::Slot,
     pub oauth_tokens: oauth_tokens::Slot,
     pub organization_route_policy: organization_route_policy::Slot,
     pub ptu_rollup: ptu_rollup::Slot,
@@ -196,6 +198,7 @@ impl ServerState {
             key_rotation: key_rotation::Slot::new(config, &shared),
             master_database_auth: master_database_auth::Slot::new(config, &shared),
             model_grant_intersection: model_grant_intersection::Slot::new(config, &shared),
+            model_read_through: model_read_through::Slot::new(config, &shared),
             oauth_tokens: oauth_tokens::Slot::new(config, &shared),
             organization_route_policy: organization_route_policy::Slot::new(config, &shared),
             ptu_rollup: ptu_rollup::Slot::new(config, &shared),

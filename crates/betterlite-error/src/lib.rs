@@ -15,6 +15,7 @@ pub mod parse;
 pub mod proxy_enums;
 pub mod proxy_error_types;
 pub mod proxy_exception;
+pub mod proxy_model_not_found;
 pub mod proxy_rate_limit_error;
 pub mod rate_limit;
 pub mod status;

@@ -1,0 +1,38 @@
+kind: helper
+name: auth-read-budget-failure-log-policy
+call:
+  auth_read:
+    kind: budget_failure_log_policy
+    exact_exception: true
+    message: ""
+calls:
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: false
+      message: ""
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: true
+      message: user not found
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: false
+      message: CoLuMn missing from litellm_budgettable
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: false
+      message: relation DOES NOT EXIST
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: false
+      message: Prisma client failed
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: false
+      message: please MIGRATE the database
+  - auth_read:
+      kind: budget_failure_log_policy
+      exact_exception: false
+      message: connection refused by the pool
+env: {}
+compare: {ignore: []}
