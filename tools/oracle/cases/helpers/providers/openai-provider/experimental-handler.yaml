@@ -1,0 +1,38 @@
+kind: helper
+name: openai-provider-experimental-handler
+call:
+  openai_provider:
+    case: chat
+    model: gpt-4o
+    api_base: https://fixture.test/v1
+    api_key: sk-fixture
+    organization: org-fixture
+    headers:
+      x-caller: "1"
+    extra_headers:
+      x-extra: "2"
+    metadata: null
+    environment:
+      EXPERIMENTAL_OPENAI_BASE_LLM_HTTP_HANDLER: "true"
+    globals:
+      api_base: null
+      api_key: null
+      openai_key: null
+      organization: null
+    preview: false
+    chat_defaults: null
+    text_defaults: null
+    messages:
+      - role: user
+        content: hi
+    optional_params: {}
+    status: 500
+    reply:
+      error:
+        message: the model is overloaded
+        type: server_error
+        param: temperature
+        code: overloaded
+    text_completion: false
+env: {}
+compare: {ignore: []}

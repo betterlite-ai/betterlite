@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-claude-invoke-map-params
+call:
+  bedrock_claude_invoke:
+    function: map_params
+    model_cost:
+      bedrock/claude-plain: {litellm_provider: bedrock}
+    calls:
+      - model: claude-plain
+        non_default_params: {temperature: 0.5}
+        optional_params: {}
+        drop_params: false
+env: {}
+compare: {ignore: []}

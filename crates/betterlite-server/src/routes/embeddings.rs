@@ -23,16 +23,15 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::{self, EmbeddingError, EmbeddingRequest, EmbeddingResponse};
 use betterlite_redact::secret::Redactor;
 use serde::Serialize;
-use std::str;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use uuid::Uuid;
 
+use crate::pre_call::rewrites::resolve_call_id;
 use crate::routing::simple_shuffle::pick_deployment;
 use crate::server::chat_setup::provider_call::CallError;
 use crate::server::chat_setup::provider_call::embedding::provider_embedding;
 
-use super::chat::MAX_CALL_ID_LENGTH;
 use super::chat::headers::{failure_headers, success_headers};
 
 mod tests;
@@ -115,14 +114,6 @@ impl EmbeddingCall for EmbeddingCalls {
     }
 }
 
-fn routed_call_id(headers: &HeaderMap) -> String {
-    headers
-        .get("x-litellm-call-id")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
-        .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned)
-}
-
 async fn embeddings(
     State(state): State<EmbeddingState>,
     path_model: Option<Path<String>>,
@@ -130,7 +121,11 @@ async fn embeddings(
     body: Bytes,
 ) -> Response {
     let started = Instant::now();
-    let call_id = routed_call_id(&headers);
+    let call_id = resolve_call_id(
+        headers
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+    );
     let request = match EmbeddingRequest::parse(&body) {
         Ok(request) => request,
         Err(error) => {

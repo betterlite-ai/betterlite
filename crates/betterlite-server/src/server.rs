@@ -4,6 +4,7 @@ use crate::admission_control::in_flight::InFlightRequests;
 use crate::admission_control::{AdmissionControl, AdmissionStack};
 use crate::middleware::request_root_paths::RootPaths;
 use crate::middleware::request_stack;
+use crate::pre_call::rewrites::resolve_call_id;
 use crate::routes::chat::CallContext;
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
@@ -18,12 +19,19 @@ use crate::shutdown::build_shutdown_signal;
 use crate::state::ServerState;
 use crate::state::shared::Shared;
 use axum::http::StatusCode;
-use axum::middleware::from_fn;
+use axum::middleware::{from_fn, from_fn_with_state};
 use axum::response::{IntoResponse as _, Response as AxumResponse};
 use axum::{Json, Router};
 use betterlite_config::types::Config;
 use betterlite_error::envelope::EnvelopeError;
 use betterlite_error::envelope::error_body_call_id;
+use betterlite_logging::logging_service_events::clock::SystemClock;
+use betterlite_logging::logging_service_events::middleware::{ServiceEventState, service_events};
+use betterlite_logging::logging_service_events::pipeline::PipelineError;
+use betterlite_logging::logging_service_events::sink::TracingSink;
+use betterlite_logging::logging_service_events::wiring::LoggingWiring;
+use betterlite_logging::logging_streams::assembler::ChatStreamAssembler;
+use betterlite_logging::registry::CallbackRegistry;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -65,6 +73,8 @@ pub enum ServerError {
     },
     #[error(transparent)]
     VertexEmbedding(#[from] VertexEmbeddingSetupError),
+    #[error(transparent)]
+    Logging(#[from] PipelineError),
 }
 pub async fn run(
     config: Config,
@@ -87,9 +97,25 @@ pub async fn run_with_listener(
     let shutting_down = Arc::new(AtomicBool::new(false));
     let outbound = chat.client.clone();
     let tasks = TaskTracker::new();
-    let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?;
+    // the one place the logging parts are built, with the stream assembler B8610 later replaces
+    let logging = LoggingWiring::start(
+        &config.sections.service_callback,
+        Arc::new(SystemClock),
+        Arc::new(TracingSink),
+        CallbackRegistry::new(config.sections.callback_settings.max_callbacks),
+        Arc::new(ChatStreamAssembler),
+    )?;
+    let events = ServiceEventState {
+        pipeline: Arc::clone(&logging.pipeline),
+        call_id: resolve_call_id,
+    };
+    let app = application(&config, chat, Arc::clone(&shutting_down), &tasks)?
+        .layer(from_fn_with_state(events, service_events));
     let background = Background { outbound, tasks };
-    Box::pin(serve(app, shutting_down, background, host, listener)).await
+    let served = Box::pin(serve(app, shutting_down, background, host, listener)).await;
+    // every accepted service event is delivered before the process reports the shutdown
+    logging.pipeline.stop().await;
+    served
 }
 
 async fn bind(host: &str, port: u16) -> Result<TcpListener, ServerError> {

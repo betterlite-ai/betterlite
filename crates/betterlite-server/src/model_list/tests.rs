@@ -24,21 +24,22 @@ const LIST: &str = concat!(
 );
 const BOOL_ISSUE: &str = r#""msg":"not a boolean","type":"bool_parsing"}"#;
 async fn send(config: &str, uri: &str, header: &str) -> (u16, String) {
-    let loader = ConfigLoader {
-        lookup: BTreeMap::<String, String>::new(),
+    // a loaded Config is large, so it drops here instead of sitting in this future across the await
+    let call = {
+        let loader = ConfigLoader {
+            lookup: BTreeMap::<String, String>::new(),
+        };
+        let document = loader.load(config).unwrap();
+        let application = router(
+            state_for(&document),
+            Arc::new(AtomicBool::new(false)),
+            Router::new(),
+            Router::new(),
+        );
+        let request = Request::get(uri).header(header, "2023-06-01");
+        application.oneshot(request.body(Body::empty()).unwrap())
     };
-    let document = loader.load(config).unwrap();
-    let application = router(
-        state_for(&document),
-        Arc::new(AtomicBool::new(false)),
-        Router::new(),
-        Router::new(),
-    );
-    let request = Request::get(uri).header(header, "2023-06-01");
-    let response = application
-        .oneshot(request.body(Body::empty()).unwrap())
-        .await
-        .unwrap();
+    let response = call.await.unwrap();
     let status = response.status().as_u16();
     let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     (status, String::from_utf8(body.to_vec()).unwrap())

@@ -1,0 +1,889 @@
+use std::fs;
+use std::sync::Arc;
+use std::time::Duration;
+
+use rstest::rstest;
+use tokio::sync::watch;
+use tokio::task::{JoinSet, yield_now};
+use tokio_util::task::TaskTracker;
+
+use crate::semantic_math::{MathError, cosine_similarity};
+use crate::semantic_router::build::{BuildState, wait_for_build};
+use crate::semantic_router::error::{EmbeddingStage, RouterError};
+use crate::semantic_router::index::{
+    ROUTE_INDEX_MAX_BYTES, RouteIndexError, load_file, parse_inline,
+};
+use crate::semantic_router::select::BuiltEntry;
+use crate::semantic_router::service::{AutoRouter, EMBEDDING_TIMEOUT};
+use crate::semantic_router::tests::support::{
+    FakeEmbedder, FakeError, TWO_ROUTES, caller, decisions, router, settings, temporary_directory,
+    user_text, with_limit,
+};
+
+// the smallest config each parser accepts, padded to an exact byte length with trailing whitespace
+const INLINE_SKELETON: &str = r#"{"routes":[]}"#;
+const FILE_SKELETON: &str = r#"{"encoder_type":"openai","encoder_name":"e","routes":[]}"#;
+
+// the pinned semantic router's two norms round this self-similarity just below one
+const EIGHT_DIMENSIONS: [f64; 8] = [1.0, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
+
+fn padded_config(skeleton: &str, len: usize) -> String {
+    assert!(
+        len >= skeleton.len(),
+        "the skeleton is the smallest padded config"
+    );
+    format!(
+        "{skeleton}{}",
+        " ".repeat(len.saturating_sub(skeleton.len()))
+    )
+}
+
+#[test]
+fn an_inline_config_at_the_byte_limit_parses_and_one_byte_more_is_rejected() {
+    let at_limit = padded_config(INLINE_SKELETON, ROUTE_INDEX_MAX_BYTES);
+    assert_eq!(at_limit.len(), ROUTE_INDEX_MAX_BYTES);
+    let index = parse_inline(&at_limit).expect("a config at the byte limit parses");
+    assert!(index.rows.is_empty());
+    let over = padded_config(INLINE_SKELETON, ROUTE_INDEX_MAX_BYTES + 1);
+    let Err(error) = parse_inline(&over) else {
+        panic!("a config one byte past the bound is rejected");
+    };
+    assert!(matches!(
+        &error,
+        RouteIndexError::TooLarge { limit } if *limit == ROUTE_INDEX_MAX_BYTES
+    ));
+    assert_eq!(error.code(), "too_large");
+}
+
+#[test]
+fn a_config_file_at_the_byte_limit_parses_and_one_byte_more_is_rejected() {
+    let directory = temporary_directory("file-bound");
+    let at_limit = directory.join("at.json");
+    fs::write(
+        &at_limit,
+        padded_config(FILE_SKELETON, ROUTE_INDEX_MAX_BYTES),
+    )
+    .unwrap();
+    let index = load_file(&at_limit).expect("a file at the byte limit parses");
+    assert!(index.rows.is_empty());
+    let over = directory.join("over.json");
+    fs::write(
+        &over,
+        padded_config(FILE_SKELETON, ROUTE_INDEX_MAX_BYTES + 1),
+    )
+    .unwrap();
+    let Err(error) = load_file(&over) else {
+        panic!("a file one byte past the bound is rejected");
+    };
+    assert!(matches!(&error, RouteIndexError::TooLarge { .. }));
+    assert_eq!(error.code(), "too_large");
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_config_file_with_an_unknown_extension_is_rejected() {
+    let directory = temporary_directory("extension");
+    let path = directory.join("routes.txt");
+    fs::write(&path, r#"{"routes":[]}"#).unwrap();
+    let Err(error) = load_file(&path) else {
+        panic!("a .txt file is not a route config");
+    };
+    assert!(
+        matches!(&error, RouteIndexError::UnsupportedExtension { path: rejected } if rejected == &path)
+    );
+    assert_eq!(error.code(), "unsupported_extension");
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_missing_config_file_is_a_read_error() {
+    let directory = temporary_directory("missing");
+    let path = directory.join("absent.json");
+    let Err(error) = load_file(&path) else {
+        panic!("a file that does not exist cannot be read");
+    };
+    assert!(matches!(&error, RouteIndexError::Read { path: rejected, .. } if rejected == &path));
+    assert_eq!(error.code(), "read_failed");
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_nonfinite_threshold_is_rejected() {
+    let directory = temporary_directory("nonfinite");
+    let path = directory.join("routes.yaml");
+    fs::write(
+        &path,
+        "encoder_type: openai\nencoder_name: text-embedding-3-small\nroutes:\n  - name: r\n    utterances: [a]\n    score_threshold: .nan\n",
+    )
+    .unwrap();
+    let Err(error) = load_file(&path) else {
+        panic!("a NaN threshold is not a usable route");
+    };
+    assert!(matches!(&error, RouteIndexError::NonFiniteThreshold { name } if name == "r"));
+    assert_eq!(error.code(), "non_finite_threshold");
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_file_route_without_utterances_is_rejected() {
+    let directory = temporary_directory("utterances");
+    let path = directory.join("routes.yaml");
+    fs::write(
+        &path,
+        "encoder_type: openai\nencoder_name: e\nroutes:\n  - name: r\n",
+    )
+    .unwrap();
+    let Err(error) = load_file(&path) else {
+        panic!("the file format requires utterances on every route");
+    };
+    assert!(matches!(error, RouteIndexError::Yaml(_)));
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_file_without_the_encoder_keys_is_rejected() {
+    let directory = temporary_directory("no-encoder");
+    let path = directory.join("routes.json");
+    fs::write(&path, r#"{"routes": []}"#).unwrap();
+    let Err(error) = load_file(&path) else {
+        panic!("the file format requires the encoder keys");
+    };
+    assert!(matches!(error, RouteIndexError::Json(_)));
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_file_route_keeps_the_fields_the_encoder_ignores() {
+    let directory = temporary_directory("extra-fields");
+    let path = directory.join("routes.json");
+    fs::write(
+        &path,
+        r#"{
+            "encoder_type": "openai",
+            "encoder_name": "text-embedding-3-small",
+            "routes": [{
+                "name": "r",
+                "description": "d",
+                "utterances": ["a"],
+                "score_threshold": 0.4,
+                "function_schemas": [{"name": "f"}],
+                "metadata": {"team": "t"},
+                "llm": {"module": "m", "class": "C", "model": "gpt"}
+            }]
+        }"#,
+    )
+    .unwrap();
+    let index = load_file(&path).expect("the extra route fields are accepted");
+    assert_eq!(index.rows.len(), 1);
+    assert_eq!(&*index.rows[0].route, "r");
+    assert_eq!(index.rows[0].text, "a");
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn a_config_without_a_routes_key_is_an_empty_index() {
+    let index = parse_inline(r#"{"encoder_type": "openai"}"#).expect("the config parses");
+    assert!(index.rows.is_empty());
+    assert!(index.groups.is_empty());
+}
+
+#[rstest]
+#[case::misspelled_utterances(r#"{"routes": [{"name": "r", "utterance": ["a"]}]}"#, "utterance")]
+#[case::misspelled_threshold(
+    r#"{"routes": [{"name": "r", "utterances": ["a"], "score_thresholds": 0.4}]}"#,
+    "score_thresholds"
+)]
+#[case::misspelled_top_level(r#"{"routse": []}"#, "routse")]
+fn a_misspelled_inline_config_key_is_rejected(#[case] source: &str, #[case] key: &str) {
+    let Err(error) = parse_inline(source) else {
+        panic!("{key} is not a key of the route config");
+    };
+    assert!(matches!(error, RouteIndexError::Json(_)));
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("unknown field `{key}`")),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::misspelled_utterances(
+    r#"{"encoder_type": "openai", "encoder_name": "e", "routes": [{"name": "r", "utterance": ["a"]}]}"#,
+    "utterance"
+)]
+#[case::misspelled_threshold(
+    r#"{"encoder_type": "openai", "encoder_name": "e", "routes": [{"name": "r", "utterances": ["a"], "score_thresholds": 0.4}]}"#,
+    "score_thresholds"
+)]
+#[case::misspelled_top_level(
+    r#"{"encoder_type": "openai", "encoder_name": "e", "routse": []}"#,
+    "routse"
+)]
+fn a_misspelled_file_config_key_is_rejected(#[case] source: &str, #[case] key: &str) {
+    let directory = temporary_directory(key);
+    let path = directory.join("routes.json");
+    fs::write(&path, source).unwrap();
+    let Err(error) = load_file(&path) else {
+        panic!("{key} is not a key of the route config file");
+    };
+    assert!(matches!(error, RouteIndexError::Json(_)));
+    assert!(
+        error
+            .to_string()
+            .contains(&format!("unknown field `{key}`")),
+        "{error}"
+    );
+    fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn an_inline_route_keeps_the_fields_the_encoder_ignores() {
+    let index = parse_inline(
+        r#"{"routes": [{"name": "r", "utterances": ["a"], "function_schemas": [{"name": "f"}], "metadata": {"team": "t"}, "llm": {"module": "m"}}]}"#,
+    )
+    .expect("the dynamic route fields are accepted");
+    assert_eq!(index.rows.len(), 1);
+    assert_eq!(&*index.rows[0].route, "r");
+}
+
+#[tokio::test]
+async fn a_threshold_of_one_matches_only_an_identical_vector() {
+    let config =
+        r#"{"routes": [{"name": "exact", "utterances": ["same"], "score_threshold": 1.0}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("same", vec![1.0_f64, 0.0_f64]),
+        ("exact", vec![1.0_f64, 0.0_f64]),
+        ("near", vec![1.0_f64, 0.000_001_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let matched = router
+        .decide_with(Some(&[user_text("exact")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(matched, Some(decisions(Some("exact"), "exact")));
+    let missed = router
+        .decide_with(Some(&[user_text("near")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(missed, Some(decisions(None, "fallback")));
+    assert_eq!(embedder.document_calls().len(), 2);
+}
+
+#[tokio::test]
+async fn a_zero_threshold_matches_even_a_negative_score() {
+    let config =
+        r#"{"routes": [{"name": "zero", "utterances": ["same"], "score_threshold": 0.0}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("same", vec![0.0_f64, 1.0_f64]),
+        ("opposite", vec![0.0_f64, -1.0_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("opposite")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(decision, Some(decisions(Some("zero"), "zero")));
+}
+
+#[tokio::test]
+async fn a_negative_threshold_still_compares() {
+    let config =
+        r#"{"routes": [{"name": "negative", "utterances": ["same"], "score_threshold": -0.5}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("same", vec![0.0_f64, 1.0_f64]),
+        ("opposite", vec![0.0_f64, -1.0_f64]),
+        ("close", vec![1.0_f64, -0.2_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let missed = router
+        .decide_with(Some(&[user_text("opposite")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(missed, Some(decisions(None, "fallback")));
+    let matched = router
+        .decide_with(Some(&[user_text("close")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(matched, Some(decisions(Some("negative"), "negative")));
+}
+
+#[tokio::test]
+async fn a_route_mean_counts_the_rows_inside_the_top_five() {
+    let config = r#"{"routes": [
+        {"name": "a", "utterances": ["u1", "u2", "u3", "u4", "u5"], "score_threshold": 0.98},
+        {"name": "b", "utterances": ["v1"], "score_threshold": 0.9}
+    ]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+        ("u1", vec![0.99_f64, 0.141_067_359_796_658_9_f64]),
+        ("u2", vec![0.98_f64, 0.198_997_487_421_324_1_f64]),
+        ("u3", vec![0.97_f64, 0.243_104_915_622_864_5_f64]),
+        ("u4", vec![0.96_f64, 0.280_000_000_000_000_14_f64]),
+        (
+            "u5",
+            vec![0.199_999_999_999_999_93_f64, 0.979_795_897_113_271_3_f64],
+        ),
+        ("v1", vec![0.93_f64, 0.367_559_518_989_782_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(Some("b"), "b")),
+        "the fifth row's 0.98 threshold keeps route a out of the window"
+    );
+}
+
+#[tokio::test]
+async fn a_route_mean_ignores_the_rows_past_the_top_five() {
+    let config = r#"{"routes": [
+        {"name": "a", "utterances": ["w1", "w2", "w3", "w4", "w5"], "score_threshold": 0.9},
+        {"name": "b", "utterances": ["x1", "x2"], "score_threshold": 0.99}
+    ]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+        ("w1", vec![0.97_f64, 0.243_104_915_622_864_5_f64]),
+        ("w2", vec![0.97_f64, 0.243_104_915_622_864_5_f64]),
+        ("w3", vec![0.97_f64, 0.243_104_915_622_864_5_f64]),
+        ("w4", vec![0.97_f64, 0.243_104_915_622_864_5_f64]),
+        ("w5", vec![0.1_f64, 0.994_987_437_106_62_f64]),
+        ("x1", vec![0.995_f64, 0.099_874_921_777_190_94_f64]),
+        ("x2", vec![0.94_f64, 0.341_174_442_184_639_77_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(Some("b"), "b")),
+        "route b's second row sits past the top five and never lowers its mean"
+    );
+}
+
+#[tokio::test]
+async fn an_utterance_vector_is_scored_by_cosine() {
+    let config =
+        r#"{"routes": [{"name": "tilted", "utterances": ["tilted"], "score_threshold": 0.9}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("tilted", vec![1.0_f64, 1.0_f64]),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(None, "fallback")),
+        "the tilted utterance scores 1/sqrt(2), below the 0.9 threshold"
+    );
+}
+
+#[tokio::test]
+async fn tied_routes_keep_the_earlier_route() {
+    let config = r#"{"routes": [
+        {"name": "first", "utterances": ["same"]},
+        {"name": "second", "utterances": ["same2"]}
+    ]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("same", vec![1.0_f64, 0.0_f64]),
+        ("same2", vec![1.0_f64, 0.0_f64]),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(decision, Some(decisions(Some("first"), "first")));
+}
+
+#[tokio::test]
+async fn a_probe_batch_of_the_wrong_size_is_a_vector_count_error() {
+    let embedder = Arc::new(FakeEmbedder::new(&[]).documents_answer(
+        &["test"],
+        vec![vec![1.0_f64, 0.0_f64], vec![0.0_f64, 1.0_f64]],
+    ));
+    let router = router(TWO_ROUTES, &embedder);
+    let error = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .expect_err("a two-vector probe cannot size the index");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::VectorCount {
+            stage: EmbeddingStage::Documents,
+            expected: 1,
+            found: 2
+        }
+    ));
+}
+
+#[tokio::test]
+async fn a_probe_batch_without_vectors_is_a_vector_count_error() {
+    let embedder = Arc::new(FakeEmbedder::new(&[]).documents_answer(&["test"], Vec::new()));
+    let router = router(TWO_ROUTES, &embedder);
+    let error = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .expect_err("an empty probe cannot size the index");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::VectorCount {
+            stage: EmbeddingStage::Documents,
+            expected: 1,
+            found: 0
+        }
+    ));
+}
+
+#[tokio::test]
+async fn an_utterance_batch_of_the_wrong_size_is_a_vector_count_error() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[("test", vec![1.0_f64, 0.0_f64])])
+            .documents_answer(&["small talk", "write code"], vec![vec![1.0_f64, 0.0_f64]]),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let error = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .expect_err("one vector cannot describe two utterances");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::VectorCount {
+            stage: EmbeddingStage::Documents,
+            expected: 2,
+            found: 1
+        }
+    ));
+}
+
+#[tokio::test]
+async fn a_ragged_document_batch_is_rejected() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[("test", vec![1.0_f64, 0.0_f64])]).documents_answer(
+            &["small talk", "write code"],
+            vec![vec![1.0_f64, 0.0_f64], vec![1.0_f64]],
+        ),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let error = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .expect_err("a ragged batch breaks the vector width contract");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::Vectors {
+            stage: EmbeddingStage::Documents,
+            source: MathError::Dimension {
+                index: 1,
+                expected: 2,
+                found: 1
+            }
+        }
+    ));
+}
+
+#[tokio::test]
+async fn a_nonfinite_document_vector_is_rejected() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[("test", vec![1.0_f64, 0.0_f64])]).documents_answer(
+            &["small talk", "write code"],
+            vec![vec![1.0_f64, 0.0_f64], vec![f64::NAN, 0.0_f64]],
+        ),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let error = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .expect_err("a NaN document vector cannot be scored");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::Vectors {
+            stage: EmbeddingStage::Documents,
+            source: MathError::NonFinite { index: 1 }
+        }
+    ));
+}
+
+#[tokio::test]
+async fn a_zero_norm_document_vector_is_rejected() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[("test", vec![1.0_f64, 0.0_f64])]).documents_answer(
+            &["small talk", "write code"],
+            vec![vec![1.0_f64, 0.0_f64], vec![0.0_f64, 0.0_f64]],
+        ),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let error = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .expect_err("a zero document vector has no cosine");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::Vectors {
+            stage: EmbeddingStage::Documents,
+            source: MathError::ZeroNorm { index: 1 }
+        }
+    ));
+}
+
+#[rstest]
+#[case::one_dimension(vec![vec![1.0_f64]])]
+#[case::no_vector(Vec::<Vec<f64>>::new())]
+#[case::infinite(vec![vec![f64::INFINITY, 0.0_f64]])]
+#[case::zero_norm(vec![vec![0.0_f64, 0.0_f64]])]
+#[tokio::test]
+async fn a_bad_query_vector_falls_back_to_the_default_model(#[case] vectors: Vec<Vec<f64>>) {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("write code", vec![1.0_f64, 0.0_f64]),
+            ("small talk", vec![0.0_f64, 1.0_f64]),
+        ])
+        .query_answers("ask", vectors),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(decision, Some(decisions(None, "fallback")));
+    assert_eq!(embedder.query_calls().len(), 1);
+}
+
+#[rstest]
+#[case::zero(0)]
+#[case::negative(-1)]
+#[tokio::test]
+async fn a_limit_of_zero_or_less_embeds_the_whole_text(#[case] limit: i64) {
+    let text = "c".repeat(10);
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        (text.as_str(), vec![1.0_f64, 0.0_f64]),
+    ]));
+    let configured = with_limit(settings(r#"{"routes": []}"#), limit);
+    let router = AutoRouter::new(configured, Arc::clone(&embedder), TaskTracker::new())
+        .expect("the config parses");
+    router
+        .decide_with(Some(&[user_text(&text)]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(embedder.query_calls()[0].text, text);
+}
+
+#[tokio::test]
+async fn the_default_limit_is_two_thousand_characters() {
+    let raw = "a".repeat(2001);
+    let clamped = "a".repeat(2000);
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        (clamped.as_str(), vec![1.0_f64, 0.0_f64]),
+    ]));
+    let router = router(r#"{"routes": []}"#, &embedder);
+    router
+        .decide_with(Some(&[user_text(&raw)]), || Some(caller()))
+        .await
+        .unwrap();
+    let query = &embedder.query_calls()[0];
+    assert_eq!(query.text, clamped);
+    assert_eq!(query.text.len(), 2000);
+    assert_eq!(query.raw_text, raw);
+}
+
+#[tokio::test]
+async fn the_character_limit_applies_to_each_utterance() {
+    let raw = "b".repeat(2001);
+    let clamped = "b".repeat(2000);
+    let config = format!(r#"{{"routes": [{{"name": "r", "utterances": ["{raw}"]}}]}}"#);
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        (clamped.as_str(), vec![1.0_f64, 0.0_f64]),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+    ]));
+    let router = router(&config, &embedder);
+    router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(embedder.utterance_texts(), vec![clamped]);
+}
+
+#[tokio::test]
+async fn a_dropped_build_sender_aborts_the_waiter() {
+    let (sender, receiver) = watch::channel(BuildState::<FakeError>::Building);
+    drop(sender);
+    let error = wait_for_build(receiver)
+        .await
+        .expect_err("the build never completed");
+    assert!(matches!(error.as_ref(), RouterError::BuildAborted));
+}
+
+#[tokio::test]
+async fn a_failed_build_reaches_the_waiter() {
+    let (sender, receiver) = watch::channel(BuildState::<FakeError>::Building);
+    sender.send_replace(BuildState::Done(Err(Arc::new(RouterError::BuildAborted))));
+    let error = wait_for_build(receiver)
+        .await
+        .expect_err("the build failed");
+    assert!(matches!(error.as_ref(), RouterError::BuildAborted));
+}
+
+#[tokio::test]
+async fn a_done_build_reaches_the_waiter() {
+    let entries: Arc<[BuiltEntry]> = Arc::from(vec![BuiltEntry {
+        route: Arc::from("r"),
+        threshold: 0.5,
+        vector: vec![1.0_f64, 0.0_f64],
+    }]);
+    let (sender, receiver) = watch::channel(BuildState::<FakeError>::Building);
+    sender.send_replace(BuildState::Done(Ok(Arc::clone(&entries))));
+    let built = wait_for_build(receiver).await.expect("the build completed");
+    assert_eq!(built.as_ref(), entries.as_ref());
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_cancelled_waiter_does_not_cancel_the_shared_build() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("write code", vec![1.0_f64, 0.0_f64]),
+            ("small talk", vec![0.0_f64, 1.0_f64]),
+            ("fix it", vec![1.0_f64, 0.0_f64]),
+        ])
+        .with_delay(Duration::from_millis(10)),
+    );
+    let router = Arc::new(router(TWO_ROUTES, &embedder));
+    let messages = vec![user_text("fix it")];
+    let mut tasks = JoinSet::new();
+    let cancelled_router = Arc::clone(&router);
+    let cancelled_messages = messages.clone();
+    let cancelled = tasks.spawn(async move {
+        cancelled_router
+            .decide_with(Some(&cancelled_messages), || Some(caller()))
+            .await
+    });
+    yield_now().await;
+    cancelled.abort();
+    let survivor_router = Arc::clone(&router);
+    let survivor_messages = messages.clone();
+    tasks.spawn(async move {
+        survivor_router
+            .decide_with(Some(&survivor_messages), || Some(caller()))
+            .await
+    });
+    let first = tasks.join_next().await.expect("a task finishes");
+    assert!(first.unwrap_err().is_cancelled());
+    let second = tasks.join_next().await.expect("the survivor finishes");
+    assert_eq!(
+        second.unwrap().unwrap(),
+        Some(decisions(Some("code"), "code"))
+    );
+    assert_eq!(embedder.document_calls().len(), 2);
+    assert_eq!(embedder.query_calls().len(), 1);
+}
+
+#[test]
+fn the_embedding_deadline_is_litellms_request_timeout() {
+    assert_eq!(
+        EMBEDDING_TIMEOUT,
+        Duration::from_mins(100),
+        "a stalled embedding call ends at litellm's default request timeout"
+    );
+}
+
+#[test]
+fn a_self_similar_document_scores_just_below_one() {
+    let score =
+        cosine_similarity(&EIGHT_DIMENSIONS, &EIGHT_DIMENSIONS, 0).expect("the vectors are usable");
+    assert!(score.total_cmp(&0.999_999_999_999_999_9_f64).is_eq());
+}
+
+#[rstest]
+#[case::sequential_tail(3, 0.940_720_868_383_597_3_f64)]
+#[case::block_of_eight(8, 0.574_484_989_621_426_f64)]
+#[case::one_full_block(128, 0.143_621_247_405_356_5_f64)]
+#[case::split_with_a_tail(129, 0.142_162_533_509_045_87_f64)]
+#[case::remainder_of_two(130, 0.142_105_105_700_801_15_f64)]
+#[case::split_into_two_blocks(200, 0.114_896_997_924_285_2_f64)]
+fn a_document_norm_reduces_like_the_pinned_numpy_pairwise_sum(
+    #[case] length: usize,
+    #[case] expected: f64,
+) {
+    let document: Vec<f64> = EIGHT_DIMENSIONS
+        .iter()
+        .copied()
+        .cycle()
+        .take(length)
+        .collect();
+    let mut query = vec![0.0_f64; length];
+    query[0] = 1.0_f64;
+    let score = cosine_similarity(&query, &document, 0).expect("the vectors are usable");
+    assert!(score.total_cmp(&expected).is_eq());
+}
+
+#[test]
+fn a_split_document_reduces_at_the_pinned_split_point() {
+    // a seven-value cycle rounds differently at any other split point
+    let document: Vec<f64> = EIGHT_DIMENSIONS[..7]
+        .iter()
+        .copied()
+        .cycle()
+        .take(130)
+        .collect();
+    let mut query = vec![0.0_f64; document.len()];
+    query[0] = 1.0_f64;
+    let score = cosine_similarity(&query, &document, 0).expect("the vectors are usable");
+    assert!(score.total_cmp(&0.150_227_391_023_630_06_f64).is_eq());
+}
+
+#[tokio::test]
+async fn a_self_similar_document_at_threshold_one_selects_the_default_model() {
+    let config =
+        r#"{"routes": [{"name": "exact", "utterances": ["same"], "score_threshold": 1.0}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", EIGHT_DIMENSIONS.to_vec()),
+        ("same", EIGHT_DIMENSIONS.to_vec()),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("same")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(None, "fallback")),
+        "the pinned pairwise index norm scores this just below the 1.0 threshold"
+    );
+}
+
+#[rstest]
+#[case::at_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_7_f64], Some("default"))]
+#[case::just_below_the_boundary(vec![0.3_f64, 0.953_939_201_416_945_9_f64], None)]
+#[tokio::test]
+async fn a_route_without_a_threshold_compares_at_litellms_three_tenths(
+    #[case] utterance: Vec<f64>,
+    #[case] route: Option<&str>,
+) {
+    let config = r#"{"routes": [{"name": "default", "utterances": ["utterance"]}]}"#;
+    let embedder = Arc::new(FakeEmbedder::new(&[
+        ("test", vec![1.0_f64, 0.0_f64]),
+        ("utterance", utterance),
+        ("ask", vec![1.0_f64, 0.0_f64]),
+    ]));
+    let router = router(config, &embedder);
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(
+        decision,
+        Some(decisions(route, route.unwrap_or("fallback")))
+    );
+}
+
+#[test]
+fn a_large_route_name_and_a_repeated_utterance_stay_one_allocation_and_one_row() {
+    let name = "n".repeat(500_000);
+    let mut texts = vec!["\"u\""; 100_000];
+    texts.push("\"v\"");
+    let config = format!(
+        r#"{{"routes": [{{"name": "{name}", "utterances": [{}]}}]}}"#,
+        texts.join(",")
+    );
+    assert!(config.len() < ROUTE_INDEX_MAX_BYTES);
+    let index = parse_inline(&config).expect("the config is inside the byte bound");
+    assert_eq!(index.groups.len(), 1);
+    assert_eq!(index.rows.len(), 2, "the repeated utterance expands once");
+    assert!(Arc::ptr_eq(&index.rows[0].route, &index.groups[0].name));
+    assert!(Arc::ptr_eq(&index.rows[1].route, &index.groups[0].name));
+}
+
+#[test]
+fn two_routes_with_the_same_sync_string_both_keep_a_row() {
+    let config = r#"{"routes": [
+        {"name": "a", "utterances": ["b: c"]},
+        {"name": "a: b", "utterances": ["c"]}
+    ]}"#;
+    let index = parse_inline(config).expect("both routes parse");
+    assert_eq!(index.groups.len(), 2);
+    assert_eq!(
+        index.rows.len(),
+        2,
+        "a colliding sync string keeps one row per route"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_timed_out_build_clears_its_slot_and_releases_the_tracker() {
+    let tracker = TaskTracker::new();
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("write code", vec![1.0_f64, 0.0_f64]),
+            ("small talk", vec![0.0_f64, 1.0_f64]),
+        ])
+        .stalling_documents(1),
+    );
+    let router = AutoRouter::new(settings(TWO_ROUTES), Arc::clone(&embedder), tracker.clone())
+        .expect("the route config parses");
+    let error = router
+        .decide_with(Some(&[user_text("write code")]), || Some(caller()))
+        .await
+        .expect_err("a build that never answers hits the deadline");
+    assert!(matches!(
+        error.as_ref(),
+        RouterError::Timeout {
+            stage: EmbeddingStage::Documents,
+            seconds: 6000
+        }
+    ));
+    tracker.close();
+    tracker.wait().await;
+    let decision = router
+        .decide_with(Some(&[user_text("write code")]), || Some(caller()))
+        .await
+        .expect("the cleared slot lets the next caller build");
+    assert_eq!(decision, Some(decisions(Some("code"), "code")));
+    assert_eq!(embedder.document_calls().len(), 3);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_timed_out_query_falls_back_to_the_default_model() {
+    let embedder = Arc::new(
+        FakeEmbedder::new(&[
+            ("test", vec![1.0_f64, 0.0_f64]),
+            ("write code", vec![1.0_f64, 0.0_f64]),
+            ("small talk", vec![0.0_f64, 1.0_f64]),
+            ("ask", vec![1.0_f64, 0.0_f64]),
+        ])
+        .stalling_queries(1),
+    );
+    let router = router(TWO_ROUTES, &embedder);
+    let timed_out = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(timed_out, Some(decisions(None, "fallback")));
+    let decision = router
+        .decide_with(Some(&[user_text("ask")]), || Some(caller()))
+        .await
+        .unwrap();
+    assert_eq!(decision, Some(decisions(Some("code"), "code")));
+    assert_eq!(embedder.document_calls().len(), 2);
+    assert_eq!(embedder.query_calls().len(), 2);
+}
