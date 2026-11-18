@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Future, pending};
+use std::future::pending;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
@@ -53,7 +53,7 @@ fn fake_tracker() -> DbLookupStallTracker<FakeClock> {
 
 async fn delayed_lookup() -> Result<i32, DbLookupError> {
     sleep(Duration::from_millis(50)).await;
-    Ok(7)
+    Ok(7_i32)
 }
 
 struct FakeClock {
@@ -130,15 +130,15 @@ async fn bounded_lookup_does_not_acquire_gate() {
         .expect("the gate is open");
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
-    let lookup_request = request("policy", Some(0.1), 10.0, &tracker);
+    let lookup_request = request("policy", Some(0.1_f64), 10.0, &tracker);
     let output = bounded_db_lookup(
-        async { Ok::<i32, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7_i32) },
         lookup_request,
         &tasks,
     )
     .await
     .expect("the lookup never takes the gate");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     assert_eq!(semaphore.available_permits(), 0);
 }
 
@@ -176,15 +176,15 @@ async fn success_does_not_clear_stall() {
     let tasks = TaskTracker::new();
     let tracker = fake_tracker();
     tracker.record_hit();
-    let lookup_request = request("cache", Some(0.1), 10.0, &tracker);
+    let lookup_request = request("cache", Some(0.1_f64), 10.0, &tracker);
     let output = bounded_db_lookup(
-        async { Ok::<i32, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7_i32) },
         lookup_request,
         &tasks,
     )
     .await
     .expect("the lookup succeeds");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     assert!(tracker.stalled_within(WINDOW));
     tracker.clock.advance(Duration::from_secs(30));
     assert!(!tracker.stalled_within(WINDOW));
@@ -194,16 +194,16 @@ async fn success_does_not_clear_stall() {
 async fn explicit_deadline_over_default() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
-    let short = request("work", Some(0.0), 30.0, &tracker);
+    let short = request("work", Some(0.0_f64), 30.0, &tracker);
     let error = bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), short, &tasks)
         .await
         .expect_err("the explicit zero deadline wins over the default");
     assert_deadline(&error, "work", 0.0);
-    let generous = request("work", Some(30.0), 0.0, &tracker);
+    let generous = request("work", Some(30.0_f64), 0.0, &tracker);
     let output = bounded_db_lookup(delayed_lookup(), generous, &tasks)
         .await
         .expect("the explicit budget outlives the default");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     let fallback = request("work", None, 0.02, &tracker);
     let default_expiry =
         bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), fallback, &tasks)
@@ -217,7 +217,7 @@ async fn explicit_deadline_over_default() {
 async fn zero_negative_explicit_deadline() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
-    let zero = request("zero", Some(0.0), 10.0, &tracker);
+    let zero = request("zero", Some(0.0_f64), 10.0, &tracker);
     let expired_at_zero = bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), zero, &tasks)
         .await
         .expect_err("a zero deadline expires at once");
@@ -226,7 +226,7 @@ async fn zero_negative_explicit_deadline() {
         expired_at_zero.to_string(),
         "zero lookup did not answer within 0s"
     );
-    let negative = request("negative", Some(-1.0), 10.0, &tracker);
+    let negative = request("negative", Some(-1.0_f64), 10.0, &tracker);
     let expired_negative = timeout(
         Duration::from_secs(2),
         bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), negative, &tasks),
@@ -246,20 +246,20 @@ async fn zero_negative_explicit_deadline() {
 #[rstest]
 #[case::nan(f64::NAN)]
 #[case::positive_infinity(f64::INFINITY)]
-#[case::huge(1e300)]
+#[case::huge(1e300_f64)]
 #[tokio::test]
 async fn nonfinite_explicit_deadline_never_expires(#[case] deadline_seconds: f64) {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
     let lookup_request = request("work", Some(deadline_seconds), 0.0, &tracker);
     let output = bounded_db_lookup(
-        async { Ok::<i32, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7_i32) },
         lookup_request,
         &tasks,
     )
     .await
     .expect("an unrepresentable deadline waits for the lookup");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     assert!(!tracker.stalled_within(f64::INFINITY));
 }
 
@@ -267,7 +267,7 @@ async fn nonfinite_explicit_deadline_never_expires(#[case] deadline_seconds: f64
 async fn timeout_fields_and_exact_message() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
-    let lookup_request = request("user_api_key_cache", Some(2.5), 10.0, &tracker);
+    let lookup_request = request("user_api_key_cache", Some(2.5_f64), 10.0, &tracker);
     let error = bounded_db_lookup(
         pending::<Result<i32, DbLookupError>>(),
         lookup_request,
@@ -290,23 +290,23 @@ async fn timeout_fields_and_exact_message() {
 }
 
 #[rstest]
-#[case::zero(0.0, "0")]
-#[case::negative_zero(-0.0, "-0")]
-#[case::one(1.0, "1")]
-#[case::two_point_five(2.5, "2.5")]
-#[case::ten(10.0, "10")]
-#[case::point_one(0.1, "0.1")]
-#[case::point_zero_five(0.05, "0.05")]
-#[case::fixed_edge(0.0001, "0.0001")]
-#[case::scientific_edge(0.00001, "1e-05")]
-#[case::tiny(1e-7, "1e-07")]
-#[case::million(1000000.0, "1e+06")]
-#[case::six_digits(123456.0, "123456")]
-#[case::seven_digits(1234567.0, "1.23457e+06")]
-#[case::large(123456789.0, "1.23457e+08")]
-#[case::twenty_five(25.0, "25")]
-#[case::rounding_tail(0.30000000000000004, "0.3")]
-#[case::rounding_up(1.7999999999999998, "1.8")]
+#[case::zero(0.0_f64, "0")]
+#[case::negative_zero(-0.0_f64, "-0")]
+#[case::one(1.0_f64, "1")]
+#[case::two_point_five(2.5_f64, "2.5")]
+#[case::ten(10.0_f64, "10")]
+#[case::point_one(0.1_f64, "0.1")]
+#[case::point_zero_five(0.05_f64, "0.05")]
+#[case::fixed_edge(0.0001_f64, "0.0001")]
+#[case::scientific_edge(0.00001_f64, "1e-05")]
+#[case::tiny(1e-7_f64, "1e-07")]
+#[case::million(1_000_000.0_f64, "1e+06")]
+#[case::six_digits(123_456.0_f64, "123456")]
+#[case::seven_digits(1_234_567.0_f64, "1.23457e+06")]
+#[case::large(123_456_789.0_f64, "1.23457e+08")]
+#[case::twenty_five(25.0_f64, "25")]
+#[case::rounding_tail(0.300_000_000_000_000_04_f64, "0.3")]
+#[case::rounding_up(1.799_999_999_999_999_8_f64, "1.8")]
 #[case::nan(f64::NAN, "nan")]
 #[case::inf(f64::INFINITY, "inf")]
 #[case::negative_inf(f64::NEG_INFINITY, "-inf")]
@@ -328,9 +328,9 @@ async fn cancellation_resistant_lookup_returns_deadline() {
     });
     let lookup = async move {
         join.await.expect("the blocking lookup joins");
-        Ok::<i32, DbLookupError>(7)
+        Ok::<i32, DbLookupError>(7_i32)
     };
-    let lookup_request = request("slow", Some(0.02), 10.0, &tracker);
+    let lookup_request = request("slow", Some(0.02_f64), 10.0, &tracker);
     let result = bounded_db_lookup(lookup, lookup_request, &tasks).await;
     let answered_early = finished.load(Ordering::SeqCst);
     release.send(()).expect("the lookup is still waiting");
@@ -383,9 +383,9 @@ async fn cancelled_child_not_queried_for_exception() {
     let lookup = async move {
         sleep(Duration::from_secs(1)).await;
         lookup_completed.store(true, Ordering::SeqCst);
-        Ok::<i32, DbLookupError>(7)
+        Ok::<i32, DbLookupError>(7_i32)
     };
-    let lookup_request = request("cancelled", Some(0.02), 10.0, &tracker);
+    let lookup_request = request("cancelled", Some(0.02_f64), 10.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
         .await
         .expect_err("the deadline wins over the slow lookup");
@@ -436,7 +436,7 @@ async fn caller_cancel_no_stall_hit() {
         let tasks = TaskTracker::new();
         let lookup_request = LookupRequest {
             name: "slow",
-            deadline_seconds: Some(30.0),
+            deadline_seconds: Some(30.0_f64),
             default_deadline_seconds: 10.0,
             tracker: caller_tracker.as_ref(),
         };
@@ -468,7 +468,7 @@ async fn existing_deadline_exception_unchanged() {
         cause: None,
     };
     let lookup = async move { Err::<i32, DbLookupError>(DbLookupError::Deadline(existing)) };
-    let lookup_request = request("outer", Some(7.0), 7.0, &tracker);
+    let lookup_request = request("outer", Some(7.0_f64), 7.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
         .await
         .expect_err("the inner deadline is rethrown");
@@ -485,7 +485,7 @@ async fn timeout_cause_preserved() {
         .await
         .expect_err("the zero timer fires before the pending future");
     let lookup = async move { Err::<i32, DbLookupError>(DbLookupError::Elapsed(elapsed)) };
-    let lookup_request = request("cache", Some(2.5), 10.0, &tracker);
+    let lookup_request = request("cache", Some(2.5_f64), 10.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
         .await
         .expect_err("the inner timeout is wrapped");
@@ -512,7 +512,7 @@ async fn unrelated_query_error_unchanged() {
             "boom",
         )))
     };
-    let lookup_request = request("cache", Some(2.5), 10.0, &tracker);
+    let lookup_request = request("cache", Some(2.5_f64), 10.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
         .await
         .expect_err("the query error passes through");
@@ -556,23 +556,21 @@ struct Environment {
     url: Option<String>,
 }
 
-fn blocked_gate_lookup(
+async fn blocked_gate_lookup(
     semaphore: Arc<Semaphore>,
     pool: Pool,
     acquired: Arc<AtomicBool>,
     finished: Arc<AtomicBool>,
-) -> impl Future<Output = Result<(), DbLookupError>> + Send {
-    async move {
-        let _permit = semaphore.acquire_owned().await.expect("the gate is open");
-        acquired.store(true, Ordering::SeqCst);
-        let session = pool.get().await.expect("the fixture connects");
-        session
-            .query("SELECT pg_sleep(5)", &[])
-            .await
-            .expect("the sleep query answers");
-        finished.store(true, Ordering::SeqCst);
-        Ok(())
-    }
+) -> Result<(), DbLookupError> {
+    let _permit = semaphore.acquire_owned().await.expect("the gate is open");
+    acquired.store(true, Ordering::SeqCst);
+    let session = pool.get().await.expect("the fixture connects");
+    session
+        .query("SELECT pg_sleep(5)", &[])
+        .await
+        .expect("the sleep query answers");
+    finished.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -593,7 +591,7 @@ async fn postgres_blocked_lookup_deadline() {
         Arc::clone(&acquired),
         Arc::clone(&finished),
     );
-    let lookup_request = request("user_api_key_cache", Some(0.5), 10.0, &tracker);
+    let lookup_request = request("user_api_key_cache", Some(0.5_f64), 10.0, &tracker);
     let error = bounded_db_lookup(lookup, lookup_request, &tasks)
         .await
         .expect_err("the blocked query cannot answer inside the deadline");
@@ -638,7 +636,7 @@ async fn postgres_metric_failure_keeps_committed_write() {
     )
     .await
     .expect("the committed write stays a success");
-    assert_eq!(output, 1);
+    assert_eq!(output, 1_i32);
     drain(&tasks).await;
     assert_eq!(successes(&sink).len(), 1);
     let session = pool.get().await.expect("the verification connects");

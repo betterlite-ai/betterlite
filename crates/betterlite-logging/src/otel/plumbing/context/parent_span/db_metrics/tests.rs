@@ -126,7 +126,7 @@ async fn record_success(call: &DbMetricCall<'_>, sink: &Arc<RecordingSink>, task
         clock: &clock,
         tasks,
     };
-    log_db_metrics(async { Ok::<i32, DbLookupError>(1) }, call, context)
+    log_db_metrics(async { Ok::<i32, DbLookupError>(1_i32) }, call, context)
         .await
         .expect("the successful call returns");
 }

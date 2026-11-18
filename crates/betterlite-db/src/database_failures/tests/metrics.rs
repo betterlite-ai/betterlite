@@ -16,7 +16,7 @@ use tokio_util::task::TaskTracker;
 use crate::database_failures::deadline::{DbLookupDeadlineExceeded, DbLookupError};
 use crate::database_failures::metrics::{
     DbEventMetadata, DbMetricCall, DbMetricContext, DbMetricError, DbService, DbServiceEvent,
-    SystemWallClock, WallClock, log_db_metrics, safe_db_event_metadata,
+    SystemWallClock, WallClock as _, log_db_metrics, safe_db_event_metadata,
 };
 use crate::database_faults::ErrorType;
 
@@ -38,7 +38,7 @@ async fn ordinary_success_scheduled() {
         second_positional: None,
     };
     let output = run_metric(
-        async { Ok::<i32, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7_i32) },
         &call,
         &sink,
         &resolver,
@@ -46,7 +46,7 @@ async fn ordinary_success_scheduled() {
     )
     .await
     .expect("the metric does not change the result");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     assert!(successes(&sink).is_empty());
     drain(&tasks).await;
     let recorded = successes(&sink);
@@ -120,7 +120,7 @@ async fn table_only_metadata() {
         second_positional: None,
     };
     run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1_i32) },
         &call,
         &sink,
         &resolver,
@@ -151,7 +151,7 @@ async fn empty_table_name_retained() {
         second_positional: None,
     };
     run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1_i32) },
         &call,
         &sink,
         &resolver,
@@ -273,7 +273,7 @@ async fn proxy_success_zero_duration() {
     };
     let operation = async {
         sleep(Duration::from_millis(250)).await;
-        Ok::<i32, DbLookupError>(1)
+        Ok::<i32, DbLookupError>(1_i32)
     };
     run_metric(operation, &call, &sink, &resolver, &tasks)
         .await
@@ -293,7 +293,7 @@ async fn success_hook_failure_logged() {
     let resolver = RecordingResolver::default();
     let call = metric_call("query_raw");
     let output = run_metric(
-        async { Ok::<i32, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7_i32) },
         &call,
         &sink,
         &resolver,
@@ -301,7 +301,7 @@ async fn success_hook_failure_logged() {
     )
     .await
     .expect("the metric failure does not fail the operation");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     drain(&tasks).await;
     assert!(logs.text().contains("the database success metric failed"));
 }
@@ -324,7 +324,7 @@ async fn success_duration_uses_wall_clock_window() {
     let clock = RecordingWallClock::new(vec![start, end]);
     let call = metric_call("query_raw");
     let output = log_db_metrics(
-        async { Ok::<i32, DbLookupError>(1) },
+        async { Ok::<i32, DbLookupError>(1_i32) },
         &call,
         DbMetricContext {
             sink: Arc::clone(&sink),
@@ -335,7 +335,7 @@ async fn success_duration_uses_wall_clock_window() {
     )
     .await
     .expect("the successful call returns");
-    assert_eq!(output, 1);
+    assert_eq!(output, 1_i32);
     drain(&tasks).await;
     let recorded = successes(&sink);
     assert_eq!(recorded[0].start_time, start);
@@ -393,7 +393,7 @@ async fn proxy_missing_span_drops_success() {
         second_positional: Some(&kwargs),
     };
     let output = run_metric(
-        async { Ok::<i32, DbLookupError>(7) },
+        async { Ok::<i32, DbLookupError>(7_i32) },
         &call,
         &sink,
         &resolver,
@@ -401,7 +401,7 @@ async fn proxy_missing_span_drops_success() {
     )
     .await
     .expect("the result survives a dropped metric");
-    assert_eq!(output, 7);
+    assert_eq!(output, 7_i32);
     drain(&tasks).await;
     assert!(successes(&sink).is_empty());
     assert_eq!(
@@ -565,7 +565,8 @@ async fn cancellation_no_failure_metric() {
         run_metric(operation, &call, &sink, &resolver, &tasks),
     )
     .await;
-    assert!(cancelled.is_err());
+    let timed_out = cancelled.is_err();
+    assert!(timed_out, "the timeout cancels the lookup");
     drain(&tasks).await;
     assert!(failures(&sink).is_empty());
     assert!(successes(&sink).is_empty());
@@ -763,7 +764,7 @@ fn assert_query_success(event: &DbServiceEvent) {
     assert_eq!(event.service, DbService::Postgres);
     assert_eq!(event.call_type, "query_raw");
     assert_eq!(event.parent_otel_span, Some(span(1)));
-    assert!(event.duration_seconds >= 0.0);
+    assert!(event.duration_seconds >= 0.0_f64);
     assert!(event.start_time <= event.end_time);
     assert_eq!(
         event.event_metadata,
