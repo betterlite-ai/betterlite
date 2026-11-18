@@ -1,0 +1,53 @@
+task: B5961
+deviations:
+  - what: >-
+      The stream-shape loader, its cached warning and the 500 "SageMaker event-stream shape could not be loaded from botocore" error are not built. The decoder always reads the frame payload itself, because the loaded shape never carries a chunk key.
+    why: >-
+      The shape cannot change the text the decoder reads, and betterlite needs no botocore data file, so the 500 can never occur.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L15-L40
+  - what: >-
+      A Hugging Face request whose inputs hold token ids, such as [1, 2] or [[1, 2]], counts no tokens for those entries, while LiteLLM raises AttributeError from its usage loop and answers a 500.
+    why: >-
+      AllEmbeddingInputValues declares token arrays, and a working embeddings call with one would fail instead of reporting usage, so betterlite counts the string entries and leaves token entries at zero.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L132-L142
+  - what: >-
+      A messages-API stream chunk that carries a field betterlite's shared Chunk type does not declare is read past and dropped, while LiteLLM builds its chunk from the raw event and keeps the undeclared field in its response JSON.
+    why: >-
+      betterlite's Chunk declares the fields every provider projection shares. It lives in betterlite-openai, outside this task, so the SageMaker projection cannot carry an undeclared field further.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L62-L65
+  - what: >-
+      A messages-API stream tool call with a type other than "function", such as "tool" or "custom", passes through with that type, while LiteLLM's OpenAI chunk validation rejects it and the stream ends with an error.
+    why: >-
+      The OpenAI chunk type allows only the literal "function", and LiteLLM's custom tool-call branch needs a custom payload betterlite's shared ToolCall lacks. A chunk of the declared type carries "function" and projects the same on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1553-L1572
+  - what: >-
+      A Hugging Face reply whose embeddings list holds a row that is neither a list of numbers nor a string fails the reply reader, while LiteLLM stores the row unchecked and answers 200.
+    why: >-
+      betterlite models a reply row as the shared EmbeddingVector, a number list or a base64 string, which is what the OpenAI embeddings API declares; LiteLLM's Embedding.embedding is an unchecked `list | str` and its assignment never validates, so a row outside that shape only fails where a client later reads it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2280-L2283
+  - what: >-
+      A Cohere reply whose embeddings are not a list of number or base64 rows or a map of such rows, whose response_type or meta is outside the declared response types, or whose body is not an object is refused with the reply reader's shape error or, for a body that is not an object, the embeddingless error; a list of rows marked response_type embeddings_by_type is refused as embeddingless. LiteLLM reads the reply unchecked, so a string embeddings is enumerated into character rows and a string response_type only fails its equality check, while billed units that are not a number fail its token sum, and a list marked embeddings_by_type, a body that is not an object and a meta that is not a map raise TypeError; the unread reply answers 200 and each TypeError answers 500.
+    why: >-
+      betterlite models the reply as CohereEmbeddingResponse declares it, rows of numbers or base64 strings with a literal response_type and integer billed units, and answers a typed error for a value outside that shape instead of carrying it into the response. A working Cohere endpoint answers the declared shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cohere/embed/v1_transformation.py#L149-L178
+  - what: >-
+      A Cohere reply whose fallback request data holds a texts or images value that is not a list of strings is refused with the request error, while LiteLLM turns any truthy value into the usage input and a bare string becomes a one-item list.
+    why: >-
+      CohereEmbeddingRequest declares texts and images as list[str], and the request betterlite builds writes exactly that, so a value outside the declared type is an error naming the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L108-L112
+kept_bugs:
+  - what: >-
+      Both SageMaker embedding configs answer validate_environment with only Content-Type: application/json, dropping every caller header.
+    why: >-
+      LiteLLM returns a fresh dict instead of merging the caller's headers. A working setup can rely on caller headers never reaching the SageMaker endpoint, so betterlite keeps the quirk. The Cohere method does the same at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L122-L135.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L146-L159
+  - what: >-
+      Every blank line in an event payload is removed before the JSON buffer sees it, including a blank line inside a string value.
+    why: >-
+      LiteLLM strips line framing with a global replace. A client reading the same response stream sees the same text, so changing the rule would alter streamed content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L103-L106
+  - what: >-
+      A Hugging Face request that sends inputs as a bare string reports its non-space character count as usage, not its word count.
+    why: >-
+      LiteLLM iterates the string itself in its word-count loop. A caller that sends a bare string would see a different usage number if betterlite counted words, so the quirk is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L132-L142
