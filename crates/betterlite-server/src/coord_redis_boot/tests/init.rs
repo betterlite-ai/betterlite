@@ -105,6 +105,10 @@ async fn init_from_config_returns_none_without_a_block() {
     assert!(config_without_a_block(&json(r#"{"general_settings": null}"#)).await);
     assert!(config_without_a_block(&json(r#"{"general_settings": {}}"#)).await);
     assert!(
+        config_without_a_block(&json(r#"{"general_settings": "coordination"}"#)).await,
+        "a general_settings that is not an object names no block"
+    );
+    assert!(
         config_without_a_block(&json(
             r#"{"general_settings": {"coordination_redis": null}}"#
         ))
@@ -238,8 +242,16 @@ async fn init_from_config_reads_the_auth_flag_from_litellm_settings() {
     init_from_config(&text_config, &context, &wiring(), &attach_of(&disabled))
         .await
         .expect("the text flag leaves the auth cache alone");
+    let word_config = json(&format!(
+        r#"{{"general_settings": {{"coordination_redis": {block}}}, "litellm_settings": "coordination"}}"#
+    ));
+    let from_word = RecordingCaches::new();
+    init_from_config(&word_config, &context, &wiring(), &attach_of(&from_word))
+        .await
+        .expect("a litellm_settings that is not an object leaves the auth cache alone");
     assert_eq!(enabled.auth.calls().len(), 1);
     assert!(disabled.auth.calls().is_empty());
+    assert!(from_word.auth.calls().is_empty());
 }
 
 #[tokio::test]
