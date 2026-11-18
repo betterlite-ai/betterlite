@@ -6,6 +6,9 @@ deviations:
   - what: The refresh decodes each stored tool row into the typed ToolInputPolicy and ToolOutputPolicy values instead of holding the raw column text; a row whose policy is outside the declared literals fails the refresh with the typed decode error, where LiteLLM keeps the raw string in the map and answers request lookups with it.
     why: Rule typed-wire; the declared types are the literals LiteLLM defines, and a value outside them is a corrupt row that no request-side comparison can act on, so the failure surfaces instead of hiding in the registry.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L390-L395
+  - what: Every tool policy read, write and pool checkout runs under a deadline the caller supplies, and a statement that passes it is cancelled on the server; LiteLLM runs the same discovery, upsert, blocked_tools and refresh statements without a deadline of its own.
+    why: Rule bounded-inputs; a table lock or an exhausted pool would otherwise hold the discovery drain, a policy route or the refresh forever, and dropping a timed out query future does not cancel the statement inside tokio-postgres, so the cancel request goes out explicitly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/tool_registry_writer.py#L106-L160
 kept_bugs:
   - what: A refresh publishes the new tool maps before it reads the permissions, so a failed permission read leaves the registry with the new tool policies, the previous blocked_tools map and initialized unchanged; a fresh registry stays uninitialized.
     why: The task pins this partial-refresh state; a working setup only ever observes a refresh that raised, so nothing relies on the refresh being atomic.
