@@ -827,13 +827,13 @@ async fn user_notifications_read_the_first_row_and_all_rows() {
 }
 
 #[rstest]
-#[case(true, "blocked-key")]
-#[case(false, "active-key")]
+#[case::blocked(true, "blocked-key")]
+#[case::active(false, "active-key")]
 #[tokio::test]
 async fn generic_key_boolean_filter_binds_true_and_false(#[case] flag: bool, #[case] token: &str) {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.unwrap();
-    db.batch_execute("INSERT INTO \"LiteLLM_VerificationToken\" (token, blocked) VALUES ('blocked-key', true), ('active-key', false)").await.unwrap();
+    db.batch_execute("INSERT INTO \"LiteLLM_VerificationToken\" (token, blocked, models) VALUES ('blocked-key', true, ARRAY[]::text[]), ('active-key', false, ARRAY[]::text[])").await.unwrap();
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);

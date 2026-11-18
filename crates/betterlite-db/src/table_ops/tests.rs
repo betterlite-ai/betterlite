@@ -168,11 +168,11 @@ fn null_and_bool_values_bind_their_column_types() {
 }
 
 #[rstest]
-#[case(TeamColumn::Blocked, TokenValue::Text(String::from("true")))]
-#[case(TeamColumn::Blocked, TokenValue::KeyHash(KeyHash::from("hash")))]
-#[case(TeamColumn::TeamAlias, TokenValue::Bool(true))]
-#[case(TeamColumn::TeamAlias, TokenValue::Integer(5))]
-#[case(TeamColumn::TeamAlias, TokenValue::TextArray(vec![String::from("value")]))]
+#[case::text_to_bool(TeamColumn::Blocked, TokenValue::Text(String::from("true")))]
+#[case::hash_to_bool(TeamColumn::Blocked, TokenValue::KeyHash(KeyHash::from("hash")))]
+#[case::bool_to_text(TeamColumn::TeamAlias, TokenValue::Bool(true))]
+#[case::integer_to_text(TeamColumn::TeamAlias, TokenValue::Integer(5))]
+#[case::array_to_text(TeamColumn::TeamAlias, TokenValue::TextArray(vec![String::from("value")]))]
 fn scalar_values_reject_the_wrong_column_type(
     #[case] column: TeamColumn,
     #[case] value: TokenValue,
@@ -188,10 +188,10 @@ fn scalar_values_reject_the_wrong_column_type(
 }
 
 #[rstest]
-#[case(r#", "model_max_budget":{"gpt":1}"#, true)]
-#[case(r#", "model_max_budget":"{\"gpt\":1}""#, true)]
-#[case(r#", "model_max_budget":null"#, false)]
-#[case("", false)]
+#[case::object(r#", "model_max_budget":{"gpt":1}"#, true)]
+#[case::text(r#", "model_max_budget":"{\"gpt\":1}""#, true)]
+#[case::null(r#", "model_max_budget":null"#, false)]
+#[case::absent("", false)]
 fn budget_maps_decode_from_objects_text_and_null(#[case] field: &str, #[case] populated: bool) {
     use crate::budget_permission_rows::LiteLLMBudgetTableFull;
     use crate::table_ops::rows::RowDecoder as _;

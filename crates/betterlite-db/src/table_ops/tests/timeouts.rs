@@ -68,7 +68,7 @@ async fn a_batch_statement_waiting_on_a_lock_times_out() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
     db.batch_execute(
-        "INSERT INTO \"LiteLLM_VerificationToken\" (token, key_alias) VALUES ('tok-1', 'original')",
+        "INSERT INTO \"LiteLLM_VerificationToken\" (token, key_alias, models) VALUES ('tok-1', 'original', ARRAY[]::text[])",
     )
     .await
     .unwrap();
