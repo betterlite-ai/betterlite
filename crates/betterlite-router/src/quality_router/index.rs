@@ -69,11 +69,11 @@ impl Index {
             .map(|(name, keyword, entry)| (name, keyword, entry.quality_tier))
     }
 
-    pub(crate) fn model_for_tier<'a>(
-        &'a self,
+    pub(crate) fn model_for_tier<'tier>(
+        &'tier self,
         tier: i64,
-        default_model: Option<&'a str>,
-    ) -> Result<&'a str, QualityRouterError> {
+        default_model: Option<&'tier str>,
+    ) -> Result<&'tier str, QualityRouterError> {
         if let Some(model) = self.tiers.get(&tier) {
             return Ok(model);
         }
