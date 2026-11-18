@@ -30,7 +30,32 @@ pub fn event_kind(event: &ResponsesAPIStreamingResponse) -> EventKind {
             KnownResponseEvent::OutputTextDelta(_) => EventKind::TextDelta,
             KnownResponseEvent::FunctionCallArgumentsDelta(_)
             | KnownResponseEvent::McpCallArgumentsDelta(_) => EventKind::ArgsDelta,
-            _ => EventKind::Other,
+            KnownResponseEvent::ResponseCreated(_)
+            | KnownResponseEvent::ResponseInProgress(_)
+            | KnownResponseEvent::ResponsePartAdded(_)
+            | KnownResponseEvent::ReasoningSummaryTextDelta(_)
+            | KnownResponseEvent::ReasoningSummaryTextDone(_)
+            | KnownResponseEvent::ReasoningSummaryPartDone(_)
+            | KnownResponseEvent::ContentPartAdded(_)
+            | KnownResponseEvent::OutputTextDone(_)
+            | KnownResponseEvent::RefusalDelta(_)
+            | KnownResponseEvent::RefusalDone(_)
+            | KnownResponseEvent::FunctionCallArgumentsDone(_)
+            | KnownResponseEvent::FileSearchCallInProgress(_)
+            | KnownResponseEvent::FileSearchCallSearching(_)
+            | KnownResponseEvent::FileSearchCallCompleted(_)
+            | KnownResponseEvent::WebSearchCallInProgress(_)
+            | KnownResponseEvent::WebSearchCallSearching(_)
+            | KnownResponseEvent::WebSearchCallCompleted(_)
+            | KnownResponseEvent::McpListToolsInProgress(_)
+            | KnownResponseEvent::McpListToolsCompleted(_)
+            | KnownResponseEvent::McpListToolsFailed(_)
+            | KnownResponseEvent::McpCallInProgress(_)
+            | KnownResponseEvent::McpCallArgumentsDone(_)
+            | KnownResponseEvent::McpCallCompleted(_)
+            | KnownResponseEvent::McpCallFailed(_)
+            | KnownResponseEvent::ImageGenerationPartialImage(_)
+            | KnownResponseEvent::Error(_) => EventKind::Other,
         },
         ResponsesAPIStreamingResponse::Generic(generic) => match generic.r#type.as_str() {
             "response.completed" => EventKind::Completed,
@@ -50,13 +75,8 @@ pub fn event_kind(event: &ResponsesAPIStreamingResponse) -> EventKind {
 
 #[must_use]
 pub fn is_terminal(kind: EventKind) -> bool {
-    match kind {
-        EventKind::Completed | EventKind::Incomplete | EventKind::Failed => true,
-        EventKind::Item
-        | EventKind::Annotation
-        | EventKind::Part
-        | EventKind::TextDelta
-        | EventKind::ArgsDelta
-        | EventKind::Other => false,
-    }
+    matches!(
+        kind,
+        EventKind::Completed | EventKind::Incomplete | EventKind::Failed
+    )
 }

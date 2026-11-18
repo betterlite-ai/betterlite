@@ -10,7 +10,7 @@ use indexmap::IndexMap;
 
 use crate::api::response_id_traversal::record::{DictRecord, Record};
 
-/// the event field whose container ids are encoded
+// the event field whose container ids are encoded
 #[derive(Clone, Copy)]
 pub enum Slot {
     Item,
@@ -40,28 +40,27 @@ pub enum ResponseTarget<'event> {
     Value(&'event mut Json),
 }
 
+// a JSON null stays a value here; the rewrite itself ignores anything that is not an object
 #[must_use]
 pub fn response_target(event: &mut ResponsesAPIStreamingResponse) -> Option<ResponseTarget<'_>> {
     match event {
-        ResponsesAPIStreamingResponse::Known(known) => match known.as_mut() {
-            KnownResponseEvent::ResponseCreated(record)
+        ResponsesAPIStreamingResponse::Known(known) => {
+            if let KnownResponseEvent::ResponseCreated(record)
             | KnownResponseEvent::ResponseInProgress(record)
             | KnownResponseEvent::ResponseCompleted(record)
             | KnownResponseEvent::ResponseFailed(record)
-            | KnownResponseEvent::ResponseIncomplete(record) => {
-                Some(ResponseTarget::Typed(&mut record.response))
+            | KnownResponseEvent::ResponseIncomplete(record) = known.as_mut()
+            {
+                return Some(ResponseTarget::Typed(&mut record.response));
             }
-            other => extra_response(known_extra(other).and_then(|extra| extra.get_mut("response"))),
-        },
+            known_extra(known.as_mut())
+                .and_then(|extra| extra.get_mut("response"))
+                .map(ResponseTarget::Value)
+        }
         ResponsesAPIStreamingResponse::Generic(record) => {
-            extra_response(record.extra.get_mut("response"))
+            record.extra.get_mut("response").map(ResponseTarget::Value)
         }
     }
-}
-
-// a JSON null stays a value here; the rewrite itself ignores anything that is not an object
-fn extra_response(slot: Option<&mut Json>) -> Option<ResponseTarget<'_>> {
-    slot.map(ResponseTarget::Value)
 }
 
 #[must_use]
@@ -150,11 +149,13 @@ fn known_extra(event: &mut KnownResponseEvent) -> Option<&mut Extra> {
 // serde's untagged Record decode reads a float as its private number map and the Dict arm wins, so a JSON value converts by hand
 #[must_use]
 pub fn record_of(value: &Json) -> Record {
-    match value {
-        Json::Object(fields) => record_of_fields(fields.iter()),
-        Json::List(items) => Record::List(items.iter().map(record_of).collect()),
-        scalar => Record::Scalar(scalar.clone()),
+    if let Json::Object(fields) = value {
+        return record_of_fields(fields.iter());
     }
+    if let Json::List(items) = value {
+        return Record::List(items.iter().map(record_of).collect());
+    }
+    Record::Scalar(value.clone())
 }
 
 #[must_use]

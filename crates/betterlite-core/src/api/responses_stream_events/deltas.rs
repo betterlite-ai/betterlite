@@ -13,7 +13,39 @@ pub fn delta_text(event: &ResponsesAPIStreamingResponse) -> Option<&str> {
             KnownResponseEvent::OutputTextDelta(record) => Some(&record.delta),
             KnownResponseEvent::FunctionCallArgumentsDelta(record) => Some(&record.delta),
             KnownResponseEvent::McpCallArgumentsDelta(record) => Some(&record.delta),
-            _ => None,
+            KnownResponseEvent::ResponseCreated(_)
+            | KnownResponseEvent::ResponseInProgress(_)
+            | KnownResponseEvent::ResponseCompleted(_)
+            | KnownResponseEvent::ResponseFailed(_)
+            | KnownResponseEvent::ResponseIncomplete(_)
+            | KnownResponseEvent::ResponsePartAdded(_)
+            | KnownResponseEvent::ReasoningSummaryTextDelta(_)
+            | KnownResponseEvent::ReasoningSummaryTextDone(_)
+            | KnownResponseEvent::ReasoningSummaryPartDone(_)
+            | KnownResponseEvent::OutputItemAdded(_)
+            | KnownResponseEvent::OutputItemDone(_)
+            | KnownResponseEvent::ContentPartAdded(_)
+            | KnownResponseEvent::ContentPartDone(_)
+            | KnownResponseEvent::OutputTextAnnotationAdded(_)
+            | KnownResponseEvent::OutputTextDone(_)
+            | KnownResponseEvent::RefusalDelta(_)
+            | KnownResponseEvent::RefusalDone(_)
+            | KnownResponseEvent::FunctionCallArgumentsDone(_)
+            | KnownResponseEvent::FileSearchCallInProgress(_)
+            | KnownResponseEvent::FileSearchCallSearching(_)
+            | KnownResponseEvent::FileSearchCallCompleted(_)
+            | KnownResponseEvent::WebSearchCallInProgress(_)
+            | KnownResponseEvent::WebSearchCallSearching(_)
+            | KnownResponseEvent::WebSearchCallCompleted(_)
+            | KnownResponseEvent::McpListToolsInProgress(_)
+            | KnownResponseEvent::McpListToolsCompleted(_)
+            | KnownResponseEvent::McpListToolsFailed(_)
+            | KnownResponseEvent::McpCallInProgress(_)
+            | KnownResponseEvent::McpCallArgumentsDone(_)
+            | KnownResponseEvent::McpCallCompleted(_)
+            | KnownResponseEvent::McpCallFailed(_)
+            | KnownResponseEvent::ImageGenerationPartialImage(_)
+            | KnownResponseEvent::Error(_) => None,
         },
         ResponsesAPIStreamingResponse::Generic(record) => {
             record.extra.get("delta").and_then(JsonShape::optional_str)
