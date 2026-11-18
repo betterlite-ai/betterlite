@@ -68,19 +68,20 @@ pub fn project(
     is_messages_api: bool,
     text: &str,
 ) -> Result<Projection, SagemakerStreamError> {
+    if serde_json::from_str::<serde::de::IgnoredAny>(text).is_err() {
+        return Ok(Projection::Pending);
+    }
     if is_messages_api {
         return match serde_json::from_str::<ChatEvent>(text) {
             Ok(event) => Ok(Projection::Ready(SagemakerChunk::Chat(
                 event.into_chunk(model),
             ))),
-            Err(source) if source.is_data() => Err(SagemakerStreamError::Json(source)),
-            Err(_still_partial) => Ok(Projection::Pending),
+            Err(source) => Err(SagemakerStreamError::Json(source)),
         };
     }
     match serde_json::from_str::<TokenEvent>(text) {
         Ok(event) => Ok(Projection::Ready(SagemakerChunk::Token(event.into_chunk()))),
-        Err(source) if source.is_data() => Err(SagemakerStreamError::Json(source)),
-        Err(_still_partial) => Ok(Projection::Pending),
+        Err(source) => Err(SagemakerStreamError::Json(source)),
     }
 }
 
