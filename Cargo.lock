@@ -4420,6 +4420,7 @@ dependencies = [
  "betterlite-tracing",
  "betterlite-transcribe",
  "betterlite-vertex",
+ "bytes",
  "caseless",
  "chrono",
  "clap",
