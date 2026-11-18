@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::future::pending;
+use std::future::{Future, pending};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -16,7 +16,7 @@ use crate::agentcore_stream::IdSource;
 use crate::realtime_bridge::client::ClientForward;
 use crate::realtime_bridge::end::ForwardEnd;
 use crate::realtime_bridge::error::{ClientForwardError, ProviderForwardError};
-use crate::realtime_bridge::provider::ProviderForward;
+use crate::realtime_bridge::provider::{LoggedEventSink, ProviderForward};
 use crate::realtime_events::client::{ClientError, RealtimeClientWebSocket};
 use crate::realtime_events::scope::EventScope;
 use crate::realtime_events::stream::{
@@ -73,6 +73,28 @@ pub(super) fn logged_types() -> LoggedEventTypes {
     LoggedEventTypes::Default
 }
 
+type ClientRun = Result<ForwardEnd, ClientForwardError<io::Error>>;
+type ProviderRun = Result<ForwardEnd, ProviderForwardError<io::Error>>;
+
+fn session(ids: &CountingIds) -> Mutex<RealtimeInput> {
+    Mutex::new(RealtimeInput {
+        session: RealtimeSession::new(ids),
+        open_audio: None,
+    })
+}
+
+#[derive(Default)]
+pub(super) struct RecordedLog {
+    pub events: Vec<Json>,
+}
+
+#[async_trait]
+impl LoggedEventSink for RecordedLog {
+    async fn record(&mut self, event: Json) {
+        self.events.push(event);
+    }
+}
+
 pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("valid JSON")
 }
@@ -94,6 +116,7 @@ struct ClientState {
     frames: Mutex<VecDeque<Option<String>>>,
     block_receive: bool,
     send_failure: Option<usize>,
+    sends: AtomicUsize,
     sent: Mutex<Vec<String>>,
     closes: Mutex<Vec<(u16, Option<String>)>>,
 }
@@ -118,6 +141,7 @@ impl ScriptedClient {
                 frames: Mutex::new(frames.into_iter().collect()),
                 block_receive,
                 send_failure: None,
+                sends: AtomicUsize::new(0),
                 sent: Mutex::new(Vec::new()),
                 closes: Mutex::new(Vec::new()),
             }),
@@ -179,12 +203,7 @@ impl RealtimeClientWebSocket for ScriptedClient {
     }
 
     async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
-        let index = self
-            .state
-            .sent
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len();
+        let index = self.state.sends.fetch_add(1, Ordering::SeqCst);
         self.state
             .sent
             .lock()
@@ -431,10 +450,7 @@ pub(super) struct ClientFixture {
 impl ClientFixture {
     pub(super) fn new(initial: Option<String>, client: ScriptedClient) -> Self {
         let ids = CountingIds::new();
-        let shared = Mutex::new(RealtimeInput {
-            session: RealtimeSession::new(&ids),
-            open_audio: None,
-        });
+        let shared = session(&ids);
         Self {
             ids,
             shared,
@@ -448,8 +464,12 @@ impl ClientFixture {
         }
     }
 
-    pub(super) async fn run(&mut self) -> Result<ForwardEnd, ClientForwardError<io::Error>> {
-        let mut pump: ClientForward<'_, io::Error, io::Error> = ClientForward {
+    pub(super) async fn run(&mut self) -> ClientRun {
+        self.pump().forward_client_to_bedrock().await
+    }
+
+    fn pump(&mut self) -> ClientForward<'_, io::Error, io::Error> {
+        ClientForward {
             client: &self.client,
             stream: &self.stream,
             shared: &self.shared,
@@ -460,24 +480,13 @@ impl ClientFixture {
             redactor: &self.redactor,
             initial: self.initial.take(),
             cancel: &self.token,
-        };
-        pump.forward_client_to_bedrock().await
+        }
     }
 
-    pub(super) async fn run_cancelled(
-        &mut self,
-        threshold: usize,
-    ) -> Result<ForwardEnd, ClientForwardError<io::Error>> {
+    pub(super) async fn run_cancelled(&mut self, threshold: usize) -> ClientRun {
+        let counter = Arc::clone(&self.client.receives);
         let token = self.token.clone();
-        let receives = Arc::clone(&self.client.receives);
-        let canceller = cancel_at(&receives, threshold, &token);
-        let pump = self.run();
-        tokio::pin!(pump);
-        tokio::pin!(canceller);
-        tokio::select! {
-            result = &mut pump => result,
-            () = &mut canceller => pump.await,
-        }
+        cancel_when(self.run(), cancel_at(&counter, threshold, &token)).await
     }
 }
 
@@ -485,7 +494,7 @@ pub(super) struct ProviderFixture {
     pub ids: CountingIds,
     pub shared: Mutex<RealtimeInput>,
     pub state: RealtimeResponseTransformInput,
-    pub logged: Vec<Json>,
+    pub log: RecordedLog,
     pub types: LoggedEventTypes,
     pub redactor: Redactor,
     pub token: CancellationToken,
@@ -496,15 +505,12 @@ pub(super) struct ProviderFixture {
 impl ProviderFixture {
     pub(super) fn new(client: ScriptedClient, stream: ScriptedStream) -> Self {
         let ids = CountingIds::new();
-        let shared = Mutex::new(RealtimeInput {
-            session: RealtimeSession::new(&ids),
-            open_audio: None,
-        });
+        let shared = session(&ids);
         Self {
             ids,
             shared,
             state: input(),
-            logged: Vec::new(),
+            log: RecordedLog::default(),
             types: logged_types(),
             redactor: redactor(),
             token: CancellationToken::new(),
@@ -513,35 +519,36 @@ impl ProviderFixture {
         }
     }
 
-    pub(super) async fn run(&mut self) -> Result<ForwardEnd, ProviderForwardError<io::Error>> {
+    pub(super) async fn run(&mut self) -> ProviderRun {
+        let Self {
+            ids,
+            shared,
+            state,
+            log,
+            types,
+            redactor,
+            token,
+            client,
+            stream,
+        } = self;
         let mut pump: ProviderForward<'_, io::Error, io::Error> = ProviderForward {
-            stream: &self.stream,
-            client: &self.client,
-            shared: &self.shared,
-            state: &mut self.state,
-            logged: &mut self.logged,
-            logged_types: &self.types,
-            ids: &self.ids,
-            redactor: &self.redactor,
-            cancel: &self.token,
+            stream,
+            client,
+            shared,
+            state,
+            logged: log,
+            logged_types: types,
+            ids,
+            redactor,
+            cancel: token,
         };
         pump.forward_bedrock_to_client().await
     }
 
-    pub(super) async fn run_cancelled(
-        &mut self,
-        threshold: usize,
-    ) -> Result<ForwardEnd, ProviderForwardError<io::Error>> {
-        let token = self.token.clone();
+    pub(super) async fn run_cancelled(&mut self, threshold: usize) -> ProviderRun {
         let output = Arc::clone(&self.stream.output);
-        let canceller = cancel_at(&output.receives, threshold, &token);
-        let pump = self.run();
-        tokio::pin!(pump);
-        tokio::pin!(canceller);
-        tokio::select! {
-            result = &mut pump => result,
-            () = &mut canceller => pump.await,
-        }
+        let token = self.token.clone();
+        cancel_when(self.run(), cancel_at(&output.receives, threshold, &token)).await
     }
 }
 
@@ -551,4 +558,18 @@ async fn cancel_at(counter: &AtomicUsize, threshold: usize, cancel: &Cancellatio
         tokio::task::yield_now().await;
     }
     cancel.cancel();
+}
+
+// The pump finishes on its own, or the watchdog cancels it and the pump sees the token and returns
+async fn cancel_when<T, P, W>(pump: P, watching: W) -> T
+where
+    P: Future<Output = T>,
+    W: Future<Output = ()>,
+{
+    tokio::pin!(pump);
+    tokio::pin!(watching);
+    tokio::select! {
+        result = &mut pump => result,
+        () = &mut watching => pump.await,
+    }
 }

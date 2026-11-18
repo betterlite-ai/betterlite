@@ -85,8 +85,7 @@ where
     }
 
     async fn send_frame(&self, frame: &InputFrame) -> Result<(), ClientForwardError<S>> {
-        let event =
-            serde_json::to_value(frame).map_err(|source| ClientForwardError::Encode { source })?;
+        let event = frame_json::<S>(frame)?;
         self.stream.input_stream().send(event).await?;
         tracing::debug!("Bedrock Realtime: Sent to Bedrock");
         Ok(())
@@ -115,7 +114,7 @@ where
             input.session_close_messages()
         };
         for frame in frames {
-            let Ok(event) = serde_json::to_value(frame) else {
+            let Ok(event) = frame_json::<S>(&frame) else {
                 continue;
             };
             // One closing frame's failure never skips the rest, and never replaces the pump's own error
@@ -123,4 +122,15 @@ where
         }
         let _closed = self.stream.input_stream().close().await;
     }
+}
+
+// The transform builds typed frames, and the stream takes the protocol's own JSON value
+fn frame_json<S>(frame: &InputFrame) -> Result<Json, ClientForwardError<S>>
+where
+    S: StdError + 'static,
+{
+    serde_json::from_value(
+        serde_json::to_value(frame).map_err(|source| ClientForwardError::Encode { source })?,
+    )
+    .map_err(|source| ClientForwardError::Encode { source })
 }

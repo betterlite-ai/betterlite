@@ -9,8 +9,8 @@ const AUDIO_COMMIT: &str = r#"{"type":"input_audio_buffer.commit"}"#;
 const UNKNOWN: &str = r#"{"type":"does.not.exist"}"#;
 
 pub(super) async fn client_event_forwarding() {
-    forwards_every_client_frame();
-    ack_failure_stops_forwarding();
+    forwards_every_client_frame().await;
+    ack_failure_stops_forwarding().await;
 }
 
 async fn forwards_every_client_frame() {

@@ -2,6 +2,7 @@ use std::error::Error as StdError;
 use std::str::from_utf8;
 use std::sync::{Mutex, PoisonError};
 
+use async_trait::async_trait;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_contracts::events::{
     RealtimeResponseTransformInput, RealtimeResponseTypedDict,
@@ -20,6 +21,12 @@ use crate::realtime_events::logging::should_log_event;
 use crate::realtime_events::stream::BedrockBidirectionalStream;
 use crate::realtime_input::RealtimeInput;
 
+// The pump hands each loggable event to the caller before pulling the next one, as the source's generator does
+#[async_trait]
+pub trait LoggedEventSink: Send {
+    async fn record(&mut self, event: Json);
+}
+
 pub struct ProviderForward<'state, C, S>
 where
     C: StdError + Send + Sync + 'static,
@@ -29,7 +36,7 @@ where
     pub client: &'state dyn RealtimeClientWebSocket<Error = C>,
     pub shared: &'state Mutex<RealtimeInput>,
     pub state: &'state mut RealtimeResponseTransformInput,
-    pub logged: &'state mut Vec<Json>,
+    pub logged: &'state mut dyn LoggedEventSink,
     pub logged_types: &'state LoggedEventTypes,
     pub ids: &'state dyn IdSource,
     pub redactor: &'state Redactor,
@@ -101,7 +108,7 @@ where
                     return Ok(ForwardEnd::Ended);
                 }
                 if self.should_log(&message) {
-                    self.logged.push(message);
+                    self.logged.record(message).await;
                 }
             }
         }

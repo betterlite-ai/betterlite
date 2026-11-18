@@ -31,7 +31,10 @@ pub(super) async fn provider_event_forwarding() {
     );
     assert_eq!(fixture.client.closes(), vec![(1000, None)]);
     let sent = fixture.client.sent_events();
-    let kinds: Vec<Option<&str>> = sent.iter().map(event_type).collect();
+    let kinds: Vec<Option<&str>> = sent
+        .iter()
+        .map(|event| event_field(event, "type"))
+        .collect();
     assert_eq!(
         kinds,
         [
@@ -46,7 +49,7 @@ pub(super) async fn provider_event_forwarding() {
             Some("response.done"),
         ]
     );
-    assert_eq!(event_text(&sent[5], "text"), Some("Hello world"));
+    assert_eq!(event_field(&sent[5], "text"), Some("Hello world"));
     // The end turn resets the response, its item and the delta type; the conversation stays for the next one
     assert_eq!(fixture.state.current_response_id, None);
     assert_eq!(fixture.state.current_output_item_id, None);
@@ -62,19 +65,20 @@ pub(super) async fn provider_event_forwarding() {
     );
     assert_eq!(fixture.state.current_item_chunks, Some(Vec::new()));
 
-    assert_eq!(fixture.logged.len(), 1);
-    assert_eq!(event_type(&fixture.logged[0]), Some("response.done"));
+    // Each event reached the sink where the source yields it, so the first turn's response.done is already logged
+    assert_eq!(fixture.log.events.len(), 1);
+    assert_eq!(
+        event_field(&fixture.log.events[0], "type"),
+        Some("response.done")
+    );
 }
 
 pub(super) async fn provider_error_close() {
-    await_failure();
-    receive_failure();
-    utf8_failure();
-    transform_failure();
-    client_send_failure();
+    provider_stream_failures().await;
+    client_send_failure().await;
 }
 
-async fn await_failure() {
+async fn provider_stream_failures() {
     let stream = ScriptedStream::new(Vec::new()).with_await_failure("the provider has no output");
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -82,11 +86,9 @@ async fn await_failure() {
     assert!(matches!(outcome, Err(ProviderForwardError::Stream(_))));
     assert!(fixture.client.sent_events().is_empty());
     assert!(fixture.client.closes().is_empty());
-    assert!(fixture.logged.is_empty());
+    assert!(fixture.log.events.is_empty());
     assert_eq!(fixture.state, support::input());
-}
 
-async fn receive_failure() {
     let stream = ScriptedStream::new(vec![Chunk::bytes(CONTENT_START)]).with_receive_failure(1);
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -95,10 +97,8 @@ async fn receive_failure() {
     assert_eq!(fixture.client.sent_events().len(), 3);
     assert!(fixture.client.closes().is_empty());
     assert!(fixture.state.current_response_id.is_some());
-    assert!(fixture.logged.is_empty());
-}
+    assert!(fixture.log.events.is_empty());
 
-async fn utf8_failure() {
     let stream = ScriptedStream::new(vec![Chunk::Bytes(vec![0xff])]);
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -106,9 +106,7 @@ async fn utf8_failure() {
     assert!(matches!(outcome, Err(ProviderForwardError::Utf8 { .. })));
     assert!(fixture.client.sent_events().is_empty());
     assert!(fixture.client.closes().is_empty());
-}
 
-async fn transform_failure() {
     let stream = ScriptedStream::new(vec![Chunk::bytes(r#"{"event":{"contentStart":[]}}"#)]);
     let mut fixture = ProviderFixture::new(ScriptedClient::new(Vec::new()), stream);
     let outcome = fixture.run().await;
@@ -123,9 +121,12 @@ async fn client_send_failure() {
     let stream = ScriptedStream::new(vec![
         Chunk::bytes(CONTENT_START),
         Chunk::bytes(END_TURN),
+        Chunk::bytes(CONTENT_START),
+        Chunk::bytes(END_TURN),
         Chunk::End,
     ]);
-    let client = ScriptedClient::new(Vec::new()).failing_send(0);
+    // The second turn's response.done, the only loggable event, is the one the client refuses
+    let client = ScriptedClient::new(Vec::new()).failing_send(13);
     let mut fixture = ProviderFixture::new(client, stream);
     let outcome = fixture.run().await;
 
@@ -133,24 +134,19 @@ async fn client_send_failure() {
         outcome.expect("a client send failure ends forwarding"),
         ForwardEnd::Ended
     );
-    assert_eq!(fixture.client.sent_events().len(), 1);
+    assert_eq!(fixture.client.sent_events().len(), 14);
     assert!(fixture.client.closes().is_empty());
-    assert!(fixture.logged.is_empty());
-    // The first content start already updated the shared state; the failure does not roll it back
-    assert!(fixture.state.current_response_id.is_some());
+    // The pump logged the first turn's response.done and never the failed second one, which needs a sink call per send
+    assert_eq!(fixture.log.events.len(), 1);
+    assert_eq!(
+        event_field(&fixture.log.events[0], "type"),
+        Some("response.done")
+    );
+    // The second turn's transform already advanced the shared state, and the failure does not roll it back
+    assert!(fixture.state.current_conversation_id.is_some());
 }
 
-fn event_type(event: &Json) -> Option<&str> {
-    match event {
-        Json::Object(fields) => match fields.get("type") {
-            Some(Json::Text(text)) => Some(text.as_str()),
-            _ => None,
-        },
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
-}
-
-fn event_text(event: &Json, field: &str) -> Option<&str> {
+fn event_field<'a>(event: &'a Json, field: &str) -> Option<&'a str> {
     match event {
         Json::Object(fields) => match fields.get(field) {
             Some(Json::Text(text)) => Some(text.as_str()),

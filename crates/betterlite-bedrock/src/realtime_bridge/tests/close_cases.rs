@@ -10,11 +10,11 @@ const SESSION_UPDATE: &str = r#"{"type": "session.update", "session": {}}"#;
 const CONTENT_START: &str = r#"{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}"#;
 
 pub(super) async fn input_half_close() {
-    without_prompt_started();
-    close_frames_fail_individually();
-    one_close_frame_failure_keeps_the_rest();
-    close_failure_keeps_the_original_error();
-    readiness_failure_keeps_the_replay_marker();
+    without_prompt_started().await;
+    close_frames_fail_individually().await;
+    one_close_frame_failure_keeps_the_rest().await;
+    close_failure_keeps_the_original_error().await;
+    readiness_failure_keeps_the_replay_marker().await;
 }
 
 async fn without_prompt_started() {
@@ -115,9 +115,9 @@ async fn readiness_failure_keeps_the_replay_marker() {
 }
 
 pub(super) async fn output_half_close() {
-    eof_without_events();
-    eof_after_unknown_event();
-    eof_after_transformed_events();
+    eof_without_events().await;
+    eof_after_unknown_event().await;
+    eof_after_transformed_events().await;
 }
 
 fn provider_fixture(chunks: Vec<Chunk>) -> ProviderFixture {
@@ -134,7 +134,7 @@ async fn eof_without_events() {
     );
     assert!(fixture.client.sent_events().is_empty());
     assert_eq!(fixture.client.closes(), vec![(1000, None)]);
-    assert!(fixture.logged.is_empty());
+    assert!(fixture.log.events.is_empty());
 }
 
 async fn eof_after_unknown_event() {
@@ -167,7 +167,7 @@ async fn eof_after_transformed_events() {
             .all(|event| event_type(event) != Some("response.done"))
     );
     assert_eq!(fixture.client.closes(), vec![(1000, None)]);
-    assert!(fixture.logged.is_empty());
+    assert!(fixture.log.events.is_empty());
     assert!(fixture.state.current_response_id.is_some());
 }
 
