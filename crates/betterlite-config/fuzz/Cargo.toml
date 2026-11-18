@@ -114,3 +114,10 @@ path = "fuzz_targets/spend_statement_limits.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "dimension_pattern"
+path = "fuzz_targets/dimension_pattern.rs"
+test = false
+doc = false
+bench = false
