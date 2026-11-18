@@ -4,10 +4,9 @@ import socketserver
 import threading
 from collections.abc import Callable, Coroutine
 from functools import partial
-from typing import Literal, NamedTuple, Protocol, TypedDict, cast
+from typing import Literal, NamedTuple, Protocol, TypeAlias, TypedDict, cast
 
 import litellm.constants
-from b4293 import NIL, Handler, Script, bulk
 from litellm.caching.dual_cache import DualCache
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.caching.redis_cache import RedisCache
@@ -15,6 +14,8 @@ from pydantic import JsonValue
 from redis.backoff import NoBackoff
 from redis.retry import Retry
 from typing_extensions import override
+
+from b4293 import NIL, Handler, Script, bulk
 
 Client = Literal["shared", "own", "rejecting", "none"]
 HOST = "127.0.0.1"
@@ -52,17 +53,21 @@ class Fields(TypedDict):
     apply_caches: list[CacheFields]
 
 
+Reservation: TypeAlias = tuple[list[JsonValue], dict[str, JsonValue]]
+ReadPair: TypeAlias = tuple["TypedCache", list[str]]
+
+
 class TypedCache(Protocol):
     def get_cache(self, key: str, *, local_only: bool = False) -> JsonValue: ...
     def set_cache(self, key: str, value: JsonValue, *, local_only: bool = False) -> None: ...
     def batch_get_cache(self, keys: list[str], *, local_only: bool = False) -> JsonValue: ...
-    def reserve_redis_batch_reads(self, keys: list[str]) -> tuple[list[JsonValue], dict[str, JsonValue]]: ...
+    def reserve_redis_batch_reads(self, keys: list[str]) -> Reservation: ...
     async def async_batch_get_cache(
         self, keys: list[str], *, local_only: bool = False, throttle_redis: bool = True
     ) -> list[JsonValue] | None: ...
     async def async_get_ttl(self, key: str) -> JsonValue: ...
     @staticmethod
-    async def async_batch_get_cache_shared(reads: list[tuple["TypedCache", list[str]]]) -> list[JsonValue]: ...
+    async def async_batch_get_cache_shared(reads: list[ReadPair]) -> list[JsonValue]: ...
 
 
 class ReadFailureMemory(InMemoryCache):
@@ -93,14 +98,13 @@ class Fakes(NamedTuple):
     separate: Script
 
     def redis(self, client: Client) -> RedisCache | None:
-        caches = {"own": self.own, "rejecting": self.rejecting, "shared": self.recording}
-        return None if client == "none" else caches[client]
+        return {"own": self.own, "rejecting": self.rejecting, "shared": self.recording}.get(client)
 
     def cache(self, call: Fields, client: Client) -> TypedCache:
         return seed(dual(call, memory_for(call), self.redis(client)), call["memory"])
 
     def pair(self, call: Fields, row: CacheFields) -> TypedCache:
-        memory = memory_for(call, fail_reads=row["fail_reads"], fail_writes=row["fail_writes"])
+        memory = memory_for(call, reads=row["fail_reads"], writes=row["fail_writes"])
         return seed(dual(call, memory, self.redis(row["client"])), row["memory"])
 
 
@@ -111,30 +115,28 @@ def mget_reply(values: list[JsonValue]) -> bytes:
 
 # a scripted fake RESP server, or with no script one that closes every connection it accepts
 def start_redis(script: Script | None) -> tuple[socketserver.ThreadingTCPServer, RedisCache]:
-    handler: Callable[..., socketserver.BaseRequestHandler] = (
-        socketserver.StreamRequestHandler if script is None else partial(Handler, script)
-    )
-    server = socketserver.ThreadingTCPServer((HOST, 0), handler)
+    factory = socketserver.StreamRequestHandler if script is None else partial(Handler, script)
+    server = socketserver.ThreadingTCPServer((HOST, 0), factory)
     server.daemon_threads = True
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    cache = RedisCache(host=HOST, port=server.server_address[1], socket_timeout=2.0, retry=Retry(NoBackoff(), 0))
+    port = server.server_address[1]
+    cache = RedisCache(host=HOST, port=port, socket_timeout=2.0, retry=Retry(NoBackoff(), 0))
     return server, cache
 
 
 def sent(script: Script) -> list[JsonValue]:
-    recorded: list[JsonValue] = []
+    keys: list[JsonValue] = []
     for args in script.received:
         if args[0].upper() == "MGET":
-            keys: list[JsonValue] = list(args[1:])
-            recorded.append(keys)
-    return recorded
+            keys.append(list(args[1:]))
+    return keys
 
 
-def memory_for(call: Fields, *, fail_reads: bool = False, fail_writes: bool = False) -> InMemoryCache:
+def memory_for(call: Fields, *, reads: bool = False, writes: bool = False) -> InMemoryCache:
     clock = partial(float, call["clock"])
-    if fail_reads:
+    if reads:
         return ReadFailureMemory(clock=clock)
-    return WriteFailureMemory(clock=clock) if fail_writes else InMemoryCache(clock=clock)
+    return WriteFailureMemory(clock=clock) if writes else InMemoryCache(clock=clock)
 
 
 def dual(call: Fields, memory: InMemoryCache, redis: RedisCache | None) -> TypedCache:
@@ -150,7 +152,7 @@ def seed(cache: TypedCache, entries: list[Entry]) -> TypedCache:
     return cache
 
 
-def reserved(reservation: tuple[list[JsonValue], dict[str, JsonValue]]) -> dict[str, JsonValue]:
+def reserved(reservation: Reservation) -> dict[str, JsonValue]:
     due, previous = reservation
     return {"due": due, "previous": previous}
 
@@ -198,13 +200,14 @@ async def sync_backfill(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
 
 async def sync_errors(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
     rejecting = fakes.cache(call, "rejecting")
-    read_memory = memory_for(call, fail_reads=True)
-    write_memory = memory_for(call, fail_writes=True)
+    reads = memory_for(call, reads=True)
+    writes = memory_for(call, writes=True)
+    shared = fakes.redis("shared")
     facts: dict[str, JsonValue] = {}
     facts["breaker_read"] = rejecting.batch_get_cache(call["read_keys"])
     facts["breaker_due"] = reserved(rejecting.reserve_redis_batch_reads(call["due_keys"]))
-    facts["memory_failure"] = dual(call, read_memory, fakes.redis("shared")).batch_get_cache(call["read_keys"])
-    facts["write_failure"] = dual(call, write_memory, fakes.redis("shared")).batch_get_cache(call["write_keys"])
+    facts["memory_failure"] = dual(call, reads, shared).batch_get_cache(call["read_keys"])
+    facts["write_failure"] = dual(call, writes, shared).batch_get_cache(call["write_keys"])
     facts["mgets"] = sent(fakes.shared)
     return facts
 
@@ -265,11 +268,10 @@ async def shared_failures(call: Fields, fakes: Fakes) -> dict[str, JsonValue]:
     }
 
 
-# a broken Redis opens a real breaker after this many failed public reads, for the scenario to observe
+# a broken Redis opens the real breaker after this many failed public reads
 def open_breaker(call: Fields, redis: RedisCache) -> None:
-    probe = dual(call, InMemoryCache(), redis)
     for index in range(litellm.constants.REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD):
-        probe.batch_get_cache([f"breaker-open-{index}"])
+        dual(call, InMemoryCache(), redis).batch_get_cache([f"breaker-open-{index}"])
 
 
 SCENARIOS: dict[str, Callable[[Fields, Fakes], Coroutine[None, None, dict[str, JsonValue]]]] = {
@@ -285,10 +287,8 @@ SCENARIOS: dict[str, Callable[[Fields, Fakes], Coroutine[None, None, dict[str, J
 def run(input_value: dict[str, Fields]) -> dict[str, JsonValue]:
     ((name, call),) = input_value.items()
     shared, own = Script(), Script()
-    for reply in call["replies"]:
-        shared.replies["MGET"].append(mget_reply(reply))
-    for reply in call["own_replies"]:
-        own.replies["MGET"].append(mget_reply(reply))
+    shared.replies["MGET"].extend(mget_reply(reply) for reply in call["replies"])
+    own.replies["MGET"].extend(mget_reply(reply) for reply in call["own_replies"])
     started = [start_redis(script) for script in (shared, own, None)]
     try:
         fakes = Fakes(started[0][1], started[1][1], started[2][1], shared, own)
