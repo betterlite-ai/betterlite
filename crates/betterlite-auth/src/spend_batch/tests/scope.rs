@@ -72,11 +72,10 @@ async fn an_inner_scope_joins_the_open_outer_batch() {
     let context = SpendBatchContext::default();
     let outer = context.enter(Some(&cache), &keys(&["spend:key:a"]));
     let outer_batch = active(&context).expect("the outer batch");
-    {
-        let _inner = context.enter(Some(&cache), &keys(&["spend:key:b"]));
-        let inner_batch = active(&context).expect("the joined batch");
-        assert!(Arc::ptr_eq(&outer_batch, &inner_batch));
-    }
+    let inner = context.enter(Some(&cache), &keys(&["spend:key:b"]));
+    let inner_batch = active(&context).expect("the joined batch");
+    assert!(Arc::ptr_eq(&outer_batch, &inner_batch));
+    drop(inner);
     let current = active(&context).expect("the outer batch stays active");
     assert!(Arc::ptr_eq(&outer_batch, &current));
     server.script_mget(Reply::Array(vec![

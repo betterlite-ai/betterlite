@@ -308,13 +308,12 @@ async fn overlapping_fetches_never_strand_a_late_reader() {
     waiting_reads.spawn(async move { waiting_batch.read("spend:key:a").await });
     yield_now().await;
     abort_handle.abort();
-    assert!(
-        readers
-            .join_next()
-            .await
-            .expect("the fetcher runs")
-            .is_err()
-    );
+    let abort_error = readers
+        .join_next()
+        .await
+        .expect("the fetcher runs")
+        .expect_err("the fetcher task is aborted");
+    assert!(abort_error.is_cancelled());
     held.release();
     assert_eq!(join_read(&mut waiting_reads).await, None);
     assert_eq!(
