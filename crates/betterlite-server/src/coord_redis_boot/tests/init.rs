@@ -80,7 +80,7 @@ fn assert_backs_spend_cli_sso_and_config(caches: &RecordingCaches) {
     assert_eq!(
         caches.spend.calls(),
         vec![AttachCall::Attached {
-            default_ttl: Some(120.0)
+            default_ttl: Some(120.0_f64)
         }]
     );
     assert_eq!(
