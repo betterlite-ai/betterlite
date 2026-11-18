@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::convert::Infallible;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -19,6 +20,8 @@ use betterlite_auth::auth_identity::roles::Role;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::postgres_store::errors::DbError;
+use betterlite_db::postgres_store::errors::backend;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::resource_repository::config::ConfigError;
 use betterlite_db::stored_cipher::DbCipher;
@@ -31,6 +34,11 @@ use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tokio::io::AsyncReadExt as _;
+use tokio::io::AsyncWriteExt as _;
+use tokio::net::TcpListener;
+use tokio::net::TcpStream;
+use tokio::task::JoinSet;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
@@ -189,6 +197,26 @@ impl SettingsRepository for MissingRowRepository {
     }
 }
 
+pub(crate) struct OutageRepository {
+    pub(crate) code: String,
+    pub(crate) message: String,
+}
+
+#[async_trait]
+impl SettingsRepository for OutageRepository {
+    async fn param(&self, _name: &str) -> Result<Option<JsonData>, ConfigError> {
+        Err(ConfigError::Database(
+            server_error(&self.code, &self.message).await,
+        ))
+    }
+
+    async fn set_param(&self, _name: &str, _value: JsonData) -> Result<(), ConfigError> {
+        Err(ConfigError::Database(
+            server_error(&self.code, &self.message).await,
+        ))
+    }
+}
+
 pub(crate) struct FailingCipher;
 
 impl SettingsCipher for FailingCipher {
@@ -216,6 +244,73 @@ pub(crate) fn disconnected_repository() -> DatabaseSettingsRepository {
         store: Arc::new(PostgresStore { pool: None }),
         availability: Availability::default(),
     }
+}
+
+pub(crate) fn outage_repository(code: &str, message: &str) -> Arc<dyn SettingsRepository> {
+    Arc::new(OutageRepository {
+        code: code.to_owned(),
+        message: message.to_owned(),
+    })
+}
+
+// A listener that answers the startup with an ErrorResponse yields the real driver error LiteLLM sees
+async fn server_error(code: &str, message: &str) -> DbError {
+    let listener = TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("fake postgres listener");
+    let address = listener.local_addr().expect("fake postgres address");
+    let payload = error_response(code, message);
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let (socket, _) = listener.accept().await.expect("fake postgres accept");
+        reply_with_error(socket, payload).await;
+    });
+    let dsn = format!("host=127.0.0.1 port={} user=roi", address.port());
+    let Err(driver) = tokio_postgres::connect(&dsn, tokio_postgres::NoTls).await else {
+        panic!("the fake postgres server never completes a startup");
+    };
+    if let Some(result) = tasks.join_next().await {
+        result.expect("the fake postgres task");
+    }
+    let database = driver.as_db_error().expect("the fake postgres error");
+    assert_eq!(database.code().code(), code);
+    backend::<Infallible>(driver)
+}
+
+async fn reply_with_error(mut socket: TcpStream, payload: Vec<u8>) {
+    let mut length = [0_u8; 4];
+    socket
+        .read_exact(&mut length)
+        .await
+        .expect("startup message length");
+    let size = u32::from_be_bytes(length);
+    let body_size = usize::try_from(size.saturating_sub(4)).expect("startup message size");
+    let mut startup = vec![0_u8; body_size];
+    socket
+        .read_exact(&mut startup)
+        .await
+        .expect("startup message body");
+    socket.write_all(&payload).await.expect("error response");
+}
+
+fn error_response(code: &str, message: &str) -> Vec<u8> {
+    let mut body = Vec::new();
+    for (kind, value) in [
+        (b'S', "FATAL"),
+        (b'V', "FATAL"),
+        (b'C', code),
+        (b'M', message),
+    ] {
+        body.push(kind);
+        body.extend_from_slice(value.as_bytes());
+        body.push(0);
+    }
+    body.push(0);
+    let mut payload = vec![b'E'];
+    let size = u32::try_from(body.len().saturating_add(4)).expect("error response length");
+    payload.extend_from_slice(&size.to_be_bytes());
+    payload.extend_from_slice(&body);
+    payload
 }
 
 pub(crate) fn settings_app(

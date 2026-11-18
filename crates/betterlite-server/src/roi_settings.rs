@@ -1,6 +1,7 @@
 pub mod auth;
 pub mod deployments;
 pub mod error;
+pub mod outage;
 pub mod patch;
 pub mod public;
 pub mod repository;

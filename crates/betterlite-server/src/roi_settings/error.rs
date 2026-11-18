@@ -1,8 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use betterlite_db::auxiliary_repository::repository::TableError;
-use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::resource_repository::config::ConfigError;
 use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
@@ -10,6 +8,7 @@ use betterlite_roi::settings::ROISettingsUpdate;
 use betterlite_roi::settings::SettingsError;
 use betterlite_secrets::error::SecretError;
 
+use super::outage::is_database_outage;
 use super::store::StoredSettingsError;
 use serde::Serialize;
 use serde_json::error::Category;
@@ -119,32 +118,40 @@ impl IntoResponse for RoiSettingsError {
                 detail_response(StatusCode::INTERNAL_SERVER_ERROR, INVALID_REPORT.to_owned())
             }
             Self::NullUrl => detail_response(StatusCode::UNPROCESSABLE_ENTITY, NULL_URL.to_owned()),
-            Self::MissingBody => issues_response(vec![missing_body()]),
-            Self::InvalidJson => issues_response(vec![invalid_json()]),
+            Self::MissingBody => issues_response(vec![Issue {
+                kind: "missing",
+                loc: vec![LocPart::Field("body".to_owned())],
+                msg: FIELD_REQUIRED.to_owned(),
+            }]),
+            Self::InvalidJson => issues_response(vec![Issue {
+                kind: "json_invalid",
+                loc: vec![LocPart::Field("body".to_owned())],
+                msg: JSON_DECODE_ERROR.to_owned(),
+            }]),
             Self::Body(source) => issues_response(vec![body_issue(&source)]),
             Self::Request(issues) => issues_response(issues),
             Self::Validation(error) => issues_response(vec![settings_issue(&error)]),
-            Self::Internal(error) => match &error {
-                InternalError::DbNotConnected => detail_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
-                ),
-                InternalError::Config(source) if is_database_outage(source) => {
-                    database_unavailable()
-                }
-                InternalError::Config(_)
-                | InternalError::Encode(_)
-                | InternalError::Encryption(_) => {
-                    tracing::error!(error = ?error, "the ROI settings request failed");
-                    let body = InternalBody {
-                        error: InternalMessage {
-                            message: "Internal server error",
-                            error_type: "internal_server_error",
-                        },
-                    };
-                    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
-                }
-            },
+            Self::Internal(error) => internal_response(&error),
+        }
+    }
+}
+
+fn internal_response(error: &InternalError) -> Response {
+    match error {
+        InternalError::DbNotConnected => detail_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
+        ),
+        InternalError::Config(source) if is_database_outage(source) => database_unavailable(),
+        InternalError::Config(_) | InternalError::Encode(_) | InternalError::Encryption(_) => {
+            tracing::error!(error = ?error, "the ROI settings request failed");
+            let body = InternalBody {
+                error: InternalMessage {
+                    message: "Internal server error",
+                    error_type: "internal_server_error",
+                },
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
         }
     }
 }
@@ -175,40 +182,13 @@ fn database_unavailable() -> Response {
     (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response()
 }
 
-fn is_database_outage(error: &ConfigError) -> bool {
-    let source = match error {
-        ConfigError::Database(source) => source,
-        ConfigError::Table(TableError::Database(source)) => source,
-        ConfigError::Table(_) | ConfigError::Json(_) => return false,
-    };
-    match source {
-        DbError::NoDbConnected | DbError::Pool { .. } | DbError::Backend { .. } => true,
-        DbError::SqlState { code, .. } => code.code().starts_with("08"),
-        DbError::InvalidRecord { .. } | DbError::CreateNull | DbError::UniqueViolation { .. } => {
-            false
-        }
-    }
-}
-
-fn missing_body() -> Issue {
-    Issue {
-        kind: "missing",
-        loc: vec![LocPart::Field("body".to_owned())],
-        msg: FIELD_REQUIRED.to_owned(),
-    }
-}
-
-fn invalid_json() -> Issue {
-    Issue {
-        kind: "json_invalid",
-        loc: vec![LocPart::Field("body".to_owned())],
-        msg: JSON_DECODE_ERROR.to_owned(),
-    }
-}
-
 fn body_issue(source: &serde_path_to_error::Error<serde_json::Error>) -> Issue {
     if matches!(source.inner().classify(), Category::Syntax | Category::Eof) {
-        return invalid_json();
+        return Issue {
+            kind: "json_invalid",
+            loc: vec![LocPart::Field("body".to_owned())],
+            msg: JSON_DECODE_ERROR.to_owned(),
+        };
     }
     let message = source.inner().to_string();
     if let Some(field) = unknown_field(&message) {
