@@ -5,7 +5,9 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::key_fields::values::Amount;
-use betterlite_server::proxy_request_contracts::user::NewUserTeams;
+use betterlite_server::proxy_request_contracts::user::{
+    NewUserRequest, NewUserTeams, UpdateUserRequest,
+};
 use betterlite_server::user_contracts::bulk_delete::{
     BulkDeleteUserRequest, BulkDeleteUsersResponse, UserDeleteResult,
 };
@@ -172,54 +174,60 @@ fn record_answer<T>(body: &Value) -> Result<Value, Box<HelperError>>
 where
     T: DeserializeOwned + Serialize,
 {
-    let record: T = serde_json::from_value(body.clone()).or_value_error()?;
-    serde_json::to_value(record).or_value_error()
+    serde_json::to_value(serde_json::from_value::<T>(body.clone()).or_value_error()?)
+        .or_value_error()
+}
+
+impl<'record> From<&'record UpdateUserRequest> for UpdateUserView<'record> {
+    fn from(user: &'record UpdateUserRequest) -> Self {
+        Self {
+            user_id: user.user_id.as_ref(),
+            user_email: user.user_email.as_ref(),
+            supplied: &user.fields.supplied,
+        }
+    }
+}
+
+impl<'record> From<&'record NewUserRequest> for NewUserItemView<'record> {
+    fn from(row: &'record NewUserRequest) -> Self {
+        Self {
+            user_id: row.base.user_id.clone().flatten(),
+            user_email: row.user_email.as_ref(),
+            user_alias: row.user_alias.as_ref(),
+            user_role: row.user_role,
+            max_budget: row.max_budget.as_ref(),
+            teams: row.teams.as_ref(),
+            auto_create_key: row.auto_create_key,
+            send_invite_email: row.send_invite_email,
+            sso_user_id: row.sso_user_id.as_ref(),
+            organizations: row.organizations.as_ref(),
+        }
+    }
 }
 
 fn bulk_update_answer(body: &Value) -> Result<Value, Box<HelperError>> {
     let request = BulkUpdateUserRequest::from_value(body).or_value_error()?;
-    let users = request.users.as_ref().map(|users| {
-        users
-            .iter()
-            .map(|user| UpdateUserView {
-                user_id: user.user_id.as_ref(),
-                user_email: user.user_email.as_ref(),
-                supplied: &user.fields.supplied,
-            })
-            .collect()
-    });
+    let users = request
+        .users
+        .as_ref()
+        .map(|users| users.iter().map(UpdateUserView::from).collect());
     let user_updates = request
         .user_updates
         .as_ref()
         .map(|updates| &updates.supplied);
-    let view = BulkUpdateView {
+    serde_json::to_value(BulkUpdateView {
         users,
         all_users: request.all_users,
         user_updates,
-    };
-    serde_json::to_value(view).or_value_error()
+    })
+    .or_value_error()
 }
 
 fn bulk_new_answer(body: &Value) -> Result<Value, Box<HelperError>> {
     let request = BulkNewUserRequest::from_value(body).or_value_error()?;
-    let users = request
-        .users
-        .iter()
-        .map(|item| {
-            let row = &item.request;
-            NewUserItemView {
-                user_id: row.base.user_id.clone().flatten(),
-                user_email: row.user_email.as_ref(),
-                user_alias: row.user_alias.as_ref(),
-                user_role: row.user_role,
-                max_budget: row.max_budget.as_ref(),
-                teams: row.teams.as_ref(),
-                auto_create_key: row.auto_create_key,
-                send_invite_email: row.send_invite_email,
-                sso_user_id: row.sso_user_id.as_ref(),
-                organizations: row.organizations.as_ref(),
-            }
-        })
-        .collect();
+    let mut users = Vec::with_capacity(request.users.len());
+    for item in &request.users {
+        users.push(NewUserItemView::from(&item.request));
+    }
     serde_json::to_value(BulkNewView { users }).or_value_error()
 }
