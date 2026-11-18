@@ -126,7 +126,7 @@ where
             .await;
     if !supported {
         tracing::warn!(
-            "Bedrock Converse: dropping `output_config.format` for model={}. The model does not advertise `supports_native_structured_output` in model_prices_and_context_window.json. The schema will not be enforced; pass `response_format` to use the synthetic tool-call fallback.",
+            "Bedrock Converse: dropping `output_config.format` for model={} \u{2014} model does not advertise `supports_native_structured_output` in model_prices_and_context_window.json. The schema will not be enforced; pass `response_format` to use the synthetic tool-call fallback.",
             request.model
         );
         return Ok(None);
