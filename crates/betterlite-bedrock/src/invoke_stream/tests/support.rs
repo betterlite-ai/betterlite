@@ -273,7 +273,7 @@ pub(super) fn run(
     stream_options: Option<Json>,
 ) -> Opened {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let deps = deps(supplied.as_ref().map(shared), shared(&default), &redactor);
+    let deps = deps(supplied.map(shared), shared(default), &redactor);
     let logs = Logs::new();
     let sink = Quiet;
     let logger = |details: &Json| logs.record(details);
@@ -287,18 +287,7 @@ pub(super) fn run(
         state: &mut state,
         env: &env,
     };
-    let collected = match compose(&transport, &deps, &fakes, &mut correlation, &mut log) {
-        Ok(wrapped) => consume(wrapped),
-        Err(message) => Collected {
-            model: String::new(),
-            custom_llm_provider: "",
-            headers: HeaderMap::new(),
-            chunks: Vec::new(),
-            failure: Some(message),
-            failure_status: None,
-            fallback: false,
-        },
-    };
+    let collected = drive(&transport, &deps, &fakes, &mut correlation, &mut log);
     Opened {
         model: collected.model,
         custom_llm_provider: collected.custom_llm_provider,
@@ -313,6 +302,28 @@ pub(super) fn run(
         logged_chunks: fakes.logging.logged_chunks(),
         successes: fakes.logging.successes(),
         completions: fakes.logging.completions(),
+    }
+}
+
+// The wrapper call and its stream read, or the wrapper's own failure when it never returns one.
+fn drive<'deps>(
+    transport: &StreamTransport<'_>,
+    deps: &StreamDeps<'deps>,
+    fakes: &'deps Fakes,
+    correlation: &'deps mut CorrelationContext,
+    log: &mut LogContext<'_, '_>,
+) -> Collected {
+    match compose(transport, deps, fakes, correlation, log) {
+        Ok(mut wrapped) => consume(&mut wrapped),
+        Err(message) => Collected {
+            model: String::new(),
+            custom_llm_provider: "",
+            headers: HeaderMap::new(),
+            chunks: Vec::new(),
+            failure: Some(message),
+            failure_status: None,
+            fallback: false,
+        },
     }
 }
 
@@ -347,7 +358,7 @@ fn compose<'deps>(
     block_on(custom_stream_wrapper(transport, deps, setup, log)).map_err(|error| error.to_string())
 }
 
-fn consume(mut wrapped: WrappedInvokeStream<'_>) -> Collected {
+fn consume(wrapped: &mut WrappedInvokeStream<'_>) -> Collected {
     let model = wrapped.model.clone();
     let custom_llm_provider = wrapped.custom_llm_provider;
     let headers = wrapped.response_headers.clone();
@@ -504,6 +515,11 @@ impl CorrelationRestore for NoRestore {
     fn restore_correlation_context(&self, _context: &mut CorrelationContext) {}
 }
 
+// A case fixture as the handler the deps hold, taking the caller's Arc rather than borrowing it.
+fn shared(fixture: Arc<Fixture>) -> Arc<dyn StreamHandler> {
+    fixture
+}
+
 pub(super) fn deps<'deps>(
     supplied: Option<Arc<dyn StreamHandler>>,
     default: Arc<dyn StreamHandler>,
@@ -521,10 +537,6 @@ pub(super) fn deps<'deps>(
         timeout: TIMEOUT,
         now: now(),
     }
-}
-
-pub(super) fn shared(fixture: &Arc<Fixture>) -> Arc<dyn StreamHandler> {
-    Arc::<Fixture>::clone(fixture)
 }
 
 pub(super) fn call<'call>(

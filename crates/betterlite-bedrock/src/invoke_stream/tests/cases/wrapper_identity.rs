@@ -105,6 +105,11 @@ fn logging_context() {
 
 // The chunks a caller reads are B004's: the frame's text, then the finish chunk it synthesizes.
 fn client_chunks_and_logging() {
+    blocking_chunks();
+    async_chunks();
+}
+
+fn blocking_chunks() {
     let messages = messages();
     let data = data();
     let call = call(MODEL, BASE, &data, &messages);
@@ -138,6 +143,12 @@ fn client_chunks_and_logging() {
     assert_eq!(blocking.successes.len(), 2);
     assert!(blocking.successes.iter().all(Option::is_some));
     assert_eq!(blocking.completions, 1);
+}
+
+fn async_chunks() {
+    let messages = messages();
+    let data = data();
+    let call = call(MODEL, BASE, &data, &messages);
 
     let asynchronous = Fixture::new(HandlerKind::Async, &RESPONSE_HEADERS, chunk_frame(TITAN));
     let streamed = run(
@@ -159,6 +170,11 @@ fn client_chunks_and_logging() {
 
 // The Converse projection source.rs reads: the delta's text, and the trace fields it reports.
 fn converse_chunks() {
+    converse_text();
+    converse_trace_fields();
+}
+
+fn converse_text() {
     let messages = messages();
     let data = data();
     let call = call(MODEL, BASE, &data, &messages);
@@ -180,6 +196,12 @@ fn converse_chunks() {
         opened.chunks[0].provider_specific_fields.is_none(),
         "the chunk carries no provider fields"
     );
+}
+
+fn converse_trace_fields() {
+    let messages = messages();
+    let data = data();
+    let call = call(MODEL, BASE, &data, &messages);
 
     let traced = Fixture::new(HandlerKind::Async, &RESPONSE_HEADERS, chunk_frame(TRACE));
     let traced_opened = run(
@@ -362,10 +384,14 @@ fn read_timeouts_are_a_timeout() {
 
 // A read that is not a timeout is APIConnectionError 500, wrapped for a fallback unless the finish reason came first.
 fn other_read_failures_are_connection_errors() {
+    read_failures_fall_back();
+    a_dropped_read_after_the_finish_reason_ends_the_stream();
+}
+
+fn read_failures_fall_back() {
     let messages = messages();
     let data = data();
-    let plain = call(MODEL, BASE, &data, &messages);
-    let finished = call(DEEPSEEK_MODEL, BASE, &data, &messages);
+    let call = call(MODEL, BASE, &data, &messages);
 
     let fixture = Fixture::failing(
         HandlerKind::Async,
@@ -373,7 +399,7 @@ fn other_read_failures_are_connection_errors() {
         vec![Err(HttpError::TooLarge { limit: 10 })],
     );
     let opened = run(
-        &plain,
+        &call,
         Some(Arc::clone(&fixture)),
         Arc::clone(&fixture),
         false,
@@ -383,6 +409,12 @@ fn other_read_failures_are_connection_errors() {
     assert!(opened.chunks.is_empty());
     assert_eq!(opened.failure_status, Some(500));
     assert!(opened.fallback);
+}
+
+fn a_dropped_read_after_the_finish_reason_ends_the_stream() {
+    let messages = messages();
+    let data = data();
+    let call = call(DEEPSEEK_MODEL, BASE, &data, &messages);
 
     // httpx.ReadError after a finish reason ends the stream instead of raising.
     let late = Fixture::failing(
@@ -394,7 +426,7 @@ fn other_read_failures_are_connection_errors() {
         ],
     );
     let ended = run(
-        &finished,
+        &call,
         Some(Arc::clone(&late)),
         Arc::clone(&late),
         false,
