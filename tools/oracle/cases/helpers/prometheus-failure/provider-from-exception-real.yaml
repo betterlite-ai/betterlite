@@ -2,20 +2,20 @@ kind: helper
 name: prometheus-failure-provider-from-exception-real
 call:
   b3880:
-    function: extract_api_provider_from_exception
+    function: api_provider_from_exception
     exception:
       kind: rate_limit
       message: "rate limited"
       llm_provider: "openai"
 calls:
   - b3880:
-      function: extract_api_provider_from_exception
+      function: api_provider_from_exception
       exception:
         kind: proxy_rate_limit
         message: "proxy limited"
         llm_provider: "anthropic"
   - b3880:
-      function: extract_api_provider_from_exception
+      function: api_provider_from_exception
       exception:
         kind: rate_limit
         message: "rate limited"

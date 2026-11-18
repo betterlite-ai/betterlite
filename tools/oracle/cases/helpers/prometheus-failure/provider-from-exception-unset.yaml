@@ -2,20 +2,20 @@ kind: helper
 name: prometheus-failure-provider-from-exception-unset
 call:
   b3880:
-    function: extract_api_provider_from_exception
+    function: api_provider_from_exception
     exception:
       kind: rate_limit
       message: "rate limited"
       llm_provider: null
 calls:
   - b3880:
-      function: extract_api_provider_from_exception
+      function: api_provider_from_exception
       exception:
         kind: rate_limit
         message: "rate limited"
         llm_provider: ""
   - b3880:
-      function: extract_api_provider_from_exception
+      function: api_provider_from_exception
       exception:
         kind: scripted
         message: "not a rate limit"
@@ -23,7 +23,7 @@ calls:
         code: null
         llm_provider: "openai"
   - b3880:
-      function: extract_api_provider_from_exception
+      function: api_provider_from_exception
       exception:
         kind: budget_exceeded
         message: "over budget"

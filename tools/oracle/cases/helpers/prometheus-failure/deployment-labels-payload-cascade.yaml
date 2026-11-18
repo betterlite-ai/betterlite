@@ -2,7 +2,7 @@ kind: helper
 name: prometheus-failure-deployment-labels-payload-cascade
 call:
   b3880:
-    function: extract_deployment_failure_label_values
+    function: deployment_failure_labels
     payload_metadata:
       user_api_key_alias: "payload-alias"
       user_api_key_user_email: "payload@example.com"
@@ -22,7 +22,7 @@ call:
       team_alias: "Auth Team"
 calls:
   - b3880:
-      function: extract_deployment_failure_label_values
+      function: deployment_failure_labels
       payload_metadata: {}
       litellm_params_metadata:
         user_api_key_alias: "params-alias"
@@ -36,7 +36,7 @@ calls:
         team_id: "team-auth"
         team_alias: "Auth Team"
   - b3880:
-      function: extract_deployment_failure_label_values
+      function: deployment_failure_labels
       payload_metadata:
         requester_ip_address: ""
         user_agent: ""
@@ -47,7 +47,7 @@ calls:
         user_agent: "litellm/1.0"
       user_api_key_auth: null
   - b3880:
-      function: extract_deployment_failure_label_values
+      function: deployment_failure_labels
       payload_metadata: null
       litellm_params_metadata: null
       user_api_key_auth:
@@ -57,7 +57,7 @@ calls:
         team_id: "team-auth"
         team_alias: "Auth Team"
   - b3880:
-      function: extract_deployment_failure_label_values
+      function: deployment_failure_labels
       payload_metadata: null
       litellm_params_metadata: null
       user_api_key_auth:
@@ -67,7 +67,7 @@ calls:
         team_id: null
         team_alias: null
   - b3880:
-      function: extract_deployment_failure_label_values
+      function: deployment_failure_labels
       payload_metadata: {}
       litellm_params_metadata: {}
       user_api_key_auth: null
