@@ -212,8 +212,7 @@ async fn a_failed_charge_alerts_before_the_lapsed_alert_with_at_most_ten_names()
         )
         .await;
     }
-    let lease = Arc::new(FakeLease::default());
-    let owned = manager(&lease);
+    let owned = manager(&Arc::new(FakeLease::default()));
     let alert = AlertLog::default();
     let result = scheduled(schedule(
         &store(&pool),
