@@ -42,26 +42,9 @@ impl CatalogCaches<'_> {
     }
 }
 
-// One cached value: a clear drops it, so the next reader computes it again.
+// One cached value: its owner locks the guard to read or replace it, and a clear drops it, so the next reader computes it again.
 #[derive(Debug, Default)]
-pub struct CacheSlot<T>(Mutex<Option<T>>);
-
-impl<T: Clone> CacheSlot<T> {
-    #[must_use]
-    pub fn read(&self) -> Option<T> {
-        match self.0.lock() {
-            Ok(slot) => slot.clone(),
-            Err(poison) => poison.into_inner().clone(),
-        }
-    }
-
-    pub fn store(&self, value: T) {
-        match self.0.lock() {
-            Ok(mut slot) => *slot = Some(value),
-            Err(poison) => *poison.into_inner() = Some(value),
-        }
-    }
-}
+pub struct CacheSlot<T>(pub Mutex<Option<T>>);
 
 impl<T> CacheClear for CacheSlot<T> {
     fn clear(&self) {
