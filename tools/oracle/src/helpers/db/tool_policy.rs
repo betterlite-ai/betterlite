@@ -40,7 +40,7 @@ struct QueryAnswer {
 }
 
 #[derive(serde::Serialize)]
-struct Output {
+struct Answer {
     initialized: bool,
     queries: Vec<QueryAnswer>,
     output_policies: BTreeMap<String, ToolOutputPolicy>,
@@ -74,7 +74,7 @@ impl Helper for Op {
         for name in &input.output_tools {
             output_policies.insert(name.clone(), registry.output_policy(name));
         }
-        serde_json::to_value(Output {
+        serde_json::to_value(Answer {
             initialized: registry.initialized,
             queries,
             output_policies,
