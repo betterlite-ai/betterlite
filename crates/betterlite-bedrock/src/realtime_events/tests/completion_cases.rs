@@ -166,7 +166,28 @@ fn content_end_variants() {
     );
     assert_eq!(events.len(), 4);
     missing_ids();
+    partial_ids();
     invalid_payload();
+}
+
+// A content end that closed nothing closeable leaves the accumulated chunks as they came
+fn partial_ids() {
+    for (item, response) in [(Some("item"), None), (None, Some("resp"))] {
+        let mut input = support::input();
+        input.current_output_item_id = item.map(str::to_owned);
+        input.current_response_id = response.map(str::to_owned);
+        input.current_delta_type = Some(AllDeltaType::Text);
+        input.current_delta_chunks = Some(vec![support::json(r#"{"delta":"Hi"}"#)]);
+        let result = support::transform(
+            &mut support::new_session(),
+            &support::CountingIds::new(),
+            r#"{"event":{"contentEnd":{"stopReason":"MAX_TOKENS"}}}"#,
+            &input,
+        )
+        .expect("a content end with one id");
+        assert_eq!(support::events(&result).len(), 0);
+        assert_eq!(result.current_delta_chunks, input.current_delta_chunks);
+    }
 }
 
 fn missing_ids() {
