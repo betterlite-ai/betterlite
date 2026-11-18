@@ -1,0 +1,26 @@
+kind: helper
+name: mcp-sse-no-frame
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, text/event-stream]]
+    body: "data: not json\n\ndata: [1]\n\n"
+calls:
+  - agentcore_search_reply:
+      status: 500
+      headers: [[content-type, text/event-stream]]
+      body: 'data: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, text/event-stream]]
+      body: 'data: {"result":{"structuredContent":[{"title":"kept"}]}}'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: 'not json'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: ''
+env: {}
+compare: {ignore: []}

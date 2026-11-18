@@ -1,0 +1,26 @@
+kind: helper
+name: agentcore-response-error
+call:
+  agentcore_search_reply:
+    status: 200
+    headers: [[content-type, application/json]]
+    body: '{"result":'
+calls:
+  - agentcore_search_reply:
+      status: 500
+      headers: [[content-type, application/json]]
+      body: '{"result":'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '7'
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: ''
+  - agentcore_search_reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      body: '[1,2]'
+env: {}
+compare: {ignore: []}
