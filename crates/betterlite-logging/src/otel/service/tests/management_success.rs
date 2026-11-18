@@ -2,9 +2,7 @@ use opentelemetry::trace::Status;
 
 use super::support::{Rig, START, attribute, i64_attribute, instant, kwargs, text_attribute};
 use crate::otel::legacy_policy::span_time::SpanTime;
-use crate::otel::service::management::{
-    ManagementEndpointLoggingPayload, async_management_endpoint_success_hook,
-};
+use crate::otel::service::management::{ManagementPayload, async_management_success_hook};
 use crate::otel::vocabulary::constants::attribute_keys::http;
 
 #[rstest::rstest]
@@ -15,7 +13,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(#[case] with_response: 
     let lifecycle = rig.lifecycle();
     let parent = rig.parent(&lifecycle, "proxy", START);
     let response = with_response.then_some(kwargs(r#"{"key":"sk-1"}"#));
-    let payload = ManagementEndpointLoggingPayload {
+    let payload = ManagementPayload {
         route: "POST /key/generate".to_owned(),
         request_data: kwargs(r#"{"model":"gpt-4o"}"#),
         response,
@@ -23,7 +21,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(#[case] with_response: 
         start_time: SpanTime::Seconds(1_704_067_201.25),
         end_time: SpanTime::Seconds(1_704_067_201.75),
     };
-    async_management_endpoint_success_hook(&lifecycle, &payload, Some(&parent));
+    async_management_success_hook(&lifecycle, &payload, Some(&parent));
     let span = rig.span("POST /key/generate");
     assert_eq!(span.parent_span_id, parent.context.span_id());
     assert_eq!(span.start_time, instant(1_704_067_201.25));

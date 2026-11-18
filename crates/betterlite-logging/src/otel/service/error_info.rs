@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use serde_json::Number;
 
 use crate::fields::payload::records::ErrorInformation;
-use crate::logging_metadata::error_info::{ExceptionLogging, get_error_information};
+use crate::logging_metadata::error_info::ExceptionLogging;
 use crate::logging_metadata::exception::ExceptionFacts;
 use crate::otel::legacy_policy::error_recording::RecordedException;
 use crate::otel::model::metadata::wire::MetadataMap;
@@ -11,16 +11,7 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 use crate::otel::v2_callback::span_error::ErrorInformationConfig;
 
 // litellm.litellm_core_utils.litellm_logging.StandardLoggingPayloadSetup.get_error_information
-#[must_use]
-pub(super) fn information(
-    config: &ErrorInformationConfig,
-    exception: Option<&ExceptionFacts>,
-    traceback: Option<&str>,
-) -> ErrorInformation {
-    get_error_information(&logging_context(config, exception), traceback)
-}
-
-fn logging_context<'config>(
+pub(super) fn logging_context<'config>(
     config: &'config ErrorInformationConfig,
     exception: Option<&'config ExceptionFacts>,
 ) -> ExceptionLogging<'config> {
@@ -87,9 +78,4 @@ pub(super) fn exception_text(exception: Option<&ExceptionFacts>) -> String {
         || "None".to_owned(),
         |facts| facts.message.clone().unwrap_or_default(),
     )
-}
-
-#[must_use]
-pub(super) fn error_code(information: &ErrorInformation) -> Option<&str> {
-    information.error_code.as_ref().and_then(Option::as_deref)
 }

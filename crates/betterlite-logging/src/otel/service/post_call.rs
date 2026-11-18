@@ -1,6 +1,7 @@
 use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Status, TraceContextExt as _, Tracer as _};
 
+use crate::logging_metadata::error_info::get_error_information;
 use crate::logging_metadata::exception::ExceptionFacts;
 use crate::otel::legacy_lifecycle::context::{instant_from_ns, standard_logging_object};
 use crate::otel::legacy_lifecycle::lifecycle::LegacyLifecycle;
@@ -16,7 +17,7 @@ use crate::otel::v2_callback::span_error::ErrorInformationConfig;
 
 use super::error::ServiceCallbackError;
 use super::error_info;
-use super::preprocessing::set_preprocessing_duration_attribute;
+use super::preprocessing::set_preprocessing_duration;
 
 pub const FAILED_REQUEST_SPAN_NAME: &str = "Failed Proxy Server Request";
 
@@ -43,21 +44,21 @@ pub fn async_post_call_failure_hook(
     let Some(parent) = call.key.parent_span else {
         return Ok(());
     };
-    let information = error_info::information(call.info, call.exception, call.traceback);
+    let information = get_error_information(
+        &error_info::logging_context(call.info, call.exception),
+        call.traceback,
+    );
     stamp_parent_error(parent, call.key);
     record_exception_on_span(
         &mut *parent.lock(),
         error_info::recorded_exception(call.exception).as_ref(),
         &error_info::error_payload(&information),
     );
-    if error_info::error_code(&information)
-        .unwrap_or_default()
-        .is_empty()
-    {
+    let error_code = information.error_code.as_ref().and_then(Option::as_deref);
+    if error_code.unwrap_or_default().is_empty() {
         set_response_status_code(Some(parent), Some(500));
     }
-    // ast-grep-ignore: no-long-names
-    set_preprocessing_duration_attribute(Some(parent), call.request_data);
+    set_preprocessing_duration(Some(parent), call.request_data);
     write_failed_child(lifecycle, call, parent);
     lifecycle.emit_request_guardrails(call.request_data, Some(parent))?;
     parent
@@ -72,8 +73,7 @@ pub fn async_post_call_success_hook(
     model_call_details: &MetadataMap,
     parent: Option<&LiveSpan>,
 ) -> Result<(), ServiceCallbackError> {
-    // ast-grep-ignore: no-long-names
-    set_preprocessing_duration_attribute(parent, model_call_details);
+    set_preprocessing_duration(parent, model_call_details);
     let Some(request_data) = guardrail_request_data(model_call_details) else {
         return Ok(());
     };

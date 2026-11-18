@@ -6,9 +6,7 @@ use super::support::{
     Rig, START, attribute, event_attribute, i64_attribute, instant, text_attribute,
 };
 use crate::otel::legacy_policy::span_time::SpanTime;
-use crate::otel::service::management::{
-    ManagementEndpointLoggingPayload, async_management_endpoint_failure_hook,
-};
+use crate::otel::service::management::{ManagementPayload, async_management_failure_hook};
 use crate::otel::vocabulary::constants::attribute_keys::http;
 
 fn endpoint_span(rig: &Rig, facts: bool) -> SpanData {
@@ -38,7 +36,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     let rig = Rig::new();
     let lifecycle = rig.lifecycle();
     let parent = rig.parent(&lifecycle, "proxy", START);
-    let payload = ManagementEndpointLoggingPayload {
+    let payload = ManagementPayload {
         route: "POST /key/delete".to_owned(),
         request_data: kwargs(r#"{"key":"sk-1"}"#),
         response: None,
@@ -47,7 +45,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
         end_time: SpanTime::Seconds(1_704_067_202.7),
     };
     let config = error_config();
-    async_management_endpoint_failure_hook(&lifecycle, &payload, Some(&parent), &config);
+    async_management_failure_hook(&lifecycle, &payload, Some(&parent), &config);
     endpoint_span(&rig, facts_json.is_some());
     let server = rig.span("proxy");
     assert_eq!(server.status, Status::error(""));

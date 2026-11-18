@@ -12,12 +12,14 @@ const FIRST_HANDOFF_KEY: &str = "first_api_call_start_time";
 const RECEIVED_AT_KEY: &str = "litellm_received_at";
 const DATE_TIME: &str = "%Y-%m-%d %H:%M:%S%.f";
 
-// ast-grep-ignore: no-long-names
-pub fn set_preprocessing_duration_attribute(span: Option<&LiveSpan>, container: &MetadataMap) {
+pub fn set_preprocessing_duration(span: Option<&LiveSpan>, container: &MetadataMap) {
     let Some(span) = span else {
         return;
     };
-    let Some(first_handoff) = present(container.get(FIRST_HANDOFF_KEY)) else {
+    let Some(first_handoff) = container
+        .get(FIRST_HANDOFF_KEY)
+        .filter(|value| !matches!(value, OtelModelValue::Null(())))
+    else {
         return;
     };
     let Some(received_at) = received_at(container) else {
@@ -58,11 +60,11 @@ fn received_at(container: &MetadataMap) -> Option<&OtelModelValue> {
     ]
     .into_iter()
     .flatten()
-    .find_map(|fields| present(fields.get(RECEIVED_AT_KEY)))
-}
-
-fn present(value: Option<&OtelModelValue>) -> Option<&OtelModelValue> {
-    value.filter(|value| !matches!(value, OtelModelValue::Null(())))
+    .find_map(|fields| {
+        fields
+            .get(RECEIVED_AT_KEY)
+            .filter(|value| !matches!(value, OtelModelValue::Null(())))
+    })
 }
 
 // _to_timestamp: epoch seconds, or a datetime string in one of the two formats strptime accepts

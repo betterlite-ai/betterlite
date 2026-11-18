@@ -2,6 +2,7 @@ use opentelemetry::Context;
 use opentelemetry::trace::{Span as _, Status, TraceContextExt as _, Tracer as _};
 use opentelemetry_sdk::trace::Span as SdkSpan;
 
+use crate::logging_metadata::error_info::get_error_information;
 use crate::logging_metadata::exception::ExceptionFacts;
 use crate::otel::legacy_lifecycle::context::instant_from_ns;
 use crate::otel::legacy_lifecycle::lifecycle::LegacyLifecycle;
@@ -17,8 +18,7 @@ use crate::otel::v2_callback::span_error::ErrorInformationConfig;
 use super::error_info;
 use super::timing;
 
-// ast-grep-ignore: no-long-names
-pub struct ManagementEndpointLoggingPayload {
+pub struct ManagementPayload {
     pub route: String,
     pub request_data: MetadataMap,
     pub response: Option<MetadataMap>,
@@ -27,10 +27,9 @@ pub struct ManagementEndpointLoggingPayload {
     pub end_time: SpanTime,
 }
 
-// ast-grep-ignore: no-long-names
-pub fn async_management_endpoint_success_hook(
+pub fn async_management_success_hook(
     lifecycle: &LegacyLifecycle,
-    payload: &ManagementEndpointLoggingPayload,
+    payload: &ManagementPayload,
     parent: Option<&LiveSpan>,
 ) {
     let Some(parent) = parent else {
@@ -50,10 +49,9 @@ pub fn async_management_endpoint_success_hook(
     parent.lock().end_with_timestamp(instant_from_ns(end_ns));
 }
 
-// ast-grep-ignore: no-long-names
-pub fn async_management_endpoint_failure_hook(
+pub fn async_management_failure_hook(
     lifecycle: &LegacyLifecycle,
-    payload: &ManagementEndpointLoggingPayload,
+    payload: &ManagementPayload,
     parent: Option<&LiveSpan>,
     info: &ErrorInformationConfig,
 ) {
@@ -72,7 +70,10 @@ pub fn async_management_endpoint_failure_hook(
     target.set_status(Status::error(""));
     target.end_with_timestamp(instant_from_ns(end_ns));
     drop(target);
-    let information = error_info::information(info, payload.exception.as_ref(), None);
+    let information = get_error_information(
+        &error_info::logging_context(info, payload.exception.as_ref()),
+        None,
+    );
     parent.lock().set_status(Status::error(""));
     record_exception_on_span(
         &mut *parent.lock(),
@@ -82,10 +83,9 @@ pub fn async_management_endpoint_failure_hook(
     parent.lock().end_with_timestamp(instant_from_ns(end_ns));
 }
 
-// ast-grep-ignore: no-long-names
 fn start_endpoint_span(
     lifecycle: &LegacyLifecycle,
-    payload: &ManagementEndpointLoggingPayload,
+    payload: &ManagementPayload,
     parent: &LiveSpan,
     start_ns: i64,
 ) -> LiveSpan {

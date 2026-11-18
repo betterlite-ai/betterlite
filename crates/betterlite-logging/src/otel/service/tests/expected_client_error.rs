@@ -10,17 +10,17 @@ const TRACEBACK: &str = "Traceback (most recent call last):\n  raise Authenticat
 
 // a provider-originated error keeps its traceback; a proxy 4xx is an expected client error and drops it
 fn facts_for(llm_provider: Option<&str>) -> ExceptionFacts {
-    ExceptionFacts {
-        class_name: "AuthenticationError".to_owned(),
-        message: Some("bad key".to_owned()),
-        status_code: Some(401),
-        llm_provider: llm_provider.map(str::to_owned),
-        traceback_lines: vec![
-            "Traceback (most recent call last):\n".to_owned(),
-            "  raise AuthenticationError\n".to_owned(),
+    let value = serde_json::json!({
+        "class_name": "AuthenticationError",
+        "message": "bad key",
+        "status_code": 401,
+        "llm_provider": llm_provider,
+        "traceback_lines": [
+            "Traceback (most recent call last):\n",
+            "  raise AuthenticationError\n",
         ],
-        ..ExceptionFacts::default()
-    }
+    });
+    serde_json::from_value(value).expect("exception facts")
 }
 
 #[rstest::rstest]

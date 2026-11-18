@@ -2,7 +2,7 @@ use opentelemetry::trace::Span as _;
 
 use super::fixtures::{error_config, exception};
 use super::support::{Rig, START, attribute, i64_attribute, text_attribute};
-use crate::otel::service::error_attributes::record_error_attributes_on_span;
+use crate::otel::service::error_attributes::record_error_attributes;
 use crate::otel::vocabulary::constants::attribute_keys::http;
 
 #[rstest::rstest]
@@ -32,7 +32,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     let parent = rig.parent(&lifecycle, "proxy", START);
     let facts = facts_json.map(exception);
     let config = error_config();
-    record_error_attributes_on_span(has_span.then_some(&parent), facts.as_ref(), 400, &config);
+    record_error_attributes(has_span.then_some(&parent), facts.as_ref(), 400, &config);
     parent.lock().end();
     let span = rig.span("proxy");
     assert!(

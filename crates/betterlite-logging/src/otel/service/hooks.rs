@@ -30,12 +30,11 @@ pub fn async_service_success_hook(
     call: &ServiceSpanCall<'_>,
     environment: &dyn EnvironmentLookup,
 ) {
-    let Some(parent) = call.parent else {
-        return;
-    };
     let start_ns = to_ns(call.start_time, lifecycle.now_ns());
     let end_ns = to_ns(call.end_time, lifecycle.now_ns());
-    let span = start_service_span(lifecycle, call, parent, start_ns, environment);
+    let Some(span) = begin_service_span(lifecycle, call, start_ns, environment) else {
+        return;
+    };
     write_event_metadata(&mut *span.lock(), call.event_metadata, true);
     span.lock().set_status(Status::Ok);
     span.lock().end_with_timestamp(instant_from_ns(end_ns));
@@ -48,21 +47,37 @@ pub fn async_service_failure_hook(
     error_text: Option<&str>,
     environment: &dyn EnvironmentLookup,
 ) {
-    let Some(parent) = call.parent else {
-        return;
-    };
     let start_ns = timing::whole_second_ns(call.start_time, lifecycle.now_ns());
     let end_ns = timing::whole_second_ns(call.end_time, lifecycle.now_ns());
-    let span = start_service_span(lifecycle, call, parent, start_ns, environment);
+    let Some(span) = begin_service_span(lifecycle, call, start_ns, environment) else {
+        return;
+    };
+    let mut target = span.lock();
     if let Some(text) = error_text.filter(|text| !text.is_empty()) {
-        span.lock().safe_set_attribute(
+        target.safe_set_attribute(
             error::MESSAGE_LEGACY,
             &OtelModelValue::String(text.to_owned()),
         );
     }
-    write_event_metadata(&mut *span.lock(), call.event_metadata, false);
-    span.lock().set_status(Status::error(""));
-    span.lock().end_with_timestamp(instant_from_ns(end_ns));
+    write_event_metadata(&mut target, call.event_metadata, false);
+    target.set_status(Status::error(""));
+    target.end_with_timestamp(instant_from_ns(end_ns));
+}
+
+fn begin_service_span(
+    lifecycle: &LegacyLifecycle,
+    call: &ServiceSpanCall<'_>,
+    start_ns: i64,
+    environment: &dyn EnvironmentLookup,
+) -> Option<LiveSpan> {
+    let parent = call.parent?;
+    Some(start_service_span(
+        lifecycle,
+        call,
+        parent,
+        start_ns,
+        environment,
+    ))
 }
 
 // litellm.integrations.opentelemetry.OpenTelemetry._start_service_span

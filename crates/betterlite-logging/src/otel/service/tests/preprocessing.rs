@@ -1,7 +1,7 @@
 use opentelemetry::trace::Span as _;
 
 use super::support::{Rig, START, attribute, f64_attribute, kwargs};
-use crate::otel::service::preprocessing::set_preprocessing_duration_attribute;
+use crate::otel::service::preprocessing::set_preprocessing_duration;
 use crate::otel::vocabulary::constants::attribute_keys::litellm;
 
 #[rstest::rstest]
@@ -49,7 +49,7 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     let lifecycle = rig.lifecycle();
     let parent = rig.parent(&lifecycle, "proxy", START);
     let container = kwargs(container);
-    set_preprocessing_duration_attribute(Some(&parent), &container);
+    set_preprocessing_duration(Some(&parent), &container);
     parent.lock().end();
     let span = rig.span("proxy");
     match expected {
