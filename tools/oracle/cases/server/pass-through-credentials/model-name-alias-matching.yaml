@@ -12,5 +12,6 @@ call:
           vertex_project: alias-project
           vertex_location: us-central1
     environment: {}
+    credentials: {}
 env: {}
 compare: {ignore: []}

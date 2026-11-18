@@ -18,7 +18,7 @@ pub struct PassThroughDeployment {
     pub litellm_params: JsonObject,
 }
 
-/// Supplies the Router model list and the two LiteLLM-owned resolution seams.
+// Provider and credential lookups stay injected so this module reads no global router state.
 pub trait PassThroughCredentialSource: Send + Sync {
     fn deployments(&self) -> Vec<PassThroughDeployment>;
     fn provider_for(&self, model: &str, custom_provider: Option<&str>) -> Option<String>;
@@ -28,7 +28,7 @@ pub trait PassThroughCredentialSource: Send + Sync {
 pub struct PassthroughEndpointRouter {
     source: Option<Arc<dyn PassThroughCredentialSource>>,
     environment: Arc<dyn EnvironmentLookup + Send + Sync>,
-    pub deployment_key_to_vertex_credentials: BTreeMap<String, VertexPassThroughCredentials>,
+    pub vertex_by_deployment_key: BTreeMap<String, VertexPassThroughCredentials>,
     pub default_vertex_config: Option<VertexPassThroughCredentials>,
 }
 
@@ -41,7 +41,7 @@ impl PassthroughEndpointRouter {
         Self {
             source,
             environment,
-            deployment_key_to_vertex_credentials: BTreeMap::new(),
+            vertex_by_deployment_key: BTreeMap::new(),
             default_vertex_config: None,
         }
     }
@@ -62,37 +62,34 @@ impl PassthroughEndpointRouter {
                     continue;
                 };
                 if source
-                    .provider_for(model, text(params, "custom_llm_provider"))
+                    .provider_for(model, json_text(params.get("custom_llm_provider")))
                     .as_deref()
                     != Some(custom_llm_provider)
                 {
                     continue;
                 }
                 let credentials = credential_values(source.as_ref(), params);
-                let api_base =
-                    str_value(&credentials, "api_base").or_else(|| text(params, "api_base"));
+                let api_base = json_text(credentials.get("api_base"))
+                    .or_else(|| json_text(params.get("api_base")));
                 if Self::_get_region_name_from_api_base(custom_llm_provider, api_base)
                     != region_name
                 {
                     continue;
                 }
-                if let Some(key) =
-                    str_value(&credentials, "api_key").or_else(|| text(params, "api_key"))
+                if let Some(key) = json_text(credentials.get("api_key"))
+                    .or_else(|| json_text(params.get("api_key")))
                 {
                     return Some(key.to_owned());
                 }
-                // A matching deployment without a key contributes no result; later matching
-                // deployments remain eligible, while provider and region filters still apply.
+                // Later deployments remain eligible when this matching deployment has no key.
             }
         }
-        self.environment
-            .lookup(&Self::_get_default_env_variable_name_passthrough_endpoint(
-                custom_llm_provider,
-            ))
+        let environment_variable = format!("{}_API_KEY", custom_llm_provider.to_uppercase());
+        self.environment.lookup(&environment_variable)
     }
 
     #[must_use]
-    pub fn get_vertex_credentials_from_router_deployments(
+    pub fn vertex_deployment_credentials(
         &self,
         model: Option<&str>,
     ) -> Option<VertexPassThroughCredentials> {
@@ -105,19 +102,19 @@ impl PassthroughEndpointRouter {
                 if params.get("use_in_pass_through") != Some(&Json::Bool(true)) {
                     return None;
                 }
-                let upstream = text(params, "model")?;
+                let upstream = json_text(params.get("model"))?;
                 if source
-                    .provider_for(upstream, text(params, "custom_llm_provider"))
+                    .provider_for(upstream, json_text(params.get("custom_llm_provider")))
                     .as_deref()
                     != Some("vertex_ai")
                 {
                     return None;
                 }
                 let values = credential_values(source.as_ref(), params);
-                let project = str_value(&values, "vertex_project")
-                    .or_else(|| text(params, "vertex_project"))?;
-                let location = str_value(&values, "vertex_location")
-                    .or_else(|| text(params, "vertex_location"))?;
+                let project = json_text(values.get("vertex_project"))
+                    .or_else(|| json_text(params.get("vertex_project")))?;
+                let location = json_text(values.get("vertex_location"))
+                    .or_else(|| json_text(params.get("vertex_location")))?;
                 let stored = values
                     .get("vertex_credentials")
                     .filter(|value| matches!(value, Json::Text(_) | Json::Object(_)));
@@ -166,9 +163,12 @@ impl PassthroughEndpointRouter {
         project_id: Option<&str>,
         location: Option<&str>,
     ) -> Option<VertexPassThroughCredentials> {
-        let key = Self::_get_deployment_key(project_id, location);
+        let key = match (project_id, location) {
+            (Some(project), Some(location)) => Some(format!("{project}-{location}")),
+            _ => None,
+        };
         key.as_ref()
-            .and_then(|key| self.deployment_key_to_vertex_credentials.get(key))
+            .and_then(|key| self.vertex_by_deployment_key.get(key))
             .or(self.default_vertex_config.as_ref())
             .cloned()
     }
@@ -211,7 +211,7 @@ impl PassthroughEndpointRouter {
         location: &str,
         vertex_credentials: Option<Json>,
     ) {
-        self.deployment_key_to_vertex_credentials.insert(
+        self.vertex_by_deployment_key.insert(
             format!("{project_id}-{location}"),
             VertexPassThroughCredentials {
                 vertex_project: Some(project_id.to_owned()),
@@ -222,11 +222,6 @@ impl PassthroughEndpointRouter {
     }
 
     #[must_use]
-    pub fn _get_deployment_key(project_id: Option<&str>, location: Option<&str>) -> Option<String> {
-        Some(format!("{}-{}", project_id?, location?))
-    }
-
-    #[must_use]
     pub fn _get_region_name_from_api_base(
         custom_llm_provider: &str,
         api_base: Option<&str>,
@@ -234,36 +229,22 @@ impl PassthroughEndpointRouter {
         (custom_llm_provider == "assemblyai" && api_base.is_some_and(|base| base.contains("eu")))
             .then_some("eu")
     }
-
-    #[must_use]
-    pub fn _get_default_env_variable_name_passthrough_endpoint(
-        custom_llm_provider: &str,
-    ) -> String {
-        format!("{}_API_KEY", custom_llm_provider.to_uppercase())
-    }
 }
 
 fn credential_values(source: &dyn PassThroughCredentialSource, params: &JsonObject) -> JsonObject {
-    text(params, "litellm_credential_name")
+    json_text(params.get("litellm_credential_name"))
         .and_then(|name| source.credential_values(name))
         .unwrap_or_default()
 }
 
-fn text<'a>(values: &'a JsonObject, key: &str) -> Option<&'a str> {
-    json_text(values.get(key))
-}
 fn json_text(value: Option<&Json>) -> Option<&str> {
     match value {
         Some(Json::Text(text)) => Some(text),
         _ => None,
     }
 }
-fn str_value<'a>(values: &'a JsonObject, key: &str) -> Option<&'a str> {
-    text(values, key)
-}
-
 fn deployment_matches_model(deployment: &PassThroughDeployment, model: &str) -> bool {
-    let upstream = text(&deployment.litellm_params, "model");
+    let upstream = json_text(deployment.litellm_params.get("model"));
     deployment.model_name.as_deref() == Some(model)
         || upstream == Some(model)
         || upstream.and_then(|name| name.split_once('/').map(|(_, suffix)| suffix)) == Some(model)
@@ -293,5 +274,4 @@ fn credential_identity(value: Option<&Json>) -> Option<String> {
     })
 }
 
-#[cfg(test)]
 mod tests;

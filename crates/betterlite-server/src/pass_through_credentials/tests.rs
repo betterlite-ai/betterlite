@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -50,14 +52,14 @@ fn router(source: Source, env: &[(&str, &str)]) -> PassthroughEndpointRouter {
 #[test]
 fn credential_resolution_deployment_then_environment() {
     let params = obj(&[
-        ("model", Json::Text("openai/gpt".into())),
+        ("model", Json::Text(String::from("openai/gpt"))),
         ("use_in_pass_through", Json::Bool(true)),
-        ("api_key", Json::Text("deployment".into())),
+        ("api_key", Json::Text(String::from("deployment"))),
     ]);
     let resolver = router(
         Source {
             deployments: vec![deployment(None, params)],
-            ..Source::default()
+            credentials: BTreeMap::new(),
         },
         &[("OPENAI_API_KEY", "environment")],
     );
@@ -77,27 +79,27 @@ fn deployment_matching_provider_region_alias_and_order() {
     let unrelated = deployment(
         None,
         obj(&[
-            ("model", Json::Text("openai/gpt".into())),
+            ("model", Json::Text(String::from("openai/gpt"))),
             ("use_in_pass_through", Json::Bool(true)),
-            ("api_key", Json::Text("wrong".into())),
+            ("api_key", Json::Text(String::from("wrong"))),
         ]),
     );
     let match_deployment = deployment(
         None,
         obj(&[
-            ("model", Json::Text("assemblyai/transcribe".into())),
+            ("model", Json::Text(String::from("assemblyai/transcribe"))),
             ("use_in_pass_through", Json::Bool(true)),
             (
                 "api_base",
-                Json::Text("https://api.eu.assemblyai.com".into()),
+                Json::Text(String::from("https://api.eu.assemblyai.com")),
             ),
-            ("api_key", Json::Text("right".into())),
+            ("api_key", Json::Text(String::from("right"))),
         ]),
     );
     let resolver = router(
         Source {
             deployments: vec![unrelated, match_deployment],
-            ..Source::default()
+            credentials: BTreeMap::new(),
         },
         &[],
     );
@@ -118,22 +120,22 @@ fn deployment_matching_provider_region_alias_and_order() {
     let alias = deployment(
         None,
         obj(&[
-            ("model", Json::Text("vertex_ai/model-name".into())),
+            ("model", Json::Text(String::from("vertex_ai/model-name"))),
             ("use_in_pass_through", Json::Bool(true)),
-            ("vertex_project", Json::Text("p".into())),
-            ("vertex_location", Json::Text("us".into())),
+            ("vertex_project", Json::Text(String::from("p"))),
+            ("vertex_location", Json::Text(String::from("us"))),
         ]),
     );
     let alias_router = router(
         Source {
             deployments: vec![alias],
-            ..Source::default()
+            credentials: BTreeMap::new(),
         },
         &[],
     );
     assert_eq!(
         alias_router
-            .get_vertex_credentials_from_router_deployments(Some("model-name"))
+            .vertex_deployment_credentials(Some("model-name"))
             .unwrap()
             .vertex_project
             .as_deref(),
@@ -144,31 +146,31 @@ fn deployment_matching_provider_region_alias_and_order() {
         obj(&[
             (
                 "model",
-                Json::Text("vertex_ai/publishers/google/model-name".into()),
+                Json::Text(String::from("vertex_ai/publishers/google/model-name")),
             ),
             ("use_in_pass_through", Json::Bool(true)),
-            ("vertex_project", Json::Text("p".into())),
-            ("vertex_location", Json::Text("us".into())),
+            ("vertex_project", Json::Text(String::from("p"))),
+            ("vertex_location", Json::Text(String::from("us"))),
         ]),
     );
     let other = deployment(
         None,
         obj(&[
-            ("model", Json::Text("vertex_ai/other".into())),
+            ("model", Json::Text(String::from("vertex_ai/other"))),
             ("use_in_pass_through", Json::Bool(true)),
-            ("vertex_project", Json::Text("q".into())),
-            ("vertex_location", Json::Text("us".into())),
+            ("vertex_project", Json::Text(String::from("q"))),
+            ("vertex_location", Json::Text(String::from("us"))),
         ]),
     );
     let nested_router = router(
         Source {
             deployments: vec![nested_alias, other],
-            ..Source::default()
+            credentials: BTreeMap::new(),
         },
         &[],
     );
     assert_eq!(
-        nested_router.get_vertex_credentials_from_router_deployments(Some("model-name")),
+        nested_router.vertex_deployment_credentials(Some("model-name")),
         None
     );
 }
@@ -176,38 +178,35 @@ fn deployment_matching_provider_region_alias_and_order() {
 #[test]
 fn vertex_credentials_named_and_unanimous() {
     let params = obj(&[
-        ("model", Json::Text("vertex_ai/gemini".into())),
+        ("model", Json::Text(String::from("vertex_ai/gemini"))),
         ("use_in_pass_through", Json::Bool(true)),
-        ("vertex_project", Json::Text("p".into())),
-        ("vertex_location", Json::Text("us".into())),
+        ("vertex_project", Json::Text(String::from("p"))),
+        ("vertex_location", Json::Text(String::from("us"))),
     ]);
     let resolver = router(
         Source {
             deployments: vec![deployment(Some("gemini"), params)],
-            ..Source::default()
+            credentials: BTreeMap::new(),
         },
         &[],
     );
     let named = resolver
-        .get_vertex_credentials_from_router_deployments(Some("gemini"))
+        .vertex_deployment_credentials(Some("gemini"))
         .unwrap();
     assert_eq!(named.vertex_project.as_deref(), Some("p"));
-    assert_eq!(
-        resolver.get_vertex_credentials_from_router_deployments(None),
-        Some(named)
-    );
+    assert_eq!(resolver.vertex_deployment_credentials(None), Some(named));
 }
 
 #[test]
 fn vertex_credentials_by_project_location() {
     let mut resolver = router(Source::default(), &[]);
-    resolver.add_vertex_credentials("project", "region", Some(Json::Text("creds".into())));
+    resolver.add_vertex_credentials("project", "region", Some(Json::Text(String::from("creds"))));
     assert_eq!(
         resolver
             .get_vertex_credentials(Some("project"), Some("region"))
             .unwrap()
             .vertex_credentials,
-        Some(Json::Text("creds".into()))
+        Some(Json::Text(String::from("creds")))
     );
     assert_eq!(resolver.get_vertex_credentials(None, Some("region")), None);
 }
@@ -216,14 +215,14 @@ fn vertex_credentials_by_project_location() {
 fn credential_accessor_override() {
     let mut source = Source::default();
     source.credentials.insert(
-        "creds".into(),
-        obj(&[("api_key", Json::Text("from-accessor".into()))]),
+        String::from("creds"),
+        obj(&[("api_key", Json::Text(String::from("from-accessor")))]),
     );
     let params = obj(&[
-        ("model", Json::Text("openai/gpt".into())),
+        ("model", Json::Text(String::from("openai/gpt"))),
         ("use_in_pass_through", Json::Bool(true)),
-        ("litellm_credential_name", Json::Text("creds".into())),
-        ("api_key", Json::Text("from-param".into())),
+        ("litellm_credential_name", Json::Text(String::from("creds"))),
+        ("api_key", Json::Text(String::from("from-param"))),
     ]);
     let resolver = router(
         Source {
@@ -239,14 +238,14 @@ fn credential_accessor_override() {
 
     let mut source = Source::default();
     source.credentials.insert(
-        "creds".into(),
+        String::from("creds"),
         obj(&[("api_key", Json::Number(serde_json::Number::from(7)))]),
     );
     let params = obj(&[
-        ("model", Json::Text("openai/gpt".into())),
+        ("model", Json::Text(String::from("openai/gpt"))),
         ("use_in_pass_through", Json::Bool(true)),
-        ("litellm_credential_name", Json::Text("creds".into())),
-        ("api_key", Json::Text("param-fallback".into())),
+        ("litellm_credential_name", Json::Text(String::from("creds"))),
+        ("api_key", Json::Text(String::from("param-fallback"))),
     ]);
     let resolver = router(
         Source {
@@ -268,8 +267,11 @@ fn vertex_default_config_environment_references() {
         &[("PROJECT", "p"), ("DEFAULT_VERTEXAI_LOCATION", "us")],
     );
     resolver.set_default_vertex_config(Some(obj(&[
-        ("vertex_project", Json::Text("os.environ/PROJECT".into())),
-        ("vertex_location", Json::Text("us".into())),
+        (
+            "vertex_project",
+            Json::Text(String::from("os.environ/PROJECT")),
+        ),
+        ("vertex_location", Json::Text(String::from("us"))),
     ])));
     assert_eq!(
         resolver
@@ -292,24 +294,30 @@ fn vertex_default_config_environment_references() {
 
 #[test]
 fn credential_identity_sorted_objects() {
-    let first = obj(&[("a", Json::Text("1".into())), ("b", Json::Text("2".into()))]);
-    let second = obj(&[("b", Json::Text("2".into())), ("a", Json::Text("1".into()))]);
+    let first = obj(&[
+        ("a", Json::Text(String::from("1"))),
+        ("b", Json::Text(String::from("2"))),
+    ]);
+    let second = obj(&[
+        ("b", Json::Text(String::from("2"))),
+        ("a", Json::Text(String::from("1"))),
+    ]);
     assert_eq!(
         super::credential_identity(Some(&Json::Object(first))),
         super::credential_identity(Some(&Json::Object(second)))
     );
     assert_ne!(
-        super::credential_identity(Some(&Json::Text("x".into()))),
+        super::credential_identity(Some(&Json::Text(String::from("x")))),
         super::credential_identity(Some(&Json::Object(JsonObject::new())))
     );
     assert_eq!(
-        super::credential_identity(Some(&Json::Text("credential".into()))),
-        Some("credential".into())
+        super::credential_identity(Some(&Json::Text(String::from("credential")))),
+        Some(String::from("credential"))
     );
     assert_eq!(
         super::credential_identity(Some(&Json::Object(obj(&[
-            ("a", Json::Text("1".into())),
-            ("b", Json::Text("2".into())),
+            ("a", Json::Text(String::from("1"))),
+            ("b", Json::Text(String::from("2"))),
         ])))),
         Some(r#"{"a":"1","b":"2"}"#.into())
     );
@@ -320,35 +328,32 @@ fn vertex_disagreement_returns_none() {
     let one = deployment(
         None,
         obj(&[
-            ("model", Json::Text("vertex_ai/a".into())),
+            ("model", Json::Text(String::from("vertex_ai/a"))),
             ("use_in_pass_through", Json::Bool(true)),
-            ("vertex_project", Json::Text("a".into())),
-            ("vertex_location", Json::Text("us".into())),
+            ("vertex_project", Json::Text(String::from("a"))),
+            ("vertex_location", Json::Text(String::from("us"))),
         ]),
     );
     let two = deployment(
         None,
         obj(&[
-            ("model", Json::Text("vertex_ai/b".into())),
+            ("model", Json::Text(String::from("vertex_ai/b"))),
             ("use_in_pass_through", Json::Bool(true)),
-            ("vertex_project", Json::Text("b".into())),
-            ("vertex_location", Json::Text("us".into())),
+            ("vertex_project", Json::Text(String::from("b"))),
+            ("vertex_location", Json::Text(String::from("us"))),
         ]),
     );
     let resolver = router(
         Source {
             deployments: vec![one, two],
-            ..Source::default()
+            credentials: BTreeMap::new(),
         },
         &[],
     );
-    assert_eq!(
-        resolver.get_vertex_credentials_from_router_deployments(None),
-        None
-    );
+    assert_eq!(resolver.vertex_deployment_credentials(None), None);
     assert_eq!(
         resolver
-            .get_vertex_credentials_from_router_deployments(Some("vertex_ai/b"))
+            .vertex_deployment_credentials(Some("vertex_ai/b"))
             .unwrap()
             .vertex_project
             .as_deref(),

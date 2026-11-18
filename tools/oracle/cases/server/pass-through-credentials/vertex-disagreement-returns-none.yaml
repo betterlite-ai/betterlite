@@ -3,6 +3,7 @@ name: vertex-disagreement-returns-none
 call:
   b3602:
     function: vertex_deployments
+    model: null
     deployments:
       - model_name: first
         litellm_params:
@@ -17,5 +18,6 @@ call:
           vertex_project: project-two
           vertex_location: us-central1
     environment: {}
+    credentials: {}
 env: {}
 compare: {ignore: []}

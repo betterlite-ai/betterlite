@@ -13,5 +13,6 @@ call:
           vertex_location: us-central1
           vertex_credentials: /credentials.json
     environment: {}
+    credentials: {}
 env: {}
 compare: {ignore: []}

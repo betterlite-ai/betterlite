@@ -3,6 +3,7 @@ name: vertex-unanimous-default
 call:
   b3602:
     function: vertex_deployments
+    model: null
     deployments:
       - model_name: first
         litellm_params:
@@ -23,5 +24,6 @@ call:
             private_key: key
             client_email: service@example.test
     environment: {}
+    credentials: {}
 env: {}
 compare: {ignore: []}

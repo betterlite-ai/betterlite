@@ -49,7 +49,7 @@ impl Helper for Op {
                 input.get("region").and_then(Value::as_str),
             )})),
             Some("vertex_deployments") => Ok(json!({"result": router
-                .get_vertex_credentials_from_router_deployments(input.get("model").and_then(Value::as_str))})),
+                .vertex_deployment_credentials(input.get("model").and_then(Value::as_str))})),
             Some("vertex_default") => {
                 router.set_default_vertex_config(input.get("config").and_then(as_object));
                 Ok(json!({"result": router.get_vertex_credentials(None, None)}))

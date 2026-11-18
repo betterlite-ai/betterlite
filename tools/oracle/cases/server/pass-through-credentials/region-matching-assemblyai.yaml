@@ -19,5 +19,6 @@ call:
           api_base: https://api.assemblyai.com
           api_key: us-key
     environment: {}
+    credentials: {}
 env: {}
 compare: {ignore: []}
