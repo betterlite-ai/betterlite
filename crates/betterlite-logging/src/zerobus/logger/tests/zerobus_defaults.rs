@@ -56,7 +56,7 @@ fn zerobus_defaults_convert_the_message_logging_flag() {
     assert!(!disabled.turn_off_message_logging);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn zerobus_defaults_flush_on_the_interval() {
     let ingest = FakeIngest::table("main.litellm.traces");
     let client: Arc<dyn RowIngest> = as_row_ingest(&ingest);

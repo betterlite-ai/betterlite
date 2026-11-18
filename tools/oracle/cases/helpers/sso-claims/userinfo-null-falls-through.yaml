@@ -1,0 +1,48 @@
+kind: helper
+name: sso-claims-userinfo-null-falls-through
+call:
+  sso_claims:
+    attributes: {}
+    emails:
+    - User@Example.com
+    - null
+    - ''
+    - MiXeD@Example.COM
+    groups: []
+    role_mappings: null
+    merge:
+    - userinfo:
+        email: User@Example.com
+        name: null
+        groups: null
+        role: null
+      id_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJJZEBFeGFtcGxlLmNvbSIsICJuYW1lIjogImlkLW5hbWUiLCAicm9sZSI6ICJpbnRlcm5hbF91c2VyIiwgImdyb3VwcyI6IFsiaWQtZ3JvdXAiXSwgInRlbmFudCI6IHsiaWQiOiAidC0xIn19.c2lnbmF0dXJl
+      access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJBY2Nlc3NARXhhbXBsZS5jb20iLCAibmFtZSI6IG51bGwsICJyb2xlIjogInByb3h5X2FkbWluIiwgImdyb3VwcyI6IFsiYWNjZXNzLWdyb3VwIl0sICJ0ZWFtX2lkcyI6IFsiYXQtMSIsICJhdC0yIl0sICJ0ZWFtX2lkIjogImF0LTMiLCAibmVzdGVkIjogeyJ0ZWFtIjogIm4tMSJ9fQ.c2lnbmF0dXJl
+    - userinfo:
+        x: null
+      id_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ4IjogbnVsbH0.c2lnbmF0dXJl
+      access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ4IjogbnVsbH0.c2lnbmF0dXJl
+    - userinfo: {}
+      id_token: null
+      access_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJ4IjogImFjY2VzcyJ9.c2lnbmF0dXJl
+    - userinfo:
+        n: 0
+        flag: false
+        text: ''
+      id_token: eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJJZEBFeGFtcGxlLmNvbSIsICJuYW1lIjogImlkLW5hbWUiLCAicm9sZSI6ICJpbnRlcm5hbF91c2VyIiwgImdyb3VwcyI6IFsiaWQtZ3JvdXAiXSwgInRlbmFudCI6IHsiaWQiOiAidC0xIn19.c2lnbmF0dXJl
+      access_token: null
+    decode_tokens:
+    - eyJhbGciOiAiSFMyNTYiLCAidHlwIjogIkpXVCJ9.eyJlbWFpbCI6ICJJZEBFeGFtcGxlLmNvbSIsICJuYW1lIjogImlkLW5hbWUiLCAicm9sZSI6ICJpbnRlcm5hbF91c2VyIiwgImdyb3VwcyI6IFsiaWQtZ3JvdXAiXSwgInRlbmFudCI6IHsiaWQiOiAidC0xIn19.c2lnbmF0dXJl
+    - null
+    - opaque-token
+    - a.b.c
+    process: []
+    convert:
+      response: {}
+      jwt_settings: {}
+      sso_settings: null
+      role_mappings: null
+      team_mappings: null
+env: {}
+compare:
+  ignore: []

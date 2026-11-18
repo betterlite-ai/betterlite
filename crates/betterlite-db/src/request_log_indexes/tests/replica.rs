@@ -1,7 +1,8 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use deadpool_postgres::GenericClient as _;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::Instant;
 
 use crate::database_url_policy::query::with_query_value;
 use crate::request_log_indexes::replica_identity::{apply_on, apply_replica_identity_full};
@@ -211,7 +212,7 @@ async fn replica_identity_connect_times_out() {
     sockets.shutdown().await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn replica_connect_time_counts_against_the_command_budget() {
     let (logs, _guard) = install_logs();
     let (url, mut servers) = delayed_stalled_server(Duration::from_millis(800)).await;

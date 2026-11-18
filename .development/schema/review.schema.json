@@ -16,7 +16,11 @@
     },
     "verdict": {
       "description": "changes when at least one finding has origin ours, approve otherwise.",
-      "$ref": "#/$defs/ReviewVerdict"
+      "type": "string",
+      "enum": [
+        "approve",
+        "changes"
+      ]
     }
   },
   "additionalProperties": false,
@@ -39,7 +43,11 @@
         },
         "origin": {
           "description": "ours when betterlite introduced the problem; litellm when the code repeats LiteLLM's own behavior and rule owned-behavior-is-built says to fix that bug. Only ours findings go back to the worker; litellm findings go to the architect.",
-          "$ref": "#/$defs/FindingOrigin"
+          "type": "string",
+          "enum": [
+            "ours",
+            "litellm"
+          ]
         },
         "problem": {
           "description": "What breaks the rule, in one or two sentences.",
@@ -57,20 +65,6 @@
         "location",
         "problem",
         "fix"
-      ]
-    },
-    "FindingOrigin": {
-      "type": "string",
-      "enum": [
-        "ours",
-        "litellm"
-      ]
-    },
-    "ReviewVerdict": {
-      "type": "string",
-      "enum": [
-        "approve",
-        "changes"
       ]
     }
   }
