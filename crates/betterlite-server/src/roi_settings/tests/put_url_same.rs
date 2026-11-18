@@ -62,7 +62,7 @@ async fn put_url_same_reads_the_settings_row_once() {
     let memory = MemoryRepository::default();
     memory.seed_settings(&stored);
     let shifting = Arc::new(ShiftingRepository::counting(memory));
-    let repository: Arc<dyn SettingsRepository> = shifting.clone();
+    let repository: Arc<dyn SettingsRepository> = Arc::<ShiftingRepository>::clone(&shifting);
     let app = settings_app(Some(repository), Some(catalog(Vec::new())));
     let reply = call(
         app,

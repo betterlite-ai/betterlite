@@ -23,7 +23,10 @@ async fn load_stored_without_a_parameter_uses_the_defaults() {
     assert_eq!(stored.estimator_model, "");
     assert_eq!(stored.estimator_prompt, DEFAULT_PROMPT);
     assert_eq!(stored.backfill_days, 7);
-    assert_eq!(stored.update_interval_minutes, 1440.0);
+    assert_eq!(
+        stored.update_interval_minutes.to_bits(),
+        1440.0_f64.to_bits()
+    );
     assert!(stored.identity_map.is_empty());
 }
 

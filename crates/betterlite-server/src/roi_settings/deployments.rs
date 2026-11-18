@@ -24,6 +24,7 @@ pub trait RouterCatalog: Send + Sync {
     fn deployments(&self, model_group: &str) -> Vec<RouterEstimatorDeployment>;
 }
 
+#[must_use]
 pub fn estimator_model(deployment: &RouterEstimatorDeployment) -> Option<EstimatorModel> {
     let parameters = &deployment.litellm_params;
     let model = deployment
