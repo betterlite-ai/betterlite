@@ -608,12 +608,12 @@ fn an_unterminated_payload_boundary_is_content() {
     assert!(items.next().is_none());
 }
 
-#[test]
-fn a_body_that_is_only_the_closing_delimiter_has_no_fields() {
-    for body in [&b"--b--\r\n"[..], &b"--b--"[..]] {
-        let parts = decode_request_form(body, MULTIPART, &ApiLimits::default()).unwrap();
-        assert!(parts.items.is_empty());
-    }
+#[rstest]
+#[case("--b--\r\n")]
+#[case("--b--")]
+fn a_body_that_is_only_the_closing_delimiter_has_no_fields(#[case] body: &str) {
+    let parts = decode_request_form(body.as_bytes(), MULTIPART, &ApiLimits::default()).unwrap();
+    assert!(parts.items.is_empty());
 }
 
 #[rstest]

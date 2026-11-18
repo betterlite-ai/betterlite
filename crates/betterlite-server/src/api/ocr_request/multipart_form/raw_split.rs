@@ -48,19 +48,61 @@ fn parse_header_line(line: &[u8]) -> Result<(&[u8], &[u8]), MultipartError> {
     Ok((name, value))
 }
 
-// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF and whether that line already closed the message. A body with no boundary line at all returns None, which split_items reports as malformed. Each loop below finds only the CRLF's offset, not a slice pair: a caller advancing by that offset plus a literal 2 always shrinks its own cursor, so a mutated offset can at worst spin without allocating, not leak memory on every turn.
-fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> Option<(&'body [u8], bool)> {
-    let mut remaining = body;
-    while let Some(idx) = remaining.windows(2).position(|pair| pair == b"\r\n") {
-        let line = remaining.get(..idx).unwrap_or(remaining);
-        let after_crlf = remaining.get(idx.saturating_add(2)..).unwrap_or(&[]);
-        if let Some(is_final) = boundary_kind(line, dash_boundary) {
-            return Some((after_crlf, is_final));
+enum BoundaryScan<'body> {
+    Found {
+        content: &'body [u8],
+        after: &'body [u8],
+        is_final: bool,
+    },
+    NoBoundary,
+}
+
+// Scans line by line for the first boundary line and returns the part content before it. A boundary on the very first line counts only when allow_first is set, so a part whose data starts with a boundary line keeps it as content, and the closing delimiter can end the body with no trailing CRLF. Each pass advances by the found offset plus the CRLF width, and a body.get that runs past the end stops the scan, so a mutated offset cannot loop.
+fn scan_boundary<'body>(
+    body: &'body [u8],
+    dash_boundary: &[u8],
+    allow_first: bool,
+) -> BoundaryScan<'body> {
+    let mut start = 0_usize;
+    loop {
+        let Some(cursor) = body.get(start..) else {
+            return BoundaryScan::NoBoundary;
+        };
+        let Some(offset) = cursor.windows(2).position(|pair| pair == b"\r\n") else {
+            let Some(is_final) =
+                boundary_kind(cursor, dash_boundary).filter(|_| allow_first || start > 0)
+            else {
+                return BoundaryScan::NoBoundary;
+            };
+            return BoundaryScan::Found {
+                content: body.get(..start.saturating_sub(2)).unwrap_or(&[]),
+                after: &[],
+                is_final,
+            };
+        };
+        let end = start.saturating_add(offset);
+        let line = body.get(start..end).unwrap_or(&[]);
+        if let Some(is_final) =
+            boundary_kind(line, dash_boundary).filter(|_| allow_first || start > 0)
+        {
+            return BoundaryScan::Found {
+                content: body.get(..start.saturating_sub(2)).unwrap_or(&[]),
+                after: body.get(end.saturating_add(2)..).unwrap_or(&[]),
+                is_final,
+            };
         }
-        remaining = after_crlf;
+        start = end.saturating_add(2);
     }
-    // The closing delimiter can end the body with no trailing CRLF, so the last unterminated line is checked too.
-    boundary_kind(remaining, dash_boundary).map(|is_final| (&[][..], is_final))
+}
+
+// Scans past everything before the first boundary line (the preamble, which MIME allows and ignores), returning what follows its trailing CRLF and whether that line already closed the message. A body with no boundary line at all returns None, which split_items reports as malformed.
+fn skip_preamble<'body>(body: &'body [u8], dash_boundary: &[u8]) -> Option<(&'body [u8], bool)> {
+    match scan_boundary(body, dash_boundary, true) {
+        BoundaryScan::Found {
+            after, is_final, ..
+        } => Some((after, is_final)),
+        BoundaryScan::NoBoundary => None,
+    }
 }
 
 struct PartHeaders<'body> {
@@ -99,36 +141,18 @@ fn read_headers(remaining: &[u8]) -> Result<PartHeaders<'_>, MultipartError> {
     })
 }
 
-// Reads a part's body up to the next boundary line, returning the content (without its trailing CRLF), what follows the boundary line's CRLF, and whether it was the closing boundary.
+// Reads a part's body up to the next boundary line, returning the content (without its trailing CRLF), what follows the boundary line's CRLF, and whether it was the closing boundary. A boundary on the data's first line is content, and a body with no boundary at all is all content.
 fn read_data<'body>(
     remaining: &'body [u8],
     dash_boundary: &[u8],
 ) -> (&'body [u8], &'body [u8], bool) {
-    let mut cursor = remaining;
-    loop {
-        if let Some(idx) = cursor.windows(2).position(|pair| pair == b"\r\n") {
-            let line = cursor.get(..idx).unwrap_or(cursor);
-            let after_crlf = cursor.get(idx.saturating_add(2)..).unwrap_or(&[]);
-            if let Some(is_final) =
-                boundary_kind(line, dash_boundary).filter(|_| cursor.len() < remaining.len())
-            {
-                let consumed = remaining.len().saturating_sub(cursor.len());
-                let content_len = consumed.saturating_sub(2);
-                let content = remaining.get(..content_len).unwrap_or(remaining);
-                return (content, after_crlf, is_final);
-            }
-            cursor = after_crlf;
-        } else if let Some(is_final) =
-            boundary_kind(cursor, dash_boundary).filter(|_| cursor.len() < remaining.len())
-        {
-            // The body can end right after the closing boundary's second hyphen, with no trailing CRLF, so a final unterminated line still needs checking before falling back to treating the rest as content.
-            let consumed = remaining.len().saturating_sub(cursor.len());
-            let content_len = consumed.saturating_sub(2);
-            let content = remaining.get(..content_len).unwrap_or(remaining);
-            return (content, &[], is_final);
-        } else {
-            return (remaining, &[], true);
-        }
+    match scan_boundary(remaining, dash_boundary, false) {
+        BoundaryScan::Found {
+            content,
+            after,
+            is_final,
+        } => (content, after, is_final),
+        BoundaryScan::NoBoundary => (remaining, &[], true),
     }
 }
 
