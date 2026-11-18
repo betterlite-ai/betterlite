@@ -212,14 +212,14 @@ impl Harness {
             timeout: None,
             request_timeout: None,
         };
-        let environment = environment
+        let environment_map = environment
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect::<BTreeMap<_, _>>();
         let logger = Arc::new(
             RubrikLogger::new(
                 &init,
-                &environment,
+                &environment_map,
                 Arc::<ScriptedTransport>::clone(&transport),
                 Arc::new(FixedClock),
             )

@@ -32,18 +32,18 @@ fn kept(samples: &[f64], rate: f64, call_details: &str) -> Json {
 }
 
 #[rstest]
-#[case::below(0.1, 0.25)]
-#[case::equal(0.25, 0.25)]
-#[case::zero_rate(0.0, 0.0)]
-#[case::full_rate(0.999_999, 1.0)]
+#[case::below(0.1_f64, 0.25_f64)]
+#[case::equal(0.25_f64, 0.25_f64)]
+#[case::zero_rate(0.0_f64, 0.0_f64)]
+#[case::full_rate(0.999_999_f64, 1.0_f64)]
 fn a_draw_at_or_below_the_rate_keeps_the_event(#[case] sample: f64, #[case] rate: f64) {
     let payload = kept(&[sample], rate, BASE);
     assert_eq!(text(field(&payload, "id")), "chatcmpl-provider");
 }
 
 #[rstest]
-#[case::above(0.500_000_1, 0.25)]
-#[case::above_zero(0.000_001, 0.0)]
+#[case::above(0.500_000_1_f64, 0.25_f64)]
+#[case::above_zero(0.000_001_f64, 0.0_f64)]
 fn a_draw_above_the_rate_drops_the_event(#[case] sample: f64, #[case] rate: f64) {
     let outcome = prepared(&[sample], rate, BASE).expect("the payload is prepared");
     assert!(outcome.is_none());
@@ -54,7 +54,7 @@ fn a_sampled_out_event_is_logged_with_its_kind() {
     let harness = Harness::new(&[], &[]);
     let fields = details(BASE);
     let outcome = prepare_log_payload(
-        &ScriptedRandom::new(&[0.9]),
+        &ScriptedRandom::new(&[0.9_f64]),
         0.5,
         &fields,
         EventKind::Failure,
@@ -69,13 +69,13 @@ fn a_sampled_out_event_is_logged_with_its_kind() {
 
 #[test]
 fn a_sampled_out_event_reads_no_standard_logging_object() {
-    let outcome = prepared(&[0.9], 0.5, "{}").expect("the payload is prepared");
+    let outcome = prepared(&[0.9_f64], 0.5, "{}").expect("the payload is prepared");
     assert!(outcome.is_none());
 }
 
 #[test]
 fn an_absent_standard_logging_object_is_an_error() {
-    let error = prepared(&[0.0], 1.0, "{}").expect_err("a missing object is an error");
+    let error = prepared(&[0.0_f64], 1.0, "{}").expect_err("a missing object is an error");
     assert!(matches!(
         error,
         EventPayloadError::MissingStandardLoggingObject
@@ -86,7 +86,7 @@ fn an_absent_standard_logging_object_is_an_error() {
 #[case::text(r#"{"standard_logging_object":"chatcmpl-provider"}"#)]
 #[case::null(r#"{"standard_logging_object":null}"#)]
 fn a_standard_logging_object_that_is_not_an_object_is_a_field_error(#[case] call_details: &str) {
-    let error = prepared(&[0.0], 1.0, call_details).expect_err("a wrong shape is an error");
+    let error = prepared(&[0.0_f64], 1.0, call_details).expect_err("a wrong shape is an error");
     assert!(matches!(
         error,
         EventPayloadError::FieldType {
@@ -99,7 +99,7 @@ fn a_standard_logging_object_that_is_not_an_object_is_a_field_error(#[case] call
 fn the_payload_is_a_deep_copy() {
     let fields = details(BASE);
     let mut payload = prepare_log_payload(
-        &ScriptedRandom::new(&[0.0]),
+        &ScriptedRandom::new(&[0.0_f64]),
         1.0,
         &fields,
         EventKind::Success,
@@ -122,7 +122,7 @@ fn the_payload_is_a_deep_copy() {
 
 #[test]
 fn an_unknown_standard_field_is_kept() {
-    let payload = kept(&[0.0], 1.0, BASE);
+    let payload = kept(&[0.0_f64], 1.0, BASE);
     assert_eq!(text(field(&payload, "status")), "success");
     assert_eq!(field(&payload, "provider_detail"), &json(r#"{"x":1}"#));
 }
@@ -130,7 +130,7 @@ fn an_unknown_standard_field_is_kept() {
 #[test]
 fn the_call_id_replaces_the_provider_response_id() {
     let payload = kept(
-        &[0.0],
+        &[0.0_f64],
         1.0,
         r#"{"litellm_call_id":"call-1","standard_logging_object":{"id":"chatcmpl-provider"}}"#,
     );
@@ -142,14 +142,14 @@ fn the_call_id_replaces_the_provider_response_id() {
 #[case::empty(r#"{"litellm_call_id":"","standard_logging_object":{"id":"chatcmpl-provider"}}"#)]
 #[case::null(r#"{"litellm_call_id":null,"standard_logging_object":{"id":"chatcmpl-provider"}}"#)]
 fn a_call_id_that_is_unset_keeps_the_provider_response_id(#[case] call_details: &str) {
-    let payload = kept(&[0.0], 1.0, call_details);
+    let payload = kept(&[0.0_f64], 1.0, call_details);
     assert_eq!(text(field(&payload, "id")), "chatcmpl-provider");
 }
 
 #[test]
 fn a_wrong_typed_call_id_is_a_call_details_error() {
     let error = prepared(
-        &[0.0],
+        &[0.0_f64],
         1.0,
         r#"{"litellm_call_id":5,"standard_logging_object":{"id":"chatcmpl-provider"}}"#,
     )
@@ -160,7 +160,7 @@ fn a_wrong_typed_call_id_is_a_call_details_error() {
 #[test]
 fn the_system_prompt_is_prepended() {
     let payload = kept(
-        &[0.0],
+        &[0.0_f64],
         1.0,
         r#"{"system":"be nice","standard_logging_object":{"messages":[{"role":"user","content":"hi"}]}}"#,
     );
@@ -176,7 +176,7 @@ fn the_system_prompt_is_prepended() {
     r#"{"system":"","standard_logging_object":{"messages":[{"role":"user","content":"hi"}]}}"#
 )]
 fn a_system_prompt_that_is_unset_leaves_the_messages_alone(#[case] call_details: &str) {
-    let payload = kept(&[0.0], 1.0, call_details);
+    let payload = kept(&[0.0_f64], 1.0, call_details);
     assert_eq!(
         field(&payload, "messages"),
         &json(r#"[{"role":"user","content":"hi"}]"#)
@@ -186,7 +186,7 @@ fn a_system_prompt_that_is_unset_leaves_the_messages_alone(#[case] call_details:
 #[test]
 fn a_system_prompt_without_messages_adds_no_messages() {
     let payload = kept(
-        &[0.0],
+        &[0.0_f64],
         1.0,
         r#"{"system":"be nice","standard_logging_object":{"id":"chatcmpl-provider"}}"#,
     );
@@ -202,7 +202,7 @@ fn the_system_prompt_does_not_rewrite_the_shared_messages() {
         r#"{"system":"be nice","standard_logging_object":{"messages":[{"role":"user","content":"hi"}]}}"#,
     );
     let payload = prepare_log_payload(
-        &ScriptedRandom::new(&[0.0]),
+        &ScriptedRandom::new(&[0.0_f64]),
         1.0,
         &fields,
         EventKind::Success,

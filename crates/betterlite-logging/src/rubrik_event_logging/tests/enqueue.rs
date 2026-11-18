@@ -16,7 +16,7 @@ async fn a_kept_success_event_is_queued() {
     let fields = details(EVENT);
     enqueue_log_event(
         &harness.logger,
-        &ScriptedRandom::new(&[0.5]),
+        &ScriptedRandom::new(&[0.5_f64]),
         &fields,
         EventKind::Success,
     )
@@ -33,7 +33,7 @@ async fn a_sampled_out_success_event_is_not_queued() {
     let fields = details(EVENT);
     enqueue_log_event(
         &harness.logger,
-        &ScriptedRandom::new(&[0.5]),
+        &ScriptedRandom::new(&[0.5_f64]),
         &fields,
         EventKind::Success,
     )
@@ -47,7 +47,7 @@ async fn a_payload_error_is_logged_at_error_level() {
     let fields = details(r#"{"litellm_call_id":"call-1"}"#);
     enqueue_log_event(
         &harness.logger,
-        &ScriptedRandom::new(&[0.0]),
+        &ScriptedRandom::new(&[0.0_f64]),
         &fields,
         EventKind::Failure,
     )
@@ -68,7 +68,7 @@ async fn reaching_the_batch_size_flushes_the_queue() {
     let fields = details(EVENT);
     enqueue_log_event(
         &harness.logger,
-        &ScriptedRandom::new(&[0.0]),
+        &ScriptedRandom::new(&[0.0_f64]),
         &fields,
         EventKind::Success,
     )
@@ -117,7 +117,7 @@ async fn a_blocked_request_is_skipped_by_the_success_handler() {
 async fn a_non_true_block_flag_logs_the_success_event(#[case] call_details: &str) {
     let harness = Harness::new(&[], &[]);
     let fields = details(call_details);
-    async_log_success_event(&harness.logger, &ScriptedRandom::new(&[0.0]), &fields).await;
+    async_log_success_event(&harness.logger, &ScriptedRandom::new(&[0.0_f64]), &fields).await;
     assert_eq!(queue_snapshot(&harness.logger).len(), 1);
 }
 
@@ -129,7 +129,7 @@ async fn a_blocked_request_still_logs_its_failure_event() {
     );
     enqueue_log_event(
         &harness.logger,
-        &ScriptedRandom::new(&[0.0]),
+        &ScriptedRandom::new(&[0.0_f64]),
         &fields,
         EventKind::Failure,
     )
@@ -145,7 +145,7 @@ async fn a_sampled_out_failure_event_reports_the_failure_kind() {
     let fields = details(EVENT);
     enqueue_log_event(
         &harness.logger,
-        &ScriptedRandom::new(&[0.9]),
+        &ScriptedRandom::new(&[0.9_f64]),
         &fields,
         EventKind::Failure,
     )
