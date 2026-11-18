@@ -108,6 +108,16 @@ fn ttl_accepts_a_text_fraction() {
 }
 
 #[test]
+fn ttl_does_not_depend_on_key_order() {
+    let source = "litellm_settings:\n  default_redis_ttl: 90\n  cache: true\n";
+    assert_eq!(
+        loaded(source).default_ttl,
+        90,
+        "a TTL written before the switch still applies"
+    );
+}
+
+#[test]
 fn ttl_rejects_a_boolean() {
     let error = failure(
         "litellm_settings:\n  default_redis_ttl: true\n",
