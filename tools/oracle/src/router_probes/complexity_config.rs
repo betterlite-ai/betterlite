@@ -143,19 +143,6 @@ pub(crate) fn run(
         .iter()
         .map(|feature| feature.production())
         .collect();
-    let checks = Checks {
-        classifier_type: knobs.classifier_type.production(),
-        classifier_fallback: knobs.classifier_fallback,
-        fallback_tier: knobs.fallback_tier.as_deref(),
-        classification_prompt: knobs.classification_prompt.as_deref(),
-        classification_examples: knobs.classification_examples.as_deref(),
-        llm_system_prompt: knobs.llm_system_prompt.as_deref(),
-        classification_rubric: knobs.classification_rubric.as_deref(),
-        keyword_rule_tiers: &knobs.keyword_rule_tiers,
-        embedding_model: knobs.embedding_model.as_deref(),
-        stall_escalation: knobs.stall_escalation,
-        features: &features,
-    };
     let tiers = tier_section::Config {
         tier_models: payload.tiers.tier_models.clone(),
         ..tier_section::Config::default()
@@ -167,7 +154,7 @@ pub(crate) fn run(
         tiers,
         dimensions: &dimensions,
         dimension_weights: &weights,
-        checks,
+        checks: router_checks(knobs, &features),
     })
     .map_err(|source| OperationError::InvalidRequest {
         message: source.to_string(),
@@ -175,6 +162,22 @@ pub(crate) fn run(
     Ok(ProbeOutput::ComplexityConfig(Output(Box::new(fields(
         &resolved,
     )))))
+}
+
+fn router_checks<'config>(knobs: &'config Knobs, features: &'config [Feature]) -> Checks<'config> {
+    Checks {
+        classifier_type: knobs.classifier_type.production(),
+        classifier_fallback: knobs.classifier_fallback,
+        fallback_tier: knobs.fallback_tier.as_deref(),
+        classification_prompt: knobs.classification_prompt.as_deref(),
+        classification_examples: knobs.classification_examples.as_deref(),
+        llm_system_prompt: knobs.llm_system_prompt.as_deref(),
+        classification_rubric: knobs.classification_rubric.as_deref(),
+        keyword_rule_tiers: &knobs.keyword_rule_tiers,
+        embedding_model: knobs.embedding_model.as_deref(),
+        stall_escalation: knobs.stall_escalation,
+        features,
+    }
 }
 
 fn fields(resolved: &Resolved) -> Fields {

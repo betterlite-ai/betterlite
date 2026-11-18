@@ -54,7 +54,7 @@ fn a_margin_outside_the_endpoints_is_rejected(#[case] margin: f64) {
 
 #[test]
 fn the_prompt_cap_counts_characters() {
-    let at_cap = "é".repeat(MAX_CLASSIFICATION_PROMPT_CHARS);
+    let at_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_PROMPT_CHARS);
     let accepted = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_prompt: Some(&at_cap),
@@ -62,7 +62,7 @@ fn the_prompt_cap_counts_characters() {
     };
     checked(blank(), tiers(), &accepted);
 
-    let over_cap = "é".repeat(MAX_CLASSIFICATION_PROMPT_CHARS + 1);
+    let over_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_PROMPT_CHARS + 1);
     let rejected_checks = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_prompt: Some(&over_cap),
@@ -78,7 +78,7 @@ fn the_prompt_cap_counts_characters() {
 
 #[test]
 fn the_examples_cap_counts_characters() {
-    let at_cap = "é".repeat(MAX_CLASSIFICATION_EXAMPLES_CHARS);
+    let at_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_EXAMPLES_CHARS);
     let accepted = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_examples: Some(&at_cap),
@@ -86,7 +86,7 @@ fn the_examples_cap_counts_characters() {
     };
     checked(blank(), tiers(), &accepted);
 
-    let over_cap = "é".repeat(MAX_CLASSIFICATION_EXAMPLES_CHARS + 1);
+    let over_cap = "\u{e9}".repeat(MAX_CLASSIFICATION_EXAMPLES_CHARS + 1);
     let rejected_checks = Checks {
         classifier_type: ClassifierKind::Llm,
         classification_examples: Some(&over_cap),
