@@ -113,7 +113,7 @@ fn rejects_a_zero_capacity_and_keeps_a_zero_aggregation_threshold() {
         decode_spend_queue_setting(QUEUE_CAPACITY_ENV, "0"),
         Err(SpendQueueError::NotPositive { .. })
     ));
-    assert!(decode_spend_queue_setting(DEFAULT_LOCK_TTL_ENV, "0").is_err());
+    decode_spend_queue_setting(DEFAULT_LOCK_TTL_ENV, "0").unwrap_err();
     assert_eq!(
         decode_spend_queue_setting(AGGREGATION_THRESHOLD_ENV, "0").unwrap(),
         Some(0)
@@ -134,7 +134,7 @@ fn decodes_one_setting_at_a_time() {
         decode_spend_queue_setting(FLUSH_COUNT_ENV, "-1").unwrap(),
         Some(-1)
     );
-    assert!(decode_spend_queue_setting(AGGREGATION_THRESHOLD_ENV, "1.5").is_err());
+    decode_spend_queue_setting(AGGREGATION_THRESHOLD_ENV, "1.5").unwrap_err();
 }
 
 #[rstest]

@@ -51,7 +51,7 @@ fn counts_only_an_exact_deletion_as_one() {
 fn accepts_the_bulk_string_an_integer_can_arrive_as() {
     assert!(deleted_one(Value::BulkString(b"1".to_vec())).unwrap());
     assert!(!deleted_one(Value::BulkString(b"0".to_vec())).unwrap());
-    assert!(deleted_one(Value::BulkString(b"two".to_vec())).is_err());
+    deleted_one(Value::BulkString(b"two".to_vec())).unwrap_err();
 }
 
 #[test]
@@ -61,8 +61,8 @@ fn treats_a_nil_reply_as_no_deletion() {
 
 #[test]
 fn refuses_a_reply_that_is_not_a_count() {
-    assert!(deleted_one(Value::Okay).is_err());
-    assert!(deleted_one(Value::SimpleString("1".to_owned())).is_err());
+    deleted_one(Value::Okay).unwrap_err();
+    deleted_one(Value::SimpleString("1".to_owned())).unwrap_err();
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn only_a_json_string_can_hold_the_owner() {
     assert_eq!(owner_bytes(CachedValue::Null), None);
     assert_eq!(owner_bytes(CachedValue::Boolean(true)), None);
     assert_eq!(
-        owner_bytes(CachedValue::Number(serde_json::Number::from(7))),
+        owner_bytes(CachedValue::Number(serde_json::Number::from(7_i32))),
         None
     );
     assert_eq!(owner_bytes(CachedValue::Array(Vec::new())), None);

@@ -700,7 +700,7 @@ fn decodes_utf8_owner_bytes_and_refuses_the_rest() {
         decode_pod_owner(unicode_owner.as_bytes()).unwrap(),
         unicode_owner
     );
-    assert!(decode_pod_owner(&[0xff, 0xfe]).is_err());
+    decode_pod_owner(&[0xff, 0xfe]).unwrap_err();
 }
 
 #[rstest]

@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::queues::pod_lock::{PodLockCallType, PodLockEvent, PodLockEventSink as _};
 use chrono::{DateTime, FixedOffset};
@@ -26,14 +26,27 @@ struct RecordingSink(Mutex<Vec<ServiceEvent>>);
 
 impl ServiceEventSink for RecordingSink {
     fn emit(&self, event: &ServiceEvent) -> Result<(), ServiceEventError> {
-        self.0.lock().unwrap().push(event.clone());
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(event.clone());
         Ok(())
     }
 }
 
 #[rstest]
-#[case(PodLockCallType::Acquired, "_emit_acquired_lock_event", 1.0, 60.0)]
-#[case(PodLockCallType::Released, "_emit_released_lock_event", 0.0, 17.0)]
+#[case(
+    PodLockCallType::Acquired,
+    "_emit_acquired_lock_event",
+    1.0_f64,
+    60.0_f64
+)]
+#[case(
+    PodLockCallType::Released,
+    "_emit_released_lock_event",
+    0.0_f64,
+    17.0_f64
+)]
 #[tokio::test]
 async fn delivers_pod_lock_service_events(
     #[case] call_type: PodLockCallType,
