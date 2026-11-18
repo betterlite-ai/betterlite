@@ -29,8 +29,8 @@ use super::retry::{parked_lookup_error, retry_wait, take_parked};
 use super::rows::KeyRowRead as _;
 use super::view::{CombinedKeyView, epoch_decimal};
 
-// the deprecated key re-enters read, so its future is boxed to keep the Send proof from cycling
-pub type ReadFuture<'reader> =
+// the grace hop re-enters read, so its future is erased into a declared Send type and the proof stops at the box
+pub type GraceFuture<'reader> =
     Pin<Box<dyn Future<Output = Result<Option<CombinedKeyView>, KeyReadError>> + Send + 'reader>>;
 
 pub struct ReadServices<'services> {
@@ -63,35 +63,32 @@ where
     Sink: DbServiceEventSink + 'static,
 {
     // the backoff decorator around get_data: at most three attempts and ten seconds, jittered waits
-    #[must_use]
-    pub fn read<'reader>(
-        &'reader self,
-        request: &'reader CombinedKeyRequest,
-    ) -> ReadFuture<'reader> {
-        Box::pin(async move {
-            let start = self.services.clock.instant();
-            let mut tries: u32 = 0;
-            loop {
-                tries = tries.saturating_add(1);
-                let elapsed = self
-                    .services
-                    .clock
-                    .instant()
-                    .saturating_duration_since(start);
-                let error = match self.measured_attempt(request).await {
-                    Ok(view) => return Ok(view),
-                    Err(error) => error,
-                };
-                if tries >= MAX_TRIES || elapsed >= MAX_TIME {
-                    return Err(error);
-                }
-                let wait = retry_wait(self.services.jitter, tries, elapsed);
-                self.services
-                    .diagnostics
-                    .emit(Diagnostic::Backoff { tries });
-                self.services.pause.pause(wait).await;
+    pub async fn read(
+        &self,
+        request: &CombinedKeyRequest,
+    ) -> Result<Option<CombinedKeyView>, KeyReadError> {
+        let start = self.services.clock.instant();
+        let mut tries: u32 = 0;
+        loop {
+            tries = tries.saturating_add(1);
+            let elapsed = self
+                .services
+                .clock
+                .instant()
+                .saturating_duration_since(start);
+            let error = match self.measured_attempt(request).await {
+                Ok(view) => return Ok(view),
+                Err(error) => error,
+            };
+            if tries >= MAX_TRIES || elapsed >= MAX_TIME {
+                return Err(error);
             }
-        })
+            let wait = retry_wait(self.services.jitter, tries, elapsed);
+            self.services
+                .diagnostics
+                .emit(Diagnostic::Backoff { tries });
+            self.services.pause.pause(wait).await;
+        }
     }
 
     async fn lookup(
@@ -124,28 +121,30 @@ where
     }
 
     // the grace row only matters when the combined view missed, and its recursive read never checks again
-    async fn deprecated_view(
-        &self,
-        request: &CombinedKeyRequest,
-        hash: &KeyHash,
+    fn deprecated_view<'reader>(
+        &'reader self,
+        request: &'reader CombinedKeyRequest,
+        hash: &'reader KeyHash,
         use_writer: bool,
-    ) -> Result<Option<CombinedKeyView>, KeyReadError> {
-        let Some(active_token_id) = self.grace_lookup(hash, use_writer).await else {
-            return Ok(None);
-        };
-        // the deprecated key recurses once with check_deprecated off, so a grace lookup can never chain
-        let hop = CombinedKeyRequest {
-            token: Some(active_token_id),
-            query_type: KeyQueryType::FindUnique,
-            check_deprecated: false,
-            use_writer: request.use_writer,
-            parent_otel_span: request.parent_otel_span.clone(),
-        };
-        let found = self.read(&hop).await?;
-        if found.is_some() {
-            self.services.diagnostics.emit(Diagnostic::DeprecatedUsed);
-        }
-        Ok(found)
+    ) -> GraceFuture<'reader> {
+        Box::pin(async move {
+            let Some(active_token_id) = self.grace_lookup(hash, use_writer).await else {
+                return Ok(None);
+            };
+            // the deprecated key recurses once with check_deprecated off, so a grace lookup can never chain
+            let hop = CombinedKeyRequest {
+                token: Some(active_token_id),
+                query_type: KeyQueryType::FindUnique,
+                check_deprecated: false,
+                use_writer: request.use_writer,
+                parent_otel_span: request.parent_otel_span.clone(),
+            };
+            let found = self.read(&hop).await?;
+            if found.is_some() {
+                self.services.diagnostics.emit(Diagnostic::DeprecatedUsed);
+            }
+            Ok(found)
+        })
     }
 
     // log_db_metrics wraps each get_data call: it awaits a failure metric and schedules a success metric
