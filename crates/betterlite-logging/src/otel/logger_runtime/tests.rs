@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+#[path = "tests/construction.rs"]
+mod construction;
 #[path = "tests/factory.rs"]
 mod factory;
 #[path = "tests/hooks.rs"]
