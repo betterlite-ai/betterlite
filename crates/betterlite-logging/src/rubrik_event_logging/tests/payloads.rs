@@ -113,7 +113,7 @@ fn the_payload_is_a_deep_copy() {
         panic!("the provider detail is an object");
     };
     detail.insert("x".to_owned(), Json::Number(Number::from(2_u8)));
-    let source = json(BASE);
+    let source = Json::Object(fields);
     assert_eq!(
         field(field(&source, "standard_logging_object"), "provider_detail"),
         &json(r#"{"x":1}"#)

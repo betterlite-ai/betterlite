@@ -81,7 +81,7 @@ fn the_copied_base_is_a_deep_copy() {
         panic!("the litellm params are an object");
     };
     params.insert("custom".to_owned(), Json::Bool(false));
-    let standard = json(BASE);
+    let standard = Json::Object(source);
     assert_eq!(
         field(
             field(&standard, "standard_logging_object"),
