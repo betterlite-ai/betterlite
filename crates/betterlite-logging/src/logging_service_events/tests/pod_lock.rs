@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use betterlite_db::queues::pod_lock::{PodLockCallType, PodLockEvent, PodLockEventSink};
+use betterlite_db::queues::pod_lock::{PodLockCallType, PodLockEvent, PodLockEventSink as _};
 use chrono::{DateTime, FixedOffset};
 use rstest::rstest;
 
