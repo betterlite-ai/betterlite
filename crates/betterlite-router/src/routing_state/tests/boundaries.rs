@@ -44,6 +44,7 @@ pub(crate) async fn run(name: &str) {
         "callback_saturation_without_a_runtime_keeps_the_delta" => {
             callback_saturation_without_a_runtime_keeps_the_delta().await;
         }
+        "start_without_a_runtime_starts_no_task" => start_without_a_runtime_starts_no_task(),
         "tracked_cap_is_1024" => tracked_cap_is_1024(),
         "window_increment_rejects_an_oversized_key" => {
             window_increment_rejects_an_oversized_key().await;
@@ -258,6 +259,16 @@ async fn callback_saturation_without_a_runtime_keeps_the_delta() {
         Some(Decimal::from(1_025_u64))
     );
     assert_eq!(harness.pending_len(), 0);
+}
+
+// with no runtime to poll it, the periodic task is never spawned
+fn start_without_a_runtime_starts_no_task() {
+    let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
+    let counters = Arc::clone(&harness.counters);
+    thread::scope(|scope| {
+        let _handle = scope.spawn(move || counters.start());
+    });
+    assert_eq!(harness.counters.tasks.lock().unwrap().len(), 0);
 }
 
 fn tracked_cap_is_1024() {

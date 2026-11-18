@@ -121,6 +121,7 @@ fn routing_state_behaviors(#[case] name: &str, #[case] paused: bool) {
 #[case::sync_interval_resolution_boundaries("sync_interval_resolution_boundaries", false)]
 #[case::local_counter_reads_only_whole_values("local_counter_reads_only_whole_values", false)]
 #[case::scheduled_gate_timeout("scheduled_gate_timeout", true)]
+#[case::start_without_a_runtime_starts_no_task("start_without_a_runtime_starts_no_task", false)]
 fn routing_state_boundaries(#[case] name: &str, #[case] paused: bool) {
     runtime(paused).block_on(boundaries::run(name));
 }

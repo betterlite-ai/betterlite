@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
+use tokio::runtime::Handle;
 use tokio::task::JoinSet;
 
 use crate::router_observations::counter::{CounterError, Increment};
@@ -182,8 +183,12 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
         }
     }
 
-    // BaseRoutingStrategy.setup_sync_task
+    // BaseRoutingStrategy.setup_sync_task: a task on an unstarted loop never ticks, so none is started
     pub fn setup_sync_task(self: &Arc<Self>) {
+        if Handle::try_current().is_err() {
+            tracing::warn!("the periodic sync needs a running runtime; it was not started");
+            return;
+        }
         let interval = self.settings.resolved_sync_interval();
         let owner = Arc::downgrade(self);
         let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
