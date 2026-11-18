@@ -1,0 +1,11 @@
+kind: helper
+name: sagemaker-runtime-completion-url-and-region
+call:
+  b5840:
+    function: url
+    model: endpoint-a
+    region: us-east-2
+    base_url: null
+    stream: false
+env: {}
+compare: {ignore: []}

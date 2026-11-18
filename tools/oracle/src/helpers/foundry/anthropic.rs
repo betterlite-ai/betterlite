@@ -1,11 +1,16 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+#[path = "anthropic/tests/mod.rs"]
+mod adapter;
+
+use adapter::input::Input;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("foundry_anthropic")
+    fn run(input: &Self::Input) -> HelperResult {
+        adapter::answers::completion(input)
     }
 }

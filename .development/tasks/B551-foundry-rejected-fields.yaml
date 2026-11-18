@@ -28,8 +28,8 @@ description: >-
   single then double quotes, ignore empty names and remove only matching top-level keys. No bracket yields []; do
   not parse it as JSON or Python syntax. repair_trigger_literals: Retry when error text contains Extra inputs are
   not permitted and either truthy per-call/global drop_params or tools[digits]. appears; always retry on unknown
-  field: parameter index is not a valid field or Set extra-parameters to 'pass-through'. Otherwise use B505 superclass
-  retry policy; max local retries=2.
+  field: parameter index is not a valid field or Set extra-parameters to 'pass-through'. Otherwise use the superclass
+  retry policy B9988 ports for OpenAi; max local retries=2.
 
 
   Implement crates/betterlite-foundry/src/rejected_fields.rs with adjacent tests under rejected_fields/. Keep each
@@ -141,8 +141,8 @@ dod:
   - helper-case-corpus
 - text: 'repair_trigger_literals: Retry when error text contains Extra inputs are not permitted and either truthy
     per-call/global drop_params or tools[digits]. appears; always retry on unknown field: parameter index is not
-    a valid field or Set extra-parameters to ''pass-through''. Otherwise use B505 superclass retry policy; max local
-    retries=2.'
+    a valid field or Set extra-parameters to ''pass-through''. Otherwise use the superclass retry policy B9988 ports
+    for OpenAi; max local retries=2.'
   proof:
   - case-repair-trigger-literals
   - oracle
@@ -191,7 +191,7 @@ checks:
   - id: case-repair-trigger-literals
     why: 'Retry when error text contains Extra inputs are not permitted and either truthy per-call/global drop_params
       or tools[digits]. appears; always retry on unknown field: parameter index is not a valid field or Set extra-parameters
-      to ''pass-through''. Otherwise use B505 superclass retry policy; max local retries=2.'
+      to ''pass-through''. Otherwise use the superclass retry policy B9988 ports for OpenAi; max local retries=2.'
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::rejected_fields_cases::case_[0-9]+_repair_trigger_literals$/)'
 oracle_cases:
 - tools/oracle/cases/helpers/providers/foundry-rejected-fields/drop-top-level-loc.yaml

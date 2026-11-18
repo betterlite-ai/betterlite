@@ -59,6 +59,7 @@ zeroize = "1.9.1"
 [dev-dependencies]
 mutants = "0.0.4"
 rstest = "=0.27.0"
+serde-saphyr = "2.0.0"
 tokio = { workspace = true, features = ["io-util", "net", "test-util"] }
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing-subscriber.workspace = true
