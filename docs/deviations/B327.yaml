@@ -21,4 +21,13 @@ deviations:
   - what: A document embedding vector that holds a non-finite value or has zero norm fails the index build and reaches the caller, where LiteLLM scores every query against it as NaN and falls back to the default model.
     why: A NaN score cannot be ordered deterministically, and an embedding the provider could not compute is a provider fault rather than a routing miss, so betterlite surfaces the build error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/litellm_encoder.py#L16-L24
+  - what: The cosine dot product is a sequential fused multiply-add, which bit-matches the pinned NumPy for the short vectors the oracle fixes but can differ in the last bit on longer ones, where NumPy's np.dot goes through a CPU-specific BLAS kernel.
+    why: The threshold boundary is decided by the norm reductions, which this does match exactly; a portable Rust build cannot reproduce an oracle machine's BLAS kernel, and a mean within one ulp of a threshold is not a stable selection on any build.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/auto_router/auto_router.py#L230-L244
+  - what: 'Two routes whose composed sync strings collide, such as route "a" with utterance "b: c" and route "a: b" with utterance "c", both keep a row, where LiteLLM''s sync map keys utterances by that string and keeps the last of the two.'
+    why: Collapsing them would need the whole composed string per row, the allocation that sharing the route name and deduplicating before row expansion just removed, and only a config that reads one route's name and text across the separator can produce the collision.
+    link: ''
+  - what: Each embedding call is bounded at 6000 seconds, the pinned default of litellm.request_timeout, and neither a configured request timeout nor the REQUEST_TIMEOUT environment variable changes it, where LiteLLM's embedding call reads its deadline from that global setting.
+    why: The auto router's build and query calls need a finite deadline; the router's request timeout setting is wired by its own task, so this bound stays at the pinned default until it lands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L568
 kept_bugs: []
