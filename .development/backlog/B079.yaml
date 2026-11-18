@@ -2,7 +2,7 @@ id: B079
 milestone: M6 guardrails
 title: Policy engine, policy templates and policy API
 status: todo
-depends_on: [B9320, B9321, B8669, B8803, B9750, B5076]
+depends_on: [B9320, B9321, B8669, B8803, B9750, B9942]
 file: tasks/B079-policy-composition-http.yaml
 covers:
   - "litellm/proxy/policy_engine/architecture.md"

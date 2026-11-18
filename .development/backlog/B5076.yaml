@@ -2,7 +2,7 @@ id: B5076
 milestone: M4 keys, spend and management
 title: Postgres-backed booted gateway cases
 status: todo
-depends_on: [B860, B052, B056]
+depends_on: [B860, B9942, B052, B056]
 file: tasks/B5076-postgres-booted-cases.yaml
 covers: []
 parent: null

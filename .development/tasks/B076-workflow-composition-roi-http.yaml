@@ -47,7 +47,7 @@ description: >-
 
   All new oracle files are kind: http and drive the real binary against the pinned open-source
   proxy. Use B1630's steps and per-proxy captures for generated run IDs, with path substitution
-  {{capture:run_id:query}}. B5076 supplies the generated Prisma client for booting LiteLLM
+  {{capture:run_id:query}}. B9942 supplies the generated Prisma client for booting LiteLLM
   against B860's independent databases. Seed only the users and keys the existing fixture
   supports; create workflow and ROI records through HTTP. Config uses
   general_settings.master_key: oracle-master. Database cases use database: {seed: ...};
@@ -221,7 +221,7 @@ out_of_scope:
   - >-
     Auth route admission and admin-viewer policy: B742 and B883. The POST /key/update setup
     request is B775's existing route. Fixture databases, Prisma bootstrap and transcript
-    capture/decoding are B860, B5076 and B1630; their shared schemas and registries are unchanged.
+    capture/decoding are B860, B9942 and B1630; their shared schemas and registries are unchanged.
 pitfalls:
   - An internal_user key without allowed_routes ["/v1/workflows/*"] tests the generic route-policy 403, not workflow ownership.
   - Full proxy admins bypass _require_run ownership, and proxy_admin_viewer reads bypass get_workflow_run ownership; do not reproduce the earlier summaries' contrary claims.

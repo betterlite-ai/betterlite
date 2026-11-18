@@ -53,6 +53,24 @@ fn the_loaded_config_installs_its_rules() {
 }
 
 #[test]
+fn the_loaded_config_serves_the_least_busy_counters() {
+    let state = RoutingState::new(&config("model_list: []\n"));
+    let service = state.least_busy().unwrap();
+    assert!(service.shared.is_none());
+}
+
+#[test]
+fn a_reload_rebuilds_the_least_busy_counters_from_the_new_config() {
+    let mut state = RoutingState::new(&config("model_list: []\n"));
+    state
+        .reload(&config(
+            "router_settings:\n  redis_host: 127.0.0.1\n  redis_port: 6399\n",
+        ))
+        .unwrap();
+    assert!(state.least_busy().unwrap().shared.is_some());
+}
+
+#[test]
 fn a_reload_replaces_the_rules_the_server_serves() {
     let mut state = RoutingState::new(&config(ACME));
     state.reload(&config(BETA)).unwrap();
