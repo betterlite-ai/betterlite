@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{LinkedKeys, TeamMembershipRow};
+use super::super::linked_rows::{LinkedKeys as _, TeamMembershipRow};
 
 fn row() -> TeamMembershipRow {
     TeamMembershipRow {

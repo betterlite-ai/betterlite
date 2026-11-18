@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{LinkedKeys, TagRow};
+use super::super::linked_rows::{LinkedKeys as _, TagRow};
 
 fn row() -> TagRow {
     TagRow {

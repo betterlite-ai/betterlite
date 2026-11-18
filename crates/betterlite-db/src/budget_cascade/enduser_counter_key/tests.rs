@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{EndUserRow, LinkedKeys};
+use super::super::linked_rows::{EndUserRow, LinkedKeys as _};
 
 fn row() -> EndUserRow {
     EndUserRow {

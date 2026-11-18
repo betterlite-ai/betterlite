@@ -1,4 +1,4 @@
-use secrecy::ExposeSecret;
+use secrecy::ExposeSecret as _;
 
 use super::linked_rows::{KeyRow, LinkedKeys};
 

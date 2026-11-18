@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{LinkedKeys, OrganizationRow};
+use super::super::linked_rows::{LinkedKeys as _, OrganizationRow};
 
 fn row() -> OrganizationRow {
     OrganizationRow {

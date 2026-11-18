@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{LinkedKeys, ModelAccessGroupRow};
+use super::super::linked_rows::{LinkedKeys as _, ModelAccessGroupRow};
 
 fn row() -> ModelAccessGroupRow {
     ModelAccessGroupRow {

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{KeyRow, LinkedKeys};
+use super::super::linked_rows::{KeyRow, LinkedKeys as _};
 use crate::key_hash::KeyHash;
 
 fn row() -> KeyRow {

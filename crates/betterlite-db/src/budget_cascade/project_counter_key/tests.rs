@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::super::linked_rows::{LinkedKeys, ProjectRow};
+use super::super::linked_rows::{LinkedKeys as _, ProjectRow};
 
 fn row() -> ProjectRow {
     ProjectRow {
