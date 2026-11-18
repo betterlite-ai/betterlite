@@ -6,7 +6,7 @@ description: >-
   records, repositories, routes and analysis, and B8682 mounts the administration and worker
   routers with their production ports. Do not register routes or rebuild those functions.
   B9030 supplies the missing Lens fixture tables and administration flows; use those fixtures
-  with B1630's multi-step kind: http cases and B5076's database-capable LiteLLM process.
+  with B1630's multi-step kind: http cases and B9942's database-capable LiteLLM process.
   The only production paths left exclusively claimed by this umbrella are deploy/lens/README.md
   and an empty __init__.py, which requires no Rust counterpart. No unowned executable Python
   logic remains in those paths. Keep this final part to the guide and three focused HTTP flows;
@@ -188,7 +188,7 @@ out_of_scope:
   - B8232 owns failure_message, LensWorker.__init__, model_request, run_once and its model/read/progress/heartbeat callbacks, main and __main__ startup, plus Dockerfile, Dockerfile.dockerignore and both Compose files.
   - B4500 owns models/state; B4501 repository; B4502 sources; B4503/B4505 endpoints including every nested transform; B4504 billing/inference; B4506 analysis primitives and trace_store; B4507 extraction; B4508 investigation; B4509 coordination.
   - B8682 owns Lens production adapters and both mounts as well as its 26 no-database HTTP cases; B8610 owns the composition root, and the MCP area mounts do not participate in Lens.
-  - B9030 owns the supplemental fixture schema and administration HTTP flows; B860, B1630 and B5076 own database provisioning, captures and database-capable process boot.
+  - B9030 owns the supplemental fixture schema and administration HTTP flows; B860, B1630 and B9942 own database provisioning, captures and database-capable process boot.
   - Concrete ClickHouse lens_availability/lens_agents/lens_sample/lens_content/lens_evidence queries remain unassigned outside this umbrella's claimed files; B3867 owns provide_storage, B110/B8911 own receiver integration/lifetime, and B8682 retains the explicit unavailable Lens-store behavior until a backend owner is assigned.
   - Successful source sampling, content pagination and quote-verification HTTP cases need that real ClickHouse backend; B4502/B4505 retain their native tests, and these new cases do not present an in-memory substitute as production success.
   - B147 owns the Lens dashboard pages, B709 owns database migrations and B8232 leaves publication to the release workflow; this guide neither implements a UI nor publishes an image.
