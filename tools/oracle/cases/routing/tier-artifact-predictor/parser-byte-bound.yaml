@@ -1,0 +1,36 @@
+kind: probe
+name: parser-byte-bound
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: parse_artifact
+        artifact_bytes:
+          kind: padded
+          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":1,"observations":2},{"tier":3,"successes":1,"observations":2},{"tier":4,"successes":1,"observations":2}]}'
+          pad: ' '
+          pad_len: 1048386
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: parse_artifact
+        artifact_bytes:
+          kind: padded
+          content: '{"global_statistics":[{"tier":1,"successes":1,"observations":2},{"tier":2,"successes":1,"observations":2},{"tier":3,"successes":1,"observations":2},{"tier":4,"successes":1,"observations":2}]}'
+          pad: ' '
+          pad_len: 1249809
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/tier_artifact_predictor/status
+      reference: accepted
+      rust: rejected
+      why: betterlite refuses artifact bytes past 1048576 before decoding, a bound LiteLLM's json parser has no equivalent for
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L82-L89
+    - pointer: /output/tier_artifact_predictor/threshold
+      reference: '0.750000'
+      rust: null
+      why: the reference reads the over-limit artifact and reports its default routing threshold, while betterlite rejects the bytes and reports no threshold
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/tier_predictor.py#L82-L89

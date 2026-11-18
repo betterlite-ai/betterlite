@@ -1,0 +1,48 @@
+kind: probe
+name: artifact-global-domain-cohort
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 8, observations: 10}
+            - {tier: 2, successes: 5, observations: 10}
+            - {tier: 3, successes: 3, observations: 10}
+            - {tier: 4, successes: 1, observations: 10}
+          domain_statistics:
+            - {tier: 1, successes: 2, observations: 4, request_type: general}
+            - {tier: 2, successes: 1, observations: 4, request_type: general}
+          cohort_statistics:
+            - {tier: 1, successes: 0, observations: 2, cohort: 'general|short|code=0|math=0|mc=0|intl=0'}
+            - {tier: 2, successes: 2, observations: 2, cohort: 'general|short|code=0|math=0|mc=0|intl=0'}
+          domain_prior_mass: 4
+          cohort_prior_mass: 2
+          routing_threshold: 0.6
+        prompt: 'Hello.'
+        request_type: general
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 8, observations: 10}
+            - {tier: 2, successes: 5, observations: 10}
+            - {tier: 3, successes: 3, observations: 10}
+            - {tier: 4, successes: 1, observations: 10}
+          domain_statistics:
+            - {tier: 1, successes: 2, observations: 4, request_type: general}
+            - {tier: 2, successes: 1, observations: 4, request_type: general}
+          cohort_statistics:
+            - {tier: 1, successes: 0, observations: 2, cohort: 'general|short|code=0|math=0|mc=0|intl=0'}
+            - {tier: 2, successes: 2, observations: 2, cohort: 'general|short|code=0|math=0|mc=0|intl=0'}
+          domain_prior_mass: 4
+          cohort_prior_mass: 2
+          routing_threshold: 0.6
+        prompt: 'Hello.'
+        request_type: code_generation
+compare: {ignore: []}
