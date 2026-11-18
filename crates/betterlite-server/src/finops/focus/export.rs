@@ -20,6 +20,8 @@ mod constructor_defaults;
 mod constructor_overrides;
 #[path = "export/tests/cron_offset_error.rs"]
 mod cron_offset_error;
+#[path = "export/tests/engine_adapter.rs"]
+mod engine_adapter;
 #[path = "export/tests/export_usage_data_bounds.rs"]
 mod export_usage_data_bounds;
 #[path = "export/tests/export_usage_data_routing.rs"]

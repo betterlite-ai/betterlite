@@ -16,6 +16,8 @@ mod exact_type_match;
 mod pod_lock_acquire;
 #[path = "export_schedule/tests/pod_lock_acquire_fail.rs"]
 mod pod_lock_acquire_fail;
+#[path = "export_schedule/tests/pod_lock_manager_adapter.rs"]
+mod pod_lock_manager_adapter;
 #[path = "export_schedule/tests/pod_lock_release.rs"]
 mod pod_lock_release;
 #[path = "export_schedule/tests/pod_lock_unavailable.rs"]
