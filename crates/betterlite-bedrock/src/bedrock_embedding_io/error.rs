@@ -24,6 +24,8 @@ pub enum EmbeddingIoError {
         #[source]
         source: JoinError,
     },
+    #[error("the managed region secret lookup worker ended without a result")]
+    RegionWorkerClosed,
     #[error(transparent)]
     Secret(#[from] SecretLookupError),
     #[error(transparent)]

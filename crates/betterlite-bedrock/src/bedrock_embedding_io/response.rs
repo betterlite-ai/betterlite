@@ -1,17 +1,19 @@
-use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
+use betterlite_openai::embedding::EmbeddingRecord;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Serialize;
-use serde_json::Number;
 
 use super::convert::{encode_json, parse_list, parse_one};
 use super::error::EmbeddingIoError;
+use super::response_projection::{
+    ProviderResponse, provider_embedding_reply, titan_embedding_reply,
+};
 use crate::aws_endpoints::provider::BedrockEmbeddingProvider;
-use crate::image_models::params::{Field, Params};
+use crate::image_models::params::Params;
 use crate::marengo_embeddings::response::{
     self as marengo, MarengoBilledRequest, MarengoEmbeddingResponse, MarengoInvokeResponse,
 };
-use crate::nova_embeddings::response::{self as nova, NovaEmbeddingResponse};
-use crate::titan_embeddings::response::{self as titan, TitanEmbeddingResponse};
+use crate::nova_embeddings::response as nova;
+use crate::titan_embeddings::response as titan;
 use crate::titan_embeddings::{multimodal, v2};
 
 const TITAN_MULTIMODAL_MODEL: &str = "amazon.titan-embed-image-v1";
@@ -136,206 +138,4 @@ fn regular_reply(
             })
         }
     }
-}
-
-fn titan_embedding_reply(response: TitanEmbeddingResponse) -> EmbeddingReply {
-    let details = response
-        .usage
-        .prompt_tokens_details
-        .map(|counts| PromptTokenCounts {
-            image_count: Some(u64::from(counts.image_count)),
-            query_count: None,
-        });
-    finish_reply(
-        response.object,
-        response.model,
-        response.data,
-        EmbeddingUsage {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: response.usage.completion_tokens,
-            total_tokens: response.usage.total_tokens,
-            prompt_tokens_details: details,
-        },
-        Json::Null,
-    )
-}
-
-enum ProviderResponse {
-    Nova(NovaEmbeddingResponse),
-    Marengo(MarengoEmbeddingResponse),
-}
-
-struct ProviderUsage {
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    total_tokens: u64,
-    prompt_tokens_details: Option<PromptTokenCounts>,
-}
-
-fn provider_embedding_reply(
-    provider_response: ProviderResponse,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
-    match provider_response {
-        ProviderResponse::Nova(response) => {
-            let records = response
-                .data
-                .into_iter()
-                .enumerate()
-                .map(|(position, record)| {
-                    let index = u32::try_from(position)
-                        .map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-                    Ok((index, embedding_vector(&record.embedding)?))
-                });
-            provider_reply(
-                response.model,
-                records,
-                nova_usage(response.usage),
-                response.invocation_arn.as_ref(),
-            )
-        }
-        ProviderResponse::Marengo(response) => {
-            let records = response.data.into_iter().map(marengo_record);
-            provider_reply(
-                response.model,
-                records,
-                marengo_usage(response.usage),
-                response.invocation_arn.as_ref(),
-            )
-        }
-    }
-}
-
-fn marengo_record(
-    record: marengo::EmbeddingRecord,
-) -> Result<(u32, EmbeddingVector), EmbeddingIoError> {
-    let index = u32::try_from(record.index).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-    let numbers = record
-        .embedding
-        .into_iter()
-        .map(|value| Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable))
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok((index, EmbeddingVector::Floats(numbers)))
-}
-
-fn nova_usage(usage: nova::NovaUsage) -> ProviderUsage {
-    let details = usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
-        image_count: Some(u64::from(counts.image_count)),
-        query_count: None,
-    });
-    provider_usage(usage.prompt_tokens, 0, usage.total_tokens, details)
-}
-
-fn marengo_usage(usage: marengo::MarengoUsage) -> ProviderUsage {
-    let details = usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
-        image_count: counts.image_count,
-        query_count: counts.query_count,
-    });
-    provider_usage(
-        usage.prompt_tokens,
-        usage.completion_tokens,
-        usage.total_tokens,
-        details,
-    )
-}
-
-fn provider_usage(
-    prompt_tokens: u64,
-    completion_tokens: u64,
-    total_tokens: u64,
-    prompt_tokens_details: Option<PromptTokenCounts>,
-) -> ProviderUsage {
-    ProviderUsage {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens,
-        prompt_tokens_details,
-    }
-}
-
-fn embedding_records<I>(records: I) -> Result<Vec<EmbeddingRecord>, EmbeddingIoError>
-where
-    I: IntoIterator<Item = Result<(u32, EmbeddingVector), EmbeddingIoError>>,
-{
-    records
-        .into_iter()
-        .map(|record| {
-            let (index, embedding) = record?;
-            Ok(EmbeddingRecord {
-                object: EMBEDDING_OBJECT.to_owned(),
-                embedding,
-                index,
-            })
-        })
-        .collect()
-}
-
-fn provider_reply<I>(
-    model: String,
-    records: I,
-    usage: ProviderUsage,
-    invocation_arn: Option<&Field>,
-) -> Result<EmbeddingReply, EmbeddingIoError>
-where
-    I: IntoIterator<Item = Result<(u32, EmbeddingVector), EmbeddingIoError>>,
-{
-    let arn = match invocation_arn {
-        Some(field) => encode_json(field)?,
-        None => Json::Null,
-    };
-    Ok(finish_reply(
-        RESPONSE_OBJECT,
-        model,
-        embedding_records(records)?,
-        EmbeddingUsage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-            prompt_tokens_details: usage.prompt_tokens_details,
-        },
-        arn,
-    ))
-}
-
-fn finish_reply(
-    object: &'static str,
-    model: String,
-    data: Vec<EmbeddingRecord>,
-    usage: EmbeddingUsage,
-    invocation_arn: Json,
-) -> EmbeddingReply {
-    EmbeddingReply {
-        object,
-        data,
-        model,
-        usage,
-        invocation_arn,
-    }
-}
-
-// Nova declares embedding as list | str, and the shared record carries only those two shapes
-fn embedding_vector(field: &Field) -> Result<EmbeddingVector, EmbeddingIoError> {
-    match field {
-        Field::Text(encoded) => Ok(EmbeddingVector::Base64(encoded.clone())),
-        Field::List(items) => Ok(EmbeddingVector::Floats(number_vector(items)?)),
-        Field::Null | Field::Bool(_) | Field::Int(_) | Field::Float(_) | Field::Mapping(_) => {
-            Err(EmbeddingIoError::MalformedEmbedding)
-        }
-    }
-}
-
-fn number_vector(items: &[Field]) -> Result<Vec<Number>, EmbeddingIoError> {
-    let mut numbers = Vec::with_capacity(items.len());
-    for item in items {
-        let number = match item {
-            Field::Int(value) => Number::from(*value),
-            Field::Float(value) => {
-                Number::from_f64(*value).ok_or(EmbeddingIoError::Unrepresentable)?
-            }
-            Field::Null | Field::Bool(_) | Field::Text(_) | Field::List(_) | Field::Mapping(_) => {
-                return Err(EmbeddingIoError::NotANumber);
-            }
-        };
-        numbers.push(number);
-    }
-    Ok(numbers)
 }

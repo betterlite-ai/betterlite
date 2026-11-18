@@ -10,6 +10,7 @@ use betterlite_secret_managers::secret_read_dispatch::SecretManagerClient;
 use betterlite_secret_managers::secret_read_dispatch::settings::SecretManagerSettings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
+use tokio::task::JoinSet;
 
 use super::error::EmbeddingIoError;
 use crate::aws_endpoints::region::DEFAULT_AWS_REGION;
@@ -80,10 +81,14 @@ async fn environment_region(
 ) -> Result<String, EmbeddingIoError> {
     // Secret manager reads use synchronous HTTP clients; own their inputs and await outside Tokio.
     let (name, standard) = if secrets.manager.is_some() {
-        let environment = environment.clone();
-        let secrets = owned_secret_lookup(secrets);
-        tokio::task::spawn_blocking(move || region_secrets(&environment, &secrets))
+        let lookup_environment = environment.clone();
+        let lookup_secrets = owned_secret_lookup(secrets);
+        let mut workers = JoinSet::new();
+        workers.spawn_blocking(move || region_secrets(&lookup_environment, &lookup_secrets));
+        workers
+            .join_next()
             .await
+            .ok_or(EmbeddingIoError::RegionWorkerClosed)?
             .map_err(|source| EmbeddingIoError::RegionWorker { source })??
     } else {
         region_secrets(environment, secrets)?
