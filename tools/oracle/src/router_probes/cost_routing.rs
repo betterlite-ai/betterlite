@@ -249,14 +249,18 @@ fn build_deployment(group: &str, input: &DeploymentInput) -> Result<DeploymentSp
 }
 
 fn insert(map: &mut JsonObject, field: &str, value: Option<&Json>) {
-    if let Some(value) = value {
-        map.insert(field.to_owned(), value.clone());
+    if let Some(found) = value {
+        map.insert(field.to_owned(), found.clone());
     }
 }
 
 fn io_clock(clock: &Arc<AtomicU64>) -> IoClock {
     let source = Arc::clone(clock);
-    let read = move || UNIX_EPOCH + Duration::from_millis(source.load(Ordering::SeqCst));
+    let read = move || {
+        UNIX_EPOCH
+            .checked_add(Duration::from_millis(source.load(Ordering::SeqCst)))
+            .unwrap_or(UNIX_EPOCH)
+    };
     Arc::new(read)
 }
 

@@ -99,7 +99,9 @@ async fn select(
 }
 
 fn state(index: usize, context: &Context<'_>) -> Observation {
-    let now = UNIX_EPOCH + Duration::from_millis(context.clock.load(Ordering::SeqCst));
+    let now = UNIX_EPOCH
+        .checked_add(Duration::from_millis(context.clock.load(Ordering::SeqCst)))
+        .unwrap_or(UNIX_EPOCH);
     let minute = minute_label(now);
     let entries = context
         .router

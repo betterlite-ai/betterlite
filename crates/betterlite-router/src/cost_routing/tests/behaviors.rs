@@ -93,7 +93,7 @@ async fn cost_routing_behaviors(#[case] behavior: Behavior) {
         Behavior::ScreensByCapacity => screens_by_capacity(),
         Behavior::AppendsUnseenDeployments => appends_unseen_deployments().await,
         Behavior::KeepsDeploymentsGoneFromThePool => keeps_deployments_gone_from_the_pool().await,
-        Behavior::UnstoredGroupKeepsNothing => unstored_group_keeps_nothing().await,
+        Behavior::UnstoredGroupKeepsNothing => unstored_group_keeps_nothing(),
         Behavior::StoredOrderBeatsPoolOrder => stored_order_beats_pool_order().await,
         Behavior::RealCountersFeedSelection => real_counters_feed_selection().await,
         Behavior::SelectsNothingWhenEveryDeploymentIsFull => selects_nothing_when_full(),
@@ -499,7 +499,7 @@ async fn keeps_deployments_gone_from_the_pool() {
 }
 
 // The pinned map is stored by the first success, not by a selection: a fresh group's selection appends nothing.
-async fn unstored_group_keeps_nothing() {
+fn unstored_group_keeps_nothing() {
     let (router, _clock) = router_at(MINUTE_MILLIS);
     let pool = [
         priced("b", MODEL, "0.1", "0.1"),

@@ -2,6 +2,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
+use tokio::time::timeout;
 
 use super::support::{
     FakeWindows, GROUP, MINUTE, MINUTE_MILLIS, MODEL, NEXT_MINUTE, ProbeCosts, TestClock,
@@ -447,7 +448,7 @@ fn bool_limit_is_refused() {
 async fn record_is_cancelled_at_the_await() {
     let clock = TestClock::new(MINUTE_MILLIS);
     let router = CostRouter::new(super::support::PendingWindows, clock.io_clock());
-    let stopped = tokio::time::timeout(
+    let stopped = timeout(
         Duration::from_millis(10),
         router.record_success(&success("a", 1)),
     )
@@ -458,7 +459,10 @@ async fn record_is_cancelled_at_the_await() {
 
 // cost_map:{group}:{id}:{minute}:tpm is 1024 bytes at the pair length below; the requests key is the same size
 fn long_id_pair(total: usize) -> (String, String) {
-    (format!("g{}", "x".repeat(total - 4)), "i".repeat(3))
+    (
+        format!("g{}", "x".repeat(total.saturating_sub(4))),
+        "i".repeat(3),
+    )
 }
 
 fn long_event<'event>(group: &'event str, id: &'event str) -> SuccessEvent<'event> {
@@ -472,15 +476,17 @@ fn long_event<'event>(group: &'event str, id: &'event str) -> SuccessEvent<'even
 
 async fn key_at_limit() {
     let (group, id) = long_id_pair(993);
-    let router = router_at(MINUTE_MILLIS);
+    let clock = TestClock::new(MINUTE_MILLIS);
+    let (router, _values) = real_router(&clock);
     router.record_success(&long_event(&group, &id)).await;
     assert_eq!(router.entries(&group, MINUTE), vec![entry(&id, 5, 1)]);
 }
 
 async fn key_over_limit_falls_back_to_zero() {
     let (group, id) = long_id_pair(994);
-    let router = router_at(MINUTE_MILLIS);
-    // the write is dropped with a warning, and the deployment remains selectable with no usage
+    let clock = TestClock::new(MINUTE_MILLIS);
+    let (router, _values) = real_router(&clock);
+    // the value store refuses the 1025-byte key, and the deployment remains selectable with no usage
     router.record_success(&long_event(&group, &id)).await;
     assert_eq!(router.entries(&group, MINUTE), vec![entry(&id, 0, 0)]);
 }

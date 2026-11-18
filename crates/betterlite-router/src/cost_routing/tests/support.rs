@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::str::FromStr as _;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -11,7 +12,6 @@ use rust_decimal::Decimal;
 use serde_json::Number;
 
 use crate::cost_routing::costs::{Catalog, ModelCosts};
-use crate::cost_routing::keys::window_keys;
 use crate::cost_routing::selection::Selection;
 use crate::cost_routing::service::{CostRouter, Entry};
 use crate::cost_routing::window::{CostWindows, WindowCounters, WindowUsage};
@@ -21,7 +21,7 @@ use crate::routing_state::Settings;
 use crate::routing_state::counter::RouterCounters;
 use crate::routing_state::delta::{Delta, DeltaStore};
 use crate::routing_state::error::RoutingStateError;
-use crate::routing_value_store::{Clock, RouteKey, RouteValue, RoutingValueStore, StoreSettings};
+use crate::routing_value_store::{Clock, RoutingValueStore, StoreSettings};
 
 pub(super) const GROUP: &str = "probe-group";
 pub(super) const MODEL: &str = "openai/probe";
@@ -49,10 +49,6 @@ impl ModelCosts for ProbeCosts {
     fn entry(&self, model: &str) -> Option<Catalog<'_>> {
         self.entries.get(model).map(Catalog::plain)
     }
-}
-
-pub(super) fn dec(value: &str) -> Decimal {
-    value.parse().unwrap()
 }
 
 pub(super) fn number(value: &str) -> Json {
@@ -110,10 +106,7 @@ pub(super) fn usage(tokens: i64, requests: i64) -> WindowUsage {
 }
 
 // The selection a route over GROUP asks the cost map for.
-pub(super) fn selection<'request>(
-    deployments: &'request [DeploymentSpec],
-    input_tokens: i64,
-) -> Selection<'request> {
+pub(super) fn selection(deployments: &[DeploymentSpec], input_tokens: i64) -> Selection<'_> {
     Selection {
         group: GROUP,
         deployments,
@@ -168,6 +161,7 @@ impl CostWindows for FakeWindows {
             .or_insert(WindowUsage::ZERO);
         entry.tokens = entry.tokens.saturating_add(tokens);
         entry.requests = entry.requests.saturating_add(1);
+        drop(windows);
     }
 }
 
@@ -182,7 +176,7 @@ impl CostWindows for PendingWindows {
     }
 
     async fn record(&self, _model_group: &str, _deployment_id: &str, _minute: &str, _tokens: i64) {
-        std::future::pending::<()>().await;
+        pending::<()>().await;
     }
 }
 
@@ -199,7 +193,11 @@ impl TestClock {
 
     pub(super) fn io_clock(&self) -> IoClock {
         let source = Arc::clone(&self.0);
-        Arc::new(move || UNIX_EPOCH + Duration::from_millis(source.load(Ordering::SeqCst)))
+        Arc::new(move || {
+            UNIX_EPOCH
+                .checked_add(Duration::from_millis(source.load(Ordering::SeqCst)))
+                .unwrap()
+        })
     }
 
     pub(super) fn value_clock(&self) -> Clock {
@@ -209,7 +207,9 @@ impl TestClock {
 }
 
 pub(super) fn now(millis: u64) -> SystemTime {
-    UNIX_EPOCH + Duration::from_millis(millis)
+    UNIX_EPOCH
+        .checked_add(Duration::from_millis(millis))
+        .unwrap()
 }
 
 pub(super) struct NoDelta;
@@ -259,25 +259,4 @@ pub(super) fn real_router(
         ),
         values,
     )
-}
-
-// Seed the pair of counters a success observation would have written.
-pub(super) fn seed_window(
-    values: &RoutingValueStore,
-    group: &str,
-    id: &str,
-    minute: &str,
-    tokens: i64,
-    requests: i64,
-) {
-    let keys = window_keys(group, id, minute);
-    for (key, value) in [(&keys.tokens, tokens), (&keys.requests, requests)] {
-        values
-            .set(
-                &RouteKey::parse(key).unwrap(),
-                &RouteValue::Spend(Decimal::from(value)),
-                None,
-            )
-            .unwrap();
-    }
 }
