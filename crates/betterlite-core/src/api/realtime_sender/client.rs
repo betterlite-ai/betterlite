@@ -39,11 +39,11 @@ where
 
     // LiteLLM normalizes a provider event, translates it for a beta client, and falls back to the untranslated frame
     #[must_use]
-    pub fn send_event_to_client(
-        &mut self,
-        event: &Json,
-        event_str: &str,
-    ) -> SenderFuture<'_, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
+    pub fn send_event_to_client<'call>(
+        &'call mut self,
+        event: &'call Json,
+        event_str: &'call str,
+    ) -> SenderFuture<'call, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
         Box::pin(async move {
             if self.should_drop_event_from_client(event) {
                 return Ok(false);

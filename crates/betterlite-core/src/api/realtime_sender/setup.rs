@@ -45,13 +45,13 @@ where
         &mut self,
     ) -> SenderFuture<'_, Result<(), RealtimeSenderError<Config::Error, CallbackError>>> {
         Box::pin(async move {
-            if !self.state.setup.turn_detection_update_sent.0 && self.transcription_guardrails()? {
-                let message =
-                    disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
-                        .map_err(|source| RealtimeSenderError::Disable { source })?;
-                if self.send_to_backend(&message).await? {
-                    self.state.setup.turn_detection_update_sent.0 = true;
-                }
+            if self.state.setup.turn_detection_update_sent.0 || !self.transcription_guardrails()? {
+                return Ok(());
+            }
+            let message = disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
+                .map_err(|source| RealtimeSenderError::Disable { source })?;
+            if self.send_to_backend(&message).await? {
+                self.state.setup.turn_detection_update_sent.0 = true;
             }
             Ok(())
         })

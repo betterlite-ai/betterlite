@@ -20,10 +20,10 @@ where
 {
     // LiteLLM enforces the authorized model, transforms through the provider, and records state only after a frame is sent
     #[must_use]
-    pub fn send_to_backend(
-        &mut self,
-        message: &str,
-    ) -> SenderFuture<'_, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
+    pub fn send_to_backend<'call>(
+        &'call mut self,
+        message: &'call str,
+    ) -> SenderFuture<'call, Result<bool, RealtimeSenderError<Config::Error, CallbackError>>> {
         Box::pin(async move {
             let enforced = self.enforce_session_model(message)?;
             let Some(provider) = self.provider else {
@@ -33,24 +33,29 @@ where
             let transformed = self.transform(provider, &enforced)?;
             let mut sent = false;
             for frame in transformed {
-                let delivered = match frame {
-                    RealtimeMessage::Binary(payload) => {
-                        provider.pace_backend_send(&payload).await;
-                        self.send_frame(RealtimeMessage::Binary(payload)).await?;
-                        self.state.setup.content_sent_after_setup.0 = true;
-                        true
-                    }
-                    RealtimeMessage::Text(text) => {
-                        let kind = classify_text(provider, &text);
-                        self.deliver_text(text, kind).await?
-                    }
-                };
-                if delivered {
-                    sent = true;
-                }
+                sent |= self.deliver_frame(provider, frame).await?;
             }
             Ok(sent)
         })
+    }
+
+    async fn deliver_frame(
+        &mut self,
+        provider: &Config,
+        frame: RealtimeMessage,
+    ) -> Result<bool, RealtimeSenderError<Config::Error, CallbackError>> {
+        match frame {
+            RealtimeMessage::Binary(payload) => {
+                provider.pace_backend_send(&payload).await;
+                self.send_frame(RealtimeMessage::Binary(payload)).await?;
+                self.state.setup.content_sent_after_setup.0 = true;
+                Ok(true)
+            }
+            RealtimeMessage::Text(text) => {
+                let kind = classify_text(provider, &text);
+                self.deliver_text(text, kind).await
+            }
+        }
     }
 
     fn transform(
