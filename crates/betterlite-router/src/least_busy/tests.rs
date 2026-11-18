@@ -723,6 +723,19 @@ async fn pre_call_over_limit() {
     assert_eq!(service.local_count_values(&[]).unwrap(), Vec::<i64>::new());
 }
 
+async fn guard_debug() {
+    let service = service(local_store(&TestClock::default()), None);
+    let started = service
+        .pre_call(&facts(Some(GROUP), Some("a"), None))
+        .await
+        .unwrap();
+    let call = started.call.unwrap();
+    let rendered = format!("{call:?}");
+    assert!(rendered.contains("InFlightCall"), "{rendered}");
+    assert!(rendered.contains("gpt_request_count:a"), "{rendered}");
+    assert!(rendered.contains("released: false"), "{rendered}");
+}
+
 async fn boundary(name: &str) -> bool {
     match name {
         "key_lengths" => key_lengths(),
@@ -733,6 +746,7 @@ async fn boundary(name: &str) -> bool {
         "shared_missing_is_zero" => shared_missing_is_zero().await,
         "cancel_drop" => cancel_drop().await,
         "pre_call_over_limit" => pre_call_over_limit().await,
+        "guard_debug" => guard_debug().await,
         _ => return false,
     }
     true
@@ -771,6 +785,7 @@ fn least_busy_behaviors(#[case] name: &str) {
 #[case::shared_missing_is_zero("shared_missing_is_zero")]
 #[case::cancel_drop("cancel_drop")]
 #[case::pre_call_over_limit("pre_call_over_limit")]
+#[case::guard_debug("guard_debug")]
 fn least_busy_boundaries(#[case] name: &str) {
     assert!(runtime().block_on(boundary(name)), "unknown case {name}");
 }
