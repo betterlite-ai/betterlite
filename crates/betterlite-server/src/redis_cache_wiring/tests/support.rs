@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
 use std::io;
@@ -73,12 +73,10 @@ pub(crate) fn settings(failure_threshold: u32) -> Settings {
 }
 
 pub(crate) fn gate_with(settings: Settings, clock: &Arc<FakeClock>) -> PolicyGate {
-    PolicyGate {
-        policy: Mutex::new(RedisFailurePolicy::new(settings, BreakerMetrics::new(None))),
-        next_call: AtomicU64::new(0),
-        swallowed_calls: Mutex::new(BTreeSet::new()),
-        clock: clock.handle(),
-    }
+    PolicyGate::new(
+        RedisFailurePolicy::new(settings, BreakerMetrics::new(None)),
+        clock.handle(),
+    )
 }
 
 pub(crate) fn status(gate: &PolicyGate) -> Status {

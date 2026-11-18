@@ -5,7 +5,9 @@ use std::sync::Arc;
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
 use betterlite_router::redis_failure_policy::State;
 
-use super::support::{FakeClock, connection_error, gate_with, settings, status, timeout_error};
+use super::support::{
+    FakeClock, command_error, connection_error, gate_with, settings, status, timeout_error,
+};
 
 #[test]
 fn enter_admits_while_the_breaker_is_closed() {
@@ -32,7 +34,7 @@ fn enter_returns_the_method_name_when_the_breaker_is_open() {
 }
 
 #[test]
-fn enter_admits_one_probe_after_the_recovery_timeout() {
+fn enter_admits_a_probe_after_the_recovery_timeout() {
     let clock = Arc::new(FakeClock::new());
     let gate = gate_with(settings(1), &clock);
     let error = connection_error();
@@ -50,12 +52,59 @@ fn enter_admits_one_probe_after_the_recovery_timeout() {
     let probe = gate
         .enter("async_get_cache")
         .expect("the probe is admitted once the timeout passes");
-    assert!(
-        gate.enter("async_get_cache").is_err(),
-        "a second call fast-fails while the probe runs"
-    );
+    assert_eq!(status(&gate).state, State::HalfOpen);
     gate.exit(probe);
     assert_eq!(status(&gate).state, State::Closed);
+}
+
+#[test]
+fn a_non_health_probe_error_frees_the_slot() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(1), &clock);
+    gate.record_failure(&connection_error());
+    clock.advance(10_001);
+    let _probe = gate
+        .enter("async_get_cache")
+        .expect("the designated probe is admitted");
+    gate.record_failure(&command_error());
+    let now = (gate.clock)();
+    gate.policy
+        .lock()
+        .expect("the policy lock is not poisoned")
+        .admit(now, "async_get_cache")
+        .expect("the non-health error freed the probe slot");
+}
+
+#[test]
+fn a_non_health_swallowed_error_frees_the_slot() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(1), &clock);
+    gate.record_failure(&connection_error());
+    clock.advance(10_001);
+    let probe = gate
+        .enter("async_get_cache")
+        .expect("the designated probe is admitted");
+    gate.swallowed(&probe, &command_error());
+    let now = (gate.clock)();
+    gate.policy
+        .lock()
+        .expect("the policy lock is not poisoned")
+        .admit(now, "async_get_cache")
+        .expect("the non-health error freed the probe slot");
+}
+
+#[test]
+fn a_cancelled_probe_frees_the_slot() {
+    let clock = Arc::new(FakeClock::new());
+    let gate = gate_with(settings(1), &clock);
+    gate.record_failure(&connection_error());
+    clock.advance(10_001);
+    // the probe's future is dropped before it can exit, the way a cancelled request ends
+    let _cancelled = gate
+        .enter("async_get_cache")
+        .expect("the designated probe is admitted");
+    gate.enter("async_get_cache")
+        .expect("the abandoned probe slot admits the next call");
 }
 
 #[test]

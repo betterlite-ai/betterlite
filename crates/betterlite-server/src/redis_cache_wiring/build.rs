@@ -1,6 +1,4 @@
-use std::collections::BTreeSet;
-use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_redis::redis_cache::RedisCache;
@@ -51,15 +49,10 @@ impl RedisCacheWiring {
     where
         E: EnvironmentLookup + Sync,
     {
-        let gate = Arc::new(PolicyGate {
-            policy: Mutex::new(RedisFailurePolicy::new(
-                self.policy,
-                BreakerMetrics::new(None),
-            )),
-            next_call: AtomicU64::new(0),
-            swallowed_calls: Mutex::new(BTreeSet::new()),
-            clock: Arc::clone(&self.clock),
-        });
+        let gate = Arc::new(PolicyGate::new(
+            RedisFailurePolicy::new(self.policy, BreakerMetrics::new(None)),
+            Arc::clone(&self.clock),
+        ));
         connect(
             RedisCacheOptions {
                 overrides: request.overrides,

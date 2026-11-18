@@ -7,10 +7,10 @@ use std::time::Duration;
 
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
 use betterlite_redis::redis_client_reuse::breaker_gate::BreakerGate;
-use betterlite_router::redis_failure_policy::RedisFailurePolicy;
 use betterlite_router::redis_failure_policy::classify::{
     Failure, FailureClass, MAX_CAUSE_DEPTH, is_health_failure,
 };
+use betterlite_router::redis_failure_policy::{Admission, RedisFailurePolicy};
 use redis::{ErrorKind, RedisError, ServerError, ServerErrorKind};
 use tokio::time::error::Elapsed;
 
@@ -27,21 +27,47 @@ pub(crate) const SWALLOWED_CALLS_KEPT: usize = 4096;
 
 // One breaker per cache, as LiteLLM gives every RedisCache instance its own RedisCircuitBreaker.
 pub struct PolicyGate {
-    pub policy: Mutex<RedisFailurePolicy>,
+    pub policy: Arc<Mutex<RedisFailurePolicy>>,
     pub next_call: AtomicU64,
     pub swallowed_calls: Mutex<BTreeSet<u64>>,
+    probe: Mutex<Option<ProbeSlot>>,
     pub clock: GateClock,
+}
+
+// Releasing the half open probe on drop keeps a call that never exits from holding the only probe slot.
+struct ProbeSlot {
+    policy: Arc<Mutex<RedisFailurePolicy>>,
+    admission: Admission,
+}
+
+impl Drop for ProbeSlot {
+    fn drop(&mut self) {
+        self.policy
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .release(self.admission);
+    }
 }
 
 impl BreakerGate for PolicyGate {
     fn enter(&self, name: &'static str) -> Result<BreakerAdmission, BreakerOpen> {
+        // a probe whose future was dropped never reaches exit, so the next call frees its slot instead of waiting
+        self.release_probe();
         let now = (self.clock)();
         let mut policy = self.policy.lock().unwrap_or_else(PoisonError::into_inner);
-        if policy.admit(now, name).is_err() {
-            return Err(BreakerOpen { name });
-        }
+        let admission = policy.admit(now, name).map_err(|_| BreakerOpen { name })?;
         let generation = policy.status().generation;
         drop(policy);
+        let slot = ProbeSlot {
+            policy: Arc::clone(&self.policy),
+            admission,
+        };
+        let replaced = self
+            .probe
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace(slot);
+        drop(replaced);
         let call = self.next_call.fetch_add(1, Ordering::Relaxed);
         Ok(BreakerAdmission::from(
             generation
@@ -72,15 +98,11 @@ impl BreakerGate for PolicyGate {
     }
 
     fn record_failure(&self, error: &(dyn StdError + Send + Sync)) {
-        let Some(linked) = error.source() else {
+        let Some((class, causes)) = Self::health_failure(error) else {
+            // a call ending without a health signal must not keep a half open probe slot taken
+            self.release_probe();
             return;
         };
-        let Some((class, causes)) = classify(linked) else {
-            return;
-        };
-        if !is_health_failure(class) {
-            return;
-        }
         self.record(
             Failure {
                 class,
@@ -91,15 +113,11 @@ impl BreakerGate for PolicyGate {
     }
 
     fn swallowed(&self, admission: &BreakerAdmission, error: &(dyn StdError + Send + Sync)) {
-        let Some(linked) = error.source() else {
+        let Some((class, causes)) = Self::health_failure(error) else {
+            // the call may still exit, but its non-health error must not keep a half open probe slot taken
+            self.release_probe();
             return;
         };
-        let Some((class, causes)) = classify(linked) else {
-            return;
-        };
-        if !is_health_failure(class) {
-            return;
-        }
         self.record(
             Failure {
                 class,
@@ -121,6 +139,35 @@ impl BreakerGate for PolicyGate {
 }
 
 impl PolicyGate {
+    #[must_use]
+    pub fn new(policy: RedisFailurePolicy, clock: GateClock) -> Self {
+        Self {
+            policy: Arc::new(Mutex::new(policy)),
+            next_call: AtomicU64::new(0),
+            swallowed_calls: Mutex::new(BTreeSet::new()),
+            probe: Mutex::new(None),
+            clock,
+        }
+    }
+
+    fn release_probe(&self) {
+        // the guard drops after the probe lock is released, so its release takes only the policy lock
+        let stale = self
+            .probe
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        drop(stale);
+    }
+
+    fn health_failure(
+        error: &(dyn StdError + Send + Sync),
+    ) -> Option<(FailureClass, Vec<FailureClass>)> {
+        let linked = error.source()?;
+        let (class, causes) = classify(linked)?;
+        is_health_failure(class).then_some((class, causes))
+    }
+
     // The outermost class decides, and a deeper cause only marks a connection failure as a timeout.
     fn record(&self, failure: Failure<'_>, error: &(dyn StdError + Send + Sync)) {
         let now = (self.clock)();

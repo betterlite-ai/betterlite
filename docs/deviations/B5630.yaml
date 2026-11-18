@@ -66,3 +66,20 @@ deviations:
       would match every betterlite-redis error enum inside the server wiring. Every cache
       call site hands over one of those wrappers, so the bare root is not reachable there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L341
+  - what: >-
+      A half-open probe whose call ends without a success or a health failure frees the
+      probe slot, and the next call takes a slot that a cancelled probe still holds.
+      LiteLLM leaves the breaker half-open and fast-fails every later Redis call until
+      restart, because `_run_under_circuit_breaker` skips `_exit_circuit_breaker` on any
+      exception and on cancellation. Here the probe's guard releases its slot when a
+      non-health error reaches `record_failure` or `swallowed`, and when the next call
+      arrives for a probe whose future was dropped. That last path can admit the next call
+      while a live probe still runs, where LiteLLM fast-fails every concurrent call in
+      half-open.
+    why: >-
+      The hang is the worse failure. `enter` hands the caller a copyable token rather than
+      a guard it can drop, and `record_failure` takes no admission, so neither a dropped
+      future nor an error tells the gate which call ended. The next call is the only
+      chance to free the slot, and freeing it cannot tell a live probe from a cancelled
+      one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L546-L553
