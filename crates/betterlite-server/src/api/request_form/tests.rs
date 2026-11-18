@@ -1,11 +1,12 @@
 #![cfg(test)]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
+use betterlite_config::sections::request_body::Settings;
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::request_body::DecodedJson;
+use betterlite_core::api::request_body::{DecodedJson, RequestBodyInput};
 use betterlite_core::api::request_form::annotations::{
     FormAnnotation, FormAnnotations, numeric_form_fields,
 };
@@ -32,6 +33,9 @@ use super::{RequestFormBody, RequestFormError, decode_request_form, get_request_
 
 const URLENCODED: &[u8] = b"application/x-www-form-urlencoded";
 const MULTIPART: &[u8] = b"multipart/form-data; boundary=b";
+const TEST_BOUNDARY: &str = "multipart/form-data; boundary=test";
+const TEST_MULTIPART_BODY: &[u8] =
+    b"--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n";
 
 fn text_part(name: &str, value: &str) -> String {
     format!("--b\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
@@ -50,6 +54,11 @@ fn decode_multipart_parts(body: &str) -> FormFields {
     get_form_data(&parts).unwrap()
 }
 
+fn urlencoded_fields(body: &[u8]) -> FormFields {
+    let parts = decode_request_form(body, URLENCODED, &ApiLimits::default()).unwrap();
+    get_form_data(&parts).unwrap()
+}
+
 fn upload_value(filename: &str, content: &str) -> FormValue {
     FormValue::Upload(UploadFile {
         filename: filename.to_owned(),
@@ -61,9 +70,7 @@ fn upload_value(filename: &str, content: &str) -> FormValue {
 
 #[test]
 fn repeated_plain_last_wins() {
-    let parts =
-        decode_request_form(b"model=first&model=last", URLENCODED, &ApiLimits::default()).unwrap();
-    let fields = get_form_data(&parts).unwrap();
+    let fields = urlencoded_fields(b"model=first&model=last");
     assert_eq!(
         fields.get("model"),
         Some(&FormValue::Text("last".to_owned()))
@@ -147,7 +154,7 @@ fn array_form_preserves_order() {
 
 #[test]
 fn numeric_form_coercion() {
-    let annotations: FormAnnotations = [
+    let annotations = FormAnnotations::from([
         ("count".to_owned(), FormAnnotation::Int),
         ("ratio".to_owned(), FormAnnotation::Float),
         ("nan_ratio".to_owned(), FormAnnotation::Float),
@@ -160,52 +167,38 @@ fn numeric_form_coercion() {
             "pair".to_owned(),
             FormAnnotation::Union(vec![FormAnnotation::Int, FormAnnotation::Float]),
         ),
-    ]
-    .into_iter()
-    .collect();
+    ]);
     let numeric = numeric_form_fields(&annotations);
-    let parts = decode_request_form(
-        b"count=%207%20&ratio=1e2&nan_ratio=nan&optional=%2B3&flag=true&pair=2",
-        URLENCODED,
-        &ApiLimits::default(),
-    )
-    .unwrap();
-    let fields = get_form_data(&parts).unwrap();
+    let fields =
+        urlencoded_fields(b"count=%207%20&ratio=1e2&nan_ratio=nan&optional=%2B3&flag=true&pair=2");
     let coerced = coerce_numeric_form_fields(&fields, &numeric);
     assert_eq!(
-        coerced.get("count"),
-        Some(&FormValue::Number(serde_json::Number::from(7_i64)))
+        coerced,
+        FormFields::from([
+            (
+                "count".to_owned(),
+                FormValue::Number(serde_json::Number::from(7_i64))
+            ),
+            (
+                "ratio".to_owned(),
+                FormValue::Number(serde_json::Number::from_f64(100.0).unwrap())
+            ),
+            ("nan_ratio".to_owned(), FormValue::NonFinite(NonFinite::Nan)),
+            (
+                "optional".to_owned(),
+                FormValue::Number(serde_json::Number::from(3_i64))
+            ),
+            ("flag".to_owned(), FormValue::Text("true".to_owned())),
+            ("pair".to_owned(), FormValue::Text("2".to_owned())),
+        ])
     );
-    assert_eq!(
-        coerced.get("ratio"),
-        Some(&FormValue::Number(
-            serde_json::Number::from_f64(100.0).unwrap()
-        ))
-    );
-    assert_eq!(
-        coerced.get("nan_ratio"),
-        Some(&FormValue::NonFinite(NonFinite::Nan))
-    );
-    assert_eq!(
-        coerced.get("optional"),
-        Some(&FormValue::Number(serde_json::Number::from(3_i64)))
-    );
-    assert_eq!(
-        coerced.get("flag"),
-        Some(&FormValue::Text("true".to_owned()))
-    );
-    assert_eq!(coerced.get("pair"), Some(&FormValue::Text("2".to_owned())));
 }
 
 #[test]
 fn nested_form_metadata() {
-    let parts = decode_request_form(
+    let fields = urlencoded_fields(
         b"litellm_metadata%5Ba%5D%5Bb%5D=v&litellm_metadata%5Bteam%5D=alpha&other=x",
-        URLENCODED,
-        &ApiLimits::default(),
-    )
-    .unwrap();
-    let fields = get_form_data(&parts).unwrap();
+    );
     let (metadata, warnings) = extract_nested_form_metadata(&fields, "litellm_metadata[");
     assert!(warnings.is_empty());
     let Some(MetadataValue::Object(child)) = metadata.get("a") else {
@@ -220,7 +213,10 @@ fn nested_form_metadata() {
         Some(&MetadataValue::Leaf(FormValue::Text("alpha".to_owned())))
     );
     assert!(!metadata.contains_key("other"));
+}
 
+#[test]
+fn nested_form_metadata_reports_conflicts() {
     let conflicting = decode_multipart_parts(&format!(
         "{}{}{}",
         text_part("litellm_metadata[a]", "leaf"),
@@ -258,11 +254,8 @@ impl ModelUploadLimits for FixedRouter {
     }
 }
 
-fn limits_of(router: Option<&FixedRouter>) -> Option<&dyn ModelUploadLimits> {
-    match router {
-        Some(fixed) => Some(fixed),
-        None => None,
-    }
+fn router_limit(router: &FixedRouter) -> &dyn ModelUploadLimits {
+    router
 }
 
 fn size_mb_of(data: &JsonObject) -> Option<f64> {
@@ -276,8 +269,8 @@ fn size_mb_of(data: &JsonObject) -> Option<f64> {
 }
 
 #[rstest]
-#[case::absent_size(None, 0.0)]
-#[case::one_mebibyte(Some(0x0010_0000), 1.0)]
+#[case::absent_size(None, 0.0_f64)]
+#[case::one_mebibyte(Some(0x0010_0000), 1.0_f64)]
 fn upload_size_unset(#[case] size: Option<u64>, #[case] expected_mb: f64) {
     let mut request_data = JsonObject::new();
     request_data.insert("model".to_owned(), Json::Text("whisper".to_owned()));
@@ -332,10 +325,47 @@ fn upload_size_skips_a_missing_model_limit(
 
 #[test]
 fn request_body_dispatch() {
-    use betterlite_config::sections::request_body::Settings;
-    use betterlite_core::api::request_body::RequestBodyInput;
-    use std::collections::BTreeMap;
+    let limits = ApiLimits::default();
+    let Ok(RequestFormBody::Json(DecodedJson::Parsed { body, repaired })) =
+        get_request_body("POST", "application/json", br#"{"x":1}"#, &limits)
+    else {
+        panic!("a POST JSON body should parse");
+    };
+    assert!(!repaired);
+    assert_eq!(body.get("x"), Some(&serde_json::json!(1_i32)));
 
+    let RequestFormBody::Form(urlencoded) =
+        get_request_body("POST", "application/x-www-form-urlencoded", b"x=1", &limits).unwrap()
+    else {
+        panic!("a urlencoded body should parse as form fields");
+    };
+    assert_eq!(urlencoded.get("x"), Some(&FormValue::Text("1".to_owned())));
+
+    let RequestFormBody::Form(multipart) =
+        get_request_body("POST", TEST_BOUNDARY, TEST_MULTIPART_BODY, &limits).unwrap()
+    else {
+        panic!("a multipart body should parse as form fields");
+    };
+    assert_eq!(multipart.get("x"), Some(&FormValue::Text("1".to_owned())));
+
+    let input = RequestBodyInput {
+        method: "POST".to_owned(),
+        route_path: "/v1/chat/completions".to_owned(),
+        headers: BTreeMap::from([("content-type".to_owned(), TEST_BOUNDARY.to_owned())]),
+        query_params: BTreeMap::new(),
+        body: TEST_MULTIPART_BODY.to_vec(),
+        client_requested_model: None,
+        cached_body: None,
+        form_fields: None,
+    };
+    let result =
+        super::super::request_body::read_request_body(&input, &Settings::default(), &limits)
+            .unwrap();
+    assert_eq!(result.body.get("x"), Some(&serde_json::json!("1")));
+}
+
+#[test]
+fn a_non_post_request_returns_an_empty_body() {
     let limits = ApiLimits::default();
     assert_eq!(
         get_request_body("GET", "application/json", b"garbage", &limits),
@@ -349,13 +379,11 @@ fn request_body_dispatch() {
         get_request_body("PUT", "application/json", br#"{"x":1}"#, &limits),
         Ok(RequestFormBody::Empty)
     );
-    let Ok(RequestFormBody::Json(DecodedJson::Parsed { body, repaired })) =
-        get_request_body("POST", "application/json", br#"{"x":1}"#, &limits)
-    else {
-        panic!("a POST JSON body should parse");
-    };
-    assert!(!repaired);
-    assert_eq!(body.get("x"), Some(&serde_json::json!(1)));
+}
+
+#[test]
+fn an_unsupported_media_type_is_rejected() {
+    let limits = ApiLimits::default();
     assert_eq!(
         get_request_body("POST", "text/plain", b"x", &limits),
         Err(RequestFormError::UnsupportedContentType(
@@ -366,38 +394,6 @@ fn request_body_dispatch() {
         get_request_body("POST", "", b"x", &limits),
         Err(RequestFormError::UnsupportedContentType(String::new()))
     );
-
-    let RequestFormBody::Form(urlencoded) =
-        get_request_body("POST", "application/x-www-form-urlencoded", b"x=1", &limits).unwrap()
-    else {
-        panic!("a urlencoded body should parse as form fields");
-    };
-    assert_eq!(urlencoded.get("x"), Some(&FormValue::Text("1".to_owned())));
-
-    let boundary = "multipart/form-data; boundary=test";
-    let multipart_body =
-        b"--test\r\nContent-Disposition: form-data; name=\"x\"\r\n\r\n1\r\n--test--\r\n";
-    let RequestFormBody::Form(multipart) =
-        get_request_body("POST", boundary, multipart_body, &limits).unwrap()
-    else {
-        panic!("a multipart body should parse as form fields");
-    };
-    assert_eq!(multipart.get("x"), Some(&FormValue::Text("1".to_owned())));
-
-    let input = RequestBodyInput {
-        method: "POST".to_owned(),
-        route_path: "/v1/chat/completions".to_owned(),
-        headers: BTreeMap::from([("content-type".to_owned(), boundary.to_owned())]),
-        query_params: BTreeMap::new(),
-        body: multipart_body.to_vec(),
-        client_requested_model: None,
-        cached_body: None,
-        form_fields: None,
-    };
-    let result =
-        super::super::request_body::read_request_body(&input, &Settings::default(), &limits)
-            .unwrap();
-    assert_eq!(result.body.get("x"), Some(&serde_json::json!("1")));
 }
 
 #[test]
@@ -463,16 +459,15 @@ fn compatibility_deviations(
     let router = configured_limit.map(|limit| FixedRouter {
         limit: UploadLimit::Configured(limit),
     });
-    let router_names = match configured_limit {
-        Some(_limit) => BTreeSet::from(["whisper".to_owned()]),
-        None => BTreeSet::new(),
-    };
+    let router_names = configured_limit.map_or_else(BTreeSet::new, |_limit| {
+        BTreeSet::from(["whisper".to_owned()])
+    });
     let mut request_data = whisper_request();
     let result = check_file_size_under_limit(UploadSizeCheck {
         request_data: &mut request_data,
         file_size: Some(bytes),
         router_names: &router_names,
-        router: limits_of(router.as_ref()),
+        router: router.as_ref().map(router_limit),
         limits: &ApiLimits::default(),
     });
     match (expected, result) {
@@ -491,7 +486,6 @@ fn compatibility_deviations(
 #[test]
 fn loaded_limit_reaches_file_size_checking() {
     use betterlite_config::loader::ConfigLoader;
-    use std::collections::BTreeMap;
 
     let loaded = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
@@ -568,10 +562,10 @@ fn multipart_disposition_parameters(
 }
 
 #[rstest]
-#[case("", "é")]
-#[case("; charset=iso-8859-1", "é")]
-#[case("; charset=windows-1251", "й")]
-#[case("; charset=unknown", "é")]
+#[case("", "\u{e9}")]
+#[case("; charset=iso-8859-1", "\u{e9}")]
+#[case("; charset=windows-1251", "\u{439}")]
+#[case("; charset=unknown", "\u{e9}")]
 fn multipart_charset_and_fallback(#[case] charset: &str, #[case] expected: &str) {
     let body = b"--b\r\nContent-Disposition: form-data; name=\"\xe9\"\r\n\r\n\xe9\r\n--b\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\xe9.pdf\"\r\n\r\n\xff\r\n--b--\r\n";
     let content_type = format!("multipart/form-data; boundary=b{charset}");

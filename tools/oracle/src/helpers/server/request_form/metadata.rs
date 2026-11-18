@@ -12,10 +12,8 @@ const DEFAULT_PREFIX: &str = "litellm_metadata[";
 
 pub(super) fn metadata(input: &Input) -> HelperResult {
     let fields = direct_fields(input)?;
-    let (tree, warnings) = match input.prefix.as_deref() {
-        Some(prefix) => extract_nested_form_metadata(&fields, prefix),
-        None => extract_nested_form_metadata(&fields, DEFAULT_PREFIX),
-    };
+    let prefix = input.prefix.as_deref().unwrap_or(DEFAULT_PREFIX);
+    let (tree, warnings) = extract_nested_form_metadata(&fields, prefix);
     let tree_value = metadata_value(&tree)?;
     Ok(json!({
         "metadata": tree_value,

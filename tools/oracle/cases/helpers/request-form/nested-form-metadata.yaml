@@ -40,7 +40,7 @@ calls:
           value: t
         - kind: text
           name: litellm_metadata[litellm_metadata[b]]
-          value: n
+          value: "n"
         - kind: text
           name: litellm_metadata[c][]
           value: k

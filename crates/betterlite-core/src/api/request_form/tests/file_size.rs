@@ -117,8 +117,8 @@ fn a_router_name_match_applies_the_configured_limit() {
         panic!("the configured limit should reject the size");
     };
     assert_eq!(limit_mb.to_bits(), 1.0_f64.to_bits());
-    assert!(size_mb > 1.0);
-    assert!(size_mb_of(&data).is_some_and(|recorded| recorded > 1.0));
+    assert!(size_mb > 1.0_f64);
+    assert!(size_mb_of(&data).is_some_and(|recorded| recorded > 1.0_f64));
 }
 
 #[test]
@@ -313,8 +313,8 @@ fn metadata_that_is_not_an_object_is_rejected() {
 #[test]
 fn the_file_size_errors_carry_their_wire_fields() {
     let too_large = UploadSizeError::TooLarge {
-        size_mb: 2.0,
-        limit_mb: 1.0,
+        size_mb: 2.0_f64,
+        limit_mb: 1.0_f64,
     };
     let facts = too_large.facts();
     assert_eq!(
@@ -322,8 +322,8 @@ fn the_file_size_errors_carry_their_wire_fields() {
         (400, "bad_request", "file", "400")
     );
     let capped = UploadSizeError::AboveSafetyCap {
-        size_mb: 17.0,
-        cap_mb: 16.0,
+        size_mb: 17.0_f64,
+        cap_mb: 16.0_f64,
     };
     let cap_facts = capped.facts();
     assert_eq!(

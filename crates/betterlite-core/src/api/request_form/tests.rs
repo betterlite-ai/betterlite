@@ -6,7 +6,7 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::api::request_form::annotations::{
-    FormAnnotation, NumericType, Qualifier, numeric_form_fields, numeric_form_type,
+    FormAnnotation, FormAnnotations, NumericType, Qualifier, numeric_form_fields, numeric_form_type,
 };
 use crate::api::request_form::coercion::{coerce_numeric_form_fields, float_value};
 use crate::api::request_form::convert::{
@@ -221,14 +221,14 @@ fn numeric_form_fields_keeps_only_the_eligible_names() {
 #[case(" 7 ", "7")]
 #[case("+3", "3")]
 #[case("1_000", "1000")]
-#[case("١٢", "12")]
+#[case("\u{661}\u{662}", "12")]
 #[case("007", "7")]
 #[case("-0", "0")]
 #[case("+0", "0")]
 #[case("-5", "-5")]
-#[case("1٢", "12")]
+#[case("1\u{662}", "12")]
 #[case("0_0", "0")]
-#[case(" 5", "5")]
+#[case("\u{2005}5", "5")]
 #[case("\u{1c}5", "5")]
 #[case("123456789012345678901234567890", "123456789012345678901234567890")]
 fn an_integer_text_parses_like_python(#[case] source: &str, #[case] expected: &str) {
@@ -253,23 +253,23 @@ fn an_integer_text_parses_like_python(#[case] source: &str, #[case] expected: &s
 #[case("1,5")]
 #[case("1 2")]
 #[case("0 1")]
-#[case("Ⅻ")]
+#[case("\u{216b}")]
 fn a_non_integer_text_stays_unparsed(#[case] source: &str) {
     assert_eq!(scalar_int(source), None);
 }
 
 #[rstest]
-#[case(" 7 ", 7.0)]
-#[case("+3", 3.0)]
-#[case("1_000", 1000.0)]
-#[case("1e2", 100.0)]
-#[case(".5", 0.5)]
-#[case("5.", 5.0)]
-#[case("1.e5", 100_000.0)]
-#[case("1_0.5_5e1_0", 105_500_000_000.0)]
-#[case("١٢", 12.0)]
-#[case("1e-400", 0.0)]
-#[case("-0", -0.0)]
+#[case(" 7 ", 7.0_f64)]
+#[case("+3", 3.0_f64)]
+#[case("1_000", 1000.0_f64)]
+#[case("1e2", 100.0_f64)]
+#[case(".5", 0.5_f64)]
+#[case("5.", 5.0_f64)]
+#[case("1.e5", 100_000.0_f64)]
+#[case("1_0.5_5e1_0", 105_500_000_000.0_f64)]
+#[case("\u{661}\u{662}", 12.0_f64)]
+#[case("1e-400", 0.0_f64)]
+#[case("-0", -0.0_f64)]
 fn a_float_text_parses_like_python(#[case] source: &str, #[case] expected: f64) {
     let parsed = scalar_float(source).unwrap();
     assert_eq!(parsed.to_bits(), expected.to_bits());
@@ -349,11 +349,10 @@ fn an_unparsable_text_for_a_numeric_field_stays_a_string() {
 
 #[test]
 fn an_int_field_keeps_nan_and_inf_as_strings() {
-    let numeric = numeric_form_fields(
-        &[("count".to_owned(), FormAnnotation::Int)]
-            .into_iter()
-            .collect(),
-    );
+    let numeric = numeric_form_fields(&FormAnnotations::from([(
+        "count".to_owned(),
+        FormAnnotation::Int,
+    )]));
     let coerced = coerce_numeric_form_fields(&texts(&[("count", "nan")]), &numeric);
     assert_eq!(
         coerced.get("count"),
@@ -363,11 +362,10 @@ fn an_int_field_keeps_nan_and_inf_as_strings() {
 
 #[test]
 fn non_string_values_are_left_alone() {
-    let numeric = numeric_form_fields(
-        &[("count".to_owned(), FormAnnotation::Int)]
-            .into_iter()
-            .collect(),
-    );
+    let numeric = numeric_form_fields(&FormAnnotations::from([(
+        "count".to_owned(),
+        FormAnnotation::Int,
+    )]));
     let source = fields(vec![("count", FormValue::Other(Json::Bool(true)))]);
     let coerced = coerce_numeric_form_fields(&source, &numeric);
     assert_eq!(
@@ -378,11 +376,10 @@ fn non_string_values_are_left_alone() {
 
 #[test]
 fn a_float_text_carries_non_finite_values_as_variants() {
-    let numeric = numeric_form_fields(
-        &[("ratio".to_owned(), FormAnnotation::Float)]
-            .into_iter()
-            .collect(),
-    );
+    let numeric = numeric_form_fields(&FormAnnotations::from([(
+        "ratio".to_owned(),
+        FormAnnotation::Float,
+    )]));
     let coerced = coerce_numeric_form_fields(&texts(&[("ratio", "nan")]), &numeric);
     assert_eq!(
         coerced.get("ratio"),

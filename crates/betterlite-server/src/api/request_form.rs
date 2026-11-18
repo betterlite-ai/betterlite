@@ -94,11 +94,7 @@ fn decode_urlencoded(bytes: &[u8], limits: &ApiLimits) -> Result<FormParts, Requ
     let part_count = if bytes.is_empty() {
         0
     } else {
-        bytes
-            .iter()
-            .filter(|byte| **byte == b'&')
-            .count()
-            .saturating_add(1)
+        bytes.split(|byte| *byte == b'&').count()
     };
     check_part_count(part_count, limits)?;
     let mut items = Vec::with_capacity(part_count);
