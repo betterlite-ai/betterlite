@@ -26,7 +26,7 @@ use super::super::call::{
 };
 use super::super::credentials::VariationPolicies;
 use super::super::entry::ImageVariationOperation;
-use super::super::error::ImageVariationError;
+use super::super::error::{ImageVariationError, TopazVariationError};
 use super::super::service::ImageVariations;
 use super::super::topaz::{TopazVariationExecutor, TopazVariationRequest};
 
@@ -244,6 +244,20 @@ impl TopazVariationExecutor for NoTopaz {
         _request: TopazVariationRequest,
     ) -> Result<Option<PendingVariation<'_>>, ImageVariationError> {
         unreachable!("the openai path never reaches topaz")
+    }
+}
+
+pub(super) struct FailingTopaz;
+
+impl TopazVariationExecutor for FailingTopaz {
+    fn execute(
+        &self,
+        _request: TopazVariationRequest,
+    ) -> Result<Option<PendingVariation<'_>>, ImageVariationError> {
+        Err(ImageVariationError::Topaz(TopazVariationError {
+            status_code: Some(502),
+            message: "topaz is down".to_owned(),
+        }))
     }
 }
 

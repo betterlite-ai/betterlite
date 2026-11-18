@@ -20,9 +20,9 @@ use super::entry::{aimage_variation, image_variation};
 use super::error::ImageVariationError;
 
 use self::support::{
-    ERROR_BODY, FailingOperation, Fixture, NoTopaz, RecordingTopaz, RecordingTransport, SOURCE,
-    SUCCESS_BODY, Scripted, ScriptedOperation, ignored_options, metadata, multipart_parts,
-    recorded_calls, response, service, settings, variation_call,
+    ERROR_BODY, FailingOperation, FailingTopaz, Fixture, NoTopaz, RecordingTopaz,
+    RecordingTransport, SOURCE, SUCCESS_BODY, Scripted, ScriptedOperation, ignored_options,
+    metadata, multipart_parts, recorded_calls, response, service, settings, variation_call,
 };
 
 #[test]
@@ -188,6 +188,35 @@ async fn a_declared_provider_prefixes_the_model() {
     let answer = image_variation(&service, &call)
         .await
         .expect("the declared provider wins over the inferred one");
+    assert_eq!(answer, VariationAnswer::Response(response()));
+    assert_eq!(transport.take().len(), 0, "the openai transport is unused");
+    let requests = topaz.take();
+    let [request] = requests.as_slice() else {
+        panic!("one topaz request");
+    };
+    assert_eq!(request.model, "dall-e-3");
+}
+
+#[tokio::test]
+async fn a_model_naming_the_provider_keeps_one_prefix() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-key")]);
+    let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let topaz = RecordingTopaz::new(Some(response()));
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &topaz,
+        VariationPolicies::default(),
+    );
+    let mut call = variation_call();
+    call.custom_llm_provider = Some("topaz".to_owned());
+    call.model = Some("topaz/dall-e-3".to_owned());
+    let answer = image_variation(&service, &call)
+        .await
+        .expect("the already prefixed model resolves once");
     assert_eq!(answer, VariationAnswer::Response(response()));
     assert_eq!(transport.take().len(), 0, "the openai transport is unused");
     let requests = topaz.take();
@@ -422,6 +451,29 @@ async fn invalid_providers_raise_before_http() {
 }
 
 #[tokio::test]
+async fn unknown_models_project_a_bad_request() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let settings = settings(SOURCE, &[("OPENAI_API_KEY", "sk-test")]);
+    let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &NoTopaz,
+        VariationPolicies::default(),
+    );
+    let mut call = variation_call();
+    call.model = Some("mystery-variation-model".to_owned());
+    let error = aimage_variation(&service, &call)
+        .await
+        .expect_err("the model names no provider");
+    assert_eq!(error.status_code(), 400);
+    assert!(matches!(error.class(), ErrorClass::BadRequest(_)));
+    assert_eq!(transport.take().len(), 0);
+}
+
+#[tokio::test]
 async fn missing_model_info_names_the_provider() {
     let fixture = Fixture::new();
     let context = fixture.context();
@@ -534,6 +586,31 @@ async fn a_topaz_result_without_a_response_is_invalid() {
         "Invalid image variation provider: topaz. Supported providers are: <enum 'LITELLM_IMAGE_VARIATION_PROVIDERS'>"
     );
     assert_eq!(topaz.take().len(), 1);
+}
+
+#[tokio::test]
+async fn topaz_failures_keep_their_status_and_message() {
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    let settings = settings(SOURCE, &[("TOPAZ_API_KEY", "topaz-key")]);
+    let transport = RecordingTransport::new(200, SUCCESS_BODY);
+    let topaz = FailingTopaz;
+    let service = service(
+        &settings,
+        &context,
+        &transport,
+        &topaz,
+        VariationPolicies::default(),
+    );
+    let mut call = variation_call();
+    call.custom_llm_provider = Some("topaz".to_owned());
+    let error = aimage_variation(&service, &call)
+        .await
+        .expect_err("the topaz executor fails");
+    assert_eq!(error.status_code(), 502);
+    assert_eq!(error.message, "topaz is down");
+    assert!(matches!(error.class(), ErrorClass::BadGateway(_)));
+    assert_eq!(transport.take().len(), 0);
 }
 
 #[tokio::test]
