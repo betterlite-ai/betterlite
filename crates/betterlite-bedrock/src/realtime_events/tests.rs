@@ -5,10 +5,13 @@ mod completion_cases;
 mod corpus;
 mod event_dispatch;
 mod failure_cases;
+mod limits;
 mod logging_cases;
 mod session_cases;
 mod stream_cases;
 mod support;
+mod transport;
+mod usage_cases;
 
 #[derive(Clone, Copy, Debug)]
 enum EventCase {

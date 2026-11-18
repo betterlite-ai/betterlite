@@ -6,7 +6,7 @@ use indexmap::IndexMap;
 use thiserror::Error;
 
 use super::client::RealtimeClientWebSocket;
-use super::decode::json_dict;
+use super::decode::{json_dict, json_str};
 use super::scope::EventScope;
 use super::stream::{BedrockBidirectionalStream, StreamError};
 use crate::agentcore_stream::IdSource;
@@ -58,16 +58,16 @@ where
         let session = self.message.get("session").and_then(json_dict);
         let modalities = match session.and_then(|session| session.get("modalities")) {
             None | Some(Json::Null) => None,
-            Some(Json::List(items)) => {
-                let mut names = Vec::with_capacity(items.len());
-                for item in items {
-                    let Json::Text(name) = item else {
-                        return Err(AckError::Modalities);
-                    };
-                    names.push(name.clone());
-                }
-                Some(names)
-            }
+            Some(Json::List(items)) => Some(
+                items
+                    .iter()
+                    .map(|item| {
+                        json_str(item)
+                            .map(str::to_owned)
+                            .ok_or(AckError::Modalities)
+                    })
+                    .collect::<Result<Vec<String>, _>>()?,
+            ),
             Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_)) => {
                 return Err(AckError::Modalities);
             }

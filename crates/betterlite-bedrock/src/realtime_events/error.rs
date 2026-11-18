@@ -33,6 +33,8 @@ pub enum EventError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the {subject} exceeds the {limit} limit")]
+    ExceedsLimit { subject: &'static str, limit: usize },
     #[error(transparent)]
     Completion(#[from] CompletionError),
 }

@@ -43,18 +43,14 @@ impl RealtimeClientWebSocket for Transport {
 
     async fn receive_text(&self) -> Result<String, ClientError<io::Error>> {
         self.receive_calls.fetch_add(1, Ordering::SeqCst);
-        let frame = self
-            .frames
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front();
-        match frame {
-            Some(Some(text)) => Ok(text),
-            Some(None) | None => Err(ClientError {
+        let mut frames = self.frames.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(frame) = frames.pop_front().flatten() else {
+            return Err(ClientError {
                 message: "the client sent no more frames".to_owned(),
                 source: None,
-            }),
-        }
+            });
+        };
+        Ok(frame)
     }
 
     async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
@@ -62,13 +58,13 @@ impl RealtimeClientWebSocket for Transport {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(data);
-        match &self.send_error {
-            Some(message) => Err(ClientError {
+        if let Some(message) = &self.send_error {
+            return Err(ClientError {
                 message: message.clone(),
                 source: None,
-            }),
-            None => Ok(()),
+            });
         }
+        Ok(())
     }
 
     async fn close(&self, _code: u16, _reason: Option<String>) {}

@@ -6,46 +6,17 @@ use crate::realtime_events::decode::json_dict;
 use crate::realtime_events::error::EventError;
 
 const CONTENT_START: &str = r#"{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}"#;
-const USAGE_EVENT: &str = r#"{"event":{"usageEvent":{"totalInputTokens":10,"totalOutputTokens":4,"totalTokens":14,"details":{"total":{"input":{"speechTokens":2,"textTokens":8},"output":{"speechTokens":1,"textTokens":3}}}}}}"#;
-const USAGE_JSON: &str = r#"{"input_tokens":10,"output_tokens":4,"total_tokens":14,"input_token_details":{"audio_tokens":2,"text_tokens":8,"cached_tokens":0},"output_token_details":{"audio_tokens":1,"text_tokens":3}}"#;
-const ZERO_USAGE_JSON: &str = r#"{"input_tokens":0,"output_tokens":0,"total_tokens":0,"input_token_details":{"audio_tokens":0,"text_tokens":0,"cached_tokens":0},"output_token_details":{"audio_tokens":0,"text_tokens":0}}"#;
 
 pub(super) fn native_completion_dispatch() {
     content_start_events();
     text_deltas_and_end_turn();
     content_end_variants();
-    usage_delta();
-    usage_array_rejected();
+    super::usage_cases::usage_delta();
+    super::usage_cases::usage_array_rejected();
+    super::usage_cases::assert_usage_rejected(r#"{"details":{"total":{"input":[2,8]}}}"#);
+    super::limits::delta_accumulator_limits();
     tool_use_output();
     prompt_end_state();
-}
-
-// A payload of the wrong shape is an error and leaves the cumulative counters as they were
-fn usage_array_rejected() {
-    let ids = support::CountingIds::new();
-    let mut session = support::new_session();
-    let mut input = support::input();
-    let response =
-        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
-    support::transform(&mut session, &ids, USAGE_EVENT, &input).expect("a usage event");
-    let error = support::transform(&mut session, &ids, r#"{"event":{"usageEvent":[]}}"#, &input)
-        .expect_err("an array usage event");
-    assert!(matches!(
-        error,
-        EventError::Payload {
-            field: "usageEvent",
-            ..
-        }
-    ));
-    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
-        .expect("a prompt end");
-    let done = json_dict(&support::events(&response)[0]).expect("a response.done object");
-    let object = done
-        .get("response")
-        .and_then(json_dict)
-        .expect("a response object");
-    assert_eq!(object.get("usage"), Some(&support::json(USAGE_JSON)));
 }
 
 fn content_start_events() {
@@ -224,39 +195,6 @@ fn invalid_payload() {
             ..
         })
     ));
-}
-
-fn usage_delta() {
-    let ids = support::CountingIds::new();
-    let mut session = support::new_session();
-    let mut input = support::input();
-    let response =
-        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
-    support::transform(&mut session, &ids, USAGE_EVENT, &input).expect("a usage event");
-    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
-        .expect("a prompt end");
-    let events = support::events(&response);
-    assert_eq!(events.len(), 1);
-    let done = json_dict(&events[0]).expect("a response.done object");
-    let object = done
-        .get("response")
-        .and_then(json_dict)
-        .expect("a response object");
-    assert_eq!(object.get("usage"), Some(&support::json(USAGE_JSON)));
-    input = support::next_input(&response);
-    let response =
-        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
-    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
-        .expect("a prompt end");
-    let events = support::events(&response);
-    let done = json_dict(&events[0]).expect("a response.done object");
-    let object = done
-        .get("response")
-        .and_then(json_dict)
-        .expect("a response object");
-    assert_eq!(object.get("usage"), Some(&support::json(ZERO_USAGE_JSON)));
 }
 
 fn tool_use_output() {

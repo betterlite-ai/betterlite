@@ -7,33 +7,15 @@ use crate::realtime_events::error::EventError;
 
 pub(super) fn native_event_dispatch() {
     decoding_errors();
+    super::limits::decoder_limits();
     malformed_message();
-    syntax_before_shape();
+    super::limits::syntax_before_shape();
     unknown_payloads();
     branch_priority();
     speech_priority();
     tool_and_end_priority();
     content_end_payload();
-    transcript_content_end();
-}
-
-// A message that does not parse is a warning whatever its first token promises
-fn syntax_before_shape() {
-    let (log, _guard) = support::capture();
-    for message in ["[", "null garbage", "[] garbage", "[] {}"] {
-        let response = support::transform(
-            &mut support::new_session(),
-            &support::CountingIds::new(),
-            message,
-            &support::input(),
-        )
-        .expect("a syntax error is a warning");
-        assert_eq!(support::events(&response).len(), 0);
-        assert_eq!(response.current_output_item_id, None);
-        assert_eq!(response.current_delta_chunks, None);
-    }
-    assert!(log.text().contains(r#"Invalid JSON message: ["#));
-    assert!(log.text().contains("Invalid JSON message: null garbage"));
+    super::session_cases::transcript_content_end();
 }
 
 fn content_end_payload() {
@@ -174,8 +156,9 @@ fn malformed_message() {
     assert_eq!(support::events(&response).len(), 0);
     assert!(log.text().contains("REDACTED"));
     assert!(!log.text().contains(SECRET));
-    let long = format!(r#"{{"broken":{}"#, "x".repeat(250));
-    support::transform(&mut session, &ids, &long, &input).expect("a syntax error is a warning");
+    let truncated = format!(r#"{{"broken":{}"#, "x".repeat(250));
+    support::transform(&mut session, &ids, &truncated, &input)
+        .expect("a syntax error is a warning");
     assert!(
         log.text()
             .contains(&format!(r#"{{"broken":{}"#, "x".repeat(190)))
@@ -190,7 +173,7 @@ fn unknown_payloads() {
     let input = support::input_with_ids("item", "resp", "conv");
     let messages = [
         r#"{"event":{}}"#,
-        r#"{}"#,
+        "{}",
         r#"{"event":{"sessionEnd":{}}}"#,
         r#"{"event":{"unknownThing":1}}"#,
     ];
@@ -287,49 +270,4 @@ fn tool_and_end_priority() {
         support::transform_events(r#"{"event":{"promptEnd":{},"completionEnd":{}}}"#, &input);
     assert_eq!(events.len(), 1);
     assert_eq!(support::event_type(&events[0]), Some("response.done"));
-}
-
-fn transcript_content_end() {
-    let input = support::input_with_ids("item", "resp", "conv");
-    let ids = support::CountingIds::new();
-    let mut session = support::new_session();
-    support::transform(
-        &mut session,
-        &ids,
-        r#"{"event":{"contentStart":{"role":"USER","type":"TEXT"}}}"#,
-        &input,
-    )
-    .expect("a user content start");
-    support::transform(
-        &mut session,
-        &ids,
-        r#"{"event":{"textOutput":{"content":"hello"}}}"#,
-        &input,
-    )
-    .expect("a transcript delta");
-    let response = support::transform(
-        &mut session,
-        &ids,
-        r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
-        &input,
-    )
-    .expect("a transcript end");
-    assert_eq!(support::events(&response).len(), 1);
-    assert_eq!(
-        support::event_type(&support::events(&response)[0]),
-        Some("conversation.item.input_audio_transcription.completed")
-    );
-    assert!(!session.transcript.active);
-    assert!(session.transcript.buffer.is_empty());
-
-    let events = support::transform_events(
-        r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
-        &input,
-    );
-    assert_eq!(events.len(), 2);
-    assert_eq!(
-        support::event_type(&events[0]),
-        Some("response.output_item.done")
-    );
-    assert_eq!(support::event_type(&events[1]), Some("response.done"));
 }

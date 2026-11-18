@@ -4,6 +4,7 @@ use std::io;
 use betterlite_models::decisions::Json;
 
 use super::support::{self, SECRET};
+use super::transport;
 use crate::realtime_events::client::{ClientError, ClientMessages};
 use crate::realtime_events::decode::decode_realtime_client_preface;
 use crate::realtime_events::scope::EventScope;
@@ -17,11 +18,11 @@ pub(super) async fn session_update_first() {
 
 async fn client_messages() {
     let (log, _guard) = support::capture();
-    let client = support::FakeClient::new();
+    let client = transport::FakeClient::new();
     {
         let mut received = client.received.lock().unwrap();
-        received.push_back(support::Received::Text("first".to_owned()));
-        received.push_back(support::Received::Error(format!("{SECRET} died")));
+        received.push_back(transport::Received::Text("first".to_owned()));
+        received.push_back(transport::Received::Error(format!("{SECRET} died")));
     }
     let redactor = support::redactor();
     let mut messages: ClientMessages<'_, io::Error> = ClientMessages {
@@ -37,7 +38,7 @@ async fn client_messages() {
         .received
         .lock()
         .unwrap()
-        .push_back(support::Received::Text("later".to_owned()));
+        .push_back(transport::Received::Text("later".to_owned()));
     assert_eq!(messages.next().await, None);
     assert_eq!(client.received.lock().unwrap().len(), 1);
     assert!(
@@ -45,7 +46,7 @@ async fn client_messages() {
             .contains("Client to Bedrock forwarding ended: REDACTED died")
     );
     assert!(!log.text().contains(SECRET));
-    let fresh = support::FakeClient::new();
+    let fresh = transport::FakeClient::new();
     let mut empty: ClientMessages<'_, io::Error> = ClientMessages {
         client: &fresh,
         initial: None,

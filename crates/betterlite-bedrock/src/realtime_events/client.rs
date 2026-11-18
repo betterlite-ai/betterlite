@@ -25,10 +25,10 @@ pub trait RealtimeClientWebSocket: Send + Sync {
 }
 
 // _client_messages as a pull-based iterator: the first frame is the preface the bridge already holds
-pub struct ClientMessages<'a, E: StdError + Send + Sync + 'static> {
-    pub client: &'a dyn RealtimeClientWebSocket<Error = E>,
+pub struct ClientMessages<'client, E: StdError + Send + Sync + 'static> {
+    pub client: &'client dyn RealtimeClientWebSocket<Error = E>,
     pub initial: Option<String>,
-    pub redactor: &'a Redactor,
+    pub redactor: &'client Redactor,
     pub done: bool,
 }
 

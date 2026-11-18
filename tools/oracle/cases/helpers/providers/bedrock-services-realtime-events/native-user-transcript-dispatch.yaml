@@ -161,6 +161,46 @@ call:
         current_item_chunks: []
         current_conversation_id: null
         current_delta_type: null
+    - method: dispatch
+      message: '{"event": {"contentStart": {"role": "USER", "type": "TEXT"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"textOutput": {"content": "still listening"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"audioOutput": {"content": "YXVkaW8="}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
+    - method: dispatch
+      message: '{"event": {"contentEnd": {"stopReason": "END_TURN"}}}'
+      state:
+        session_configuration_request: null
+        current_output_item_id: item_live
+        current_response_id: resp_live
+        current_delta_chunks: []
+        current_item_chunks: []
+        current_conversation_id: conv_live
+        current_delta_type: text
 env: {}
 compare:
   ignore: []

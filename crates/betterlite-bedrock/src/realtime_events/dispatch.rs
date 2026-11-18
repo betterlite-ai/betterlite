@@ -13,6 +13,10 @@ use crate::realtime_completion::records::{
 use crate::realtime_output::events::{DeltaType as OutputDeltaType, OutputIds};
 use crate::realtime_session::RealtimeSession;
 
+// A response's delta accumulator stays inside these caps in chunk count and text bytes; a long response fits both
+pub(super) const MAX_DELTA_CHUNKS: usize = 4096;
+pub(super) const MAX_DELTA_BYTES: usize = 0x0040_0000;
+
 pub struct RealtimeEvents<'state> {
     pub session: &'state mut RealtimeSession,
     pub ids: &'state dyn IdSource,
@@ -25,6 +29,11 @@ impl RealtimeEvents<'_> {
         message: &[u8],
         input: &RealtimeResponseTransformInput,
     ) -> Result<RealtimeResponseTypedDict, EventError> {
+        let chunks = input.current_delta_chunks.as_deref().unwrap_or_default();
+        check_delta_limits(
+            chunks.len(),
+            chunks.iter().map(|chunk| delta_text(chunk).len()).sum(),
+        )?;
         let mut state = TransformState::from(input);
         let events = match decode_realtime_native_event(message)? {
             DecodedEvent::InvalidJson { preview } => {
@@ -105,10 +114,14 @@ impl TransformState {
                 .filter(|text| !text.is_empty())
                 .map(str::to_owned),
             delta_type: self.delta_type.map(CompletionDeltaType::from),
-            delta_chunks: self
-                .delta_chunks
-                .as_ref()
-                .map(|chunks| chunks.iter().map(delta_chunk).collect::<Vec<DeltaChunk>>()),
+            delta_chunks: self.delta_chunks.as_ref().map(|chunks| {
+                chunks
+                    .iter()
+                    .map(|chunk| DeltaChunk {
+                        delta: delta_text(chunk).to_owned(),
+                    })
+                    .collect::<Vec<_>>()
+            }),
         }
     }
 
@@ -120,14 +133,40 @@ impl TransformState {
     }
 }
 
-fn delta_chunk(chunk: &Json) -> DeltaChunk {
-    let text = json_dict(chunk)
+fn delta_text(chunk: &Json) -> &str {
+    json_dict(chunk)
         .and_then(|fields| fields.get("delta"))
         .and_then(json_str)
-        .unwrap_or_default();
-    DeltaChunk {
-        delta: text.to_owned(),
-    }
+        .unwrap_or_default()
+}
+
+// A chunk is stored only while the accumulator stays inside both caps
+pub(super) fn append_delta(state: &mut TransformState, chunk: Json) -> Result<(), EventError> {
+    let count = state
+        .delta_chunks
+        .as_ref()
+        .map_or(0, Vec::len)
+        .saturating_add(1);
+    let held: usize = state
+        .delta_chunks
+        .iter()
+        .flatten()
+        .map(|chunk| delta_text(chunk).len())
+        .sum();
+    check_delta_limits(count, held.saturating_add(delta_text(&chunk).len()))?;
+    state.delta_chunks.get_or_insert_with(Vec::new).push(chunk);
+    Ok(())
+}
+
+fn check_delta_limits(count: usize, bytes: usize) -> Result<(), EventError> {
+    let (subject, limit) = if count > MAX_DELTA_CHUNKS {
+        ("response delta chunks", MAX_DELTA_CHUNKS)
+    } else if bytes > MAX_DELTA_BYTES {
+        ("response delta bytes", MAX_DELTA_BYTES)
+    } else {
+        return Ok(());
+    };
+    Err(EventError::ExceedsLimit { subject, limit })
 }
 
 impl From<CompletionDeltaType> for AllDeltaType {

@@ -18,6 +18,9 @@ deviations:
   - what: raise_provider_failure returns the mapped error for the bridge to raise, where LiteLLM raises it inside the function; the provider exception stays attached as the error's source.
     why: Rust reports failure through return values, and the bridge that owns the stream is the only place that can raise it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L193-L198
+  - what: A provider message or client preface above 1 MiB is refused before parsing, where LiteLLM parses any frame whatever its size; a provider message answers EventError::ExceedsLimit, a client preface reads as the empty mapping, and a response delta accumulator above 4096 chunks or 4 MiB of delta text answers EventError::ExceedsLimit before it is cloned or grown.
+    why: The bounded-inputs rule caps what untrusted input can size, and the accumulator is deep-cloned on every dispatch, so an unbounded one lets small textOutput frames spend memory and time without limit; the preface decoder is infallible, so it drops the message the way it drops JSON that is not an object, and both accumulator caps sit far past a long realtime response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1344-L1354
 kept_bugs:
   - what: A session.update whose session.modalities fails validation leaves the scope committed to the stream, so a second attempt on the same websocket is refused as already committed.
     why: LiteLLM commits the scope before it validates or sends the ack, and the bridge's retry path is written against that ordering.

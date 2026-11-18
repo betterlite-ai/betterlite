@@ -1,8 +1,7 @@
-use std::collections::VecDeque;
+use super::transport::{FakeClient, FakeStream};
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use async_trait::async_trait;
 use betterlite_core::api::realtime_contracts::events::{
     RealtimeResponseTransformInput, RealtimeResponseTypedDict,
 };
@@ -14,15 +13,10 @@ use uuid::Uuid;
 
 use crate::agentcore_stream::IdSource;
 use crate::realtime_events::ack::{AckError, SessionAck};
-use crate::realtime_events::client::{ClientError, RealtimeClientWebSocket};
 use crate::realtime_events::decode::{decode_realtime_client_preface, json_dict, json_str};
 use crate::realtime_events::dispatch::RealtimeEvents;
 use crate::realtime_events::error::EventError;
 use crate::realtime_events::scope::EventScope;
-use crate::realtime_events::stream::{
-    BedrockBidirectionalStream, BedrockInputStream, BedrockOutputChunk, BedrockOutputStream,
-    ClosableBedrockRuntimeClient, StreamError,
-};
 use crate::realtime_session::RealtimeSession;
 
 pub(super) const SECRET: &str = "sk-abcdefghijklmno";
@@ -173,152 +167,6 @@ pub(super) fn capture() -> (Captured, DefaultGuard) {
         .with_ansi(false)
         .finish();
     (captured, set_default(subscriber))
-}
-
-pub(super) enum Received {
-    Text(String),
-    Error(String),
-}
-
-pub(super) struct FakeClient {
-    pub(super) received: Mutex<VecDeque<Received>>,
-    pub(super) sent: Mutex<Vec<String>>,
-    pub(super) send_error: Option<String>,
-}
-
-impl FakeClient {
-    pub(super) fn new() -> Self {
-        Self {
-            received: Mutex::new(VecDeque::new()),
-            sent: Mutex::new(Vec::new()),
-            send_error: None,
-        }
-    }
-
-    pub(super) fn sent(&self) -> Vec<String> {
-        self.sent.lock().unwrap().clone()
-    }
-}
-
-#[async_trait]
-impl RealtimeClientWebSocket for FakeClient {
-    type Error = io::Error;
-
-    async fn receive_text(&self) -> Result<String, ClientError<io::Error>> {
-        let mut received = self.received.lock().unwrap();
-        match received.pop_front() {
-            Some(Received::Text(text)) => Ok(text),
-            Some(Received::Error(message)) => Err(ClientError {
-                message,
-                source: None,
-            }),
-            None => Err(ClientError {
-                message: "no more messages".to_owned(),
-                source: None,
-            }),
-        }
-    }
-
-    async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
-        self.sent.lock().unwrap().push(data);
-        match &self.send_error {
-            Some(message) => Err(ClientError {
-                message: message.clone(),
-                source: None,
-            }),
-            None => Ok(()),
-        }
-    }
-
-    async fn close(&self, _code: u16, _reason: Option<String>) {}
-}
-
-pub(super) struct FakeInput;
-
-#[async_trait]
-impl BedrockInputStream for FakeInput {
-    type Error = io::Error;
-
-    async fn send(&self, _event: Json) -> Result<(), StreamError<io::Error>> {
-        Ok(())
-    }
-
-    async fn close(&self) -> Result<(), StreamError<io::Error>> {
-        Ok(())
-    }
-}
-
-pub(super) struct FakeOutput;
-
-#[async_trait]
-impl BedrockOutputStream for FakeOutput {
-    type Error = io::Error;
-
-    async fn receive(&self) -> Result<Option<Box<dyn BedrockOutputChunk>>, StreamError<io::Error>> {
-        Ok(None)
-    }
-}
-
-pub(super) struct FakeStream {
-    pub(super) input: FakeInput,
-    pub(super) error: Option<String>,
-    pub(super) awaited: Mutex<u32>,
-}
-
-impl FakeStream {
-    pub(super) fn new() -> Self {
-        Self {
-            input: FakeInput,
-            error: None,
-            awaited: Mutex::new(0),
-        }
-    }
-
-    pub(super) fn awaited(&self) -> u32 {
-        *self.awaited.lock().unwrap()
-    }
-}
-
-#[async_trait]
-impl BedrockBidirectionalStream for FakeStream {
-    type Error = io::Error;
-
-    fn input_stream(&self) -> &dyn BedrockInputStream<Error = io::Error> {
-        &self.input
-    }
-
-    async fn await_output(
-        &self,
-    ) -> Result<(Json, Box<dyn BedrockOutputStream<Error = io::Error>>), StreamError<io::Error>>
-    {
-        *self.awaited.lock().unwrap() += 1;
-        match &self.error {
-            Some(message) => Err(StreamError {
-                message: message.clone(),
-                source: None,
-            }),
-            None => Ok((Json::Null, Box::new(FakeOutput))),
-        }
-    }
-}
-
-pub(super) struct Closable {
-    pub(super) error: Option<String>,
-}
-
-#[async_trait]
-impl ClosableBedrockRuntimeClient for Closable {
-    type Error = io::Error;
-
-    async fn close(&self) -> Result<(), StreamError<io::Error>> {
-        match &self.error {
-            Some(message) => Err(StreamError {
-                message: message.clone(),
-                source: None,
-            }),
-            None => Ok(()),
-        }
-    }
 }
 
 pub(super) struct AckSetup {

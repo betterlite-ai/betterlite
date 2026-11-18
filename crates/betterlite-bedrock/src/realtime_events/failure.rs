@@ -45,9 +45,10 @@ pub enum ProviderStreamError<E> {
 }
 
 #[must_use]
-pub fn as_bedrock_error<E: StdError + 'static>(
-    failure: ProviderFailure<E>,
-) -> ProviderStreamError<E> {
+pub fn as_bedrock_error<E>(failure: ProviderFailure<E>) -> ProviderStreamError<E>
+where
+    E: StdError + 'static,
+{
     let status_code = BEDROCK_STREAM_ERROR_STATUS
         .iter()
         .find(|(name, _)| *name == failure.class_name.as_str())
@@ -62,11 +63,14 @@ pub fn as_bedrock_error<E: StdError + 'static>(
     }
 }
 
-pub fn raise_provider_failure<E: StdError + 'static>(
+pub fn raise_provider_failure<E>(
     scope: &mut EventScope,
     failure: ProviderFailure<E>,
     redactor: &Redactor,
-) -> ProviderStreamError<E> {
+) -> ProviderStreamError<E>
+where
+    E: StdError + 'static,
+{
     let error = as_bedrock_error(failure);
     let redacted = redactor.redact_string(&error.to_string());
     tracing::error!("Bedrock Realtime: provider stream failed: {redacted}");

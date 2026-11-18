@@ -199,6 +199,7 @@ const fn raised(error: &EventError) -> &'static str {
         EventError::EventNotAnObject { .. } => "event_not_an_object",
         EventError::Payload { .. } => "invalid_payload",
         EventError::Encode { .. } => "encode",
+        EventError::ExceedsLimit { .. } => "exceeds_limit",
         EventError::Completion(_) => "completion",
     }
 }

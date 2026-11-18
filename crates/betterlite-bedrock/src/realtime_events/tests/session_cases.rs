@@ -154,6 +154,34 @@ fn user_transcript_deltas() {
         Some("conversation.item.input_audio_transcription.delta")
     );
     assert_eq!(session.transcript.buffer, "hello");
+    let transcript_id = session.transcript.item_id.clone();
+    let stage = session.transcript.generation_stage.clone();
+    // An audioOutput during an active transcription still reaches the client as an audio delta
+    let response = support::transform(
+        &mut session,
+        &ids,
+        r#"{"event":{"audioOutput":{"content":"YXVkaW8="}}}"#,
+        &input,
+    )
+    .expect("an audio delta during a transcript");
+    let events = support::events(&response);
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        support::event_type(&events[0]),
+        Some("response.audio.delta")
+    );
+    let delta = json_dict(&events[0]).expect("an audio delta object");
+    assert_eq!(delta.get("delta"), Some(&Json::Text("YXVkaW8=".to_owned())));
+    assert_eq!(delta.get("item_id"), Some(&Json::Text("item".to_owned())));
+    assert_eq!(
+        delta.get("response_id"),
+        Some(&Json::Text("resp".to_owned()))
+    );
+    assert!(session.transcript.active);
+    assert_eq!(session.transcript.buffer, "hello");
+    assert_eq!(response.current_delta_chunks, input.current_delta_chunks);
+    assert_eq!(session.transcript.item_id, transcript_id);
+    assert_eq!(session.transcript.generation_stage, stage);
     let response = support::transform(
         &mut session,
         &ids,
@@ -213,4 +241,49 @@ fn inactive_text_output() {
         &support::input(),
     );
     assert_eq!(events.len(), 0);
+}
+
+pub(super) fn transcript_content_end() {
+    let input = support::input_with_ids("item", "resp", "conv");
+    let ids = support::CountingIds::new();
+    let mut session = support::new_session();
+    support::transform(
+        &mut session,
+        &ids,
+        r#"{"event":{"contentStart":{"role":"USER","type":"TEXT"}}}"#,
+        &input,
+    )
+    .expect("a user content start");
+    support::transform(
+        &mut session,
+        &ids,
+        r#"{"event":{"textOutput":{"content":"hello"}}}"#,
+        &input,
+    )
+    .expect("a transcript delta");
+    let response = support::transform(
+        &mut session,
+        &ids,
+        r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
+        &input,
+    )
+    .expect("a transcript end");
+    assert_eq!(support::events(&response).len(), 1);
+    assert_eq!(
+        support::event_type(&support::events(&response)[0]),
+        Some("conversation.item.input_audio_transcription.completed")
+    );
+    assert!(!session.transcript.active);
+    assert!(session.transcript.buffer.is_empty());
+
+    let events = support::transform_events(
+        r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
+        &input,
+    );
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        support::event_type(&events[0]),
+        Some("response.output_item.done")
+    );
+    assert_eq!(support::event_type(&events[1]), Some("response.done"));
 }

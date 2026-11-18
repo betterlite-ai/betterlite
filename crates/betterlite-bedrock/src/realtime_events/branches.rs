@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 use serde::Serialize;
 
 use super::decode::{NativeEvent, require_object};
-use super::dispatch::{RealtimeEvents, TransformState};
+use super::dispatch::{RealtimeEvents, TransformState, append_delta};
 use super::error::EventError;
 use crate::realtime_completion::content_end::content_end_events;
 use crate::realtime_completion::tool_input::ToolUseEvent;
@@ -84,7 +84,7 @@ impl RealtimeEvents<'_> {
         }
         let current = state.output_ids();
         let mut discarded = None;
-        let mut output = NovaRealtimeOutput {
+        let output = NovaRealtimeOutput {
             session: &mut *self.session,
             ids: self.ids,
         };
@@ -92,10 +92,7 @@ impl RealtimeEvents<'_> {
             return Ok(Vec::new());
         };
         let json = event_json(&delta)?;
-        state
-            .delta_chunks
-            .get_or_insert_with(Vec::new)
-            .push(json.clone());
+        append_delta(state, json.clone())?;
         Ok(vec![json])
     }
 
@@ -207,14 +204,20 @@ impl RealtimeEvents<'_> {
     }
 }
 
-fn event_json<T: Serialize>(event: &T) -> Result<Json, EventError> {
+fn event_json<T>(event: &T) -> Result<Json, EventError>
+where
+    T: Serialize,
+{
     serde_json::from_value(
         serde_json::to_value(event).map_err(|source| EventError::Encode { source })?,
     )
     .map_err(|source| EventError::Encode { source })
 }
 
-fn events_json<T: Serialize>(events: &[T]) -> Result<Vec<Json>, EventError> {
+fn events_json<T>(events: &[T]) -> Result<Vec<Json>, EventError>
+where
+    T: Serialize,
+{
     let mut encoded = Vec::with_capacity(events.len());
     for event in events {
         encoded.push(event_json(event)?);
