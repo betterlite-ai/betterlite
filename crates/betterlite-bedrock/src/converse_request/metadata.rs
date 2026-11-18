@@ -1,7 +1,7 @@
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 
 use crate::converse_request::CommonRequest;
-use crate::converse_request::convert::{request_params, request_value};
+use crate::converse_request::convert::request_value;
 use crate::request_policy::{BedrockRequestPolicy, Params};
 
 // B596 owns the pair: ownership follows the operator's allow-list, not whether anything resolved.
@@ -23,9 +23,4 @@ pub(super) fn resolve(
                 .collect(),
         )
     });
-}
-
-// The whole litellm_params dict is projected; the resolver reads only its metadata buckets.
-pub(super) fn params_of(litellm_params: Option<&Object>) -> Params {
-    litellm_params.map_or_else(Params::new, request_params)
 }

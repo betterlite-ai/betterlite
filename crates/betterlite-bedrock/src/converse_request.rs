@@ -32,11 +32,12 @@ use crate::bedrock_model_capabilities::catalog_flags::{
 use crate::bedrock_model_capabilities::strict_tools::converse_supports_strict_tools;
 use crate::converse_messages::{ConverseMessagePolicy, transform_messages};
 use crate::converse_request::body::PrepareRequest;
+use crate::converse_request::convert::request_params;
 use crate::converse_request::error::ConverseRequestError;
 use crate::converse_request::tools::ToolsRequest;
 use crate::event_frames::beta::BetaHeader;
 use crate::model_routes::ParamMap;
-use crate::request_policy::BedrockRequestPolicy;
+use crate::request_policy::{BedrockRequestPolicy, Params};
 
 const DROP_PARAMS_FIELD: &str = "drop_params";
 const USER_CONTINUE_FIELD: &str = "user_continue_message";
@@ -50,12 +51,12 @@ pub struct CommonRequest {
         rename = "additionalModelRequestFields",
         skip_serializing_if = "Option::is_none"
     )]
-    pub additional_model_request_fields: Option<Object>,
+    pub additional_fields: Option<Object>,
     #[serde(
         rename = "additionalModelResponseFieldPaths",
         skip_serializing_if = "Option::is_none"
     )]
-    pub additional_model_response_field_paths: Option<Vec<String>>,
+    pub response_paths: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub system: Vec<Json>,
     #[serde(rename = "guardrailConfig", skip_serializing_if = "Option::is_none")]
@@ -208,10 +209,12 @@ where
     )
     .await?;
     let mut common = assembly::common(prepared, transformed.system, outcome.tool_config)?;
-    let litellm_params = input.litellm_params.as_deref();
     metadata::resolve(
         input.settings.request_metadata,
-        &metadata::params_of(litellm_params),
+        &input
+            .litellm_params
+            .as_deref()
+            .map_or_else(Params::new, request_params),
         &mut common,
     );
     Ok(ConverseRequestBody {

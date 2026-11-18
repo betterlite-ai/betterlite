@@ -2,7 +2,8 @@ from typing import Protocol, TypedDict, runtime_checkable
 
 import litellm
 from litellm.llms.bedrock.chat.converse_transformation import AmazonConverseConfig
-from pydantic import BaseModel, ConfigDict, JsonValue as Json
+from pydantic import BaseModel, ConfigDict
+from pydantic import JsonValue as Json
 
 
 class Input(TypedDict):

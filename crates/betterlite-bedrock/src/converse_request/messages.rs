@@ -30,10 +30,11 @@ where
     R: Resolve,
     Ids: Fn() -> String + Sync,
 {
-    let user_continue_message = match request.user_continue_message.as_ref() {
-        Some(value) => Some(projected(value)?),
-        None => None,
-    };
+    let user_continue_message = request
+        .user_continue_message
+        .as_ref()
+        .map(|value| transcode::<Message, _>(value).map(|message| project_message(&message)))
+        .transpose()?;
     let (projected, _assistant_continue) = project_messages(request.messages, None, names);
     let cache_points = MessageCachePoints {
         support: request.cache_points,
@@ -47,9 +48,4 @@ where
         modify_params: request.modify_params,
     };
     Ok(converse_messages(&projected, &conversion, request.new_id).await?)
-}
-
-fn projected(value: &Json) -> Result<Json, ConverseRequestError> {
-    let message: Message = transcode(value)?;
-    Ok(project_message(&message))
 }

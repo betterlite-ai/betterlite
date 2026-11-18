@@ -39,8 +39,8 @@ pub(super) fn common(
         .then(|| vec![THINKING_OUTPUT_PATH.to_owned()]);
     Ok(CommonRequest {
         inference_config,
-        additional_model_request_fields: additional_fields,
-        additional_model_response_field_paths: response_paths,
+        additional_fields,
+        response_paths,
         system,
         guardrail_config,
         performance_config,

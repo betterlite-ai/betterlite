@@ -37,8 +37,9 @@ pub(super) fn thinking_history_policy() {
     let call = Call {
         messages: TOOL_TURN,
         settings: Settings {
+            global_drop: false,
             modify_params: true,
-            ..Settings::default()
+            neutralize: false,
         },
         ..Call::new(CLAUDE_4_5, &enabled)
     };
@@ -52,8 +53,9 @@ pub(super) fn thinking_history_policy() {
     let call = Call {
         messages: THOUGHT_TURN,
         settings: Settings {
+            global_drop: false,
             modify_params: true,
-            ..Settings::default()
+            neutralize: false,
         },
         ..Call::new(CLAUDE_4_5, &enabled)
     };

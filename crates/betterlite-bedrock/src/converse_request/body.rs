@@ -1,5 +1,8 @@
+use std::collections::BTreeSet;
+
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
 use betterlite_anthropic::anthropic_capability_catalog::DropParams;
+use betterlite_context::request_records::RequestRecordProjection;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
@@ -14,7 +17,7 @@ use crate::converse_params::wire::{carries_value, transcode};
 use crate::converse_request::convert::request_value;
 use crate::converse_request::error::ConverseRequestError;
 use crate::converse_request::output_config::{self, OutputCandidates, OutputRequest};
-use crate::converse_request::records::{filter_exceptions, filter_internal, safe_copy};
+use crate::converse_request::records::{MAX_DEPTH, params_of, record_of, safe_copy};
 use crate::model_routes::{ParamMap, ParamValue};
 use crate::request_policy::validation::validate_request_metadata;
 
@@ -68,7 +71,9 @@ where
     let already_normalized = optional_params
         .shift_remove(OUTPUT_CONFIG_MARKER)
         .is_some_and(|value| carries_value(&value));
-    let mut inference_params = safe_copy(&filter_exceptions(optional_params)?)?;
+    let exceptions =
+        RequestRecordProjection::filter_parameters(record_of(optional_params)?, MAX_DEPTH);
+    let mut inference_params = safe_copy(&params_of(&exceptions)?)?;
     inference_params.shift_remove(JSON_MODE_FIELD);
 
     let (anthropic_output, format_candidate) =
@@ -88,7 +93,11 @@ where
         request.drop,
         request.catalogs,
     )?);
-    additional = filter_exceptions(&filter_internal(&additional)?)?;
+    let internal =
+        RequestRecordProjection::filter_internal(record_of(&additional)?, &BTreeSet::new());
+    additional = params_of(&RequestRecordProjection::filter_parameters(
+        internal, MAX_DEPTH,
+    ))?;
 
     let decision = output_config::decide(
         &OutputRequest {
@@ -118,15 +127,15 @@ where
     })
 }
 
-fn is_supported(key: &str) -> bool {
-    INFERENCE_FIELDS.contains(&key) || TOOL_FIELDS.contains(&key) || CONFIG_FIELDS.contains(&key)
-}
-
 // The supported fields keep the caller's order; everything else is a request field.
 fn split_additional(inference_params: &mut ParamMap) -> ParamMap {
     let unsupported: Vec<String> = inference_params
         .keys()
-        .filter(|key| !is_supported(key))
+        .filter(|key| {
+            !(INFERENCE_FIELDS.contains(&key.as_str())
+                || TOOL_FIELDS.contains(&key.as_str())
+                || CONFIG_FIELDS.contains(&key.as_str()))
+        })
         .cloned()
         .collect();
     unsupported

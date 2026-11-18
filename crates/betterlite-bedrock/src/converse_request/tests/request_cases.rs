@@ -148,7 +148,8 @@ pub(super) fn model_arn_request() {
     let call = Call {
         settings: Settings {
             global_drop: true,
-            ..Settings::default()
+            modify_params: false,
+            neutralize: false,
         },
         ..Call::new(CLAUDE_4_5, r#"{"output_config": {"effort": "high"}}"#)
     };
