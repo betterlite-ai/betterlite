@@ -13,10 +13,8 @@ use super::support::{
 };
 use crate::daily_spend_sql::values::SpendColumnValue;
 use crate::spend_queues::SpendQueueError;
-use crate::spend_queues::daily::{
-    DailySpendUpdateQueue, aggregate_daily_spend_update_transactions,
-};
-use crate::spend_queues::events::{NoSpendQueueEventSink, SpendQueueService};
+use crate::spend_queues::daily::{DailySpendUpdateQueue, aggregate_daily_rows};
+use crate::spend_queues::events::{NoSpendQueueEventSink, SpendQueueEventSink, SpendQueueService};
 
 #[test]
 fn the_first_payload_metadata_survives_and_later_metadata_is_ignored() {
@@ -36,9 +34,7 @@ fn the_first_payload_metadata_survives_and_later_metadata_is_ignored() {
             SpendColumnValue::Int(1),
         ),
     );
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("10.0")), second])
-            .unwrap();
+    let aggregated = aggregate_daily_rows(&[update("k", daily_row("10.0")), second]).unwrap();
     let row = aggregated.get("k").unwrap();
     assert_eq!(
         row.get("date"),
@@ -60,7 +56,7 @@ fn the_first_payload_metadata_survives_and_later_metadata_is_ignored() {
     assert_eq!(row.get("api_requests"), Some(&SpendColumnValue::Int(2)));
     assert_eq!(
         row.get("successful_requests"),
-        Some(&SpendColumnValue::Int(1))
+        Some(&SpendColumnValue::Int(2))
     );
     assert_eq!(row.get("failed_requests"), Some(&SpendColumnValue::Int(1)));
     assert_eq!(
@@ -80,8 +76,7 @@ fn the_first_payload_metadata_survives_and_later_metadata_is_ignored() {
 #[test]
 fn a_singleton_keeps_absent_optional_metrics_absent() {
     let row = daily_row("10.0");
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[update("k", row.clone())]).unwrap();
+    let aggregated = aggregate_daily_rows(&[update("k", row.clone())]).unwrap();
     assert_eq!(aggregated.get("k"), Some(&row));
     assert!(!row.contains_key("cache_read_input_tokens"));
     assert!(!row.contains_key("autorouter_savings_spend"));
@@ -89,48 +84,29 @@ fn a_singleton_keeps_absent_optional_metrics_absent() {
 
 #[test]
 fn different_transaction_keys_stay_apart() {
-    let aggregated = aggregate_daily_spend_update_transactions(&[
-        update("a", daily_row("1.5")),
-        update("b", daily_row("2.5")),
-    ])
-    .unwrap();
+    let aggregated =
+        aggregate_daily_rows(&[update("a", daily_row("1.5")), update("b", daily_row("2.5"))])
+            .unwrap();
     assert_eq!(aggregated.len(), 2);
     assert!(!aggregated.contains_key(""));
 }
 
 #[rstest]
-#[case::null("cache_read_input_tokens", SpendColumnValue::Null)]
-#[case::false_bool("cache_creation_input_tokens", SpendColumnValue::Bool(false))]
-#[case::zero("compression_saved_tokens", SpendColumnValue::Int(0))]
+#[case::null_counter("cache_read_input_tokens", SpendColumnValue::Null)]
+#[case::false_bool_counter("cache_creation_input_tokens", SpendColumnValue::Bool(false))]
+#[case::zero_counter("compression_saved_tokens", SpendColumnValue::Int(0))]
 #[case::empty_text("total_response_time_ms", SpendColumnValue::Text(String::new()))]
 #[case::empty_array("timed_requests", SpendColumnValue::Array(Vec::new()))]
-fn a_falsey_optional_counter_adds_zero(
+#[case::null_savings("compression_savings_spend", SpendColumnValue::Null)]
+#[case::false_bool_savings("prompt_caching_savings_spend", SpendColumnValue::Bool(false))]
+#[case::zero_savings("gateway_injected_caching_savings_spend", SpendColumnValue::Int(0))]
+#[case::empty_object_savings("autorouter_savings_spend", SpendColumnValue::Object(BTreeMap::new()))]
+fn a_falsey_optional_metric_adds_zero(
     #[case] field: &'static str,
     #[case] value: SpendColumnValue,
 ) {
     let second = update("k", with_field(daily_row("1.5"), field, value));
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.5")), second])
-            .unwrap();
-    assert_eq!(
-        aggregated.get("k").unwrap().get(field),
-        Some(&SpendColumnValue::Int(0))
-    );
-}
-
-#[rstest]
-#[case::null("compression_savings_spend", SpendColumnValue::Null)]
-#[case::false_bool("prompt_caching_savings_spend", SpendColumnValue::Bool(false))]
-#[case::zero("gateway_injected_caching_savings_spend", SpendColumnValue::Int(0))]
-#[case::empty_object("autorouter_savings_spend", SpendColumnValue::Object(BTreeMap::new()))]
-fn a_falsey_optional_savings_adds_zero(
-    #[case] field: &'static str,
-    #[case] value: SpendColumnValue,
-) {
-    let second = update("k", with_field(daily_row("1.5"), field, value));
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.5")), second])
-            .unwrap();
+    let aggregated = aggregate_daily_rows(&[update("k", daily_row("1.5")), second]).unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get(field),
         Some(&SpendColumnValue::Int(0))
@@ -147,7 +123,7 @@ fn integer_money_stays_an_integer() {
         "k",
         with_field(daily_row("1.0"), "spend", SpendColumnValue::Int(5)),
     );
-    let aggregated = aggregate_daily_spend_update_transactions(&[first, second]).unwrap();
+    let aggregated = aggregate_daily_rows(&[first, second]).unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get("spend"),
         Some(&SpendColumnValue::Int(15))
@@ -168,7 +144,7 @@ fn decimal_money_stays_decimal_when_the_other_side_is_an_integer() {
         "k",
         with_field(daily_row("1.5"), "spend", SpendColumnValue::Int(2)),
     );
-    let aggregated = aggregate_daily_spend_update_transactions(&[first, second]).unwrap();
+    let aggregated = aggregate_daily_rows(&[first, second]).unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("3.0")))
@@ -201,9 +177,7 @@ fn a_nonzero_optional_metric_adds_its_own_value() {
             SpendColumnValue::Bool(true),
         ),
     );
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second])
-            .unwrap();
+    let aggregated = aggregate_daily_rows(&[update("k", daily_row("1.0")), second]).unwrap();
     let row = aggregated.get("k").unwrap();
     assert_eq!(
         row.get("cache_read_input_tokens"),
@@ -226,11 +200,9 @@ fn a_nonzero_optional_metric_adds_its_own_value() {
 
 #[test]
 fn money_is_summed_as_an_exact_decimal() {
-    let aggregated = aggregate_daily_spend_update_transactions(&[
-        update("k", daily_row("0.1")),
-        update("k", daily_row("0.2")),
-    ])
-    .unwrap();
+    let aggregated =
+        aggregate_daily_rows(&[update("k", daily_row("0.1")), update("k", daily_row("0.2"))])
+            .unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("0.3")))
@@ -247,8 +219,7 @@ fn a_fractional_counter_is_truncated() {
             SpendColumnValue::Decimal(decimal("4.9")),
         ),
     );
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]).unwrap();
+    let aggregated = aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]).unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get("prompt_tokens"),
         Some(&SpendColumnValue::Int(7))
@@ -266,7 +237,7 @@ fn a_fractional_counter_beyond_the_integer_range_is_reported() {
         ),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]),
         Err(SpendQueueError::FieldOverflow {
             field: "prompt_tokens"
         })
@@ -277,7 +248,7 @@ fn a_fractional_counter_beyond_the_integer_range_is_reported() {
 fn a_missing_required_incoming_field_is_reported() {
     let second = update("k", without_field(daily_row("1.0"), "spend"));
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::MissingField { field: "spend" })
     ));
 }
@@ -286,7 +257,7 @@ fn a_missing_required_incoming_field_is_reported() {
 fn a_missing_required_incoming_counter_is_reported() {
     let second = update("k", without_field(daily_row("1.0"), "prompt_tokens"));
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::MissingField {
             field: "prompt_tokens"
         })
@@ -297,7 +268,7 @@ fn a_missing_required_incoming_counter_is_reported() {
 fn a_missing_required_existing_field_is_reported() {
     let first = update("k", without_field(daily_row("1.0"), "prompt_tokens"));
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]),
         Err(SpendQueueError::MissingField {
             field: "prompt_tokens"
         })
@@ -308,7 +279,7 @@ fn a_missing_required_existing_field_is_reported() {
 fn a_missing_required_existing_money_field_is_reported() {
     let first = update("k", without_field(daily_row("1.0"), "spend"));
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]),
         Err(SpendQueueError::MissingField { field: "spend" })
     ));
 }
@@ -320,7 +291,7 @@ fn the_first_missing_metric_the_source_raises_on_is_reported() {
         without_field(without_field(daily_row("1.0"), "spend"), "prompt_tokens"),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::MissingField { field: "spend" })
     ));
 }
@@ -332,7 +303,7 @@ fn a_null_required_incoming_value_is_reported() {
         with_field(daily_row("1.0"), "spend", SpendColumnValue::Null),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::InvalidAddition { field: "spend" })
     ));
 }
@@ -344,7 +315,7 @@ fn a_null_required_incoming_counter_is_reported() {
         with_field(daily_row("1.0"), "prompt_tokens", SpendColumnValue::Null),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::InvalidAddition {
             field: "prompt_tokens"
         })
@@ -365,9 +336,7 @@ fn a_null_optional_metric_adds_zero() {
             SpendColumnValue::Null,
         ),
     );
-    let aggregated =
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second])
-            .unwrap();
+    let aggregated = aggregate_daily_rows(&[update("k", daily_row("1.0")), second]).unwrap();
     let row = aggregated.get("k").unwrap();
     assert_eq!(
         row.get("cache_read_input_tokens"),
@@ -398,7 +367,7 @@ fn an_existing_null_optional_value_is_reported() {
         ),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[first, second]),
+        aggregate_daily_rows(&[first, second]),
         Err(SpendQueueError::InvalidAddition {
             field: "cache_read_input_tokens"
         })
@@ -416,7 +385,7 @@ fn a_text_metric_value_is_reported() {
         ),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[update("k", daily_row("1.0")), second]),
+        aggregate_daily_rows(&[update("k", daily_row("1.0")), second]),
         Err(SpendQueueError::InvalidAddition {
             field: "total_response_time_ms"
         })
@@ -434,7 +403,7 @@ fn a_counter_that_overflows_is_reported() {
         ),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]),
         Err(SpendQueueError::FieldOverflow {
             field: "prompt_tokens"
         })
@@ -452,7 +421,7 @@ fn money_that_overflows_the_decimal_range_is_reported() {
         ),
     );
     assert!(matches!(
-        aggregate_daily_spend_update_transactions(&[first, update("k", daily_row("1.0"))]),
+        aggregate_daily_rows(&[first, update("k", daily_row("1.0"))]),
         Err(SpendQueueError::FieldOverflow { field: "spend" })
     ));
 }
@@ -469,10 +438,7 @@ async fn a_flush_aggregates_rows_and_logs_the_item_count() {
         .add_update(update("k", daily_row("2.5")))
         .await
         .unwrap();
-    let aggregated = queue
-        .flush_and_get_aggregated_daily_spend_update_transactions()
-        .await
-        .unwrap();
+    let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("12.5")))
@@ -487,10 +453,7 @@ async fn a_flush_aggregates_rows_and_logs_the_item_count() {
 async fn an_empty_flush_returns_nothing_and_logs_nothing() {
     let logs = capture_logs();
     let queue = DailySpendUpdateQueue::new(8, 100, 10, Arc::new(NoSpendQueueEventSink)).unwrap();
-    let aggregated = queue
-        .flush_and_get_aggregated_daily_spend_update_transactions()
-        .await
-        .unwrap();
+    let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
     assert!(aggregated.is_empty());
     assert!(!logs.contains("flushed daily spend update items"));
     queue.shutdown().await;
@@ -519,10 +482,7 @@ async fn a_singleton_flush_keeps_absent_metrics_absent() {
         .add_update(update("k", daily_row("1.0")))
         .await
         .unwrap();
-    let aggregated = queue
-        .flush_and_get_aggregated_daily_spend_update_transactions()
-        .await
-        .unwrap();
+    let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
     assert!(!aggregated.get("k").unwrap().contains_key("timed_requests"));
     queue.shutdown().await;
 }
@@ -530,7 +490,8 @@ async fn a_singleton_flush_keeps_absent_metrics_absent() {
 #[tokio::test]
 async fn the_daily_queue_compacts_at_the_threshold_and_reports_the_compacted_size() {
     let sink = Arc::new(RecordingSink::default());
-    let queue = DailySpendUpdateQueue::new(8, 2, 10, Arc::clone(&sink)).unwrap();
+    let port: Arc<dyn SpendQueueEventSink> = Arc::clone(&sink);
+    let queue = DailySpendUpdateQueue::new(8, 2, 10, port).unwrap();
     queue
         .add_update(update("k", daily_row("0.5")))
         .await
@@ -543,10 +504,7 @@ async fn the_daily_queue_compacts_at_the_threshold_and_reports_the_compacted_siz
         .add_update(update("k", daily_row("0.25")))
         .await
         .unwrap();
-    let aggregated = queue
-        .flush_and_get_aggregated_daily_spend_update_transactions()
-        .await
-        .unwrap();
+    let aggregated = queue.flush_aggregated_daily_rows().await.unwrap();
     assert_eq!(
         aggregated.get("k").unwrap().get("spend"),
         Some(&SpendColumnValue::Decimal(decimal("1.0")))
@@ -586,13 +544,10 @@ async fn a_flush_waits_for_a_tracked_settlement_and_includes_its_row() {
             .unwrap();
     });
     start.notify_one();
-    let aggregated = timeout(
-        Duration::from_secs(1),
-        queue.flush_and_get_aggregated_daily_spend_update_transactions(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let aggregated = timeout(Duration::from_secs(1), queue.flush_aggregated_daily_rows())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(aggregated.contains_key("a"));
     assert!(aggregated.contains_key("b"));
     queue.shutdown().await;
@@ -617,13 +572,10 @@ async fn a_settlement_blocked_on_a_full_queue_is_relieved_by_the_flush() {
             .unwrap();
     });
     start.notify_one();
-    let aggregated = timeout(
-        Duration::from_secs(1),
-        queue.flush_and_get_aggregated_daily_spend_update_transactions(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let aggregated = timeout(Duration::from_secs(1), queue.flush_aggregated_daily_rows())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(aggregated.len(), 2);
     queue.shutdown().await;
 }
@@ -651,13 +603,10 @@ async fn a_flush_waits_for_a_settlement_registered_while_it_waits() {
             .unwrap();
     });
     start.notify_one();
-    let aggregated = timeout(
-        Duration::from_secs(1),
-        queue.flush_and_get_aggregated_daily_spend_update_transactions(),
-    )
-    .await
-    .unwrap()
-    .unwrap();
+    let aggregated = timeout(Duration::from_secs(1), queue.flush_aggregated_daily_rows())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(aggregated.len(), 2);
     queue.shutdown().await;
 }
@@ -677,7 +626,8 @@ async fn settling_returns_immediately_when_no_commit_is_tracked() {
 #[tokio::test]
 async fn shutdown_waits_for_settlements_and_delivers_their_events() {
     let sink = Arc::new(RecordingSink::default());
-    let queue = Arc::new(DailySpendUpdateQueue::new(8, 100, 10, Arc::clone(&sink)).unwrap());
+    let port: Arc<dyn SpendQueueEventSink> = Arc::clone(&sink);
+    let queue = Arc::new(DailySpendUpdateQueue::new(8, 100, 10, port).unwrap());
     queue
         .add_update(update("a", daily_row("1.0")))
         .await

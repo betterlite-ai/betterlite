@@ -6,10 +6,11 @@ use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use futures_util::future::{Either, select};
 use tokio::sync::Notify;
 use tokio_util::task::TaskTracker;
 
-use self::fields::{add_counter, add_money};
+use self::fields::{Measure, add_metric};
 use super::SpendQueueError;
 use super::events::{SpendQueueEvent, SpendQueueEventSink, SpendQueueService};
 use super::interrupted::{CommitProgress, SettleCompletion};
@@ -51,7 +52,7 @@ const METRICS: [(&str, Metric); 15] = [
 ];
 
 // get_aggregated_daily_spend_update_transactions: one payload per daily transaction key, the first payload kept whole and every later one added onto it.
-pub fn aggregate_daily_spend_update_transactions(
+pub fn aggregate_daily_rows(
     updates: &[DailySpendUpdate],
 ) -> Result<DailySpendUpdate, SpendQueueError> {
     let mut aggregated = DailySpendUpdate::new();
@@ -72,10 +73,14 @@ pub fn aggregate_daily_spend_update_transactions(
 fn merge_daily_row(existing: &mut SpendRow, incoming: &SpendRow) -> Result<(), SpendQueueError> {
     for (field, metric) in METRICS {
         match metric {
-            Metric::RequiredCounter => add_counter(existing, incoming, field, true)?,
-            Metric::OptionalCounter => add_counter(existing, incoming, field, false)?,
-            Metric::RequiredMoney => add_money(existing, incoming, field, true)?,
-            Metric::OptionalMoney => add_money(existing, incoming, field, false)?,
+            Metric::RequiredCounter => {
+                add_metric(existing, incoming, field, Measure::Counter, true)?;
+            }
+            Metric::OptionalCounter => {
+                add_metric(existing, incoming, field, Measure::Counter, false)?;
+            }
+            Metric::RequiredMoney => add_metric(existing, incoming, field, Measure::Money, true)?,
+            Metric::OptionalMoney => add_metric(existing, incoming, field, Measure::Money, false)?,
         }
     }
     Ok(())
@@ -113,7 +118,8 @@ impl DailySpendUpdateQueue {
         // The source logs the whole update here; betterlite's log line keeps spend bodies out of every log.
         tracing::debug!("Adding update to the in-memory daily spend queue");
         self.queue.add(update, self).await;
-        self.queue.compact_when_full(aggregate_queue_updates)
+        self.queue
+            .compact_when_full(|updates| Ok(vec![aggregate_daily_rows(updates)?]))
     }
 
     // track_interrupted_commit: the settlement runs on the queue's own task set, so shutdown waits for it and a flush never misses it.
@@ -145,9 +151,7 @@ impl DailySpendUpdateQueue {
     }
 
     // flush_and_get_aggregated_daily_spend_update_transactions: settlements run first and their requeued rows join this flush.
-    pub async fn flush_and_get_aggregated_daily_spend_update_transactions(
-        &self,
-    ) -> Result<DailySpendUpdate, SpendQueueError> {
+    pub async fn flush_aggregated_daily_rows(&self) -> Result<DailySpendUpdate, SpendQueueError> {
         let mut updates = self.settle_before_flush().await;
         updates.extend(self.queue.drain());
         if !updates.is_empty() {
@@ -156,7 +160,7 @@ impl DailySpendUpdateQueue {
                 "Spend tracking - flushed daily spend update items from in-memory queue"
             );
         }
-        aggregate_daily_spend_update_transactions(&updates)
+        aggregate_daily_rows(&updates)
     }
 
     // A settlement that needs room while the queue is full drains the queue into this batch instead of deadlocking against the flush waiting for it.
@@ -165,9 +169,11 @@ impl DailySpendUpdateQueue {
         let settle = self.settle_interrupted_commits();
         tokio::pin!(settle);
         loop {
-            tokio::select! {
-                () = &mut settle => return relieved,
-                () = self.queue.pressure.notified() => relieved.extend(self.queue.drain()),
+            let pressure = self.queue.pressure.notified();
+            tokio::pin!(pressure);
+            match select(settle.as_mut(), pressure).await {
+                Either::Left(((), _)) => return relieved,
+                Either::Right(((), _)) => relieved.extend(self.queue.drain()),
             }
         }
     }
@@ -190,11 +196,4 @@ impl EnqueueObserver for DailySpendUpdateQueue {
         let sink = Arc::clone(&self.sink);
         self.service_tasks.spawn(async move { sink.emit(event) });
     }
-}
-
-fn aggregate_queue_updates(
-    updates: &[DailySpendUpdate],
-) -> Result<Vec<DailySpendUpdate>, SpendQueueError> {
-    let aggregated = aggregate_daily_spend_update_transactions(updates)?;
-    Ok(vec![aggregated])
 }
