@@ -9,6 +9,7 @@ use super::{
 };
 use crate::quality_router::QualityRouter;
 use crate::quality_router::decision::Decision;
+use crate::quality_router::messages::RequestText;
 
 fn pick(router: &QualityRouter, request: &[Message]) -> Option<String> {
     let mut metadata = None;
@@ -225,6 +226,71 @@ fn only_text_parts_of_a_content_list_carry_the_prompt() {
         .unwrap();
     assert_eq!(route.model, "fb");
     assert_eq!(route.decision, Decision::default_fallback("qr", "fb"));
+}
+
+#[test]
+fn the_newest_user_message_and_system_prompt_are_read() {
+    let request = messages(
+        r#"[{"role":"user","content":"older"},{"role":"system","content":"first"},{"role":"user","content":"newest"},{"role":"system","content":"second"}]"#,
+    );
+    let text = RequestText::extract(&request).unwrap();
+    assert_eq!(text.user_message.as_deref(), Some("newest"));
+    assert_eq!(text.system_prompt.as_deref(), Some("second"));
+}
+
+#[test]
+fn a_decision_records_its_route_for_the_response_metadata() {
+    let keyword = Decision::keyword("qr", "strong", "code", 3);
+    assert_eq!(
+        keyword.record().unwrap(),
+        json(
+            r#"{"router_model_name":"qr","router_type":"quality","routed_model":"strong","cause":"keyword","matched_keyword":"code","tier":"3"}"#
+        )
+    );
+    let fallback = Decision::default_fallback("qr", "fb");
+    assert_eq!(
+        fallback.record().unwrap(),
+        json(
+            r#"{"router_model_name":"qr","router_type":"quality","routed_model":"fb","cause":"default_fallback"}"#
+        )
+    );
+    let router = router_with(
+        &["one"],
+        Some(table(&[("SIMPLE", 1)])),
+        None,
+        &[deployment("one", 1)],
+    );
+    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    let mut metadata = None;
+    let route = router
+        .pre_route(Some(&request), &mut metadata)
+        .unwrap()
+        .unwrap();
+    let Decision::QualityTier { score, .. } = &route.decision else {
+        panic!("the tier path decides a quality_tier route");
+    };
+    let expected = format!(
+        r#"{{"router_model_name":"qr","router_type":"quality","routed_model":"one","cause":"quality_tier","tier":"1","score":{score},"signals":["short (2 tokens)","simple (hello)"]}}"#
+    );
+    assert_eq!(route.decision.record().unwrap(), json(&expected));
+}
+
+#[test]
+fn an_absent_router_config_uses_the_pinned_default_table() {
+    let router = QualityRouter::new("qr", None, Some("fb"), &[]).unwrap();
+    let request = messages(r#"[{"role":"user","content":"hello there"}]"#);
+    let mut metadata = None;
+    let route = router
+        .pre_route(Some(&request), &mut metadata)
+        .unwrap()
+        .unwrap();
+    assert_eq!(route.model, "fb");
+    assert_eq!(
+        metadata,
+        Some(json(
+            r#"{"quality_router_decision":{"router_model_name":"qr","routed_model":"fb","routed_via":"quality_tier","matched_keyword":null,"quality_tier":1,"complexity_tier":"SIMPLE"}}"#
+        ))
+    );
 }
 
 #[test]
