@@ -2,7 +2,6 @@ use betterlite_models::cost_breakdown::CostBreakdown;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rust_decimal::Decimal;
-use rust_decimal::serde::arbitrary_precision_option;
 use serde::Deserialize;
 use subtle::ConstantTimeEq as _;
 
@@ -54,11 +53,12 @@ pub struct SpendMetadataArguments {
     pub usage_object: Option<JsonObject>,
     pub model_map_information: Option<JsonObject>,
     pub cold_storage_object_key: Option<String>,
-    #[serde(default, with = "arbitrary_precision_option")]
+    // Option::deserialize reads a null as None even when a tagged enum buffered it as unit.
+    #[serde(default, deserialize_with = "Option::deserialize")]
     pub litellm_overhead_time_ms: Option<Decimal>,
     pub cost_breakdown: Option<CostBreakdown>,
     pub litellm_call_id: Option<String>,
-    #[serde(default, with = "arbitrary_precision_option")]
+    #[serde(default, deserialize_with = "Option::deserialize")]
     pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<JsonObject>,
     #[serde(rename = "autorouter_baseline_observation")]

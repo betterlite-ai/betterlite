@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::error::Category;
 
 use super::{SpendMetadataArguments, project_spend_logs_metadata};
 use crate::spend_metadata::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
@@ -407,9 +408,29 @@ fn savings_preserve_decimal_precision() {
     );
 }
 
+// The helper decodes its arguments inside a tagged call, whose content buffer turns a null into unit.
+#[derive(serde::Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case")]
+enum TaggedCall {
+    Project {
+        arguments: Box<SpendMetadataArguments>,
+    },
+}
+
+#[rstest]
+#[case::null(r#"{"function":"project","arguments":{"autorouter_savings":null,"litellm_overhead_time_ms":null}}"#)]
+#[case::absent(r#"{"function":"project","arguments":{}}"#)]
+fn a_tagged_call_reads_an_absent_or_null_decimal_as_default(#[case] fixture: &str) {
+    let TaggedCall::Project { arguments } = serde_json::from_str(fixture).unwrap();
+    assert_eq!(arguments.autorouter_savings, None);
+    assert_eq!(arguments.litellm_overhead_time_ms, None);
+}
+
 #[test]
 fn cost_breakdown_rejects_non_numeric_amounts() {
     let fixture = r#"{"cost_breakdown":{"total_cost":{"unexpected":0.5}}}"#;
-    assert!(serde_json::from_str::<SpendMetadataArguments>(fixture).is_err());
-    assert!(serde_json::from_str::<SpendLogsMetadata>(fixture).is_err());
+    let arguments_error = serde_json::from_str::<SpendMetadataArguments>(fixture).unwrap_err();
+    assert_eq!(arguments_error.classify(), Category::Data);
+    let record_error = serde_json::from_str::<SpendLogsMetadata>(fixture).unwrap_err();
+    assert_eq!(record_error.classify(), Category::Data);
 }

@@ -82,6 +82,24 @@ fn decoding_distinguishes_missing_from_null() {
     assert_eq!(record.routing_decision, None);
 }
 
+// Payload assembly hands the record over inside a tagged call, whose content buffer turns a null into unit.
+#[derive(serde::Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case")]
+enum TaggedRecord {
+    Record { record: Box<SpendLogsMetadata> },
+}
+
+#[rstest]
+#[case::null(
+    r#"{"function":"record","record":{"autorouter_savings":null,"litellm_overhead_time_ms":null}}"#
+)]
+#[case::absent(r#"{"function":"record","record":{}}"#)]
+fn a_tagged_call_reads_an_absent_or_null_decimal_as_default(#[case] fixture: &str) {
+    let TaggedRecord::Record { record } = serde_json::from_str(fixture).unwrap();
+    assert_eq!(record.autorouter_savings, None);
+    assert_eq!(record.litellm_overhead_time_ms, None);
+}
+
 #[test]
 fn a_mistyped_field_fails_to_decode() {
     let error = serde_json::from_str::<SpendLogsMetadata>(r#"{"status": 5}"#)

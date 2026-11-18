@@ -63,7 +63,12 @@ pub struct SpendLogsMetadata {
     pub usage_object: Option<Json>,
     pub model_map_information: Option<Json>,
     pub cold_storage_object_key: Option<String>,
-    #[serde(default, with = "arbitrary_precision_option")]
+    // Option::deserialize reads a null as None even when a tagged enum buffered it as unit.
+    #[serde(
+        default,
+        deserialize_with = "Option::deserialize",
+        serialize_with = "arbitrary_precision_option::serialize"
+    )]
     pub litellm_overhead_time_ms: Option<Decimal>,
     pub attempted_retries: Option<i64>,
     pub max_retries: Option<i64>,
@@ -71,7 +76,11 @@ pub struct SpendLogsMetadata {
     pub original_model_group: Option<String>,
     pub cost_breakdown: Option<CostBreakdown>,
     pub compression_savings: Option<Json>,
-    #[serde(default, with = "arbitrary_precision_option")]
+    #[serde(
+        default,
+        deserialize_with = "Option::deserialize",
+        serialize_with = "arbitrary_precision_option::serialize"
+    )]
     pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<Json>,
     pub litellm_gateway_injected_cache: Option<String>,
