@@ -168,7 +168,8 @@ class ScriptedMemory(InMemoryCache):
 
 
 class ScriptedRedis(RedisCache):
-    # RedisCache.__init__ opens a real client; the scripted methods below answer every read and write
+    # RedisCache.__init__ opens a real client; the scripted methods below
+    # answer every read and write
     def __init__(self, cache: CacheInput, batch: JsonValue) -> None:
         object.__init__(self)
         self.answers = list(cache["answers"])
@@ -267,7 +268,8 @@ async def scenario(data: Input) -> JsonValue:
     if data["batch"] is None:
         value = await apply(data, cache, client)
     else:
-        with spend_counter_batch_scope(redis if redis_enabled else None, frozenset((data["counter_key"],))):
+        batch_redis: Final = redis if redis_enabled else None
+        with spend_counter_batch_scope(batch_redis, frozenset((data["counter_key"],))):
             value = await apply(data, cache, client)
             active = active_spend_counter_batch()
             if active is not None:
