@@ -17,7 +17,8 @@ use url::Url;
 
 use super::MessagesHeaderStreamCall;
 use super::error::SdkHttpError;
-use super::result::{HeaderStreamRun, SdkResult};
+use super::result::HeaderStreamRun;
+use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
 
 const STREAM_DEADLINE: Duration = Duration::from_secs(120);

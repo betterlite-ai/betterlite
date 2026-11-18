@@ -8,7 +8,10 @@ description: >-
   no default; additional_instructions,instructions,metadata,model,stream,tools,client,event_handler default
   null. Do not introduce a whole-run timeout on top of the source's per-request timeout.
 
-  Add B2401 AssistantRun with typed mode=run/run_stream/arun/arun_stream. Call actual SDKs against mock
+  SdkHttpCall::AssistantRun takes a typed mode=run/run_stream/arun/arun_stream. It is a placeholder on
+  main: replace the Call and Outcome aliases in tools/oracle/src/sdk_http/assistant_run.rs (Call implements
+  call_kind::CallKind) and fill AssistantRunRequest in tools/oracle/sdk_http/assistant_run.py, leaving the
+  shared sdk_http files alone. Call actual SDKs against mock
   HTTP. A streaming adapter enters the returned manager and projects ordered typed events and callback
   effects; it does not simulate a stream with expected fixture values. Public stream wrappers return the
   manager without consuming it; arun_thread_stream is itself synchronous and sets arun_thread=true.
@@ -18,9 +21,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/assistant_run_sdk.rs
   - crates/betterlite-core/src/api/assistant_run_sdk/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/assistant_run.rs
+  - tools/oracle/src/sdk_http/assistant_run/**
   - tools/oracle/sdk_http/assistant_run.py
   - tools/oracle/cases/sdk-http/assistant-run/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-run-*
@@ -81,7 +83,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_run_sdk::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: the run comparison bypasses real SDK polling or stream consumption
-    run: test -f tools/oracle/sdk_http/assistant_run.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/assistant_run.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: the run/stream modes have no newly committed case-parser seeds
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-run-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
