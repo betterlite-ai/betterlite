@@ -175,9 +175,9 @@ where
 }
 
 // LiteLLM's logging module resolves LITELLM_LOG even when JSON_LOGS gives uvicorn its JSON config
-fn log_config(level: Option<&str>, json_logs: Option<&str>) -> LogConfig {
+fn log_config(raw_level: Option<&str>, json_logs: Option<&str>) -> LogConfig {
     let json = json_logs.is_some_and(|value| value.to_lowercase() == "true");
-    match level.map(resolve_log_level) {
+    match raw_level.map(resolve_log_level) {
         Some(Err(error)) => LogConfig::Invalid(error),
         Some(Ok(level)) if json => LogConfig::Json { level },
         Some(Ok(level)) => LogConfig::Level(level),
