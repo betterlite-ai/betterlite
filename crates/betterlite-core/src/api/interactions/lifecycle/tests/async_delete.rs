@@ -1,5 +1,9 @@
+use std::time::Duration;
+
 use betterlite_error::error::ErrorClass;
 use betterlite_http::interactions::base::Logging;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 
 use crate::api::interactions::lifecycle::adelete;
@@ -7,13 +11,12 @@ use crate::api::interactions::lifecycle::error::InteractionLifecycleError;
 use crate::api::interactions::lifecycle::request::BackgroundSettlement;
 
 use super::support::{
-    Call, Script, answer, base, deps, fixture, host, received, redactor, registry_with, reply,
-    serve, state,
+    Call, Script, answer, base, deps, fixture, host, redactor, registry_with, state,
 };
 
 #[tokio::test]
 async fn adelete_settles_a_tracked_interaction_before_deleting() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let call = Call::new("interaction-1").at(serving.address);
     let settlement_host = host();
@@ -37,14 +40,14 @@ async fn adelete_settles_a_tracked_interaction_before_deleting() {
     assert_eq!(script.calls(), 1);
     assert_eq!(settlement_host.billed(), vec!["interaction-1".to_owned()]);
     assert_eq!(
-        received(serving).request_line(),
+        serving.finish().unwrap().line,
         "DELETE /v1beta/interactions/interaction-1 HTTP/1.1"
     );
 }
 
 #[tokio::test]
 async fn adelete_keeps_the_callers_logging_details_and_records_its_pre_call() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let call = Call::new("interaction-1").at(serving.address);
     let registry = registry_with(host());
@@ -79,7 +82,7 @@ async fn adelete_keeps_the_callers_logging_details_and_records_its_pre_call() {
         )
     );
     assert_eq!(http.model_call_details.get("seeded"), Some(&details));
-    drop(received(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[tokio::test]

@@ -62,6 +62,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 async-trait = "0.1.92"
+betterlite-error = { path = "../betterlite-error" }
 futures-util = { version = "0.3.34", default-features = false }
 mutants = "0.0.4"
 rstest = "=0.27.0"

@@ -1,0 +1,11 @@
+kind: helper
+name: output-limits-malformed-detail-keeps-fields
+call:
+  openai_output_limits:
+    drop:
+      channel: sdk
+      body:
+        message: '{"detail":"not-a-list"}'
+      data: {"model": "gpt-3.5-turbo", "temperature": 2, "messages": []}
+env: {}
+compare: {ignore: []}
