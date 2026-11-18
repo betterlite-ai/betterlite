@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
 use rstest::rstest;
@@ -8,7 +9,7 @@ use secrecy::ExposeSecret as _;
 
 use super::support::{
     Call, Fixture, FixtureError, api_key_header, clients, dead_address, posted, provider_error,
-    run_async, serve_with_body, transport_error,
+    run_async, transport_error,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -37,10 +38,11 @@ impl AsyncStreamingConfig for Fixture {
 
 #[tokio::test]
 async fn async_create_interaction_posts_the_provider_request_and_returns_the_response() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         data: base::params(r#"{"model": "m", "input": "hello"}"#),
@@ -57,7 +59,8 @@ async fn async_create_interaction_posts_the_provider_request_and_returns_the_res
     };
     assert_eq!(body, "{\"id\":\"int_1\"}");
     let expected = posted(r#"{"input": "hello", "model": "m", "store": true}"#);
-    let received = serving.request.join().unwrap();
+    let address = serving.address;
+    let received = serving.finish().unwrap();
     assert_eq!(
         received.head.lines().next(),
         Some("POST /v1beta/interactions HTTP/1.1")
@@ -74,7 +77,7 @@ async fn async_create_interaction_posts_the_provider_request_and_returns_the_res
     assert_eq!(recorded.api_key.expose_secret(), "");
     assert_eq!(
         recorded.api_base,
-        format!("http://{}/v1beta/interactions", serving.address)
+        format!("http://{}/v1beta/interactions", address)
     );
     assert!(fixture.calls().contains(&"response|200|r1".to_owned()));
 }
@@ -82,7 +85,7 @@ async fn async_create_interaction_posts_the_provider_request_and_returns_the_res
 #[tokio::test]
 async fn async_create_interaction_returns_the_open_response_as_a_stream_iterator() {
     let streaming = "data: {\"event_type\": \"step.start\"}\n\ndata: [DONE]\n\n";
-    let serving = serve_with_body(base::reply("200 OK", &[], streaming), None);
+    let serving = serve(base::reply("200 OK", &[], streaming), Duration::ZERO).unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         ..Fixture::new()
@@ -107,7 +110,7 @@ async fn async_create_interaction_returns_the_open_response_as_a_stream_iterator
         logging.model_call_details.get("streamed"),
         Some(&JsonValue::Bool(true))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -119,7 +122,11 @@ async fn async_create_interaction_converts_a_failing_status_through_the_provider
     #[case] code: u16,
     #[case] stream: bool,
 ) {
-    let serving = serve_with_body(base::reply(status, &[("retry-after", "5")], "boom"), None);
+    let serving = serve(
+        base::reply(status, &[("retry-after", "5")], "boom"),
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.stream = stream;
@@ -134,7 +141,7 @@ async fn async_create_interaction_converts_a_failing_status_through_the_provider
             .iter()
             .all(|entry| !entry.starts_with("response|") && !entry.starts_with("async_stream|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -144,10 +151,7 @@ async fn async_create_interaction_converts_a_failing_status_through_the_provider
 async fn async_create_interaction_uses_the_callers_timeout_else_the_request_timeout(
     #[case] expired: bool,
 ) {
-    let serving = serve_with_body(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.timeout = (!expired).then_some(Duration::from_secs(2));
@@ -164,7 +168,7 @@ async fn async_create_interaction_uses_the_callers_timeout_else_the_request_time
         };
         assert_eq!(body, "{}");
     }
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
@@ -181,7 +185,7 @@ async fn async_create_interaction_returns_a_connection_failure_to_the_caller() {
 
 #[tokio::test]
 async fn async_create_interaction_leaves_a_config_error_as_a_provider_error() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture {
         fail_transform_status: Some(200),
         ..Fixture::new()
@@ -196,19 +200,20 @@ async fn async_create_interaction_leaves_a_config_error_as_a_provider_error() {
             .iter()
             .all(|recorded| !recorded.starts_with("error|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_create_interaction_does_not_follow_a_redirect() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply(
             "302 Found",
             &[("location", "http://127.0.0.1:1/elsewhere")],
             "",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
 
     let (outcome, _logging) = run_async(&fixture, &Call::new(serving.address)).await;
@@ -216,7 +221,7 @@ async fn async_create_interaction_does_not_follow_a_redirect() {
     assert_eq!(provider_error(outcome), FixtureError::Refused(302));
     let calls = fixture.calls();
     assert!(calls.contains(&"error|302||-".to_owned()), "{calls:?}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
@@ -264,7 +269,7 @@ async fn async_create_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
 
 #[tokio::test]
 async fn async_create_interaction_builds_for_the_provider_its_caller_names() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut clients = clients();
     let mut call = Call::new(serving.address);
@@ -291,12 +296,12 @@ async fn async_create_interaction_builds_for_the_provider_its_caller_names() {
         .collect();
     assert!(providers.contains(&ProviderId::Openai));
     assert!(!providers.contains(&ProviderId::Gemini));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_create_interaction_uses_a_supplied_client_as_is() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut clients = HttpClients::new(
         base::policy(Verification::Enabled, None),
@@ -319,5 +324,5 @@ async fn async_create_interaction_uses_a_supplied_client_as_is() {
     };
     assert_eq!(body, "{}");
     assert!(clients.async_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }

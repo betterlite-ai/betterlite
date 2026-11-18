@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -28,7 +29,7 @@ fn fixture() -> Fixture {
 
 #[test]
 fn versions_sends_the_get_with_the_transformed_query() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -44,17 +45,24 @@ fn versions_sends_the_get_with_the_transformed_query() {
     .unwrap();
 
     assert_eq!(output, "versions|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
+    let address = serving.address;
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("GET /v1beta/agents/agent-1/versions?pageSize=5&pageToken=t1 HTTP/1.1"),
-        "{sent}"
+        sent.head
+            .starts_with("GET /v1beta/agents/agent-1/versions?pageSize=5&pageToken=t1 HTTP/1.1"),
+        "{}",
+        sent.head
     );
-    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
+    assert!(
+        sent.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        sent.head
+    );
     assert_eq!(
         fixture.calls(),
         vec![
             "environment|0|1".to_owned(),
-            format!("versions_request|agent-1|http://{}|1", serving.address),
+            format!("versions_request|agent-1|http://{}|1", address),
             "versions_response|agent-1|200".to_owned(),
         ]
     );
@@ -62,7 +70,7 @@ fn versions_sends_the_get_with_the_transformed_query() {
 
 #[test]
 fn versions_takes_the_api_base_from_litellm_params() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -81,18 +89,19 @@ fn versions_takes_the_api_base_from_litellm_params() {
     )
     .unwrap();
 
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with(
+        sent.head.starts_with(
             "GET /base/v1beta/agents/agent-1/versions?pageSize=5&pageToken=t1 HTTP/1.1"
         ),
-        "{sent}"
+        "{}",
+        sent.head
     );
 }
 
 #[test]
 fn versions_logs_the_pre_call_and_the_post_call() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -124,15 +133,16 @@ fn versions_logs_the_pre_call_and_the_post_call() {
         logging.model_call_details.get("additional_args"),
         Some(&JsonValue::Object(IndexMap::new()))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn versions_sends_no_timeout() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(100)),
-    );
+        Duration::from_millis(100),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -150,15 +160,16 @@ fn versions_sends_no_timeout() {
     .unwrap();
 
     assert_eq!(output, "versions|agent-1|200|2");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn versions_returns_the_provider_error_for_a_failing_status() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("404 Not Found", &[("retry-after", "7")], "missing"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -188,7 +199,7 @@ fn versions_returns_the_provider_error_for_a_failing_status() {
     );
     assert!(logging.pre_call.is_some());
     assert!(logging.model_call_details.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -258,7 +269,7 @@ fn versions_sends_the_caller_headers_to_validate_environment(
     #[case] extra: &[(&str, &str)],
     #[case] expected: &str,
 ) {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -275,12 +286,12 @@ fn versions_sends_the_caller_headers_to_validate_environment(
     .unwrap();
 
     assert_eq!(fixture.calls().first().map(String::as_str), Some(expected));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_versions_sends_the_get_with_the_transformed_query() {
-    let serving = server::serve_once(server::reply("200 OK", &[], "{}"), None);
+    let serving = serve(server::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -297,12 +308,18 @@ async fn async_versions_sends_the_get_with_the_transformed_query() {
     .unwrap();
 
     assert_eq!(output, "versions|agent-1|200|2");
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.starts_with("GET /v1beta/agents/agent-1/versions?pageSize=5&pageToken=t1 HTTP/1.1"),
-        "{sent}"
+        sent.head
+            .starts_with("GET /v1beta/agents/agent-1/versions?pageSize=5&pageToken=t1 HTTP/1.1"),
+        "{}",
+        sent.head
     );
-    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
+    assert!(
+        sent.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        sent.head
+    );
     let pre = logging.pre_call.as_ref().unwrap();
     assert_eq!(pre.input, "agent-1");
     assert_eq!(
@@ -313,10 +330,11 @@ async fn async_versions_sends_the_get_with_the_transformed_query() {
 
 #[tokio::test]
 async fn async_versions_sends_no_timeout() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(100)),
-    );
+        Duration::from_millis(100),
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -335,15 +353,16 @@ async fn async_versions_sends_no_timeout() {
     .unwrap();
 
     assert_eq!(output, "versions|agent-1|200|2");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_versions_returns_the_provider_error_for_a_failing_status() {
-    let serving = server::serve_once(
+    let serving = serve(
         server::reply("500 Internal Server Error", &[], "boom"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = fixture();
     let mut clients = clients();
     let mut logging = Logging::default();
@@ -367,7 +386,7 @@ async fn async_versions_returns_the_provider_error_for_a_failing_status() {
             .any(|record| record.starts_with("versions_response"))
     );
     assert!(logging.model_call_details.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]

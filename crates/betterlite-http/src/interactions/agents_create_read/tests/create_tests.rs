@@ -11,10 +11,15 @@ use super::create_sync::create_agent;
 use super::support::{self, Config, FixtureError, Recorder, caller_headers, clients, params_at};
 use crate::interactions::base::tests::support as base;
 use crate::interactions::base::{ClientError, RequestFailure};
+use betterlite_http_fixture::server::serve;
 
 #[test]
 fn create_agent_posts_the_configured_request_and_returns_the_transform() {
-    let serving = support::serve_post(base::reply("200 OK", &[], r#"{"id":"agent-1"}"#), None);
+    let serving = serve(
+        base::reply("200 OK", &[], r#"{"id":"agent-1"}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_body = base::params(r#"{"name": "agent-1", "instructions": "hi"}"#);
     config.headers.insert(
@@ -32,12 +37,22 @@ fn create_agent_posts_the_configured_request_and_returns_the_transform() {
     let mut logging = Recorder::default();
     let output = create_agent(&config, &mut clients, &mut logging, None, &request).unwrap();
     assert_eq!(output, r#"agent-1|200|{"id":"agent-1"}"#);
-    let sent = serving.request.join().unwrap();
-    assert!(sent.starts_with("POST /v1beta/agents HTTP/1.1"), "{sent}");
-    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
+    let address = serving.address;
+    let sent = serving.finish().unwrap();
     assert!(
-        sent.contains("content-type: application/json\r\n"),
-        "{sent}"
+        sent.head.starts_with("POST /v1beta/agents HTTP/1.1"),
+        "{}",
+        sent.head
+    );
+    assert!(
+        sent.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        sent.head
+    );
+    assert!(
+        sent.head.contains("content-type: application/json\r\n"),
+        "{}",
+        sent.head
     );
     assert_eq!(
         support::sent_body(&sent),
@@ -47,7 +62,7 @@ fn create_agent_posts_the_configured_request_and_returns_the_transform() {
         config.calls(),
         vec![
             "environment|1|1".to_owned(),
-            format!("create_url|http://{}", serving.address),
+            format!("create_url|http://{}", address),
             "create_request|agent-1".to_owned(),
         ]
     );
@@ -55,7 +70,7 @@ fn create_agent_posts_the_configured_request_and_returns_the_transform() {
 
 #[test]
 fn create_agent_logs_the_call_and_the_additional_arguments() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_body = base::params(r#"{"name": "agent-1"}"#);
     let params = params_at(serving.address);
@@ -77,12 +92,12 @@ fn create_agent_logs_the_call_and_the_additional_arguments() {
             r#"post|{}|{"name":"agent-1"}"#.to_owned(),
         ]
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_agent_lets_extra_body_replace_the_transformed_body() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_body = base::params(r#"{"name": "agent-1", "temperature": 0.5}"#);
     let params = params_at(serving.address);
@@ -93,7 +108,7 @@ fn create_agent_lets_extra_body_replace_the_transformed_body() {
 
     create_agent(&config, &mut clients, &mut logging, None, &request).unwrap();
 
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert_eq!(
         support::sent_body(&sent),
         base::params(r#"{"name": "agent-two", "temperature": 0.5, "new": true}"#)
@@ -104,10 +119,7 @@ fn create_agent_lets_extra_body_replace_the_transformed_body() {
 
 #[test]
 fn create_agent_sends_the_callers_timeout() {
-    let serving = support::serve_post(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut request = support::create_request("agent-1", &params);
@@ -127,15 +139,12 @@ fn create_agent_sends_the_callers_timeout() {
             .iter()
             .all(|call| !call.starts_with("post|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_agent_falls_back_to_the_request_timeout() {
-    let serving = support::serve_post(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut request = support::create_request("agent-1", &params);
@@ -149,19 +158,20 @@ fn create_agent_falls_back_to_the_request_timeout() {
         matches!(&error, AgentRequestError::Transport(RequestFailure::Transport(source)) if source.is_timeout()),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_agent_converts_a_failing_status_through_the_config() {
-    let serving = support::serve_post(
+    let serving = serve(
         base::reply(
             "429 Too Many Requests",
             &[("retry-after", "1")],
             "slow down",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let request = support::create_request("agent-1", &params);
@@ -190,19 +200,20 @@ fn create_agent_converts_a_failing_status_through_the_config() {
             .iter()
             .all(|call| !call.starts_with("post|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_agent_reports_a_redirect_status_as_an_error() {
-    let serving = support::serve_post(
+    let serving = serve(
         base::reply(
             "302 Found",
             &[("location", "http://elsewhere.invalid/agents")],
             "",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let request = support::create_request("agent-1", &params);
@@ -218,7 +229,7 @@ fn create_agent_reports_a_redirect_status_as_an_error() {
         ),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -277,7 +288,7 @@ fn body_text_reads_non_utf8_bytes_as_latin1() {
 #[case::absent("{}")]
 #[case::null(r#"{"api_base": null}"#)]
 fn create_agent_passes_an_empty_api_base_to_the_url_transform(#[case] params_text: &str) {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let config = Config::for_address(serving.address);
     let params = base::params(params_text);
     let request = support::create_request("agent-1", &params);
@@ -291,12 +302,16 @@ fn create_agent_passes_an_empty_api_base_to_the_url_transform(#[case] params_tex
         calls.iter().any(|call| call.as_str() == "create_url|"),
         "{calls:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_create_agent_posts_the_configured_request_and_returns_the_transform() {
-    let serving = support::serve_post(base::reply("200 OK", &[], r#"{"id":"agent-1"}"#), None);
+    let serving = serve(
+        base::reply("200 OK", &[], r#"{"id":"agent-1"}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_body = base::params(r#"{"name": "agent-1"}"#);
     config
@@ -312,9 +327,17 @@ async fn async_create_agent_posts_the_configured_request_and_returns_the_transfo
         .unwrap();
 
     assert_eq!(output, r#"agent-1|200|{"id":"agent-1"}"#);
-    let sent = serving.request.join().unwrap();
-    assert!(sent.starts_with("POST /v1beta/agents HTTP/1.1"), "{sent}");
-    assert!(sent.contains("x-goog-api-key: key-1\r\n"), "{sent}");
+    let sent = serving.finish().unwrap();
+    assert!(
+        sent.head.starts_with("POST /v1beta/agents HTTP/1.1"),
+        "{}",
+        sent.head
+    );
+    assert!(
+        sent.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        sent.head
+    );
     assert_eq!(
         support::sent_body(&sent),
         base::params(r#"{"name": "agent-1"}"#)
@@ -323,7 +346,7 @@ async fn async_create_agent_posts_the_configured_request_and_returns_the_transfo
 
 #[tokio::test]
 async fn async_create_agent_lets_extra_body_replace_the_transformed_body() {
-    let serving = support::serve_post(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let mut config = Config::for_address(serving.address);
     config.create_body = base::params(r#"{"name": "agent-1"}"#);
     let params = params_at(serving.address);
@@ -336,7 +359,7 @@ async fn async_create_agent_lets_extra_body_replace_the_transformed_body() {
         .await
         .unwrap();
 
-    let sent = serving.request.join().unwrap();
+    let sent = serving.finish().unwrap();
     assert_eq!(
         support::sent_body(&sent),
         base::params(r#"{"name": "agent-two"}"#)
@@ -345,10 +368,7 @@ async fn async_create_agent_lets_extra_body_replace_the_transformed_body() {
 
 #[tokio::test]
 async fn async_create_agent_sends_the_callers_timeout() {
-    let serving = support::serve_post(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut request = support::create_request("agent-1", &params);
@@ -364,15 +384,12 @@ async fn async_create_agent_sends_the_callers_timeout() {
         matches!(&error, AgentRequestError::Transport(RequestFailure::Transport(source)) if source.is_timeout()),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_create_agent_falls_back_to_the_request_timeout() {
-    let serving = support::serve_post(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let mut request = support::create_request("agent-1", &params);
@@ -388,12 +405,16 @@ async fn async_create_agent_falls_back_to_the_request_timeout() {
         matches!(&error, AgentRequestError::Transport(RequestFailure::Transport(source)) if source.is_timeout()),
         "{error:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_create_agent_converts_a_failing_status_through_the_config() {
-    let serving = support::serve_post(base::reply("500 Internal Server Error", &[], "boom"), None);
+    let serving = serve(
+        base::reply("500 Internal Server Error", &[], "boom"),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = Config::for_address(serving.address);
     let params = params_at(serving.address);
     let request = support::create_request("agent-1", &params);
@@ -417,7 +438,7 @@ async fn async_create_agent_converts_a_failing_status_through_the_config() {
             .iter()
             .all(|call| !call.starts_with("post|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]

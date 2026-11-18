@@ -326,10 +326,6 @@ impl<'call> Call<'call> {
     }
 }
 
-pub(super) fn request_line(head: &str) -> &str {
-    head.lines().next().unwrap_or_default()
-}
-
 pub(super) fn base(address: SocketAddr) -> String {
     format!("http://{address}")
 }

@@ -728,7 +728,11 @@ fn delete_pops_the_adelete_agent_flag_before_the_parameters() {
 
 #[test]
 fn list_versions_pops_the_alist_agent_versions_flag_before_the_parameters() {
-    let serving = serve(reply("200 fixture", &[], r#"{"agentVersions": []}"#), Duration::ZERO).unwrap();
+    let serving = serve(
+        reply("200 fixture", &[], r#"{"agentVersions": []}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -778,7 +782,11 @@ fn an_unsupported_provider_is_a_named_bad_request() {
 
 #[test]
 fn a_missing_agent_is_a_not_found_error_with_the_agent_name() {
-    let serving = serve(reply("404 fixture", &[], r#"{"error": {"message": "missing"}}"#), Duration::ZERO).unwrap();
+    let serving = serve(
+        reply("404 fixture", &[], r#"{"error": {"message": "missing"}}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -794,7 +802,11 @@ fn a_missing_agent_is_a_not_found_error_with_the_agent_name() {
 
 #[test]
 fn a_failing_delete_is_an_internal_server_error_with_the_agent_name() {
-    let serving = serve(reply("500 fixture", &[], r#"{"error": {"message": "broken"}}"#), Duration::ZERO).unwrap();
+    let serving = serve(
+        reply("500 fixture", &[], r#"{"error": {"message": "broken"}}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -895,7 +907,11 @@ async fn adelete_sends_the_same_request_as_delete() {
 
 #[tokio::test]
 async fn alist_versions_sends_the_same_request_as_list_versions() {
-    let serving = serve(reply("200 fixture", &[], r#"{"agentVersions": []}"#), Duration::ZERO).unwrap();
+    let serving = serve(
+        reply("200 fixture", &[], r#"{"agentVersions": []}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")

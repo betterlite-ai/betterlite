@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::identity::provider_id::ProviderId;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
@@ -9,7 +10,7 @@ use secrecy::ExposeSecret as _;
 
 use super::support::{
     Call, Fixture, FixtureError, api_key_header, async_handler, build_handler, caller_headers,
-    dead_address, serve_with_body, sync_handler,
+    dead_address, sync_handler,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -19,10 +20,11 @@ use crate::proxy::base_builder;
 
 #[test]
 fn delete_interaction_deletes_the_interaction_through_the_config() {
-    let serving = base::serve_once(
+    let serving = serve(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         ..Fixture::new()
@@ -38,12 +40,20 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
     let output = handler.delete_interaction(&call.request()).unwrap();
 
     assert_eq!(output, "{\"id\":\"int_1\"}");
-    let head = serving.request.join().unwrap();
+    let address = serving.address;
+    let request = serving.finish().unwrap();
     assert!(
-        head.starts_with("DELETE /v1beta/interactions/int_1 HTTP/1.1"),
-        "{head}"
+        request
+            .head
+            .starts_with("DELETE /v1beta/interactions/int_1 HTTP/1.1"),
+        "{}",
+        request.head
     );
-    assert!(head.contains("x-goog-api-key: key-1\r\n"), "{head}");
+    assert!(
+        request.head.contains("x-goog-api-key: key-1\r\n"),
+        "{}",
+        request.head
+    );
     assert_eq!(
         fixture.calls(),
         vec![
@@ -57,14 +67,14 @@ fn delete_interaction_deletes_the_interaction_through_the_config() {
     assert_eq!(recorded.api_key.expose_secret(), "");
     assert_eq!(
         recorded.api_base,
-        format!("http://{}/v1beta/interactions/int_1", serving.address)
+        format!("http://{}/v1beta/interactions/int_1", address)
     );
     assert_eq!(recorded.headers["x-goog-api-key"].expose_secret(), "key-1");
 }
 
 #[test]
 fn delete_interaction_sends_no_body_when_the_transform_returns_data() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture {
         delete_data: base::params(r#"{"ignored": "yes"}"#),
         ..Fixture::new()
@@ -75,7 +85,7 @@ fn delete_interaction_sends_no_body_when_the_transform_returns_data() {
         .delete_interaction(&Call::new(serving.address).request())
         .unwrap();
 
-    let received = serving.request.join().unwrap();
+    let received = serving.finish().unwrap();
     assert!(
         received
             .head
@@ -88,7 +98,7 @@ fn delete_interaction_sends_no_body_when_the_transform_returns_data() {
 
 #[test]
 fn delete_interaction_accepts_a_no_content_answer() {
-    let serving = serve_with_body(base::reply("204 No Content", &[], ""), None);
+    let serving = serve(base::reply("204 No Content", &[], ""), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
@@ -102,19 +112,20 @@ fn delete_interaction_accepts_a_no_content_answer() {
             .calls()
             .contains(&"delete_response|204|int_1|int_1|-".to_owned())
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_interaction_turns_a_failing_status_into_the_error_class() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply(
             "429 Too Many Requests",
             &[("retry-after", "2")],
             "slow down",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
@@ -136,7 +147,7 @@ fn delete_interaction_turns_a_failing_status_into_the_error_class() {
             .iter()
             .all(|recorded| !recorded.starts_with("delete_response|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -148,7 +159,7 @@ fn delete_interaction_reads_a_non_utf8_error_body_as_replacement_text() {
     )
     .into_bytes();
     answer.extend_from_slice(body);
-    let serving = serve_with_body(answer, None);
+    let serving = serve(answer, Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
@@ -164,12 +175,12 @@ fn delete_interaction_reads_a_non_utf8_error_body_as_replacement_text() {
         fixture.calls().last().map(String::as_str),
         Some("error|500|bad \u{fffd} bytes|-")
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_interaction_keeps_a_transform_error_out_of_the_error_handler() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture {
         fail_transform_status: Some(200),
         ..Fixture::new()
@@ -190,7 +201,7 @@ fn delete_interaction_keeps_a_transform_error_out_of_the_error_handler() {
             .iter()
             .all(|call| !call.starts_with("error|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -234,14 +245,15 @@ fn delete_interaction_passes_an_invalid_url_through_the_error_handler() {
 
 #[test]
 fn delete_interaction_does_not_follow_a_redirect() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply(
             "302 Found",
             &[("location", "http://127.0.0.1:1/elsewhere")],
             "",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
 
@@ -259,15 +271,12 @@ fn delete_interaction_does_not_follow_a_redirect() {
             .iter()
             .all(|call| !call.starts_with("delete_response|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_interaction_sends_the_given_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -280,15 +289,12 @@ fn delete_interaction_sends_the_given_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_interaction_falls_back_to_the_request_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -300,15 +306,12 @@ fn delete_interaction_falls_back_to_the_request_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_interaction_prefers_the_given_timeout_over_the_request_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let fixture = Fixture::new();
     let mut handler = sync_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -318,12 +321,12 @@ fn delete_interaction_prefers_the_given_timeout_over_the_request_timeout() {
     let output = handler.delete_interaction(&call.request()).unwrap();
 
     assert_eq!(output, "{}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn delete_interaction_uses_a_supplied_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let supplied = BlockingClientBuilder::new()
         .timeout(Duration::from_millis(20))
@@ -337,7 +340,7 @@ fn delete_interaction_uses_a_supplied_client() {
 
     assert_eq!(output, "{}");
     assert!(handler.clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -390,7 +393,7 @@ fn delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
 
 #[test]
 fn delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let supplied = BlockingClientBuilder::new().build().unwrap();
     let mut handler = InteractionsHttpHandler {
@@ -408,7 +411,7 @@ fn delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
         .unwrap();
 
     assert_eq!(output, "{}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -443,7 +446,7 @@ async fn async_delete_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
 
 #[tokio::test]
 async fn async_delete_interaction_skips_the_proxy_check_for_a_supplied_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let supplied = base_builder().build().unwrap();
     let mut handler = InteractionsHttpHandler {
@@ -462,15 +465,16 @@ async fn async_delete_interaction_skips_the_proxy_check_for_a_supplied_client() 
         .unwrap();
 
     assert_eq!(output, "{}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_interaction_deletes_the_interaction_through_the_config() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         ..Fixture::new()
@@ -483,7 +487,7 @@ async fn async_delete_interaction_deletes_the_interaction_through_the_config() {
         .unwrap();
 
     assert_eq!(output, "{\"id\":\"int_1\"}");
-    let received = serving.request.join().unwrap();
+    let received = serving.finish().unwrap();
     assert!(
         received
             .head
@@ -505,7 +509,7 @@ async fn async_delete_interaction_deletes_the_interaction_through_the_config() {
 
 #[tokio::test]
 async fn async_delete_interaction_builds_for_the_provider_its_caller_names() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -525,12 +529,16 @@ async fn async_delete_interaction_builds_for_the_provider_its_caller_names() {
         .collect();
     assert!(providers.contains(&ProviderId::Openai));
     assert!(!providers.contains(&ProviderId::Gemini));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_interaction_turns_a_failing_status_into_the_error_class() {
-    let serving = serve_with_body(base::reply("503 Service Unavailable", &[], "later"), None);
+    let serving = serve(
+        base::reply("503 Service Unavailable", &[], "later"),
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
 
@@ -549,15 +557,12 @@ async fn async_delete_interaction_turns_a_failing_status_into_the_error_class() 
             .iter()
             .all(|call| !call.starts_with("delete_response|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_interaction_sends_the_given_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -573,15 +578,12 @@ async fn async_delete_interaction_sends_the_given_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_interaction_falls_back_to_the_request_timeout() {
-    let serving = base::serve_once(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(500)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(500)).unwrap();
     let fixture = Fixture::new();
     let mut handler = async_handler(&fixture);
     let mut call = Call::new(serving.address);
@@ -596,12 +598,12 @@ async fn async_delete_interaction_falls_back_to_the_request_timeout() {
         error,
         LifecycleError::Transport(RequestFailure::Transport(source)) if source.is_timeout()
     ));
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]
 async fn async_delete_interaction_uses_a_supplied_client() {
-    let serving = base::serve_once(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let supplied = base_builder()
         .timeout(Duration::from_millis(20))
@@ -616,7 +618,7 @@ async fn async_delete_interaction_uses_a_supplied_client() {
 
     assert_eq!(output, "{}");
     assert!(handler.clients.async_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[tokio::test]

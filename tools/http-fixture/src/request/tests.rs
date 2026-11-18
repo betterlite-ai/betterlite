@@ -6,10 +6,7 @@ use super::read_request;
 use crate::error::FixtureError;
 
 #[rstest]
-#[case::no_body(
-    "POST /v1beta/interactions HTTP/1.1\r\nhost: fixture\r\n\r\n",
-    ""
-)]
+#[case::no_body("POST /v1beta/interactions HTTP/1.1\r\nhost: fixture\r\n\r\n", "")]
 #[case::lowercase_length(
     "POST /v1beta/interactions HTTP/1.1\r\nhost: fixture\r\ncontent-length: 5\r\n\r\nhello",
     "hello"

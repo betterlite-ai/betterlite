@@ -2,16 +2,18 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{Error as IoError, ErrorKind, Read as _, Write as _, copy};
+use std::io::{Error as IoError, ErrorKind, Write as _, copy};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http_fixture::request::read_request;
+use betterlite_http_fixture::server::READ_TIMEOUT;
 use rcgen::{BasicConstraints, CertificateParams, IsCa, Issuer, KeyPair, KeyUsagePurpose};
 use rstest::rstest;
 use rustls::crypto::aws_lc_rs;
@@ -69,80 +71,83 @@ fn authority() -> Authority {
 #[case::https_connect_auth("proxy", "localhost", true)]
 #[case::https_connect_rejects_wrong_host("proxy", "127.0.0.1", false)]
 fn http_policy_tests_behavior(#[case] mode: &str, #[case] host: &str, #[case] succeeds: bool) {
-    thread::scope(|scope| {
-        let authority = authority();
-        let ca_file = tempfile::NamedTempFile::new().unwrap();
-        fs::write(ca_file.path(), authority.ca_pem.as_bytes()).unwrap();
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        let server = scope.spawn(move || serve(&listener, mode, &authority));
-        let mut environment = environment(mode, ca_file.path().to_str().unwrap());
-        let proxy = (mode == "proxy").then(|| {
-            let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            environment.insert(
-                "HTTPS_PROXY".to_owned(),
-                format!(
-                    "http://user:secret@{}",
-                    proxy_listener.local_addr().unwrap()
-                ),
-            );
-            scope.spawn(move || tunnel(&proxy_listener, address))
-        });
-        let yaml = if mode == "deployment" {
-            "model_list:\n  - model_name: test\n    litellm_params:\n      model: provider/model\n      ssl_verify: false\n"
-        } else {
-            ""
-        };
-        let config = ConfigLoader {
-            lookup: BTreeMap::new(),
-        }
-        .load(yaml)
+    let authority = authority();
+    let ca_file = tempfile::NamedTempFile::new().unwrap();
+    fs::write(ca_file.path(), authority.ca_pem.as_bytes()).unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    let server_mode = mode.to_owned();
+    let server = thread::Builder::new()
+        .spawn(move || serve(&listener, &server_mode, &authority))
         .unwrap();
-        let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
-        let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
-        let client = config.model_list.first().map_or_else(
-            || {
-                if mode == "legacy" {
-                    ProxiedClient::outbound(&routing).unwrap()
-                } else {
-                    ProxiedClient::outbound_with_tls(&routing, &policy).unwrap()
-                }
-            },
-            |deployment| {
-                ProxiedClient::outbound_for_deployment(&routing, &config, deployment, &environment)
-                    .unwrap()
-            },
+    let mut environment = environment(mode, ca_file.path().to_str().unwrap());
+    let proxy = (mode == "proxy").then(|| {
+        let proxy_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        environment.insert(
+            "HTTPS_PROXY".to_owned(),
+            format!(
+                "http://user:secret@{}",
+                proxy_listener.local_addr().unwrap()
+            ),
         );
-        let runtime = Builder::new_current_thread().enable_all().build().unwrap();
-        let _entered = runtime.enter();
-        let response = runtime.block_on(
-            client
-                .client
-                .get(format!("https://{host}:{}", address.port()))
-                .timeout(TIMEOUT)
-                .send(),
-        );
-        assert_eq!(response.is_ok(), succeeds, "{response:?}");
-        let observation = server.join().unwrap();
-        if succeeds {
-            let (request, offered_h2, sent_identity) = observation.unwrap();
-            assert!(!sent_identity);
-            let expected_agent = match mode {
-                "agent" => "agent/1".to_owned(),
-                "empty_agent" => String::new(),
-                _ => format!("betterlite/{}", env!("CARGO_PKG_VERSION")),
-            };
-            assert_eq!(policy.user_agent, expected_agent);
-            assert!(request.contains(&format!("user-agent: {}\r\n", policy.user_agent)));
-            assert!(!request.contains("proxy-authorization"));
-            assert_eq!(offered_h2, mode.starts_with("http2"));
-        } else {
-            let _error = observation.unwrap_err();
-        }
-        if let Some(proxy_thread) = proxy {
-            proxy_thread.join().unwrap();
-        }
+        thread::Builder::new()
+            .spawn(move || tunnel(&proxy_listener, address))
+            .unwrap()
     });
+    let yaml = if mode == "deployment" {
+        "model_list:\n  - model_name: test\n    litellm_params:\n      model: provider/model\n      ssl_verify: false\n"
+    } else {
+        ""
+    };
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(yaml)
+    .unwrap();
+    let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
+    let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
+    let client = config.model_list.first().map_or_else(
+        || {
+            if mode == "legacy" {
+                ProxiedClient::outbound(&routing).unwrap()
+            } else {
+                ProxiedClient::outbound_with_tls(&routing, &policy).unwrap()
+            }
+        },
+        |deployment| {
+            ProxiedClient::outbound_for_deployment(&routing, &config, deployment, &environment)
+                .unwrap()
+        },
+    );
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let _entered = runtime.enter();
+    let response = runtime.block_on(
+        client
+            .client
+            .get(format!("https://{host}:{}", address.port()))
+            .timeout(TIMEOUT)
+            .send(),
+    );
+    assert_eq!(response.is_ok(), succeeds, "{response:?}");
+    let observation = server.join().unwrap();
+    if succeeds {
+        let (request, offered_h2, sent_identity) = observation.unwrap();
+        assert!(!sent_identity);
+        let expected_agent = match mode {
+            "agent" => "agent/1".to_owned(),
+            "empty_agent" => String::new(),
+            _ => format!("betterlite/{}", env!("CARGO_PKG_VERSION")),
+        };
+        assert_eq!(policy.user_agent, expected_agent);
+        assert!(request.contains(&format!("user-agent: {}\r\n", policy.user_agent)));
+        assert!(!request.contains("proxy-authorization"));
+        assert_eq!(offered_h2, mode.starts_with("http2"));
+    } else {
+        let _error = observation.unwrap_err();
+    }
+    if let Some(proxy_thread) = proxy {
+        proxy_thread.join().unwrap();
+    }
 }
 
 fn environment(mode: &str, ca_path: &str) -> BTreeMap<String, String> {
@@ -178,9 +183,9 @@ fn serve(
     mode: &str,
     authority: &Authority,
 ) -> Result<(String, bool, bool), IoError> {
-    let mut stream = accept(listener);
-    stream.set_read_timeout(Some(TIMEOUT))?;
-    stream.set_write_timeout(Some(TIMEOUT))?;
+    let (mut stream, _peer) = listener.accept()?;
+    stream.set_read_timeout(Some(READ_TIMEOUT))?;
+    stream.set_write_timeout(Some(READ_TIMEOUT))?;
     let mut acceptor = Acceptor::default();
     let accepted = loop {
         if acceptor.read_tls(&mut stream)? == 0 {
@@ -205,17 +210,11 @@ fn serve(
         assert_http1(&connection);
     }
     let mut tls_stream = StreamOwned::new(connection, stream);
-    let mut request = Vec::new();
-    while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
-        let mut byte = [0];
-        tls_stream.read_exact(&mut byte)?;
-        request.extend_from_slice(&byte);
-    }
+    let request = read_request(&mut tls_stream).map_err(IoError::other)?;
     let sent_identity = tls_stream.conn.peer_certificates().is_some();
     tls_stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")?;
     tls_stream.flush()?;
-    let request_text = String::from_utf8(request).map_err(IoError::other)?;
-    Ok((request_text, offered_h2, sent_identity))
+    Ok((request.head, offered_h2, sent_identity))
 }
 
 fn server_config(mode: &str, authority: &Authority) -> Arc<ServerConfig> {
@@ -242,16 +241,10 @@ fn server_config(mode: &str, authority: &Authority) -> Arc<ServerConfig> {
 }
 
 fn tunnel(listener: &TcpListener, origin: SocketAddr) {
-    let mut downstream = accept(listener);
-    downstream.set_read_timeout(Some(TIMEOUT)).unwrap();
-    downstream.set_write_timeout(Some(TIMEOUT)).unwrap();
-    let mut request = Vec::new();
-    while !request.ends_with(b"\r\n\r\n") && request.len() < 8192 {
-        let mut byte = [0];
-        downstream.read_exact(&mut byte).unwrap();
-        request.extend_from_slice(&byte);
-    }
-    let text = String::from_utf8(request).unwrap();
+    let (mut downstream, _peer) = listener.accept().unwrap();
+    downstream.set_read_timeout(Some(READ_TIMEOUT)).unwrap();
+    downstream.set_write_timeout(Some(READ_TIMEOUT)).unwrap();
+    let text = read_request(&mut downstream).unwrap().head;
     assert!(text.starts_with("CONNECT "));
     assert!(
         text.to_ascii_lowercase()
@@ -273,19 +266,6 @@ fn tunnel(listener: &TcpListener, origin: SocketAddr) {
         let _copied = copy(&mut upstream, &mut downstream);
         let _shutdown = downstream.shutdown(Shutdown::Both);
     });
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    loop {
-        match listener.accept() {
-            Ok((stream, _)) => return stream,
-            Err(error) => assert_eq!(error.kind(), ErrorKind::WouldBlock),
-        }
-        assert!(started.elapsed() < TIMEOUT, "client did not connect");
-        thread::park_timeout(Duration::from_millis(10));
-    }
 }
 
 mod protocols;

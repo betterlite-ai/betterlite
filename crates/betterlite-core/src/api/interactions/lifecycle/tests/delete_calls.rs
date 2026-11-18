@@ -45,10 +45,7 @@ fn delete_reaches_the_provider_config_and_answers_with_its_result() {
     assert_eq!(logging.model, "gemini-2.5-flash");
     assert_eq!(logging.call_type, "generated");
     let received = serving.finish().unwrap();
-    assert_eq!(
-        received.line,
-        "DELETE /v1beta/interactions/int-7 HTTP/1.1"
-    );
+    assert_eq!(received.line, "DELETE /v1beta/interactions/int-7 HTTP/1.1");
     assert_eq!(received.body, "");
     assert!(received.head.to_lowercase().contains("x-extra: yes"));
     assert_eq!(config.params().get("custom_llm_provider"), None);
@@ -232,7 +229,11 @@ fn delete_withdraws_the_async_flag_before_the_parameters_are_built() {
 
 #[test]
 fn delete_wraps_a_provider_error_with_its_status() {
-    let serving = serve(reply("404 fixture", &[], "no such interaction"), Duration::ZERO).unwrap();
+    let serving = serve(
+        reply("404 fixture", &[], "no such interaction"),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let call = Call::new("int-1").at(serving.address);
     let mut http = Logging::default();

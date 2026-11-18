@@ -50,11 +50,7 @@ fn finish_returns_what_the_client_sent() {
 
 #[test]
 fn a_client_that_leaves_during_the_pause_still_finishes() {
-    let serving = serve(
-        reply("200 fixture", &[], "ok"),
-        Duration::from_millis(200),
-    )
-    .unwrap();
+    let serving = serve(reply("200 fixture", &[], "ok"), Duration::from_millis(200)).unwrap();
     let mut stream = TcpStream::connect(serving.address).unwrap();
     stream
         .write_all(b"GET /gone HTTP/1.1\r\nhost: fixture\r\n\r\n")

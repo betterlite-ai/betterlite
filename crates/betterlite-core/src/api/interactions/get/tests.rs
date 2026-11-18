@@ -19,7 +19,7 @@ use super::error::InteractionGetError;
 use super::{aget, get};
 use support::{
     Call, FixtureError, GET_BODY, Harness, base, environment_headers, environment_params, fixture,
-    number, request_line, request_of, response_of, text,
+    number, request_of, response_of, text,
 };
 
 #[test]
@@ -37,7 +37,7 @@ fn get_defaults_to_gemini_when_no_provider_is_named() {
         Some(&JsonValue::Text("gemini".to_owned()))
     );
     assert_eq!(
-        request_line(&serving.finish().unwrap().head),
+        serving.finish().unwrap().line,
         "GET /v1beta/interactions/int_1 HTTP/1.1"
     );
 }
@@ -382,7 +382,7 @@ async fn aget_answers_through_the_async_transport() {
     assert_eq!(answer.id.as_deref(), Some("int_1"));
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
     assert_eq!(
-        request_line(&serving.finish().unwrap().head),
+        serving.finish().unwrap().line,
         "GET /v1beta/interactions/int_1 HTTP/1.1"
     );
 }
@@ -457,7 +457,11 @@ async fn aget_reports_an_unsupported_provider_as_a_value_error() {
 
 #[tokio::test]
 async fn aget_reports_a_provider_status_to_its_error_class() {
-    let serving = serve(reply("500 fixture", &[], r#"{"error": {"message": "broken"}}"#), Duration::ZERO).unwrap();
+    let serving = serve(
+        reply("500 fixture", &[], r#"{"error": {"message": "broken"}}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
