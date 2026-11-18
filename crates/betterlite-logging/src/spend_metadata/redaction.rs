@@ -40,7 +40,7 @@ pub fn is_non_secret_key_value(value: &str, key_alias: Option<&str>) -> bool {
 }
 
 // re.sub(r"(?i)^bearer ", ""): exactly one case-insensitive ASCII prefix.
-fn strip_bearer(value: &str) -> &str {
+const fn strip_bearer(value: &str) -> &str {
     match value.split_at_checked(7) {
         Some((prefix, rest)) if prefix.eq_ignore_ascii_case("bearer ") => rest,
         Some(_) | None => value,

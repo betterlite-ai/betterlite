@@ -122,13 +122,9 @@ fn enrich_record(
         redact_vector_store(requests, policy.store_bodies);
     }
     record.vector_store_request_metadata = vector_requests;
-    record.guardrail_information = match arguments.guardrail_information {
-        Some(information) => Some(sanitize_guardrail_information(
-            &SpendValue::from(&information),
-            policy,
-        )),
-        None => None,
-    };
+    record.guardrail_information = arguments
+        .guardrail_information
+        .map(|information| sanitize_guardrail_information(&SpendValue::from(&information), policy));
     record.usage_object = arguments.usage_object.map(Json::Object);
     record.model_map_information = arguments.model_map_information.map(Json::Object);
     record.litellm_overhead_time_ms = arguments.litellm_overhead_time_ms;

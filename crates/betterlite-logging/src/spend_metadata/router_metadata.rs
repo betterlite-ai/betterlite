@@ -14,7 +14,7 @@ pub fn router_metadata_for_spend_log(
     router_correlation_id: Option<&str>,
 ) -> Option<SpendLogsRouterMetadata> {
     let model_info = metadata
-        .and_then(|metadata| metadata.get("model_info"))
+        .and_then(|mapping| mapping.get("model_info"))
         .and_then(as_object);
     let internal = model_info.and_then(|info| info.get("internal_router_model"));
     if !matches!(internal, Some(Json::Bool(true))) {
@@ -31,7 +31,7 @@ pub fn router_metadata_for_spend_log(
 // `requested_model or None`: an empty string becomes null, while the correlation id passes through.
 fn nonempty(value: Option<&str>) -> Option<String> {
     value
-        .filter(|value| !value.is_empty())
+        .filter(|candidate| !candidate.is_empty())
         .map(ToOwned::to_owned)
 }
 

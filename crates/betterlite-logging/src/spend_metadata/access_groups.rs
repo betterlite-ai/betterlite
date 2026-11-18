@@ -7,11 +7,11 @@ pub const ACCESS_GROUP_METADATA_KEY: &str = "user_api_key_matched_model_access_g
 
 // The sources get_request_model_access_groups reads: the standard payload first, then the request metadata mappings.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct AccessGroupSources<'a> {
-    pub standard_logging_object: Option<&'a JsonObject>,
-    pub litellm_params: Option<&'a JsonObject>,
+pub struct AccessGroupSources<'source> {
+    pub standard_logging_object: Option<&'source JsonObject>,
+    pub litellm_params: Option<&'source JsonObject>,
     // matched_model_access_groups on the live auth object, which no JSON mapping carries.
-    pub auth_groups: Option<&'a Json>,
+    pub auth_groups: Option<&'source Json>,
 }
 
 #[must_use]

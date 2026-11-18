@@ -8,6 +8,8 @@ pub mod router_metadata;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
+use crate::logging_metadata::decode::DecodeError;
+
 pub const BATCH_COST_REQUEST_ID_SUFFIX: &str = "_batch_cost";
 pub const MAX_MODEL_NAME_LENGTH: usize = 256;
 pub const MCP_SPEND_LOG_MODEL_PREFIX: &str = "MCP: ";
@@ -15,7 +17,7 @@ pub const MCP_SPEND_LOG_MODEL_PREFIX: &str = "MCP: ";
 #[derive(Debug, thiserror::Error)]
 pub enum SpendMetadataError {
     #[error(transparent)]
-    Decode(#[from] crate::logging_metadata::decode::DecodeError),
+    Decode(#[from] DecodeError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
