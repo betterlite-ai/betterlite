@@ -3,11 +3,13 @@ use betterlite_auth::auth_identity::records::{
     CredentialRef, NetworkContext, Principal, SourceKey,
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
+use betterlite_error::proxy_exception::ProxyException;
 use secrecy::{ExposeSecret as _, SecretString};
 use subtle::ConstantTimeEq as _;
 
 use crate::auth::auth_model_patterns::{ModelAccessRejection, ModelPatternStageInput, run_stage};
 use crate::auth::auth_request_models::{RequestModelStageInput, resolve};
+use crate::auth::auth_resource_grants::{self, ResourceGrantStageInput};
 use crate::error_body::AuthenticationFailure;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -15,6 +17,7 @@ pub enum AuthBackend {
     MasterKey,
     AuthRequestModels,
     AuthModelPatterns,
+    AuthResourceGrants,
 }
 
 // B052 owns the final stage order; the master-key stage authenticates before the model stages run.
@@ -22,6 +25,7 @@ pub(crate) const INSTALLED_STAGES: &[AuthBackend] = &[
     AuthBackend::MasterKey,
     AuthBackend::AuthRequestModels,
     AuthBackend::AuthModelPatterns,
+    AuthBackend::AuthResourceGrants,
 ];
 
 #[derive(Clone, Debug)]
@@ -29,6 +33,7 @@ pub enum StageInput {
     MasterKey(Option<SecretString>),
     AuthRequestModels(Box<RequestModelStageInput>),
     AuthModelPatterns(Box<ModelPatternStageInput>),
+    AuthResourceGrants(Box<ResourceGrantStageInput>),
 }
 
 #[derive(Clone, Debug)]
@@ -55,6 +60,7 @@ pub trait BudgetAdmission {
 pub(crate) enum StageFailure {
     Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
+    ResourceGrants(Box<ProxyException>),
 }
 
 pub(crate) fn dispatch(
@@ -68,7 +74,18 @@ pub(crate) fn dispatch(
         AuthBackend::AuthRequestModels => auth_request_models_stage(input)
             .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
+        AuthBackend::AuthResourceGrants => auth_resource_grants_stage(input),
     }
+}
+
+fn auth_resource_grants_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
+    let StageInput::AuthResourceGrants(stage) = input else {
+        return Err(StageFailure::Authentication(Box::new(
+            AuthenticationFailure::Missing,
+        )));
+    };
+    auth_resource_grants::run_stage(stage)
+        .map_err(|exception| StageFailure::ResourceGrants(Box::new(exception)))
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
