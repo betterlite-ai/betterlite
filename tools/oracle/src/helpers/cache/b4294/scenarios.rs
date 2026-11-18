@@ -12,25 +12,25 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) async fn reserve(call: &Fields) -> HelperResult {
     let setup = Setup::start(call).await?;
-    let cache = seeded(call, Some(&setup.shared), Failures::default())?;
+    let cache = seeded(call, Some(&setup.shared))?;
     reserve_output(call, &setup, &cache)
 }
 
 pub(crate) async fn sync_backfill(call: &Fields) -> HelperResult {
     let setup = Setup::start(call).await?;
-    let cache = seeded(call, Some(&setup.shared), Failures::default())?;
+    let cache = seeded(call, Some(&setup.shared))?;
     backfill_output(call, &setup, &cache).await
 }
 
 pub(crate) async fn sync_errors(call: &Fields) -> HelperResult {
     let setup = Setup::start(call).await?;
-    let rejecting = seeded(call, Some(&setup.rejecting), Failures::default())?;
+    let rejecting = seeded(call, Some(&setup.rejecting))?;
     errors_output(call, &setup, &rejecting)
 }
 
 pub(crate) async fn async_switch(call: &Fields) -> HelperResult {
     let setup = Setup::start(call).await?;
-    let cache = seeded(call, Some(&setup.shared), Failures::default())?;
+    let cache = seeded(call, Some(&setup.shared))?;
     switch_output(call, &setup, &cache).await
 }
 
@@ -53,9 +53,9 @@ fn reserve_output(call: &Fields, setup: &Setup, cache: &DualCache<HarnessMemory>
     let mut observed = call.keys.clone();
     observed.extend(call.read_keys.iter().cloned());
     let after_read = cache.reserve_redis_batch_reads(&observed);
-    let rejecting = seeded(call, Some(&setup.rejecting), Failures::default())?;
+    let rejecting = seeded(call, Some(&setup.rejecting))?;
     let failed = rejecting.batch_get_cache(&call.due_keys, false);
-    let absent = seeded(call, None, Failures::default())?;
+    let absent = seeded(call, None)?;
     Ok(json!({
         "first": reservation(first),
         "second": reservation(second),
@@ -81,7 +81,7 @@ async fn backfill_output(
     let ttls = ttl_values(cache, &call.ttl_keys).await?;
     let all_hit = cache.batch_get_cache(&call.keys, false);
     let local_only = cache.batch_get_cache(&call.read_keys, true);
-    let absent = seeded(call, None, Failures::default())?;
+    let absent = seeded(call, None)?;
     Ok(json!({
         "read": read,
         "memory": memory,
@@ -189,11 +189,10 @@ async fn failures_output(
     breaker_caches: &[DualCache<HarnessMemory>],
     breaker: Vec<Option<Vec<Option<Json>>>>,
 ) -> HelperResult {
-    let breaker_due: Vec<serde_json::Value> = breaker_caches
-        .iter()
-        .zip(&call.breaker_caches)
-        .map(|(built, entry)| reservation(built.reserve_redis_batch_reads(&entry.keys)))
-        .collect();
+    let mut breaker_due: Vec<serde_json::Value> = Vec::with_capacity(breaker_caches.len());
+    for (built, entry) in breaker_caches.iter().zip(&call.breaker_caches) {
+        breaker_due.push(reservation(built.reserve_redis_batch_reads(&entry.keys)));
+    }
     let (_prepare_caches, prepare) = group(setup, &call.prepare_caches, call).await?;
     let (_apply_caches, apply) = group(setup, &call.apply_caches, call).await?;
     Ok(json!({

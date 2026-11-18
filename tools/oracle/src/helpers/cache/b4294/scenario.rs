@@ -135,7 +135,8 @@ pub(super) fn build_cache(
     failures: Failures,
 ) -> Result<DualCache<HarnessMemory>, Box<HelperError>> {
     let clock = call.clock;
-    let inner = LocalMemoryOps::new(1024, Arc::new(move || clock)).or_value_error()?;
+    let now = Arc::new(move || clock);
+    let inner = LocalMemoryOps::new(1024, now).or_value_error()?;
     let memory = HarnessMemory { inner, failures };
     Ok(DualCache::new(
         Arc::new(memory),
@@ -148,9 +149,8 @@ pub(super) fn build_cache(
 pub(super) fn seeded(
     call: &Fields,
     tier: Option<&Arc<RedisCache>>,
-    failures: Failures,
 ) -> Result<DualCache<HarnessMemory>, Box<HelperError>> {
-    let cache = build_cache(tier, call, failures)?;
+    let cache = build_cache(tier, call, Failures::default())?;
     seed(&cache, &call.memory);
     Ok(cache)
 }
