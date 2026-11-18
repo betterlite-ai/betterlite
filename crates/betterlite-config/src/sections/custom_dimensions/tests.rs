@@ -146,7 +146,8 @@ fn a_missing_environment_variable_names_the_field() {
     "          - name: domain\n            weight: [0.5]\n            keywords: [alpha]\n"
 )]
 fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
-    assert!(settings(&deployment(keys), &[]).is_err());
+    let error = settings(&deployment(keys), &[]).unwrap_err();
+    assert!(!error.is_empty(), "{error}");
 }
 
 #[rstest]
@@ -219,16 +220,13 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::class_duplicate_literals("[aa]", 2)]
 #[case::class_negated_duplicates("[^aa]", 2)]
 #[case::class_after_range_dash("[a-a-z]", 5)]
-#[case::class_three_dashes("[---a]", 4)]
-#[case::class_five_dashes("[-----a]", 5)]
-#[case::class_six_dashes("[------a]", 5)]
 #[case::escaped_angle_open("\\<a", 3)]
 #[case::escaped_angle_close("\\>a", 3)]
-#[case::escaped_non_ascii("\\é", 2)]
-#[case::class_escaped_non_ascii("[\\é]", 2)]
+#[case::escaped_non_ascii("\\\u{e9}", 2)]
+#[case::class_escaped_non_ascii("[\\\u{e9}]", 2)]
 #[case::escaped_unicode("\\u00e9", 2)]
 #[case::escaped_long_unicode("\\U000000e9", 2)]
-#[case::named_group_non_ascii("(?P<é>a)", 3)]
+#[case::named_group_non_ascii("(?P<\u{e9}>a)", 3)]
 #[case::named_group_underscore("(?P<_a>a)", 3)]
 #[case::verbose_comment_to_newline("(?x)a#c\nb", 3)]
 #[case::verbose_long_comment("(?x)a#cd\nb", 3)]
@@ -405,12 +403,13 @@ fn rejected_patterns_report_the_pinned_problem(
 #[case::double_hyphen_range("[a-b--c]", Err(PatternProblem::Unsupported))]
 #[case::double_hyphen_open("[!--a]", Err(PatternProblem::Unsupported))]
 #[case::double_hyphen_closed("[a--b]", Err(PatternProblem::Unsupported))]
-#[case::dash_run_only("[---]", Ok(2))]
-#[case::dash_run_four("[----]", Ok(2))]
-#[case::dash_run_five("[-----]", Ok(2))]
-#[case::dash_run_five_then_literal("[-----a]", Ok(5))]
-#[case::dash_run_six_then_literal("[------a]", Ok(5))]
-#[case::dash_run_trailing("[---a-]", Ok(4))]
+#[case::dash_run_only("[---]", Err(PatternProblem::Unsupported))]
+#[case::dash_run_four("[----]", Err(PatternProblem::Unsupported))]
+#[case::dash_run_five("[-----]", Err(PatternProblem::Unsupported))]
+#[case::dash_run_five_then_literal("[-----a]", Err(PatternProblem::Unsupported))]
+#[case::dash_run_six_then_literal("[------a]", Err(PatternProblem::Unsupported))]
+#[case::dash_run_three_then_literal("[---a]", Err(PatternProblem::Unsupported))]
+#[case::dash_run_trailing("[---a-]", Err(PatternProblem::Unsupported))]
 #[case::lookahead("(?=a)b", Err(PatternProblem::Syntax))]
 #[case::lookbehind("(?<=a)b", Err(PatternProblem::Syntax))]
 #[case::atomic_group("(?>a)", Err(PatternProblem::Syntax))]
@@ -554,7 +553,7 @@ fn a_repeated_flag_is_carried_once(#[case] pattern: &str, #[case] expected: &str
 #[test]
 fn thirty_two_matchers_are_allowed_and_thirty_three_are_not() {
     let mut allowed = dimension("domain", &[], &[], "binary");
-    allowed.keywords = (0..32).map(|index| format!("k{index}")).collect();
+    allowed.keywords = (0_i32..32_i32).map(|index| format!("k{index}")).collect();
     assert_eq!(valid(&allowed), Ok(()));
     allowed.keywords.push("k32".to_owned());
     assert_eq!(valid(&allowed), Err(()));
@@ -563,7 +562,9 @@ fn thirty_two_matchers_are_allowed_and_thirty_three_are_not() {
 #[test]
 fn four_thousand_ninety_six_matcher_characters_are_allowed_and_one_more_is_not() {
     let mut allowed = dimension("domain", &[], &[], "binary");
-    allowed.patterns = (0..16).map(|index| format!("{index:0<256}")).collect();
+    allowed.patterns = (0_i32..16_i32)
+        .map(|index| format!("{index:0<256}"))
+        .collect();
     assert_eq!(valid(&allowed), Ok(()));
     allowed.patterns.push("k".to_owned());
     assert_eq!(
@@ -623,16 +624,18 @@ fn validate_dimension_carries_the_pattern_work_total() {
 #[test]
 fn the_config_corpus_seeds_load_or_are_refused() {
     let valid = include_str!("../../../fuzz/corpus/config_yaml/custom-dimensions-valid.yaml");
-    assert!(settings(valid, &[]).is_ok());
+    let loaded = settings(valid, &[]).unwrap();
+    assert_eq!(loaded.deployments.len(), 1);
     let invalid = include_str!("../../../fuzz/corpus/config_yaml/custom-dimensions-invalid.yaml");
-    assert!(settings(invalid, &[]).is_err());
+    let error = settings(invalid, &[]).unwrap_err();
+    assert!(!error.is_empty(), "{error}");
 }
 
 #[rstest]
 fn replays_the_dimension_pattern_corpus(#[files("fuzz/corpus/dimension_pattern/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
-    let Ok(pattern) = std::str::from_utf8(&bytes) else {
+    let Ok(pattern) = String::from_utf8(bytes) else {
         return;
     };
-    drop(pattern_work(pattern));
+    drop(pattern_work(&pattern));
 }

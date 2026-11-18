@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::slice;
 
 use betterlite_config::sections::custom_dimensions as section;
 use betterlite_config::sections::custom_dimensions::pattern::PatternProblem;
@@ -149,14 +150,10 @@ fn scored_with(declared: &[section::Config], prompt: &str) -> Vec<(String, f64)>
     let validated = validate(declared, "heuristic", &BTreeMap::new()).unwrap();
     let matcher = CustomDimensionMatcher::compile(&validated.dimensions[0])
         .expect("the test matcher compiles");
-    score_custom_dimensions(
-        prompt,
-        &prompt.to_lowercase(),
-        std::slice::from_ref(&matcher),
-    )
-    .into_iter()
-    .map(|(score, _weight)| (score.dimension.name().to_owned(), score.score))
-    .collect()
+    score_custom_dimensions(prompt, &prompt.to_lowercase(), slice::from_ref(&matcher))
+        .into_iter()
+        .map(|(score, _weight)| (score.dimension.name().to_owned(), score.score))
+        .collect()
 }
 
 fn scored(mode: &str, prompt: &str) -> Vec<(String, f64)> {
