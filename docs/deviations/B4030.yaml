@@ -1,0 +1,33 @@
+task: B4030
+deviations:
+  - what: >-
+      In the model-added message, a model info value that is a list or an object is written as
+      compact JSON, not as Python repr text. Scalars keep their Python text (True, False, None).
+    why: >-
+      docs/compatibility.md leaves Python repr and str text out of the parity surface; the JSON
+      text carries the same value in a form every caller can parse.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1066-L1085
+  - what: >-
+      A non-number input_cost_per_token or output_cost_per_token returns a typed
+      ModelInfoRenderError::Cost instead of raising the Python formatting error (a TypeError
+      for null, a list or an object; a ValueError for a string).
+    why: >-
+      The only caller, model_management_endpoints.py:2493, catches every exception and only logs
+      it, so the alert is skipped either way and the caller sees the same result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1069-L1071
+  - what: >-
+      Values in the virtual key event lines are written as JSON text for bool, number, list and
+      object values, not as Python str() text. Strings and None keep the same text.
+    why: >-
+      docs/compatibility.md leaves Python str and repr text out of the parity surface; the JSON
+      text carries the same value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L2070-L2076
+  - what: >-
+      run_deprecation_check_loop takes a cancellation token through its sleeper and returns when
+      the token fires; LiteLLM's run_scheduled_deprecation_check is a while True loop that only
+      ends with the process.
+    why: >-
+      The task asks for a cancellation point at each sleep so tests end the loop without waiting.
+      Production cancellation is otherwise driven by process shutdown in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1173-L1191
+kept_bugs: []

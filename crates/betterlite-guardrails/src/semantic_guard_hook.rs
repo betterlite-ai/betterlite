@@ -111,7 +111,7 @@ where
         if text.is_empty() {
             return Ok(());
         }
-        self.check(&text, data).await
+        self.check(&text, data, None).await
     }
 
     pub async fn async_post_call_success_hook(
@@ -123,7 +123,7 @@ where
         if extracted.is_empty() {
             return Ok(response);
         }
-        self.check(&extracted, data).await?;
+        self.check(&extracted, data, Some(&response)).await?;
         Ok(response)
     }
 
@@ -147,6 +147,7 @@ where
         &self,
         text: &str,
         data: &BTreeMap<String, GuardrailValue>,
+        original_response: Option<&GuardrailValue>,
     ) -> Result<(), SemanticGuardHookError<R::Error>> {
         let choices = self
             .router
@@ -163,6 +164,7 @@ where
             route,
             choice.similarity_score,
             data,
+            original_response,
         )))
     }
 
@@ -171,6 +173,7 @@ where
         route: &str,
         similarity_score: Option<f64>,
         data: &BTreeMap<String, GuardrailValue>,
+        original_response: Option<&GuardrailValue>,
     ) -> GuardrailFailure {
         let guardrail_name = self.base.settings.guardrail_name.clone();
         let shown_name = guardrail_name.as_deref().unwrap_or("None");
@@ -185,9 +188,12 @@ where
         let score = similarity_score.map_or(GuardrailValue::Null, GuardrailValue::Decimal);
         if self.on_flagged_action == "passthrough" {
             let info = detection_info(route, score, guardrail_name);
-            return self
-                .base
-                .passthrough_failure(&message, data, Some(info), None);
+            return self.base.passthrough_failure(
+                &message,
+                data,
+                Some(info),
+                original_response.cloned(),
+            );
         }
         violation_detail(&message, route, score)
     }

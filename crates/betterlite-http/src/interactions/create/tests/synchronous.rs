@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::time::Duration;
 
 use betterlite_config::tls::Verification;
+use betterlite_http_fixture::server::{Serving, serve};
 use betterlite_interactions::types::interaction::{InteractionInput, Turn, TurnContent};
 use betterlite_models::controls::json_value::JsonValue;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
@@ -9,8 +10,8 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::support::{
-    Call, Fixture, FixtureError, Serving, api_key_header, caller_headers, client_error,
-    dead_address, posted, provider_error, run, serve_with_body, transport_error,
+    Call, Fixture, FixtureError, api_key_header, caller_headers, client_error, dead_address,
+    posted, provider_error, run, transport_error,
 };
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::tests::support as base;
@@ -19,10 +20,11 @@ use crate::interactions::create::CreateOutcome;
 use crate::interactions::create::synchronous::create_interaction;
 
 fn served() -> (Serving, Fixture) {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply("200 OK", &[("x-request-id", "r1")], "{\"id\":\"int_1\"}"),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         data: base::params(r#"{"model": "m", "input": "hello"}"#),
@@ -54,7 +56,7 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
         outcome.unwrap(),
         CreateOutcome::Response("{\"id\":\"int_1\"}".to_owned())
     );
-    let received = serving.request.join().unwrap();
+    let received = serving.finish().unwrap();
     assert_eq!(
         received.head.lines().next(),
         Some("POST /base/v1beta/interactions HTTP/1.1")
@@ -89,7 +91,7 @@ fn create_interaction_asks_the_config_for_each_step_in_order() {
             "model|gemini-2.5-flash".to_owned(),
         ]
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -111,13 +113,13 @@ fn create_interaction_logs_the_pre_call_with_the_transformed_request() {
         logging.model_call_details.get("complete_input_dict"),
         Some(&posted(r#"{"model": "m", "input": "hello"}"#))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_interaction_returns_a_stream_iterator_for_a_stream_request() {
     let streaming = "data: {\"event_type\": \"step.start\"}\n\ndata: [DONE]\n\n";
-    let serving = serve_with_body(base::reply("200 OK", &[], streaming), None);
+    let serving = serve(base::reply("200 OK", &[], streaming), Duration::ZERO).unwrap();
     let fixture = Fixture {
         headers: api_key_header(),
         ..Fixture::new()
@@ -148,7 +150,7 @@ fn create_interaction_returns_a_stream_iterator_for_a_stream_request() {
         logging.model_call_details.get("streamed"),
         Some(&JsonValue::Bool(true))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -159,7 +161,11 @@ fn create_interaction_converts_a_failing_status_through_the_provider_error_class
     #[case] code: u16,
     #[case] stream: bool,
 ) {
-    let serving = serve_with_body(base::reply(status, &[("retry-after", "5")], "boom"), None);
+    let serving = serve(
+        base::reply(status, &[("retry-after", "5")], "boom"),
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.stream = stream;
@@ -174,7 +180,7 @@ fn create_interaction_converts_a_failing_status_through_the_provider_error_class
             .iter()
             .all(|entry| !entry.starts_with("response|") && !entry.starts_with("sync_stream|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -186,7 +192,7 @@ fn create_interaction_leaves_a_provider_error_from_the_config_unchanged(
     #[case] stream: bool,
     #[case] expected: FixtureError,
 ) {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture {
         fail_transform_status: fail_transform.then_some(200),
         refuse_stream,
@@ -204,7 +210,7 @@ fn create_interaction_leaves_a_provider_error_from_the_config_unchanged(
             .iter()
             .all(|entry| !entry.starts_with("error|"))
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -220,7 +226,7 @@ fn create_interaction_logs_the_input_it_was_given(
     #[case] input: Option<InteractionInput>,
     #[case] expected: &str,
 ) {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.input = input;
@@ -228,7 +234,7 @@ fn create_interaction_logs_the_input_it_was_given(
     let (_outcome, logging) = run(&fixture, &call);
 
     assert_eq!(logging.pre_call.as_ref().unwrap().input, expected);
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[rstest]
@@ -244,7 +250,7 @@ fn create_interaction_overlays_extra_body_onto_the_transformed_request(
     #[case] extra_body: Option<Params>,
     #[case] expected: &str,
 ) {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture {
         data: base::params(r#"{"model": "m", "input": "hello"}"#),
         ..Fixture::new()
@@ -254,7 +260,7 @@ fn create_interaction_overlays_extra_body_onto_the_transformed_request(
 
     let (_outcome, logging) = run(&fixture, &call);
 
-    let received = serving.request.join().unwrap();
+    let received = serving.finish().unwrap();
     assert_eq!(posted(&received.body), posted(expected));
     assert_eq!(
         logging.model_call_details.get("complete_input_dict"),
@@ -286,10 +292,7 @@ fn create_interaction_builds_the_client_before_validating_headers() {
 #[case::request_timeout(true)]
 #[case::callers_timeout(false)]
 fn create_interaction_uses_the_callers_timeout_else_the_request_timeout(#[case] expired: bool) {
-    let serving = serve_with_body(
-        base::reply("200 OK", &[], "{}"),
-        Some(Duration::from_millis(200)),
-    );
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::from_millis(200)).unwrap();
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.timeout = (!expired).then_some(Duration::from_secs(2));
@@ -303,19 +306,20 @@ fn create_interaction_uses_the_callers_timeout_else_the_request_timeout(#[case] 
     } else {
         assert_eq!(outcome.unwrap(), CreateOutcome::Response("{}".to_owned()));
     }
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_interaction_does_not_follow_a_redirect() {
-    let serving = serve_with_body(
+    let serving = serve(
         base::reply(
             "302 Found",
             &[("location", "http://127.0.0.1:1/elsewhere")],
             "",
         ),
-        None,
-    );
+        Duration::ZERO,
+    )
+    .unwrap();
     let fixture = Fixture::new();
 
     let (outcome, _logging) = run(&fixture, &Call::new(serving.address));
@@ -323,7 +327,7 @@ fn create_interaction_does_not_follow_a_redirect() {
     assert_eq!(provider_error(outcome), FixtureError::Refused(302));
     let calls = fixture.calls();
     assert!(calls.contains(&"error|302||-".to_owned()), "{calls:?}");
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -351,7 +355,7 @@ fn create_interaction_reports_the_error_body_with_invalid_bytes_replaced() {
     let mut answer =
         b"HTTP/1.1 400 Bad Request\r\ncontent-length: 3\r\nconnection: close\r\n\r\n".to_vec();
     answer.extend_from_slice(&[b'a', 0xff, b'b']);
-    let serving = serve_with_body(answer, None);
+    let serving = serve(answer, Duration::ZERO).unwrap();
     let fixture = Fixture::new();
 
     let (outcome, _logging) = run(&fixture, &Call::new(serving.address));
@@ -362,12 +366,12 @@ fn create_interaction_reports_the_error_body_with_invalid_bytes_replaced() {
         calls.contains(&"error|400|a\u{fffd}b|-".to_owned()),
         "{calls:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
 fn create_interaction_validates_an_absent_model_as_an_empty_string() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut call = Call::new(serving.address);
     call.model = None;
@@ -380,7 +384,7 @@ fn create_interaction_validates_an_absent_model_as_an_empty_string() {
         Some(&"environment||0|1".to_owned()),
         "{calls:?}"
     );
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }
 
 #[test]
@@ -425,7 +429,7 @@ fn create_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_direct
 
 #[test]
 fn create_interaction_skips_the_proxy_check_for_a_supplied_client() {
-    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let serving = serve(base::reply("200 OK", &[], "{}"), Duration::ZERO).unwrap();
     let fixture = Fixture::new();
     let mut clients = HttpClients::new(
         base::policy(Verification::Enabled, None),
@@ -442,5 +446,5 @@ fn create_interaction_skips_the_proxy_check_for_a_supplied_client() {
 
     assert_eq!(outcome.unwrap(), CreateOutcome::Response("{}".to_owned()));
     assert!(clients.sync_clients.is_empty());
-    serving.request.join().unwrap();
+    serving.finish().unwrap();
 }

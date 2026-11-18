@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::mem;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,7 +12,7 @@ use tokio::pin;
 use tokio::sync::Notify;
 
 use super::super::value::decimal_map;
-use super::{SpendCounterBatch, SpendCounterBatchError};
+use super::{InflightRead, SpendCounterBatch, SpendCounterBatchError};
 
 pub(super) struct Loader<'batch> {
     pub(super) batch: &'batch SpendCounterBatch,
@@ -60,17 +60,22 @@ impl Loader<'_> {
     }
 
     async fn collect_inflight(&self) -> Result<(), SpendCounterBatchError> {
-        let results = {
+        let reads = {
             let mut state = lock(&self.batch.state);
             mem::take(&mut state.inflight)
         };
-        for result in results {
-            self.accept_settled(result.await)?;
+        for read in reads {
+            let InflightRead { result, asked } = read;
+            self.accept_settled(result.await, &asked)?;
         }
         Ok(())
     }
 
-    fn accept_settled(&self, settled: Settled<MgetValues>) -> Result<(), SpendCounterBatchError> {
+    fn accept_settled(
+        &self,
+        settled: Settled<MgetValues>,
+        asked: &BTreeMap<String, Option<u64>>,
+    ) -> Result<(), SpendCounterBatchError> {
         let values = match settled {
             Ok(values) => values,
             Err(error) if matches!(error.as_ref(), BatchError::Cancelled) => {
@@ -85,7 +90,7 @@ impl Loader<'_> {
             }
         };
         match decimal_map(values.iter()) {
-            Ok(fetched) => self.merge(fetched),
+            Ok(fetched) => self.merge(fetched, asked),
             Err(error) => tracing::debug!(
                 error = %error,
                 "spend counter batch read failed, falling back to per-key reads"
@@ -95,17 +100,14 @@ impl Loader<'_> {
     }
 
     async fn fetch_pending(&self) {
-        let pending = {
+        let asked = {
             let mut state = lock(&self.batch.state);
-            let pending: BTreeSet<String> =
-                state.keys.difference(&state.fetched).cloned().collect();
-            state.fetched.extend(pending.iter().cloned());
-            pending
+            state.take_pending()
         };
-        if pending.is_empty() {
+        if asked.is_empty() {
             return;
         }
-        let requested: Vec<Option<&str>> = pending.iter().map(String::as_str).map(Some).collect();
+        let requested: Vec<Option<&str>> = asked.keys().map(String::as_str).map(Some).collect();
         let fetched = match self
             .batch
             .redis_cache
@@ -130,13 +132,22 @@ impl Loader<'_> {
                 BTreeMap::new()
             }
         };
-        self.merge(fetched);
+        self.merge(fetched, &asked);
     }
 
     // a recorded write outranks whatever an older read reply brings back
-    fn merge(&self, fetched: BTreeMap<String, Option<Decimal>>) {
+    fn merge(
+        &self,
+        fetched: BTreeMap<String, Option<Decimal>>,
+        asked: &BTreeMap<String, Option<u64>>,
+    ) {
         let mut state = lock(&self.batch.state);
         for (key, value) in fetched {
+            // a forget since the reply was asked for makes its value stale
+            let current = state.generations.get(&key).copied();
+            if asked.get(&key) != Some(&current) {
+                continue;
+            }
             state.loaded.entry(key).or_insert(value);
         }
     }
