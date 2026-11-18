@@ -20,9 +20,9 @@ description: >-
   Response with upstream status/headers, losing the custom headers written on fastapi_response.
   Streaming replies default to 200 and merge provider headers then B004 custom headers, with
   application/octet-stream only as the fallback media type. Preserve this observable difference.
-  Add HTTP oracle scenarios through B900/B1139 with master key sk-test and ordinary seeded keys,
-  which pass auth through B755's VirtualKeyValidation stage (betterlite-auth auth_key_validation,
-  registered in B732's server state);
+  Add HTTP oracle scenarios through B900/B1139 with master key sk-test and ordinary seeded keys;
+  a seeded key passes auth through B755's VirtualKeyValidation stage (betterlite-auth auth_key_validation,
+  registered in B732's server state), and
   no helper imports a FastAPI function. Tests use api::file_content_route::tests in both crates.
   The 337 nonblank/non-comment lines including the two moved methods need 285 implementation,
   185 tests, 220 cases and 40 wiring lines, 730 total. Existing body/ID/transport decoders are reused.
