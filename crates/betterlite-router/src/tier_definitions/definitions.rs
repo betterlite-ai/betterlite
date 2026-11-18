@@ -31,11 +31,15 @@ pub(super) fn resolve_pools(
 fn pinned_pools() -> Result<BTreeMap<String, TierPool>, TierDefinitionsError> {
     let defaults: Defaults = serde_json::from_str(defaults::SOURCE)
         .map_err(|source| TierDefinitionsError::Defaults { source })?;
-    Ok(defaults
-        .tier_models
-        .into_iter()
-        .map(|(tier, model)| (tier, TierPool::Single(TierModelEntry::plain(model))))
-        .collect())
+    let mut pools = BTreeMap::new();
+    for (tier, model) in defaults.tier_models {
+        let entry = TierModelEntry {
+            model_name: model,
+            params: section::TierParams::default(),
+        };
+        pools.insert(tier, TierPool::Single(entry));
+    }
+    Ok(pools)
 }
 
 fn normalize_pool(tier: &str, pool: &section::TierPool) -> Result<TierPool, TierDefinitionsError> {
@@ -49,7 +53,7 @@ fn normalize_pool(tier: &str, pool: &section::TierPool) -> Result<TierPool, Tier
     }
 }
 
-// _normalize_tier_entries: one pool cannot name the same model twice with different params
+// LiteLLM rejects a pool that names the same model twice, even with different params
 fn reject_duplicate_names(
     tier: &str,
     entries: &[TierModelEntry],
@@ -68,15 +72,17 @@ fn reject_duplicate_names(
 
 fn normalize_entry(entry: &section::TierEntry) -> TierModelEntry {
     match entry {
-        section::TierEntry::Model(model) => TierModelEntry::plain(model.clone()),
+        section::TierEntry::Model(model) => TierModelEntry {
+            model_name: model.clone(),
+            params: section::TierParams::default(),
+        },
         section::TierEntry::Detailed(detailed) => TierModelEntry {
             model_name: detailed.model_name.clone(),
-            params: detailed.litellm_params.clone().unwrap_or_default(),
+            params: detailed.litellm_params.clone(),
         },
     }
 }
 
-// TierDefinition._normalize: strip both fields, then enforce the name, description and line rules
 pub(super) fn normalize_definition(
     raw: &section::TierDefinition,
 ) -> Result<TierDefinition, TierDefinitionsError> {
@@ -119,7 +125,6 @@ pub(super) fn normalize_definition(
     Ok(TierDefinition { name, description })
 }
 
-// _validate_non_reasoning_tier: the flag and the NON_REASONING tier must agree
 pub(super) fn validate_non_reasoning(
     non_reasoning: bool,
     custom: Option<&[TierDefinition]>,
@@ -148,7 +153,6 @@ pub(super) fn validate_non_reasoning(
     Ok(())
 }
 
-// _validate_tier_definitions: the custom ladder, its pools and its fallback
 pub(super) fn validate_definitions(
     ladder: Option<&[TierDefinition]>,
     pools: &BTreeMap<String, TierPool>,
@@ -190,7 +194,6 @@ fn validate_definition_names(names: &[&str]) -> Result<(), TierDefinitionsError>
     Ok(())
 }
 
-// the names that repeat a case-insensitive spelling, each listed once and sorted
 fn duplicate_names(names: &[&str]) -> Vec<String> {
     let folded: Vec<String> = names.iter().map(|name| name.to_lowercase()).collect();
     let mut duplicated: Vec<String> = names
@@ -249,7 +252,7 @@ fn validate_fallback(fallback: Option<&str>, names: &[&str]) -> Result<(), TierD
     })
 }
 
-// _tier_definition_conflicts: the settings that are written against the built-in ladder
+// these settings are written against the built-in ladder, which a custom set replaces
 fn definition_conflicts(
     checks: &TierChecks<'_>,
     labels: &BTreeMap<ComplexityTier, String>,
@@ -274,15 +277,13 @@ fn definition_conflicts(
     conflicts
 }
 
-// _built_in_opening_conflicts: a section-shaped rubric needs an LLM classifier and a free prompt slot
+// a section-shaped rubric needs an LLM classifier and the prompt slot the system prompt would fill
 fn validate_opening(checks: &TierChecks<'_>) -> Result<(), TierDefinitionsError> {
-    let prompt = checks
-        .classification_prompt
-        .map(|_| "classification_prompt");
-    let field = prompt.or(checks
-        .classification_examples
-        .map(|_| "classification_examples"));
-    let Some(field) = field else {
+    let field = if checks.classification_prompt.is_some() {
+        "classification_prompt"
+    } else if checks.classification_examples.is_some() {
+        "classification_examples"
+    } else {
         return Ok(());
     };
     if checks.llm_system_prompt.is_some() {

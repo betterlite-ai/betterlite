@@ -13,7 +13,6 @@ use self::error::TierDefinitionsError;
 use self::model::TierSet;
 
 impl TierSet {
-    // the typed, validated tier configuration one deployment's complexity_router_config describes
     pub fn resolve(
         input: &section::Config,
         checks: &TierChecks<'_>,

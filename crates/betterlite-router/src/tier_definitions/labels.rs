@@ -18,7 +18,6 @@ pub(super) fn resolve_labels(
     Ok(labels)
 }
 
-// _validate_tier_labels: no blank label, no label that spells another tier, no shared label
 pub(super) fn validate_labels(
     labels: &BTreeMap<ComplexityTier, String>,
     non_reasoning: bool,
@@ -49,7 +48,6 @@ fn blank_labels(labels: &BTreeMap<ComplexityTier, String>) -> Vec<ComplexityTier
         .collect()
 }
 
-// a label that spells another tier's canonical name, as the tier and the label it spelled
 fn shadowed_labels(labels: &BTreeMap<ComplexityTier, String>) -> Vec<(ComplexityTier, String)> {
     let mut shadowed: Vec<(ComplexityTier, String)> = Vec::new();
     for (tier, label) in labels {

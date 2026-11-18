@@ -62,12 +62,10 @@ pub(crate) fn pool(models: &[&str]) -> section::TierPool {
 pub(crate) fn detailed(model: &str, params: &[(&str, Json)]) -> section::TierEntry {
     section::TierEntry::Detailed(section::TierModelEntry {
         model_name: model.to_owned(),
-        litellm_params: Some(
-            params
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), value.clone()))
-                .collect(),
-        ),
+        litellm_params: params
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
     })
 }
 

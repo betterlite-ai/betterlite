@@ -196,7 +196,7 @@ fn a_single_object_entry_keeps_its_request_params() {
     let config = section::Config {
         tier_models: pools(&[(
             "REASONING",
-            TierPool::Single(detailed(
+            section::TierPool::Single(detailed(
                 "opus",
                 &[("reasoning_effort", parameters.clone())],
             )),
@@ -209,9 +209,31 @@ fn a_single_object_entry_keeps_its_request_params() {
     assert_eq!(reasoning.models().len(), 1);
     assert_eq!(reasoning.models()[0].model_name, "opus");
     assert_eq!(
-        reasoning.models()[0].params.get("reasoning_effort"),
-        Some(&parameters)
+        reasoning.models()[0]
+            .params
+            .get("reasoning_effort")
+            .map(section::TierParam::exposed),
+        Some(parameters)
     );
+}
+
+#[test]
+fn parameter_values_stay_out_of_debug_output() {
+    let config = section::Config {
+        tier_models: pools(&[(
+            "SIMPLE",
+            section::TierPool::Single(detailed(
+                "small",
+                &[("api_key", Json::Text("sk-secret".to_owned()))],
+            )),
+        )]),
+        ..blank()
+    };
+    let rendered = format!("{config:?}");
+    assert!(!rendered.contains("sk-secret"), "{rendered}");
+    let set = checked(config, &TierChecks::default());
+    let rendered = format!("{set:?}");
+    assert!(!rendered.contains("sk-secret"), "{rendered}");
 }
 
 #[test]
@@ -219,7 +241,7 @@ fn a_pool_keeps_every_entry_with_its_own_params() {
     let config = section::Config {
         tier_models: pools(&[(
             "REASONING",
-            TierPool::Pool(vec![
+            section::TierPool::Pool(vec![
                 detailed(
                     "opus",
                     &[("reasoning_effort", Json::Text("xhigh".to_owned()))],
@@ -263,13 +285,16 @@ fn an_absent_pool_map_uses_the_pinned_default_models() {
 #[rstest]
 #[case::plain_pool(pool(&["dup", "dup"]), "SIMPLE")]
 #[case::object_and_plain(
-    TierPool::Pool(vec![
+    section::TierPool::Pool(vec![
         detailed("dup", &[("temperature", Json::Number(Number::from(1_u64)))]),
         section::TierEntry::Model("dup".to_owned()),
     ]),
     "SIMPLE"
 )]
-fn a_repeated_model_name_in_one_pool_is_rejected(#[case] configured: TierPool, #[case] tier: &str) {
+fn a_repeated_model_name_in_one_pool_is_rejected(
+    #[case] configured: section::TierPool,
+    #[case] tier: &str,
+) {
     let config = section::Config {
         tier_models: pools(&[(tier, configured)]),
         ..blank()
@@ -341,7 +366,7 @@ fn entry_params_stay_typed_json_values() {
     let config = section::Config {
         tier_models: pools(&[(
             "MEDIUM",
-            TierPool::Single(detailed(
+            section::TierPool::Single(detailed(
                 "mid",
                 &[
                     ("max_tokens", Json::Number(Number::from(512_u64))),
@@ -355,7 +380,10 @@ fn entry_params_stay_typed_json_values() {
     let entry: &TierModelEntry = &set.pools.get("MEDIUM").unwrap().models()[0];
     assert_eq!(entry.params.len(), 2);
     assert_eq!(
-        entry.params.get("max_tokens"),
-        Some(&Json::Number(Number::from(512_u64)))
+        entry
+            .params
+            .get("max_tokens")
+            .map(section::TierParam::exposed),
+        Some(Json::Number(Number::from(512_u64)))
     );
 }

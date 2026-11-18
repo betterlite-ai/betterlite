@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-// ComplexityRouterConfig.classifier_type, the closed set of classifier kinds
+// ComplexityRouterConfig.classifier_type; LiteLLM's plugin-defined kinds are outside this set
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClassifierKind {
@@ -41,7 +41,6 @@ impl ClassifierKind {
         )
     }
 
-    // the classifier kinds a custom tier set cannot run under
     #[must_use]
     pub const fn rejects_custom_tiers(self) -> bool {
         matches!(
@@ -55,7 +54,6 @@ impl ClassifierKind {
     }
 }
 
-// ComplexityRouterConfig.classifier_fallback
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ClassifierFallback {
