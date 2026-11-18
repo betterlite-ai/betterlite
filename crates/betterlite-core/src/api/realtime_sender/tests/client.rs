@@ -1,5 +1,16 @@
 use super::*;
+use crate::api::realtime_sender::client::event_type_label;
 use crate::api::realtime_sender::error::RealtimeSenderError;
+
+#[test]
+fn event_type_label_names_the_event_type() {
+    assert_eq!(
+        event_type_label(&parsed(r#"{"type":"response.text.delta"}"#)),
+        "response.text.delta"
+    );
+    assert_eq!(event_type_label(&parsed(r#"{"type":1}"#)), "<non-string>");
+    assert_eq!(event_type_label(&Json::List(Vec::new())), "<non-string>");
+}
 
 #[tokio::test]
 async fn realtime_client_send_translation() {

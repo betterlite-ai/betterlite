@@ -129,6 +129,31 @@ async fn failed_binary_send_leaves_content_unset() {
 }
 
 #[tokio::test]
+async fn content_text_marks_content_sent() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    {
+        let mut script = fixture.script();
+        script.setup.push(parsed(SETUP_FRAME));
+        script.content.push(parsed(CONTENT_FRAME));
+        script.transforms.push_back(vec![
+            RealtimeMessage::Text(CONTENT_FRAME.to_owned()),
+            RealtimeMessage::Text(SETUP_FRAME.to_owned()),
+        ]);
+    }
+    let callbacks = no_guardrails();
+    let mut sender = RealtimeSender {
+        state: &mut state,
+        provider: Some(&fixture.provider),
+        guardrails: &callbacks,
+    };
+    assert!(sender.send_to_backend("client-frame").await.unwrap());
+    assert!(state.setup.content_sent_after_setup.0);
+    assert_eq!(fixture.backend_log.sent().len(), 1);
+    assert_eq!(cached(&state), None);
+}
+
+#[tokio::test]
 async fn malformed_transformed_json_is_sent_as_text() {
     let fixture = Fixture::new();
     let mut state = fixture.state();

@@ -105,7 +105,7 @@ where
     }
 }
 
-fn event_type_label(event: &Json) -> String {
+pub(super) fn event_type_label(event: &Json) -> String {
     let Json::Object(fields) = event else {
         return String::from("<non-string>");
     };

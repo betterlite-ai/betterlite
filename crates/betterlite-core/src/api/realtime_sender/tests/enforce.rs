@@ -54,8 +54,28 @@ fn enforce_keeps_original_bytes_for_unrelated_frames() {
     };
     let unrelated = r#"{"type":"input_audio_buffer.append","audio":"AAAA"}"#;
     assert_eq!(sender.enforce_session_model(unrelated).unwrap(), unrelated);
+    let append_with_session = r#"{"type":"input_audio_buffer.append","session":{"input_audio_transcription":{"model":"forbidden"}}}"#;
+    assert_eq!(
+        sender.enforce_session_model(append_with_session).unwrap(),
+        append_with_session
+    );
     let malformed = r#"{"type":"session.update""#;
     assert_eq!(sender.enforce_session_model(malformed).unwrap(), malformed);
+}
+
+#[test]
+fn enforce_keeps_bytes_when_a_session_update_needs_no_rewrite() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = RealtimeSender {
+        state: &mut state,
+        provider: Some(&fixture.provider),
+        guardrails: &callbacks,
+    };
+    let unchanged = r#"{"type": "session.update", "session": {"type": "realtime", "input_audio_transcription": {"model": "allowed"}}}"#;
+    assert_eq!(sender.enforce_session_model(unchanged).unwrap(), unchanged);
 }
 
 #[test]
