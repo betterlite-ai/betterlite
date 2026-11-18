@@ -75,8 +75,9 @@ async fn provision_all<const N: usize>() -> [PostgresFixture; N] {
     fixtures.try_into().unwrap()
 }
 
-async fn connect(
+async fn initialize_schema(
     fixture: &PostgresFixture,
+    sql: &str,
     duration: Duration,
 ) -> Result<(Client, ConnectionTasks), HarnessError> {
     let (client, connection) = timeout(
@@ -86,15 +87,6 @@ async fn connect(
     .await??;
     let mut tasks = JoinSet::new();
     tasks.spawn(connection);
-    Ok((client, tasks))
-}
-
-async fn initialize_schema(
-    fixture: &PostgresFixture,
-    sql: &str,
-    duration: Duration,
-) -> Result<(Client, ConnectionTasks), HarnessError> {
-    let (client, tasks) = connect(fixture, duration).await?;
     let result = timeout(duration, client.batch_execute(sql))
         .await
         .map_err(HarnessError::Timeout)
@@ -118,7 +110,13 @@ async fn initialize_all(
 ) -> Result<Vec<Client>, HarnessError> {
     let mut clients = Vec::with_capacity(fixtures.len());
     for fixture in fixtures {
-        let (client, tasks) = connect(fixture, SETUP_TIMEOUT).await?;
+        let (client, connection) = timeout(
+            SETUP_TIMEOUT,
+            tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls),
+        )
+        .await??;
+        let mut tasks = JoinSet::new();
+        tasks.spawn(connection);
         clients.push(client);
         connections.push(tasks);
     }

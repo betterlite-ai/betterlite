@@ -70,44 +70,40 @@ async fn assert_ledger_catalog(pool: &Pool) {
 
 #[tokio::test]
 async fn native_baseline_current_only() {
-    database_pair(
-        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
-        litellm_statements(),
-        |live, reference| async move {
-            let expected = read_contract(&reference.pool).await;
-            let catalog = runtime_catalog().await;
-            let schema_prisma = schema_prisma_bytes();
-            let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
-            let jitter = DrawingJitter(0);
+    database_pair(|live, reference| async move {
+        let expected = read_contract(&reference.pool).await;
+        let catalog = runtime_catalog().await;
+        let schema_prisma = schema_prisma_bytes();
+        let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
+        let jitter = DrawingJitter(0);
 
-            let operator = live.pool.get().await.unwrap();
-            operator
-                .batch_execute("CREATE TABLE operator_notes (id int)")
-                .await
-                .unwrap();
-            drop(operator);
-            let drifted = acquired_coordinator(&live.pool, Duration::from_secs(30)).await;
-            let error = baseline_current_schema(&drifted, &inputs, &jitter)
-                .await
-                .expect_err("an operator relation is drift");
-            assert_drift(&error);
-            drop(drifted);
-            assert!(!exists(&live.pool, "_prisma_migrations").await);
+        let operator = live.pool.get().await.unwrap();
+        operator
+            .batch_execute("CREATE TABLE operator_notes (id int)")
+            .await
+            .unwrap();
+        drop(operator);
+        let drifted = acquired_coordinator(&live.pool, Duration::from_secs(30)).await;
+        let error = baseline_current_schema(&drifted, &inputs, &jitter)
+            .await
+            .expect_err("an operator relation is drift");
+        assert_drift(&error);
+        drop(drifted);
+        assert!(!exists(&live.pool, "_prisma_migrations").await);
 
-            let cleanup = live.pool.get().await.unwrap();
-            cleanup
-                .batch_execute("DROP TABLE operator_notes")
-                .await
-                .unwrap();
-            drop(cleanup);
-            let coordinator = acquired_coordinator(&live.pool, Duration::from_secs(30)).await;
-            baseline_current_schema(&coordinator, &inputs, &jitter)
-                .await
-                .unwrap();
-            coordinator.finish().await.unwrap();
-            assert_eq!(ledger_rows(&live.pool).await.len(), catalog.len());
-        },
-    )
+        let cleanup = live.pool.get().await.unwrap();
+        cleanup
+            .batch_execute("DROP TABLE operator_notes")
+            .await
+            .unwrap();
+        drop(cleanup);
+        let coordinator = acquired_coordinator(&live.pool, Duration::from_secs(30)).await;
+        baseline_current_schema(&coordinator, &inputs, &jitter)
+            .await
+            .unwrap();
+        coordinator.finish().await.unwrap();
+        assert_eq!(ledger_rows(&live.pool).await.len(), catalog.len());
+    })
     .await;
 }
 
@@ -238,24 +234,20 @@ async fn baseline_warns_backfills() {
 
 #[tokio::test]
 async fn postgres_pinned_rows() {
-    database_pair(
-        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
-        litellm_statements(),
-        |live, reference| async move {
-            let expected = read_contract(&reference.pool).await;
-            let catalog = accepted_baseline(&live, &expected).await;
-            let rows = ledger_rows(&live.pool).await;
-            let pinned = pinned_catalog_map();
-            assert_eq!(rows.len(), pinned.len());
-            assert!(rows.iter().all(|row| {
-                let name: String = row.get("migration_name");
-                let checksum: String = row.get("checksum");
-                pinned.get(&name) == Some(&checksum)
-            }));
-            assert_eq!(catalog.len(), rows.len());
-            assert_ledger_catalog(&live.pool).await;
-        },
-    )
+    database_pair(|live, reference| async move {
+        let expected = read_contract(&reference.pool).await;
+        let catalog = accepted_baseline(&live, &expected).await;
+        let rows = ledger_rows(&live.pool).await;
+        let pinned = pinned_catalog_map();
+        assert_eq!(rows.len(), pinned.len());
+        assert!(rows.iter().all(|row| {
+            let name: String = row.get("migration_name");
+            let checksum: String = row.get("checksum");
+            pinned.get(&name) == Some(&checksum)
+        }));
+        assert_eq!(catalog.len(), rows.len());
+        assert_ledger_catalog(&live.pool).await;
+    })
     .await;
 }
 

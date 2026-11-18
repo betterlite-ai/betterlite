@@ -50,28 +50,20 @@ where
     F: FnOnce(TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    harness(vec![statements], move |mut databases| {
-        test(databases.remove(0))
-    })
-    .await;
+    harness(vec![statements], move |mut list| test(list.remove(0))).await;
 }
 
-// The live database and the independently initialized reference database a baseline verifies against
-async fn database_pair<F, Fut>(
-    live_statements: Vec<String>,
-    reference_statements: Vec<String>,
-    test: F,
-) where
+// The live database with the packaged catalogs and the reference with LiteLLM's history, the pair a baseline verifies against
+async fn database_pair<F, Fut>(test: F)
+where
     F: FnOnce(TestDatabase, TestDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    harness(
-        vec![live_statements, reference_statements],
-        move |mut databases| {
-            let reference = databases.remove(1);
-            test(databases.remove(0), reference)
-        },
-    )
+    let live = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+    harness(vec![live, litellm_statements()], move |mut databases| {
+        let reference = databases.remove(1);
+        test(databases.remove(0), reference)
+    })
     .await;
 }
 
