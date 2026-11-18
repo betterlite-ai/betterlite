@@ -14,7 +14,7 @@ use crate::coord_redis_boot::attach::{
     attach_usage_redis,
 };
 
-fn attach_with<'caches>(caches: &'caches RecordingCaches, ttl: f64) -> UsageAttach<'caches> {
+fn attach_with(caches: &RecordingCaches, ttl: f64) -> UsageAttach<'_> {
     UsageAttach {
         caches: caches.usage(),
         default_redis_ttl: Some(ttl),
@@ -36,7 +36,7 @@ async fn attach_usage_redis_backs_spend_cli_sso_and_config() {
     assert_eq!(
         caches.spend.calls(),
         vec![AttachCall::Attached {
-            default_ttl: Some(120.0)
+            default_ttl: Some(120.0_f64)
         }]
     );
     assert_eq!(
@@ -65,7 +65,7 @@ async fn attach_usage_redis_backs_the_auth_cache_when_asked() {
     assert_eq!(
         caches.auth.calls(),
         vec![AttachCall::Attached {
-            default_ttl: Some(90.0)
+            default_ttl: Some(90.0_f64)
         }]
     );
     assert_eq!(caches.calls().len(), 4);
@@ -117,12 +117,16 @@ async fn attach_usage_redis_logs_the_disabled_line() {
 async fn usage_cache_target_attaches_to_a_real_dual_cache() {
     let redis = standalone_cache().await;
     let cache = dual_cache(None);
-    UsageCacheTarget::attach_redis(&cache, Arc::clone(&redis), Some(30.0));
+    UsageCacheTarget::attach_redis(&cache, Arc::clone(&redis), Some(30.0_f64));
     let held = cache.redis_cache.read().expect("the client lock");
-    assert!(held.as_ref().is_some_and(|held| Arc::ptr_eq(held, &redis)));
+    assert!(
+        held.as_ref()
+            .is_some_and(|guarded| Arc::ptr_eq(guarded, &redis))
+    );
+    drop(held);
     assert_eq!(
         *cache.default_redis_ttl.read().expect("the ttl lock"),
-        Some(30.0)
+        Some(30.0_f64)
     );
 }
 
@@ -135,19 +139,24 @@ async fn config_cache_target_replaces_a_real_dual_cache_client() {
     let held = cache.redis_cache.read().expect("the client lock");
     assert!(
         held.as_ref()
-            .is_some_and(|held| Arc::ptr_eq(held, &replacement))
+            .is_some_and(|guarded| Arc::ptr_eq(guarded, &replacement))
     );
+    drop(held);
 }
 
 #[tokio::test]
 async fn usage_cache_target_attaches_to_a_real_auth_cache() {
     let redis = standalone_cache().await;
     let cache = auth_cache();
-    UsageCacheTarget::attach_redis(&cache, Arc::clone(&redis), Some(45.0));
+    UsageCacheTarget::attach_redis(&cache, Arc::clone(&redis), Some(45.0_f64));
     let held = cache
         .tier("ordinary-key")
         .redis_cache
         .read()
         .expect("the client lock");
-    assert!(held.as_ref().is_some_and(|held| Arc::ptr_eq(held, &redis)));
+    assert!(
+        held.as_ref()
+            .is_some_and(|guarded| Arc::ptr_eq(guarded, &redis))
+    );
+    drop(held);
 }

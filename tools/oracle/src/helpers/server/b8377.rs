@@ -76,13 +76,11 @@ async fn resolved_env_refs(params: &Value, environment: &BTreeMap<String, String
         value: params.clone(),
     };
     let model = resolve_params(&block, &context).await.or_value_error()?;
-    match serde_json::to_value(&model).or_value_error()? {
-        Value::Object(mut fields) => {
-            fields.retain(|_name, value| !value.is_null());
-            Ok(Value::Object(fields))
-        }
-        other => Ok(other),
+    let mut serialized = serde_json::to_value(&model).or_value_error()?;
+    if let Value::Object(fields) = &mut serialized {
+        fields.retain(|_name, value| !value.is_null());
     }
+    Ok(serialized)
 }
 
 fn family_of(params: &Value, environment: &BTreeMap<String, String>) -> HelperResult {

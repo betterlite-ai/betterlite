@@ -290,6 +290,7 @@ impl OidcHttp for BlockingOidc {
                 message: "the OIDC read blocked the async worker".to_owned(),
             });
         }
+        drop(release);
         Ok(OidcResponse {
             status: 200,
             body: b"offloaded-token".to_vec(),
@@ -334,13 +335,11 @@ async fn secret_lookup_runs_a_blocking_oidc_read_off_the_worker() {
         "the blocking OIDC read ran on the async worker"
     );
     let params = outcome.expect("the offloaded lookup resolves the token");
-    assert!(
-        signallers
-            .join_next()
-            .await
-            .expect("the signaller ran")
-            .is_ok()
-    );
+    signallers
+        .join_next()
+        .await
+        .expect("the signaller ran")
+        .unwrap();
     let password = params.password.expect("the password is set");
     assert_eq!(password.expose_secret(), "offloaded-token");
 }

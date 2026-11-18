@@ -16,8 +16,8 @@ use crate::coord_redis_boot::attach::{CLI_SSO_SESSION_TTL_SECONDS, UsageAttach};
 use crate::coord_redis_boot::env_refs::ResolveContext;
 use crate::coord_redis_boot::error::CoordRedisError;
 use crate::coord_redis_boot::init::{
-    AdminPing, PING_TIMEOUT, UsageRedisProbe, buffer_redis, init_env_fallback, init_from_config,
-    init_from_db,
+    AdminPing, PING_TIMEOUT, UsageRedisProbe as _, buffer_redis, init_env_fallback,
+    init_from_config, init_from_db,
 };
 use crate::coord_redis_boot::settings::{
     CoordinationGeneralSettings, CoordinationLitellmSettings, CoordinationRedisSettings,
@@ -69,10 +69,10 @@ fn assert_info(lines: &[LogLine], expected: &str) {
     assert_eq!(infos.last().map(String::as_str), Some(expected));
 }
 
-fn attach_of<'caches>(caches: &'caches RecordingCaches) -> UsageAttach<'caches> {
+fn attach_of(caches: &RecordingCaches) -> UsageAttach<'_> {
     UsageAttach {
         caches: caches.usage(),
-        default_redis_ttl: Some(120.0),
+        default_redis_ttl: Some(120.0_f64),
     }
 }
 
@@ -89,7 +89,7 @@ fn assert_backs_spend_cli_sso_and_config(caches: &RecordingCaches) {
             default_ttl: Some(CLI_SSO_SESSION_TTL_SECONDS)
         }]
     );
-    assert_eq!(caches.calls().last(), Some(&AttachCall::Replaced));
+    assert_eq!(caches.config.calls(), vec![AttachCall::Replaced]);
 }
 
 fn port_environment(port: u16) -> BTreeMap<String, String> {
@@ -405,7 +405,7 @@ async fn init_from_db_rejects_a_block_that_is_not_a_mapping() {
 async fn admin_ping_reports_a_closed_port_as_an_error() {
     let cache = standalone_cache().await;
     let outcome = AdminPing.ping(&cache).await;
-    assert!(outcome.is_err());
+    outcome.expect_err("a closed port pings as an error");
 }
 
 #[tokio::test]

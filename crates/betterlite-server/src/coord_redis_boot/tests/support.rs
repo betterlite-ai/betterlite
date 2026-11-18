@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::fmt;
-use std::future::Future;
+use std::future::{Future, pending};
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -276,7 +276,7 @@ impl ConfigCacheTarget for RecordingTarget {
 pub(crate) struct RecordingCaches {
     pub(crate) spend: RecordingTarget,
     pub(crate) cli: RecordingTarget,
-    config: RecordingTarget,
+    pub(crate) config: RecordingTarget,
     pub(crate) auth: RecordingTarget,
 }
 
@@ -319,7 +319,7 @@ impl UsageRedisProbe for RecordingProbe {
             PingOutcome::Reachable => Ok(true),
             PingOutcome::Unreachable => Ok(false),
             PingOutcome::Fails => Err(RedisAdminError::Breaker(BreakerOpen { name: "ping" })),
-            PingOutcome::Hangs => std::future::pending().await,
+            PingOutcome::Hangs => pending().await,
         }
     }
 }

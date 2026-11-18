@@ -72,9 +72,8 @@ fn from_config_keeps_a_text_buffer_flag_for_the_str_to_bool_read() {
 #[test]
 fn from_config_rejects_a_general_settings_that_is_not_a_mapping() {
     let config = json(r#"{"general_settings": "postgres://proxy"}"#);
-    let error = CoordinationRedisSettings::from_config(&config)
-        .err()
-        .expect("a text section does not read");
+    let error =
+        CoordinationRedisSettings::from_config(&config).expect_err("a text section does not read");
     assert!(matches!(error, CoordRedisError::Settings { .. }));
     let message = error.to_string();
     assert!(
@@ -88,8 +87,7 @@ fn from_config_rejects_a_general_settings_that_is_not_a_mapping() {
 fn from_config_rejects_a_litellm_settings_that_is_not_a_mapping() {
     let config = json(r#"{"general_settings": {}, "litellm_settings": ["drop_params"]}"#);
     let error = CoordinationRedisSettings::from_config(&config)
-        .err()
-        .expect("an array section does not read");
+        .expect_err("an array section does not read");
     assert!(matches!(error, CoordRedisError::Settings { .. }));
     assert!(error.to_string().contains("litellm_settings"), "{error}");
 }
@@ -97,9 +95,8 @@ fn from_config_rejects_a_litellm_settings_that_is_not_a_mapping() {
 #[test]
 fn from_config_rejects_a_text_auth_flag() {
     let config = json(r#"{"litellm_settings": {"enable_redis_auth_cache": "true"}}"#);
-    let error = CoordinationRedisSettings::from_config(&config)
-        .err()
-        .expect("a text flag is not a bool");
+    let error =
+        CoordinationRedisSettings::from_config(&config).expect_err("a text flag is not a bool");
     assert!(matches!(error, CoordRedisError::Settings { .. }));
     let message = error.to_string();
     assert!(
@@ -112,8 +109,7 @@ fn from_config_rejects_a_text_auth_flag() {
 fn from_config_rejects_a_number_buffer_flag() {
     let config = json(r#"{"general_settings": {"use_redis_transaction_buffer": 1}}"#);
     let error = CoordinationRedisSettings::from_config(&config)
-        .err()
-        .expect("a number flag is not a bool or a text");
+        .expect_err("a number flag is not a bool or a text");
     assert!(matches!(error, CoordRedisError::Settings { .. }));
     assert!(
         error
@@ -126,9 +122,8 @@ fn from_config_rejects_a_number_buffer_flag() {
 #[test]
 fn from_config_rejects_a_config_that_is_not_a_mapping() {
     let config = json(r#""coordination""#);
-    let error = CoordinationRedisSettings::from_config(&config)
-        .err()
-        .expect("a text is not a config");
+    let error =
+        CoordinationRedisSettings::from_config(&config).expect_err("a text is not a config");
     assert!(matches!(error, CoordRedisError::Settings { .. }));
     let message = error.to_string();
     assert!(
@@ -142,8 +137,7 @@ fn from_config_rejects_a_config_that_is_not_a_mapping() {
 fn from_config_rejects_an_object_buffer_flag() {
     let config = json(r#"{"general_settings": {"use_redis_transaction_buffer": {"on": true}}}"#);
     let error = CoordinationRedisSettings::from_config(&config)
-        .err()
-        .expect("an object flag is neither a bool nor a text");
+        .expect_err("an object flag is neither a bool nor a text");
     assert!(
         error
             .to_string()
