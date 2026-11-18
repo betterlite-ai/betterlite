@@ -1,5 +1,11 @@
+use std::io;
+
+use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
+use betterlite_bedrock::embedding_jobs::error::EmbeddingJobsError;
+use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_redact::error::RedactionError;
 use thiserror::Error;
 
 mod env;
@@ -12,17 +18,17 @@ pub(crate) struct Op;
 #[derive(Debug, Error)]
 pub(crate) enum Failure {
     #[error(transparent)]
-    Status(#[from] betterlite_bedrock::embedding_jobs::EmbeddingJobsError),
+    Status(#[from] EmbeddingJobsError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error(transparent)]
-    Io(#[from] std::io::Error),
+    Io(#[from] io::Error),
     #[error(transparent)]
-    Credentials(#[from] betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError),
+    Credentials(#[from] EmbeddingIoError),
     #[error(transparent)]
-    Logging(#[from] betterlite_logging::logging_state::LoggingStateError),
+    Logging(#[from] LoggingStateError),
     #[error(transparent)]
-    Redaction(#[from] betterlite_redact::error::RedactionError),
+    Redaction(#[from] RedactionError),
     #[error("the fixture clock is out of range")]
     Fixture,
 }

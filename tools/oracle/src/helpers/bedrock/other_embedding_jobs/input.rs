@@ -12,7 +12,7 @@ pub(crate) enum Input {
 }
 
 impl Input {
-    pub(crate) fn call(&self) -> &Call {
+    pub(crate) const fn call(&self) -> &Call {
         match self {
             Self::AsyncInvokeStatusUrl(call)
             | Self::StatusBodyPassthrough(call)

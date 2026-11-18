@@ -1,4 +1,5 @@
-use betterlite_bedrock::embedding_jobs::{EmbeddingJobsError, StatusWireRequest};
+use betterlite_bedrock::embedding_jobs::error::EmbeddingJobsError;
+use betterlite_bedrock::embedding_jobs::transport::StatusWireRequest;
 use betterlite_models::decisions::Json;
 use serde_json::{Value, json};
 
@@ -57,10 +58,11 @@ fn request_value(request: &StatusWireRequest) -> Value {
 
 fn pre_value(snapshot: &Json) -> Value {
     let args = field(snapshot, "additional_args");
-    let names: Vec<&String> = match field(args, "headers") {
+    let mut names: Vec<&String> = match field(args, "headers") {
         Json::Object(headers) => headers.keys().collect(),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Vec::new(),
     };
+    names.sort_unstable();
     json!({
         "input": field(snapshot, "input"),
         "api_base": field(args, "api_base"),

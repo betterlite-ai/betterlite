@@ -22,7 +22,8 @@ fn curl_request(url: &str, live: &IndexMap<String, Json>) -> String {
     )
 }
 
-pub(crate) enum StatusEvent<'event> {
+#[derive(Clone, Copy)]
+pub enum StatusEvent<'event> {
     Request {
         url: &'event str,
         headers: &'event [(String, String)],
@@ -30,7 +31,11 @@ pub(crate) enum StatusEvent<'event> {
     Reply(&'event str),
 }
 
-pub(crate) fn log_call(
+// Construct the synchronous logging context inside this callback, never across an await.
+pub type StatusLogger<'logger> =
+    dyn FnMut(&str, StatusEvent<'_>) -> Result<(), PrePostError> + Send + 'logger;
+
+pub fn log_call(
     invocation_arn: &str,
     event: StatusEvent<'_>,
     log: &mut LogContext<'_, '_>,

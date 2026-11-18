@@ -12,8 +12,8 @@ use crate::signing::error::SigningError;
 pub struct FailureBody(pub String);
 
 impl Debug for FailureBody {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str("[REDACTED provider reply]")
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED provider reply]")
     }
 }
 

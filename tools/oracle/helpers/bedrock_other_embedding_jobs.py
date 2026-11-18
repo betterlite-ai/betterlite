@@ -78,7 +78,7 @@ class Recorder(Logging):
     @override
     def pre_call(self, *_args: JsonValue, **values: JsonValue) -> None:
         additional = PRE_ARGS.validate_python(values["additional_args"])
-        header_names: list[str] = list(additional["headers"])
+        header_names: list[str] = sorted(additional["headers"])
         record = call_record(values)
         record.update(
             {

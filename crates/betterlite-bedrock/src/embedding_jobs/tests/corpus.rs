@@ -1,7 +1,8 @@
 use std::fs;
 use std::path::Path;
 
-use super::super::{EmbeddingJobsError, decode_async_embedding_status};
+use super::super::decode::decode_async_embedding_status;
+use super::super::error::EmbeddingJobsError;
 
 fn category(bytes: &[u8]) -> &'static str {
     match decode_async_embedding_status(bytes) {

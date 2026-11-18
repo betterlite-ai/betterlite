@@ -3,13 +3,14 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_models::decisions::Json;
+use betterlite_prompts::gitlab_client::payload::decode_text;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::ExposeSecret as _;
 use serde_json::value::RawValue;
 
 use super::decode::decode_async_embedding_status;
 use super::error::{EmbeddingJobsError, FailureBody};
-use super::logging::{StatusEvent, log_call};
+use super::logging::{StatusEvent, StatusLogger};
 use super::transport::{StatusReply, StatusTransport, StatusWireRequest};
 use super::url::{StatusEndpoint, async_invoke_status_url};
 use crate::aws_settings::sources::Credentials;
@@ -18,7 +19,7 @@ use crate::bedrock_embedding_io::credentials::{
 };
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{ASYNC_CLIENT_PROVIDER, ClientFactory};
-use crate::image_call::plan::{CredentialSource, LogContext};
+use crate::image_call::plan::CredentialSource;
 use crate::signing::executor::AwsSigningExecutor;
 
 const RUNTIME_ENDPOINT_VARIABLE: &str = "AWS_BEDROCK_RUNTIME_ENDPOINT";
@@ -49,7 +50,7 @@ struct PreparedStatusRequest {
 pub async fn get_async_invoke_status<Source, Factory>(
     mut call: AsyncInvokeStatusCall<'_>,
     services: &StatusServices<'_, Source, Factory>,
-    mut log: Option<&mut LogContext<'_, '_>>,
+    mut log: Option<&mut StatusLogger<'_>>,
 ) -> Result<Json, EmbeddingJobsError>
 where
     Source: CredentialSource + Sync,
@@ -58,17 +59,16 @@ where
 {
     let prepared = prepare_status_request(&mut call, services).await?;
     if let Some(context) = log.as_deref_mut() {
-        log_call(
+        context(
             call.invocation_arn,
             StatusEvent::Request {
                 url: &prepared.url,
                 headers: &prepared.headers,
             },
-            context,
         )?;
     }
     let reply = send_status_request(&prepared, services.factory).await?;
-    complete_status_request(call.invocation_arn, reply, &prepared.credentials, log)
+    complete_status_request(call.invocation_arn, &reply, &prepared.credentials, log)
 }
 
 async fn prepare_status_request<Source, Factory>(
@@ -77,6 +77,7 @@ async fn prepare_status_request<Source, Factory>(
 ) -> Result<PreparedStatusRequest, EmbeddingJobsError>
 where
     Source: CredentialSource + Sync,
+    Factory: Sync,
 {
     let configured = configured_endpoint(call.optional_params)?;
     let endpoint = StatusEndpoint {
@@ -111,6 +112,7 @@ async fn status_credentials<Source, Factory>(
 ) -> Result<Credentials, EmbeddingJobsError>
 where
     Source: CredentialSource + Sync,
+    Factory: Sync,
 {
     let loaded = load_credentials(
         CredentialRequest {
@@ -175,27 +177,15 @@ where
         .map_err(EmbeddingJobsError::from)
 }
 
-// httpx's response.text replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
-fn response_text(bytes: &[u8]) -> String {
-    let mut text = String::with_capacity(bytes.len());
-    for chunk in bytes.utf8_chunks() {
-        text.push_str(chunk.valid());
-        if !chunk.invalid().is_empty() {
-            text.push('\u{FFFD}');
-        }
-    }
-    text
-}
-
 fn complete_status_request(
     invocation_arn: &str,
-    reply: StatusReply,
+    reply: &StatusReply,
     credentials: &Credentials,
-    log: Option<&mut LogContext<'_, '_>>,
+    log: Option<&mut StatusLogger<'_>>,
 ) -> Result<Json, EmbeddingJobsError> {
-    let text = scrub_credentials(response_text(&reply.body), credentials);
+    let text = scrub_credentials(decode_text(&reply.body), credentials);
     if let Some(context) = log {
-        log_call(invocation_arn, StatusEvent::Reply(&text), context)?;
+        context(invocation_arn, StatusEvent::Reply(&text))?;
     }
     // only an exact 200 is a status body; a Failed job in a 200 body is still a success
     if reply.status == 200 {

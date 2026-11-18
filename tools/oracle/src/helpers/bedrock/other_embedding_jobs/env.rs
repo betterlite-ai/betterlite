@@ -1,6 +1,7 @@
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
+use betterlite_bedrock::embedding_jobs::logging::{StatusEvent, StatusLogger, log_call};
 use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -75,11 +76,28 @@ pub(crate) fn with_logging<Invoke, Output>(
     invoke: Invoke,
 ) -> Result<(Output, Vec<Json>), Failure>
 where
-    Invoke: FnOnce(Option<&mut LogContext<'_, '_>>) -> Output,
+    Invoke: FnOnce(Option<&mut StatusLogger<'_>>) -> Output,
 {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(Failure::from)?;
     let mut state = logging_state(&redactor)?;
     let snapshots = Mutex::new(Vec::new());
+    let mut logger_callback = |arn: &str, event: StatusEvent<'_>| {
+        capture_status_event(&mut state, &redactor, &snapshots, arn, event)
+    };
+    let result = invoke(enabled.then_some(&mut logger_callback));
+    let captured = snapshots
+        .into_inner()
+        .unwrap_or_else(PoisonError::into_inner);
+    Ok((result, captured))
+}
+
+fn capture_status_event(
+    state: &mut LoggingState,
+    redactor: &Redactor,
+    snapshots: &Mutex<Vec<Json>>,
+    arn: &str,
+    event: StatusEvent<'_>,
+) -> Result<(), PrePostError> {
     let logger = |snapshot: &Json| -> Result<(), PrePostError> {
         snapshots
             .lock()
@@ -94,20 +112,12 @@ where
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
+        redactor,
         log: &DiscardingSink,
         input_callbacks: &[],
         sentry: None,
         logger_fn: Some(&logger),
         now: state.start_time,
     };
-    let mut log = LogContext {
-        state: &mut state,
-        env: &env,
-    };
-    let result = invoke(enabled.then_some(&mut log));
-    let captured = snapshots
-        .into_inner()
-        .unwrap_or_else(PoisonError::into_inner);
-    Ok((result, captured))
+    log_call(arn, event, &mut LogContext { state, env: &env })
 }

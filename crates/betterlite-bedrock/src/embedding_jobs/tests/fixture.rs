@@ -23,11 +23,12 @@ use betterlite_secret_managers::secret_lookup::ports::{
 };
 use secrecy::SecretString;
 use serde_json::value::RawValue;
+use tokio::runtime::Builder;
 
-use super::super::{
-    AsyncInvokeStatusCall, EmbeddingJobsError, StatusReply, StatusServices, StatusTransport,
-    StatusWireRequest, get_async_invoke_status,
-};
+use super::super::error::EmbeddingJobsError;
+use super::super::logging::{StatusEvent, log_call};
+use super::super::status::{AsyncInvokeStatusCall, StatusServices, get_async_invoke_status};
+use super::super::transport::{StatusReply, StatusTransport, StatusWireRequest};
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::ManagedRegionWorker;
 use crate::bedrock_embedding_io::transport::{
@@ -35,6 +36,7 @@ use crate::bedrock_embedding_io::transport::{
 };
 use crate::credentials::error::CredentialError;
 use crate::image_call::plan::{CredentialSource, LogContext};
+use crate::signing::executor::AwsSigningExecutor;
 
 pub(super) const ACCESS_KEY: &str = "AKIDEXAMPLE";
 pub(super) const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
@@ -146,7 +148,7 @@ impl CredentialSource for Source {
         settings: AwsSettings,
         region: String,
     ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
-        self.calls.lock().unwrap().push((settings, region.clone()));
+        self.calls.lock().unwrap().push((settings, region));
         ready(Ok(self.credentials.clone()))
     }
 }
@@ -346,18 +348,6 @@ fn snapshot_logger(snapshots: Arc<Mutex<Vec<Json>>>) -> impl Fn(&Json) -> Result
     }
 }
 
-fn invoke(
-    call: AsyncInvokeStatusCall<'_>,
-    services: &StatusServices<'_, Source, Factory>,
-    log: Option<&mut LogContext<'_, '_>>,
-) -> Result<Json, EmbeddingJobsError> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("the fixture runtime builds")
-        .block_on(get_async_invoke_status(call, services, log))
-}
-
 pub(super) fn run(scenario: &Scenario) -> Run {
     let factory = Factory::new(scenario.reply.clone());
     let source = Source::new(scenario.credentials.clone());
@@ -369,10 +359,16 @@ pub(super) fn run(scenario: &Scenario) -> Run {
     let logger = snapshot_logger(Arc::clone(&snapshots));
     let redactor = redactor();
     let sink = DiscardingSink;
-    let env = prepost_env(&state, &redactor, &sink, &logger);
-    let mut log = LogContext {
-        state: &mut state,
-        env: &env,
+    let mut logger_callback = |arn: &str, event: StatusEvent<'_>| {
+        let env = prepost_env(&state, &redactor, &sink, &logger);
+        log_call(
+            arn,
+            event,
+            &mut LogContext {
+                state: &mut state,
+                env: &env,
+            },
+        )
     };
     let call = AsyncInvokeStatusCall {
         invocation_arn: INVOCATION_ARN,
@@ -381,7 +377,7 @@ pub(super) fn run(scenario: &Scenario) -> Run {
         environment: &scenario.environment,
         now: now(),
     };
-    let signing = crate::signing::executor::AwsSigningExecutor::default();
+    let signing = AwsSigningExecutor::default();
     let services = StatusServices {
         source: &source,
         secrets: &secrets,
@@ -389,7 +385,15 @@ pub(super) fn run(scenario: &Scenario) -> Run {
         factory: &factory,
         signing: &signing,
     };
-    let result = invoke(call, &services, scenario.logging.then_some(&mut log));
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the fixture runtime builds");
+    let result = runtime.block_on(get_async_invoke_status(
+        call,
+        &services,
+        scenario.logging.then_some(&mut logger_callback),
+    ));
     Run {
         result,
         requests: factory.requests(),

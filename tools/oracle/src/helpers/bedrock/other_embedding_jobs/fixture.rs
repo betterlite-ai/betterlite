@@ -9,16 +9,23 @@ use betterlite_bedrock::bedrock_embedding_io::transport::{
     ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
 };
 use betterlite_bedrock::credentials::error::CredentialError;
-use betterlite_bedrock::embedding_jobs::{
-    AsyncInvokeStatusCall, EmbeddingJobsError, StatusReply, StatusServices, StatusTransport,
-    StatusWireRequest, get_async_invoke_status,
+use betterlite_bedrock::embedding_jobs::error::EmbeddingJobsError;
+use betterlite_bedrock::embedding_jobs::logging::StatusLogger;
+use betterlite_bedrock::embedding_jobs::status::{
+    AsyncInvokeStatusCall, StatusServices, get_async_invoke_status,
 };
-use betterlite_bedrock::image_call::plan::{CredentialSource, LogContext};
+use betterlite_bedrock::embedding_jobs::transport::{
+    StatusReply, StatusTransport, StatusWireRequest,
+};
+use betterlite_bedrock::image_call::plan::CredentialSource;
+use betterlite_bedrock::signing::executor::AwsSigningExecutor;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
+use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
+use tokio::runtime::Builder;
 
 use super::Failure;
 use super::env::{NoPorts, with_logging};
@@ -142,13 +149,13 @@ fn parameters(call: &Call) -> Result<BTreeMap<String, Box<RawValue>>, Failure> {
     Ok(parameters)
 }
 
-fn invoke(
+fn fetch_status(
     call: &Call,
     parameters: &mut BTreeMap<String, Box<RawValue>>,
     services: &StatusServices<'_, Source, Factory>,
-    log: Option<&mut LogContext<'_, '_>>,
+    log: Option<&mut StatusLogger<'_>>,
 ) -> Result<Result<Json, EmbeddingJobsError>, Failure> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(Failure::from)?;
@@ -202,7 +209,7 @@ fn execute_with_source(
         calls: Mutex::new(Vec::new()),
     };
     let mut parameters = parameters(call)?;
-    let signing = betterlite_bedrock::signing::executor::AwsSigningExecutor::default();
+    let signing = AwsSigningExecutor::default();
     let services = StatusServices {
         source: &source,
         secrets,
@@ -211,7 +218,7 @@ fn execute_with_source(
         signing: &signing,
     };
     let (result, snapshots) = with_logging(call.logging, |log| {
-        invoke(call, &mut parameters, &services, log)
+        fetch_status(call, &mut parameters, &services, log)
     })?;
     Ok(Execution {
         result: result?,

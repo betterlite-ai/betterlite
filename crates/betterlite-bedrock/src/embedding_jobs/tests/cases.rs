@@ -1,10 +1,16 @@
+use std::time::Duration;
+
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
 use betterlite_redact::structured::REDACTED;
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::value::RawValue;
 
-use super::super::{EmbeddingJobsError, StatusWireRequest};
+use crate::bedrock_embedding_io::transport::TransferError;
+
+use super::super::error::EmbeddingJobsError;
+use super::super::transport::StatusWireRequest;
 use super::fixture::{
     ACCESS_KEY, ENCODED_ARN, INVOCATION_ARN, Reply, SECRET_KEY, SESSION_TOKEN, Scenario,
     credentials_with,
@@ -49,7 +55,7 @@ fn header_names(request: &StatusWireRequest) -> Vec<&str> {
         .collect()
 }
 
-fn object<'json>(value: &'json Json) -> &'json IndexMap<String, Json> {
+fn object(value: &Json) -> &IndexMap<String, Json> {
     let Json::Object(fields) = value else {
         panic!("the fixture value is an object");
     };
@@ -60,7 +66,7 @@ fn field<'json>(value: &'json Json, name: &str) -> &'json Json {
     object(value).get(name).expect("the fixture field exists")
 }
 
-fn text<'json>(value: &'json Json) -> &'json str {
+fn text(value: &Json) -> &str {
     let Json::Text(text) = value else {
         panic!("the fixture value is text");
     };
@@ -216,11 +222,11 @@ fn status_messages() {
         "Failed to get async invoke status: 500 - boom"
     );
     for status in [201_u16, 204, 302] {
-        let error = super::fixture::run(&Scenario::new(Reply::status(status, "created")))
+        let status_error = super::fixture::run(&Scenario::new(Reply::status(status, "created")))
             .result
             .expect_err("every non-200 status fails");
         assert_eq!(
-            error.to_string(),
+            status_error.to_string(),
             format!("Failed to get async invoke status: {status} - created")
         );
     }
@@ -247,12 +253,12 @@ fn logged_and_transport_failures() {
     );
     assert!(matches!(
         super::fixture::run(&Scenario::new(Reply::Failed)).result,
-        Err(EmbeddingJobsError::Transport(
-            crate::bedrock_embedding_io::transport::TransferError::Failed(TransportError::Closed)
-        ))
+        Err(EmbeddingJobsError::Transport(TransferError::Failed(
+            TransportError::Closed
+        )))
     ));
     let mut unsigned = Scenario::new(Reply::ok("{}"));
-    unsigned.endpoint = Some("://not-a-url".to_owned());
+    unsigned.endpoint = Some("https://invalid host.example".to_owned());
     assert!(matches!(
         super::fixture::run(&unsigned).result,
         Err(EmbeddingJobsError::Signing(_))
@@ -293,10 +299,10 @@ fn assert_logged_headers(pre: &Json) {
     assert_eq!(
         names,
         [
+            "Authorization",
             "Content-Type",
             "X-Amz-Date",
-            "X-Amz-Security-Token",
-            "Authorization"
+            "X-Amz-Security-Token"
         ]
     );
     assert_eq!(
@@ -350,6 +356,9 @@ fn embedding_jobs_credential_identity_isolation() {
     let mut second = Scenario::new(Reply::ok("{}"));
     second.endpoint = Some("https://second.example".to_owned());
     second.region = "us-east-2".to_owned();
+    second
+        .environment
+        .insert("AWS_REGION".to_owned(), "us-east-2".to_owned());
     second.credentials = credentials_with("AKIASECONDEXAMPLE", "second-secret", None);
     let second_run = super::fixture::run(&second);
     let first_request = first_run.requests.first().expect("first request sent");
@@ -394,18 +403,20 @@ fn embedding_jobs_secret_safe_failure() {
     };
     assert_eq!(body.0, "rejected [REDACTED], [REDACTED] and [REDACTED]");
 
-    let request = run.requests.first().expect("the request was sent");
+    assert_request_debug_safe(run.requests.first().expect("the request was sent"));
+    let failed = super::fixture::run(&Scenario::new(Reply::Failed));
+    let transport = failed.result.expect_err("the transport fails");
+    assert!(!format!("{transport:?}").contains(SECRET_KEY));
+    assert!(!transport.to_string().contains(SECRET_KEY));
+}
+
+fn assert_request_debug_safe(request: &StatusWireRequest) {
     let request_debug = format!("{request:?}");
     assert!(request_debug.contains("header_names"));
     assert!(request_debug.contains("Content-Type"));
     assert!(!request_debug.contains(SECRET_KEY));
     assert!(!request_debug.contains(SESSION_TOKEN));
     assert!(!request_debug.contains("AWS4-HMAC-SHA256"));
-
-    let failed = super::fixture::run(&Scenario::new(Reply::Failed));
-    let transport = failed.result.expect_err("the transport fails");
-    assert!(!format!("{transport:?}").contains(SECRET_KEY));
-    assert!(!transport.to_string().contains(SECRET_KEY));
 }
 
 #[rstest]
@@ -415,11 +426,11 @@ fn endpoint_parameter_types(#[case] value: &str, #[case] accepted: bool) {
     let mut scenario = Scenario::new(Reply::ok("{}"));
     scenario.optional_params.insert(
         "aws_bedrock_runtime_endpoint".to_owned(),
-        serde_json::value::RawValue::from_string(value.to_owned()).unwrap(),
+        RawValue::from_string(value.to_owned()).unwrap(),
     );
     let run = super::fixture::run(&scenario);
     if accepted {
-        assert!(run.result.is_ok());
+        run.result.unwrap();
         assert_eq!(
             run.requests[0].url,
             format!("https://bedrock-runtime.us-west-2.amazonaws.com/async-invoke/{ENCODED_ARN}")
@@ -442,10 +453,10 @@ fn bearer_parameters_do_not_skip_signing() {
     );
     scenario.optional_params.insert(
         "api_key".to_owned(),
-        serde_json::value::RawValue::from_string("\"unused-api-key\"".to_owned()).unwrap(),
+        RawValue::from_string("\"unused-api-key\"".to_owned()).unwrap(),
     );
     let run = super::fixture::run(&scenario);
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(run.resolved.len(), 1);
     assert_signed_headers(&run.requests[0]);
 }
@@ -454,7 +465,7 @@ fn bearer_parameters_do_not_skip_signing() {
 fn status_timeout_is_not_converted() {
     let run = super::fixture::run(&Scenario::new(Reply::Timeout));
     assert!(
-        matches!(run.result, Err(EmbeddingJobsError::Transport(crate::bedrock_embedding_io::transport::TransferError::Timeout { elapsed })) if elapsed == std::time::Duration::from_secs(7))
+        matches!(run.result, Err(EmbeddingJobsError::Transport(TransferError::Timeout { elapsed })) if elapsed == Duration::from_secs(7))
     );
 }
 

@@ -11,10 +11,9 @@ pub struct StatusWireRequest {
 
 // the signed headers carry a provider credential, so Debug names them without their values
 impl Debug for StatusWireRequest {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
-        formatter
-            .debug_struct("StatusWireRequest")
+        f.debug_struct("StatusWireRequest")
             .field("url", &self.url)
             .field("header_names", &names)
             .finish()
