@@ -1,9 +1,7 @@
-from functools import partial
+import time
 from typing import Final, TypedDict
-from unittest import mock
 
-from fastuuid import UUID
-from litellm._uuid import uuid as uuid_module
+import fastuuid
 from litellm.proxy.openai_files_endpoints.storage_backend_service import (
     StorageBackendFileService,
 )
@@ -34,16 +32,30 @@ class Input(TypedDict):
     uuid: str
 
 
+class FixedClock:
+    def __init__(self, seconds: float) -> None:
+        self.seconds = seconds
+
+    def __call__(self) -> float:
+        return self.seconds
+
+
+class FixedUuid:
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def __call__(self) -> fastuuid.UUID:
+        return fastuuid.UUID(hex=self.value)
+
+
 def run(input_value: Input) -> ProjectedFile:
-    with (
-        mock.patch("time.time", partial(float, input_value["now"])),
-        mock.patch.object(uuid_module, "uuid4", partial(UUID, hex=input_value["uuid"])),
-    ):
-        file_object = StorageBackendFileService._create_file_object_with_storage_metadata(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L141
-            file_content=input_value["content"].encode(),
-            filename=input_value["filename"],
-            purpose=input_value["purpose"],
-            target_storage=input_value["target_storage"],
-            storage_url=input_value["storage_url"],
-        )
+    time.time = FixedClock(input_value["now"])
+    fastuuid.uuid4 = FixedUuid(input_value["uuid"])
+    file_object = StorageBackendFileService._create_file_object_with_storage_metadata(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L141
+        file_content=input_value["content"].encode(),
+        filename=input_value["filename"],
+        purpose=input_value["purpose"],
+        target_storage=input_value["target_storage"],
+        storage_url=input_value["storage_url"],
+    )
     return PROJECTED.validate_json(file_object.model_dump_json())
