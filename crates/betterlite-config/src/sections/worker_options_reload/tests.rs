@@ -8,20 +8,20 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::worker_options_reload::{
-    LogConfig, LogLevelError, Settings, UvicornSettings, resolve_log_level,
+    LogConfig, LogLevelError, UvicornSettings, WorkerOptionsReloadSettings, resolve_log_level,
 };
 
-fn load(environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+fn load(environment: &[(&str, &str)]) -> Result<WorkerOptionsReloadSettings, ConfigError> {
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     ConfigLoader { lookup }
         .load("{}")
-        .map(|config| config.sections.worker_options_reload)
+        .map(|config| *config.sections.worker_options_reload)
 }
 
-fn loaded(environment: &[(&str, &str)]) -> Settings {
+fn loaded(environment: &[(&str, &str)]) -> WorkerOptionsReloadSettings {
     load(environment).unwrap()
 }
 

@@ -33,10 +33,13 @@ pub struct Raw {
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct Settings {
+pub struct WorkerOptionsReloadSettings {
     pub worker_options: UvicornSettings,
     pub dev_reload: ReloadSettings,
 }
+
+// the settings are boxed so Sections stays one pointer wider, because their inline size pushed a db-admin future to clippy's 16384-byte large_futures limit
+pub type Settings = Box<WorkerOptionsReloadSettings>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct UvicornSettings {
@@ -122,7 +125,7 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        Ok(Settings {
+        Ok(Box::new(WorkerOptionsReloadSettings {
             worker_options: UvicornSettings {
                 host: variable(lookup, HOST_VARIABLE).unwrap_or_else(|| DEFAULT_HOST.to_owned()),
                 port: parse(lookup, PORT_VARIABLE, number::<u16>)?.unwrap_or(DEFAULT_PORT),
@@ -144,7 +147,7 @@ impl Section for Raw {
                 extra_paths: BTreeSet::new(),
                 env_hot_reload: parse(lookup, HOT_RELOAD_VARIABLE, flag)?.unwrap_or_default(),
             },
-        })
+        }))
     }
 }
 
