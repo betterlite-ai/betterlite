@@ -258,7 +258,7 @@ async fn a_cancelled_fetcher_releases_its_waiters() {
     let waiting = Arc::clone(&batch);
     waiters.spawn(async move { waiting.read("spend:key:a").await });
     tokio::task::yield_now().await;
-    fetcher.abort();
+    let _aborted = fetcher.abort();
     let cancelled = fetchers.join_next().await.expect("the fetcher runs");
     assert!(cancelled.is_err(), "the first reader is aborted");
     held.release();
@@ -283,7 +283,7 @@ async fn overlapping_fetches_never_strand_a_late_reader() {
     let waiting = Arc::clone(&batch);
     waiters.spawn(async move { waiting.read("spend:key:a").await });
     tokio::task::yield_now().await;
-    fetcher.abort();
+    let _aborted = fetcher.abort();
     assert!(
         fetchers
             .join_next()
