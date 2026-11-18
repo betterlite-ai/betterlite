@@ -85,7 +85,6 @@ where
     }
 }
 
-#[must_use]
 pub fn render_model_added_message(
     model_name: &str,
     litellm_model_name: &str,
@@ -93,10 +92,7 @@ pub fn render_model_added_message(
     catalog: &dyn RawModelInfoSource,
     proxy_base_url: Option<&str>,
 ) -> Result<String, ModelInfoRenderError> {
-    let base_line = match base_model {
-        Some(name) => format!("Base Model: `{name}`\n"),
-        None => String::new(),
-    };
+    let base_line = base_model.map_or_else(String::new, |name| format!("Base Model: `{name}`\n"));
     let model_info = match catalog.model_info(base_model.unwrap_or(litellm_model_name)) {
         Some(entries) => render_model_info(entries)?,
         None => String::new(),
@@ -120,7 +116,19 @@ fn render_model_info(entries: &JsonObject) -> Result<String, ModelInfoRenderErro
 
 fn render_model_info_value(key: &str, value: &Json) -> Result<String, ModelInfoRenderError> {
     if key == INPUT_COST_KEY || key == OUTPUT_COST_KEY {
-        return render_cost(key, value);
+        let cost = match value {
+            Json::Number(number) => number.as_f64(),
+            Json::Bool(flag) => Some(f64::from(u8::from(*flag))),
+            Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => None,
+        };
+        return cost.map_or_else(
+            || {
+                Err(ModelInfoRenderError::Cost {
+                    field: key.to_owned(),
+                })
+            },
+            |number| Ok(format!("{number:.8}")),
+        );
     }
     match value {
         Json::Null => Ok("None".to_owned()),
@@ -134,20 +142,4 @@ fn render_model_info_value(key: &str, value: &Json) -> Result<String, ModelInfoR
     }
 }
 
-fn render_cost(field: &str, value: &Json) -> Result<String, ModelInfoRenderError> {
-    let number = match value {
-        Json::Number(number) => number.as_f64().ok_or_else(|| ModelInfoRenderError::Cost {
-            field: field.to_owned(),
-        })?,
-        Json::Bool(flag) => f64::from(u8::from(*flag)),
-        Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            return Err(ModelInfoRenderError::Cost {
-                field: field.to_owned(),
-            });
-        }
-    };
-    Ok(format!("{number:.8}"))
-}
-
-#[cfg(test)]
 mod tests;

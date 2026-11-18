@@ -15,5 +15,4 @@ pub trait ModelAlertSender: Send + Sync {
     async fn send_alert(&self, alert: Alert<'_>) -> Result<(), Self::Error>;
 }
 
-#[cfg(test)]
 mod tests;

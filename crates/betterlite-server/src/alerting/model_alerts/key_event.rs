@@ -55,10 +55,7 @@ fn render_key_event_message(
     key_event: &VirtualKeyEvent,
     event_name: &str,
 ) -> Result<String, serde_json::Error> {
-    let alias = match key_event.created_by_key_alias.as_deref() {
-        Some(alias) => alias,
-        None => "None",
-    };
+    let alias = key_event.created_by_key_alias.as_deref().unwrap_or("None");
     let mut lines = vec![
         format!("`{event_name}`"),
         "*Action Done by:*".to_owned(),
@@ -89,5 +86,4 @@ fn render_argument(value: &Json) -> Result<String, serde_json::Error> {
     }
 }
 
-#[cfg(test)]
 mod tests;

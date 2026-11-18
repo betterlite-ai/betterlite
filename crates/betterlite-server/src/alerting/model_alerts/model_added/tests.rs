@@ -47,9 +47,9 @@ fn integer(value: u64) -> Json {
     Json::Number(Number::from(value))
 }
 
-fn environment(base_url: Option<&str>) -> BTreeMap<String, String> {
+fn environment(configured: Option<&str>) -> BTreeMap<String, String> {
     let mut environment = BTreeMap::new();
-    if let Some(base_url) = base_url {
+    if let Some(base_url) = configured {
         environment.insert(PROXY_BASE_URL_ENV.to_owned(), base_url.to_owned());
     }
     environment
@@ -112,7 +112,7 @@ fn renders_the_keys_in_the_catalog_order() {
         "litellm_name",
         object(vec![
             ("mode", Json::Text("chat".to_owned())),
-            ("input_cost_per_token", float(0.000002)),
+            ("input_cost_per_token", float(0.000_002)),
             ("max_tokens", integer(128)),
         ]),
     )]);
@@ -185,27 +185,14 @@ fn an_unknown_catalog_name_renders_an_empty_model_info() {
 }
 
 #[rstest]
-#[case::micro_float(1.63e-06, "0.00000163")]
-#[case::small_float(0.000002, "0.00000200")]
-#[case::quarter_micro(2.5e-07, "0.00000025")]
-#[case::large_float(1234.5, "1234.50000000")]
-fn renders_costs_with_eight_decimals(#[case] cost: f64, #[case] expected: &str) {
-    let catalog = catalog(vec![(
-        "litellm_name",
-        object(vec![("input_cost_per_token", float(cost))]),
-    )]);
-
-    let message = render_model_added_message("my-model", "litellm_name", None, &catalog, None)
-        .expect("the message renders");
-
-    assert!(message.contains(&format!("input_cost_per_token: {expected}\n")));
-}
-
-#[rstest]
-#[case::integer_cost(Json::Number(Number::from(7_u32)), "7.00000000")]
+#[case::micro_float(float(1.63e-06_f64), "0.00000163")]
+#[case::small_float(float(0.000_002_f64), "0.00000200")]
+#[case::quarter_micro(float(2.5e-07_f64), "0.00000025")]
+#[case::large_float(float(1_234.5_f64), "1234.50000000")]
+#[case::integer_cost(integer(7), "7.00000000")]
 #[case::true_cost(Json::Bool(true), "1.00000000")]
 #[case::false_cost(Json::Bool(false), "0.00000000")]
-fn renders_integer_and_bool_costs_with_eight_decimals(#[case] cost: Json, #[case] expected: &str) {
+fn renders_costs_with_eight_decimals(#[case] cost: Json, #[case] expected: &str) {
     let catalog = catalog(vec![(
         "litellm_name",
         object(vec![("output_cost_per_token", cost)]),
@@ -214,32 +201,30 @@ fn renders_integer_and_bool_costs_with_eight_decimals(#[case] cost: Json, #[case
     let message = render_model_added_message("my-model", "litellm_name", None, &catalog, None)
         .expect("the message renders");
 
-    assert!(message.contains(&format!("output_cost_per_token: {expected}\n")));
+    assert_eq!(
+        message,
+        expected_message(
+            "my-model",
+            "",
+            &format!("output_cost_per_token: {expected}\n"),
+            "http://0.0.0.0:4000"
+        )
+    );
 }
 
 #[rstest]
 #[case::true_value(Json::Bool(true), "True")]
 #[case::false_value(Json::Bool(false), "False")]
 #[case::null_value(Json::Null, "None")]
-#[case::integer_value(Json::Number(Number::from(42_u32)), "42")]
-#[case::float_value(Json::Number(Number::from_f64(1.5).expect("a finite test number")), "1.5")]
+#[case::integer_value(integer(42), "42")]
+#[case::float_value(float(1.5), "1.5")]
 #[case::text_value(Json::Text("openai".to_owned()), "openai")]
-fn renders_scalars_in_python_text_form(#[case] value: Json, #[case] expected: &str) {
-    let catalog = catalog(vec![("litellm_name", object(vec![("field", value)]))]);
-
-    let message = render_model_added_message("my-model", "litellm_name", None, &catalog, None)
-        .expect("the message renders");
-
-    assert!(message.contains(&format!("field: {expected}\n")));
-}
-
-#[rstest]
 #[case::list_value(Json::List(vec![Json::Text("us".to_owned()), Json::Text("eu".to_owned())]), "[\"us\",\"eu\"]")]
 #[case::object_value(
     Json::Object(object(vec![("b", Json::Bool(true)), ("a", integer(1))])),
     "{\"b\":true,\"a\":1}"
 )]
-fn renders_nested_values_as_compact_json(#[case] value: Json, #[case] expected: &str) {
+fn renders_non_cost_values_in_python_text_form(#[case] value: Json, #[case] expected: &str) {
     let catalog = catalog(vec![("litellm_name", object(vec![("field", value)]))]);
 
     let message = render_model_added_message("my-model", "litellm_name", None, &catalog, None)
@@ -263,7 +248,7 @@ fn a_non_number_cost_is_a_typed_error(#[case] cost: Json) {
 
     assert!(matches!(
         error,
-        ModelInfoRenderError::Cost { ref field } if field == "input_cost_per_token"
+        ModelInfoRenderError::Cost { field } if field == "input_cost_per_token"
     ));
 }
 

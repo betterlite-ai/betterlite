@@ -6,11 +6,13 @@ use async_trait::async_trait;
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_logging::alert_dispatch::destination::AlertDestination;
 use betterlite_logging::alert_dispatch::{Alert, AlertLevel};
+use betterlite_logging::alert_settings::cache_keys::SlackAlertingCacheKeys;
 use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use futures_util::future::{Either, select};
 use indexmap::IndexMap;
 use serde_json::Number;
+use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 
 use super::ModelAlertSender;
@@ -24,7 +26,6 @@ use crate::model_deprecation::types::{
     ModelDeprecationResponse,
 };
 
-pub const DEPRECATION_SENT_KEY: &str = "model_deprecation_alert_sent";
 pub const DEPRECATION_LOCK_ID: &str = "slack_model_deprecation_warning";
 // B1690's acquire_lock takes its ttl as i64, where B843's day constant is a u64
 const DEPRECATION_LOCK_TTL: i64 = 86_400;
@@ -67,7 +68,7 @@ pub struct CancellationSleeper {
 #[async_trait]
 impl AlertSleeper for CancellationSleeper {
     async fn sleep(&self, seconds: u64) -> bool {
-        let deadline = tokio::time::sleep(Duration::from_secs(seconds));
+        let deadline = sleep(Duration::from_secs(seconds));
         match select(pin!(deadline), pin!(self.cancellation.cancelled())).await {
             Either::Left(((), _)) => true,
             Either::Right(((), _)) => false,
@@ -127,18 +128,7 @@ where
         if !self.deprecation_alerts_enabled() {
             return Ok(false);
         }
-        let resolved: Vec<Deployment<'_>> = deployments
-            .unwrap_or_default()
-            .iter()
-            .map(Deployment::from_spec)
-            .collect();
-        let snapshot = collect_model_deprecations(
-            &resolved,
-            self.catalog_source.deprecation_catalog(),
-            &self.clock,
-            DEFAULT_DEPRECATION_WARN_DAYS,
-            None,
-        );
+        let snapshot = self.deprecation_snapshot(deployments);
         let Some(message) = format_alert_message(&snapshot) else {
             return Ok(false);
         };
@@ -162,8 +152,9 @@ where
             .await
             .map_err(ModelDeprecationAlertError::Alert)?;
         let stamp = self.deprecation_stamp()?;
+        let key = SlackAlertingCacheKeys::ModelDeprecationAlertSent.to_string();
         self.cache
-            .set(DEPRECATION_SENT_KEY, &stamp, DEFAULT_CHECK_INTERVAL_SECONDS)
+            .set(&key, &stamp, DEFAULT_CHECK_INTERVAL_SECONDS)
             .await;
         Ok(true)
     }
@@ -179,7 +170,8 @@ where
         if deployments.is_none() || !self.deprecation_alerts_enabled() {
             return Ok(false);
         }
-        if self.cache.get(DEPRECATION_SENT_KEY).await.is_some() {
+        let key = SlackAlertingCacheKeys::ModelDeprecationAlertSent.to_string();
+        if self.cache.get(&key).await.is_some() {
             return Ok(false);
         }
         self.send_model_deprecation_alert(deployments, pod_lock)
@@ -206,6 +198,24 @@ where
                 return;
             }
         }
+    }
+
+    fn deprecation_snapshot(
+        &self,
+        deployments: Option<&[DeploymentSpec]>,
+    ) -> ModelDeprecationResponse {
+        let resolved: Vec<Deployment<'_>> = deployments
+            .unwrap_or_default()
+            .iter()
+            .map(Deployment::from_spec)
+            .collect();
+        collect_model_deprecations(
+            &resolved,
+            self.catalog_source.deprecation_catalog(),
+            &self.clock,
+            DEFAULT_DEPRECATION_WARN_DAYS,
+            None,
+        )
     }
 
     async fn claim_deprecation_window<Lock>(&self, pod_lock: Option<&Lock>) -> bool
@@ -256,5 +266,4 @@ pub fn deprecation_alert_metadata(snapshot: &ModelDeprecationResponse) -> IndexM
     metadata
 }
 
-#[cfg(test)]
 mod tests;

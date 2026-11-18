@@ -8,26 +8,32 @@ use async_trait::async_trait;
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_logging::alert_dispatch::AlertLevel;
 use betterlite_logging::alert_dispatch::destination::AlertDestination;
+use betterlite_logging::alert_settings::cache_keys::SlackAlertingCacheKeys;
 use betterlite_models::decisions::Json;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 use chrono::{DateTime, NaiveDate, Utc};
 use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::Number;
+use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use super::{
-    AlertPodLock, AlertSleeper, CancellationSleeper, DEPRECATION_LOCK_ID, DEPRECATION_SENT_KEY,
-    DeprecationRouterSource, ModelCatalogSource, ModelDeprecationAlertError,
-    ModelDeprecationAlerts, deprecation_alert_level, deprecation_alert_metadata,
+    AlertPodLock, AlertSleeper, CancellationSleeper, DeprecationRouterSource, ModelCatalogSource,
+    ModelDeprecationAlertError, ModelDeprecationAlerts, deprecation_alert_level,
+    deprecation_alert_metadata,
 };
 use crate::alerting::model_alerts::tests::support::{
     CacheWrite, FakeCache, FakeSender, Journal, LogCapture, SentAlert,
 };
+use crate::model_deprecation::alert::format_alert_message;
 use crate::model_deprecation::catalog::{CatalogDeprecation, DeprecationCatalog};
 use crate::model_deprecation::clock::UtcClock;
+use crate::model_deprecation::report::collect_model_deprecations;
+use crate::model_deprecation::resolve::Deployment;
 use crate::model_deprecation::types::{
-    DeprecationStatus, ModelDeprecationInfo, ModelDeprecationResponse,
+    DEFAULT_DEPRECATION_WARN_DAYS, DeprecationStatus, ModelDeprecationInfo,
+    ModelDeprecationResponse,
 };
 
 #[derive(Clone)]
@@ -292,7 +298,7 @@ async fn no_message_returns_false_before_the_lock() {
 #[tokio::test]
 async fn claims_the_lock_with_the_day_ttl_and_no_reentry() {
     let lock = FakePodLock::returning(Some(true));
-    let mut alerts = service();
+    let alerts = service();
 
     let sent = alerts
         .send_model_deprecation_alert(Some(&[deprecated_deployment()]), Some(&lock))
@@ -302,7 +308,7 @@ async fn claims_the_lock_with_the_day_ttl_and_no_reentry() {
     assert_eq!(
         lock.calls.entries(),
         vec![LockCall {
-            cronjob_id: DEPRECATION_LOCK_ID.to_owned(),
+            cronjob_id: "slack_model_deprecation_warning".to_owned(),
             ttl: Some(86_400),
             allow_reentrant: false,
         }]
@@ -420,13 +426,13 @@ async fn the_alert_carries_the_level_and_the_counts(
     let mut alerts = service();
     alerts.sender = sender.clone();
 
-    let sent = alerts
+    let was_sent = alerts
         .send_model_deprecation_alert(Some(&deployments), None::<&FakePodLock>)
         .await;
 
-    assert!(sent.unwrap());
-    let sent = sent_alerts(&sender);
-    let alert = sent.first().expect("one deprecation alert");
+    assert!(was_sent.unwrap());
+    let received = sent_alerts(&sender);
+    let alert = received.first().expect("one deprecation alert");
     assert_eq!(alert.level, level);
     assert_eq!(alert.alert_type, AlertType::ModelDeprecationWarnings);
     assert!(alert.user_info.is_none());
@@ -446,8 +452,39 @@ async fn the_alert_carries_the_level_and_the_counts(
 }
 
 #[tokio::test]
-async fn the_stamp_is_written_after_the_send() {
+async fn the_alert_carries_the_formatted_message() {
+    let sender = FakeSender::default();
     let mut alerts = service();
+    alerts.sender = sender.clone();
+    let deployments = vec![deprecated_deployment()];
+
+    let was_sent = alerts
+        .send_model_deprecation_alert(Some(&deployments), None::<&FakePodLock>)
+        .await;
+
+    let resolved: Vec<Deployment<'_>> = deployments.iter().map(Deployment::from_spec).collect();
+    let collected = collect_model_deprecations(
+        &resolved,
+        &EmptyCatalog,
+        &FixedClock(now()),
+        DEFAULT_DEPRECATION_WARN_DAYS,
+        None,
+    );
+    let expected = format_alert_message(&collected).expect("a deprecation message");
+
+    assert!(was_sent.unwrap());
+    let received = sent_alerts(&sender);
+    let alert = received.first().expect("one deprecation alert");
+    assert_eq!(alert.message, expected);
+    assert_eq!(
+        alert.message,
+        "*\u{26a0}\u{fe0f} Model Deprecation Warning*\n\n*Already deprecated:*\n\u{2022} `old` (provider: unknown, deprecates 2026-05-01, already deprecated 9d ago)\n\nPlan migrations to a supported model. See https://docs.litellm.ai/docs/proxy/model_management for guidance."
+    );
+}
+
+#[tokio::test]
+async fn the_stamp_is_written_after_the_send() {
+    let alerts = service();
 
     let sent = alerts
         .send_model_deprecation_alert(Some(&[deprecated_deployment()]), None::<&FakePodLock>)
@@ -460,7 +497,7 @@ async fn the_stamp_is_written_after_the_send() {
     assert_eq!(
         alerts.cache.writes.entries(),
         vec![CacheWrite {
-            key: DEPRECATION_SENT_KEY.to_owned(),
+            key: SlackAlertingCacheKeys::ModelDeprecationAlertSent.to_string(),
             value: expected,
             ttl_seconds: 86_400,
         }]
@@ -510,7 +547,8 @@ async fn a_pass_returns_false_when_the_alert_is_disabled() {
 async fn a_pass_returns_false_when_the_stamp_is_present() {
     let sender = FakeSender::default();
     let mut alerts = service();
-    alerts.cache = FakeCache::seeded(DEPRECATION_SENT_KEY);
+    alerts.cache =
+        FakeCache::seeded(&SlackAlertingCacheKeys::ModelDeprecationAlertSent.to_string());
     alerts.sender = sender.clone();
 
     let passed = alerts
@@ -598,7 +636,7 @@ async fn an_uncancelled_sleeper_waits_the_delay(#[case] seconds: u64) {
     let sleeper = CancellationSleeper {
         cancellation: CancellationToken::new(),
     };
-    let started = tokio::time::Instant::now();
+    let started = Instant::now();
 
     assert!(sleeper.sleep(seconds).await);
     assert_eq!(started.elapsed(), Duration::from_secs(seconds));
