@@ -1,4 +1,4 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, TypedDict
 
 from litellm.proxy._types import (
     AddTeamCallback,
@@ -27,6 +27,8 @@ from litellm.proxy._types import (
 )
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
+from .records import RecordDump
+
 Record = Literal[
     "DeleteTeamRequest",
     "AddTeamCallback",
@@ -45,182 +47,10 @@ Record = Literal[
     "OrganizationTableWithMembers",
 ]
 
-Amount: TypeAlias = int | float
-
 
 class Call(TypedDict):
     record: Record
     value: dict[str, JsonValue]
-
-
-class MemberDump(TypedDict):
-    user_id: str | None
-    user_email: str | None
-    role: str
-
-
-class MembershipDump(TypedDict):
-    user_id: str
-    organization_id: str
-    user_role: str | None
-    spend: Amount
-    budget_id: str | None
-    created_at: str
-    updated_at: str
-    user: dict[str, JsonValue] | None
-    litellm_budget_table: dict[str, JsonValue] | None
-    user_email: str | None
-
-
-class DeleteTeamDump(TypedDict):
-    team_ids: list[str]
-
-
-class AddTeamCallbackDump(TypedDict):
-    callback_name: str
-    callback_type: str | None
-    callback_vars: dict[str, str]
-
-
-class TeamCallbackMetadataDump(TypedDict):
-    success_callback: list[str]
-    failure_callback: list[str]
-    callbacks: list[str]
-    callback_vars: dict[str, str]
-
-
-class MemberAddDump(TypedDict):
-    member: MemberDump | list[MemberDump]
-
-
-class TeamMemberAddDump(TypedDict):
-    member: MemberDump | list[MemberDump]
-    team_id: str
-    max_budget_in_team: Amount | None
-    budget_duration: str | None
-    allowed_models: list[str] | None
-
-
-class OrgMemberAddDump(TypedDict):
-    member: MemberDump | list[MemberDump]
-
-
-class OrganizationMemberAddDump(TypedDict):
-    member: MemberDump | list[MemberDump]
-    organization_id: str
-    max_budget_in_organization: Amount | None
-
-
-class TeamMemberDeleteDump(TypedDict):
-    user_id: str | None
-    user_email: str | None
-    team_id: str
-
-
-class OrganizationMemberDeleteDump(TypedDict):
-    user_id: str | None
-    user_email: str | None
-    organization_id: str
-
-
-class TeamMemberUpdateDump(TypedDict):
-    user_id: str | None
-    user_email: str | None
-    team_id: str
-    max_budget_in_team: Amount | None
-    role: str | None
-    tpm_limit: int | None
-    rpm_limit: int | None
-    budget_duration: str | None
-    allowed_models: list[str] | None
-    temp_budget_increase: Amount | None
-    temp_budget_expiry: str | None
-
-
-class OrganizationMemberUpdateDump(TypedDict):
-    user_id: str | None
-    user_email: str | None
-    organization_id: str
-    max_budget_in_organization: Amount | None
-    role: str | None
-
-
-class OrgTableUpdateDump(TypedDict):
-    budget_id: str | None
-    soft_budget: Amount | None
-    max_budget: Amount | None
-    max_parallel_requests: int | None
-    tpm_limit: int | None
-    rpm_limit: int | None
-    tpd_limit: int | None
-    model_max_budget: dict[str, JsonValue] | None
-    budget_duration: str | None
-    allowed_models: list[str] | None
-    temp_budget_increase: Amount | None
-    temp_budget_expiry: str | None
-    organization_id: str | None
-    organization_alias: str | None
-    spend: Amount | None
-    metadata: dict[str, JsonValue] | None
-    models: list[str] | None
-    updated_by: str | None
-    object_permission: dict[str, JsonValue] | None
-    model_tpm_limit: dict[str, int] | None
-    model_rpm_limit: dict[str, int] | None
-
-
-class OrgUpdateV2Dump(TypedDict):
-    organization_alias: str | None
-    models: list[str] | None
-    metadata: dict[str, JsonValue] | None
-    tpm_limit: int | None
-    rpm_limit: int | None
-    max_budget: Amount | None
-    soft_budget: Amount | None
-    max_parallel_requests: int | None
-    model_max_budget: dict[str, JsonValue] | None
-    budget_duration: str | None
-    object_permission: dict[str, JsonValue] | None
-
-
-class OrgTableWithMembersDump(TypedDict):
-    organization_id: str | None
-    organization_alias: str | None
-    budget_id: str
-    spend: Amount
-    metadata: dict[str, JsonValue] | None
-    models: list[str]
-    model_spend: dict[str, JsonValue] | None
-    created_by: str
-    updated_by: str
-    users: list[dict[str, JsonValue]] | None
-    litellm_budget_table: dict[str, JsonValue] | None
-    object_permission: dict[str, JsonValue] | None
-    object_permission_id: str | None
-    members: list[MembershipDump]
-    teams: list[dict[str, JsonValue]]
-    created_at: str
-    updated_at: str
-
-
-# nested rows other tasks own (users, teams, budget tables) and free-form metadata stay open JSON
-RecordDump: TypeAlias = (
-    DeleteTeamDump
-    | AddTeamCallbackDump
-    | TeamCallbackMetadataDump
-    | MemberDump
-    | MemberAddDump
-    | TeamMemberAddDump
-    | OrgMemberAddDump
-    | OrganizationMemberAddDump
-    | TeamMemberDeleteDump
-    | OrganizationMemberDeleteDump
-    | TeamMemberUpdateDump
-    | OrganizationMemberUpdateDump
-    | OrgTableUpdateDump
-    | OrgUpdateV2Dump
-    | OrgTableWithMembersDump
-)
 
 
 class Recorded(TypedDict):
@@ -228,9 +58,7 @@ class Recorded(TypedDict):
     dump: RecordDump
 
 
-class Patched(TypedDict):
-    outcome: Literal["record"]
-    dump: RecordDump
+class Patched(Recorded):
     fields_set: list[str]
 
 
