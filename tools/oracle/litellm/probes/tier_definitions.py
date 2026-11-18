@@ -18,6 +18,7 @@ OrderFeatureName = Literal["adaptive", "session_affinity", "escalation_keywords"
 _PROBE_CLASSIFIER_MODEL: Final[str] = "probe-classifier"
 _ESCALATION_KEYWORD: Final[str] = "escalate"
 _JSON_OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
+_EMPTY_PARAMS: Final[dict[str, JsonValue]] = {}
 
 
 class TierDefinitionInput(Strict):
@@ -196,7 +197,7 @@ def _pools(config: ComplexityRouterConfig) -> dict[str, PoolView]:
         }
         pools[tier] = PoolView(
             single=single,
-            entries=[EntryView(model_name=name, params=stored.get(name, {})) for name in names],
+            entries=[EntryView(model_name=name, params=stored.get(name, _EMPTY_PARAMS)) for name in names],
         )
     return pools
 
