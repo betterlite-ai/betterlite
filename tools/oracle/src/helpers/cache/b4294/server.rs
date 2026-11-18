@@ -59,8 +59,8 @@ impl FakeRedis {
         for value in values {
             match value {
                 None => reply.push_str("$-1\r\n"),
-                Some(value) => {
-                    let text = serde_json::to_string(value).or_value_error()?;
+                Some(present) => {
+                    let text = serde_json::to_string(present).or_value_error()?;
                     write!(reply, "${}\r\n{text}\r\n", text.len()).or_value_error()?;
                 }
             }
