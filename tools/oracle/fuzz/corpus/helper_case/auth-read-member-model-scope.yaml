@@ -1,0 +1,12 @@
+kind: helper
+name: auth-read-member-model-scope
+call:
+  auth_read:
+    kind: member_model_scope
+    membership:
+      user_id: fuzz-user
+      team_id: fuzz-team
+      litellm_budget_table:
+        allowed_models: ["model-a", ""]
+env: {}
+compare: {ignore: []}

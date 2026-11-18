@@ -1,0 +1,26 @@
+kind: helper
+name: coordination-redis-boot-env-target-sentinel
+call:
+  b8377:
+    operation: env_has_target
+    environment:
+      REDIS_SENTINEL_NODES: '[["127.0.0.1", 26379]]'
+calls:
+  - b8377:
+      operation: env_has_target
+      environment: {}
+  - b8377:
+      operation: env_has_target
+      environment:
+        REDIS_PORT: "6379"
+  - b8377:
+      operation: env_has_target
+      environment:
+        REDIS_HOST: ""
+  - b8377:
+      operation: env_has_target
+      environment:
+        REDIS_CLUSTER_NODES: "false"
+env:
+  REDIS_SENTINEL_NODES: '[["127.0.0.1", 26379]]'
+compare: {ignore: []}

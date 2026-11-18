@@ -1,0 +1,42 @@
+kind: helper
+name: bedrock-services-realtime-bridge-provider-seed
+call:
+  bedrock_services_realtime_bridge:
+    model: amazon.nova-sonic-v1:0
+    name_ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    event_ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    - 00000000-0000-4000-8000-000000000005
+    - 00000000-0000-4000-8000-000000000006
+    - 00000000-0000-4000-8000-000000000007
+    - 00000000-0000-4000-8000-000000000008
+    - 00000000-0000-4000-8000-000000000009
+    - 00000000-0000-4000-8000-000000000010
+    runs:
+    - kind: provider
+      trace_id: trace-seed
+      initial: null
+      frames: []
+      chunks:
+      - kind: bytes
+        text: '{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"}}}'
+      - kind: bytes
+        text: '{"event":{"contentEnd":{"stopReason":"END_TURN"}}}'
+      - kind: end
+        text: ''
+      await_error: null
+      block: false
+      cancel: false
+      bedrock_send_failures: []
+      receive_failures: []
+      client_send_failures: []
+      bedrock_close_error: false
+env: {}
+compare:
+  ignore: []
