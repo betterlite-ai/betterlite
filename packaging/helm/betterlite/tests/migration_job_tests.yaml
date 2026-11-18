@@ -8,6 +8,7 @@ tests:
       - equal: { path: metadata.name, value: RELEASE-NAME-betterlite-migrations }
       - equal: { path: 'spec.backoffLimit', value: 4 }
       - equal: { path: 'spec.ttlSecondsAfterFinished', value: 120 }
+      - equal: { path: 'spec.activeDeadlineSeconds', value: 1800 }
       - equal: { path: 'spec.template.spec.restartPolicy', value: Never }
       - equal: { path: 'spec.template.spec.containers[0].name', value: db-migrations }
       - equal: { path: 'spec.template.spec.containers[0].image', value: 'ghcr.io/betterlite-ai/betterlite-backend:0.1.0' }
@@ -39,6 +40,11 @@ tests:
       serviceAccounts.backend.name: existing-backend-sa
     asserts:
       - equal: { path: 'spec.template.spec.serviceAccountName', value: existing-backend-sa }
+
+  - it: mounts a ServiceAccount token when the operator asks for one
+    set: { migrationJob.automountServiceAccountToken: true }
+    asserts:
+      - equal: { path: 'spec.template.spec.automountServiceAccountToken', value: true }
 
   - it: renders no hardening fields by default but the chart labels plus the migrations component
     asserts:
