@@ -24,7 +24,7 @@ use crate::api::realtime_session_state::{
 };
 use crate::api::request_destination::RequestData;
 
-use super::RealtimeSender;
+use super::{RealtimeSend, RealtimeSender};
 
 mod backend;
 mod client;

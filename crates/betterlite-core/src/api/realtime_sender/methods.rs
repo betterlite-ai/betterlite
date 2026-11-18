@@ -1,15 +1,15 @@
-use super::backend::{FrameKind, classify_text};
-use super::client::event_type_label;
+use super::backend::{FrameKind, classify_text, send_backend};
+use super::client::{ClientFrame, event_type_label, send_client_frame};
 use super::enforce::enforce_session_update;
 use super::error::RealtimeSenderError;
-use super::{RealtimeSender, SenderFuture};
-use crate::api::realtime_beta_protocol::events::translate_event_to_beta;
+use super::{RealtimeSend, RealtimeSender, SenderFuture};
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 use crate::api::realtime_contracts::transport::RealtimeMessage;
 use crate::api::realtime_guardrail_policy::{
     TRANSCRIPTION_EVENT_HOOKS, disable_auto_response_message, guardrails_run_for_hooks,
     inject_auto_response_disable,
 };
+use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use futures_util::FutureExt as _;
 use std::error::Error;
@@ -19,34 +19,6 @@ where
     Config: BaseRealtimeConfig,
     CallbackError: Error + 'static,
 {
-    // LiteLLM enforces the authorized model, transforms through the provider, and records state only after a frame is sent
-    #[must_use]
-    pub fn send_to_backend<'call>(
-        &'call mut self,
-        message: &'call str,
-    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
-        async move {
-            let enforced = self.enforce_session_model(message)?;
-            let Some(provider) = self.provider else {
-                self.send_frame(RealtimeMessage::Text(enforced)).await?;
-                return Ok(true);
-            };
-            let transformed = provider
-                .transform_realtime_request(
-                    &enforced,
-                    &self.state.model,
-                    self.state.response.session_configuration_request.as_deref(),
-                )
-                .map_err(|source| RealtimeSenderError::Transform { source })?;
-            let mut sent = false;
-            for frame in transformed {
-                sent |= self.deliver_frame(provider, frame).await?;
-            }
-            Ok(sent)
-        }
-        .boxed_local()
-    }
-
     fn deliver_frame<'call>(
         &'call mut self,
         provider: &'call Config,
@@ -55,7 +27,11 @@ where
         match frame {
             RealtimeMessage::Binary(payload) => async move {
                 provider.pace_backend_send(&payload).await;
-                self.send_frame(RealtimeMessage::Binary(payload)).await?;
+                send_backend::<Config::Error, CallbackError>(
+                    &mut self.state.backend,
+                    RealtimeMessage::Binary(payload),
+                )
+                .await?;
                 self.state.setup.content_sent_after_setup.0 = true;
                 Ok(true)
             }
@@ -65,22 +41,6 @@ where
                 self.deliver_text(text, kind)
             }
         }
-    }
-
-    fn send_frame(
-        &mut self,
-        frame: RealtimeMessage,
-    ) -> SenderFuture<'_, (), Config::Error, CallbackError> {
-        async move {
-            self.state
-                .backend
-                .as_mut()
-                .ok_or(RealtimeSenderError::BackendMissing)?
-                .send(frame)
-                .await
-                .map_err(|source| RealtimeSenderError::Backend { source })
-        }
-        .boxed_local()
     }
 
     fn deliver_text(
@@ -106,7 +66,11 @@ where
                 .map_err(|source| RealtimeSenderError::GuardrailSetup { source })?;
                 text = injected.unwrap_or(text);
             }
-            self.send_frame(RealtimeMessage::Text(text.clone())).await?;
+            send_backend::<Config::Error, CallbackError>(
+                &mut self.state.backend,
+                RealtimeMessage::Text(text.clone()),
+            )
+            .await?;
             self.cache_session_configuration(&text);
             if kind == FrameKind::Content {
                 self.state.setup.content_sent_after_setup.0 = true;
@@ -141,76 +105,6 @@ where
             .map_err(|source| RealtimeSenderError::Encode { source })
     }
 
-    // LiteLLM normalizes a provider event, translates it for a beta client, and falls back to the untranslated frame
-    #[must_use]
-    pub fn send_event_to_client<'call>(
-        &'call mut self,
-        event: &'call Json,
-        event_str: &'call str,
-    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
-        async move {
-            if self.should_drop_event_from_client(event) {
-                return Ok(false);
-            }
-            let mut normalized = None;
-            let mut encoded = event_str.to_owned();
-            if matches!(event, Json::Object(_)) {
-                let value = self.normalize_event_for_ga_client(event.clone());
-                encoded = serde_json::to_string(&value)
-                    .map_err(|source| RealtimeSenderError::Encode { source })?;
-                normalized = Some(value);
-            }
-            if let Some(object) = &normalized
-                && self.state.client_wants_beta.0
-            {
-                match self.send_translated(object).await {
-                    Ok(delivered) => return Ok(delivered),
-                    Err(error) => tracing::warn!(
-                        "Failed to translate {} to beta protocol, forwarding untranslated event to client: {error}",
-                        event_type_label(object)
-                    ),
-                }
-            }
-            self.send_client_text(&encoded).await?;
-            Ok(true)
-        }
-        .boxed_local()
-    }
-
-    fn send_translated<'call>(
-        &'call mut self,
-        event: &'call Json,
-    ) -> SenderFuture<'call, bool, Config::Error, CallbackError> {
-        async move {
-            let outcome = translate_event_to_beta(event.clone())
-                .map_err(|source| RealtimeSenderError::Beta { source })?;
-            let Some(translated) = outcome else {
-                return Ok(false);
-            };
-            let encoded = serde_json::to_string(&translated)
-                .map_err(|source| RealtimeSenderError::Encode { source })?;
-            self.send_client_text(&encoded).await?;
-            Ok(true)
-        }
-        .boxed_local()
-    }
-
-    fn send_client_text<'call>(
-        &'call mut self,
-        text: &'call str,
-    ) -> SenderFuture<'call, (), Config::Error, CallbackError> {
-        async move {
-            self.state
-                .client
-                .as_mut()
-                .ok_or(RealtimeSenderError::ClientMissing)?
-                .send_text(text)
-                .await
-                .map_err(|source| RealtimeSenderError::Client { source })
-        }
-        .boxed_local()
-    }
-
     // LiteLLM caches the exact frame it sent whenever the sent JSON object carries a setup key, even a null one
     pub fn cache_session_configuration(&mut self, message: &str) {
         let Ok(Json::Object(root)) = serde_json::from_str::<Json>(message) else {
@@ -219,25 +113,6 @@ where
         if root.contains_key("setup") {
             self.state.response.session_configuration_request = Some(message.to_owned());
         }
-    }
-
-    // LiteLLM retries the VAD disable on the next opportunity until the provider transformation actually delivers it
-    #[must_use]
-    pub fn maybe_disable_auto_response(
-        &mut self,
-    ) -> SenderFuture<'_, (), Config::Error, CallbackError> {
-        async move {
-            if self.state.setup.turn_detection_update_sent.0 || !self.transcription_guardrails()? {
-                return Ok(());
-            }
-            let message = disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
-                .map_err(|source| RealtimeSenderError::Disable { source })?;
-            if self.send_to_backend(&message).await? {
-                self.state.setup.turn_detection_update_sent.0 = true;
-            }
-            Ok(())
-        }
-        .boxed_local()
     }
 
     fn transcription_guardrails(
@@ -263,5 +138,85 @@ where
             &authorized_model,
             &mut self.state.is_transcription_session.0,
         )
+    }
+}
+
+#[async_trait(?Send)]
+impl<Config, CallbackError> RealtimeSend for RealtimeSender<'_, Config, CallbackError>
+where
+    Config: BaseRealtimeConfig,
+    CallbackError: Error + 'static,
+{
+    type Error = RealtimeSenderError<Config::Error, CallbackError>;
+
+    async fn send_to_backend(&mut self, message: &str) -> Result<bool, Self::Error> {
+        let enforced = self.enforce_session_model(message)?;
+        let Some(provider) = self.provider else {
+            send_backend::<Config::Error, CallbackError>(
+                &mut self.state.backend,
+                RealtimeMessage::Text(enforced),
+            )
+            .await?;
+            return Ok(true);
+        };
+        let transformed = provider
+            .transform_realtime_request(
+                &enforced,
+                &self.state.model,
+                self.state.response.session_configuration_request.as_deref(),
+            )
+            .map_err(|source| RealtimeSenderError::Transform { source })?;
+        let mut sent = false;
+        for frame in transformed {
+            sent |= self.deliver_frame(provider, frame).await?;
+        }
+        Ok(sent)
+    }
+
+    async fn send_event_to_client(
+        &mut self,
+        event: &Json,
+        event_str: &str,
+    ) -> Result<bool, Self::Error> {
+        if self.should_drop_event_from_client(event) {
+            return Ok(false);
+        }
+        let mut normalized = None;
+        let mut encoded = event_str.to_owned();
+        if matches!(event, Json::Object(_)) {
+            let value = self.normalize_event_for_ga_client(event.clone());
+            encoded = serde_json::to_string(&value)
+                .map_err(|source| RealtimeSenderError::Encode { source })?;
+            normalized = Some(value);
+        }
+        if let Some(object) = &normalized
+            && self.state.client_wants_beta.0
+        {
+            match send_client_frame::<Config::Error, CallbackError>(
+                &mut self.state.client,
+                ClientFrame::Beta(object),
+            )
+            .await
+            {
+                Ok(delivered) => return Ok(delivered),
+                Err(error) => tracing::warn!(
+                    "Failed to translate {} to beta protocol, forwarding untranslated event to client: {error}",
+                    event_type_label(object)
+                ),
+            }
+        }
+        send_client_frame(&mut self.state.client, ClientFrame::Text(&encoded)).await
+    }
+
+    async fn maybe_disable_auto_response(&mut self) -> Result<(), Self::Error> {
+        if self.state.setup.turn_detection_update_sent.0 || !self.transcription_guardrails()? {
+            return Ok(());
+        }
+        let message = disable_auto_response_message(self.state.backend_uses_beta_protocol.0)
+            .map_err(|source| RealtimeSenderError::Disable { source })?;
+        if self.send_to_backend(&message).await? {
+            self.state.setup.turn_detection_update_sent.0 = true;
+        }
+        Ok(())
     }
 }

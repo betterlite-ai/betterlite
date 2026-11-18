@@ -1,5 +1,8 @@
+use super::error::RealtimeSenderError;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
+use crate::api::realtime_contracts::transport::{RealtimeBackend, RealtimeMessage};
 use betterlite_models::decisions::Json;
+use std::error::Error;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum FrameKind {
@@ -25,4 +28,22 @@ where
         }
         _ => FrameKind::Plain,
     }
+}
+
+// Borrow only the backend socket, so this send future does not capture the rest of the non-Send connection state.
+pub(super) async fn send_backend<ConfigError, CallbackError>(
+    connection: &mut Option<Box<dyn RealtimeBackend>>,
+    frame: RealtimeMessage,
+) -> Result<(), RealtimeSenderError<ConfigError, CallbackError>>
+where
+    ConfigError: Error + 'static,
+    CallbackError: Error + 'static,
+{
+    let Some(socket) = connection.as_mut() else {
+        return Err(RealtimeSenderError::BackendMissing);
+    };
+    socket
+        .send(frame)
+        .await
+        .map_err(|source| RealtimeSenderError::Backend { source })
 }

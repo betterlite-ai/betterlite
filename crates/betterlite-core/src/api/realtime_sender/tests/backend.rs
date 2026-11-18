@@ -2,6 +2,24 @@ use super::*;
 use crate::api::realtime_sender::error::RealtimeSenderError;
 
 #[tokio::test]
+async fn sender_interface_defers_work_until_polled() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let boundary: &mut dyn RealtimeSend<Error = RealtimeSenderError<ProviderFailure, Infallible>> =
+        &mut sender;
+    drop(boundary.send_to_backend(BOTH_UPDATE));
+    assert!(!sender.state.is_transcription_session.0);
+    assert!(fixture.script().seen.is_empty());
+    assert_eq!(fixture.backend_log.attempts(), 0);
+    assert!(!sender.send_to_backend(BOTH_UPDATE).await.unwrap());
+    assert!(state.is_transcription_session.0);
+    assert_eq!(parsed(&fixture.script().seen[0].0), parsed(BOTH_EXPECTED));
+}
+
+#[tokio::test]
 async fn realtime_backend_send_order() {
     let fixture = Fixture::new();
     let mut state = fixture.state();

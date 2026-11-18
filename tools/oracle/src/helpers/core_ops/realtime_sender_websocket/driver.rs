@@ -8,8 +8,8 @@ use std::time::Duration;
 use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_contracts::transport::WebSocketScope;
 use betterlite_core::api::realtime_guardrail_policy::RealtimeGuardrailCallback;
-use betterlite_core::api::realtime_sender::RealtimeSender;
 use betterlite_core::api::realtime_sender::error::RealtimeSenderError;
+use betterlite_core::api::realtime_sender::{RealtimeSend as _, RealtimeSender};
 use betterlite_core::api::realtime_session_state::{
     ConnectionSetup, RealtimeProviderConfig, RealtimeStreaming,
 };
