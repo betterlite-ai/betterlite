@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 
 pub type EvictFuture<'name> = Pin<Box<dyn Future<Output = Result<(), EvictError>> + Send + 'name>>;
@@ -10,7 +11,7 @@ pub enum EvictError {
     Io {
         param_name: String,
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 

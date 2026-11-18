@@ -45,12 +45,11 @@ pub fn parse_reload_schedule(row: &ReloadConfigRow) -> Result<ReloadSchedule, Pa
 // param_value is serialized JSON, and a raw row read can hand it back decoded or still as a string
 fn interval_hours(param_value: &JsonData) -> Option<u32> {
     let decoded;
-    let value = match param_value {
-        JsonData::String(text) => {
-            decoded = decode_config_json(text.as_bytes()).ok()?;
-            &decoded
-        }
-        other => other,
+    let value = if let JsonData::String(text) = param_value {
+        decoded = decode_config_json(text.as_bytes()).ok()?;
+        &decoded
+    } else {
+        param_value
     };
     if !matches!(value, JsonData::Object(_)) {
         return None;

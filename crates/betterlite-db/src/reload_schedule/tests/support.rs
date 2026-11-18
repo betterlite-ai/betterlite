@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::future;
+use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -112,9 +114,9 @@ impl ConfigParamEvictor for FailingEvictor {
     fn evict_param<'call>(&'call self, param_name: &'call str) -> EvictFuture<'call> {
         let refusal = EvictError::Io {
             param_name: param_name.to_owned(),
-            source: std::io::Error::other("the cache refused the eviction"),
+            source: io::Error::other("the cache refused the eviction"),
         };
-        Box::pin(std::future::ready(Err(refusal)))
+        Box::pin(future::ready(Err(refusal)))
     }
 }
 
