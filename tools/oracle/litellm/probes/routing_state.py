@@ -35,6 +35,7 @@ from probes.protocol import Millis, Operation, ProbeError, Strict
 
 CHANNELS: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
 SYNC_INTERVAL_ENV: Final = "DEFAULT_REDIS_SYNC_INTERVAL"
+ROUTING_ARGS: Final[dict[str, JsonValue]] = {}
 MODEL_LIST: Final[list[dict[str, JsonValue]]] = [
     {
         "model_name": "gpt",
@@ -349,7 +350,9 @@ async def run_scenario(operation: RoutingState) -> ScenarioOutput:
     observations: list[Observation] = []
     with interval_environment(operation.env.get(SYNC_INTERVAL_ENV)):
         cache = DualCache(in_memory_cache=InMemoryCache(clock=clock.wall), redis_cache=store)
-        strategy = LowestTPMLoggingHandler_v2(router_cache=cache, routing_args={})
+        strategy = LowestTPMLoggingHandler_v2(
+            router_cache=cache, routing_args=ROUTING_ARGS
+        )
         strategy.cancel_sync_task()
         router = Router(model_list=MODEL_LIST)
         router.cache = cache
