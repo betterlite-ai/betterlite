@@ -119,24 +119,20 @@ async fn createdb_privilege_failure() {
     ));
 }
 #[tokio::test]
-async fn isolated_schemas() {
+async fn statement_fixtures_are_separate_copies_of_one_schema() {
     let admin_url = postgres_url();
-    let first = PostgresFixture::provision_schema(Some(&admin_url))
+    let statements = vec!["CREATE TABLE rows (value TEXT)".to_owned()];
+    let first = PostgresFixture::provision_with_statements(Some(&admin_url), statements.clone())
         .resolve()
         .await
         .unwrap();
-    let second = PostgresFixture::provision_schema(Some(&admin_url))
+    let second = PostgresFixture::provision_with_statements(Some(&admin_url), statements)
         .resolve()
         .await
         .unwrap();
     let (writer, first_driver) = connect_client(&first.options.url).await;
-    let (reader, second_driver) = connect_client(&second.options.url).await;
     writer
-        .batch_execute("CREATE TABLE rows (value TEXT); INSERT INTO rows VALUES ('first')")
-        .await
-        .unwrap();
-    reader
-        .batch_execute("CREATE TABLE rows (value TEXT)")
+        .batch_execute("INSERT INTO rows VALUES ('first')")
         .await
         .unwrap();
     assert_eq!(
@@ -147,15 +143,14 @@ async fn isolated_schemas() {
         fixture_scalar::<i64>(&second, "SELECT count(*) FROM rows").await,
         0
     );
-    let first_schema = fixture_scalar::<String>(&first, "SELECT current_schema()").await;
-    let second_schema = fixture_scalar::<String>(&second, "SELECT current_schema()").await;
+    let first_database = fixture_scalar::<String>(&first, "SELECT current_database()").await;
+    let second_database = fixture_scalar::<String>(&second, "SELECT current_database()").await;
     close_driver(writer, first_driver).await;
-    close_driver(reader, second_driver).await;
     first.close_async().await.unwrap();
     second.close_async().await.unwrap();
     let (admin, _driver) = connect_client(&admin_url).await;
     let statement = "SELECT 1 FROM pg_database WHERE datname = ANY($1)";
-    let names = vec![first_schema, second_schema];
+    let names = vec![first_database, second_database];
     let databases = admin.query(statement, &[&names]).await.unwrap();
     assert!(databases.is_empty());
 }

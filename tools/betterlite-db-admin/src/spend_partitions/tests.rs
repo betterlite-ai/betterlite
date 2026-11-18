@@ -81,20 +81,17 @@ impl Postgres {
         let url = TestEnvironment::parse_from(["spend-partitions-admin"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
-            .resolve()
-            .await
-            .expect("a test schema");
+        let fixture =
+            PostgresFixture::provision_with_statements(url.as_ref(), vec![SCHEMA_SQL.to_owned()])
+                .resolve()
+                .await
+                .expect("a test database");
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .batch_execute(SCHEMA_SQL)
-            .await
-            .expect("the pinned LiteLLM_SpendLogs schema");
         Self {
             fixture,
             client,
@@ -110,7 +107,10 @@ impl Postgres {
         } = self;
         drop(client);
         drop(tasks);
-        fixture.close_async().await.expect("the schema is dropped");
+        fixture
+            .close_async()
+            .await
+            .expect("the database is dropped");
     }
 }
 

@@ -1,19 +1,9 @@
 #![cfg(test)]
 
-use std::str;
-
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
-use betterlite_db::schema_agent_identity;
-use betterlite_db::schema_baseline;
-use betterlite_db::schema_budget_windows;
-use betterlite_db::schema_daily_usage;
-use betterlite_db::schema_identity_history;
-use betterlite_db::schema_managed_resources;
-use betterlite_db::schema_policy_resources;
-use betterlite_db::schema_routing_state;
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use rstest::rstest;
@@ -59,18 +49,15 @@ struct Environment {
     url: Option<String>,
 }
 
-// each test owns a database: the migration catalogs guard on pg_constraint, which spans a database
 async fn database() -> (PostgresFixture, AgentIdentityStore, PostgresStore) {
     let url = Environment::parse_from(["agent-store-repository-tests"])
         .url
         .map(SecretString::from);
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        url.as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
-    let fixture = task.resolve().await.expect("the database fixture");
+    let statements = catalog_statements(&PACKAGED_CATALOGS).expect("the migration text");
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+        .resolve()
+        .await
+        .expect("the database fixture");
     let pool = Pool::builder(Manager::new(
         fixture
             .options
@@ -84,36 +71,8 @@ async fn database() -> (PostgresFixture, AgentIdentityStore, PostgresStore) {
     .build()
     .expect("the database pool");
     let postgres = PostgresStore { pool: Some(pool) };
-    apply_schema(&postgres).await;
     let store = AgentIdentityStore::from_client(&postgres, None);
     (fixture, store, postgres)
-}
-
-// the migration catalogs the schema contract test treats together as the current schema
-async fn apply_schema(postgres: &PostgresStore) {
-    let client = postgres.session().await.expect("the database connection");
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .expect("the empty public schema");
-    for catalog in [
-        schema_baseline::MIGRATION_CATALOG,
-        schema_daily_usage::MIGRATION_CATALOG,
-        schema_managed_resources::MIGRATION_CATALOG,
-        schema_identity_history::MIGRATION_CATALOG,
-        schema_policy_resources::MIGRATION_CATALOG,
-        schema_routing_state::MIGRATION_CATALOG,
-        schema_budget_windows::MIGRATION_CATALOG,
-        schema_agent_identity::MIGRATION_CATALOG,
-    ] {
-        for migration in catalog.files {
-            let sql = str::from_utf8(migration.bytes).expect("the migration text");
-            client
-                .batch_execute(sql)
-                .await
-                .expect("the schema migration");
-        }
-    }
 }
 
 async fn close(fixture: PostgresFixture, postgres: PostgresStore) {

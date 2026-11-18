@@ -1,0 +1,36 @@
+kind: helper
+name: realtime-session-state-storage
+call:
+  realtime_session_state:
+    model: gemini-3.5-transcribe-live
+    logged_event_types: "*"
+    client_wants_beta: true
+    backend_uses_beta_protocol: false
+    force_transcription_model: ""
+    request_data: {speed: 1.5}
+    user_api_key_dict: {api_key: sk-test}
+    provider:
+      requires_session_configuration: true
+      unbilled_usage: {type: duration, seconds: 2}
+    store:
+      - kind: record
+        values:
+          type: response.done
+          response:
+            output:
+              - {type: function_call, call_id: call_1, name: lookup, arguments: '{"city":"Paris"}'}
+    inputs:
+      - kind: record
+        values:
+          type: session.update
+          session:
+            instructions: be brief
+            tools: [{type: function, name: lookup}]
+    backend_events:
+      - {type: conversation.item.input_audio_transcription.completed, transcript: hello}
+      - {type: session.created, session: {type: transcription}}
+    usage_events:
+      - {type: conversation.item.input_audio_transcription.completed, usage: {type: duration, seconds: 2}}
+    flush: true
+env: {}
+compare: {ignore: []}

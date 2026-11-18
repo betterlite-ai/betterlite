@@ -1,0 +1,10 @@
+kind: helper
+name: sso-mappings-header-value-with-equals
+call:
+  sso_mapping_input:
+    environment:
+      GENERIC_SSO_HEADERS: "X-Team=eng=prod"
+    calls:
+      - function: headers
+env: {}
+compare: {ignore: []}

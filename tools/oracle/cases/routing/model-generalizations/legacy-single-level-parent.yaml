@@ -1,0 +1,26 @@
+kind: probe
+name: legacy-single-level-parent
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        rules:
+          - name: base
+            pattern: "^base-"
+            model_info: {mode: chat, max_tokens: 1}
+          - name: child
+            pattern: "^child-"
+            extends: base
+            model_info: {max_tokens: 9}
+          - name: grand
+            pattern: "^grand-"
+            extends: child
+            model_info: {x: 1}
+        queries:
+          - {query: capabilities, model: child-x}
+          - {query: capabilities, model: grand-x}
+          - {query: capabilities, model: base-x}
+compare:
+  ignore: []
+  expected_difference: []

@@ -48,6 +48,7 @@ rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+serde_with = "3.24.0"
 sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
@@ -59,6 +60,7 @@ uuid.workspace = true
 [dev-dependencies]
 async-trait = "0.1.92"
 futures-util = { version = "0.3.34", default-features = false }
+mutants = "0.0.4"
 rstest = "=0.27.0"
 tempfile = "3.27.0"
 tracing-subscriber.workspace = true

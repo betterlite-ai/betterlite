@@ -1,7 +1,7 @@
 id: B012
 milestone: M1 openai data plane
 title: Logging pipeline, callback registry and redaction
-status: todo
+status: done
 depends_on: [B004, B187, B188, B189, B190, B191, B006, B252]
 file: tasks/B012-logging-pipeline.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/services.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2290

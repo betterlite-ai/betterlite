@@ -9,6 +9,7 @@ use sha2::{Digest as _, Sha256};
 
 use crate::budget_permission_rows::JsonData;
 use crate::identity_rows::user::LiteLLMUserTable;
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::session::PostgresStore;
 
 use super::error::KeyAttributionError;
@@ -614,14 +615,6 @@ fn user_table(user_id: &str, email: Option<&str>, teams: &[&str]) -> LiteLLMUser
     serde_json::from_str(&serde_json::to_string(&wire).unwrap()).unwrap()
 }
 
-const MIGRATIONS: &str = concat!(
-    include_str!("../../migrations/20250326162113_baseline/migration.sql"),
-    include_str!("../../migrations/20250326171002_add_daily_user_table/migration.sql"),
-    include_str!(
-        "../../migrations/20251219110931_add_deleted_keys_and_deleted_teams_tables/migration.sql"
-    ),
-);
-
 async fn database() -> (PostgresFixture, PostgresStore) {
     use clap::Parser as _;
     use secrecy::ExposeSecret as _;
@@ -633,10 +626,13 @@ async fn database() -> (PostgresFixture, PostgresStore) {
     let url = Environment::parse_from(["key-attribution-tests"])
         .url
         .map(secrecy::SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_statements(
+        url.as_ref(),
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+    )
+    .resolve()
+    .await
+    .unwrap();
     let manager = deadpool_postgres::Manager::new(
         fixture.options.url.expose_secret().parse().unwrap(),
         tokio_postgres::NoTls,
@@ -644,12 +640,6 @@ async fn database() -> (PostgresFixture, PostgresStore) {
     let pool = deadpool_postgres::Pool::builder(manager)
         .max_size(3)
         .build()
-        .unwrap();
-    pool.get()
-        .await
-        .unwrap()
-        .batch_execute(MIGRATIONS)
-        .await
         .unwrap();
     (fixture, PostgresStore { pool: Some(pool) })
 }

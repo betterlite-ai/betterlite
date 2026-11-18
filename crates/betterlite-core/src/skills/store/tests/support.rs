@@ -12,8 +12,7 @@ use betterlite_db::managed_resource_rows::wire::RowTimestamp;
 use betterlite_db::postgres_store::errors::DbError;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::schema_identity_history::SCHEMA_UPDATE;
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use clap::Parser;
 use deadpool_postgres::tokio_postgres::NoTls;
@@ -331,13 +330,11 @@ fn test_url() -> Option<SecretString> {
 }
 
 pub(crate) async fn provision() -> PostgresFixture {
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        test_url().as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
-    task.resolve().await.unwrap()
+    let table = from_utf8(SCHEMA_UPDATE.bytes).unwrap().to_owned();
+    PostgresFixture::provision_with_statements(test_url().as_ref(), vec![table])
+        .resolve()
+        .await
+        .unwrap()
 }
 
 pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
@@ -345,16 +342,4 @@ pub(crate) fn store(fixture: &PostgresFixture) -> PostgresStore {
     let manager = Manager::new(config, NoTls);
     let pool = Pool::builder(manager).max_size(2).build().unwrap();
     PostgresStore { pool: Some(pool) }
-}
-
-pub(crate) async fn migrate(store: &PostgresStore) {
-    let client = store.session().await.unwrap();
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .unwrap();
-    client
-        .batch_execute(from_utf8(SCHEMA_UPDATE.bytes).unwrap())
-        .await
-        .unwrap();
 }
