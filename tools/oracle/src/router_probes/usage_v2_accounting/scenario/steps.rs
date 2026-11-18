@@ -10,10 +10,7 @@ use betterlite_router::usage_v2_accounting::success::{
     HiddenParams, StandardLoggingObject, SuccessEvent,
 };
 
-use super::{
-    Context, DeploymentInput, Observation, ScenarioError, ScenarioStep, StandardLoggingInput,
-    StepKind,
-};
+use super::{Context, DeploymentInput, Observation, ScenarioError, ScenarioStep, StepKind};
 
 pub(super) async fn apply(
     index: usize,
@@ -27,19 +24,7 @@ pub(super) async fn apply(
             })?;
             pre_call(index, step, deployment, context).await
         }
-        StepKind::Success => {
-            let event = SuccessEvent {
-                call_type: step.call_type.as_deref(),
-                standard_logging_object: logged(step.standard_logging_object.as_ref()),
-            };
-            let now = at(step.now_millis)?;
-            let _key = if step.sync {
-                context.accounting.log_success_now(&event, now)
-            } else {
-                context.accounting.log_success(&event, now).await
-            };
-            Ok(Observation::Recorded { step: index })
-        }
+        StepKind::Success => success(index, step, context).await,
         StepKind::Sync => {
             let _pushed = context.accounting.counters.sync_with_redis().await;
             Ok(Observation::Recorded { step: index })
@@ -145,15 +130,31 @@ fn facts(deployment: &DeploymentInput) -> Result<DeploymentFacts<'_>, ScenarioEr
     })
 }
 
-fn logged(logged: Option<&StandardLoggingInput>) -> Option<StandardLoggingObject<'_>> {
-    logged.map(|logged| StandardLoggingObject {
-        model_group: logged.model_group.as_deref(),
-        hidden_params: HiddenParams {
-            litellm_model_name: logged.model.as_deref(),
-        },
-        model_id: logged.model_id.as_deref(),
-        total_tokens: logged.total_tokens,
-    })
+async fn success(
+    index: usize,
+    step: &ScenarioStep,
+    context: &Context<'_>,
+) -> Result<Observation, ScenarioError> {
+    let event = SuccessEvent {
+        call_type: step.call_type.as_deref(),
+        standard_logging_object: step.standard_logging_object.as_ref().map(|payload| {
+            StandardLoggingObject {
+                model_group: payload.model_group.as_deref(),
+                hidden_params: HiddenParams {
+                    litellm_model_name: payload.model.as_deref(),
+                },
+                model_id: payload.model_id.as_deref(),
+                total_tokens: payload.total_tokens,
+            }
+        }),
+    };
+    let now = at(step.now_millis)?;
+    let _key = if step.sync {
+        context.accounting.log_success_now(&event, now)
+    } else {
+        context.accounting.log_success(&event, now).await
+    };
+    Ok(Observation::Recorded { step: index })
 }
 
 fn rejected(index: usize, error: &RpmLimitExceeded) -> Observation {
