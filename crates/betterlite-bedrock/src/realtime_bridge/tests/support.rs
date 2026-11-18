@@ -106,10 +106,7 @@ pub(super) fn event_key(value: &Json) -> Option<&str> {
     let Json::Object(event) = fields.get("event")? else {
         return None;
     };
-    match event.keys().next() {
-        Some(key) => Some(key.as_str()),
-        None => None,
-    }
+    event.keys().next().map(String::as_str)
 }
 
 struct ClientState {
@@ -465,7 +462,8 @@ impl ClientFixture {
     }
 
     pub(super) async fn run(&mut self) -> ClientRun {
-        self.pump().forward_client_to_bedrock().await
+        let mut pump = self.pump();
+        pump.forward_client_to_bedrock().await
     }
 
     fn pump(&mut self) -> ClientForward<'_, io::Error, io::Error> {
@@ -520,27 +518,16 @@ impl ProviderFixture {
     }
 
     pub(super) async fn run(&mut self) -> ProviderRun {
-        let Self {
-            ids,
-            shared,
-            state,
-            log,
-            types,
-            redactor,
-            token,
-            client,
-            stream,
-        } = self;
         let mut pump: ProviderForward<'_, io::Error, io::Error> = ProviderForward {
-            stream,
-            client,
-            shared,
-            state,
-            logged: log,
-            logged_types: types,
-            ids,
-            redactor,
-            cancel: token,
+            stream: &self.stream,
+            client: &self.client,
+            shared: &self.shared,
+            state: &mut self.state,
+            logged: &mut self.log,
+            logged_types: &self.types,
+            ids: &self.ids,
+            redactor: &self.redactor,
+            cancel: &self.token,
         };
         pump.forward_bedrock_to_client().await
     }

@@ -76,42 +76,55 @@ where
             }
             let text = from_utf8(bytes).map_err(|source| ProviderForwardError::Utf8 { source })?;
             tracing::debug!("Bedrock Realtime: Received from Bedrock");
-            let response = self.transform(text)?;
-            let RealtimeResponseTypedDict {
-                response: value,
-                current_output_item_id,
-                current_response_id,
-                current_delta_chunks,
-                current_conversation_id,
-                current_item_chunks,
-                current_delta_type,
-                session_configuration_request,
-            } = response;
-            // All seven fields change before the first of the response's events leaves
-            *self.state = RealtimeResponseTransformInput {
-                session_configuration_request,
-                current_output_item_id,
-                current_response_id,
-                current_delta_chunks,
-                current_item_chunks,
-                current_conversation_id,
-                current_delta_type,
-            };
-            let messages = match value {
-                Json::List(items) => items,
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-                    vec![value]
-                }
-            };
-            for message in messages {
-                if !self.send_to_client(&message).await {
-                    return Ok(ForwardEnd::Ended);
-                }
-                if self.should_log(&message) {
-                    self.logged.record(message).await;
-                }
+            let value = self.apply_response(text)?;
+            if !self.deliver(value).await {
+                return Ok(ForwardEnd::Ended);
             }
         }
+    }
+
+    // The transform's answer replaces all seven state fields before the first of its events leaves
+    fn apply_response(&mut self, text: &str) -> Result<Json, ProviderForwardError<S>> {
+        let response = self.transform(text)?;
+        let RealtimeResponseTypedDict {
+            response: value,
+            current_output_item_id,
+            current_response_id,
+            current_delta_chunks,
+            current_conversation_id,
+            current_item_chunks,
+            current_delta_type,
+            session_configuration_request,
+        } = response;
+        *self.state = RealtimeResponseTransformInput {
+            session_configuration_request,
+            current_output_item_id,
+            current_response_id,
+            current_delta_chunks,
+            current_item_chunks,
+            current_conversation_id,
+            current_delta_type,
+        };
+        Ok(value)
+    }
+
+    // A list goes out in order and anything else as one item; a refused send ends forwarding unlogged
+    async fn deliver(&mut self, value: Json) -> bool {
+        let messages = match value {
+            Json::List(items) => items,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+                vec![value]
+            }
+        };
+        for message in messages {
+            if !self.send_to_client(&message).await {
+                return false;
+            }
+            if self.should_log(&message) {
+                self.logged.record(message).await;
+            }
+        }
+        true
     }
 
     fn transform(&self, text: &str) -> Result<RealtimeResponseTypedDict, ProviderForwardError<S>> {

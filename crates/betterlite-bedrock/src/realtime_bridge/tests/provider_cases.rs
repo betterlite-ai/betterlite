@@ -30,6 +30,17 @@ pub(super) async fn provider_event_forwarding() {
         ForwardEnd::Ended
     );
     assert_eq!(fixture.client.closes(), vec![(1000, None)]);
+    assert_response_events(&fixture);
+    assert_response_state(&fixture);
+    // Each event reached the sink where the source yields it, so the first turn's response.done is already logged
+    assert_eq!(fixture.log.events.len(), 1);
+    assert_eq!(
+        event_field(&fixture.log.events[0], "type"),
+        Some("response.done")
+    );
+}
+
+fn assert_response_events(fixture: &ProviderFixture) {
     let sent = fixture.client.sent_events();
     let kinds: Vec<Option<&str>> = sent
         .iter()
@@ -50,6 +61,9 @@ pub(super) async fn provider_event_forwarding() {
         ]
     );
     assert_eq!(event_field(&sent[5], "text"), Some("Hello world"));
+}
+
+fn assert_response_state(fixture: &ProviderFixture) {
     // The end turn resets the response, its item and the delta type; the conversation stays for the next one
     assert_eq!(fixture.state.current_response_id, None);
     assert_eq!(fixture.state.current_output_item_id, None);
@@ -64,13 +78,6 @@ pub(super) async fn provider_event_forwarding() {
         Some(r#"{"configured": true}"#)
     );
     assert_eq!(fixture.state.current_item_chunks, Some(Vec::new()));
-
-    // Each event reached the sink where the source yields it, so the first turn's response.done is already logged
-    assert_eq!(fixture.log.events.len(), 1);
-    assert_eq!(
-        event_field(&fixture.log.events[0], "type"),
-        Some("response.done")
-    );
 }
 
 pub(super) async fn provider_error_close() {

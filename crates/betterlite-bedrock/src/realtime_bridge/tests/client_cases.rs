@@ -27,6 +27,12 @@ async fn forwards_every_client_frame() {
         outcome.expect("the client pump ends normally"),
         ForwardEnd::Ended
     );
+    assert_frame_order(&fixture);
+    assert_frame_payloads(&fixture);
+    assert_session_ack(&fixture);
+}
+
+fn assert_frame_order(fixture: &ClientFixture) {
     let frames = fixture.stream.sent();
     let keys: Vec<Option<&str>> = frames.iter().map(event_key).collect();
     assert_eq!(
@@ -41,7 +47,11 @@ async fn forwards_every_client_frame() {
             Some("sessionEnd"),
         ]
     );
+    assert_eq!(frames[6], json(r#"{"event":{"sessionEnd":{}}}"#));
+}
 
+fn assert_frame_payloads(fixture: &ClientFixture) {
+    let frames = fixture.stream.sent();
     let prompt_name = support::numbered(1);
     let audio_name = support::numbered(3);
     assert_eq!(
@@ -72,8 +82,9 @@ async fn forwards_every_client_frame() {
         payload_text(&frames[5], "promptEnd", "promptName"),
         Some(prompt_name.as_str())
     );
-    assert_eq!(frames[6], json(r#"{"event":{"sessionEnd":{}}}"#));
+}
 
+fn assert_session_ack(fixture: &ClientFixture) {
     let sent = fixture.client.sent_events();
     assert_eq!(sent.len(), 1);
     let expected = json(&format!(
@@ -82,7 +93,6 @@ async fn forwards_every_client_frame() {
         support::MODEL
     ));
     assert_eq!(sent[0], expected);
-
     // The ack clears the replay marker only after every transformed frame reached the stream
     assert_eq!(fixture.scope.pending_session_update, Json::Null);
     assert_eq!(fixture.scope.session_committed, Json::Bool(true));
