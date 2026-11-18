@@ -1,11 +1,17 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
+mod driver;
+mod fixtures;
+mod input;
+mod output;
+mod tests;
+
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("bedrock_other_embedding_call")
+    fn run(input: &Self::Input) -> HelperResult {
+        driver::run(input)
     }
 }
