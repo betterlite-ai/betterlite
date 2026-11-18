@@ -51,7 +51,7 @@ fn finish_returns_what_the_client_sent() {
 #[test]
 fn a_client_that_leaves_during_the_pause_still_finishes() {
     // 8 MiB of body is past any send buffer, so the write fails once the closed client resets
-    let body = "ok".repeat(4_194_304);
+    let body = "ok".repeat(4 * 1024 * 1024);
     let serving = serve(reply("200 fixture", &[], &body), Duration::from_millis(200)).unwrap();
     let mut stream = TcpStream::connect(serving.address).unwrap();
     stream
