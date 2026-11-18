@@ -409,6 +409,44 @@ fn a_classifier_that_can_emit_custom_tiers_is_accepted(#[case] classifier: Class
 }
 
 #[test]
+fn the_llm_and_non_reasoning_classifier_sets_match_liteellm() {
+    for kind in [
+        ClassifierKind::Llm,
+        ClassifierKind::Capability,
+        ClassifierKind::LlmV2,
+        ClassifierKind::HeuristicFirst,
+        ClassifierKind::Hybrid,
+    ] {
+        assert!(kind.uses_llm(), "{kind}");
+    }
+    for kind in [
+        ClassifierKind::Heuristic,
+        ClassifierKind::HeuristicV2,
+        ClassifierKind::Custom,
+        ClassifierKind::Jev,
+    ] {
+        assert!(!kind.uses_llm(), "{kind}");
+    }
+    for kind in [
+        ClassifierKind::Llm,
+        ClassifierKind::Custom,
+        ClassifierKind::Jev,
+    ] {
+        assert!(kind.emits_non_reasoning(), "{kind}");
+    }
+    for kind in [
+        ClassifierKind::Heuristic,
+        ClassifierKind::HeuristicV2,
+        ClassifierKind::Capability,
+        ClassifierKind::LlmV2,
+        ClassifierKind::HeuristicFirst,
+        ClassifierKind::Hybrid,
+    ] {
+        assert!(!kind.emits_non_reasoning(), "{kind}");
+    }
+}
+
+#[test]
 fn all_order_dependent_features_are_reported_in_one_conflict() {
     let features = [
         OrderFeature::Plugins,
