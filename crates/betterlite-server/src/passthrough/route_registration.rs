@@ -55,15 +55,6 @@ pub struct PassthroughParams {
 }
 
 #[rustfmt::skip]
-impl PassThroughEndpoint {
-    fn params(&self, target: &str, headers: Option<JsonObject>) -> PassthroughParams {
-        PassthroughParams { target: target.to_owned(), custom_headers: headers, forward_headers: self.forward_headers, merge_query_params: self.merge_query_params,
-            default_query_params: self.default_query_params.clone(), cost_per_request: self.cost_per_request, guardrails: self.guardrails.clone(),
-            timeout: self.timeout, config_file_path: None }
-    }
-}
-
-#[rustfmt::skip]
 pub struct RouteSpec<'route> {
     pub endpoint_id: &'route str, pub path: &'route str, pub methods: &'route [String], pub auth: bool, pub params: &'route PassthroughParams,
 }
@@ -71,7 +62,7 @@ pub struct RouteSpec<'route> {
 #[rustfmt::skip]
 pub struct PassThroughRoutes {
     pub table: RouteTable, pub registry: PassThroughRegistry, pub endpoints: BTreeMap<String, PassthroughParams>,
-    pub openai_routes: Vec<String>, remembered: BTreeMap<(String, BTreeSet<String>), Option<String>>,
+    pub openai_routes: Vec<String>, pub remembered: BTreeMap<(String, BTreeSet<String>), Option<String>>,
 }
 
 pub type SharedPassThroughRoutes = Arc<Mutex<PassThroughRoutes>>;
@@ -168,6 +159,7 @@ pub fn initialize_pass_through_endpoints(
     let mut visited = BTreeSet::new();
     for endpoint in endpoints { register_endpoint(&mut state, endpoint, context, &mut visited)?; }
     state.remove_stale_entries(&visited);
+    drop(state);
     Ok(())
 }
 
@@ -184,7 +176,9 @@ fn register_endpoint(
         add_openai_route(&mut state.openai_routes, path);
     }
     let Some(target) = endpoint.target.as_deref() else { return Ok(()); };
-    let params = endpoint.params(target, headers);
+    let params = PassthroughParams { target: target.to_owned(), custom_headers: headers, forward_headers: endpoint.forward_headers,
+        merge_query_params: endpoint.merge_query_params, default_query_params: endpoint.default_query_params.clone(),
+        cost_per_request: endpoint.cost_per_request, guardrails: endpoint.guardrails.clone(), timeout: endpoint.timeout, config_file_path: None };
     let methods = effective_methods(endpoint.methods.as_deref().unwrap_or_default());
     let spec = RouteSpec { endpoint_id: &endpoint_id, path, methods: &methods, auth, params: &params };
     state.install_route(&spec, PassThroughRouteType::Exact, path.to_owned(), config_path);
@@ -210,19 +204,20 @@ fn register_subpath(
 pub fn set_env_variables_in_header(
     secrets: &SecretLookup, environment: &BTreeMap<String, String>, custom_headers: Option<&JsonObject>,
 ) -> Result<Option<JsonObject>, RouteRegistrationError> {
-    let Some(custom_headers) = custom_headers else { return Ok(None); };
+    let Some(custom) = custom_headers else { return Ok(None); };
     let mut headers = JsonObject::new();
-    for (key, value) in custom_headers {
+    for (key, value) in custom {
         if key == LANGFUSE_PUBLIC_KEY || key == LANGFUSE_SECRET_KEY {
-            let public = langfuse_key(secrets, environment, LANGFUSE_PUBLIC_KEY, custom_headers)?;
-            let secret = langfuse_key(secrets, environment, LANGFUSE_SECRET_KEY, custom_headers)?;
+            let public = langfuse_key(secrets, environment, LANGFUSE_PUBLIC_KEY, custom)?;
+            let secret = langfuse_key(secrets, environment, LANGFUSE_SECRET_KEY, custom)?;
             let token = STANDARD.encode(format!("{public}:{secret}"));
             headers.insert(AUTHORIZATION.to_owned(), Json::Text(format!("Basic {token}")));
             continue;
         }
-        let resolved = match value {
-            Json::Text(text) => resolved_secret(secrets, environment, text)?.map_or_else(|| value.clone(), Json::Text),
-            other => other.clone(),
+        let resolved = if let Json::Text(text) = value {
+            resolved_secret(secrets, environment, text)?.map_or_else(|| value.clone(), Json::Text)
+        } else {
+            value.clone()
         };
         headers.insert(key.clone(), resolved);
     }
