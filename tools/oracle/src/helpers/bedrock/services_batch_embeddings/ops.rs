@@ -1,12 +1,12 @@
-use betterlite_bedrock::batch_embeddings::classify::classify_batch_record;
+use betterlite_bedrock::batch_embeddings::classify::{BatchRecord, classify_batch_record};
 use betterlite_bedrock::batch_embeddings::error::BatchEmbeddingError;
 use betterlite_bedrock::batch_embeddings::input::coerce_input_to_string;
-use betterlite_bedrock::batch_embeddings::mapping::map_embedding_to_bedrock;
+use betterlite_bedrock::batch_embeddings::mapping::{EmbeddingRequest, map_embedding_to_bedrock};
 use betterlite_bedrock::batch_embeddings::titan::{
     is_titan_v2_embed_model, lookup_provider_specific_field,
 };
 use betterlite_bedrock::model_routes::ParamMap;
-use serde_json::{Value, json};
+use serde_json::json;
 use thiserror::Error;
 use tokio::runtime::Builder;
 
@@ -22,7 +22,7 @@ const INVOCATION_SCHEMA_FIELD: &str = "bedrock_invocation_schema";
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::ClassifyRecords(case) => Ok(classify_records(case)),
+        Input::ClassifyRecords(case) => classify_records(case),
         Input::RegistrySchema(case) => registry_schema(case),
         Input::NameBoundary(case) => name_boundary(case),
         Input::CoerceInput(case) => coerce_input(case),
@@ -30,13 +30,13 @@ pub(super) fn run(input: &Input) -> HelperResult {
     }
 }
 
-fn classify_records(case: &ClassifyRecords) -> Value {
-    let kinds: Vec<Value> = case
-        .records
-        .iter()
-        .map(|record| json!(classify_batch_record(record)))
-        .collect();
-    json!({ "kinds": kinds })
+fn classify_records(case: &ClassifyRecords) -> HelperResult {
+    let mut kinds = Vec::with_capacity(case.records.len());
+    for record in &case.records {
+        let record: BatchRecord = serde_json::from_value(record.clone())?;
+        kinds.push(json!(classify_batch_record(&record)));
+    }
+    Ok(json!({ "kinds": kinds }))
 }
 
 // one schema and the flag it drives per id, so the override and the fallback stay side by side
@@ -77,8 +77,9 @@ fn coerce_input(case: &CoerceInput) -> HelperResult {
 fn map_embedding(case: &MapEmbedding) -> HelperResult {
     let registry = Registry::load(&case.model_cost).map_err(Failure::from)?;
     let runtime = Builder::new_current_thread().build()?;
+    let body: EmbeddingRequest = serde_json::from_value(case.body.clone())?;
     let mapped = runtime
-        .block_on(map_embedding_to_bedrock(&case.body, &case.model, &registry))
+        .block_on(map_embedding_to_bedrock(&body, &case.model, &registry))
         .map_err(Failure::from)?;
     Ok(serde_json::to_value(mapped)?)
 }
@@ -119,6 +120,5 @@ const fn embedding_class(error: &BatchEmbeddingError) -> &'static str {
         | BatchEmbeddingError::InputNotString { .. } => "ValueError",
         BatchEmbeddingError::TokenizedInput { .. }
         | BatchEmbeddingError::UnsupportedModel { .. } => "NotImplementedError",
-        BatchEmbeddingError::Titan(_) => "TypeError",
     }
 }

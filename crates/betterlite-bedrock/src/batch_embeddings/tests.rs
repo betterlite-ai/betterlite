@@ -4,16 +4,17 @@ use std::collections::BTreeMap;
 use std::future::{Future, ready};
 
 use rstest::rstest;
-use serde_json::Number;
 use tokio::runtime::{Builder, Runtime};
 
 use betterlite_models::full_model_metadata::record::ModelInfo;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 
-use crate::batch_embeddings::classify::{BatchRecordKind, classify_batch_record};
+use crate::batch_embeddings::classify::{BatchRecord, BatchRecordKind, classify_batch_record};
 use crate::batch_embeddings::error::BatchEmbeddingError;
-use crate::batch_embeddings::input::coerce_input_to_string;
-use crate::batch_embeddings::mapping::map_embedding_to_bedrock;
+use crate::batch_embeddings::input::{EmbeddingInput, coerce_input_to_string};
+use crate::batch_embeddings::mapping::{
+    EmbeddingRequest, InvokeModelBody, map_embedding_to_bedrock,
+};
 use crate::batch_embeddings::titan::{is_titan_v2_embed_model, lookup_provider_specific_field};
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 
@@ -28,6 +29,8 @@ const NULL_SCHEMA_ENTRY: &str =
     r#"{"litellm_provider":"bedrock","mode":"embedding","provider_specific_entry":null}"#;
 
 const TITAN_MODEL: &str = "amazon.titan-embed-text-v2:0";
+// a registered id that carries the Titan v2 schema without the name marker
+const TITAN_ALIAS: &str = "custom-embedding";
 
 const MULTIPLE_INPUTS: &str = "Bedrock batch embedding requires one input per JSONL record.";
 const TOKENIZED_INPUT: &str =
@@ -122,6 +125,7 @@ const REGISTRY_ENTRIES: &[(&str, &str)] = &[
     ("amazon.titan-embed-text-v2:3", NO_SCHEMA_ENTRY),
     ("amazon.titan-embed-text-v2:5", TEXT_SCHEMA_ENTRY),
     ("cohere.embed-multilingual-v3", NULL_SCHEMA_ENTRY),
+    (TITAN_ALIAS, TITAN_V2_ENTRY),
 ];
 
 // one row per id, so the resolved schema and the flag it drives stay side by side
@@ -137,6 +141,8 @@ const REGISTRY_CASES: &[(&str, Option<&str>, bool)] = &[
     ("cohere.embed-multilingual-v3", None, false),
     ("amazon.titan-embed-text-v4:0", None, false),
     ("amazon.titan-embed-text-v1", None, false),
+    // a registered alias is detected through its schema even without the marker in its name
+    (TITAN_ALIAS, Some("titan_v2"), true),
 ];
 
 // every lookup fails for these ids, so each answer comes from the name alone
@@ -224,24 +230,20 @@ const UNSUPPORTED_CASES: &[(&str, &str)] = &[
     ),
 ];
 
-fn parsed(source: &str) -> Object {
-    serde_json::from_str(source).expect("the fixture is a JSON object")
+fn record(source: &str) -> BatchRecord {
+    serde_json::from_str(source).expect("the fixture is a batch record")
 }
 
-fn text(value: &str) -> Json {
-    Json::Text(value.to_owned())
+fn embedding_request(source: &str) -> EmbeddingRequest {
+    serde_json::from_str(source).expect("the fixture body is an embeddings request")
 }
 
-fn int(value: i64) -> Json {
-    Json::Number(Number::from(value))
+fn input(source: &str) -> EmbeddingInput {
+    serde_json::from_str(source).expect("the fixture is one embeddings input")
 }
 
-fn float(value: f64) -> Json {
-    Json::Number(Number::from_f64(value).expect("a finite float"))
-}
-
-fn list(values: Vec<Json>) -> Json {
-    Json::List(values)
+fn json(source: &str) -> Json {
+    serde_json::from_str(source).expect("the fixture is JSON")
 }
 
 fn runtime() -> Runtime {
@@ -266,7 +268,7 @@ fn not_a_string(found: &str) -> String {
 
 fn unsupported_message(model: &str) -> String {
     format!(
-        "Bedrock batch embedding currently supports only Amazon Titan Text Embeddings V2 (model id contains 'titan-embed-text-v2'). Got model=\"{model}\". Track other embedding models in https://github.com/BerriAI/litellm/issues."
+        "Bedrock batch embedding currently supports only Amazon Titan Text Embeddings V2 (model id contains 'titan-embed-text-v2'). Got model='{model}'. Track other embedding models in https://github.com/BerriAI/litellm/issues."
     )
 }
 
@@ -316,20 +318,23 @@ fn schema(runtime: &Runtime, lookup: &Registry, model: &str) -> Option<String> {
     ))
 }
 
-fn mapped(runtime: &Runtime, lookup: &Registry, source: &str) -> Object {
-    runtime
-        .block_on(map_embedding_to_bedrock(
-            &parsed(source),
-            TITAN_MODEL,
-            lookup,
-        ))
-        .expect("the fixture body maps")
+fn body_json(body: &InvokeModelBody) -> Json {
+    let value = serde_json::to_value(body).expect("the mapped body serializes");
+    serde_json::from_value(value).expect("the mapped body is JSON")
 }
 
-fn refuse(runtime: &Runtime, lookup: &Registry, model: &str, source: &str) -> BatchEmbeddingError {
-    runtime
-        .block_on(map_embedding_to_bedrock(&parsed(source), model, lookup))
-        .expect_err("the fixture body is refused")
+fn map(
+    runtime: &Runtime,
+    lookup: &Registry,
+    model: &str,
+    source: &str,
+) -> Result<Json, BatchEmbeddingError> {
+    let mapped = runtime.block_on(map_embedding_to_bedrock(
+        &embedding_request(source),
+        model,
+        lookup,
+    ));
+    mapped.map(|body| body_json(&body))
 }
 
 fn message_of(result: Result<String, BatchEmbeddingError>) -> String {
@@ -362,7 +367,7 @@ fn no_url_body_classification() {
 fn assert_classified(cases: &[(&str, BatchRecordKind)]) {
     for (source, expected) in cases {
         assert_eq!(
-            classify_batch_record(&parsed(source)),
+            classify_batch_record(&record(source)),
             *expected,
             "{source}"
         );
@@ -380,6 +385,18 @@ fn titan_v2_registry_schema() {
         );
         assert_eq!(titan(&runtime, &lookup, model), *expected_titan, "{model}");
     }
+    // the alias has no marker in its name, so only the resolved schema can accept it
+    assert_eq!(
+        map(
+            &runtime,
+            &lookup,
+            TITAN_ALIAS,
+            r#"{"model":"custom-embedding","input":"hello"}"#
+        )
+        .expect("the fixture body maps"),
+        json(r#"{"inputText":"hello"}"#),
+        "{TITAN_ALIAS}"
+    );
 }
 
 fn titan_v2_name_boundary() {
@@ -392,10 +409,10 @@ fn titan_v2_name_boundary() {
 
 fn single_input_coercion() {
     let accepted = [
-        (text("hello"), "hello"),
-        (text(""), ""),
-        (list(vec![text("hello")]), "hello"),
-        (list(vec![text("")]), ""),
+        (input(r#""hello""#), "hello"),
+        (input(r#""""#), ""),
+        (input(r#"["hello"]"#), "hello"),
+        (input(r#"[""]"#), ""),
     ];
     for (raw, expected) in accepted {
         let coerced = coerce_input_to_string(Some(&raw), "m");
@@ -403,25 +420,27 @@ fn single_input_coercion() {
     }
     let missing = "Embedding batch record is missing required `input` field: model=m";
     assert_eq!(message_of(coerce_input_to_string(None, "m")), missing);
+    // a null input collapses to None at the typed boundary and reads as missing, as `.get` did
+    let null_body = embedding_request(r#"{"input":null}"#);
     assert_eq!(
-        message_of(coerce_input_to_string(Some(&Json::Null), "m")),
+        message_of(coerce_input_to_string(null_body.input.as_ref(), "m")),
         missing
     );
 }
 
 fn invalid_multi_input() {
     let cases = [
-        (list(vec![text("a"), text("b")]), multiple_inputs(2)),
-        (list(Vec::new()), multiple_inputs(0)),
-        (list(vec![int(1), int(2)]), multiple_inputs(2)),
-        (list(vec![list(vec![int(1)])]), tokenized()),
-        (Json::Bool(true), tokenized()),
-        (int(5), tokenized()),
+        (input(r#"["a","b"]"#), multiple_inputs(2)),
+        (input("[]"), multiple_inputs(0)),
+        (input("[1,2]"), multiple_inputs(2)),
+        (input("[[1]]"), tokenized()),
+        (input("true"), tokenized()),
+        (input("5"), tokenized()),
         // a negative int is still an int even though it is not a u64
-        (int(-1), tokenized()),
-        (float(1.5), not_a_string("float")),
-        (Json::Object(parsed(r#"{"a":1}"#)), not_a_string("dict")),
-        (list(vec![Json::Null]), not_a_string("NoneType")),
+        (input("-1"), tokenized()),
+        (input("1.5"), not_a_string("float")),
+        (input(r#"{"a":1}"#), not_a_string("dict")),
+        (input("[null]"), not_a_string("NoneType")),
     ];
     for (raw, expected) in cases {
         assert_eq!(
@@ -434,14 +453,14 @@ fn invalid_multi_input() {
 fn dimensions_normalize_fields() {
     let lookup = registry(&[(TITAN_MODEL, TITAN_V2_ENTRY)]);
     let runtime = runtime();
-    assert_mapped(&runtime, &lookup, MAPPING_CASES);
+    assert_mapped(&runtime, &lookup, TITAN_MODEL, MAPPING_CASES);
 }
 
-fn assert_mapped(runtime: &Runtime, lookup: &Registry, cases: &[(&str, &str)]) {
+fn assert_mapped(runtime: &Runtime, lookup: &Registry, model: &str, cases: &[(&str, &str)]) {
     for (source, expected) in cases {
         assert_eq!(
-            mapped(runtime, lookup, source),
-            parsed(expected),
+            map(runtime, lookup, model, source).expect("the fixture body maps"),
+            json(expected),
             "{source}"
         );
     }
@@ -451,7 +470,8 @@ fn unsupported_embedding_model() {
     let lookup = registry(UNSUPPORTED_ENTRIES);
     let runtime = runtime();
     for (model, source) in UNSUPPORTED_CASES {
-        let unknown = refuse(&runtime, &lookup, model, source);
+        let unknown =
+            map(&runtime, &lookup, model, source).expect_err("the fixture body is refused");
         assert_eq!(unknown.to_string(), unsupported_message(model), "{model}");
     }
 }

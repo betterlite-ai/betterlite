@@ -17,6 +17,8 @@ call:
         {litellm_provider: bedrock, mode: embedding, provider_specific_entry: flat}
       "cohere.embed-multilingual-v3":
         {litellm_provider: bedrock, mode: embedding, provider_specific_entry: null}
+      "custom-embedding":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
     models:
       - "amazon.titan-embed-text-v2:0"
       - "amazon.titan-embed-text-v2:9"
@@ -27,11 +29,28 @@ call:
       - "cohere.embed-multilingual-v3"
       - "amazon.titan-embed-text-v4:0"
       - "amazon.titan-embed-text-v1"
+      - "custom-embedding"
 calls:
   - bedrock_services_batch_embeddings:
       function: registry_schema
       model_cost: {}
       models: ["us.amazon.titan-embed-text-v2:0", "bedrock/amazon.titan-embed-text-v2:0"]
+  # a bare entry never answers for a regional id, so the name fallback decides
+  - bedrock_services_batch_embeddings:
+      function: registry_schema
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: cohere_v3}}
+      models: ["us.amazon.titan-embed-text-v2:0"]
+  # the bare id reads its own entry while the bedrock/ prefix reads the prefixed one
+  - bedrock_services_batch_embeddings:
+      function: registry_schema
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+        "bedrock/amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: cohere_v3}}
+      models: ["amazon.titan-embed-text-v2:0", "bedrock/amazon.titan-embed-text-v2:0"]
 env: {}
 compare:
   ignore: []

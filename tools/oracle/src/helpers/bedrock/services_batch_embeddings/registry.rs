@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::future::{Future, ready};
+use std::sync::PoisonError;
 
 use betterlite_bedrock::bedrock_model_capabilities::ModelInfoLookup;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
@@ -9,8 +10,12 @@ use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_ro
 use betterlite_models::catalog::{CatalogError, ModelCatalog, UnknownFields};
 use betterlite_models::catalog_generalizations::CatalogGeneralizations;
 use betterlite_models::fetch_policy::response::FetchResponse;
+use betterlite_models::fireworks_catalog_metadata::Catalog;
+use betterlite_models::full_model_metadata::cache::{MetadataCaches, ModelInfoCache};
 use betterlite_models::full_model_metadata::error::FullMetadataError;
-use betterlite_models::full_model_metadata::record::ModelInfo;
+use betterlite_models::full_model_metadata::parameters::ProviderParameterSource;
+use betterlite_models::full_model_metadata::record::{ModelInfo, ModelInfoHandle};
+use betterlite_models::full_model_metadata::{FullMetadataSources, HelperSources, get_model_info};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::lemonade_model_metadata::{ModelInfoClient, ModelInfoRequest};
 use betterlite_models::model_catalog_keys::ModelCostKeys;
@@ -19,12 +24,15 @@ use betterlite_models::model_metadata_resolution::hf_config::{HF_CONFIG_BASE_URL
 use betterlite_models::model_metadata_resolution::names::{
     ModelCostMap, ModelCostMapError, NameNormalizers,
 };
-use betterlite_models::model_metadata_resolution::{
-    MetadataEnvironment, MetadataRequest, get_model_info_helper,
-};
+use betterlite_models::model_metadata_resolution::{MetadataEnvironment, MetadataRequest};
+use betterlite_models::params::CallType;
+use betterlite_models::params::capabilities::OpenAiConfigTag;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
+use betterlite_models::provider_metadata_factory::selection::MetadataQuery;
 use betterlite_models::resolution::ResolutionContext;
+
+const METADATA_CACHE_SIZE: i64 = 128;
 
 const COST_MAP_NAMES: NameNormalizers = NameNormalizers {
     bedrock_base_model: get_bedrock_base_model,
@@ -60,10 +68,11 @@ impl ModelInfoClient for NoFetch {
     }
 }
 
-// The shared lower metadata owner over a fixture cost map, with no catalog, provider overlay or transport behind it.
+// The shared full metadata owner over a fixture cost map, with no catalog, provider overlay or transport behind it.
 pub(super) struct Registry {
     entries: ModelCostMap,
     typed: ModelCatalog,
+    provider_catalog: Catalog,
     generalizations: CatalogGeneralizations,
     names: BTreeSet<String>,
     providers: BTreeSet<String>,
@@ -77,6 +86,7 @@ impl Registry {
         Ok(Self {
             entries: ModelCostMap::parse(&bytes)?,
             typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)?,
+            provider_catalog: Catalog::new(),
             generalizations: CatalogGeneralizations::default(),
             names: BTreeSet::new(),
             providers: BTreeSet::new(),
@@ -88,8 +98,61 @@ impl Registry {
         })
     }
 
-    fn resolution(&self) -> ResolutionContext<'_> {
-        ResolutionContext {
+    // one full metadata query per lookup, with fresh caches, so no answer outlives the call that read it
+    async fn full_model_info<'query>(
+        &'query self,
+        request: &MetadataRequest<'_>,
+        resolution: &'query ResolutionContext<'query>,
+    ) -> Result<ModelInfoHandle, FullMetadataError<Infallible>> {
+        let environment = MetadataEnvironment {
+            model_cost: &self.entries.entries,
+            vertex: &self.entries.vertex,
+            generalizations: &self.generalizations,
+            resolution,
+            normalizers: COST_MAP_NAMES,
+        };
+        let dynamic = NoDynamicMetadata;
+        let capabilities = BTreeSet::new();
+        let parameters = ProviderParameterSource {
+            resolution,
+            call_type: CallType::ChatCompletion,
+            config: OpenAiConfigTag::UnknownModel,
+            capabilities: &capabilities,
+            base_model: None,
+        };
+        let sources = FullMetadataSources {
+            helper: HelperSources {
+                environment: &environment,
+                dynamic: &dynamic,
+                hf: &self.hf,
+            },
+            provider_query: MetadataQuery {
+                catalog: &self.provider_catalog,
+                generation: 0,
+            },
+            parameters: &parameters,
+        };
+        let mut keys = ModelCostKeys::default();
+        let caches = MetadataCaches {
+            full: ModelInfoCache::new(METADATA_CACHE_SIZE),
+            helper: ModelInfoCache::new(METADATA_CACHE_SIZE),
+        };
+        get_model_info(request, &sources, &mut keys, &caches).await
+    }
+}
+
+impl ModelInfoLookup for Registry {
+    type Error = FullMetadataError<Infallible>;
+
+    // no declared provider: the resolver infers one from the id, as LiteLLM's bare model_id call does
+    async fn bedrock_model_info(&self, model: &str) -> Result<ModelInfo, Self::Error> {
+        let request = MetadataRequest {
+            model,
+            custom_llm_provider: None,
+            api_base: None,
+            api_key: None,
+        };
+        let resolution = ResolutionContext {
             catalog: &self.typed,
             known_model_names: &self.names,
             custom_providers: &self.providers,
@@ -97,39 +160,11 @@ impl Registry {
             registry: JSONProviderRegistry::load(),
             policies: ProviderPolicies::default(),
             globals: GlobalCredentials::default(),
-        }
-    }
-
-    fn metadata_environment<'registry>(
-        &'registry self,
-        resolution: &'registry ResolutionContext<'registry>,
-    ) -> MetadataEnvironment<'registry> {
-        MetadataEnvironment {
-            model_cost: &self.entries.entries,
-            vertex: &self.entries.vertex,
-            generalizations: &self.generalizations,
-            resolution,
-            normalizers: COST_MAP_NAMES,
-        }
-    }
-}
-
-impl ModelInfoLookup for Registry {
-    type Error = FullMetadataError<Infallible>;
-
-    async fn bedrock_model_info(&self, model: &str) -> Result<ModelInfo, Self::Error> {
-        let resolution = self.resolution();
-        let environment = self.metadata_environment(&resolution);
-        let dynamic = NoDynamicMetadata;
-        let request = MetadataRequest {
-            model,
-            custom_llm_provider: Some("bedrock"),
-            api_base: None,
-            api_key: None,
         };
-        let mut keys = ModelCostKeys::default();
-        let metadata =
-            get_model_info_helper(&request, &environment, &mut keys, &dynamic, &self.hf).await?;
-        Ok(ModelInfo::parse(&metadata)?)
+        let handle = self.full_model_info(&request, &resolution).await?;
+        Ok(handle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone())
     }
 }

@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
+use betterlite_bedrock::batch_embeddings::input::EmbeddingInput;
 use betterlite_bedrock::model_routes::ParamMap;
-use betterlite_prompts::arguments::json::{Json, Object};
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -13,10 +14,11 @@ pub(crate) enum Input {
     MapEmbedding(MapEmbedding),
 }
 
+// each case line is the whole JSONL record, handed to the production record type unchanged
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ClassifyRecords {
-    pub(crate) records: Vec<Object>,
+    pub(crate) records: Vec<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,14 +40,15 @@ pub(crate) struct NameBoundary {
 #[serde(deny_unknown_fields)]
 pub(crate) struct CoerceInput {
     #[serde(default)]
-    pub(crate) input: Option<Json>,
+    pub(crate) input: Option<EmbeddingInput>,
     pub(crate) model: String,
 }
 
+// the case body is the OpenAI /v1/embeddings object, handed to the production request type unchanged
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MapEmbedding {
     pub(crate) model_cost: ParamMap,
     pub(crate) model: String,
-    pub(crate) body: Object,
+    pub(crate) body: Value,
 }

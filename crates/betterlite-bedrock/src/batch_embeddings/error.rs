@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::titan_embeddings::error::TitanEmbeddingsError;
-
 #[derive(Debug, Error)]
 pub enum BatchEmbeddingError {
     #[error("Embedding batch record is missing required `input` field: model={model}")]
@@ -19,9 +17,7 @@ pub enum BatchEmbeddingError {
     )]
     InputNotString { found: &'static str, model: String },
     #[error(
-        "Bedrock batch embedding currently supports only Amazon Titan Text Embeddings V2 (model id contains 'titan-embed-text-v2'). Got model=\"{model}\". Track other embedding models in https://github.com/BerriAI/litellm/issues."
+        "Bedrock batch embedding currently supports only Amazon Titan Text Embeddings V2 (model id contains 'titan-embed-text-v2'). Got model='{model}'. Track other embedding models in https://github.com/BerriAI/litellm/issues."
     )]
     UnsupportedModel { model: String },
-    #[error(transparent)]
-    Titan(#[from] TitanEmbeddingsError),
 }
