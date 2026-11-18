@@ -431,6 +431,25 @@ async fn lookup_defaults_the_checked_time_to_the_system_clock() {
     assert_eq!(found, Some(fresh));
 }
 
+#[tokio::test]
+async fn lookup_treats_an_exact_entry_expiring_now_as_stale() {
+    let fake = FakeCache::new(false);
+    let exact = observation(FINGERPRINT, 100, NOW);
+    let fresh = observation(OLDER_FINGERPRINT, 900, 2_500.0);
+    fake.seed(
+        SCOPE,
+        FINGERPRINT,
+        json(&serde_json::to_string(&exact).unwrap()),
+    );
+    fake.seed(
+        SCOPE,
+        OLDER_FINGERPRINT,
+        json(&serde_json::to_string(&fresh).unwrap()),
+    );
+    let found = lookup(&fake, SCOPE, &evidence(0).prefix, Some(NOW)).await;
+    assert_eq!(found, Some(fresh));
+}
+
 #[test]
 fn observer_init_keeps_the_injected_cache_and_parser() {
     let fake = Arc::new(FakeCache::new(false));
@@ -577,6 +596,20 @@ async fn event_drops_a_request_that_starts_in_the_future() {
     success.first_api_call_start_time = starts_at(3_000);
     observer.async_log_success_event(&success).await;
     assert_eq!(fake.write_count(), 0);
+}
+
+#[tokio::test]
+async fn event_accepts_a_request_that_starts_now() {
+    let fake = Arc::new(FakeCache::new(false));
+    let observer = build_observer(&fake, Some(evidence(400)), NOW);
+    let logged = payload();
+    let url = Url::parse(NATIVE_URL).unwrap();
+    let headers = HeaderMap::new();
+    let response = Json::Null;
+    let mut success = event(&logged, &url, &headers, &response, BODY.as_bytes());
+    success.first_api_call_start_time = starts_at(2_000);
+    observer.async_log_success_event(&success).await;
+    assert_eq!(fake.write_count(), 1);
 }
 
 #[tokio::test]

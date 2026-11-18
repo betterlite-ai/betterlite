@@ -105,9 +105,6 @@ pub fn parse_observed_cache(
     }
     let prefix = parse_prompt(body)?;
     let usage = &observed.usage;
-    if usage.prompt_tokens < 0 {
-        return None;
-    }
     let complete = observed
         .choices
         .iter()

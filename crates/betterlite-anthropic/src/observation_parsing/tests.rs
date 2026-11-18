@@ -231,11 +231,14 @@ fn parse_observed_cache_rejects_unsupported_bodies(#[case] body: &str) {
 #[rstest]
 #[case::no_cache_tokens(BODY, 0, 0, None)]
 #[case::negative_cached(BODY, -1, 200, None)]
+#[case::negative_cached_without_creation(BODY, -1, 0, None)]
 #[case::over_prompt(BODY, 900, 200, None)]
+#[case::over_prompt_with_reads(BODY, 1_001, 0, None)]
 #[case::creation_without_split(BODY, 0, 100, None)]
 #[case::split_mismatch(BODY, 0, 100, Some((50, 40)))]
 #[case::five_minute_prefix_with_one_hour_split(BODY, 0, 100, Some((0, 100)))]
 #[case::one_hour_prefix_with_five_minute_split(ONE_HOUR_BODY, 0, 100, Some((100, 0)))]
+#[case::negative_one_hour_split(BODY, 0, 100, Some((101, -1)))]
 fn parse_observed_cache_rejects_inconsistent_cache_counts(
     #[case] body: &str,
     #[case] cached: i64,
@@ -282,6 +285,21 @@ fn parse_observed_cache_accepts_a_creation_only_hit() {
     assert_eq!(found.prefix.ttl_seconds, 3_600);
     assert_eq!(found.cached_tokens, 500);
     assert_eq!(found.cache_creation_tokens, 500);
+}
+
+#[test]
+fn parse_observed_cache_accepts_the_full_prompt_budget() {
+    let url = Url::parse(NATIVE_URL).unwrap();
+    let headers = headers();
+    let wire = WireRequest {
+        url: &url,
+        headers: &headers,
+        body: BODY.as_bytes(),
+    };
+    let observed = parse_observed_cache(&wire, &response(1_000, 0, None), "caller", "d");
+    let found = observed.unwrap();
+    assert_eq!(found.cached_tokens, 1_000);
+    assert_eq!(found.cache_creation_tokens, 0);
 }
 
 #[rstest]
