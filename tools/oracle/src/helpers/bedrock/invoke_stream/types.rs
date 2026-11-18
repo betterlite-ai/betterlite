@@ -30,6 +30,10 @@ pub(crate) struct Run {
     pub(crate) stream_chunk_size: Option<u64>,
     #[serde(default)]
     pub(crate) response_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub(crate) response_body: String,
+    #[serde(default)]
+    pub(crate) response_fails: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

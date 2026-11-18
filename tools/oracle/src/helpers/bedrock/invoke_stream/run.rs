@@ -5,7 +5,9 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_bedrock::agentcore_stream::transport::{HandlerKind, StreamHandler};
 use betterlite_bedrock::bedrock_http_stream::StreamDeps;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::invoke_stream::{InvokeStreamCall, stream_transport, sync_client};
+use betterlite_bedrock::invoke_stream::{
+    InvokeStreamCall, WrappedInvokeStream, stream_transport, sync_client,
+};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
@@ -53,7 +55,12 @@ fn transport_case(run: &Run) -> Result<Value, Box<HelperError>> {
 fn identity_case(run: &Run, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
     let kind = run.identity_kind().map_err(failure)?;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
-    let supplied = Fixture::make(kind, &run.response_headers)?;
+    let supplied = Fixture::make(
+        kind,
+        &run.response_headers,
+        body_of(run)?,
+        run.response_fails,
+    )?;
     let shared: Arc<dyn StreamHandler> = Arc::clone(&supplied);
     let default = handler(wrapper_kind(run.wrapper), &BTreeMap::new())?;
     let deps = stream_deps(Some(shared), default, &redactor);
@@ -75,14 +82,40 @@ fn identity_case(run: &Run, runtime: &Runtime) -> Result<Value, Box<HelperError>
         state: &mut state,
         env: &env,
     };
-    let wrapped = wrapper_of(runtime, &transport, &deps, &mut world, &mut log)?;
+    let mut wrapped = wrapper_of(runtime, &transport, &deps, &mut world, &mut log)?;
     let logs = mem::take(&mut *recorded.lock().unwrap_or_else(PoisonError::into_inner));
+    let (text, failed) = drain(runtime, &mut wrapped);
     Ok(json!({
         "wrapper": wrapper_view(&wrapped),
         "config": config_view(),
         "log": logs.first().map_or(Value::Null, log_view),
+        "stream": {"text": text, "failed": failed},
         "post": supplied.first_post(),
     }))
+}
+
+// The callers' read loop: the text each chunk carries, and whether the stream ended in an error.
+fn drain(runtime: &Runtime, wrapped: &mut WrappedInvokeStream<'_>) -> (String, bool) {
+    let mut text = String::new();
+    loop {
+        match runtime.block_on(wrapped.completion_stream.next()) {
+            Ok(Some(chunk)) => {
+                if let Some(content) = chunk
+                    .choices
+                    .first()
+                    .and_then(|choice| choice.delta.content.clone())
+                {
+                    text.push_str(&content);
+                }
+            }
+            Ok(None) => return (text, false),
+            Err(_) => return (text, true),
+        }
+    }
+}
+
+fn body_of(run: &Run) -> Result<Vec<u8>, Box<HelperError>> {
+    hex::decode(&run.response_body).map_err(failure)
 }
 
 fn call_of(run: &Run) -> Result<InvokeStreamCall<'_>, Box<HelperError>> {
@@ -129,7 +162,7 @@ fn handler(
     kind: HandlerKind,
     headers: &BTreeMap<String, String>,
 ) -> Result<Arc<dyn StreamHandler>, Box<HelperError>> {
-    let fixture: Arc<Fixture> = Fixture::make(kind, headers)?;
+    let fixture: Arc<Fixture> = Fixture::make(kind, headers, Vec::new(), false)?;
     let shared: Arc<dyn StreamHandler> = fixture;
     Ok(shared)
 }

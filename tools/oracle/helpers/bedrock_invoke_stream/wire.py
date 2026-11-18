@@ -1,4 +1,4 @@
-from collections.abc import Iterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from typing import Final, Literal, Protocol, TypedDict, Unpack, runtime_checkable
 
 import httpx
@@ -31,6 +31,8 @@ class Run(TypedDict):
     signed_json_body: str | None
     stream_chunk_size: int | None
     response_headers: dict[str, str]
+    response_body: str
+    response_fails: bool
 
 
 class Input(TypedDict):
@@ -62,6 +64,8 @@ class LoggingRecorder:
         self.model_call_details: dict[str, JsonValue] = {"litellm_params": {}}
         self.messages: Messages | None = None
         self.stream_options: dict[str, JsonValue] | None = None
+        self.completion_start_time: JsonValue = None
+        self._llm_caching_handler: JsonValue = None
         self.calls: list[LogView] = []
 
     def post_call(self, **params: Unpack[LogArguments]) -> None:
@@ -72,6 +76,19 @@ class LoggingRecorder:
                 "complete_input_dict": params["additional_args"]["complete_input_dict"],
             }
         )
+
+    def _update_completion_start_time(self, completion_start_time: JsonValue) -> None: ...
+
+    # The stream's end and failure hooks: the case compares the drained chunks, not what Logging does with them.
+    async def dispatch_success_handlers(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
+
+    async def async_success_handler(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
+
+    def success_handler(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
+
+    async def dispatch_failure_handlers(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
+
+    def failure_handler(self, *_args: JsonValue, **_kwargs: JsonValue) -> None: ...
 
 
 # What make_call or make_sync_call received, in the order the wrapper's own call site names it.
@@ -113,15 +130,36 @@ class EmptyStream:
         return iter([])
 
 
+# The body the case scripted, then an optional read error; httpx's sync and async clients each iterate this.
+class BodyStream(httpx.SyncByteStream, httpx.AsyncByteStream):
+    def __init__(self, body: bytes, *, fails: bool) -> None:
+        self.body = body
+        self.fails = fails
+
+    def __iter__(self) -> Iterator[bytes]:
+        yield self.body
+        if self.fails:
+            raise httpx.ReadError("read failed")
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        yield self.body
+        if self.fails:
+            raise httpx.ReadError("read failed")
+
+
 # The client a real wrapper call posts through: a real httpx transport that answers from the case.
 class MockReply:
-    def __init__(self, headers: dict[str, str]) -> None:
+    def __init__(self, headers: dict[str, str], body: bytes, *, fails: bool) -> None:
         self.headers = headers
+        self.body = body
+        self.fails = fails
         self.posts: list[PostView] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.posts.append({"url": str(request.url), "body": list(request.content)})
-        return httpx.Response(200, headers=self.headers, stream=httpx.ByteStream(b""))
+        return httpx.Response(
+            200, headers=self.headers, stream=BodyStream(self.body, fails=self.fails)
+        )
 
 
 class Recorder:

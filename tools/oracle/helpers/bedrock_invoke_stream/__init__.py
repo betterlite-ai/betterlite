@@ -2,11 +2,12 @@ import asyncio
 from unittest import mock
 
 import litellm
+from litellm.exceptions import MidStreamFallbackError
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.bedrock.chat.invoke_transformations import base_invoke_transformation
 from pydantic import JsonValue
 
-from .views import identity_payload, transport_payload
+from .views import chunk_content, identity_payload, transport_payload
 from .wire import (
     JSON,
     WRAPPERS,
@@ -113,15 +114,42 @@ def sync_identity(run: Run, logging: LoggingRecorder, reply: MockReply) -> Custo
     )
 
 
-# A real B691 call and B004 wrapper, so the POST, the log entry and the identity are LiteLLM's.
+# The caller's read loop: the text the stream carried and whether it failed, the pair the case compares.
+async def drain_async(wrapper: CustomStreamWrapper) -> tuple[str, bool]:
+    text = ""
+    try:
+        async for chunk in wrapper:
+            text += chunk_content(chunk)
+    except MidStreamFallbackError:
+        return text, True
+    return text, False
+
+
+def drain_sync(wrapper: CustomStreamWrapper) -> tuple[str, bool]:
+    text = ""
+    try:
+        for chunk in wrapper:
+            text += chunk_content(chunk)
+    except MidStreamFallbackError:
+        return text, True
+    return text, False
+
+
+# A real B691 call and B004 wrapper, so the POST, the log entry, the stream and the identity are LiteLLM's.
 async def identity_case(run: Run) -> JsonValue:
     logging = LoggingRecorder()
-    reply = MockReply(run["response_headers"])
+    reply = MockReply(
+        run["response_headers"],
+        bytes.fromhex(run["response_body"]),
+        fails=run["response_fails"],
+    )
     if run["wrapper"] == "async":
         wrapper = await async_identity(run, logging, reply)
+        text, failed = await drain_async(wrapper)
     else:
         wrapper = sync_identity(run, logging, reply)
-    return identity_payload(wrapper, logging, reply)
+        text, failed = drain_sync(wrapper)
+    return identity_payload(wrapper, logging, reply, text=text, failed=failed)
 
 
 async def run_all(input_value: Input) -> list[JsonValue]:
