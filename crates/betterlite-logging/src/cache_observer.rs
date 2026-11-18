@@ -110,7 +110,7 @@ async fn read_exact(
     let value = cache.get(&key).await?;
     let observation = match &value {
         Json::Text(text) => serde_json::from_str::<CacheObservation>(text).ok()?,
-        Json::Object(_) => serde_json::from_value::<CacheObservation>(value.clone()).ok()?,
+        Json::Object(_) => serde_json::from_value(serde_json::to_value(&value).ok()?).ok()?,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => return None,
     };
     observation
