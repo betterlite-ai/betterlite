@@ -6,7 +6,7 @@ use betterlite_openai::api::responses_event_records::records::{
 };
 
 use super::builder::{BuildContext, ItemContext, push_event};
-use super::chunks::delta_chunks;
+use super::chunks::{delta_chunks, payload_bytes};
 use super::error::SyntheticEventsError;
 use super::python_value::text_or_empty;
 
@@ -16,6 +16,8 @@ pub(super) fn function_call_events(
     payload: &Extra,
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
+    let copied = payload_bytes(&payload.get("arguments"));
+    build.budget.charge(1, copied)?;
     let arguments = text_or_empty(payload.get("arguments"));
     let chunk_size = build.chunk_size;
     for delta in delta_chunks(

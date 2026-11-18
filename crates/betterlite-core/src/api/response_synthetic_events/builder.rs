@@ -7,7 +7,7 @@ use betterlite_openai::api::responses_event_records::records::{
 };
 use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApiResponse};
 
-use super::chunks::EventBudget;
+use super::chunks::{EventBudget, payload_bytes};
 use super::error::SyntheticEventsError;
 use super::message_events::message_events;
 use super::model_dump::{ResponseObject, dump_response_object};
@@ -48,15 +48,35 @@ pub fn build_synthetic_response_events<C: ResponsesCostCalculator>(
     chunk_size: i64,
 ) -> Result<Vec<ResponsesAPIStreamingResponse>, SyntheticEventsError> {
     stamping::stamp_usage_cost(transformed, calculator);
-    let mut events = Vec::new();
-    push_status_events(&mut events, transformed);
     let mut build = BuildContext {
         chunk_size,
         sequence_number: 0,
         budget: EventBudget::default(),
     };
-    for (output_index, item) in transformed.output.iter().enumerate() {
-        let output_index = i64::try_from(output_index).unwrap_or(i64::MAX);
+    let outside = payload_bytes(&transformed.output);
+    let envelope = payload_bytes::<ResponsesApiResponse>(transformed).saturating_sub(outside);
+    build.budget.charge(3, envelope.saturating_mul(3))?;
+    let mut events = Vec::new();
+    let output = std::mem::take(&mut transformed.output);
+    let mut in_progress = transformed.clone();
+    in_progress.status = Some("in_progress".to_owned());
+    transformed.output = output;
+    push_event!(
+        &mut events,
+        KnownResponseEvent::ResponseCreated(ResponseEvent {
+            response: in_progress.clone(),
+            extra: Extra::new(),
+        }),
+    );
+    push_event!(
+        &mut events,
+        KnownResponseEvent::ResponseInProgress(ResponseEvent {
+            response: in_progress,
+            extra: Extra::new(),
+        }),
+    );
+    for (position, item) in transformed.output.iter().enumerate() {
+        let output_index = i64::try_from(position).unwrap_or(i64::MAX);
         push_item_events(&mut events, &transformed.id, item, output_index, &mut build)?;
     }
     push_event!(
@@ -69,29 +89,6 @@ pub fn build_synthetic_response_events<C: ResponsesCostCalculator>(
     Ok(events)
 }
 
-fn push_status_events(
-    events: &mut Vec<ResponsesAPIStreamingResponse>,
-    transformed: &ResponsesApiResponse,
-) {
-    let mut in_progress = transformed.clone();
-    in_progress.status = Some("in_progress".to_owned());
-    in_progress.output = Vec::new();
-    push_event!(
-        events,
-        KnownResponseEvent::ResponseCreated(ResponseEvent {
-            response: in_progress.clone(),
-            extra: Extra::new(),
-        }),
-    );
-    push_event!(
-        events,
-        KnownResponseEvent::ResponseInProgress(ResponseEvent {
-            response: in_progress,
-            extra: Extra::new(),
-        }),
-    );
-}
-
 fn push_item_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
     transformed_id: &str,
@@ -99,6 +96,9 @@ fn push_item_events(
     output_index: i64,
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
+    build
+        .budget
+        .charge(3, payload_bytes(item).saturating_mul(3))?;
     let item_payload = dump_response_object(ResponseObject::Model(item))?;
     let item_id = match item_payload.get("id") {
         Some(value) if has_content(value) => text_or_empty(Some(value)),
@@ -116,7 +116,14 @@ fn push_item_events(
         item_id: &item_id,
         output_index,
     };
-    item_type_events(events, &context, &item_payload, build)?;
+    if let Some(Json::Text(kind)) = item_payload.get("type") {
+        match kind.as_str() {
+            "message" => message_events(events, &context, &item_payload, build)?,
+            "function_call" => function_call_events(events, &context, &item_payload, build)?,
+            "reasoning" => reasoning_events(events, &context, &item_payload, build)?,
+            _ => {}
+        }
+    }
     build.sequence_number = build.sequence_number.saturating_add(1);
     push_event!(
         events,
@@ -128,21 +135,4 @@ fn push_item_events(
         }),
     );
     Ok(())
-}
-
-fn item_type_events(
-    events: &mut Vec<ResponsesAPIStreamingResponse>,
-    context: &ItemContext<'_>,
-    payload: &Extra,
-    build: &mut BuildContext,
-) -> Result<(), SyntheticEventsError> {
-    let Some(Json::Text(kind)) = payload.get("type") else {
-        return Ok(());
-    };
-    match kind.as_str() {
-        "message" => message_events(events, context, payload, build),
-        "function_call" => function_call_events(events, context, payload, build),
-        "reasoning" => reasoning_events(events, context, payload, build),
-        _ => Ok(()),
-    }
 }

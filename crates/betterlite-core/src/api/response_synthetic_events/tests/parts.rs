@@ -225,6 +225,18 @@ fn many_empty_parts_with_a_huge_item_id_exceed_the_event_budget() {
 }
 
 #[test]
+fn huge_reasoning_text_part_exceeds_the_event_budget() {
+    let reasoning = "r".repeat(44 * 1024 * 1024);
+    let output = format!(
+        r#"[{{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":[{{"type":"reasoning_text","reasoning":"{reasoning}"}}]}}]"#
+    );
+    let mut transformed = response(&output);
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+}
+
+#[test]
 fn indices_preserve_source_positions() {
     let output = concat!(
         r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"{}","status":"completed"},"#,

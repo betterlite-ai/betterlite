@@ -46,3 +46,23 @@ pub fn delta_chunks(
         .map(|chunk| chunk.iter().collect::<String>())
         .collect())
 }
+
+#[derive(Default)]
+struct ByteCount(usize);
+
+impl std::io::Write for ByteCount {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        self.0 = self.0.saturating_add(data.len());
+        Ok(data.len())
+    }
+}
+
+#[must_use]
+pub fn payload_bytes<T: serde::Serialize>(value: &T) -> usize {
+    let mut count = ByteCount::default();
+    if serde_json::to_writer(&mut count, value).is_err() {
+        // an unmeasurable payload must overcharge the budget, never slip under it
+        return usize::MAX;
+    }
+    count.0
+}

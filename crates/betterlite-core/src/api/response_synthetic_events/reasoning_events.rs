@@ -8,7 +8,7 @@ use betterlite_openai::api::responses_event_records::records::{
 };
 
 use super::builder::{BuildContext, ItemContext, push_event};
-use super::chunks::delta_chunks;
+use super::chunks::{delta_chunks, payload_bytes};
 use super::error::SyntheticEventsError;
 use super::model_dump::{ResponseObject, dump_response_object};
 use super::python_value::{json_array_or_empty, text_or_empty};
@@ -20,8 +20,8 @@ pub(super) fn reasoning_events(
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
     let summaries = json_array_or_empty(payload.get("summary"));
-    for (summary_index, summary) in summaries.iter().enumerate() {
-        let summary_index = i64::try_from(summary_index).unwrap_or(i64::MAX);
+    for (position, summary) in summaries.iter().enumerate() {
+        let summary_index = i64::try_from(position).unwrap_or(i64::MAX);
         reasoning_summary_events(events, context, summary, summary_index, build)?;
     }
     Ok(())
@@ -34,6 +34,7 @@ fn reasoning_summary_events(
     summary_index: i64,
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
+    build.budget.charge(1, payload_bytes(summary))?;
     let summary_payload = dump_response_object(ResponseObject::Value(summary))?;
     let text = text_or_empty(summary_payload.get("text"));
     let chunk_size = build.chunk_size;
