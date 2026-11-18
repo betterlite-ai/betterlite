@@ -418,6 +418,30 @@ fn the_separate_tier_model_configs_map_is_not_read() {
 }
 
 #[test]
+fn an_object_entry_fails_the_loader_until_the_baseline_view_accepts_it() {
+    let source = "model_list:
+  - model_name: primary
+    litellm_params:
+      complexity_router_config:
+        tier_models:
+          SIMPLE:
+            model_name: small
+            litellm_params: {temperature: 0.2}
+";
+    let error = ConfigLoader {
+        lookup: BTreeMap::<String, String>::new(),
+    }
+    .load(source)
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("a model name or a list of model names"),
+        "{error}"
+    );
+}
+
+#[test]
 fn a_number_parameter_survives_as_a_number() {
     let keys = "        tier_models:
           SIMPLE:
