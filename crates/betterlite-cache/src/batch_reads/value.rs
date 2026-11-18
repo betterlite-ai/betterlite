@@ -9,14 +9,10 @@ const NUMBER_KEY: &str = "$serde_json::private::Number";
 
 // both tiers read a stored null as a miss, exactly as InMemoryCache.get_cache does
 pub(super) fn redis_value_json(value: &CachedValue) -> Option<Json> {
-    match value {
-        CachedValue::Null => None,
-        stored @ (CachedValue::Boolean(_)
-        | CachedValue::Number(_)
-        | CachedValue::Text(_)
-        | CachedValue::Array(_)
-        | CachedValue::Object(_)) => Some(json_from_cached(stored)),
+    if matches!(value, CachedValue::Null) {
+        return None;
     }
+    Some(json_from_cached(value))
 }
 
 // every Redis answer a batch read gets back runs through here, whichever tier's map carries it
