@@ -379,23 +379,43 @@ compare:
       link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
     - pointer: /output/custom_dimensions/results/17/work
       reference: 3
-      rust: 2
-      why: 'Python groups a dash run by its range rule; betterlite treats the escaped dashes as separate items.'
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/17/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
       link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
     - pointer: /output/custom_dimensions/results/18/work
       reference: 4
-      rust: 2
-      why: 'Python groups a dash run by its range rule; betterlite treats the escaped dashes as separate items.'
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/18/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
       link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
     - pointer: /output/custom_dimensions/results/19/work
       reference: 4
-      rust: 5
-      why: 'Python groups a dash run by its range rule; betterlite treats the escaped dashes as separate items.'
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/19/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
       link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
     - pointer: /output/custom_dimensions/results/20/work
       reference: 5
-      rust: 4
-      why: 'Python groups a dash run by its range rule; betterlite treats the escaped dashes as separate items.'
+      rust: null
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
+    - pointer: /output/custom_dimensions/results/20/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'Python reads the dash run by its range rule; betterlite refuses the pair of dashes as the set difference operator.'
       link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L758'
     - pointer: /output/custom_dimensions/results/21/message
       reference: 'contains an unsupported regex construct'
