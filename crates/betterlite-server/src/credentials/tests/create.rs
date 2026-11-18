@@ -7,7 +7,8 @@ use rstest::rstest;
 
 use super::support::{
     ErrorReply, FakeLookup, FakeStore, ListReply, StoreFailure, SuccessReply, USER_ID, call,
-    create_body, credential_values, decrypt_text, payload, principal, registry, state, text,
+    create_body, credential, credential_values, decrypt_text, payload, principal, registry, row,
+    state, text,
 };
 
 #[tokio::test]
@@ -161,6 +162,32 @@ async fn a_duplicate_create_is_a_409_and_leaves_memory_alone() {
             .starts_with("Credential 'openai' already exists.")
     );
     assert!(registry.credential_list().is_empty());
+    assert!(store.created().is_empty());
+}
+
+#[tokio::test]
+async fn duplicate_create_preserves_the_existing_row_and_resident() {
+    let original = credential(
+        "openai",
+        &[("team", text("ml"))],
+        &[("api_key", text("old-secret"))],
+    );
+    let stored = row(&original);
+    let registry = registry(vec![original.clone()]);
+    let store = FakeStore::seeded(vec![stored.clone()]);
+    let reply = call(
+        state(&registry, Some(&store), None),
+        Method::POST,
+        "/credentials",
+        &create_body("openai", r#"{"api_key":"replacement"}"#),
+        None,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::CONFLICT);
+    let error: ErrorReply = reply.json();
+    assert_eq!(error.error.code, "409");
+    assert_eq!(registry.credential_list(), vec![original]);
+    assert_eq!(store.row("openai"), Some(stored));
     assert!(store.created().is_empty());
 }
 

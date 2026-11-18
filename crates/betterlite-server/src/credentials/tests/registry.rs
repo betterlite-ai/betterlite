@@ -121,6 +121,7 @@ fn the_credential_list_is_a_snapshot() {
     let mut listed = registry.credential_list();
     assert_eq!(1, listed.len());
     listed.clear();
+    assert!(listed.is_empty());
     assert_eq!(1, registry.credential_list().len());
 }
 
