@@ -1,8 +1,5 @@
-use std::collections::BTreeSet;
-
 use betterlite_auth::user_roles::UserRole;
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::identity_rows::Payload;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -10,77 +7,47 @@ use serde::{Deserialize, Serialize};
 use crate::key_fields::base::GenerateRequestBase;
 use crate::key_fields::decode::blank_to_null;
 use crate::key_fields::values::Amount;
-use crate::proxy_request_contracts::user::{UpdateUserFields, UpdateUserRequest};
-use crate::proxy_request_contracts::{ContractError, Fields, decode, require_object};
+use crate::proxy_request_contracts::user::{USER_FIELDS, UpdateUserFields, UpdateUserRequest};
+use crate::proxy_request_contracts::{
+    ContractError, Fields, decode, require_object, supplied_fields,
+};
 use crate::user_contracts::wire::{USER_SELECTOR, check_user_role};
 
 const SELECTION_MISSING: &str = "Must specify either 'users' for individual updates or 'all_users=True' with 'user_updates' for bulk updates";
 const SELECTION_CONFLICT: &str =
     "Cannot specify both 'users' and 'all_users=True'. Choose one approach.";
 
-// One /user/update body without its selectors: B8411's fields with pydantic's absent, null and value states.
+// One /user/update body without its selectors: B8411's fields, decoded like UpdateUserFields::from_value.
 #[derive(Deserialize)]
 struct UpdateUserFieldsWire {
     #[serde(flatten)]
     base: GenerateRequestBase,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    password: Option<Option<SecretString>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    spend: Option<Option<Amount>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    metadata: Option<Option<Payload>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    user_alias: Option<Option<String>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    user_role: Option<Option<UserRole>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    max_budget: Option<Option<Amount>>,
+    #[serde(default)]
+    password: Option<SecretString>,
+    #[serde(default)]
+    spend: Option<Amount>,
+    #[serde(default)]
+    metadata: Option<Payload>,
+    #[serde(default)]
+    user_alias: Option<String>,
+    #[serde(default)]
+    user_role: Option<UserRole>,
+    #[serde(default)]
+    max_budget: Option<Amount>,
 }
 
 impl UpdateUserFieldsWire {
     // model_fields_set keeps the six update keys the caller supplied, an explicit null included
-    fn into_fields(self) -> UpdateUserFields {
-        let supplied_now = [
-            (self.password.is_some(), "password"),
-            (self.spend.is_some(), "spend"),
-            (self.metadata.is_some(), "metadata"),
-            (self.user_alias.is_some(), "user_alias"),
-            (self.user_role.is_some(), "user_role"),
-            (self.max_budget.is_some(), "max_budget"),
-        ];
-        let mut supplied = BTreeSet::new();
-        for (present, name) in supplied_now {
-            if present {
-                supplied.insert(name.to_owned());
-            }
-        }
+    fn into_fields(self, fields: &Fields) -> UpdateUserFields {
         UpdateUserFields {
             base: self.base,
-            password: self.password.flatten(),
-            spend: self.spend.flatten(),
-            metadata: self.metadata.flatten(),
-            user_alias: self.user_alias.flatten(),
-            user_role: self.user_role.flatten(),
-            max_budget: self.max_budget.flatten(),
-            supplied,
+            password: self.password,
+            spend: self.spend,
+            metadata: self.metadata,
+            user_alias: self.user_alias,
+            user_role: self.user_role,
+            max_budget: self.max_budget,
+            supplied: supplied_fields(fields, &USER_FIELDS),
         }
     }
 }
@@ -97,50 +64,33 @@ struct UpdateUserRequestWire {
 }
 
 impl UpdateUserRequestWire {
-    fn into_request(self) -> Result<UpdateUserRequest, ContractError> {
+    fn from_value(value: &JsonValue) -> Result<UpdateUserRequest, ContractError> {
+        let mut fields = require_object(value)?;
+        blank_to_null(&mut fields, &["max_budget"]);
+        let wire: Self = decode(&fields)?;
         // the before-validator rejects a row whose selectors are both null
-        if self.user_id.is_none() && self.user_email.is_none() {
+        if wire.user_id.is_none() && wire.user_email.is_none() {
             return Err(ContractError::from(USER_SELECTOR));
         }
-        let fields = self.fields.into_fields();
-        check_user_role(fields.user_role)?;
+        let decoded = wire.fields.into_fields(&fields);
+        check_user_role(decoded.user_role)?;
         Ok(UpdateUserRequest {
-            fields,
-            user_id: self.user_id,
-            user_email: self.user_email,
+            fields: decoded,
+            user_id: wire.user_id,
+            user_email: wire.user_email,
         })
     }
 }
 
-// The wrapper is a typed wire record; each nested body keeps pydantic's absent and null states.
+// The wrapper keeps pydantic's absent default and its explicit null as separate states.
 #[derive(Deserialize)]
 struct BulkUpdateUserWire {
     #[serde(default)]
-    users: Option<Vec<UpdateUserRequestWire>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    all_users: Option<Option<bool>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    user_updates: Option<Option<UpdateUserFieldsWire>>,
-}
-
-// GenerateRequestBase's max_budget validator runs before decoding a user record, so a blank string becomes null.
-fn blank_row_budgets(fields: &mut Fields) {
-    if let Some(JsonData::Array(rows)) = fields.get_mut("users") {
-        for row in rows {
-            if let JsonData::Object(row_fields) = row {
-                blank_to_null(row_fields, &["max_budget"]);
-            }
-        }
-    }
-    if let Some(JsonData::Object(update_fields)) = fields.get_mut("user_updates") {
-        blank_to_null(update_fields, &["max_budget"]);
-    }
+    users: Option<Vec<JsonValue>>,
+    #[serde(default)]
+    all_users: Option<bool>,
+    #[serde(default)]
+    user_updates: Option<JsonValue>,
 }
 
 #[derive(Debug, Clone)]
@@ -150,37 +100,36 @@ pub struct BulkUpdateUserRequest {
     pub user_updates: Option<UpdateUserFields>,
 }
 
-fn decode_users(
-    rows: Option<Vec<UpdateUserRequestWire>>,
-) -> Result<Option<Vec<UpdateUserRequest>>, ContractError> {
-    let Some(rows) = rows else {
-        return Ok(None);
-    };
-    let mut requests = Vec::with_capacity(rows.len());
-    for row in rows {
-        requests.push(row.into_request()?);
-    }
-    Ok(Some(requests))
-}
-
 impl BulkUpdateUserRequest {
     pub fn from_value(value: &JsonValue) -> Result<Self, ContractError> {
-        let mut fields = require_object(value)?;
-        blank_row_budgets(&mut fields);
+        let fields = require_object(value)?;
+        let supplied_updates = fields.contains_key("user_updates");
         let wire: BulkUpdateUserWire = decode(&fields)?;
-        let supplied_updates = wire.user_updates.is_some();
-        // UpdateUserRequestNoUserIDorEmail runs the same role validator without a selector check
-        let user_updates = match wire.user_updates {
-            Some(Some(update_fields)) => {
-                let decoded = update_fields.into_fields();
-                check_user_role(decoded.user_role)?;
-                Some(decoded)
+        let mut users = None;
+        if let Some(rows) = wire.users {
+            let mut requests = Vec::with_capacity(rows.len());
+            for row in &rows {
+                requests.push(UpdateUserRequestWire::from_value(row)?);
             }
-            Some(None) | None => None,
+            users = Some(requests);
+        }
+        let mut user_updates = None;
+        if let Some(update) = wire.user_updates {
+            let mut update_fields = require_object(&update)?;
+            blank_to_null(&mut update_fields, &["max_budget"]);
+            let update_wire: UpdateUserFieldsWire = decode(&update_fields)?;
+            let decoded = update_wire.into_fields(&update_fields);
+            check_user_role(decoded.user_role)?;
+            user_updates = Some(decoded);
+        }
+        let all_users = if fields.contains_key("all_users") {
+            wire.all_users
+        } else {
+            Some(false)
         };
         let request = Self {
-            users: decode_users(wire.users)?,
-            all_users: wire.all_users.unwrap_or(Some(false)),
+            users,
+            all_users,
             user_updates,
         };
         // pydantic's field validator runs only for a supplied user_updates, explicit null included
@@ -192,11 +141,11 @@ impl BulkUpdateUserRequest {
 
     fn check_selection(&self) -> Result<(), ContractError> {
         let any_users = self.users.as_ref().is_some_and(|users| !users.is_empty());
-        let all_users = self.all_users == Some(true);
-        if !any_users && !(all_users && self.user_updates.is_some()) {
+        let selected_all = self.all_users == Some(true) && self.user_updates.is_some();
+        if !(any_users || selected_all) {
             return Err(ContractError::from(SELECTION_MISSING));
         }
-        if any_users && all_users {
+        if any_users && self.all_users == Some(true) {
             return Err(ContractError::from(SELECTION_CONFLICT));
         }
         Ok(())
