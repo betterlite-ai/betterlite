@@ -8,20 +8,20 @@ use tokio_postgres::error::SqlState;
 use tracing::subscriber::set_default;
 
 use super::support::{
-    Harness, Ports, alias_update, capture_logs, failing_key_write, key_column, key_write,
-    user_alias_update, user_column, user_write,
+    Harness, Ports, alias_update, capture_logs, failing_key_write, fixed_now, key_column,
+    key_write, user_alias_update, user_column, user_write,
 };
-use crate::budget_permission_rows::{JsonData, PermissionList};
+use crate::budget_permission_rows::{JsonData, PermissionList, Timestamp};
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
-use crate::key_user_writes::columns::{UserColumn, UserWrite};
+use crate::key_user_writes::columns::{UserColumn, UserUpdateOps, UserWrite};
 use crate::key_user_writes::dispatch::{QueryType, TableName, UpdateSelector, UpdateTarget};
 use crate::key_user_writes::hash::hash_token;
 use crate::key_user_writes::retry::CallType;
-use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate};
+use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate, WritePorts};
 use crate::postgres_store::errors::DbError;
 
-fn service<'service>(
+pub(super) fn service<'service>(
     client: &'service Client,
     ports: &'service Ports,
 ) -> KeyUserWrites<'service, Client> {
@@ -47,13 +47,13 @@ async fn column_is_null(client: &Client, column: &str, token: &str) -> bool {
     row.get(0)
 }
 
-async fn row_count(client: &Client, table: &str, key: &str, value: &str) -> i64 {
+pub(super) async fn row_count(client: &Client, table: &str, key: &str, value: &str) -> i64 {
     let sql = format!("SELECT count(*) FROM \"{table}\" WHERE \"{key}\" = $1");
     let row = client.query_one(sql.as_str(), &[&value]).await.unwrap();
     row.get(0)
 }
 
-async fn user_alias(client: &Client, user_id: &str) -> Option<String> {
+pub(super) async fn user_alias(client: &Client, user_id: &str) -> Option<String> {
     let row = client
         .query_opt(
             "SELECT \"user_alias\" FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = $1",
@@ -64,6 +64,17 @@ async fn user_alias(client: &Client, user_id: &str) -> Option<String> {
     row.try_get::<_, Option<String>>(0).unwrap()
 }
 
+pub(super) async fn user_column_text(
+    client: &Client,
+    column: &str,
+    user_id: &str,
+) -> Option<String> {
+    let sql =
+        format!("SELECT \"{column}\"::text FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = $1");
+    let row = client.query_opt(sql.as_str(), &[&user_id]).await.unwrap()?;
+    row.try_get::<_, Option<String>>(0).unwrap()
+}
+
 #[tokio::test]
 async fn key_conflict_no_update() {
     let harness = Harness::start().await;
@@ -71,16 +82,18 @@ async fn key_conflict_no_update() {
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
     let first = writes
-        .insert_key(&key_write("sk-abc", "first"))
+        .insert_key(&SecretString::from("sk-abc"), &key_write("first"))
         .await
         .unwrap();
     let second = writes
-        .insert_key(&key_write("sk-abc", "second"))
+        .insert_key(&SecretString::from("sk-abc"), &key_write("second"))
         .await
         .unwrap();
     let stored = hash_token("sk-abc");
     assert_eq!(first.key_alias.as_deref(), Some("first"));
     assert_eq!(second.key_alias.as_deref(), Some("first"));
+    assert!(first.models.is_empty());
+    assert!(second.models.is_empty());
     assert_eq!(first.token.as_ref().unwrap().expose_secret(), &stored);
     assert_eq!(
         row_count(&client, "LiteLLM_VerificationToken", "token", &stored).await,
@@ -103,14 +116,19 @@ async fn key_null_window_omitted() {
     let client = harness.client().await;
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
-    let null_limits = key_column("sk-null", TokenColumn::BudgetLimits, TokenValue::Null);
+    let null_limits = key_column(TokenColumn::BudgetLimits, TokenValue::Null);
     let empty_limits = key_column(
-        "sk-empty",
         TokenColumn::BudgetLimits,
         TokenValue::Json(JsonData::Array(Vec::new())),
     );
-    writes.insert_key(&null_limits).await.unwrap();
-    writes.insert_key(&empty_limits).await.unwrap();
+    writes
+        .insert_key(&SecretString::from("sk-null"), &null_limits)
+        .await
+        .unwrap();
+    writes
+        .insert_key(&SecretString::from("sk-empty"), &empty_limits)
+        .await
+        .unwrap();
     let null_token = hash_token("sk-null");
     let empty_token = hash_token("sk-empty");
     assert!(column_is_null(&client, "budget_limits", &null_token).await);
@@ -130,12 +148,11 @@ async fn key_json_null_retained() {
     let client = harness.client().await;
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
-    let json_null = key_column(
-        "sk-json-null",
-        TokenColumn::BudgetLimits,
-        TokenValue::Json(JsonData::Null),
-    );
-    writes.insert_key(&json_null).await.unwrap();
+    let json_null = key_column(TokenColumn::BudgetLimits, TokenValue::Json(JsonData::Null));
+    writes
+        .insert_key(&SecretString::from("sk-json-null"), &json_null)
+        .await
+        .unwrap();
     let token = hash_token("sk-json-null");
     assert!(!column_is_null(&client, "budget_limits", &token).await);
     assert_eq!(
@@ -161,11 +178,13 @@ async fn key_budget_relation() {
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
     let budget_key = key_column(
-        "sk-budget",
         TokenColumn::BudgetId,
         TokenValue::Text(String::from("budget-1")),
     );
-    let linked = writes.insert_key(&budget_key).await.unwrap();
+    let linked = writes
+        .insert_key(&SecretString::from("sk-budget"), &budget_key)
+        .await
+        .unwrap();
     let relation = linked.litellm_budget_table.expect("budget relation");
     assert_eq!(
         relation.0.get("budget_id"),
@@ -176,7 +195,7 @@ async fn key_budget_relation() {
         Some(&JsonData::String(String::from("creator")))
     );
     let plain = writes
-        .insert_key(&key_write("sk-plain", "plain"))
+        .insert_key(&SecretString::from("sk-plain"), &key_write("plain"))
         .await
         .unwrap();
     assert!(plain.litellm_budget_table.is_none());
@@ -222,10 +241,25 @@ async fn user_organization_fk_400() {
         TokenValue::Text(String::from("missing-org")),
     );
     let error = writes.insert_user(&orphan).await.unwrap_err();
-    assert!(matches!(
-        error,
-        KeyUserWriteError::OrganizationMissing { .. }
-    ));
+    let KeyUserWriteError::OrganizationMissing {
+        organization_id,
+        source,
+    } = &error
+    else {
+        panic!("expected the organization translation, got {error}");
+    };
+    assert_eq!(organization_id, "missing-org");
+    let DbError::SqlState {
+        code, constraint, ..
+    } = source
+    else {
+        panic!("expected the preserved foreign key failure, got {source}");
+    };
+    assert_eq!(code.code(), "23503");
+    assert_eq!(
+        constraint.as_deref(),
+        Some("LiteLLM_UserTable_organization_id_fkey")
+    );
     assert_eq!(error.http_status(), Some(400));
     assert_eq!(
         error.to_string(),
@@ -235,6 +269,15 @@ async fn user_organization_fk_400() {
         row_count(&client, "LiteLLM_UserTable", "user_id", "user-orphan").await,
         0
     );
+    let events = ports.sink.events();
+    assert_eq!(events.len(), 3);
+    assert!(events.iter().all(|event| event.status == Some(400)));
+    assert!(events.iter().all(|event| {
+        event
+            .source
+            .as_deref()
+            .is_some_and(|text| text.contains("23503"))
+    }));
     harness.close().await;
 }
 
@@ -326,11 +369,13 @@ async fn seed_permission(client: &Client) {
 
 async fn seed_permission_key(writes: &KeyUserWrites<'_, Client>) {
     let key = key_column(
-        "sk-abc",
         TokenColumn::ObjectPermissionId,
         TokenValue::Text(String::from("perm-1")),
     );
-    writes.insert_key(&key).await.unwrap();
+    writes
+        .insert_key(&SecretString::from("sk-abc"), &key)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]
@@ -350,6 +395,7 @@ async fn key_update_stamp_permission_and_return() {
     let data = result.data.expect("updated row");
     assert_eq!(data.key_alias.as_deref(), Some("second"));
     assert!(data.settings_updated_at.is_some());
+    assert_eq!(data.updated_at.map(Timestamp::utc), Some(fixed_now()));
     assert_eq!(data.object_permission_id.as_deref(), Some("perm-1"));
     let permission = data.object_permission.expect("permission");
     assert_eq!(
@@ -364,6 +410,10 @@ async fn key_update_stamp_permission_and_return() {
         column_text(&client, "settings_updated_at", &stored)
             .await
             .as_deref(),
+        Some("1970-01-01 00:00:00")
+    );
+    assert_eq!(
+        column_text(&client, "updated_at", &stored).await.as_deref(),
         Some("1970-01-01 00:00:00")
     );
     harness.close().await;
@@ -423,7 +473,7 @@ async fn key_update_accepts_stored_hash() {
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
     writes
-        .insert_key(&key_write("sk-abc", "first"))
+        .insert_key(&SecretString::from("sk-abc"), &key_write("first"))
         .await
         .unwrap();
     let stored = hash_token("sk-abc");
@@ -440,16 +490,24 @@ async fn key_update_accepts_stored_hash() {
 }
 
 #[tokio::test]
-async fn key_insert_requires_token() {
+async fn empty_token_insert_is_hashed() {
     let harness = Harness::start().await;
     let client = harness.client().await;
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
-    let error = writes.insert_key(&alias_update("x")).await.unwrap_err();
-    assert!(matches!(
-        error,
-        KeyUserWriteError::MissingField { field: "token" }
-    ));
+    writes
+        .insert_key(&SecretString::from(""), &key_write("empty"))
+        .await
+        .unwrap();
+    let stored = hash_token("");
+    assert_eq!(
+        column_text(&client, "key_alias", &stored).await.as_deref(),
+        Some("empty")
+    );
+    assert_eq!(
+        row_count(&client, "LiteLLM_VerificationToken", "token", "").await,
+        0
+    );
     harness.close().await;
 }
 
@@ -467,7 +525,7 @@ async fn user_update_map_precedence() {
         user_id: None,
         fields: user_write("user-a", "from-data"),
         update_fields: Some(user_alias_update("explicit")),
-        custom_update_fields: Some(user_alias_update("custom")),
+        custom_update_fields: Some(UserUpdateOps::from(&user_alias_update("custom"))),
     };
     writes.update_user(&explicit).await.unwrap();
     assert_eq!(
@@ -478,7 +536,7 @@ async fn user_update_map_precedence() {
         user_id: None,
         fields: user_write("user-a", "from-data"),
         update_fields: None,
-        custom_update_fields: Some(user_alias_update("custom")),
+        custom_update_fields: Some(UserUpdateOps::from(&user_alias_update("custom"))),
     };
     writes.update_user(&custom).await.unwrap();
     assert_eq!(
@@ -513,7 +571,7 @@ async fn explicit_empty_update_map() {
         user_id: None,
         fields: user_write("user-a", "from-data"),
         update_fields: Some(UserWrite::default()),
-        custom_update_fields: Some(user_alias_update("custom")),
+        custom_update_fields: Some(UserUpdateOps::from(&user_alias_update("custom"))),
     };
     let result = writes.update_user(&request).await.unwrap();
     assert_eq!(result.data.user_alias.as_deref(), Some("first"));
@@ -615,7 +673,7 @@ async fn retry_three_or_ten_seconds() {
     let fast_ports = Ports::new(Duration::ZERO);
     let fast_writes = service(&client, &fast_ports);
     let error = fast_writes
-        .insert_key(&failing_key_write())
+        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
         .await
         .unwrap_err();
     assert!(matches!(error, KeyUserWriteError::Database { .. }));
@@ -637,7 +695,7 @@ async fn retry_three_or_ten_seconds() {
     let slow_ports = Ports::new(Duration::from_secs(3));
     let slow_writes = service(&client, &slow_ports);
     slow_writes
-        .insert_key(&failing_key_write())
+        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
         .await
         .unwrap_err();
     assert_eq!(slow_ports.sink.events().len(), 2);
@@ -672,7 +730,10 @@ async fn retry_events_and_jitter() {
     let writes = service(&client, &ports);
     let (logs, subscriber) = capture_logs();
     let guard = set_default(subscriber);
-    let error = writes.insert_key(&failing_key_write()).await.unwrap_err();
+    let error = writes
+        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
+        .await
+        .unwrap_err();
     drop(guard);
     assert!(matches!(error, KeyUserWriteError::Database { .. }));
     let events = ports.sink.events();
@@ -689,6 +750,13 @@ async fn retry_events_and_jitter() {
         "{}",
         events[0].traceback
     );
+    assert_eq!(events[0].message, error.to_string());
+    assert_eq!(events[0].status, None);
+    assert_eq!(
+        events[0].sql_state.as_ref().map(SqlState::code),
+        Some("22P02")
+    );
+    assert!(events[0].source.is_some());
     assert_eq!(
         ports.pause.delays(),
         vec![Duration::from_millis(500), Duration::from_secs(1)]
@@ -716,7 +784,7 @@ async fn insert_logs_redact_token_and_name_the_table() {
     let (logs, subscriber) = capture_logs();
     let guard = set_default(subscriber);
     writes
-        .insert_key(&key_write("sk-secret", "logged"))
+        .insert_key(&SecretString::from("sk-secret"), &key_write("logged"))
         .await
         .unwrap();
     writes
@@ -761,7 +829,7 @@ async fn retry_update_events_use_update_heading() {
     let ports = Ports::new(Duration::ZERO);
     let writes = service(&client, &ports);
     writes
-        .insert_key(&key_write("sk-seed", "seeded"))
+        .insert_key(&SecretString::from("sk-seed"), &key_write("seeded"))
         .await
         .unwrap();
     let error = writes

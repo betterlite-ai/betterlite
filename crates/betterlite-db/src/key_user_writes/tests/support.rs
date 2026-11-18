@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -12,16 +13,20 @@ use clap::Parser as _;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tokio_postgres::error::SqlState;
 use tracing_subscriber::fmt::MakeWriter;
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
 
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_repository::table::{TokenValue, TokenWrite};
-use crate::key_user_writes::WritePorts;
 use crate::key_user_writes::columns::{UserColumn, UserWrite};
-use crate::key_user_writes::retry::{FailureEvent, FailureFuture, FailureSink, WriteClock};
+use crate::key_user_writes::retry::{
+    CallType, FailureEvent, FailureFuture, FailureSink, WriteClock,
+};
+use crate::key_user_writes::{KeyUserWriteError, WritePorts};
 use crate::migration_ledger::lock::JitterSource;
+use crate::postgres_store::errors::DbError;
 use crate::tool_spend::RetryPause;
 
 pub(crate) const BASELINE: &str =
@@ -156,25 +161,69 @@ impl RetryPause for RecordingPause {
     }
 }
 
+pub(crate) struct RecordedFailure {
+    pub(crate) call_type: CallType,
+    pub(crate) duration: Duration,
+    pub(crate) traceback: String,
+    pub(crate) message: String,
+    pub(crate) status: Option<u16>,
+    pub(crate) sql_state: Option<SqlState>,
+    pub(crate) source: Option<String>,
+}
+
 #[derive(Default)]
 pub(crate) struct RecordingSink {
-    pub(crate) events: Mutex<Vec<FailureEvent>>,
+    pub(crate) events: Mutex<Vec<RecordedFailure>>,
     pub(crate) timeline: Timeline,
 }
 
 impl RecordingSink {
-    pub(crate) fn events(&self) -> Vec<FailureEvent> {
+    pub(crate) fn events(&self) -> Vec<RecordedFailure> {
         let mut events = lock(&self.events);
         std::mem::take(&mut *events)
     }
 }
 
 impl FailureSink for RecordingSink {
-    fn record(&self, event: FailureEvent) -> FailureFuture<'_> {
+    fn record(&self, event: FailureEvent<'_>) -> FailureFuture<'_> {
         let label = event.call_type.as_str();
         lock(&self.timeline).push(format!("event {label}"));
-        lock(&self.events).push(event);
+        lock(&self.events).push(RecordedFailure {
+            call_type: event.call_type,
+            duration: event.duration,
+            traceback: event.traceback.clone(),
+            message: event.error.to_string(),
+            status: event.error.http_status(),
+            sql_state: match event.error {
+                KeyUserWriteError::Database {
+                    source: DbError::SqlState { code, .. },
+                } => Some(code.clone()),
+                _ => None,
+            },
+            source: std::error::Error::source(event.error).map(ToString::to_string),
+        });
         Box::pin(async {})
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum SinkBehaviour {
+    Stall,
+    Panic,
+}
+
+pub(crate) struct BrokenSink {
+    pub(crate) calls: AtomicUsize,
+    pub(crate) behaviour: SinkBehaviour,
+}
+
+impl FailureSink for BrokenSink {
+    fn record(&self, _event: FailureEvent<'_>) -> FailureFuture<'_> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        match self.behaviour {
+            SinkBehaviour::Stall => Box::pin(std::future::pending()),
+            SinkBehaviour::Panic => Box::pin(async { panic!("broken failure sink") }),
+        }
     }
 }
 
@@ -255,26 +304,22 @@ pub(crate) fn capture_logs() -> (CapturedLogs, impl tracing::Subscriber + Send +
     (logs, subscriber)
 }
 
-pub(crate) fn key_write(token: &str, alias: &str) -> TokenWrite {
+pub(crate) fn key_write(alias: &str) -> TokenWrite {
     let mut fields = TokenWrite::default();
-    fields
-        .0
-        .insert(TokenColumn::Token, TokenValue::Text(token.to_owned()));
     fields
         .0
         .insert(TokenColumn::KeyAlias, TokenValue::Text(alias.to_owned()));
     fields
 }
 
-pub(crate) fn key_column(token: &str, column: TokenColumn, value: TokenValue) -> TokenWrite {
-    let mut fields = key_write(token, "unused");
+pub(crate) fn key_column(column: TokenColumn, value: TokenValue) -> TokenWrite {
+    let mut fields = key_write("unused");
     fields.0.insert(column, value);
     fields
 }
 
 pub(crate) fn failing_key_write() -> TokenWrite {
     key_column(
-        "sk-retry",
         TokenColumn::MaxBudget,
         TokenValue::Text(String::from("not-a-number")),
     )

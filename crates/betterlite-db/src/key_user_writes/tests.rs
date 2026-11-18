@@ -2,17 +2,23 @@
 
 mod postgres;
 mod support;
+mod write_behavior;
 
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+use rust_decimal::Decimal;
+
 use crate::budget_permission_rows::JsonData;
+use crate::key_repository::table::TokenValue;
 
 use self::support::HalfJitter;
+use super::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
 use super::dispatch::{QueryType, TableName, UpdateSelector, UpdateTarget};
 use super::hash::{hash_token, hash_token_if_needed};
 use super::json_text::{FAILED_TO_SERIALIZE_JSON, JsonEncoder, SerdeJsonEncoder, jsonify_object};
 use super::retry::{MAX_TIME, MAX_TRIES, SystemWriteClock, retry_wait};
+use super::{KeyUserWriteError, sql};
 
 #[test]
 fn hash_utf8_lower_hex() {
@@ -212,4 +218,68 @@ fn update_selector_matches_update_data_branches() {
         query_type: QueryType::Update,
     };
     assert_eq!(key_table_without_token.target(), UpdateTarget::Elsewhere);
+}
+
+fn create_user_row() -> UserWrite {
+    UserWrite(BTreeMap::from([(
+        UserColumn::UserId,
+        TokenValue::Text(String::from("user-a")),
+    )]))
+}
+
+#[test]
+fn arithmetic_update_compiles_to_atomic_sql() {
+    let update = UserUpdateOps(BTreeMap::from([
+        (
+            UserColumn::Spend,
+            UserColumnOp::Increment(TokenValue::Number(Decimal::new(1, 0))),
+        ),
+        (
+            UserColumn::MaxBudget,
+            UserColumnOp::Decrement(TokenValue::Number(Decimal::new(2, 0))),
+        ),
+        (
+            UserColumn::MaxParallelRequests,
+            UserColumnOp::Multiply(TokenValue::Integer(3)),
+        ),
+        (
+            UserColumn::TpmLimit,
+            UserColumnOp::Divide(TokenValue::Integer(4)),
+        ),
+    ]));
+    let mut statement = sql::Statement::default();
+    let compiled = sql::upsert_user(&mut statement, &create_user_row(), &update).unwrap();
+    assert!(compiled.contains("\"spend\" = r.\"spend\" + $"));
+    assert!(compiled.contains("\"max_budget\" = r.\"max_budget\" - $"));
+    assert!(compiled.contains("\"max_parallel_requests\" = r.\"max_parallel_requests\" * $"));
+    assert!(compiled.contains("\"tpm_limit\" = r.\"tpm_limit\" / $"));
+    assert!(compiled.contains("::text::double precision"));
+    assert!(compiled.contains("::text::bigint"));
+    assert!(compiled.contains("\"models\""));
+}
+
+#[test]
+fn non_numeric_update_rejected() {
+    let text_column = UserUpdateOps(BTreeMap::from([(
+        UserColumn::UserAlias,
+        UserColumnOp::Increment(TokenValue::Number(Decimal::new(1, 0))),
+    )]));
+    let mut statement = sql::Statement::default();
+    let error = sql::upsert_user(&mut statement, &create_user_row(), &text_column).unwrap_err();
+    assert!(matches!(
+        error,
+        KeyUserWriteError::NonNumericUpdate {
+            column: "user_alias"
+        }
+    ));
+    let text_operand = UserUpdateOps(BTreeMap::from([(
+        UserColumn::Spend,
+        UserColumnOp::Increment(TokenValue::Text(String::from("x"))),
+    )]));
+    let mut statement = sql::Statement::default();
+    let error = sql::upsert_user(&mut statement, &create_user_row(), &text_operand).unwrap_err();
+    assert!(matches!(
+        error,
+        KeyUserWriteError::NonNumericUpdate { column: "spend" }
+    ));
 }
