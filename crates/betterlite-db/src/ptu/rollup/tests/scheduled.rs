@@ -312,7 +312,8 @@ async fn an_absent_target_date_catches_up_the_missing_days() {
         &ptu_info("team-1", 1, "1", "2026-02-26T00:00:00Z", None),
     )
     .await;
-    let full = scheduled(schedule(&store(&pool), &clock(), None, None, None))
+    let alert = AlertLog::default();
+    let full = scheduled(schedule(&store(&pool), &clock(), None, Some(&alert), None))
         .await
         .unwrap()
         .unwrap();
@@ -326,6 +327,7 @@ async fn an_absent_target_date_catches_up_the_missing_days() {
         Some(Decimal::from(24_i32))
     );
     assert_eq!(row_count(&client).await, 3);
+    assert!(alert.messages().is_empty());
     stored::close(fixture, pool, client).await;
 }
 

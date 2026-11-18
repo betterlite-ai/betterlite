@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use betterlite_db::budget_permission_rows::JsonData;
@@ -17,6 +17,10 @@ use betterlite_db::queues::pod_lock::{
 use betterlite_models::model_registration::JsonObject;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_secret_managers::oidc::http_timeouts::OidcHttpTimeouts;
+use betterlite_secret_managers::secret_lookup::ports::{
+    AzureOidcTokens as _, OidcClock as _, OidcHttp as _, OidcRequest,
+};
 use chrono::{DateTime, FixedOffset, Utc};
 use futures_util::future::BoxFuture;
 use secrecy::SecretString;
@@ -24,7 +28,7 @@ use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
 use super::PTU_ROLLUP_SCHEDULE;
-use super::attribution::{EnvironmentAttribution, PtuAttribution};
+use super::attribution::{EnvironmentAttribution, NoOidc, PtuAttribution};
 use super::snapshot::CatalogSnapshot;
 use super::task::{PtuRollupInputs, ScheduledPtuRollup};
 use crate::failure_hook::alerts::ProxyAlerts;
@@ -216,6 +220,22 @@ fn the_flag_reads_exactly_true_from_the_configured_environment() {
         };
         assert_eq!(attribution.enabled(), expected, "{value:?}");
     }
+}
+
+#[test]
+fn the_null_oidc_ports_answer_absent_and_read_the_system_clock() {
+    let oidc = NoOidc;
+    let before = Instant::now();
+    assert!(oidc.now() >= before);
+    assert!(oidc.unix_seconds() > 1_000_000_000_i64);
+    assert!(oidc.token("scope").unwrap().is_none());
+    let request = OidcRequest {
+        url: "https://example.invalid/token".to_owned(),
+        query: Vec::new(),
+        headers: Vec::new(),
+        timeouts: OidcHttpTimeouts::DEFAULT,
+    };
+    assert!(oidc.get(request).is_err());
 }
 
 #[derive(Default)]

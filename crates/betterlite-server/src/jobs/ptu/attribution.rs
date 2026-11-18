@@ -42,7 +42,7 @@ impl PtuAttribution for EnvironmentAttribution {
 }
 
 // The flag name never carries the oidc/ prefix, so these ports are never reached; a secret manager joins the lookup with the startup that owns it.
-struct NoOidc;
+pub(crate) struct NoOidc;
 
 impl OidcHttp for NoOidc {
     fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
