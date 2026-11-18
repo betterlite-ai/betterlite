@@ -19,6 +19,7 @@ use crate::roi_settings::support::catalog;
 use crate::roi_settings::support::disconnected_repository;
 use crate::roi_settings::support::erased;
 use crate::roi_settings::support::get_request;
+use crate::roi_settings::support::outage_repository;
 use crate::roi_settings::support::sealed;
 use crate::roi_settings::support::settings_app;
 use crate::roi_settings::support::stored_settings;
@@ -102,6 +103,23 @@ async fn get_route_reports_a_database_outage() {
     assert_eq!(error.message, DB_UNAVAILABLE);
     assert_eq!(error.kind, "no_db_connection");
     assert_eq!(error.param.as_deref(), Some("None"));
+    assert_eq!(error.code.as_deref(), Some("503"));
+}
+
+#[tokio::test]
+async fn get_route_reports_a_statement_timeout_as_no_db_connection() {
+    let app = settings_app(
+        Some(outage_repository(
+            "57014",
+            "canceling statement due to statement timeout",
+        )),
+        Some(catalog(Vec::new())),
+    );
+    let reply = call(app, get_request(Some(&admin_caller()))).await;
+    assert_eq!(reply.status, StatusCode::SERVICE_UNAVAILABLE);
+    let error = reply.error();
+    assert_eq!(error.message, DB_UNAVAILABLE);
+    assert_eq!(error.kind, "no_db_connection");
     assert_eq!(error.code.as_deref(), Some("503"));
 }
 
