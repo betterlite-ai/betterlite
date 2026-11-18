@@ -1,17 +1,20 @@
+use std::time::Duration;
+
 use betterlite_http::interactions::base::Logging;
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 
 use crate::api::interactions::lifecycle::{acancel, cancel};
 
 use super::support::{
-    Call, Script, answer, base, deps, fixture, host, received, redactor, registry_with, reply,
-    serve, state, text,
+    Call, Script, answer, base, deps, fixture, host, redactor, registry_with, state, text,
 };
 
 #[test]
 fn cancel_posts_the_transformed_body_and_withdraws_its_own_async_flag() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let call = Call::new("int-3")
         .at(serving.address)
@@ -39,9 +42,9 @@ fn cancel_posts_the_transformed_body_and_withdraws_its_own_async_flag() {
         params.get("adelete_interaction"),
         Some(&JsonValue::Bool(true))
     );
-    let received = received(serving);
+    let received = serving.finish().unwrap();
     assert_eq!(
-        received.request_line(),
+        received.line,
         "POST /v1beta/interactions/int-3:cancel HTTP/1.1"
     );
     assert_eq!(received.body, r#"{"state":"cancelled"}"#);
@@ -49,7 +52,7 @@ fn cancel_posts_the_transformed_body_and_withdraws_its_own_async_flag() {
 
 #[tokio::test]
 async fn acancel_keeps_the_callers_logging_details_and_records_its_pre_call() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let call = Call::new("interaction-1").at(serving.address);
     let details = JsonValue::Text("seeded".to_owned());
@@ -78,12 +81,12 @@ async fn acancel_keeps_the_callers_logging_details_and_records_its_pre_call() {
         )
     );
     assert_eq!(http.model_call_details.get("seeded"), Some(&details));
-    drop(received(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[tokio::test]
 async fn acancel_posts_the_transformed_body_without_settling() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let call = Call::new("interaction-1").at(serving.address);
     let settlement_host = host();
@@ -102,9 +105,9 @@ async fn acancel_posts_the_transformed_body_without_settling() {
     assert_eq!(result.id.as_deref(), Some("int-1"));
     assert_eq!(script.calls(), 0);
     assert!(settlement_host.billed().is_empty());
-    let received = received(serving);
+    let received = serving.finish().unwrap();
     assert_eq!(
-        received.request_line(),
+        received.line,
         "POST /v1beta/interactions/interaction-1:cancel HTTP/1.1"
     );
     assert_eq!(received.body, r#"{"state":"cancelled"}"#);
