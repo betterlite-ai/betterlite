@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-chunks-raw-predict
+call:
+  b3640:
+    operation: vertex_chunks
+    url_route: https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/claude-3:rawPredict
+    lines:
+      - 'data: {"type":"message_start","message":{"id":"msg_1","role":"assistant","model":"claude-3","usage":{"input_tokens":10,"output_tokens":1}}}'
+      - 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" hi"}}'
+      - 'not json'
+      - 'data: '
+      - '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}'
+env: {}
+compare: {ignore: []}

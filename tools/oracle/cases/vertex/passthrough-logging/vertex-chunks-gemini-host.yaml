@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-chunks-gemini-host
+call:
+  b3640:
+    operation: vertex_chunks
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent
+    lines:
+      - 'data: {"responseId":"r1","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"hi"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}'
+env: {}
+compare: {ignore: []}

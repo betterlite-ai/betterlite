@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-chunks-model-from-url
+call:
+  b3640:
+    operation: gemini_chunks
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/url-model:streamGenerateContent
+    lines:
+      - 'data: {"responseId":"r1","candidates":[{"content":{"parts":[{"text":"hi"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":1,"candidatesTokenCount":1,"totalTokenCount":2}}'
+    model: null
+env: {}
+compare: {ignore: []}

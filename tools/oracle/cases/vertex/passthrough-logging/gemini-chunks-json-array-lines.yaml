@@ -1,0 +1,12 @@
+kind: helper
+name: gemini-chunks-json-array-lines
+call:
+  b3640:
+    operation: gemini_chunks
+    url_route: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:streamGenerateContent
+    lines:
+      - '{"responseId":"r2","modelVersion":"gemini-2.0-flash","candidates":[{"content":{"parts":[{"text":"hel'
+      - 'lo"}],"role":"model"},"index":0}],"usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":1,"totalTokenCount":3}}'
+      - '{"responseId":"r2","candidates":[{"content":{"parts":[{"text":"tail'
+env: {}
+compare: {ignore: []}
