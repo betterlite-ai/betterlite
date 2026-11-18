@@ -6,10 +6,10 @@ pub fn later_chunk_model(chunks: &[JsonObject], assembled: Option<&Json>) -> boo
     let Some(Json::Text(first)) = chunks.first().and_then(|chunk| chunk.get("model")) else {
         return false;
     };
-    let Some(Json::Text(assembled)) = assembled else {
+    let Some(Json::Text(assembled_text)) = assembled else {
         return false;
     };
-    !assembled.is_empty() && assembled != first
+    !assembled_text.is_empty() && assembled_text != first
 }
 
 #[must_use]

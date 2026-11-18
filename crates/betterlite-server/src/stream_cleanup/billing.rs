@@ -26,10 +26,10 @@ pub(super) async fn bill_partial(
     if details.get("has_dispatched_final_stream_success") == Some(&Json::Bool(true)) {
         return true;
     }
-    let Some(response) = response else {
+    let Some(snapshot) = response else {
         return false;
     };
-    let collected = response.collected();
+    let collected = snapshot.collected();
     if collected.chunks.is_empty() {
         return false;
     }
