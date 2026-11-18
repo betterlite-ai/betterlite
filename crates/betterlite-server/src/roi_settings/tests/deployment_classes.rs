@@ -35,5 +35,5 @@ fn deployment_without_model_info_or_with_a_null_one_defaults_to_none() {
 
 #[test]
 fn deployment_without_litellm_params_is_rejected() {
-    assert!(serde_json::from_str::<RouterEstimatorDeployment>(r#"{"model_info":{}}"#).is_err());
+    serde_json::from_str::<RouterEstimatorDeployment>(r#"{"model_info":{}}"#).unwrap_err();
 }

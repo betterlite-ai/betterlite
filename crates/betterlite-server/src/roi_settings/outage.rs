@@ -24,8 +24,7 @@ const OUTAGE_MESSAGES: [&str; 13] = [
 
 pub(super) fn is_database_outage(error: &ConfigError) -> bool {
     let database_error = match error {
-        ConfigError::Database(source) => source,
-        ConfigError::Table(TableError::Database(source)) => source,
+        ConfigError::Database(source) | ConfigError::Table(TableError::Database(source)) => source,
         ConfigError::Table(_) | ConfigError::Json(_) => return false,
     };
     match database_error {

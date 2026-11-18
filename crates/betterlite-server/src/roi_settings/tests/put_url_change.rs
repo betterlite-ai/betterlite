@@ -6,7 +6,7 @@ use axum::http::StatusCode;
 use betterlite_roi::settings::ROISettingsResponse;
 use secrecy::ExposeSecret as _;
 
-use crate::roi_settings::store::SettingsCipher;
+use crate::roi_settings::store::SettingsCipher as _;
 use crate::roi_settings::support::MemoryRepository;
 use crate::roi_settings::support::admin_caller;
 use crate::roi_settings::support::call;

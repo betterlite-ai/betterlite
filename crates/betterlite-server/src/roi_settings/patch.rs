@@ -16,6 +16,10 @@ impl From<SecretError> for RoiSettingsError {
 }
 
 #[derive(Deserialize)]
+#[expect(
+    clippy::option_option,
+    reason = "a present key can carry a null value that clears the stored secret"
+)]
 pub struct PatchPresence {
     #[serde(default, with = "serde_with::rust::double_option")]
     pub(super) github_api_url: Option<Option<String>>,

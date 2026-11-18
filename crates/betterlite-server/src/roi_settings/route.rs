@@ -30,7 +30,6 @@ use super::store::open_settings;
 use super::store::save_settings;
 use super::store::validate_settings;
 
-#[must_use]
 pub fn router(state: RoiSettingsState) -> Router {
     Router::new()
         .route(

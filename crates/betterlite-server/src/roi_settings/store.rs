@@ -80,7 +80,7 @@ impl StoredSettings {
             ));
         }
         let interval = self.update_interval_minutes;
-        if !interval.is_finite() || !(0.0..=43_200.0).contains(&interval) {
+        if !interval.is_finite() || !(0.0_f64..=43_200.0_f64).contains(&interval) {
             return Err(RoiSettingsError::StoredSettings(
                 StoredSettingsError::Bounds,
             ));

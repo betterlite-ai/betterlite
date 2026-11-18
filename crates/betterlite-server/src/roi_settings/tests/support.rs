@@ -10,6 +10,7 @@ use std::sync::atomic::Ordering;
 use async_trait::async_trait;
 use axum::Router;
 use axum::body::Body;
+use axum::body::to_bytes;
 use axum::http::Request;
 use axum::http::StatusCode;
 use betterlite_auth::auth_identity::records::CredentialRef;
@@ -433,7 +434,7 @@ fn with_caller(mut request: Request<Body>, caller: Option<&AuthContext>) -> Requ
 pub(crate) async fn call(app: Router, request: Request<Body>) -> Reply {
     let response = app.oneshot(request).await.expect("router response");
     let status = response.status();
-    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+    let bytes = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body");
     Reply {

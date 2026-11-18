@@ -52,18 +52,18 @@ pub fn router_estimator_models(
     catalog: Option<&dyn RouterCatalog>,
     model_group: &str,
 ) -> Vec<EstimatorModel> {
-    let Some(catalog) = catalog else {
+    let Some(router) = catalog else {
         return Vec::new();
     };
-    estimator_models(&catalog.deployments(model_group))
+    estimator_models(&router.deployments(model_group))
 }
 
 #[must_use]
 pub fn router_models(catalog: Option<&dyn RouterCatalog>) -> Vec<String> {
-    let Some(catalog) = catalog else {
+    let Some(router) = catalog else {
         return Vec::new();
     };
-    let mut names = catalog.model_names();
+    let mut names = router.model_names();
     names.sort_unstable();
     names.dedup();
     names

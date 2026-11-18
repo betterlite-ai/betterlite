@@ -54,10 +54,10 @@ async fn load_stored_checks_backfill_days(#[case] days: i64, #[case] accepted: b
 }
 
 #[rstest]
-#[case::zero_is_valid(0.0, true)]
-#[case::highest_accepted(43_200.0, true)]
-#[case::negative(-1.0, false)]
-#[case::above_the_range(43_200.5, false)]
+#[case::zero_is_valid(0.0_f64, true)]
+#[case::highest_accepted(43_200.0_f64, true)]
+#[case::negative(-1.0_f64, false)]
+#[case::above_the_range(43_200.5_f64, false)]
 #[tokio::test]
 async fn load_stored_checks_update_interval_minutes(#[case] minutes: f64, #[case] accepted: bool) {
     let repository = MemoryRepository::default();

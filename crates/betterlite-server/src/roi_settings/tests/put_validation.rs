@@ -150,9 +150,9 @@ async fn put_validation_messages_carry_pydantic_text(#[case] body: &str, #[case]
 }
 
 #[rstest]
-#[case::manual_updates(0.0)]
-#[case::five_minutes(5.0)]
-#[case::one_day(1440.0)]
+#[case::manual_updates(0.0_f64)]
+#[case::five_minutes(5.0_f64)]
+#[case::one_day(1_440.0_f64)]
 #[tokio::test]
 async fn put_validation_accepts_a_valid_interval(#[case] minutes: f64) {
     let memory = Arc::new(MemoryRepository::default());

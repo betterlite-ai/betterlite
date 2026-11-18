@@ -27,11 +27,9 @@ async fn config_repository_without_a_database_is_db_not_connected() {
 #[tokio::test]
 async fn config_repository_reads_and_writes_through_the_config_table() {
     let repository = disconnected_repository();
-    assert!(repository.param(SETTINGS_KEY).await.is_err());
-    assert!(
-        repository
-            .set_param(SETTINGS_KEY, JsonData::Null)
-            .await
-            .is_err()
-    );
+    repository.param(SETTINGS_KEY).await.unwrap_err();
+    repository
+        .set_param(SETTINGS_KEY, JsonData::Null)
+        .await
+        .unwrap_err();
 }
