@@ -1,0 +1,98 @@
+kind: helper
+name: dimensions-normalize-fields
+call:
+  bedrock_services_batch_embeddings:
+    function: map_embedding
+    model_cost:
+      "amazon.titan-embed-text-v2:0":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+    model: "amazon.titan-embed-text-v2:0"
+    body:
+      model: "amazon.titan-embed-text-v2:0"
+      input: hello
+calls:
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: "amazon.titan-embed-text-v2:0"
+        input: hello
+        dimensions: 512
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: "amazon.titan-embed-text-v2:0"
+        input: hello
+        dimensions: null
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: ignored-by-the-mapping
+        input: [hello]
+        dimensions: 1024
+        encoding_format: base64
+        normalize: true
+        user: someone
+        metadata: {k: v}
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: "amazon.titan-embed-text-v2:0"
+        input: hello
+        encoding_format: hex
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: "amazon.titan-embed-text-v2:0"
+        input: ""
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: "amazon.titan-embed-text-v2:0"
+        input: 5
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:0":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "amazon.titan-embed-text-v2:0"
+      body:
+        model: "amazon.titan-embed-text-v2:0"
+  # a registered alias with no marker in its name maps through its titan_v2 schema
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "custom-embedding":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: titan_v2}}
+      model: "custom-embedding"
+      body:
+        model: "custom-embedding"
+        input: hello
+        dimensions: 512
+        encoding_format: base64
+env: {}
+compare:
+  ignore: []

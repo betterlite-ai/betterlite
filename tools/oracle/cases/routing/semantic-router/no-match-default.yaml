@@ -1,0 +1,18 @@
+kind: probe
+name: no-match-default
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      semantic_router:
+        config: '{"routes": [{"name": "code", "utterances": ["write a function"], "score_threshold": 0.9}, {"name": "chat", "utterances": ["say hello"], "score_threshold": 0.9}]}'
+        default_model: fallback-model
+        embedding_model: openai/text-embedding-3-small
+        messages:
+          - {role: user, content: what is the weather}
+        vectors:
+          test: [1, 0]
+          write a function: [1, 0]
+          say hello: [0, 1]
+          what is the weather: [0.6, 0.8]
+compare: {ignore: []}

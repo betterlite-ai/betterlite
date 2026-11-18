@@ -1,0 +1,47 @@
+kind: helper
+name: invalid-multi-input
+call:
+  bedrock_services_batch_embeddings:
+    function: coerce_input
+    model: m
+    input: [a, b]
+calls:
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: []
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: [1, 2]
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: [[1]]
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: [5]
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: [null]
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: 1.5
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: true
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: 5
+  - bedrock_services_batch_embeddings:
+      function: coerce_input
+      model: m
+      input: {a: 1}
+env: {}
+compare:
+  ignore: []

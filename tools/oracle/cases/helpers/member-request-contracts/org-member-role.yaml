@@ -1,0 +1,14 @@
+kind: helper
+name: member-request-contracts-org-member-role
+call:
+  b8412: {record: OrgMember, value: {user_id: "user-1", role: "org_admin"}}
+calls:
+  - b8412: {record: OrgMember, value: {user_id: "user-1", role: "team"}}
+  - b8412: {record: OrgMember, value: {role: "internal_user"}}
+  - b8412: {record: OrganizationMemberUpdateRequest, value: {user_id: "user-1", organization_id: "org-1", role: "team"}}
+  - b8412: {record: OrganizationMemberUpdateRequest, value: {user_id: "user-1", organization_id: "org-1", role: "org_admin", max_budget_in_organization: 12.5}}
+  - b8412: {record: OrgMemberAddRequest, value: {member: {user_id: "user-1", role: "internal_user"}}}
+  - b8412: {record: OrganizationMemberAddRequest, value: {member: {user_id: "user-1", role: "internal_user_viewer"}, organization_id: "org-1", max_budget_in_organization: 12.5}}
+  - b8412: {record: OrgMemberAddRequest, value: {member: [{user_id: "user-1", role: "org_admin"}, {user_email: "a@b.c", role: "internal_user"}]}}
+env: {}
+compare: {ignore: []}
