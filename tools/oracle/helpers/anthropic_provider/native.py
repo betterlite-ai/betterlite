@@ -160,16 +160,16 @@ def observe(supplied: Input) -> Observation:
                 "reply": {"body": supplied["response"], "status": 200},
             }],
         }
-        count_answer = TypeAdapter(CountOutput).validate_python(
+        count_call = TypeAdapter(CountOutput).validate_python(
             anthropic_count_tokens.run(payload),
-        )
-        count_call = count_answer["calls"][0]
+        )["calls"][0]
         count_request = count_call["request"]
         headers = {
             name: value for name, value in count_request["headers"].items() if value is not None
         }
-        key = headers["x-api-key"]
-        headers["x-api-key"] = "matched" if key == supplied["expected_key"] else "mismatch"
+        headers["x-api-key"] = (
+            "matched" if headers["x-api-key"] == supplied["expected_key"] else "mismatch"
+        )
         observed = {
             "method": "POST", "url": count_request["url"], "query": [],
             "headers": headers, "body": count_request["body"],
@@ -187,10 +187,9 @@ def observe(supplied: Input) -> Observation:
                 "body": supplied["response"], "sync": False,
             }],
         }}
-        batch_answer = TypeAdapter(BatchOutput).validate_python(
+        batch_scenario = TypeAdapter(BatchOutput).validate_python(
             anthropic_batches.run(batch_payload),
-        )
-        batch_scenario = batch_answer["scenarios"][0]
+        )["scenarios"][0]
         batch_value = TypeAdapter(Batch).validate_json(batch_scenario["batch"].model_dump_json())
         batch_request = batch_scenario["requests"][0]
         headers = batch_request["headers"]
@@ -228,7 +227,8 @@ def observe(supplied: Input) -> Observation:
             body = JSON.validate_json(supplied["response"])
             route = TypeAdapter(FileDelete).validate_python(anthropic_files.run({
                 "file_delete_shape": {
-                "file_ids": [supplied["id"]], "params_api_base": supplied["api_base"], "bodies": [body],
+                "file_ids": [supplied["id"]], "params_api_base": supplied["api_base"],
+                "bodies": [body],
             }}))
             if supplied["action"] == "delete":
                 observed["method"], observed["url"] = "DELETE", route["delete"][0]["url"]
