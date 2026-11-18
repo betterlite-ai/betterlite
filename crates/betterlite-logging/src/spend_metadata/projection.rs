@@ -77,6 +77,13 @@ pub fn project_spend_logs_metadata(
         fields.shift_remove(field);
     }
     let mut record: SpendLogsMetadata = decode(RECORD, fields)?;
+    // The metadata branch emits every annotation, so the six NotRequired agent fields are present and null
+    record.actor_agent_id = Some(record.actor_agent_id.flatten());
+    record.target_agent_id = Some(record.target_agent_id.flatten());
+    record.billing_agent_id = Some(record.billing_agent_id.flatten());
+    record.agent_execution_mode = Some(record.agent_execution_mode.flatten());
+    record.verified_human_user_id = Some(record.verified_human_user_id.flatten());
+    record.routing_decision = Some(record.routing_decision.flatten());
     record.user_api_key = redact_logged_api_key(
         nonempty_text(raw_key.as_ref()),
         trusted_redaction(metadata, raw_key.as_ref()),

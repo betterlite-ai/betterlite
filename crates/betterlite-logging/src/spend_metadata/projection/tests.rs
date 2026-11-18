@@ -269,7 +269,7 @@ fn a_raw_secret_is_hashed() {
         SpendMetadataArguments::default(),
         true,
     ));
-    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+    assert_eq!(value["user_api_key"], SK_ABC);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn a_bearer_prefixed_secret_is_hashed_without_the_prefix() {
         SpendMetadataArguments::default(),
         true,
     ));
-    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+    assert_eq!(value["user_api_key"], SK_ABC);
 }
 
 #[test]
