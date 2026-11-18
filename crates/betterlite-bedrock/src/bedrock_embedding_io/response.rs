@@ -224,26 +224,37 @@ fn marengo_record(
 }
 
 fn nova_usage(usage: nova::NovaUsage) -> ProviderUsage {
-    ProviderUsage {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: 0,
-        total_tokens: usage.total_tokens,
-        prompt_tokens_details: usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
-            image_count: Some(u64::from(counts.image_count)),
-            query_count: None,
-        }),
-    }
+    let details = usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
+        image_count: Some(u64::from(counts.image_count)),
+        query_count: None,
+    });
+    provider_usage(usage.prompt_tokens, 0, usage.total_tokens, details)
 }
 
 fn marengo_usage(usage: marengo::MarengoUsage) -> ProviderUsage {
+    let details = usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
+        image_count: counts.image_count,
+        query_count: counts.query_count,
+    });
+    provider_usage(
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.total_tokens,
+        details,
+    )
+}
+
+fn provider_usage(
+    prompt_tokens: u64,
+    completion_tokens: u64,
+    total_tokens: u64,
+    prompt_tokens_details: Option<PromptTokenCounts>,
+) -> ProviderUsage {
     ProviderUsage {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        prompt_tokens_details: usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
-            image_count: counts.image_count,
-            query_count: counts.query_count,
-        }),
+        prompt_tokens,
+        completion_tokens,
+        total_tokens,
+        prompt_tokens_details,
     }
 }
 
