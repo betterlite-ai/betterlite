@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Object as JsonMap;
 use serde_json::json;
 
@@ -136,8 +137,9 @@ fn redis_get_failure(memory: &str) -> FakeState {
     failed
 }
 
-fn redis_ttl_failure(model: &str) -> FakeState {
-    let mut failed = redis_hit(model, None);
+fn redis_ttl_failure(model: &str, memory: &str) -> FakeState {
+    let mut failed = redis_miss(Some(memory));
+    failed.redis_get = Some(Ok(Some(model.to_owned())));
     failed.redis_ttl = Some(Err(FakeError));
     failed
 }
@@ -172,10 +174,18 @@ fn calls(shared: &Arc<Mutex<FakeState>>) -> Vec<CacheCall> {
 
 fn request(model: Option<&str>) -> JsonMap {
     let mut data = JsonMap::new();
-    if let Some(model) = model {
-        data.insert("model".to_owned(), json!(model));
+    if let Some(requested) = model {
+        data.insert("model".to_owned(), json!(requested));
     }
     data
+}
+
+fn expected_metadata(entries: &[(&str, JsonValue)]) -> JsonValue {
+    let mut object = JsonMap::new();
+    for (key, value) in entries {
+        object.insert((*key).to_owned(), value.clone());
+    }
+    JsonValue::Object(object)
 }
 
 const fn keyed(api_key: &str) -> PrincipalIdentity<'_> {
@@ -280,10 +290,13 @@ async fn applies_a_redis_routing_override() {
     assert_eq!(data.get("model"), Some(&json!("gpt-4o-sensitive")));
     assert_eq!(
         data.get("metadata"),
-        Some(&json!({
-            "sensitive_data_routing_applied": true,
-            "sensitive_data_routing_original_model": "gpt-4o",
-        }))
+        Some(&expected_metadata(&[
+            ("sensitive_data_routing_applied", JsonValue::Bool(true)),
+            (
+                "sensitive_data_routing_original_model",
+                JsonValue::String("gpt-4o".to_owned()),
+            ),
+        ]))
     );
     let key = "{sensitive_route:hashed-key:session-1}:model".to_owned();
     assert_eq!(
@@ -352,8 +365,8 @@ async fn falls_back_to_memory_when_the_redis_read_fails() {
 }
 
 #[tokio::test]
-async fn uses_the_configured_ttl_when_the_redis_ttl_read_fails() {
-    let (handler, shared) = handler(redis_ttl_failure("gpt-4o-sensitive"), 900);
+async fn falls_back_to_memory_when_the_redis_ttl_read_fails() {
+    let (handler, shared) = handler(redis_ttl_failure("gpt-4o-sensitive", "gpt-4o-cheap"), 900);
     let mut data = request(Some("gpt-4o"));
 
     handler
@@ -361,18 +374,14 @@ async fn uses_the_configured_ttl_when_the_redis_ttl_read_fails() {
         .await
         .unwrap();
 
-    assert_eq!(data.get("model"), Some(&json!("gpt-4o-sensitive")));
+    assert_eq!(data.get("model"), Some(&json!("gpt-4o-cheap")));
     let key = "{sensitive_route:hashed-key:session-1}:model".to_owned();
     assert_eq!(
         calls(&shared),
         vec![
             CacheCall::RedisGet(key.clone()),
             CacheCall::RedisTtl(key.clone()),
-            CacheCall::MemorySet {
-                key,
-                value: "gpt-4o-sensitive".to_owned(),
-                ttl: Duration::from_secs(900),
-            },
+            CacheCall::MemoryGet(key),
         ]
     );
 }
@@ -396,7 +405,7 @@ async fn uses_the_configured_ttl_when_redis_has_none_left() {
             CacheCall::MemorySet {
                 key,
                 value: "gpt-4o-sensitive".to_owned(),
-                ttl: Duration::from_secs(900),
+                ttl: Duration::from_mins(15),
             },
         ]
     );
@@ -449,7 +458,7 @@ async fn leaves_the_request_alone_when_it_already_targets_the_routed_model() {
             CacheCall::MemorySet {
                 key,
                 value: "gpt-4o".to_owned(),
-                ttl: Duration::from_secs(900),
+                ttl: Duration::from_mins(15),
             },
         ]
     );
@@ -468,10 +477,10 @@ async fn records_an_absent_model_as_null() {
     assert_eq!(data.get("model"), Some(&json!("gpt-4o-sensitive")));
     assert_eq!(
         data.get("metadata"),
-        Some(&json!({
-            "sensitive_data_routing_applied": true,
-            "sensitive_data_routing_original_model": null,
-        }))
+        Some(&expected_metadata(&[
+            ("sensitive_data_routing_applied", JsonValue::Bool(true)),
+            ("sensitive_data_routing_original_model", JsonValue::Null),
+        ]))
     );
 }
 
@@ -479,7 +488,10 @@ async fn records_an_absent_model_as_null() {
 async fn keeps_existing_metadata_fields() {
     let (handler, _shared) = handler(memory_only("gpt-4o-sensitive"), 900);
     let mut data = request(Some("gpt-4o"));
-    data.insert("metadata".to_owned(), json!({"trace_id": "trace-1"}));
+    data.insert(
+        "metadata".to_owned(),
+        expected_metadata(&[("trace_id", JsonValue::String("trace-1".to_owned()))]),
+    );
 
     handler
         .async_pre_call_hook(&mut data, Some("session-1"), keyed("hashed-key"))
@@ -488,11 +500,14 @@ async fn keeps_existing_metadata_fields() {
 
     assert_eq!(
         data.get("metadata"),
-        Some(&json!({
-            "trace_id": "trace-1",
-            "sensitive_data_routing_applied": true,
-            "sensitive_data_routing_original_model": "gpt-4o",
-        }))
+        Some(&expected_metadata(&[
+            ("trace_id", JsonValue::String("trace-1".to_owned())),
+            ("sensitive_data_routing_applied", JsonValue::Bool(true)),
+            (
+                "sensitive_data_routing_original_model",
+                JsonValue::String("gpt-4o".to_owned()),
+            ),
+        ]))
     );
 }
 
@@ -500,7 +515,7 @@ async fn keeps_existing_metadata_fields() {
 async fn replaces_null_metadata_with_an_object() {
     let (handler, _shared) = handler(memory_only("gpt-4o-sensitive"), 900);
     let mut data = request(Some("gpt-4o"));
-    data.insert("metadata".to_owned(), json!(null));
+    data.insert("metadata".to_owned(), JsonValue::Null);
 
     handler
         .async_pre_call_hook(&mut data, Some("session-1"), keyed("hashed-key"))
@@ -509,10 +524,13 @@ async fn replaces_null_metadata_with_an_object() {
 
     assert_eq!(
         data.get("metadata"),
-        Some(&json!({
-            "sensitive_data_routing_applied": true,
-            "sensitive_data_routing_original_model": "gpt-4o",
-        }))
+        Some(&expected_metadata(&[
+            ("sensitive_data_routing_applied", JsonValue::Bool(true)),
+            (
+                "sensitive_data_routing_original_model",
+                JsonValue::String("gpt-4o".to_owned()),
+            ),
+        ]))
     );
 }
 
@@ -552,12 +570,12 @@ async fn set_session_routing_writes_redis_before_memory() {
             CacheCall::RedisSet {
                 key: key.clone(),
                 value: "gpt-4o-sensitive".to_owned(),
-                ttl: Duration::from_secs(900),
+                ttl: Duration::from_mins(15),
             },
             CacheCall::MemorySet {
                 key,
                 value: "gpt-4o-sensitive".to_owned(),
-                ttl: Duration::from_secs(900),
+                ttl: Duration::from_mins(15),
             },
         ]
     );
@@ -578,12 +596,12 @@ async fn set_session_routing_still_writes_memory_when_redis_fails() {
             CacheCall::RedisSet {
                 key: key.clone(),
                 value: "gpt-4o-sensitive".to_owned(),
-                ttl: Duration::from_secs(900),
+                ttl: Duration::from_mins(15),
             },
             CacheCall::MemorySet {
                 key,
                 value: "gpt-4o-sensitive".to_owned(),
-                ttl: Duration::from_secs(900),
+                ttl: Duration::from_mins(15),
             },
         ]
     );
@@ -603,7 +621,7 @@ async fn set_session_routing_skips_redis_when_it_is_not_configured() {
         vec![CacheCall::MemorySet {
             key,
             value: "gpt-4o-sensitive".to_owned(),
-            ttl: Duration::from_secs(900),
+            ttl: Duration::from_mins(15),
         }]
     );
 }
@@ -626,7 +644,7 @@ async fn set_session_routing_scopes_the_key_to_the_claims() {
         vec![CacheCall::MemorySet {
             key: "{sensitive_route:user:user-1|org:org-1:session-1}:model".to_owned(),
             value: "gpt-4o-sensitive".to_owned(),
-            ttl: Duration::from_secs(900),
+            ttl: Duration::from_mins(15),
         }]
     );
 }

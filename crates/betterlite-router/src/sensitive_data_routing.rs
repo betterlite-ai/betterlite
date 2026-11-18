@@ -110,17 +110,8 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
         let Some(routed_model) = self.internal_usage_cache.redis_get(cache_key).await? else {
             return Ok(None);
         };
-        // redis_cache.async_get_ttl(key) answers None for a key without ttl and for every failure
-        let remaining = match self.internal_usage_cache.redis_ttl(cache_key).await {
-            Ok(remaining) => remaining,
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    "SensitiveDataRoutingHandler: Redis TTL read failed"
-                );
-                None
-            }
-        };
+        // async_get_ttl: None inherits the configured ttl, Err falls back to the local read
+        let remaining = self.internal_usage_cache.redis_ttl(cache_key).await?;
         let ttl = remaining.unwrap_or_else(|| Duration::from_secs(self.ttl_seconds));
         Ok(Some((routed_model, ttl)))
     }
