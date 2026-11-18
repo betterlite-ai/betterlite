@@ -46,10 +46,10 @@ pub fn resolve_uvicorn_settings(
         host: overrides.host.clone().unwrap_or_else(|| base.host.clone()),
         port: overrides.port.unwrap_or(base.port),
         server_header: false,
-        log_config: match overrides.log_config.clone() {
-            Some(path) => LogConfig::File(path),
-            None => base.log_config.clone(),
-        },
+        log_config: overrides
+            .log_config
+            .clone()
+            .map_or_else(|| base.log_config.clone(), LogConfig::File),
         timeout_keep_alive: overrides.keepalive_timeout.or(base.timeout_keep_alive),
         timeout_worker_healthcheck,
         limit_max_requests,

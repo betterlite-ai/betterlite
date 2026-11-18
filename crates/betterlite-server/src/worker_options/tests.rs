@@ -216,7 +216,7 @@ fn worker_options_uvicorn_settings_refuse_an_unknown_log_level(#[case] flag: Opt
     assert!(matches!(
         outcome,
         Err(LogLevelError::Unknown {
-            ref value,
+            value,
             source: LevelError::Unknown
         }) if value == "verbose"
     ));
@@ -327,7 +327,7 @@ fn reload_options_watch_the_current_directory_without_a_config() {
 fn reload_options_add_the_config_parent_and_its_basename() {
     let (_directory, root) = temporary_directory();
     let config_dir = root.join("configs");
-    fs::create_dir(&config_dir).expect("config directory");
+    fs::create_dir_all(&config_dir).expect("config directory");
     let config = config_dir.join("proxy.yaml");
     fs::write(&config, "{}").expect("config file");
     let options = resolve_reload_options(&root, Some(config.as_path())).expect("reload options");
@@ -383,7 +383,7 @@ fn reload_options_follow_a_symlinked_watch_directory_to_its_target() {
     let (_directory, root) = temporary_directory();
     let target = root.join("target");
     let link = root.join("link");
-    fs::create_dir(&target).expect("target directory");
+    fs::create_dir_all(&target).expect("target directory");
     symlink(&target, &link).expect("symlink");
     let options = resolve_reload_options(&link, None).expect("reload options");
     assert_eq!(options.reload_dirs, vec![target]);
@@ -407,7 +407,7 @@ fn reload_options_surface_a_watch_directory_that_cannot_be_resolved() {
 #[test]
 fn reload_options_reject_a_config_name_that_is_not_utf8() {
     use std::ffi::OsStr;
-    use std::os::unix::ffi::OsStrExt;
+    use std::os::unix::ffi::OsStrExt as _;
 
     let (_directory, root) = temporary_directory();
     let config = root.join(OsStr::from_bytes(b"proxy-\xff.yaml"));
@@ -507,7 +507,7 @@ fn dev_reload_turns_on_the_hot_reload_setting() {
 fn dev_reload_watches_the_config_and_the_dot_env() {
     let (_directory, root) = temporary_directory();
     let config_dir = root.join("configs");
-    fs::create_dir(&config_dir).expect("config directory");
+    fs::create_dir_all(&config_dir).expect("config directory");
     let config = config_dir.join("proxy.yaml");
     fs::write(&config, "{}").expect("config file");
     let (settings, _warnings) = configured(&root, Some(config.as_path()));

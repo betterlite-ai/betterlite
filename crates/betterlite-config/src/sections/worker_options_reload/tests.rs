@@ -51,7 +51,7 @@ fn host_comes_from_the_environment(#[case] environment: &[(&str, &str)], #[case]
 #[rstest]
 #[case::eight_thousand(&[("PORT", "8000")], 8000)]
 #[case::lowest(&[("PORT", "0")], 0)]
-#[case::highest(&[("PORT", "65535")], 65535)]
+#[case::highest(&[("PORT", "65535")], 0xFFFF)]
 fn port_comes_from_the_environment(#[case] environment: &[(&str, &str)], #[case] expected: u16) {
     assert_eq!(loaded(environment).worker_options.port, expected);
 }
@@ -202,7 +202,7 @@ fn an_unknown_log_level_is_kept_even_with_json_logs() {
     assert!(matches!(
         settings.worker_options.log_config,
         LogConfig::Invalid(LogLevelError::Unknown {
-            ref value,
+            value,
             source: LevelError::Unknown
         }) if value == "verbose"
     ));
@@ -222,7 +222,7 @@ fn resolve_log_level_rejects_a_name_python_logging_lacks() {
     assert!(matches!(
         resolve_log_level("verbose"),
         Err(LogLevelError::Unknown {
-            ref value,
+            value,
             source: LevelError::Unknown
         }) if value == "verbose"
     ));
