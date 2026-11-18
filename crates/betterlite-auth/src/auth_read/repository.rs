@@ -73,7 +73,7 @@ where
 {
     async fn find_keyed(
         &self,
-        key: NativeKey<Rows::Column>,
+        key: &NativeKey<Rows::Column>,
     ) -> Result<Option<Rows::Model>, DbLookupError> {
         let repository = self.repository();
         repository
@@ -101,11 +101,11 @@ where
     type Data = Rows::Data;
 
     async fn find_unique(&self, request: OneRequest<Self>) -> OneAnswer<Self> {
-        self.find_keyed(request.filter).await
+        self.find_keyed(&request.filter).await
     }
 
     async fn find_first(&self, request: OneRequest<Self>) -> OneAnswer<Self> {
-        self.find_keyed(request.filter).await
+        self.find_keyed(&request.filter).await
     }
 
     async fn find_many(&self, request: ManyRequest<Self>) -> ManyAnswer<Self> {
