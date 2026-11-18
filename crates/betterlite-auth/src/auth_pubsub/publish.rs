@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use tokio::sync::Semaphore;
 use tokio::task::{JoinSet, yield_now};
@@ -28,7 +28,8 @@ impl Default for PublishTasks {
 impl PublishTasks {
     pub async fn shutdown(&self) {
         let mut pending = std::mem::take(&mut *lock(&self.pending));
-        pending.shutdown().await;
+        pending.abort_all();
+        while pending.join_next().await.is_some() {}
     }
 }
 
@@ -106,5 +107,8 @@ pub async fn evict_and_broadcast<E>(
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }

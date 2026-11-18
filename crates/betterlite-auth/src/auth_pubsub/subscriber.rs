@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use betterlite_cache::backend::memory::MemoryCacheOps;
@@ -234,5 +234,8 @@ fn drop_from<M: MemoryCacheOps>(cache: &M, cache_key: &str) -> Result<(), CacheE
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }

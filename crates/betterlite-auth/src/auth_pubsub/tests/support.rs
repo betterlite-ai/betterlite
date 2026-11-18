@@ -522,7 +522,10 @@ pub(crate) fn runtime() -> Runtime {
         .expect("the test runtime builds")
 }
 
-pub(crate) fn capture<T>(operation: impl FnOnce() -> T) -> (T, Vec<CapturedEvent>) {
+pub(crate) fn capture<T, F>(operation: F) -> (T, Vec<CapturedEvent>)
+where
+    F: FnOnce() -> T,
+{
     let events = Arc::new(Mutex::new(Vec::new()));
     let subscriber = registry().with(CaptureLayer(Arc::clone(&events)));
     let output = tracing::subscriber::with_default(subscriber, operation);

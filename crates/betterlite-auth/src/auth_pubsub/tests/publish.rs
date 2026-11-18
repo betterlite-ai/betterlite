@@ -50,6 +50,22 @@ async fn drain_blocked(release: &Notify, probe: &Probe, expected: usize) {
     panic!("the blocked publishes never finished");
 }
 
+async fn publish_range(tasks: &PublishTasks, endpoint: &Arc<ScriptedEndpoint>, count: usize) {
+    for index in 0..count {
+        publish_invalidation(tasks, Some(endpoint), &invalidation(&tag(index))).await;
+    }
+}
+
+async fn wait_for_publishes(probe: &Probe, expected: usize) {
+    for _attempt in 0..1000 {
+        if probe.publishes() == expected {
+            return;
+        }
+        yield_now().await;
+    }
+    panic!("the publishes never finished");
+}
+
 #[test]
 fn local_eviction_before_publish() {
     let runtime = runtime();
@@ -128,16 +144,8 @@ fn completed_publish_slots_reused() {
     let tasks = PublishTasks::default();
     let ((), captured) = capture(|| {
         runtime.block_on(async {
-            for index in 0..MAX_PENDING_PUBLISHES.saturating_add(1) {
-                let message = invalidation(&tag(index));
-                publish_invalidation(&tasks, Some(&endpoint), &message).await;
-            }
-            for _attempt in 0..1000 {
-                if probe.publishes() == MAX_PENDING_PUBLISHES.saturating_add(1) {
-                    break;
-                }
-                yield_now().await;
-            }
+            publish_range(&tasks, &endpoint, MAX_PENDING_PUBLISHES.saturating_add(1)).await;
+            wait_for_publishes(&probe, MAX_PENDING_PUBLISHES.saturating_add(1)).await;
         });
     });
     assert_eq!(
@@ -157,10 +165,7 @@ fn pending_1024_warns_drops() {
     let tasks = PublishTasks::default();
     let ((), captured) = capture(|| {
         runtime.block_on(async {
-            for index in 0..MAX_PENDING_PUBLISHES {
-                let message = invalidation(&tag(index));
-                publish_invalidation(&tasks, Some(&endpoint), &message).await;
-            }
+            publish_range(&tasks, &endpoint, MAX_PENDING_PUBLISHES).await;
             assert_eq!(probe.started(), MAX_IN_FLIGHT_PUBLISHES);
             let dropped = invalidation("tag:dropped");
             publish_invalidation(&tasks, Some(&endpoint), &dropped).await;
@@ -188,10 +193,7 @@ fn at_most_16_inflight() {
     let endpoint = endpoint(&probe, PublishMode::Block(Arc::clone(&release)));
     let tasks = PublishTasks::default();
     runtime.block_on(async {
-        for index in 0..MAX_IN_FLIGHT_PUBLISHES.saturating_mul(2) {
-            let message = invalidation(&tag(index));
-            publish_invalidation(&tasks, Some(&endpoint), &message).await;
-        }
+        publish_range(&tasks, &endpoint, MAX_IN_FLIGHT_PUBLISHES.saturating_mul(2)).await;
         assert_eq!(probe.started(), MAX_IN_FLIGHT_PUBLISHES);
         assert_eq!(probe.peak_in_flight(), MAX_IN_FLIGHT_PUBLISHES);
         drain_blocked(&release, &probe, MAX_IN_FLIGHT_PUBLISHES.saturating_mul(2)).await;
@@ -293,10 +295,7 @@ fn shutdown_drains_publishes() {
     let endpoint = endpoint(&probe, PublishMode::Block(Arc::clone(&release)));
     let tasks = PublishTasks::default();
     runtime.block_on(async {
-        for index in 0..3 {
-            let message = invalidation(&tag(index));
-            publish_invalidation(&tasks, Some(&endpoint), &message).await;
-        }
+        publish_range(&tasks, &endpoint, 3).await;
         assert_eq!(probe.started(), 3);
         let drained = timeout(Duration::from_secs(5), tasks.shutdown()).await;
         assert!(

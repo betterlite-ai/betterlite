@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::auth_pubsub::channel::{INVALIDATION_CHANNEL, invalidation_channel};
 use crate::auth_pubsub::decode::{
     DecodeError, MAX_MESSAGE_BYTES, MAX_MESSAGE_DEPTH, TypedValue, decode_invalidation,
@@ -72,14 +74,14 @@ fn json_omits_nulls() {
 
 #[test]
 fn utf8_replacement() {
-    let invalid_in_key = parsed(b"{\"cache_key\":\"caf\xff\"}");
+    let invalid_in_key = parsed(b"{\"cache_key\":\"menu\xff\"}");
     let expected = Invalidation {
-        cache_key: "caf\u{fffd}".to_owned(),
+        cache_key: "menu\u{fffd}".to_owned(),
         new_value: None,
         ttl: None,
     };
     assert_eq!(invalid_in_key, Some(expected.clone()));
-    let truncated = parsed(b"{\"cache_key\":\"caf\xe2\x82\"}");
+    let truncated = parsed(b"{\"cache_key\":\"menu\xe2\x82\"}");
     assert_eq!(truncated, Some(expected));
     assert_eq!(
         decode_invalidation(b"\xff{\"cache_key\":\"k\"}"),
@@ -137,49 +139,39 @@ fn extra_and_duplicate_fields() {
     );
 }
 
-#[test]
-fn numeric_bool_string_null_matrix() {
-    let values = [
-        (r#","new_value":true"#, None),
-        (r#","new_value":false"#, None),
-        (r#","new_value":"3""#, None),
-        (r#","new_value":null"#, None),
-        (r#","new_value":3"#, Some(3.0_f64)),
-        (r#","new_value":-0.5"#, Some(-0.5_f64)),
-        (r#","new_value":1e3"#, Some(1000.0_f64)),
-    ];
-    for (suffix, expected) in values {
-        let text = format!("{{\"cache_key\":\"k\"{suffix}}}");
-        let decoded = parsed(text.as_bytes()).expect("the object still parses");
-        assert_eq!(decoded.new_value, expected, "{suffix}");
-        assert_eq!(decoded.ttl, None, "{suffix}");
+fn same_number(left: Option<f64>, right: Option<f64>) -> bool {
+    match (left, right) {
+        (Some(observed), Some(expected)) => observed.to_bits() == expected.to_bits(),
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
     }
-    let ttls = [
-        (r#","ttl":true"#, None),
-        (r#","ttl":"30""#, None),
-        (r#","ttl":null"#, None),
-        (r#","ttl":30"#, Some(30.0_f64)),
-    ];
-    for (suffix, expected) in ttls {
-        let text = format!("{{\"cache_key\":\"k\",\"new_value\":1{suffix}}}");
-        let decoded = parsed(text.as_bytes()).expect("the object still parses");
-        assert_eq!(decoded.ttl, expected, "{suffix}");
-        assert_eq!(decoded.new_value, Some(1.0_f64), "{suffix}");
-    }
-    let nonfinite = [
-        (r#","new_value":NaN"#, f64::NAN),
-        (r#","new_value":Infinity"#, f64::INFINITY),
-        (r#","new_value":-Infinity"#, f64::NEG_INFINITY),
-        (r#","new_value":1e400"#, f64::INFINITY),
-    ];
-    for (suffix, expected) in nonfinite {
-        let text = format!("{{\"cache_key\":\"k\"{suffix}}}");
-        let decoded = parsed(text.as_bytes()).expect("LiteLLM's parser accepts nonfinite floats");
-        let number = decoded
-            .new_value
-            .expect("the nonfinite value is kept for the policy step");
-        assert_eq!(number.to_bits(), expected.to_bits(), "{suffix}");
-    }
+}
+
+#[rstest]
+#[case::new_value_bool_true(r#","new_value":true"#, None, None)]
+#[case::new_value_bool_false(r#","new_value":false"#, None, None)]
+#[case::new_value_string(r#","new_value":"3""#, None, None)]
+#[case::new_value_null(r#","new_value":null"#, None, None)]
+#[case::new_value_integer(r#","new_value":3"#, Some(3.0_f64), None)]
+#[case::new_value_negative(r#","new_value":-0.5"#, Some(-0.5_f64), None)]
+#[case::new_value_exponent(r#","new_value":1e3"#, Some(1000.0_f64), None)]
+#[case::ttl_bool_true(r#","new_value":1,"ttl":true"#, Some(1.0_f64), None)]
+#[case::ttl_string(r#","new_value":1,"ttl":"30""#, Some(1.0_f64), None)]
+#[case::ttl_null(r#","new_value":1,"ttl":null"#, Some(1.0_f64), None)]
+#[case::ttl_number(r#","new_value":1,"ttl":30"#, Some(1.0_f64), Some(30.0_f64))]
+#[case::new_value_nan(r#","new_value":NaN"#, Some(f64::NAN), None)]
+#[case::new_value_infinity(r#","new_value":Infinity"#, Some(f64::INFINITY), None)]
+#[case::new_value_negative_infinity(r#","new_value":-Infinity"#, Some(f64::NEG_INFINITY), None)]
+#[case::new_value_overflow(r#","new_value":1e400"#, Some(f64::INFINITY), None)]
+fn numeric_bool_string_null_matrix(
+    #[case] suffix: &str,
+    #[case] new_value: Option<f64>,
+    #[case] ttl: Option<f64>,
+) {
+    let text = format!("{{\"cache_key\":\"k\"{suffix}}}");
+    let decoded = parsed(text.as_bytes()).expect("LiteLLM's parser accepts the payload");
+    assert!(same_number(decoded.new_value, new_value), "{suffix}");
+    assert!(same_number(decoded.ttl, ttl), "{suffix}");
 }
 
 #[test]

@@ -59,7 +59,10 @@ fn warning(subject: &str, backoff_seconds: Option<f64>) -> CapturedEvent {
     }
 }
 
-async fn wait_until(mut condition: impl FnMut() -> bool) {
+async fn wait_until<F>(mut condition: F)
+where
+    F: FnMut() -> bool,
+{
     for _attempt in 0..1000 {
         if condition() {
             return;

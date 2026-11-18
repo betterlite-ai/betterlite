@@ -2,7 +2,7 @@ mod fakes;
 mod warnings;
 
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use betterlite_auth::auth_cache::gateway_cache;
 use betterlite_auth::auth_pubsub::message::Invalidation;
@@ -48,7 +48,10 @@ struct Journal {
 type Shared = Arc<Mutex<Journal>>;
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 #[derive(Deserialize)]
@@ -115,7 +118,7 @@ async fn evict_section(call: &EvictCall, journal: &Shared) {
     } else {
         PublishMode::Accept
     };
-    let endpoint = Arc::new(endpoint(journal, Vec::new(), publish));
+    let endpoint = Arc::new(Endpoint::new(Arc::clone(journal), Vec::new(), publish));
     let evidence = Eviction {
         journal: Arc::clone(journal),
     };
@@ -129,7 +132,11 @@ async fn evict_section(call: &EvictCall, journal: &Shared) {
 }
 
 async fn capacity_section(journal: &Shared) {
-    let endpoint = Arc::new(endpoint(journal, Vec::new(), PublishMode::Block));
+    let endpoint = Arc::new(Endpoint::new(
+        Arc::clone(journal),
+        Vec::new(),
+        PublishMode::Block,
+    ));
     let tasks = PublishTasks::default();
     for index in 0..=MAX_PENDING_PUBLISHES {
         let invalidation = Invalidation {
@@ -159,7 +166,11 @@ async fn subscriber_section(
         .map(|steps| session_plan(steps))
         .collect();
     let subscriber = Arc::new(CacheInvalidationSubscriber {
-        endpoint: Arc::new(endpoint(journal, sessions, PublishMode::Accept)),
+        endpoint: Arc::new(Endpoint::new(
+            Arc::clone(journal),
+            sessions,
+            PublishMode::Accept,
+        )),
         clock: Clock,
         user_cache: Arc::new(gateway_cache(
             Arc::clone(&ordinary),
@@ -172,7 +183,12 @@ async fn subscriber_section(
         session: Mutex::new(Session::default()),
     });
     subscriber.start();
-    settle(journal, "poll:", planned_polls(&call.sessions)).await?;
+    let expected = call
+        .sessions
+        .iter()
+        .map(|steps| steps.len().max(1))
+        .sum::<usize>();
+    settle(journal, "poll:", expected).await?;
     subscriber.stop().await;
     report_caches(
         journal,
@@ -183,14 +199,6 @@ async fn subscriber_section(
             ("additional:0", additional.as_ref()),
         ],
     )
-}
-
-fn endpoint(journal: &Shared, sessions: Vec<Vec<Step>>, publish: PublishMode) -> Endpoint {
-    Endpoint::new(Arc::clone(journal), sessions, publish)
-}
-
-fn planned_polls(sessions: &[Vec<StepInput>]) -> usize {
-    sessions.iter().map(|steps| steps.len().max(1)).sum()
 }
 
 fn session_plan(steps: &[StepInput]) -> Vec<Step> {
@@ -259,9 +267,9 @@ async fn settle(journal: &Shared, prefix: &str, expected: usize) -> Result<(), B
         }
         yield_now().await;
     }
-    Err(unsettled(
+    Err(Box::<HelperError>::from(std::io::Error::other(
         "the subscriber never reached the expected events",
-    ))
+    )))
 }
 
 fn journal_value(journal: &Shared) -> Value {
@@ -272,8 +280,4 @@ fn journal_value(journal: &Shared) -> Value {
         "warnings": std::mem::take(&mut guard.warnings),
         "caches": Value::Object(std::mem::take(&mut guard.caches).into_iter().collect()),
     })
-}
-
-fn unsettled(message: &str) -> Box<HelperError> {
-    Box::<HelperError>::from(std::io::Error::other(message.to_owned()))
 }
