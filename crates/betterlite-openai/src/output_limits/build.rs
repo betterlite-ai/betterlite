@@ -48,10 +48,11 @@ pub async fn build_limit_response(
     };
     let id = format!("chatcmpl-{}", (recovery.next_id)());
     let created = (recovery.clock)();
+    let response = completion(&id, created, model, prompt_tokens);
     let body = if matches!(data.get("stream"), Some(Value::Bool(true))) {
-        RecoveredBody::Chunk(chunk(&id, created, model))
+        RecoveredBody::Chunk(chunk(response))
     } else {
-        RecoveredBody::Completion(completion(&id, created, model, prompt_tokens))
+        RecoveredBody::Completion(response)
     };
     Ok(OutputLimitResponse { headers, body })
 }
@@ -92,27 +93,31 @@ fn completion(id: &str, created: u64, model: &str, prompt_tokens: usize) -> Chat
 }
 
 // LiteLLM sends no usage object on the one chunk even though the prompt was counted
-fn chunk(id: &str, created: u64, model: &str) -> Chunk {
-    let choice = Choice {
-        index: 0,
-        delta: Delta {
-            role: Some(String::from("assistant")),
-            content: Some(String::new()),
-            refusal: None,
-            tool_calls: None,
-            function_call: None,
-        },
-        finish_reason: Some(String::from("length")),
-        logprobs: None,
-    };
+fn chunk(response: ChatResponse) -> Chunk {
+    let choices = response
+        .choices
+        .into_iter()
+        .map(|choice| Choice {
+            index: choice.index,
+            delta: Delta {
+                role: Some(choice.message.role),
+                content: choice.message.content,
+                refusal: choice.message.refusal,
+                tool_calls: None,
+                function_call: None,
+            },
+            finish_reason: choice.finish_reason,
+            logprobs: None,
+        })
+        .collect();
     Chunk {
-        id: id.to_owned(),
+        id: response.id,
         object: String::from("chat.completion.chunk"),
-        created,
-        model: model.to_owned(),
-        choices: vec![choice],
+        created: response.created,
+        model: response.model,
+        choices,
         usage: None,
-        system_fingerprint: None,
-        service_tier: None,
+        system_fingerprint: response.system_fingerprint,
+        service_tier: response.service_tier,
     }
 }
