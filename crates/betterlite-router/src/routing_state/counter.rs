@@ -93,6 +93,15 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             .collect()
     }
 
+    // BaseRoutingStrategy.reset_in_memory_keys_to_update: the keys go without being handed out
+    pub fn reset_tracked_keys(&self) {
+        self.state
+            .tracked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clear();
+    }
+
     // track_deployment_metrics.increment_deployment_successes_for_current_minute
     pub fn increment_successes_for_minute(
         &self,

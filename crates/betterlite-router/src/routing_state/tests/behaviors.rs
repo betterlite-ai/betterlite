@@ -160,6 +160,11 @@ fn tracked_key_accessors() {
     assert!(harness.counters.get_tracked_keys().is_empty());
     harness.counters.track_key("c");
     assert_eq!(harness.counters.take_tracked_keys(), set(&["c"]));
+    harness.counters.track_key("d");
+    harness.counters.reset_tracked_keys();
+    assert!(harness.counters.get_tracked_keys().is_empty());
+    harness.counters.track_key("e");
+    assert_eq!(harness.counters.get_tracked_keys(), set(&["e"]));
 }
 
 fn success_and_failure_counters() {
