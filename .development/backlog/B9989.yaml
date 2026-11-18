@@ -1,0 +1,13 @@
+id: B9989
+milestone: M3 providers
+title: Shared stream wrapper, file blocks and chat field split
+status: todo
+depends_on: [B5653, B2238, B5844, B223, B010, B175]
+file: tasks/B9989-shared-stream-wrapper-file-blocks.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,178 @@
+id: B9990
+title: Anthropic chat on the proxy routes
+description: >-
+  Serve Anthropic chat on the proxy's chat routes through the adapter B9986 builds. Today the routes never hand the
+  adapter its runtime, so an anthropic/ deployment answers UnavailableAdapter, and ChatDeployment::resolve_with would
+  fill a missing key with the OpenAI one. B9988 lands first and sets the shapes this task builds on: answer_chat and
+  provider_chat in crates/betterlite-server/src/server/chat_setup/provider_call.rs return the decoded OperationResult
+  with the upstream headers and time, provider_stream in crates/betterlite-server/src/routes/completions/streaming.rs
+  returns (OperationResult, HeaderMap), and ChatCalls in crates/betterlite-server/src/routes/chat/streaming.rs becomes
+  a struct of executor and counter built by ChatCalls::new(config, executor). This task adds no route and changes no
+  adapter.
+
+
+  The deployment's own credentials. ChatDeployment::resolve_with fills a missing api_base and api_key from the OpenAI
+  chain LiteLLM runs for OpenAI-compatible providers, so an anthropic/ deployment without its own key would send
+  OPENAI_API_KEY to Anthropic. LiteLLM's _complete_anthropic never reads that chain. Add the child module
+  crates/betterlite-server/src/server/chat_setup/anthropic_defaults.rs, declared by mod anthropic_defaults; in
+  chat_setup.rs, with pub(super) fn apply_anthropic_defaults(resolved: &mut ChatDeployment, deployment:
+  &ModelDeployment, bases: &AnthropicBases, surface: Surface) -> Result<(), ChatSetupError>. chat_deployments builds
+  B9986's AnthropicBases::new(config) once and calls it for Ok(Provider::Anthropic(adapter)), next to the aiohttp
+  branch, with adapter.surface. It sets resolved.api_key to deployment.litellm_params.api_key only and
+  resolved.api_base to resolve_base(surface, deployment.litellm_params.api_base.as_deref(), &bases.globals,
+  &bases.environment, bases.disable_suffix).url. resolved.endpoint becomes that URL parsed, with a new
+  ChatSetupError::AnthropicBase { model_name, source } on failure, and resolved.organization becomes None.
+  resolve_base keeps a URL that already ends in the suffix, so complete() resolving it again gives the same URL, and
+  B027's resolve_key then runs LiteLLM's key chain for a deployment without its own key.
+
+
+  The runtime on the call. answer_chat, provider_chat and provider_stream take a new last argument anthropic:
+  Option<&Arc<AnthropicRuntime>> and set inputs.anthropic = anthropic.cloned() on the Deployment they build with
+  Deployment::from_chat, before prepare. ChatCalls gains pub(crate) anthropic: Arc<AnthropicRuntime>. ChatCalls::new
+  binds BundledCatalog::default().get() once and passes that Arc to runtime_counter and to
+  AnthropicRuntime::new(config, &executor.client, Arc::clone(&catalog)). Its error becomes pub(crate) enum
+  ChatCallsError { Counter(CountError), Runtime(RuntimeError) }. The Counter variant keeps B9988's message the token
+  counter limits are invalid: {source}, and Runtime reads the Anthropic runtime could not be built: {source}. In
+  crates/betterlite-server/src/server.rs, B9988's ServerError::TokenCounter { source: CountError } becomes
+  ServerError::ChatCalls { #[source] source: ChatCallsError } with #[error(transparent)], so the counter failure keeps
+  its text. ChatCall::complete and ChatCall::stream pass Some(&self.anthropic). Every other caller passes None:
+  answer_chat and provider_stream in the completions bridge in crates/betterlite-server/src/routes/completions.rs and
+  both provider_stream calls in routes/completions/streaming/tests.rs.
+
+
+  The route arms. ChatCall::complete in routes/chat/streaming.rs takes OperationResult::Anthropic(AnthropicResult::Reply(reply))
+  and serializes the reply with serde_json::to_vec, as it does a ChatCompletion, with the returned headers and time.
+  ChatCall::stream turns OperationResult::Anthropic(AnthropicResult::Stream(frames)) into ChatStreamAnswer { body:
+  frames, upstream_headers: the returned headers, upstream_time }. relay_bytes adds data: [DONE] as it does for every
+  upstream stream. Any other Anthropic shape answers ChatFailure::Mismatched.
+
+
+  Oracle. tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml copies the shape of
+  openai_provider-dispatch-http.yaml: model anthropic/claude-3-haiku-20240307 with api_base "{{upstream}}" and api_key
+  oracle-key, a POST /v1/chat/completions with temperature and max_tokens, and an upstream that answers Anthropic
+  Messages JSON with request-id and anthropic-ratelimit-requests-limit headers. It compares upstream_headers
+  [x-api-key, anthropic-version, content-type] and ignores /id and /created, since LiteLLM generates both.
+
+
+  Tests. Write rstest function anthropic_route_cases in the new child module
+  crates/betterlite-server/src/routes/chat/tests/anthropic.rs, declared by mod anthropic; in routes/chat/tests.rs. It
+  boots chat_routes_with_call_id against a loopback upstream the way the tests beside it do, with named cases
+  buffered_reply (the client view of an Anthropic reply, with the llm_provider- headers), stream_frames (data frames
+  that end with data: [DONE]), upstream_error (an Anthropic 429 keeps its status) and own_key_only (a deployment
+  without api_key, with OPENAI_API_KEY and ANTHROPIC_API_KEY set to different values in the config environment, sends
+  the ANTHROPIC_API_KEY value as x-api-key and never the OpenAI one). Test configs set
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS so the beta matrix never leaves the machine.
+scope:
+  paths:
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-server/src/server/chat_setup/anthropic_defaults.rs
+  - crates/betterlite-server/src/server/chat_setup/provider_call.rs
+  - crates/betterlite-server/src/routes/chat/streaming.rs
+  - crates/betterlite-server/src/routes/chat/streaming/relay.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/chat/tests/anthropic.rs
+  - crates/betterlite-server/src/routes/completions.rs
+  - crates/betterlite-server/src/routes/completions/streaming.rs
+  - crates/betterlite-server/src/routes/completions/streaming/tests.rs
+  - tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L12116
+  why: The chat route and its aliases (/v1/chat/completions, /chat/completions, /engines/{model}/chat/completions,
+    /openai/deployments/{model}/chat/completions); routes already on main serve them, this task adds no route.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2882-L2945
+  why: _complete_anthropic takes the key from the call, litellm.anthropic_key, litellm.api_key or ANTHROPIC_API_KEY
+    and the base from the call, litellm.api_base, ANTHROPIC_API_BASE or ANTHROPIC_BASE_URL, never the OpenAI chain.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2405-L2430
+  why: The OpenAI-compatible chain with OPENAI_API_KEY that resolve_with ports and apply_anthropic_defaults undoes for
+    anthropic/ deployments.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L10081
+  why: async_data_generator writes each chunk as a data frame and ends the stream with data [DONE].
+dod:
+- text: >-
+    anthropic route buffered: POST /v1/chat/completions on an anthropic/ deployment answers LiteLLM's client view of
+    the Anthropic reply with the provider headers.
+  proof:
+  - route-cases
+- text: >-
+    anthropic route stream: a stream request on an anthropic/ deployment answers the adapter's data frames and data
+    [DONE].
+  proof:
+  - route-cases
+- text: >-
+    anthropic route error: an Anthropic 4xx reaches the client with its status.
+  proof:
+  - route-cases
+- text: >-
+    own key only: an anthropic/ deployment never sends the OpenAI key or base; a missing key comes from LiteLLM's
+    Anthropic chain.
+  proof:
+  - own-key
+- text: >-
+    nothing regresses: chat setup, the chat routes and the completions routes keep passing with the new argument and
+    the ChatCalls field.
+  proof:
+  - regressions
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: route-cases
+    why: The booted chat routes do not answer the Anthropic reply, the frames or the upstream error status.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::/)'
+  - id: own-key
+    why: An anthropic/ deployment without its own key sends the OpenAI key upstream.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_own_key_only$/)'
+  - id: regressions
+    why: The new argument, the ChatCalls field, ChatCallsError or the credential reset broke a chat setup, chat route
+      or completions test.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_buffered_reply$/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::chat_setup::/) | test(/^routes::chat::/) | test(/^routes::completions::/)'
+oracle_cases:
+- tools/oracle/cases/chat/anthropic_provider-dispatch-http.yaml
+deviations:
+- what: >-
+    An anthropic/ deployment without its own api_key or api_base never takes OPENAI_API_KEY, OPENAI_BASE_URL or the
+    OpenAI default base. The shared resolver fills those for every OpenAI-compatible deployment, and the Anthropic
+    deployment resets them to its own values so B027's resolve_key and resolve_base run LiteLLM's Anthropic chain.
+  why: >-
+    Sending the proxy's OpenAI key to Anthropic leaks a secret to another vendor. LiteLLM's _complete_anthropic reads
+    only the Anthropic chain, so this fix keeps betterlite on LiteLLM's behavior and the row records the security
+    fix to the shared resolver.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2899-L2915
+out_of_scope:
+- >-
+  The adapter, the runtime, the frames, the Delta fields and the OperationError arms are B9986.
+- >-
+  Anthropic chat through the /v1/completions bridge in routes/completions.rs. It passes None for the runtime, so an
+  anthropic/ deployment there keeps answering UnavailableAdapter, and its bridge reads only ChatCompletion::OpenAi.
+  No task owns it yet; the architect names one.
+- >-
+  The output-limit recovery and the 422 retry are B9988. This task adds its arms next to B9988's and changes none of
+  them.
+- >-
+  The /v1/messages route, count tokens, batches and files through the gateway; their routes belong to their own
+  tasks.
+pitfalls:
+- >-
+  Dispatched runs cannot compile, so check every caller of answer_chat, provider_chat and provider_stream by hand:
+  routes/chat/streaming.rs (complete and stream), routes/completions.rs (both calls) and
+  routes/completions/streaming/tests.rs (both calls). Search for each name before handing in.
+- >-
+  docs/deviations/B9990.yaml holds the deviation above with its link; the scope check always allows that file.
+- >-
+  BetaConfigLoader fetches the remote beta matrix unless LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS is set. Route tests set
+  it, and the oracle case leaves it unset on both sides as LiteLLM does.
+- >-
+  File sizes. Every file stays at or under 300 lines. crates/betterlite-server/src/routes/chat/streaming.rs is 295
+  today and B9988 moves the recovery code out of it; if the new arms still do not fit, move streamed_result and
+  answered_result into streaming/relay.rs (113 lines) rather than growing it. chat_setup.rs is 270, so
+  apply_anthropic_defaults lives in chat_setup/anthropic_defaults.rs. server.rs is 302 today, so the error rename
+  changes lines in place and adds none. completions.rs is 297, so the None arguments go on lines that already exist.
+- >-
+  The projected provider headers already carry the llm_provider- prefix. The route's provider_prefixed_name keeps
+  names that contain llm_provider, so buffered_reply checks them as they arrive.
+budget:
+  max_changed_lines: 1000
+  max_new_expects: 0
+review_level: security

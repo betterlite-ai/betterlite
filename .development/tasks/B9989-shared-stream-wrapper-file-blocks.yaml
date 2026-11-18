@@ -1,0 +1,161 @@
+id: B9989
+title: Shared stream wrapper, file blocks and chat field split
+description: >-
+  Move four pieces of existing code to the module each later caller already depends on, so the Anthropic gateway
+  adapter (B9986) can call them instead of copying them. Nothing a client sees changes: every moved function keeps its
+  behavior and every current caller keeps its output.
+
+
+  Stream wrapper, in betterlite-streaming. crates/betterlite-openai/src/text_completion_transport/stream.rs holds the
+  only loop around the shared chunk_creator that ports LiteLLM's CustomStreamWrapper: completion_stream builds a
+  ChunkShaper and a DecodeState, process_payload calls chunk_creator and record, record calls attach_usage, and
+  finalize sends the closing chunks. Move the provider-neutral part into the new module
+  crates/betterlite-streaming/src/provider_chunk_decode/wrapper.rs, declared by pub mod wrapper; in
+  provider_chunk_decode.rs. It holds pub struct StreamWrapper { pub shaper: ChunkShaper, pub decode: DecodeState, pub
+  has_stream_options: bool, pub sent_stream_usage: bool } with three methods. pub fn new(provider: &str, setup:
+  StreamSetup) -> Self builds the ChunkShaper and DecodeState completion_stream builds today, with provider as the
+  shaper's provider. pub fn push(&mut self, chunk: &ProviderChunk) -> Result<Option<StreamChunk>, WrapperError> runs
+  today's chunk_creator call, record and attach_usage. pub fn finish(&mut self) -> Option<Result<StreamChunk,
+  WrapperError>> is today's finalize. StreamSetup moves into wrapper.rs with its fields unchanged, and
+  text_completion_transport/stream.rs replaces its own definition with pub use of the moved one, so
+  text_completion_transport.rs keeps building StreamSetup and calling completion_stream(bytes, setup) as it does now.
+  pub enum WrapperError has Chunk(ProviderChunkError) and Usage(serde_json::Error); the text path maps them to its
+  ErrorSource::Chunk and ErrorSource::Serialize, the variants it uses today. stream.rs keeps its SSE reading, its
+  Phase handling and its StreamState. StreamState now holds a StreamWrapper built with provider
+  text-completion-openai in place of the four fields.
+
+
+  File blocks, in betterlite-prompts. RemoteFileBlocks and FileBlockError live privately in
+  crates/betterlite-provider/src/snowflake/messages/files.rs. Move both into the new module
+  crates/betterlite-prompts/src/anthropic_invokes/file_blocks.rs, declared by pub mod file_blocks; in
+  anthropic_invokes.rs, next to process_openai_file_message: pub struct RemoteFileBlocks<'call, Source> { pub
+  fetcher: &'call Source } with its FileBlocks impl, bound on RemoteMediaFetcher + Sync, the bound snowflake's Fetcher
+  trait stands for, and pub enum FileBlockError with its three variants and messages unchanged. files.rs replaces both
+  definitions with pub use of the moved types, so snowflake/messages.rs and snowflake/messages/tests.rs keep their
+  files::FileBlockError paths untouched. prefetch_file_data and tool_result_from_parts stay in files.rs.
+
+
+  Chat field split, in betterlite-provider. chat_fields in crates/betterlite-provider/src/prepared/body.rs serializes
+  the ChatRequest with request_fields, takes messages out and removes REMOVED_KEYS, then partitions the rest by
+  KNOWN_PARAMS. Move the first three steps into pub(crate) fn chat_request_fields(request: &ChatRequest) ->
+  Result<ChatRequestFields, OperationError> in the same file, returning pub(crate) struct ChatRequestFields {
+  pub(crate) messages: JsonValue, pub(crate) params: IndexMap<String, JsonValue> }. chat_fields calls it and keeps the
+  partition and everything after it.
+
+
+  Listed parameter mapping, in betterlite-models. B175's map_parameters in crates/betterlite-models/src/params.rs looks
+  up the supported names through capabilities::supported_parameters, answers CapabilitiesAbsent for any provider the
+  OpenAI capability table does not list, and only then runs the unsupported check in params/mapping.rs. Move
+  everything after the lookup into pub fn map_listed_parameters(supported: &[&'static str], model: &str, call_type:
+  CallType, parameters: &ChatParameters, policy: &ParameterPolicy) -> Result<ParameterMapping, ParameterError> in
+  params.rs. map_parameters keeps the lookup and calls it with request.capabilities.model.model and
+  request.capabilities.call_type. A caller that knows its provider's supported list, as betterlite-anthropic's
+  get_supported_openai_params gives it, can then run LiteLLM's _check_valid_arg through B175's code. MappingState and
+  the rest of mapping.rs stay private.
+
+
+  Tests. Write rstest function stream_wrapper_cases in
+  crates/betterlite-streaming/src/provider_chunk_decode/wrapper/tests.rs, declared by mod tests; in wrapper.rs, with
+  named cases closing_finish_reason (finish sends the finish_reason chunk once after a content chunk),
+  usage_chunk_when_asked (with stream_options include_usage, finish sends a usage chunk after the closing chunk) and
+  silent_usage_chunk_dropped (a chunk carrying only usage yields nothing from push). Write rstest function
+  listed_parameter_cases in the new child module crates/betterlite-models/src/params/tests/listed.rs, declared by mod
+  listed; at the end of params/tests.rs, with named cases unsupported_rejected (a name outside the list answers
+  ParameterError::Unsupported with that name), drop_params_drops (the same name with policy.drop_params lands in
+  dropped_fields), allowed_openai_params_pass (a name in policy.allowed_openai_params lands in standard) and
+  provider_field_passes (an unknown passthrough name lands in provider_fields). The existing text completion,
+  snowflake, chat dispatch and params tests run unchanged.
+scope:
+  paths:
+  - crates/betterlite-streaming/src/provider_chunk_decode.rs
+  - crates/betterlite-streaming/src/provider_chunk_decode/wrapper.rs
+  - crates/betterlite-streaming/src/provider_chunk_decode/wrapper/**
+  - crates/betterlite-openai/src/text_completion_transport/stream.rs
+  - crates/betterlite-prompts/src/anthropic_invokes.rs
+  - crates/betterlite-prompts/src/anthropic_invokes/file_blocks.rs
+  - crates/betterlite-provider/src/snowflake/messages/files.rs
+  - crates/betterlite-provider/src/prepared/body.rs
+  - crates/betterlite-models/src/params.rs
+  - crates/betterlite-models/src/params/tests.rs
+  - crates/betterlite-models/src/params/tests/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1978-L2100
+  why: __anext__ records each chunk, holds usage for the end and sends the closing chunks; StreamWrapper keeps that
+    loop as the text path runs it today.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1715-L1728
+  why: finish_reason_handler builds the closing chunk finish sends.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4560
+  why: _check_valid_arg, the unsupported check map_listed_parameters exposes, runs against the provider's supported
+    list.
+dod:
+- text: >-
+    shared wrapper: the CustomStreamWrapper loop lives once in betterlite-streaming's StreamWrapper, and the text
+    completion stream runs through it with the same output as before.
+  proof:
+  - stream-wrapper
+- text: >-
+    listed mapping: B175's unsupported check runs from map_listed_parameters for any supported list, and
+    map_parameters keeps its results.
+  proof:
+  - listed-parameters
+- text: >-
+    shared file blocks: RemoteFileBlocks and FileBlockError are public in betterlite-prompts, and snowflake's tool
+    result conversion uses them unchanged.
+  proof:
+  - file-blocks
+- text: >-
+    chat field split: chat_request_fields returns the messages and the remaining fields, and the OpenAI chat body
+    built from it is unchanged.
+  proof:
+  - body-split
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: stream-wrapper
+    why: StreamWrapper does not send the closing or usage chunk, drops a silent usage chunk wrongly, or the text
+      completion stream changed when it moved to the shared wrapper.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/::stream_wrapper_cases::/)' && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^text_completion_transport::/)'
+  - id: listed-parameters
+    why: map_listed_parameters does not reject, drop or pass a name as B175's check does, or map_parameters changed.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/::listed_parameter_cases::/)' && cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^params::/)'
+  - id: file-blocks
+    why: The file block types did not move to betterlite-prompts, or snowflake's tool result conversion changed.
+    run: test -f crates/betterlite-prompts/src/anthropic_invokes/file_blocks.rs && ! grep -q 'struct RemoteFileBlocks' crates/betterlite-provider/src/snowflake/messages/files.rs && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^snowflake::/)' && cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^anthropic_invokes::/)'
+  - id: body-split
+    why: chat_request_fields is missing, or the OpenAI chat body changed when chat_fields started calling it.
+    run: grep -q 'pub(crate) fn chat_request_fields' crates/betterlite-provider/src/prepared/body.rs && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::openai_dispatch_cases::/) | test(/^aiohttp_openai_dispatch::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  Every caller that is not already here: the Anthropic gateway adapter calls StreamWrapper, RemoteFileBlocks,
+  chat_request_fields and map_listed_parameters in B9986.
+- >-
+  prefetch_file_data and tool_result_from_parts stay in snowflake/messages/files.rs; only the two types move.
+- >-
+  The chat_chunk projection in betterlite-openai's text_completion_stream.rs is B9986's change; this task leaves it
+  as it is.
+pitfalls:
+- >-
+  Dispatched runs cannot compile, so check each moved import by hand: StreamSetup's fields use StreamOptions,
+  JsonObject and StreamInstant from betterlite-streaming and Uuid, all of which betterlite-streaming already imports
+  in stream_chunk_shaping.rs.
+- >-
+  The text stream's attach_usage and record read state.shaper and state.decode today; after the move they read
+  self.shaper and self.decode inside StreamWrapper, and stream.rs reads state.wrapper.shaper where its Phase logic
+  needs the shaper.
+- >-
+  RemoteFileBlocks::file_block calls process_openai_file_message(...).now_or_never(), so file_blocks.rs imports
+  futures_util::FutureExt; betterlite-prompts already depends on futures-util.
+- >-
+  snowflake/messages/tests.rs matches FileBlockError::Fetch and FileBlockError::Pending through
+  files::FileBlockError, so files.rs keeps a pub use of the moved enum.
+- >-
+  File sizes. Every file stays at or under 300 lines. stream.rs is 232 lines today and shrinks;
+  crates/betterlite-models/src/params.rs is 194.
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0
+review_level: standard
