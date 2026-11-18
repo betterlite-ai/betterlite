@@ -121,3 +121,10 @@ path = "fuzz_targets/spend_statement_limits.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "capture_rate_settings"
+path = "fuzz_targets/capture_rate_settings.rs"
+test = false
+doc = false
+bench = false
