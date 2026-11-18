@@ -7,6 +7,7 @@ use betterlite_core::api::request_body::{
 use betterlite_core::api::request_form::values::{
     FormFields, FormPart, FormParts, PartValue, UploadFile, get_form_data,
 };
+use std::str;
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -76,7 +77,7 @@ pub fn decode_request_form(
         }))
         .map_err(|_error| RequestFormError::BodyTooLarge)?;
     let header_text =
-        std::str::from_utf8(content_type).map_err(|_error| RequestFormError::ContentType)?;
+        str::from_utf8(content_type).map_err(|_error| RequestFormError::ContentType)?;
     let media_type = header_text.split(';').next().unwrap_or(header_text);
     match media_type.trim().to_ascii_lowercase().as_str() {
         "application/x-www-form-urlencoded" => decode_urlencoded(bytes, limits),
@@ -111,24 +112,24 @@ fn decode_multipart(
     content_type: &str,
     limits: &ApiLimits,
 ) -> Result<FormParts, RequestFormError> {
+    use multipart::charset::decode_part;
     use multipart::disposition::disposition_param_bytes;
+    use multipart::raw_split::split_items;
     let boundary_bytes = disposition_param_bytes(content_type.as_bytes(), "boundary")
         .filter(|value| !value.is_empty())
         .ok_or(RequestFormError::ContentType)?;
     let boundary =
-        std::str::from_utf8(&boundary_bytes).map_err(|_error| RequestFormError::ContentType)?;
-    let charset = disposition_param_bytes(content_type.as_bytes(), "charset").map_or_else(
-        || "utf-8".to_owned(),
-        |value| multipart::charset::decode_part(&value, "latin1"),
-    );
+        str::from_utf8(&boundary_bytes).map_err(|_error| RequestFormError::ContentType)?;
+    let charset = disposition_param_bytes(content_type.as_bytes(), "charset")
+        .map_or_else(|| "utf-8".to_owned(), |value| decode_part(&value, "latin1"));
     if bytes.is_empty() {
         return Ok(FormParts { items: Vec::new() });
     }
     let mut items = Vec::new();
-    for item in multipart::raw_split::split_items(bytes, boundary) {
-        let item = item.map_err(|_error| RequestFormError::InvalidBody)?;
+    for item in split_items(bytes, boundary) {
+        let raw_item = item.map_err(|_error| RequestFormError::InvalidBody)?;
         check_part_count(items.len().saturating_add(1), limits)?;
-        items.push(read_part(&item, &charset)?);
+        items.push(read_part(&raw_item, &charset)?);
     }
     Ok(FormParts { items })
 }
