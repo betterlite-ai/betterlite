@@ -9,14 +9,6 @@ use indexmap::IndexMap;
 
 use crate::image_call::plan::LogContext;
 
-// LiteLLM passes the invocation ARN into both callbacks under complete_input_dict
-fn complete_input_dict(invocation_arn: &str) -> RawBody {
-    RawBody::Object(IndexMap::from([(
-        "invocation_arn".to_owned(),
-        Json::Text(invocation_arn.to_owned()),
-    )]))
-}
-
 // the curl view masks the signed headers but keeps the prepared order
 fn curl_request(url: &str, live: &IndexMap<String, Json>) -> String {
     let masked = masked_headers(live, false);
@@ -30,52 +22,70 @@ fn curl_request(url: &str, live: &IndexMap<String, Json>) -> String {
     )
 }
 
-pub(crate) fn log_pre_call(
+pub(crate) enum StatusEvent<'event> {
+    Request {
+        url: &'event str,
+        headers: &'event [(String, String)],
+    },
+    Reply(&'event str),
+}
+
+pub(crate) fn log_call(
     invocation_arn: &str,
-    url: &str,
-    headers: &[(String, String)],
+    event: StatusEvent<'_>,
     log: &mut LogContext<'_, '_>,
 ) -> Result<(), PrePostError> {
-    let live: IndexMap<String, Json> = headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect();
-    let request_str = curl_request(url, &live);
-    pre_call(
-        log.state,
-        &PreCall {
-            input: Json::Text(invocation_arn.to_owned()),
-            model: None,
-            additional_args: AdditionalArgs {
-                api_base: Some(url.to_owned()),
-                headers: Some(live),
-                complete_input_dict: Some(complete_input_dict(invocation_arn)),
-                request_str: Some(request_str),
-                openai_sdk: None,
-                passthrough: IndexMap::new(),
+    let request = match &event {
+        StatusEvent::Request { url, headers } => Some((*url, *headers)),
+        StatusEvent::Reply(_) => None,
+    };
+    let additional_args = call_args(invocation_arn, request);
+    let input = Json::Text(invocation_arn.to_owned());
+    match event {
+        StatusEvent::Request { .. } => {
+            pre_call(
+                log.state,
+                &PreCall {
+                    input,
+                    model: None,
+                    additional_args,
+                },
+                log.env,
+            )?;
+        }
+        StatusEvent::Reply(text) => post_call(
+            log.state,
+            &PostCall {
+                original_response: Json::Text(text.to_owned()),
+                input,
+                additional_args,
             },
-        },
-        log.env,
-    )?;
+            log.env,
+        ),
+    }
     Ok(())
 }
 
-pub(crate) fn log_post_call(invocation_arn: &str, text: &str, log: &mut LogContext<'_, '_>) {
-    let additional = AdditionalArgs {
+fn call_args(invocation_arn: &str, request: Option<(&str, &[(String, String)])>) -> AdditionalArgs {
+    let mut args = AdditionalArgs {
         api_base: None,
         headers: None,
-        complete_input_dict: Some(complete_input_dict(invocation_arn)),
+        complete_input_dict: Some(RawBody::Object(IndexMap::from([(
+            "invocation_arn".to_owned(),
+            Json::Text(invocation_arn.to_owned()),
+        )]))),
         request_str: None,
         openai_sdk: None,
         passthrough: IndexMap::new(),
     };
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: Json::Text(text.to_owned()),
-            input: Json::Text(invocation_arn.to_owned()),
-            additional_args: additional,
-        },
-        log.env,
-    );
+    if let Some((url, headers)) = request {
+        let live: IndexMap<String, Json> = headers
+            .iter()
+            .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
+            .collect();
+        args.request_str = Some(curl_request(url, &live));
+        args.api_base = Some(url.to_owned());
+        args.headers = Some(live);
+    }
+    args
 }

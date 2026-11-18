@@ -9,7 +9,7 @@ use serde_json::value::RawValue;
 
 use super::decode::decode_async_embedding_status;
 use super::error::{EmbeddingJobsError, FailureBody};
-use super::logging::{log_post_call, log_pre_call};
+use super::logging::{StatusEvent, log_call};
 use super::transport::{StatusReply, StatusTransport, StatusWireRequest};
 use super::url::{StatusEndpoint, async_invoke_status_url};
 use crate::aws_settings::sources::Credentials;
@@ -58,10 +58,12 @@ where
 {
     let prepared = prepare_status_request(&mut call, services).await?;
     if let Some(context) = log.as_deref_mut() {
-        log_pre_call(
+        log_call(
             call.invocation_arn,
-            &prepared.url,
-            &prepared.headers,
+            StatusEvent::Request {
+                url: &prepared.url,
+                headers: &prepared.headers,
+            },
             context,
         )?;
     }
@@ -193,7 +195,7 @@ fn complete_status_request(
 ) -> Result<Json, EmbeddingJobsError> {
     let text = scrub_credentials(response_text(&reply.body), credentials);
     if let Some(context) = log {
-        log_post_call(invocation_arn, &text, context);
+        log_call(invocation_arn, StatusEvent::Reply(&text), context)?;
     }
     // only an exact 200 is a status body; a Failed job in a 200 body is still a success
     if reply.status == 200 {

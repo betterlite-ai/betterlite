@@ -1,10 +1,10 @@
 import asyncio
 import json
 import os
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from datetime import UTC, datetime
 from functools import partial
-from typing import cast
+from typing import NotRequired, Protocol, cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L55
 import httpx
@@ -15,7 +15,7 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.llms.bedrock import AwsAuthParams
 from litellm.types.utils import LlmProviders
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
-from typing_extensions import NotRequired, TypedDict, override
+from typing_extensions import TypedDict, override
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -70,11 +70,12 @@ class Recorder(Logging):
     @override
     def pre_call(self, *_args: JsonValue, **values: JsonValue) -> None:
         additional = PRE_ARGS.validate_python(values["additional_args"])
+        header_names: list[str] = list(additional["headers"])
         self.pre.append(
             {
                 "input": values["input"],
                 "api_base": additional["api_base"],
-                "header_names": JSON.validate_python(list(additional["headers"].keys())),
+                "header_names": JSON.validate_python(header_names),
                 "request_str": additional["request_str"],
                 "complete_input_dict": JSON.validate_python(additional["complete_input_dict"]),
             }
@@ -137,6 +138,17 @@ class Fixture:
         return AsyncHTTPHandler(transport=httpx.MockTransport(self.respond))
 
 
+class StatusCall(Protocol):
+    def __call__(
+        self,
+        invocation_arn: str,
+        aws_region_name: str,
+        *,
+        logging_obj: Recorder | None,
+        **kwargs: JsonValue,
+    ) -> Coroutine[None, None, JsonValue]: ...
+
+
 class Caller(embedding_module.BedrockEmbedding):
     async def status(self, value: Input, logging_obj: Recorder | None) -> JsonValue:
         kwargs: dict[str, JsonValue] = {
@@ -149,7 +161,7 @@ class Caller(embedding_module.BedrockEmbedding):
         endpoint = value.get("endpoint")
         if endpoint is not None:
             kwargs["aws_bedrock_runtime_endpoint"] = endpoint
-        call = cast(Callable[..., Coroutine[None, None, JsonValue]], self._get_async_invoke_status)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L587-L667
+        call = cast(StatusCall, self._get_async_invoke_status)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L587-L667
         return await call(
             value["invocation_arn"], value["region"], logging_obj=logging_obj, **kwargs
         )
@@ -190,7 +202,7 @@ def run(value: Input) -> JsonValue:
         body = ""
     logging = value.get("logging")
     fixture = Fixture(status, body)
-    embedding_module.get_async_httpx_client = fixture.client  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L641
+    embedding_module.get_async_httpx_client = fixture.client  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L641
     recorder = Recorder() if logging is True else None
     try:
         returned = asyncio.run(Caller().status(value, recorder))
