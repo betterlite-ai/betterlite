@@ -21,7 +21,7 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
-use std::sync::{Mutex, PoisonError::into_inner};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 pub(crate) struct Op;
@@ -86,7 +86,8 @@ struct Recorder {
 
 impl Recorder {
     fn finish(&self, entry: Value) -> Result<(), PrePostError> {
-        self.events.lock().unwrap_or_else(into_inner).push(entry);
+        let mut events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
+        events.push(entry);
         if self.failing {
             return Err(PrePostError::CallbackFailed {
                 message: "callback exploded".to_owned(),
@@ -110,7 +111,7 @@ impl LogSink for Recorder {
             LogLevel::Warning => "warning",
             LogLevel::Error => "error",
         };
-        let mut events = self.events.lock().unwrap_or_else(into_inner);
+        let mut events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
         events.push(serde_json::json!({
             "kind": "log",
             "level": level,
@@ -204,7 +205,10 @@ fn dispatch(
 ) -> Result<Value, Box<HelperError>> {
     let callbacks = [InputCallback::Logger(recorder)];
     let logger_fn = |details: &Json| {
-        let mut events = recorder.events.lock().unwrap_or_else(into_inner);
+        let mut events = recorder
+            .events
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         events.push(serde_json::json!({
             "kind": "logger_fn",
             "log_event_type": detail(details, "log_event_type"),
@@ -269,7 +273,11 @@ fn invoke_hook(input: &Input, state: &mut LoggingState, env: &PrePostEnv<'_>) ->
 fn output(state: &LoggingState, recorder: &Recorder, error: &Value) -> Value {
     let details = &state.model_call_details;
     let set = |name: &str| !matches!(details.get(name), None | Some(Json::Null));
-    let events = recorder.events.lock().unwrap_or_else(into_inner).clone();
+    let events = recorder
+        .events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone();
     serde_json::json!({
         "events": events,
         "details": {
