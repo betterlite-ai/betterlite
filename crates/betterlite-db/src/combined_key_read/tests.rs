@@ -140,7 +140,8 @@ async fn writer_bypasses_plan_repair() {
         use_writer: true,
         parent_otel_span: None,
     };
-    assert!(harness.read(&request).await.unwrap().is_some());
+    let found = harness.read(&request).await.unwrap().unwrap();
+    assert_eq!(found.token.token.unwrap().expose_secret(), "sk-writer");
     assert!(harness.reconnect.requests().is_empty());
     assert_eq!(
         harness.database.row_calls(),
