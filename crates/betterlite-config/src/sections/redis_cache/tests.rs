@@ -95,6 +95,19 @@ fn ttl_reports_a_missing_environment_variable() {
 #[case::nan("litellm_settings:\n  default_redis_ttl: .nan\n")]
 fn ttl_rejects_a_nonfinite_value(#[case] source: &str) {
     let error = failure(source, BTreeMap::new());
+    assert!(
+        matches!(error, ConfigError::Yaml { .. }),
+        "the YAML layer refuses a non-finite float before the section sees it"
+    );
+}
+
+#[rstest]
+#[case::infinity("\"inf\"")]
+#[case::negative_infinity("\"-inf\"")]
+#[case::nan("\"nan\"")]
+fn ttl_rejects_a_text_nonfinite_value(#[case] value: &str) {
+    let source = format!("litellm_settings:\n  default_redis_ttl: {value}\n");
+    let error = failure(&source, BTreeMap::new());
     assert!(matches!(
         error,
         ConfigError::InvalidInteger { path, .. } if path == "litellm_settings.default_redis_ttl"
@@ -223,7 +236,8 @@ fn cache_switch_absent_ignores_cache_params() {
 
 #[test]
 fn cache_switch_on_reports_the_cache_params_path_for_a_bad_ttl() {
-    let source = "litellm_settings:\n  cache: true\n  cache_params:\n    default_redis_ttl: .inf\n";
+    let source =
+        "litellm_settings:\n  cache: true\n  cache_params:\n    default_redis_ttl: \"inf\"\n";
     let error = failure(source, BTreeMap::new());
     assert!(matches!(
         error,
