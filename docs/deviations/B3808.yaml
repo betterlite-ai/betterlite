@@ -1,10 +1,10 @@
 task: B3808
 deviations:
-  - what: An unknown key in a route definition, in a custom routes file or inline, is rejected with an error naming the key and the route index, where LiteLLM reads the keys it knows and drops every other one.
+  - what: An unknown key in a route definition, in a custom routes file or inline, is rejected with an error that names the key, and the route index for an inline route, where LiteLLM reads the keys it knows and drops every other one.
     why: A dropped key changes which prompts match a route without a word, and a misspelled utterances key would leave the route with no utterances at all; the parse error names the field when the config is read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L78-L114
   - what: An utterance that is not a string is rejected when the route is loaded, where LiteLLM passes the list to semantic_router's Route and the non-string value fails later inside the encoder.
-    why: Betterlite keeps a route's utterances as strings, and the route loader is the place that knows the field is a list of texts; the load error names the route and the field instead of an embedding failure at the first request.
+    why: Betterlite keeps a route's utterances as strings, and the route loader is the place that knows the field is a list of texts; the load error names the route index and the field instead of an embedding failure at the first request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L93-L114
   - what: A plain scalar that PyYAML reads as a timestamp or a sexagesimal integer, such as 2020-01-01 or 1:30, is read as its text in a route name, description or utterance, where PyYAML hands LiteLLM a date or an integer, so Route rejects the date as a name or a description and carries the non-string utterance into the encoder.
     why: The YAML reader exposes no scalar style, so the unquoted form cannot be told apart from a quoted "2020-01-01" that must stay text; reading both as text keeps a quoted date usable and never turns a route value into a Python date or integer.
