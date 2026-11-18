@@ -1,0 +1,17 @@
+kind: probe
+name: cost-routing-custom-price-over-catalog
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost:
+          openai/catalog: {input_cost_per_token: 0.5, output_cost_per_token: 0.5}
+        deployments:
+          - {id: a, model: openai/catalog, input_cost_per_token: 0.25, output_cost_per_token: 0.25}
+          - {id: b, model: openai/catalog}
+          - {id: c, model: openai/catalog, input_cost_per_token: 0.125}
+        steps:
+          - {kind: select, now_millis: 1795003200000}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: probe
+name: cost-routing-unknown-price-fallback
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost:
+          openai/known: {input_cost_per_token: 0.5, output_cost_per_token: 0.5}
+          openai/partial: {input_cost_per_token: 0.25}
+        deployments:
+          - {id: a, model: openai/unknown}
+          - {id: b, model: openai/known}
+          - {id: c, model: openai/partial}
+        steps:
+          - {kind: select, now_millis: 1795003200000}
+compare: {ignore: []}
