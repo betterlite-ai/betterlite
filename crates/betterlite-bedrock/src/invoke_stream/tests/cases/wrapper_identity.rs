@@ -360,18 +360,20 @@ fn read_timeouts_are_a_timeout() {
     assert!(!timed_out.fallback);
 }
 
-// A read that is not a timeout is APIConnectionError 500, which the wrapper wraps for a fallback.
+// A read that is not a timeout is APIConnectionError 500, wrapped for a fallback unless the finish reason came first.
 fn other_read_failures_are_connection_errors() {
     let messages = messages();
     let data = data();
-    let call = call(MODEL, BASE, &data, &messages);
+    let plain = call(MODEL, BASE, &data, &messages);
+    let finished = call(DEEPSEEK_MODEL, BASE, &data, &messages);
+
     let fixture = Fixture::failing(
         HandlerKind::Async,
         &RESPONSE_HEADERS,
         vec![Err(HttpError::TooLarge { limit: 10 })],
     );
     let opened = run(
-        &call,
+        &plain,
         Some(Arc::clone(&fixture)),
         Arc::clone(&fixture),
         false,
@@ -381,6 +383,25 @@ fn other_read_failures_are_connection_errors() {
     assert!(opened.chunks.is_empty());
     assert_eq!(opened.failure_status, Some(500));
     assert!(opened.fallback);
+
+    // httpx.ReadError after a finish reason ends the stream instead of raising.
+    let late = Fixture::failing(
+        HandlerKind::Async,
+        &RESPONSE_HEADERS,
+        vec![
+            Ok(chunk_frame(DEEPSEEK_FINISH)),
+            Err(HttpError::TooLarge { limit: 10 }),
+        ],
+    );
+    let ended = run(
+        &finished,
+        Some(Arc::clone(&late)),
+        Arc::clone(&late),
+        false,
+        None,
+    );
+    assert_eq!(ended.failure, None);
+    assert!(!ended.chunks.is_empty());
 }
 
 // A provider error event goes through the Bedrock mapper: 500 is ServiceUnavailable 503, a validation 400 stays 400.
