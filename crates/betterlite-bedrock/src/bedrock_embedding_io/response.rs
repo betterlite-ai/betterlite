@@ -105,18 +105,29 @@ fn regular_reply(
     provider: BedrockEmbeddingProvider,
     batch_data: Option<&[Object]>,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    if model == TITAN_MULTIMODAL_MODEL {
-        let response = multimodal::transform_response(response_list, model, batch_data)?;
-        return Ok(titan_embedding_reply(response));
+    match model {
+        TITAN_MULTIMODAL_MODEL => {
+            let response = multimodal::transform_response(response_list, model, batch_data)?;
+            Ok(titan_embedding_reply(response))
+        }
+        TITAN_G1_MODEL | TITAN_G1_LEGACY_MODEL => {
+            let response = titan::transform_response(response_list, model, titan::plain_embedding)?;
+            Ok(titan_embedding_reply(response))
+        }
+        TITAN_V2_MODEL => {
+            let response = titan::transform_response(response_list, model, v2::by_type_embedding)?;
+            Ok(titan_embedding_reply(response))
+        }
+        _ => provider_reply(response_list, model, provider, batch_data),
     }
-    if model == TITAN_G1_MODEL || model == TITAN_G1_LEGACY_MODEL {
-        let response = titan::transform_response(response_list, model, titan::plain_embedding)?;
-        return Ok(titan_embedding_reply(response));
-    }
-    if model == TITAN_V2_MODEL {
-        let response = titan::transform_response(response_list, model, v2::by_type_embedding)?;
-        return Ok(titan_embedding_reply(response));
-    }
+}
+
+fn provider_reply(
+    response_list: &[Object],
+    model: &str,
+    provider: BedrockEmbeddingProvider,
+    batch_data: Option<&[Object]>,
+) -> Result<EmbeddingReply, EmbeddingIoError> {
     match provider {
         BedrockEmbeddingProvider::Twelvelabs => {
             let replies = parse_list::<MarengoInvokeResponse>(response_list)?;
