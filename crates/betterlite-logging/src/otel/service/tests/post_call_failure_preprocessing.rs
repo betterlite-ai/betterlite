@@ -45,7 +45,10 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     async_post_call_failure_hook(&lifecycle, &call).expect("failure hook");
     let server = rig.span("proxy");
     match expected {
-        Some(ms) => assert_eq!(f64_attribute(&server, litellm::PREPROCESSING_MS), ms),
+        Some(ms) => assert_eq!(
+            f64_attribute(&server, litellm::PREPROCESSING_MS).to_bits(),
+            ms.to_bits()
+        ),
         None => assert!(attribute(&server, litellm::PREPROCESSING_MS).is_none()),
     }
 }

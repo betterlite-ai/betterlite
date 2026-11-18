@@ -1,5 +1,5 @@
 use opentelemetry::Context;
-use opentelemetry::trace::{Span, Status, TraceContextExt as _, Tracer as _};
+use opentelemetry::trace::{Span as _, Status, Tracer as _};
 use opentelemetry_sdk::trace::Span as SdkSpan;
 
 use crate::logging_metadata::exception::ExceptionFacts;

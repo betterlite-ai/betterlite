@@ -26,7 +26,8 @@ pub fn set_preprocessing_duration_attribute(span: Option<&LiveSpan>, container: 
     let (Some(start), Some(end)) = (timestamp(received_at), timestamp(first_handoff)) else {
         return;
     };
-    let duration_ms = (end - start) * 1000.0;
+    // float operators are denied; mul_add and mul compute the same bits as Python's (end - start) * 1000.0
+    let duration_ms = start.mul_add(-1.0, end).mul(1000.0);
     // clock skew -> omit rather than emit a negative latency
     if duration_ms < 0.0 {
         return;

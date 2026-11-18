@@ -29,7 +29,7 @@ impl HttpClient for NoServer {
     }
 }
 
-fn config() -> OpenTelemetryConfig {
+const fn config() -> OpenTelemetryConfig {
     OpenTelemetryConfig {
         exporter: Exporter::InMemory,
         endpoint: None,

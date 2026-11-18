@@ -53,7 +53,10 @@ fn otel_legacy_service_callbacks_behavior_tests_behavior(
     parent.lock().end();
     let span = rig.span("proxy");
     match expected {
-        Some(ms) => assert_eq!(f64_attribute(&span, litellm::PREPROCESSING_MS), ms),
+        Some(ms) => assert_eq!(
+            f64_attribute(&span, litellm::PREPROCESSING_MS).to_bits(),
+            ms.to_bits()
+        ),
         None => assert!(attribute(&span, litellm::PREPROCESSING_MS).is_none()),
     }
 }
