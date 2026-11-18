@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_auth::auth_cache::WriteOptions;
 use betterlite_db::budget_reset_policy::cache_invalidation::GLOBAL_PROXY_SPEND_CACHE_KEY;
 use betterlite_redis::request_batch::batches::RequestRedisBatches;
 use betterlite_redis::request_batch::lock;
@@ -275,4 +276,29 @@ async fn a_real_cache_with_redis_arms_one_read_per_partition() {
     .await;
     assert_eq!(armed.keys, keys);
     assert_eq!(armed.reads.len(), 2);
+}
+
+#[tokio::test]
+async fn the_real_armed_read_resolves_the_cached_values() {
+    let cache = unreachable_cache().await;
+    let keys = vec!["user-1".to_owned()];
+    cache
+        .async_set(
+            Some("user-1"),
+            &json_from("5"),
+            WriteOptions {
+                ttl: None,
+                local_only: true,
+                refresh_ttl: false,
+            },
+        )
+        .await
+        .expect("the memory fixture is seeded");
+    let values = in_request_scope(async {
+        arm_cache_read(&keys, &cache).expect("arming");
+        read_cache_values(&keys, None, &cache).await
+    })
+    .await;
+    assert_eq!(values.len(), 1);
+    assert_eq!(values.get("user-1"), Some(&json_from("5")));
 }

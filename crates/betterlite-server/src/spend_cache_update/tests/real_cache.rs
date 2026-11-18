@@ -13,6 +13,7 @@ use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use tokio_util::task::TaskTracker;
 
+use super::super::cache::SpendCache;
 use super::super::{UpdateInput, update_spend_cache};
 use super::support::{HASHED_TEST_TOKEN, RecordingAlerts, json_from, local_cache, update_deps};
 
@@ -127,4 +128,46 @@ async fn a_cached_key_with_a_null_spend_is_a_miss_and_sends_no_alert() {
     tasks.close();
     tasks.wait().await;
     assert!(alerts.sent().is_empty());
+}
+
+#[test]
+fn the_real_cache_reports_the_management_object_ttl() {
+    let cache = local_cache();
+    assert_eq!(cache.management_ttl().to_bits(), 45.0_f64.to_bits());
+}
+
+#[tokio::test]
+async fn the_real_cache_reads_the_cached_key_and_sends_the_projected_alert() {
+    let cache = Arc::new(local_cache());
+    cache
+        .async_set(
+            Some(HASHED_TEST_TOKEN),
+            &json_from(
+                r#"{"token":"cached-token","user_id":"user-1","spend":1300,"soft_budget":2000,"soft_budget_cooldown":false}"#,
+            ),
+            WriteOptions::default(),
+        )
+        .await
+        .expect("the key fixture is seeded");
+    let alerts = Arc::new(RecordingAlerts::default());
+    let tasks = TaskTracker::new();
+    let deps = update_deps(Arc::clone(&cache), Arc::clone(&alerts), &tasks);
+    let input = UpdateInput {
+        token: Some("sk-test-token".to_owned()),
+        user_id: None,
+        end_user_id: None,
+        team_id: None,
+        response_cost: Some(Decimal::from(100)),
+        span: None,
+        tags: None,
+    };
+    update_spend_cache(&input, &deps)
+        .await
+        .expect("the update runs");
+    tasks.close();
+    tasks.wait().await;
+    let sent = alerts.sent();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].spend, Decimal::from(1400));
+    assert_eq!(sent[0].max_budget, Some(Decimal::from(2000)));
 }

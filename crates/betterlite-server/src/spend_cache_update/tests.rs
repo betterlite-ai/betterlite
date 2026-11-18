@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+mod alerts;
 mod group_updates;
 mod key_spend;
 mod keys;

@@ -106,8 +106,8 @@ async fn every_object_group_adds_the_cost_and_the_global_spend_is_written_apart(
         .iter()
         .find(|write| !write.local_only)
         .expect("the global write reaches redis");
-    assert_eq!(objects.ttl, 33.0);
-    assert_eq!(global.ttl, 33.0);
+    assert_eq!(objects.ttl.to_bits(), 33.0_f64.to_bits());
+    assert_eq!(global.ttl.to_bits(), 33.0_f64.to_bits());
     let user = payload::decode::<LiteLLMUserTable>(entry(objects, "user-1"))
         .expect("the user decodes")
         .expect("the user is present");

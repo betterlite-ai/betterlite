@@ -3,6 +3,7 @@ use std::error::Error as StdError;
 use std::fs;
 use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_auth::auth_cache::{AuthCache, gateway_cache};
@@ -11,6 +12,7 @@ use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
 use betterlite_redis::redis_client_reuse::breaker::{BreakerAdmission, BreakerOpen};
@@ -33,7 +35,11 @@ use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 
-use crate::failure_hook::ports::{CallInfo, Clock};
+use crate::failure_hook::alerts::ProxyAlerts;
+use crate::failure_hook::ports::{
+    AlertingClient, BudgetAlertKind, CallInfo, Clock, FailureService, ServiceLogging, SlackAlert,
+    SlackAlerting, UsageCache,
+};
 
 use super::super::alerts::SpendBudgetAlerts;
 use super::super::cache::{ArmedSpendRead, SpendCache};
@@ -398,4 +404,70 @@ pub(crate) fn key_auth(spend: i64, soft_budget: Option<i64>, cooldown: bool) -> 
         fields.insert("soft_budget".to_owned(), json!(soft_budget));
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the auth fixture builds")
+}
+
+#[derive(Default)]
+pub(crate) struct RecordingSlack {
+    pub budget: Mutex<Vec<(BudgetAlertKind, CallInfo)>>,
+}
+
+impl RecordingSlack {
+    pub(crate) fn budget_calls(&self) -> Vec<(BudgetAlertKind, CallInfo)> {
+        lock(&self.budget).clone()
+    }
+}
+
+#[async_trait]
+impl SlackAlerting for RecordingSlack {
+    fn alerting_configured(&self) -> bool {
+        true
+    }
+
+    async fn failed_tracking_alert(&self, _error_message: &str, _failing_model: &str) {}
+
+    async fn budget_alerts(&self, kind: BudgetAlertKind, user_info: &CallInfo) {
+        lock(&self.budget).push((kind, user_info.clone()));
+    }
+
+    async fn send_alert(&self, _alert: SlackAlert<'_>) {}
+
+    async fn response_taking_too_long(&self, _data: Option<JsonMap>) {}
+}
+
+pub(crate) struct QuietUsageCache;
+
+#[async_trait]
+impl UsageCache for QuietUsageCache {
+    async fn set_local(&self, _key: &str, _value: &str, _ttl: Duration) {}
+}
+
+pub(crate) struct QuietServiceLogging;
+
+#[async_trait]
+impl ServiceLogging for QuietServiceLogging {
+    async fn async_service_failure_hook(
+        &self,
+        _service: FailureService,
+        _duration: Duration,
+        _error: &str,
+        _call_type: &str,
+    ) {
+    }
+}
+
+pub(crate) fn proxy_alerts(slack: Arc<RecordingSlack>) -> ProxyAlerts {
+    ProxyAlerts {
+        alerting: Some(vec![AlertingClient::Slack]),
+        alert_types: Vec::new(),
+        alerting_threshold: Duration::from_secs(60),
+        proxy_base_url: None,
+        usage_cache: Arc::new(QuietUsageCache),
+        slack,
+        email: None,
+        service_logging: Arc::new(QuietServiceLogging),
+        sentry: None,
+        redactor: None,
+        clock: june_15_clock(),
+        tasks: TaskTracker::new(),
+    }
 }
