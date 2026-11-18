@@ -36,7 +36,7 @@ fn with_margin(margin: f64) -> Result<(), ComplexityConfigError> {
 #[case::one(1.0_f64)]
 #[case::half(0.5_f64)]
 fn a_margin_at_an_endpoint_is_accepted(#[case] margin: f64) {
-    assert!(with_margin(margin).is_ok());
+    with_margin(margin).unwrap();
 }
 
 #[rstest]
@@ -304,7 +304,7 @@ fn unknown_keyword_rule_tiers_are_deduplicated_and_sorted() {
     assert_eq!(valid, "SIMPLE, MEDIUM, COMPLEX, REASONING");
 }
 
-fn adaptive_pools(pools: &[(&str, tier_section::TierPool)]) -> Result<(), ComplexityConfigError> {
+fn adaptive_pools(pools: &[(&str, TierPool)]) -> Result<(), ComplexityConfigError> {
     let features = [Feature::Adaptive];
     let checks = Checks {
         features: &features,
@@ -347,10 +347,10 @@ fn every_pool_empty_is_the_no_pool_error() {
         features: &features,
         ..base_checks()
     };
-    let rejected =
+    let rejected_map =
         resolve_with(blank(), empty_map, &checks).expect_err("an empty tier map is refused");
     assert!(matches!(
-        rejected,
+        rejected_map,
         ComplexityConfigError::AdaptiveWithoutPools
     ));
 }
@@ -371,7 +371,7 @@ fn adaptive_needs_every_pool_configured() {
         .expect("both pools are configured");
 }
 
-fn pool_two() -> tier_section::TierPool {
+fn pool_two() -> TierPool {
     TierPool::Pool(vec![
         tier_section::TierEntry::Model("a".to_owned()),
         tier_section::TierEntry::Model("b".to_owned()),

@@ -146,8 +146,8 @@ fn keyword_rules_reject_unknown_tiers() {
     let rejected = error(blank(), tiers(), &checks);
     assert!(matches!(
         rejected,
-        ComplexityConfigError::KeywordRuleUnknownTiers { ref tiers, ref valid }
-            if tiers == &strings(&["PREMIUM"]) && valid == "SIMPLE, MEDIUM, COMPLEX, REASONING"
+        ComplexityConfigError::KeywordRuleUnknownTiers { tiers, valid }
+            if tiers == strings(&["PREMIUM"]) && valid == "SIMPLE, MEDIUM, COMPLEX, REASONING"
     ));
 }
 
@@ -249,7 +249,10 @@ fn order_conflict(rejected: &ComplexityConfigError) -> Vec<&'static str> {
         .iter()
         .find_map(|conflict| match conflict {
             DefinitionConflict::OrderFeatures(features) => Some(features.clone()),
-            _ => None,
+            DefinitionConflict::SystemPrompt
+            | DefinitionConflict::ClassificationRubric
+            | DefinitionConflict::DefaultModelFallback
+            | DefinitionConflict::TierLabels => None,
         })
         .unwrap_or_default()
 }
