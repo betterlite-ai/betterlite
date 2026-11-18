@@ -1,0 +1,409 @@
+#![cfg(test)]
+
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use serde_json::Value;
+
+use super::{SpendMetadataArguments, project_spend_logs_metadata};
+use crate::spend_metadata::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
+use crate::spend_sanitize::SpendSanitizePolicy;
+
+const SK_ABC: &str = "1460db1b6902f8b1fc2a40d9381a24d0fd22c3bc1b2c6f999c521da73776fbe0";
+const SK_ABC_HASHED: &str = "125608c42b7910775fab830f88ae315427bfbb945e21af384f19f28d77918bfe";
+
+fn object(text: &str) -> JsonObject {
+    serde_json::from_str(text).expect("the fixture is a JSON object")
+}
+
+fn json(text: &str) -> Json {
+    serde_json::from_str(text).expect("the fixture is JSON")
+}
+
+fn policy(store_bodies: bool) -> SpendSanitizePolicy {
+    SpendSanitizePolicy {
+        store_bodies,
+        max_string_length: 1_000,
+    }
+}
+
+fn project(
+    metadata: Option<&JsonObject>,
+    arguments: SpendMetadataArguments,
+    store_bodies: bool,
+) -> SpendLogsMetadata {
+    project_spend_logs_metadata(metadata, arguments, &policy(store_bodies))
+        .expect("the metadata projects")
+}
+
+fn serialized(record: &SpendLogsMetadata) -> Value {
+    serde_json::to_value(record).expect("the record serializes")
+}
+
+#[test]
+fn the_absent_mapping_builds_the_constructor_payload() {
+    let mut arguments = SpendMetadataArguments::default();
+    arguments.cold_storage_object_key = Some("cold".to_owned());
+    arguments.litellm_call_id = Some("call".to_owned());
+    arguments.autorouter_savings = Some(1.5);
+    arguments.autorouter_savings_estimate = Some(object(r#"{"saved":1}"#));
+    arguments.autorouter_baseline_observation = Some("baseline".to_owned());
+    arguments.router_metadata = Some(SpendLogsRouterMetadata {
+        requested_model: Some("requested".to_owned()),
+        selected_model: None,
+        selected_provider: Some("openai".to_owned()),
+        router_correlation_id: None,
+    });
+    arguments.azure_spillover = Some(object(r#"{"region":"east"}"#));
+    arguments.used_client_oauth_token = Some(true);
+    arguments.applied_guardrails = Some(vec!["ignored".to_owned()]);
+
+    let value = serialized(&project(None, arguments, true));
+    let fields = value.as_object().expect("the record is an object");
+    assert_eq!(fields.len(), 42);
+    assert_eq!(value["status"], "success");
+    assert_eq!(value["cold_storage_object_key"], "cold");
+    assert_eq!(value["litellm_call_id"], "call");
+    assert_eq!(value["autorouter_savings"], 1.5);
+    assert_eq!(value["autorouter_savings_estimate"]["saved"], 1);
+    assert_eq!(value["autorouter_baseline_observation"], "baseline");
+    assert_eq!(value["router_metadata"]["requested_model"], "requested");
+    assert_eq!(value["router_metadata"]["selected_model"], Value::Null);
+    assert_eq!(value["azure_spillover"]["region"], "east");
+    assert_eq!(value["used_client_oauth_token"], true);
+    assert_eq!(value["applied_guardrails"], Value::Null);
+    assert!(!fields.contains_key("actor_agent_id"));
+    assert!(!fields.contains_key("routing_decision"));
+}
+
+#[test]
+fn an_empty_mapping_has_every_field() {
+    let metadata = object("{}");
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    let fields = value.as_object().expect("the record is an object");
+    assert_eq!(fields.len(), 48);
+    for name in [
+        "actor_agent_id",
+        "target_agent_id",
+        "billing_agent_id",
+        "agent_execution_mode",
+        "verified_human_user_id",
+        "routing_decision",
+        "user_api_key",
+        "status",
+    ] {
+        assert_eq!(value[name], Value::Null, "{name} is null");
+    }
+}
+
+#[test]
+fn forged_stamped_values_never_win() {
+    let metadata = object(
+        r#"{
+            "router_metadata": {"requested_model": "forged"},
+            "azure_spillover": {"region": "forged"},
+            "autorouter_savings": 99.0,
+            "autorouter_savings_estimate": {"saved": 99},
+            "autorouter_baseline_observation": "forged",
+            "used_client_oauth_token": true
+        }"#,
+    );
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    for name in [
+        "router_metadata",
+        "azure_spillover",
+        "autorouter_savings",
+        "autorouter_savings_estimate",
+        "autorouter_baseline_observation",
+        "used_client_oauth_token",
+    ] {
+        assert_eq!(value[name], Value::Null, "{name} is null");
+    }
+}
+
+#[test]
+fn forged_overridden_values_are_replaced_by_the_arguments() {
+    let metadata = object(
+        r#"{
+            "applied_guardrails": ["forged"],
+            "batch_models": ["forged"],
+            "batch_successful_requests": 9,
+            "batch_failed_requests": 9,
+            "mcp_tool_call_metadata": {"tool": "forged"},
+            "vector_store_request_metadata": [{"vector_store_id": "forged"}],
+            "guardrail_information": [{"guardrail_name": "forged"}],
+            "usage_object": {"total_tokens": 9},
+            "model_map_information": {"model": "forged"},
+            "cold_storage_object_key": "forged",
+            "litellm_overhead_time_ms": 9.5,
+            "cost_breakdown": {"total": 9},
+            "litellm_call_id": "forged"
+        }"#,
+    );
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    for name in [
+        "applied_guardrails",
+        "batch_models",
+        "batch_successful_requests",
+        "batch_failed_requests",
+        "mcp_tool_call_metadata",
+        "vector_store_request_metadata",
+        "guardrail_information",
+        "usage_object",
+        "model_map_information",
+        "cold_storage_object_key",
+        "litellm_overhead_time_ms",
+        "cost_breakdown",
+        "litellm_call_id",
+    ] {
+        assert_eq!(value[name], Value::Null, "{name} is null");
+    }
+}
+
+#[test]
+fn the_arguments_are_projected_into_the_record() {
+    let mut arguments = SpendMetadataArguments::default();
+    arguments.applied_guardrails = Some(vec!["guard".to_owned()]);
+    arguments.batch_models = Some(vec!["batch".to_owned()]);
+    arguments.batch_successful_requests = Some(3);
+    arguments.batch_failed_requests = Some(1);
+    arguments.mcp_tool_call_metadata = Some(object(r#"{"tool":"mcp"}"#));
+    arguments.vector_store_request_metadata = Some(vec![json(r#"{"vector_store_id":"vs"}"#)]);
+    arguments.guardrail_information = Some(json(r#"{"guardrail_name":"guard"}"#));
+    arguments.usage_object = Some(object(r#"{"total_tokens":4}"#));
+    arguments.model_map_information = Some(object(r#"{"model":"mapped"}"#));
+    arguments.cold_storage_object_key = Some("cold".to_owned());
+    arguments.litellm_overhead_time_ms = Some(2.25);
+    arguments.cost_breakdown = Some(object(r#"{"total":0.5}"#));
+    arguments.litellm_call_id = Some("call".to_owned());
+    arguments.autorouter_savings = Some(0.75);
+    arguments.autorouter_savings_estimate = Some(object(r#"{"saved":2}"#));
+    arguments.autorouter_baseline_observation = Some("baseline".to_owned());
+    arguments.router_metadata = Some(SpendLogsRouterMetadata::default());
+    arguments.azure_spillover = Some(object(r#"{"region":"west"}"#));
+    arguments.used_client_oauth_token = Some(false);
+
+    let metadata = object("{}");
+    let value = serialized(&project(Some(&metadata), arguments, true));
+    assert_eq!(value["applied_guardrails"][0], "guard");
+    assert_eq!(value["batch_models"][0], "batch");
+    assert_eq!(value["batch_successful_requests"], 3);
+    assert_eq!(value["batch_failed_requests"], 1);
+    assert_eq!(value["mcp_tool_call_metadata"]["tool"], "mcp");
+    assert_eq!(
+        value["vector_store_request_metadata"][0]["vector_store_id"],
+        "vs"
+    );
+    assert_eq!(value["guardrail_information"]["guardrail_name"], "guard");
+    assert_eq!(value["usage_object"]["total_tokens"], 4);
+    assert_eq!(value["model_map_information"]["model"], "mapped");
+    assert_eq!(value["cold_storage_object_key"], "cold");
+    assert_eq!(value["litellm_overhead_time_ms"], 2.25);
+    assert_eq!(value["cost_breakdown"]["total"], 0.5);
+    assert_eq!(value["litellm_call_id"], "call");
+    assert_eq!(value["autorouter_savings"], 0.75);
+    assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
+    assert_eq!(value["autorouter_baseline_observation"], "baseline");
+    assert_eq!(value["router_metadata"]["requested_model"], Value::Null);
+    assert_eq!(value["azure_spillover"]["region"], "west");
+    assert_eq!(value["used_client_oauth_token"], false);
+}
+
+#[test]
+fn copied_metadata_fields_keep_their_values() {
+    let metadata = object(
+        r#"{
+            "status": "failure",
+            "user_agent": "ua",
+            "attempted_retries": 2,
+            "max_retries": 3,
+            "additional_usage_values": {"cache_hits": 1},
+            "actor_agent_id": "actor",
+            "routing_decision": {"model": "chosen"}
+        }"#,
+    );
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["status"], "failure");
+    assert_eq!(value["user_agent"], "ua");
+    assert_eq!(value["attempted_retries"], 2);
+    assert_eq!(value["max_retries"], 3);
+    assert_eq!(value["additional_usage_values"]["cache_hits"], 1);
+    assert_eq!(value["actor_agent_id"], "actor");
+    assert_eq!(value["routing_decision"]["model"], "chosen");
+}
+
+#[test]
+fn a_mistyped_copied_field_names_the_record_and_the_field() {
+    let metadata = object(r#"{"status": 5}"#);
+    let error = project_spend_logs_metadata(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        &policy(true),
+    )
+    .expect_err("the status is not text");
+    let message = error.to_string();
+    assert!(message.contains("spend log metadata"), "{message}");
+    assert!(message.contains("`status`"), "{message}");
+}
+
+#[test]
+fn a_raw_secret_is_hashed() {
+    let metadata = object(r#"{"user_api_key": "sk-abc"}"#);
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+}
+
+#[test]
+fn a_bearer_prefixed_secret_is_hashed_without_the_prefix() {
+    let metadata = object(r#"{"user_api_key": "Bearer sk-abc"}"#);
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+}
+
+#[test]
+fn a_trusted_digest_is_kept() {
+    let metadata = object(&format!(
+        r#"{{"user_api_key": "{SK_ABC}", "user_api_key_hash": "{SK_ABC}"}}"#
+    ));
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], SK_ABC);
+}
+
+#[test]
+fn an_untrusted_digest_is_hashed_again() {
+    let metadata = object(&format!(r#"{{"user_api_key": "{SK_ABC}"}}"#));
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+}
+
+#[test]
+fn a_trusted_hash_that_differs_from_the_key_does_not_disable_hashing() {
+    let metadata = object(&format!(
+        r#"{{"user_api_key": "{SK_ABC}", "user_api_key_hash": "litellm-cli"}}"#
+    ));
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+}
+
+#[test]
+fn a_non_text_trusted_hash_does_not_disable_hashing() {
+    let metadata = object(&format!(
+        r#"{{"user_api_key": "{SK_ABC}", "user_api_key_hash": 5}}"#
+    ));
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], SK_ABC_HASHED);
+}
+
+#[test]
+fn the_alias_allows_a_cli_session_key() {
+    let metadata = object(
+        r#"{
+            "user_api_key": "cli-session-abc",
+            "user_api_key_hash": "cli-session-abc",
+            "user_api_key_alias": "cli-session-abc"
+        }"#,
+    );
+    let value = serialized(&project(
+        Some(&metadata),
+        SpendMetadataArguments::default(),
+        true,
+    ));
+    assert_eq!(value["user_api_key"], "cli-session-abc");
+    assert_eq!(value["user_api_key_alias"], "cli-session-abc");
+}
+
+#[test]
+fn non_text_and_empty_keys_become_null() {
+    for fixture in [
+        r#"{"user_api_key": 5}"#,
+        r#"{"user_api_key": ""}"#,
+        r#"{"user_api_key": "Bearer "}"#,
+    ] {
+        let metadata = object(fixture);
+        let value = serialized(&project(
+            Some(&metadata),
+            SpendMetadataArguments::default(),
+            true,
+        ));
+        assert_eq!(value["user_api_key"], Value::Null, "{fixture}");
+    }
+}
+
+#[test]
+fn vector_store_bodies_are_redacted_unless_bodies_are_stored() {
+    let mut arguments = SpendMetadataArguments::default();
+    arguments.vector_store_request_metadata = Some(vec![json(
+        r#"{"vector_store_search_response":{"data":[{"content":[{"text":"secret"}]}]}}"#,
+    )]);
+    let metadata = object("{}");
+    let redacted = serialized(&project(Some(&metadata), arguments.clone(), false));
+    assert_eq!(
+        redacted["vector_store_request_metadata"][0]["vector_store_search_response"]["data"][0]["content"]
+            [0]["text"],
+        "REDACTED_BY_LITELM"
+    );
+    let stored = serialized(&project(Some(&metadata), arguments, true));
+    assert_eq!(
+        stored["vector_store_request_metadata"][0]["vector_store_search_response"]["data"][0]["content"]
+            [0]["text"],
+        "secret"
+    );
+}
+
+#[test]
+fn guardrail_information_is_sanitized_unless_bodies_are_stored() {
+    let mut arguments = SpendMetadataArguments::default();
+    arguments.guardrail_information = Some(json(
+        r#"[{"guardrail_name":"guard","guardrail_response":"secret"}]"#,
+    ));
+    let metadata = object("{}");
+    let redacted = serialized(&project(Some(&metadata), arguments.clone(), false));
+    assert_eq!(
+        redacted["guardrail_information"][0]["guardrail_response"],
+        "REDACTED_BY_LITELM"
+    );
+    let stored = serialized(&project(Some(&metadata), arguments, true));
+    assert_eq!(
+        stored["guardrail_information"][0]["guardrail_response"],
+        "secret"
+    );
+}
