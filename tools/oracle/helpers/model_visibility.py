@@ -1,6 +1,8 @@
 import asyncio
 import logging
-from typing import Final, NotRequired, Protocol, TypedDict
+import re
+from typing import Final, NotRequired, TypedDict
+from unittest import mock
 
 import litellm
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
@@ -17,7 +19,6 @@ from typing_extensions import override
 LOGGER_NAME: Final = "LiteLLM Proxy"
 DEBUG_PREFIX: Final = "healthy-only model listing is enabled"
 HEALTH_FAILURE: Final = "the health cache is unreachable"
-BROKEN_PATTERN: Final = "broken-("
 ROW_NAME: Final[TypeAdapter[str]] = TypeAdapter(str)
 ALIASES: Final[TypeAdapter[dict[str, str | RouterModelGroupAliasItem]]] = TypeAdapter(
     dict[str, str | RouterModelGroupAliasItem]
@@ -47,10 +48,6 @@ class Input(TypedDict):
     arguments: Arguments
 
 
-class PatternRouterView(Protocol):
-    patterns: dict[str, list[dict[str, JsonValue]]]
-
-
 class DebugNotes(logging.Handler):
     def __init__(self) -> None:
         super().__init__(level=logging.DEBUG)
@@ -65,7 +62,6 @@ class DebugNotes(logging.Handler):
 
 class ReadyHealthRouter(Router):
     def __init__(self, *, unhealthy: set[str], fails: bool) -> None:
-        super().__init__()
         self.unhealthy = unhealthy
         self.report_failure = fails
         self.health_reads = 0
@@ -87,7 +83,8 @@ def rows_of(call: Input) -> list[dict[str, JsonValue]]:
 
 def aliases_of(call: Input) -> dict[str, str | RouterModelGroupAliasItem]:
     declared = call.get("model_group_alias")
-    return ALIASES.validate_python({} if declared is None else declared)
+    entries: dict[str, JsonValue] = {} if declared is None else declared
+    return ALIASES.validate_python(entries)
 
 
 def caller(role: str | None) -> UserAPIKeyAuth:
@@ -96,27 +93,17 @@ def caller(role: str | None) -> UserAPIKeyAuth:
     return UserAPIKeyAuth(user_role=LitellmUserRoles(role))
 
 
-def broken_pattern_record() -> dict[str, JsonValue]:
-    return {
-        "model_name": "broken-*",
-        "litellm_params": {"model": "openai/gpt-4o"},
-        "model_info": {"discoverable": False},
-    }
-
-
-def snapshot_router(call: Input) -> Router:
-    router = Router(model_list=rows_of(call), model_group_alias=aliases_of(call))
-    if call["arguments"].get("broken_pattern") is True:
-        view: PatternRouterView = router.pattern_router
-        view.patterns[BROKEN_PATTERN] = [broken_pattern_record()]
-    return router
+# The invalid regex key an internal record can store; LiteLLM compiles it during a listing.
+class InvalidPattern:
+    def __call__(self, _pattern: str, _flags: int = 0) -> re.Pattern[str]:
+        raise re.error("internal pattern does not compile")
 
 
 def router_of(call: Input) -> Router | None:
     disabled = call["arguments"].get("with_router")
     if disabled is False:
         return None
-    return snapshot_router(call)
+    return Router(model_list=rows_of(call), model_group_alias=aliases_of(call))
 
 
 def settings_of(arguments: Arguments) -> dict[str, JsonValue]:
@@ -139,16 +126,27 @@ def health_router(arguments: Arguments) -> ReadyHealthRouter | None:
     )
 
 
+def asked_hidden(call: Input, model_names: list[str], router: Router | None) -> frozenset[str]:
+    arguments = call["arguments"]
+    return undiscoverable_model_names(
+        model_names,
+        router,
+        caller(arguments.get("user_role")),
+        arguments.get("team_id"),
+    )
+
+
 def undiscoverable(call: Input) -> JsonValue:
     arguments = call["arguments"]
     asked = arguments.get("model_names")
     model_names: list[str] = [] if asked is None else asked
-    hidden = undiscoverable_model_names(
-        model_names,
-        router_of(call),
-        caller(arguments.get("user_role")),
-        arguments.get("team_id"),
-    )
+    router = router_of(call)
+    if arguments.get("broken_pattern") is True:
+        # ast-grep-ignore: no-string-mocking - LiteLLM's own compile takes no collaborator
+        with mock.patch.object(re, "compile", InvalidPattern()):
+            hidden = asked_hidden(call, model_names, router)
+    else:
+        hidden = asked_hidden(call, model_names, router)
     names: list[JsonValue] = []
     names.extend(sorted(hidden))
     return {"hidden": names}

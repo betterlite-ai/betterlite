@@ -8,10 +8,10 @@ deviations:
     why: >-
       B302 owns the pattern catalog and compiles each key once at add_pattern, so the invalid state
       LiteLLM can carry at listing time does not exist in betterlite. The invalid-pattern-propagates
-      oracle case injects the nearest failure each side can carry: Python stores a raw invalid regex
-      key and fails in re.compile; the Rust snapshot registers a deployment-less candidate under a
-      valid wildcard and fails with UnindexedCandidate when the backing lookup reads it. Both answers
-      are the same error envelope, so neither side fails open.
+      oracle case injects the nearest failure each side can carry: Python makes re.compile reject the
+      hidden pattern's registered key for that call; the Rust snapshot registers a deployment-less
+      candidate under a valid wildcard and fails with UnindexedCandidate when the backing lookup
+      reads it. Both answers are the same error envelope, so neither side fails open.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/discoverable_model_filter.py#L58-L70
   - what: >-
       When the provider cannot be inferred, the wildcard channel of get_model_list does not retry the
