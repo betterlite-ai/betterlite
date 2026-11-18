@@ -115,7 +115,7 @@ async fn per_row_failure_commits_the_good_rows_and_reports_the_chunk() {
     assert_eq!(events.len(), 1);
     let event = &events[0];
     assert_eq!(event.call_type, "reset_budget_keys");
-    assert_eq!(event.error, "Failed to reset 1 key: bad: no schedule");
+    assert_eq!(event.error, "Failed to reset 1 keys: bad: no schedule");
     assert_eq!(
         event.event_metadata.get("num_keys_found"),
         Some(&Json::Number(Number::from(2_u8)))

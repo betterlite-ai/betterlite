@@ -346,6 +346,7 @@ impl ResetCache for RecordingCache {
 
 pub(crate) struct CountingReconnect {
     pub(crate) succeeds: bool,
+    pub(crate) held: Option<Client>,
     pub(crate) attempts: AtomicUsize,
     pub(crate) reasons: Mutex<Vec<String>>,
 }
@@ -354,9 +355,17 @@ impl CountingReconnect {
     pub(crate) fn new(succeeds: bool) -> Self {
         Self {
             succeeds,
+            held: None,
             attempts: AtomicUsize::new(0),
             reasons: Mutex::new(Vec::new()),
         }
+    }
+
+    // Releasing the connection the test holds is what a real reconnect would do; the next attempt then finds the pool healthy.
+    pub(crate) fn releasing(held: Client) -> Self {
+        let mut reconnect = Self::new(true);
+        reconnect.held = Some(held);
+        reconnect
     }
 
     pub(crate) fn attempts(&self) -> usize {
@@ -391,48 +400,9 @@ impl DbReconnect for CountingReconnect {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(reason.to_owned());
+        self.held = None;
         let succeeds = self.succeeds;
         Box::pin(async move { Ok(succeeds) })
-    }
-}
-
-// Releasing the connection the test holds is what a real reconnect would do; the next attempt then finds the pool healthy.
-pub(crate) struct ReleasingReconnect {
-    pub(crate) held: Option<Client>,
-    pub(crate) attempts: AtomicUsize,
-}
-
-impl ReleasingReconnect {
-    pub(crate) fn new(held: Client) -> Self {
-        Self {
-            held: Some(held),
-            attempts: AtomicUsize::new(0),
-        }
-    }
-
-    pub(crate) fn attempts(&self) -> usize {
-        self.attempts.load(Ordering::SeqCst)
-    }
-}
-
-impl DbReconnect for ReleasingReconnect {
-    fn reconnect_timeout_seconds(&self) -> Option<f64> {
-        None
-    }
-
-    fn reconnect_lock_timeout_seconds(&self) -> Option<f64> {
-        None
-    }
-
-    fn attempt_db_reconnect<'client>(
-        &'client mut self,
-        _reason: &'client str,
-        _timeout_seconds: f64,
-        _lock_timeout_seconds: f64,
-    ) -> Pin<Box<dyn Future<Output = Result<bool, DbError>> + Send + 'client>> {
-        self.attempts.fetch_add(1, Ordering::SeqCst);
-        self.held.take();
-        Box::pin(async move { Ok(true) })
     }
 }
 

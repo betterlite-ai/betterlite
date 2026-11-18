@@ -6,8 +6,8 @@ use super::write_resets;
 use crate::database_faults::ErrorType;
 use crate::identity_budget_reset::phase::IdentityPhase;
 use crate::identity_budget_reset::tests::support::{
-    CountingReconnect, ReleasingReconnect, assert_spend, close_store, finish, moment, naive, past,
-    reset_at_of, schema, serial_pool, write,
+    CountingReconnect, assert_spend, close_store, finish, moment, naive, past, reset_at_of, schema,
+    serial_pool, write,
 };
 use crate::postgres_store::session::PostgresStore;
 
@@ -103,7 +103,7 @@ async fn write_transactional_retries_a_pool_timeout_after_reconnecting() {
         pool: Some(serial_pool(&fixture.options.url)),
     };
     let held = serial.session().await.unwrap();
-    let mut reconnect = ReleasingReconnect::new(held);
+    let mut reconnect = CountingReconnect::releasing(held);
     let writes = vec![write("k1", Some(moment(30)), Decimal::from(10))];
     write_resets(&serial, IdentityPhase::Keys, writes, Some(&mut reconnect))
         .await
