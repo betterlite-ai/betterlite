@@ -134,7 +134,7 @@ def chunk_object(case: ChunkCase) -> ChunkObject:
         chunk = ModelResponseStream(**body)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103
         for choice in cast(list[StreamChoice], chunk.choices):  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006
             if choice.delta.audio is not None:
-                choice.delta.audio = ChatCompletionAudioResponse.model_validate(choice.delta.audio)
+                choice.delta.audio = ChatCompletionAudioResponse.model_validate(choice.delta.audio)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1346
         return chunk
     return ModelResponse(**body)  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
 
@@ -213,10 +213,6 @@ def fallback_events_answer(input_value: Input) -> JsonValue:
     return answers
 
 
-def restamps_answer(input_value: Input) -> JsonValue:
-    return [restamp_answer(case) for case in input_value["restamps"]]
-
-
 def serialized_chunk(case: ChunkCase) -> JsonValue:
     if case["kind"] != "event":
         chunk = chunk_object(case)
@@ -247,10 +243,6 @@ VIEWS: Final[dict[ViewName, Callable[[ChunkCase], JsonValue]]] = {
     "usage_artifact": usage_chunk,
     "text": text_chunk,
 }
-
-
-def chunk_views_answer(input_value: Input) -> JsonValue:
-    return [VIEWS[input_value["view"]](case) for case in input_value["chunks"]]
 
 
 def sse_frame(payload: str) -> str:
@@ -289,12 +281,14 @@ HANDLERS: Final[dict[str, Callable[[Input], JsonValue]]] = {
     "include_errors": include_errors_answer,
     "fallback_meta": fallback_meta_answer,
     "fallback_event": fallback_events_answer,
-    "restamp": restamps_answer,
-    "chunk_view": chunk_views_answer,
     "frames": frames_answer,
 }
 
 
 def run(input_value: Input) -> JsonValue:
-    handler = HANDLERS[input_value["function"]]
-    return handler(input_value)
+    function = input_value["function"]
+    if function == "restamp":
+        return [restamp_answer(case) for case in input_value["restamps"]]
+    if function == "chunk_view":
+        return [VIEWS[input_value["view"]](case) for case in input_value["chunks"]]
+    return HANDLERS[function](input_value)
