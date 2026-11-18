@@ -108,14 +108,16 @@ fn names(rows: &[DeploymentSpec]) -> Vec<&str> {
 }
 
 fn provider_models(rows: &[DeploymentSpec]) -> Vec<&str> {
-    rows.iter().map(|row| litellm_model(row)).collect()
+    rows.iter().map(litellm_model).collect()
 }
+
+type ProviderFn = Box<dyn Fn(&str) -> Option<String>>;
 
 struct Snapshot {
     catalog: DeploymentCatalog,
     aliases: AliasMap,
     groups: RoutingGroupIndex,
-    provider: Box<dyn Fn(&str) -> Option<String>>,
+    provider: ProviderFn,
 }
 
 impl Snapshot {

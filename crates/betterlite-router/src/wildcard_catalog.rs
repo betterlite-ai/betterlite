@@ -1,3 +1,5 @@
+use std::fmt;
+
 use regex::Regex;
 
 pub mod error;
@@ -28,10 +30,9 @@ struct Registered {
 }
 
 // The candidate alone: the registered deployment carries credentials, and Debug never prints them.
-impl std::fmt::Debug for Registered {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("Registered")
+impl fmt::Debug for Registered {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Registered")
             .field("candidate", &self.candidate)
             .finish_non_exhaustive()
     }

@@ -3,16 +3,18 @@ use crate::model_catalog_lookup::index::rebuild_names as rebuild_name_index;
 
 #[test]
 fn rebuild_names() {
-    let mut catalog = DeploymentCatalog::default();
-    catalog.models = vec![
-        named("gpt-4o", "a", "openai/gpt-4o"),
-        named("gpt-4o", "b", "azure/gpt-4o"),
-        team_named("internal", "t", "t1", "team-gpt"),
-        raw(
-            "",
-            "{\"id\": \"n\", \"team_id\": \"t2\", \"team_public_model_name\": \"team-two\"}",
-        ),
-    ];
+    let mut catalog = DeploymentCatalog {
+        models: vec![
+            named("gpt-4o", "a", "openai/gpt-4o"),
+            named("gpt-4o", "b", "azure/gpt-4o"),
+            team_named("internal", "t", "t1", "team-gpt"),
+            raw(
+                "",
+                "{\"id\": \"n\", \"team_id\": \"t2\", \"team_public_model_name\": \"team-two\"}",
+            ),
+        ],
+        ..DeploymentCatalog::default()
+    };
     catalog.name_index.insert("stale".to_owned(), vec![9]);
     catalog
         .team_index
@@ -304,7 +306,7 @@ fn reordered_rebuild() {
     );
 }
 
-// Two wildcard patterns that share an id keep their own rows: a request for the anthropic pattern reads the anthropic row, not the later openai row its id ends on.
+// Two wildcard patterns that share an id keep their own rows: a request for the anthropic pattern reads the anthropic row, not the later openai row its id ends on, and substitutes the request's segment into that row's own provider model.
 #[test]
 fn wildcard_row_across_patterns() {
     let snapshot = Snapshot::new(&[
@@ -321,7 +323,7 @@ fn wildcard_row_across_patterns() {
         .unwrap();
     assert_eq!(ids(&rows), vec!["x"]);
     assert_eq!(rows[0].model_info.get("team_id"), Some(&text("t1")));
-    assert_eq!(provider_models(&rows), vec!["anthropic/claude-3"]);
+    assert_eq!(provider_models(&rows), vec!["anthropic/claude-claude-3"]);
 }
 
 // Removing an earlier row leaves each wildcard on its own deployment, not on whatever row now sits at the removed position.
