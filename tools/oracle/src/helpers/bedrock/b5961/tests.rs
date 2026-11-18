@@ -11,60 +11,41 @@ use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 use super::Op;
 
-// every branch needs a seed, so a new function cannot land without one
-const FUNCTIONS: [&str; 8] = [
-    "model_config",
-    "headers",
-    "hf_request",
-    "hf_reply",
-    "cohere_map",
-    "cohere_request",
-    "cohere_reply",
-    "decode_stream",
-];
-
-fn seed_sources() -> Vec<String> {
-    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
-    fs::read_dir(corpus)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("b5961"))
-        })
-        .map(|path| fs::read_to_string(path).unwrap())
-        .collect()
-}
-
-fn seed_case(source: &str) -> HelperCase {
-    let case = serde_saphyr::from_str::<HelperCase>(source).unwrap();
+fn seed_case(name: &str) -> HelperCase {
+    let path = Path::new(ORACLE_DIR)
+        .join("fuzz/corpus/helper_case")
+        .join(name);
+    let source = fs::read_to_string(path).unwrap();
+    let case = serde_saphyr::from_str::<HelperCase>(&source).unwrap();
     validate_helper(Path::new("<helper>"), &case).unwrap();
     assert_eq!(case.call.operation, "b5961");
     case
 }
 
-#[test]
-fn seeds_select_b5961() {
-    let sources = seed_sources();
-    assert!(!sources.is_empty());
-    let mut rejected: Vec<String> = Vec::new();
-    let mut functions: BTreeSet<String> = BTreeSet::new();
-    for source in &sources {
-        let case = seed_case(source);
-        for call in iter::once(&case.call).chain(&case.calls) {
-            if let Err(error) = <Op as Helper>::check(&call.input) {
-                rejected.push(error);
-            }
-            if let Some(name) = call
-                .input
+// each branch has its own seed, so a new function cannot land without a case here
+#[rstest::rstest]
+#[case::model_config("b5961-model-config.yaml", "model_config")]
+#[case::headers("b5961-headers.yaml", "headers")]
+#[case::hf_request("b5961-hf-request.yaml", "hf_request")]
+#[case::hf_reply("b5961-hf-reply.yaml", "hf_reply")]
+#[case::cohere_map("b5961-cohere-map.yaml", "cohere_map")]
+#[case::cohere_request("b5961-cohere-request.yaml", "cohere_request")]
+#[case::cohere_reply("b5961-cohere-reply.yaml", "cohere_reply")]
+#[case::decode_stream("b5961-decode-stream.yaml", "decode_stream")]
+fn seeds_select_b5961(#[case] name: &str, #[case] function: &str) {
+    let case = seed_case(name);
+    let rejected: Vec<String> = iter::once(&case.call)
+        .chain(&case.calls)
+        .filter_map(|call| <Op as Helper>::check(&call.input).err())
+        .collect();
+    assert!(rejected.is_empty(), "{name}: {rejected:#?}");
+    let functions: BTreeSet<&str> = iter::once(&case.call)
+        .chain(&case.calls)
+        .filter_map(|call| {
+            call.input
                 .get("function")
                 .and_then(serde_json::Value::as_str)
-            {
-                functions.insert(name.to_owned());
-            }
-        }
-    }
-    assert!(rejected.is_empty(), "{rejected:#?}");
-    assert_eq!(functions, BTreeSet::from(FUNCTIONS.map(String::from)));
+        })
+        .collect();
+    assert_eq!(functions, BTreeSet::from([function]), "{name}");
 }
