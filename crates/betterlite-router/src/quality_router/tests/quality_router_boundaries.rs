@@ -264,14 +264,17 @@ fn a_name_declared_twice_is_sorted_by_its_last_preferences() {
     assert!(matches!(route.decision, Decision::QualityTier { .. }));
 }
 
+// 2^53 is the first order an f64 cannot tell from its neighbour
+const FLOAT_ORDER_LIMIT: i64 = 1_i64 << 53;
+
 // both orders become the same f64 in LiteLLM, so its name tiebreak picks aaa; the exact i64 keeps the order
 #[test]
 fn large_orders_keep_more_precision_than_python_floats() {
     let router = router(
         &["aaa", "zzz"],
         &[
-            ordered(keyword(deployment("aaa", 2), "k"), 9_007_199_254_740_993),
-            ordered(keyword(deployment("zzz", 2), "k"), 9_007_199_254_740_992),
+            ordered(keyword(deployment("aaa", 2), "k"), FLOAT_ORDER_LIMIT + 1),
+            ordered(keyword(deployment("zzz", 2), "k"), FLOAT_ORDER_LIMIT),
         ],
     );
     let request = messages(r#"[{"role":"user","content":"k"}]"#);
@@ -295,16 +298,16 @@ model_list:
       model: openai/aaa
     model_info:
       litellm_routing_preferences: {quality_tier: 2}
-      input_cost_per_token: \"0.1000000000000000001\"
+      input_cost_per_token: 0.1000000000000000001
   - model_name: zzz
     litellm_params:
       model: openai/zzz
     model_info:
       litellm_routing_preferences: {quality_tier: 2}
-      input_cost_per_token: \"0.1\"
+      input_cost_per_token: 0.1
 ";
 
-// both string prices become the same float in LiteLLM, so its name tiebreak picks aaa; the loaded Decimal keeps zzz cheaper
+// both plain prices become the same float in LiteLLM, so its name tiebreak picks aaa; the loaded Decimal keeps zzz cheaper
 #[test]
 fn decimal_prices_keep_digits_past_float_precision() {
     let settings = text_settings(DECIMAL_PRICE_CONFIG).unwrap();

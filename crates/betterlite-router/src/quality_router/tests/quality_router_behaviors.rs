@@ -423,5 +423,5 @@ fn the_shipped_seeds_define_the_routers_document() {
     assert!(router.warnings.is_empty());
     let request = messages(r#"[{"role":"user","content":"please write code"}]"#);
     assert_eq!(pick(&router, &request).as_deref(), Some("quality-fast"));
-    assert!(text_settings(CONFIG_INVALID).is_err());
+    text_settings(CONFIG_INVALID).unwrap_err();
 }

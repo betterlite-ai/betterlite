@@ -38,7 +38,10 @@ impl Index {
     ) -> Result<Self, QualityRouterError> {
         let available: IndexSet<&str> =
             config.available_models.iter().map(String::as_str).collect();
-        let (models, assignments) = declared(deployments, &available, warnings)?;
+        let Declared {
+            models,
+            assignments,
+        } = declared(deployments, &available, warnings)?;
         let missing = missing_models(&available, &models);
         if !missing.is_empty() {
             return Err(QualityRouterError::MissingModels { models: missing });
@@ -87,12 +90,17 @@ impl Index {
     }
 }
 
+struct Declared {
+    models: IndexMap<String, ModelEntry>,
+    assignments: Vec<(i64, String)>,
+}
+
 // one entry per available name, with the last declared preferences winning, and every tier assignment in model_list order
 fn declared(
     deployments: &[section::Deployment],
     available: &IndexSet<&str>,
     warnings: &mut Vec<String>,
-) -> Result<(IndexMap<String, ModelEntry>, Vec<(i64, String)>), QualityRouterError> {
+) -> Result<Declared, QualityRouterError> {
     let mut models = IndexMap::new();
     let mut assignments = Vec::new();
     for deployment in deployments {
@@ -108,7 +116,10 @@ fn declared(
         let entry = model_entry(deployment, preferences, warnings);
         models.insert(deployment.model_name.clone(), entry);
     }
-    Ok((models, assignments))
+    Ok(Declared {
+        models,
+        assignments,
+    })
 }
 
 fn model_entry(

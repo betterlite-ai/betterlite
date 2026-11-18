@@ -28,10 +28,10 @@ pub struct Route<'messages> {
 }
 
 pub struct QualityRouter {
-    router_name: String,
-    config: Config,
-    index: Index,
-    scorer: Scorer,
+    pub router_name: String,
+    pub config: Config,
+    pub index: Index,
+    pub scorer: Scorer,
     // unknown configuration keys LiteLLM accepts and ignores
     pub warnings: Vec<String>,
 }
