@@ -69,22 +69,8 @@ struct Dimensions {
     classifier_type: String,
 }
 
-impl Default for Dimensions {
-    fn default() -> Self {
-        Self {
-            custom_dimensions: Vec::new(),
-            classifier_type: default_classifier(),
-        }
-    }
-}
-
 fn default_classifier() -> String {
     "heuristic".to_owned()
-}
-
-struct Resolved {
-    config: Config,
-    work: u64,
 }
 
 pub(crate) fn run(
@@ -137,24 +123,16 @@ fn validate_fields(config: Option<&Json>) -> Fields {
 }
 
 fn validated_work(config: Option<&Json>) -> Option<u64> {
-    let (scoring, dimensions) = configured(config).ok()?;
-    let resolved = Config::resolve(&scoring).ok()?;
-    validate(
-        &dimensions.custom_dimensions,
-        &dimensions.classifier_type,
-        &resolved.dimension_weights,
-    )
-    .ok()
-    .map(|validated| validated.work)
+    resolved(config).ok().map(|(_config, work)| work)
 }
 
 fn classify_fields(payload: &Payload) -> Result<Fields, OperationError> {
-    let resolved = resolved(payload.config.as_ref())?;
+    let (resolved, _work) = resolved(payload.config.as_ref())?;
     let prompt = PromptInput {
         prompt: &payload.prompt,
         system_prompt: payload.system_prompt.as_deref(),
     };
-    let outcome = Scorer::new(resolved.config)
+    let outcome = Scorer::new(resolved)
         .and_then(|scorer| scorer.score_and_classify(&prompt))
         .map_err(|source| invalid(source.to_string()))?;
     Ok(Fields {
@@ -167,7 +145,7 @@ fn classify_fields(payload: &Payload) -> Result<Fields, OperationError> {
 }
 
 // the section's typed view of the router config, then the service's own validation of its dimensions
-fn resolved(config: Option<&Json>) -> Result<Resolved, OperationError> {
+fn resolved(config: Option<&Json>) -> Result<(Config, u64), OperationError> {
     let (scoring, dimensions) = configured(config)?;
     let resolved = Config::resolve(&scoring).map_err(|source| invalid(source.to_string()))?;
     let validated = validate(
@@ -176,21 +154,25 @@ fn resolved(config: Option<&Json>) -> Result<Resolved, OperationError> {
         &resolved.dimension_weights,
     )
     .map_err(|source| invalid(source.to_string()))?;
+    let work = validated.work;
     let config = Config {
         custom_dimensions: validated.dimensions,
         ..resolved
     };
-    Ok(Resolved {
-        config,
-        work: validated.work,
-    })
+    Ok((config, work))
 }
 
 fn configured(
     config: Option<&Json>,
 ) -> Result<(scoring_section::Config, Dimensions), OperationError> {
     let Some(config) = config else {
-        return Ok((scoring_section::Config::default(), Dimensions::default()));
+        return Ok((
+            scoring_section::Config::default(),
+            Dimensions {
+                custom_dimensions: Vec::new(),
+                classifier_type: default_classifier(),
+            },
+        ));
     };
     let value = serde_json::to_value(config).map_err(|source| invalid(source.to_string()))?;
     let scoring =
