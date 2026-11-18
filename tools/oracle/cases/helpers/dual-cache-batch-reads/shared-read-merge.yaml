@@ -1,0 +1,45 @@
+kind: helper
+name: dual-cache-batch-reads-shared-read-merge
+call:
+  b4294:
+    shared_read_merge:
+      clock: 1000.0
+      default_in_memory_ttl: 30.0
+      memory: []
+      keys: []
+      read_keys: []
+      ttl_keys: []
+      due_keys: []
+      write_keys: []
+      duplicate_keys: []
+      merge_keys: []
+      replies:
+        - [redis-a2, redis-b1]
+      own_replies:
+        - [redis-c2]
+      caches:
+        - memory:
+            - key: a1
+              value: memory-a1
+          keys: [a1, a2]
+          client: shared
+          fail_reads: false
+          fail_writes: false
+        - memory: []
+          keys: [a2, b1]
+          client: shared
+          fail_reads: false
+          fail_writes: false
+        - memory:
+            - key: c1
+              value: memory-c1
+          keys: [c1, c2]
+          client: own
+          fail_reads: false
+          fail_writes: false
+      breaker_caches: []
+      prepare_caches: []
+      apply_caches: []
+env: {}
+compare:
+  ignore: []

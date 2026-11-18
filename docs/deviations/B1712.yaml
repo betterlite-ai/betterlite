@@ -1,0 +1,43 @@
+task: B1712
+deviations:
+  - what: >-
+      A repeated provider billing pagination cursor returns a billing-request failure instead of
+      recursing until resource exhaustion.
+    why: >-
+      External pagination must have bounded control state; the caller maps this failure to the
+      normal billing failure response, as the task requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L107-L123
+  - what: >-
+      Captured spend, provider bills, their ratios and the alert amounts are exact Decimal values
+      with half-even rounding at format time, where the source sums and divides binary floats and
+      formats the float text.
+    why: >-
+      Money stays exact per docs/compatibility.md; binary-float addition and division change the
+      last digits of a total and of the alert text for amounts a double cannot represent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_capture_rate.py#L117-L123
+  - what: >-
+      The captured-spend query returns SUM(spend)::numeric::text and the row is parsed as a
+      Decimal; a non-finite or over-precise total is a typed CapturedSpendError instead of a float
+      NaN flowing into the report.
+    why: >-
+      Decimal money cannot represent NaN or Infinity, and the report would carry a value standard
+      JSON cannot write, so betterlite reports the row it cannot read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_capture_rate.py#L47-L52
+  - what: >-
+      A bucket start_time outside the calendar of representable instants is a typed bucket-date
+      failure; the source calls datetime.fromtimestamp outside its try block, so an out-of-range
+      value raises out of fetch_openai_daily_costs and interrupts the check.
+    why: >-
+      A provider value the decoder cannot place becomes the typed billing failure the task asks
+      for, instead of an exception that stops the job before every result is published.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L76-L77
+  - what: >-
+      Response bodies are read as UTF-8: an error body that is not valid UTF-8 is the typed
+      body-text failure and a success body that is not valid UTF-8 is the response-shape
+      failure, where httpx decodes both with replacement characters, so an error detail can
+      carry U+FFFD and a JSON string with invalid bytes can still parse.
+    why: >-
+      The 300-character detail and the decoded page are only meaningful as text, so an
+      unreadable body is reported as unreadable instead of being lossily decoded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/organization_costs.py#L112-L117
+kept_bugs: []

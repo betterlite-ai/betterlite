@@ -1,0 +1,9 @@
+kind: helper
+name: auth-read-budget-failure-log-policy
+call:
+  auth_read:
+    kind: budget_failure_log_policy
+    exact_exception: false
+    message: column missing from the budget table
+env: {}
+compare: {ignore: []}

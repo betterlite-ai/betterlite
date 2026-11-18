@@ -1,7 +1,8 @@
 id: B947
 title: Responses file search loop
 description: >-
-  Execute the emulated file-search round using B090's authorized vector-search service and responses-create-call.
+  Execute the emulated file-search round using B1064's asearch (betterlite-core api::vector_store_search), called
+  once per query and vector store id by _run_vector_searches, and responses-create-call.
   Capture upstream searches, bounded follow-up calls and final output with the split file-search formatter; keep
   user/team authorization attached to every search.
 
@@ -48,7 +49,7 @@ description: >-
   30 wiring; 500 total within the 500-line cap. The estimate includes tests and adapters, not just production code.
 
 
-  Direct inputs come from B090 (Vector stores), B171 (Direct helper oracle and URL path encoding), B928 (Response
+  Direct inputs come from B090 (Vector stores), B1064 (the vector store asearch call), B171 (Direct helper oracle and URL path encoding), B928 (Response
   synthetic events), B932 (Responses create call), B946 (Responses file search tools), B1087 (Api boundaries), B732
   (Typed authentication principals and grant resolution). These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
