@@ -13,17 +13,14 @@ where
     rust_decimal::serde::arbitrary_precision::serialize(&value, serializer)
 }
 
-pub fn serialize_optional_money<S>(
-    amount: &Option<Decimal>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+pub fn serialize_optional_money<S>(rate: &Option<Decimal>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    match amount {
-        Some(value) => serialize_money(value, serializer),
-        None => serializer.serialize_none(),
+    if let Some(value) = rate {
+        return serialize_money(value, serializer);
     }
+    serializer.serialize_none()
 }
 
 // Python's {value:.1%} and {value:.0%}: percent with an exact half-even rounding of the decimal.
