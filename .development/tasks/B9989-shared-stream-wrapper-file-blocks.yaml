@@ -85,6 +85,7 @@ description: >-
   unchanged.
 scope:
   paths:
+  - "crates/betterlite-openai/src/output_limits/build.rs"
   - crates/betterlite-streaming/src/provider_chunk_decode.rs
   - crates/betterlite-streaming/src/provider_chunk_decode/wrapper.rs
   - crates/betterlite-streaming/src/provider_chunk_decode/wrapper/**
