@@ -144,9 +144,10 @@ fn call_outcome(call: &Call) -> HelperResult {
 }
 
 // The row value each row-based check compares the request against.
-enum ExistingSide<'a> {
-    UserId(Option<&'a str>),
-    AllowedRoutes(Option<&'a [JsonData]>),
+#[derive(Clone, Copy)]
+enum ExistingSide<'row> {
+    UserId(Option<&'row str>),
+    AllowedRoutes(Option<&'row [JsonData]>),
 }
 
 fn row_outcome(body: &JsonData, existing: ExistingSide<'_>, caller: Caller) -> HelperResult {
