@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
 use crate::sections::Section;
-use crate::sections::proxy_provider_options::Raw;
+use crate::sections::proxy_provider_options::{Raw, Settings as ProxySettings};
 
 pub const ENV_USE_LITELLM_PROXY: &str = "USE_LITELLM_PROXY";
 
@@ -20,7 +20,7 @@ where
     L: EnvironmentLookup,
 {
     let (raw, _ignored) = parse_view::<Raw>(source)?;
-    project_settings(raw, lookup)
+    Ok(Settings::from(raw.convert(lookup)?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,16 +41,18 @@ pub enum SpendAttributionError {
 
 pub fn decode_spend_proxy_selection(bytes: &[u8]) -> Result<Settings, SpendAttributionError> {
     let input: PolicyInput = serde_json::from_slice(bytes)?;
-    Ok(project_settings(input.selection, &input.environment)?)
+    let loaded = input.selection.convert(&input.environment)?;
+    Ok(Settings::from(loaded))
 }
 
-fn project_settings<L: EnvironmentLookup>(raw: Raw, lookup: &L) -> Result<Settings, ConfigError> {
-    let loaded = raw.convert(lookup)?;
-    Ok(Settings {
-        environment_use_litellm_proxy: loaded.environment_use_litellm_proxy,
-        global_use_litellm_proxy: loaded.global_use_litellm_proxy,
-        deployment_use_litellm_proxy: loaded.deployment_use_litellm_proxy,
-    })
+impl From<ProxySettings> for Settings {
+    fn from(loaded: ProxySettings) -> Self {
+        Self {
+            environment_use_litellm_proxy: loaded.environment_use_litellm_proxy,
+            global_use_litellm_proxy: loaded.global_use_litellm_proxy,
+            deployment_use_litellm_proxy: loaded.deployment_use_litellm_proxy,
+        }
+    }
 }
 
 mod tests;

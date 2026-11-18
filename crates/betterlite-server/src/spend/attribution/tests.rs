@@ -18,7 +18,7 @@ use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
 use betterlite_router::routing_groups::index::RoutingGroupIndex;
 use rstest::rstest;
 
-use super::{model_group_provider, model_name_is_valid};
+use super::{configured_model_group, model_group_provider};
 
 struct Fixture {
     catalog: Arc<ModelCatalog>,
@@ -114,18 +114,21 @@ fn configured_groups_are_exempt_from_model_syntax(#[case] name: &str, #[case] co
         BTreeSet::new()
     };
     let teams = BTreeSet::new();
-    assert_eq!(model_name_is_valid(name, &recognized, &teams), configured);
+    assert_eq!(
+        configured_model_group(name, &recognized, &teams),
+        configured
+    );
 }
 
 #[test]
 fn team_public_names_are_exempt_from_model_syntax() {
     let teams = BTreeSet::from(["public group".to_owned()]);
-    assert!(model_name_is_valid(
+    assert!(configured_model_group(
         "public group",
         &BTreeSet::new(),
         &teams
     ));
-    assert!(!model_name_is_valid(
+    assert!(!configured_model_group(
         "private group",
         &BTreeSet::new(),
         &teams
@@ -183,5 +186,4 @@ fn empty_groups_are_never_configured() {
     let names = BTreeSet::from([String::new()]);
     assert!(!super::configured_model_group("", &names, &names));
     assert!(!super::configured_model_group("unlisted", &names, &names));
-    assert!(super::model_name_is_valid("openai/gpt-4o", &names, &names));
 }

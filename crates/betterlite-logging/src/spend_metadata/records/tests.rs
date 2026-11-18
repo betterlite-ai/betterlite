@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use betterlite_models::decisions::Json;
 use rstest::rstest;
 
 use super::{SpendLogsMetadata, SpendLogsRouterMetadata};
@@ -26,10 +25,7 @@ fn the_absent_constructor_omits_the_agent_fields_and_routing_decision(#[case] ab
 
 #[test]
 fn a_present_agent_field_serializes_its_null_value() {
-    let record = SpendLogsMetadata {
-        actor_agent_id: Some(None),
-        ..SpendLogsMetadata::default()
-    };
+    let record: SpendLogsMetadata = serde_json::from_str(r#"{"actor_agent_id":null}"#).unwrap();
     let fields = serde_json::to_value(record)
         .unwrap()
         .as_object()
@@ -41,10 +37,8 @@ fn a_present_agent_field_serializes_its_null_value() {
 
 #[test]
 fn routing_decision_serializes_its_payload() {
-    let record = SpendLogsMetadata {
-        routing_decision: Some(Some(Json::Text("router".to_owned()))),
-        ..SpendLogsMetadata::default()
-    };
+    let record: SpendLogsMetadata =
+        serde_json::from_str(r#"{"routing_decision":"router"}"#).unwrap();
     let fields = serde_json::to_value(record)
         .unwrap()
         .as_object()

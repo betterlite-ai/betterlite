@@ -36,29 +36,9 @@ fn project(
         .expect("the metadata projects")
 }
 
-fn absent_arguments() -> SpendMetadataArguments {
-    SpendMetadataArguments {
-        cold_storage_object_key: Some("cold".to_owned()),
-        litellm_call_id: Some("call".to_owned()),
-        autorouter_savings: Some(Decimal::new(15, 1)),
-        autorouter_savings_estimate: Some(object(r#"{"saved":1}"#)),
-        baseline_observation: Some("baseline".to_owned()),
-        router_metadata: Some(SpendLogsRouterMetadata {
-            requested_model: Some("requested".to_owned()),
-            selected_model: None,
-            selected_provider: Some("openai".to_owned()),
-            router_correlation_id: None,
-        }),
-        azure_spillover: Some(object(r#"{"region":"east"}"#)),
-        used_client_oauth_token: Some(true),
-        applied_guardrails: Some(vec!["ignored".to_owned()]),
-        ..SpendMetadataArguments::default()
-    }
-}
-
 #[test]
 fn the_absent_mapping_builds_the_constructor_payload() {
-    let arguments = absent_arguments();
+    let arguments = enriched_arguments();
 
     let value = serde_json::to_value(project(None, arguments, true)).unwrap();
     let fields = value.as_object().expect("the record is an object");
@@ -66,16 +46,16 @@ fn the_absent_mapping_builds_the_constructor_payload() {
     assert_eq!(value["status"], "success");
     assert_eq!(value["cold_storage_object_key"], "cold");
     assert_eq!(value["litellm_call_id"], "call");
-    assert_eq!(value["autorouter_savings"], 1.5);
-    assert_eq!(value["autorouter_savings_estimate"]["saved"], 1);
+    assert_eq!(value["autorouter_savings"], 0.75);
+    assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
     assert_eq!(value["autorouter_baseline_observation"], "baseline");
     assert_eq!(value["router_metadata"]["requested_model"], "requested");
     assert_eq!(
         value["router_metadata"]["selected_model"],
         serde_json::json!(null)
     );
-    assert_eq!(value["azure_spillover"]["region"], "east");
-    assert_eq!(value["used_client_oauth_token"], true);
+    assert_eq!(value["azure_spillover"]["region"], "west");
+    assert_eq!(value["used_client_oauth_token"], false);
     assert_eq!(value["applied_guardrails"], serde_json::json!(null));
     assert!(!fields.contains_key("actor_agent_id"));
     assert!(!fields.contains_key("routing_decision"));
@@ -110,27 +90,6 @@ fn an_empty_mapping_has_every_field(#[case] name: &str) {
 #[case::autorouter_savings_estimate("autorouter_savings_estimate")]
 #[case::autorouter_baseline_observation("autorouter_baseline_observation")]
 #[case::used_client_oauth_token("used_client_oauth_token")]
-fn forged_stamped_values_never_win(#[case] name: &str) {
-    let metadata = object(
-        r#"{
-            "router_metadata": {"requested_model": "forged"},
-            "azure_spillover": {"region": "forged"},
-            "autorouter_savings": 99.0,
-            "autorouter_savings_estimate": {"saved": 99},
-            "autorouter_baseline_observation": "forged",
-            "used_client_oauth_token": true
-        }"#,
-    );
-    let value = serde_json::to_value(project(
-        Some(&metadata),
-        SpendMetadataArguments::default(),
-        true,
-    ))
-    .unwrap();
-    assert_eq!(value[name], serde_json::json!(null), "{name} is null");
-}
-
-#[rstest]
 #[case::applied_guardrails("applied_guardrails")]
 #[case::batch_models("batch_models")]
 #[case::batch_successful_requests("batch_successful_requests")]
@@ -144,9 +103,15 @@ fn forged_stamped_values_never_win(#[case] name: &str) {
 #[case::litellm_overhead_time_ms("litellm_overhead_time_ms")]
 #[case::cost_breakdown("cost_breakdown")]
 #[case::litellm_call_id("litellm_call_id")]
-fn forged_overridden_values_are_replaced_by_the_arguments(#[case] name: &str) {
+fn forged_stamped_values_never_win(#[case] name: &str) {
     let metadata = object(
         r#"{
+            "router_metadata": {"requested_model": "forged"},
+            "azure_spillover": {"region": "forged"},
+            "autorouter_savings": 99.0,
+            "autorouter_savings_estimate": {"saved": 99},
+            "autorouter_baseline_observation": "forged",
+            "used_client_oauth_token": true,
             "applied_guardrails": ["forged"],
             "batch_models": ["forged"],
             "batch_successful_requests": 9,
@@ -189,7 +154,12 @@ fn enriched_arguments() -> SpendMetadataArguments {
         autorouter_savings: Some(Decimal::new(75, 2)),
         autorouter_savings_estimate: Some(object(r#"{"saved":2}"#)),
         baseline_observation: Some("baseline".to_owned()),
-        router_metadata: Some(SpendLogsRouterMetadata::default()),
+        router_metadata: Some(SpendLogsRouterMetadata {
+            requested_model: Some("requested".to_owned()),
+            selected_model: None,
+            selected_provider: Some("openai".to_owned()),
+            router_correlation_id: None,
+        }),
         azure_spillover: Some(object(r#"{"region":"west"}"#)),
         used_client_oauth_token: Some(false),
     }
@@ -226,10 +196,7 @@ fn trusted_arguments_are_projected() {
     assert_eq!(value["autorouter_savings"], 0.75);
     assert_eq!(value["autorouter_savings_estimate"]["saved"], 2);
     assert_eq!(value["autorouter_baseline_observation"], "baseline");
-    assert_eq!(
-        value["router_metadata"]["requested_model"],
-        serde_json::json!(null)
-    );
+    assert_eq!(value["router_metadata"]["requested_model"], "requested");
     assert_eq!(value["azure_spillover"]["region"], "west");
     assert_eq!(value["used_client_oauth_token"], false);
 }
@@ -390,12 +357,9 @@ fn non_text_and_empty_keys_become_null(#[case] fixture: &str) {
 
 #[test]
 fn vector_store_bodies_are_redacted_unless_bodies_are_stored() {
-    let arguments = SpendMetadataArguments {
-        vector_store_request_metadata: Some(vec![json(
-            r#"{"vector_store_search_response":{"data":[{"content":[{"text":"secret"}]}]}}"#,
-        )]),
-        ..SpendMetadataArguments::default()
-    };
+    let arguments: SpendMetadataArguments = serde_json::from_str(
+        r#"{"vector_store_request_metadata":[{"vector_store_search_response":{"data":[{"content":[{"text":"secret"}]}]}}]}"#,
+    ).unwrap();
     let metadata = object("{}");
     let redacted =
         serde_json::to_value(project(Some(&metadata), arguments.clone(), false)).unwrap();
@@ -414,12 +378,10 @@ fn vector_store_bodies_are_redacted_unless_bodies_are_stored() {
 
 #[test]
 fn guardrail_information_is_sanitized_unless_bodies_are_stored() {
-    let arguments = SpendMetadataArguments {
-        guardrail_information: Some(json(
-            r#"[{"guardrail_name":"guard","guardrail_response":"secret"}]"#,
-        )),
-        ..SpendMetadataArguments::default()
-    };
+    let arguments: SpendMetadataArguments = serde_json::from_str(
+        r#"{"guardrail_information":[{"guardrail_name":"guard","guardrail_response":"secret"}]}"#,
+    )
+    .unwrap();
     let metadata = object("{}");
     let redacted =
         serde_json::to_value(project(Some(&metadata), arguments.clone(), false)).unwrap();

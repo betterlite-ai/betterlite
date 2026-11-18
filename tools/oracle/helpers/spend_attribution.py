@@ -6,8 +6,8 @@ from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack, cast
 import litellm
 from litellm.proxy.spend_tracking.spend_tracking_utils import (
     _deployment_provider,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L396
-    _extract_usage_for_ocr_call,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L317
-    _get_spend_logs_metadata,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L165
+    _extract_usage_for_ocr_call,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L317
+    _get_spend_logs_metadata,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L165
     _is_configured_model_group,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L423
     _model_group_provider,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L412
     _redact_logged_api_key,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L122
@@ -29,26 +29,31 @@ class RedactInput(TypedDict):
     values: list[KeyInput]
 
 
-class ProjectArguments(TypedDict):
-    applied_guardrails: list[str] | None
-    batch_models: list[str] | None
-    batch_successful_requests: int | None
-    batch_failed_requests: int | None
-    mcp_tool_call_metadata: dict[str, JsonValue] | None
-    vector_store_request_metadata: list[dict[str, JsonValue]] | None
-    guardrail_information: list[dict[str, JsonValue]] | None
-    usage_object: dict[str, JsonValue] | None
-    model_map_information: dict[str, JsonValue] | None
-    cold_storage_object_key: str | None
-    litellm_overhead_time_ms: float | None
-    cost_breakdown: dict[str, JsonValue] | None
-    litellm_call_id: str | None
-    autorouter_savings: float | None
-    autorouter_savings_estimate: dict[str, JsonValue] | None
-    autorouter_baseline_observation: str | None
-    router_metadata: dict[str, JsonValue] | None
-    azure_spillover: dict[str, JsonValue] | None
-    used_client_oauth_token: bool | None
+# LiteLLM requires the baseline keyword whose name exceeds our identifier limit.
+ProjectArguments = TypedDict(  # noqa: UP013  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L182
+    "ProjectArguments",
+    {
+        "applied_guardrails": list[str] | None,
+        "batch_models": list[str] | None,
+        "batch_successful_requests": int | None,
+        "batch_failed_requests": int | None,
+        "mcp_tool_call_metadata": dict[str, JsonValue] | None,
+        "vector_store_request_metadata": list[dict[str, JsonValue]] | None,
+        "guardrail_information": list[dict[str, JsonValue]] | None,
+        "usage_object": dict[str, JsonValue] | None,
+        "model_map_information": dict[str, JsonValue] | None,
+        "cold_storage_object_key": str | None,
+        "litellm_overhead_time_ms": float | None,
+        "cost_breakdown": dict[str, JsonValue] | None,
+        "litellm_call_id": str | None,
+        "autorouter_savings": float | None,
+        "autorouter_savings_estimate": dict[str, JsonValue] | None,
+        "autorouter_baseline_observation": str | None,
+        "router_metadata": dict[str, JsonValue] | None,
+        "azure_spillover": dict[str, JsonValue] | None,
+        "used_client_oauth_token": bool | None,
+    },
+)
 
 
 class MetadataProjector(Protocol):
@@ -114,11 +119,12 @@ class RouterStub:
         ]
 
 
-
 def bucket(entries: dict[str, JsonValue], groups: list[str] | None) -> dict[str, JsonValue]:
     if groups is None or "user_api_key_auth" in entries:
         return {**entries}
-    return {**entries, "user_api_key_auth": {"matched_model_access_groups": groups}}
+    projected: list[JsonValue] = list(groups)
+    auth: dict[str, JsonValue] = {"matched_model_access_groups": projected}
+    return {**entries, "user_api_key_auth": auth}
 
 
 def redact(input_value: RedactInput) -> JsonValue:
@@ -154,7 +160,8 @@ def access_groups(input_value: AccessInput) -> JsonValue:
         "standard_logging_object": input_value["standard_logging_object"],
         "litellm_params": params,
     }
-    return JSON_VALUE.validate_python(list(get_request_model_access_groups(kwargs)))
+    groups: list[JsonValue] = list(get_request_model_access_groups(kwargs))
+    return groups
 
 
 def ocr_usage(input_value: OcrInput) -> JsonValue:
@@ -193,12 +200,12 @@ def providers(input_value: ProvidersInput) -> JsonValue:
         Callable[[str, RouterStub], bool],
         _is_configured_model_group,
     )
-    resolved = [resolve_deployment(deployment) for deployment in input_value["deployments"]]
+    resolved: list[JsonValue] = [
+        resolve_deployment(deployment) for deployment in input_value["deployments"]
+    ]
     group_provider = resolve_group(input_value["model_group"], router)
     configured = recognizes_group(input_value["model_group"], router)
-    return JSON_VALUE.validate_python(
-        {"providers": resolved, "group_provider": group_provider, "configured": configured}
-    )
+    return {"providers": resolved, "group_provider": group_provider, "configured": configured}
 
 
 def run(input_value: Input) -> JsonValue:

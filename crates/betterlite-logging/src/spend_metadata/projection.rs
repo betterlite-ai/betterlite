@@ -158,11 +158,9 @@ fn supply_provenance(record: &mut SpendLogsMetadata, arguments: &SpendMetadataAr
 
 // The metadata=None constructor: success status, no agent fields, and only the enrichment arguments the source keeps.
 fn absent_metadata(arguments: &SpendMetadataArguments) -> SpendLogsMetadata {
-    let mut record = SpendLogsMetadata {
-        status: Some("success".to_owned()),
-        ..SpendLogsMetadata::default()
-    };
+    let mut record = SpendLogsMetadata::default();
     supply_provenance(&mut record, arguments);
+    record.status = Some("success".to_owned());
     record
 }
 

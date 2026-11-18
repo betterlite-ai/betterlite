@@ -55,7 +55,7 @@ fn reads_the_environment_flag(#[case] value: Option<&str>, #[case] expected: boo
 }
 
 #[test]
-fn rejects_an_unparseable_environment_flag() {
+fn rejects_an_unparsable_environment_flag() {
     let error = load_spend_proxy_selection(
         "litellm_settings: {}\n",
         &environment(&[(ENV_USE_LITELLM_PROXY, "maybe")]),

@@ -44,16 +44,6 @@ pub fn configured_model_group(
             || team_public_model_names.contains(model_group))
 }
 
-#[must_use]
-pub fn model_name_is_valid(
-    model: &str,
-    recognized_model_groups: &BTreeSet<String>,
-    team_public_model_names: &BTreeSet<String>,
-) -> bool {
-    configured_model_group(model, recognized_model_groups, team_public_model_names)
-        || betterlite_logging::spend_metadata::looks_like_model_name(model)
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum AttributionError {
     #[error(transparent)]
