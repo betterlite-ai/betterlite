@@ -930,6 +930,49 @@ fn duplicate_pattern_row() {
     assert_eq!(rows[1].model_info.get("team_id"), None);
 }
 
+// The scope decides which rows a wildcard may read: a row outside it that shares the id is not a candidate.
+#[test]
+fn pattern_scope_rows() {
+    let snapshot = Snapshot::new(&[
+        deployment(
+            "team-secret",
+            "azure/secret",
+            object(vec![("id", text("x")), ("team_id", text("t1"))]),
+        ),
+        deployment("openai/*", "openai/*", object(vec![("id", text("x"))])),
+        deployment(
+            "team-plain",
+            "openai/plain",
+            object(vec![
+                ("id", text("y")),
+                ("team_id", text("t1")),
+                ("team_public_model_name", text("plain")),
+            ]),
+        ),
+        deployment(
+            "team-star",
+            "openai/team-*",
+            object(vec![
+                ("id", text("y")),
+                ("team_id", text("t1")),
+                ("team_public_model_name", text("team/*")),
+            ]),
+        ),
+    ]);
+    let lookup = snapshot.lookup();
+    let wildcard = lookup.get_model_list(Some("openai/gpt-4o"), None).unwrap();
+    assert_eq!(provider_models(&wildcard), vec!["openai/gpt-4o"]);
+    assert_eq!(wildcard[0].model_info.get("team_id"), None);
+    let team_rows = lookup
+        .get_model_list(Some("team/alpha"), Some("t1"))
+        .unwrap();
+    assert_eq!(team_rows.len(), 1);
+    assert_eq!(
+        team_rows[0].model_info.get("team_public_model_name"),
+        Some(&text("team/*"))
+    );
+}
+
 // Each wildcard candidate resolves to the row registered with its id, not to a row at the candidate's position.
 #[test]
 fn pattern_row_by_id() {
