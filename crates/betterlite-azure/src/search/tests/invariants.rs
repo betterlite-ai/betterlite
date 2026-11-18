@@ -1,10 +1,23 @@
 use std::sync::atomic::Ordering;
 
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::azure_default_chain::AzureCredentialType;
+use betterlite_config::sections::azure_search::{
+    CONNECTION_ID_ENV, MODEL_ENV, PROJECT_ENDPOINT_ENV, Settings, TOKEN_ENV,
+};
 use betterlite_openai::openai_base_config::Headers;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::search::AzureSearchConfig;
+use crate::azure_default_chain::error::DefaultChainError;
+use crate::azure_default_chain::grant::{
+    CertificateRecord, ChainToken, ClientSecretRecord, Grant, GrantError, Grants, LinkError,
+    ManagedIdentityRecord, UsernamePasswordRecord, WorkloadRecord,
+};
+use crate::azure_default_chain::provider::{AzureTokenProvider, ProviderInner};
+use crate::search::environment::{ProbeEnvironment, SettingsEnvironment};
 use crate::search::error::AzureSearchError;
+use crate::search::minter::{EntraTokenMinter, MintError, NativeMinter};
+use crate::search::{AzureSearchConfig, ENTRA_SCOPE};
 
 use super::support::{PanicMinter, minter, model_settings, token_settings};
 
@@ -182,4 +195,141 @@ fn mint_failures_do_not_echo_secrets() {
         merged.get("Authorization").map(String::as_str),
         Some("Bearer fixture-second-mint")
     );
+}
+
+#[test]
+fn azure_search_settings_are_the_environment() {
+    let settings = Settings {
+        project_endpoint: Some(String::from("https://project.example")),
+        model: Some(String::from("gpt-4.1")),
+        connection_id: Some(String::from("connection-1")),
+        token: Some(SecretString::from("fixture-env-token")),
+    };
+    let environment = SettingsEnvironment {
+        settings: &settings,
+    };
+    assert_eq!(
+        environment.lookup(PROJECT_ENDPOINT_ENV).as_deref(),
+        Some("https://project.example")
+    );
+    assert_eq!(environment.lookup(MODEL_ENV).as_deref(), Some("gpt-4.1"));
+    assert_eq!(
+        environment.lookup(CONNECTION_ID_ENV).as_deref(),
+        Some("connection-1")
+    );
+    assert_eq!(
+        environment.lookup(TOKEN_ENV).as_deref(),
+        Some("fixture-env-token")
+    );
+    assert_eq!(environment.lookup("UNRELATED").as_deref(), None);
+    let probe = ProbeEnvironment {
+        settings: &settings,
+    };
+    assert_eq!(
+        probe.lookup(TOKEN_ENV).as_deref(),
+        Some("pending-minted-token")
+    );
+    assert_eq!(
+        probe.lookup(PROJECT_ENDPOINT_ENV).as_deref(),
+        Some("https://project.example")
+    );
+    assert_eq!(probe.lookup("UNRELATED").as_deref(), None);
+}
+
+#[test]
+fn azure_search_native_minter_mints() {
+    let minter = native_minter(Ok("fixture-native-token"));
+    assert_eq!(
+        minter.mint().unwrap().expose_secret(),
+        "fixture-native-token"
+    );
+    let failing = native_minter(Err("fixture native denial"));
+    let error = failing.mint().unwrap_err();
+    assert!(matches!(
+        error,
+        MintError::Chain(DefaultChainError::Credential {
+            unavailable: false,
+            message,
+        }) if message == "fixture native denial"
+    ));
+}
+
+fn native_minter(outcome: Result<&'static str, &'static str>) -> NativeMinter<'static, StubGrants> {
+    NativeMinter {
+        provider: AzureTokenProvider {
+            credential: AzureCredentialType::ManagedIdentityCredential,
+            scope: String::from(ENTRA_SCOPE),
+            warnings: Vec::new(),
+            inner: ProviderInner::Single(StubGrant { outcome }),
+        },
+    }
+}
+
+struct StubGrants;
+
+struct StubGrant {
+    outcome: Result<&'static str, &'static str>,
+}
+
+impl Grant for StubGrant {
+    fn token(&self) -> Result<ChainToken, LinkError> {
+        match self.outcome {
+            Ok(token) => Ok(ChainToken {
+                token: SecretString::from(token),
+                expires_on: None,
+                token_type: None,
+                refresh_on: None,
+            }),
+            Err(message) => Err(LinkError::Authentication(message.to_owned())),
+        }
+    }
+}
+
+impl Grants for StubGrants {
+    type Grant<'grants>
+        = StubGrant
+    where
+        Self: 'grants;
+
+    fn client_secret<'grants>(
+        &'grants self,
+        _record: &ClientSecretRecord,
+    ) -> Result<Self::Grant<'grants>, GrantError> {
+        Err(unavailable_grant())
+    }
+
+    fn certificate<'grants>(
+        &'grants self,
+        _record: &CertificateRecord,
+    ) -> Result<Self::Grant<'grants>, GrantError> {
+        Err(unavailable_grant())
+    }
+
+    fn username_password<'grants>(
+        &'grants self,
+        _record: &UsernamePasswordRecord,
+    ) -> Result<Self::Grant<'grants>, GrantError> {
+        Err(unavailable_grant())
+    }
+
+    fn workload<'grants>(
+        &'grants self,
+        _record: &WorkloadRecord,
+    ) -> Result<Self::Grant<'grants>, GrantError> {
+        Err(unavailable_grant())
+    }
+
+    fn managed_identity<'grants>(
+        &'grants self,
+        _record: &ManagedIdentityRecord,
+    ) -> Result<Self::Grant<'grants>, GrantError> {
+        Err(unavailable_grant())
+    }
+}
+
+fn unavailable_grant() -> GrantError {
+    GrantError {
+        credential: "fixture",
+        message: String::from("the fixture provider builds no grant"),
+    }
 }

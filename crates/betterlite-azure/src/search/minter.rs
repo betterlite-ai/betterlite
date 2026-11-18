@@ -23,7 +23,7 @@ pub trait EntraTokenMinter: Send + Sync {
 }
 
 pub struct NativeMinter<'grants, F: Grants + 'grants> {
-    provider: AzureTokenProvider<'grants, F>,
+    pub(crate) provider: AzureTokenProvider<'grants, F>,
 }
 
 impl<'grants, F> EntraTokenMinter for NativeMinter<'grants, F>
