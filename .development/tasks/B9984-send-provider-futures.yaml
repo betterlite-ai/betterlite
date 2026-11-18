@@ -61,6 +61,7 @@ description: >-
   budget allows.
 scope:
   paths:
+  - "crates/betterlite-prompts/src/media_fetch/fetcher.rs"
   - crates/betterlite-logging/src/logging_pre_post/env.rs
   - crates/betterlite-logging/src/logging_pre_post/hooks.rs
   - crates/betterlite-anthropic/src/chat_call.rs
