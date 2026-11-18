@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "bedrock-converse-call-converse-stream-path",
+  "call": {
+    "bedrock_converse_call": {
+      "model": "anthropic.claude-3-sonnet-20240229-v1:0",
+      "params": {
+        "stream": true,
+        "fake_stream": true
+      },
+      "headers": {},
+      "bearer": "fixture-bearer",
+      "asynchronous": false,
+      "status": 200,
+      "body": "{\"output\":{\"message\":{\"role\":\"assistant\",\"content\":[{\"text\":\"hello\"}]}},\"stopReason\":\"end_turn\",\"usage\":{\"inputTokens\":10,\"outputTokens\":5,\"totalTokens\":15}}",
+      "frames": [],
+      "consume": true
+    }
+  },
+  "env": {
+    "AWS_ACCESS_KEY_ID": "fixture-access",
+    "AWS_SECRET_ACCESS_KEY": "fixture-secret"
+  },
+  "compare": {
+    "ignore": []
+  }
+}
