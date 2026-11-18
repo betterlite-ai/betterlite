@@ -1,8 +1,14 @@
 task: B665
 deviations:
-  - what: Malformed provider JSON warning previews and client receive failure traces omit raw content and credentials; skip, close and error behavior stay the same.
-    why: Repository redaction rules prohibit exposing realtime payloads or secrets through diagnostics, so both the 200-character preview and the forwarding-ended line pass through the B187 redactor.
+  - what: Malformed provider JSON warning previews and client receive and send failure traces omit raw content and credentials and carry no Python traceback; skip, close and error behavior stay the same.
+    why: Repository redaction rules prohibit exposing realtime payloads or secrets through diagnostics, so both the 200-character preview and the forwarding-ended lines pass through the B187 redactor; tracing records the message without a Python traceback.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1294-L1309
+  - what: A provider `event` value that is a JSON array or a string passes through LiteLLM's branch tests untouched, which treat the membership checks as empty and return the state with no events; betterlite decodes every `event` value as an object and answers EventNotAnObject.
+    why: docs/compatibility.md makes a value of the wrong type an error that names the field, and the dispatcher's declared shape for `event` is an object of known keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1326
+  - what: A committed failure scope value that is not a non-empty string counts as absent, where LiteLLM appends any truthy value's str() to the replay error; `_json_dict` answers None for a non-object where LiteLLM returns an empty mapping, and the client preface is an owned empty map rather than an immutable one.
+    why: docs/compatibility.md rules out porting Python truthiness and str() text, the failure key is written only as the redacted string, and no caller can observe the empty mapping's ownership or sharing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L180-L187
   - what: A provider message that is not a JSON object, an `event` value that is not an object, an event payload of the wrong type, or invalid UTF-8 comes back as a typed EventError that names the shape; LiteLLM lets AttributeError, TypeError, UnicodeDecodeError or pydantic ValidationError escape from the same inputs.
     why: docs/compatibility.md makes a wrong-typed value an error that names what failed instead of a Python runtime exception, and Rust has no exception classes to carry the distinction.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1323

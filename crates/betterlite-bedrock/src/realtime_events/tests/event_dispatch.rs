@@ -25,6 +25,14 @@ fn decoding_errors() {
         Err(EventError::EventNotAnObject { .. })
     ));
     assert!(matches!(
+        decode_realtime_native_event(br#"{"event":[]}"#),
+        Err(EventError::EventNotAnObject { .. })
+    ));
+    assert!(matches!(
+        decode_realtime_native_event(br#"{"event":"x"}"#),
+        Err(EventError::EventNotAnObject { .. })
+    ));
+    assert!(matches!(
         decode_realtime_native_event(&[0xff]),
         Err(EventError::Utf8 { .. })
     ));
