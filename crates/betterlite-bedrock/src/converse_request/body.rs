@@ -184,14 +184,11 @@ fn metadata_value(value: Option<ParamValue>) -> Result<Option<Json>, ConverseReq
     let Some(present) = value.filter(|present| !matches!(present, ParamValue::Null)) else {
         return Ok(None);
     };
-    let filtered = match present {
-        ParamValue::Mapping(mut fields) => {
-            // The record projection drops a null member before LiteLLM validates; this keeps the rest in caller order.
-            fields.retain(|_, member| !matches!(member, ParamValue::Null));
-            ParamValue::Mapping(fields)
-        }
-        other => other,
-    };
+    // The record projection drops a null member before LiteLLM validates; this keeps the rest in caller order.
+    let mut filtered = present;
+    if let ParamValue::Mapping(fields) = &mut filtered {
+        fields.retain(|_, member| !matches!(member, ParamValue::Null));
+    }
     // serde_json sorts an object's keys here, and the pair selection keeps the first pairs in caller order.
     let encoded = json_of(&filtered);
     validate_request_metadata(&request_value(&encoded))?;
