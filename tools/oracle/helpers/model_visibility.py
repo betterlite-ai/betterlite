@@ -1,8 +1,6 @@
 import asyncio
 import logging
-import re
 from typing import Final, NotRequired, TypedDict
-from unittest import mock
 
 import litellm
 from litellm.proxy._types import LitellmUserRoles, UserAPIKeyAuth
@@ -19,6 +17,7 @@ from typing_extensions import override
 LOGGER_NAME: Final = "LiteLLM Proxy"
 DEBUG_PREFIX: Final = "healthy-only model listing is enabled"
 HEALTH_FAILURE: Final = "the health cache is unreachable"
+BROKEN_KEY: Final = "broken-("
 ROW_NAME: Final[TypeAdapter[str]] = TypeAdapter(str)
 ALIASES: Final[TypeAdapter[dict[str, str | RouterModelGroupAliasItem]]] = TypeAdapter(
     dict[str, str | RouterModelGroupAliasItem]
@@ -93,17 +92,20 @@ def caller(role: str | None) -> UserAPIKeyAuth:
     return UserAPIKeyAuth(user_role=LitellmUserRoles(role))
 
 
-# The invalid regex key an internal record can store; LiteLLM compiles it during a listing.
-class InvalidPattern:
-    def __call__(self, _pattern: str, _flags: int = 0) -> re.Pattern[str]:
-        raise re.error("internal pattern does not compile")
-
-
 def router_of(call: Input) -> Router | None:
     disabled = call["arguments"].get("with_router")
     if disabled is False:
         return None
     return Router(model_list=rows_of(call), model_group_alias=aliases_of(call))
+
+
+# The raw invalid regex an internal record can hold; LiteLLM compiles it during a listing.
+def broken_pattern_router(call: Input) -> Router:
+    router = Router(model_list=rows_of(call), model_group_alias=aliases_of(call))
+    pattern_router = router.pattern_router
+    row: dict[str, JsonValue] = {"model_info": {"discoverable": False}}
+    pattern_router.patterns[BROKEN_KEY] = [row]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/pattern_match_deployments.py#L60-L61
+    return router
 
 
 def settings_of(arguments: Arguments) -> dict[str, JsonValue]:
@@ -140,13 +142,11 @@ def undiscoverable(call: Input) -> JsonValue:
     arguments = call["arguments"]
     asked = arguments.get("model_names")
     model_names: list[str] = [] if asked is None else asked
-    router = router_of(call)
     if arguments.get("broken_pattern") is True:
-        # ast-grep-ignore: no-string-mocking - LiteLLM's own compile takes no collaborator
-        with mock.patch.object(re, "compile", InvalidPattern()):
-            hidden = asked_hidden(call, model_names, router)
+        router = broken_pattern_router(call)
     else:
-        hidden = asked_hidden(call, model_names, router)
+        router = router_of(call)
+    hidden = asked_hidden(call, model_names, router)
     names: list[JsonValue] = []
     names.extend(sorted(hidden))
     return {"hidden": names}

@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use serde::Deserialize;
-use serde::Deserializer;
 
 // One helper_case call: the router snapshot, the caller and the function the case reads.
 #[derive(Debug, Deserialize)]
@@ -32,39 +31,53 @@ pub(crate) struct Row {
     pub(crate) model_info: Json,
 }
 
-// The call's own arguments; every one of them takes the value the source's signature gives an absent one.
-#[derive(Debug, Default, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+// The call's own arguments, both flags resolved to the value the source's signature gives an absent one.
+#[derive(Debug, Deserialize)]
+#[serde(from = "RawArguments")]
 pub(crate) struct Arguments {
     pub(crate) model_names: Vec<String>,
     pub(crate) user_role: Option<String>,
     pub(crate) team_id: Option<String>,
     pub(crate) healthy_only: Option<bool>,
-    #[serde(deserialize_with = "null_as_false")]
     pub(crate) model_list_healthy_only: bool,
-    #[serde(default = "with_router_default", deserialize_with = "null_as_true")]
     pub(crate) with_router: bool,
     pub(crate) health: Health,
     pub(crate) broken_pattern: bool,
 }
 
-// A null bool takes the value the source's signature gives an absent one.
-fn null_as_false<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or_default())
+// The arguments as a case writes them, where absent and null both mean the source's default.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct RawArguments {
+    model_names: Vec<String>,
+    user_role: Option<String>,
+    team_id: Option<String>,
+    healthy_only: Option<bool>,
+    model_list_healthy_only: Option<bool>,
+    with_router: Option<bool>,
+    health: Health,
+    broken_pattern: bool,
 }
 
-fn null_as_true<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    Ok(Option::<bool>::deserialize(deserializer)?.unwrap_or(true))
+impl Default for Arguments {
+    fn default() -> Self {
+        Self::from(RawArguments::default())
+    }
 }
 
-const fn with_router_default() -> bool {
-    true
+impl From<RawArguments> for Arguments {
+    fn from(raw: RawArguments) -> Self {
+        Self {
+            model_names: raw.model_names,
+            user_role: raw.user_role,
+            team_id: raw.team_id,
+            healthy_only: raw.healthy_only,
+            model_list_healthy_only: raw.model_list_healthy_only.unwrap_or(false),
+            with_router: raw.with_router.unwrap_or(true),
+            health: raw.health,
+            broken_pattern: raw.broken_pattern,
+        }
+    }
 }
 
 // B307's answer, injected so a case can make the cache refuse the read.
