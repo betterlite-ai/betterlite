@@ -208,6 +208,6 @@ fn resolve_param(
             }
             Ok(Some(TierParam::List(entries)))
         }
-        other @ TierParam::Number(_) | other @ TierParam::Value(_) => Ok(Some(other)),
+        other @ (TierParam::Number(_) | TierParam::Value(_)) => Ok(Some(other)),
     }
 }

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use rstest::rstest;
-use secrecy::zeroize::Zeroize;
+use secrecy::zeroize::Zeroize as _;
 use serde_json::Number;
 
 use crate::loader::ConfigLoader;
