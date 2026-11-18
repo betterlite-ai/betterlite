@@ -19,7 +19,10 @@ description: >-
 
   Read litellm_jwtauth.virtual_key_mapping_cache_ttl=300, virtual_key_claim_field=None and
   unregistered_jwt_client_behavior='fallback_team_mapping', including B869's issuer-specific
-  overrides and jwt_client_id_field compatibility alias. B213 owns get_nested_value; B738 owns
+  overrides and jwt_client_id_field compatibility alias. All three are LiteLLM_JWTAuth fields, and B869's
+  jwt_settings section (config.sections.jwt_settings) parses and validates that whole object; read them from
+  there through B869's get_virtual_key_claim_field and get_unregistered_jwt_client_behavior accessors. This
+  task adds no config section and parses none of these keys again. B213 owns get_nested_value; B738 owns
   mapping lookup/cache keys; B733/B734 own cache reads/writes; B753 owns _raw_cache; B870 owns
   IdentityStore.resolve/key_from_principal; B893 owns generate_key_helper_fn; B2314 owns hash_token.
   Own _PendingAutoRegister's four fields (L923-L939) and the '__JWT_PROXY_ADMIN__' constant (L914)
@@ -84,12 +87,8 @@ description: >-
   clean it on every exit.
 
 
-  Write betterlite-config::jwt_key_resolution::tests::loads_settings, defaults_and_precedence,
-  issuer_override, legacy_claim_alias and invalid_behavior_rejected.
-  Each must call the production B002 config loader, set every listed key/env binding, assert the resulting
-  typed value is consumed by this component, and exercise the specified warning/ignore/error branch. A
-  grep or successful generic corpus replay does not prove acceptance. Seed existing config_yaml with the
-  actual nested key and an env-resolution case; no new config parser or fuzz workspace.
+  B869's section tests own the loading, defaults and invalid values of these settings, so this task writes no
+  config tests and no config_yaml seed.
 
 
   This part consumes already typed inputs or a decoder owned by its direct dependencies; it adds no byte
@@ -104,7 +103,7 @@ description: >-
 
   Sizing: 290 nonblank, noncomment pinned source lines (including owned declarations/static SQL); allow
   300 production including the pending result, 300 behavior/Postgres tests, 65 helper adapters,
-  65 route/manifests/wiring, 0 decoder/fuzz and 50 config lines: 780 lines within an 800-line gate.
+  65 route/manifests/wiring, 0 decoder/fuzz and 0 config lines: 730 lines within an 800-line gate.
   Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
 
@@ -133,12 +132,8 @@ scope:
     - tools/oracle/cases/auth/jwt-key-resolution/**
     - crates/betterlite-auth/src/jwt_key_resolution/fixtures.rs
     - crates/betterlite-auth/src/jwt_key_resolution/fixtures/**
-    - crates/betterlite-config/Cargo.toml
-    - crates/betterlite-config/fuzz/corpus/config_yaml/jwt-key-resolution-*
     - crates/betterlite-server/src/auth/jwt_key_resolution.rs
     - crates/betterlite-server/src/auth/jwt_key_resolution/**
-    - crates/betterlite-config/src/sections/jwt_key_resolution.rs
-    - crates/betterlite-config/src/sections/jwt_key_resolution/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L942-L1307
@@ -186,11 +181,6 @@ dod:
   - text: The independently initialized Postgres data and failure write effects match the pinned contract.
     proof:
       - postgres-tests
-  - text: Every named setting loads through the production config boundary with its pinned default, precedence
-      and invalid-value behavior.
-    proof:
-      - config-tests
-      - config-corpus
   - text: The real server constructor invokes the production auth stage and its failures stop downstream
       execution.
     proof:
@@ -218,15 +208,6 @@ checks:
       why: Actual Postgres row and failure-effect tests are absent or fail.
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/jwt_key_resolution::tests::postgres_pinned_rows$/)'
         && cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/jwt_key_resolution::tests::postgres_failure_effects$/)'
-    - id: config-tests
-      why: The actual configuration loader rejects, ignores or misresolves a new setting.
-      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::jwt_key_resolution::tests::/)
-        - test(/replays_the_/)'
-    - id: config-corpus
-      why: The task added no new configuration seed or production config replay fails.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/jwt-key-resolution-*")"
-        && grep -rlq "virtual_key_mapping_cache_ttl" crates/betterlite-config/fuzz/corpus/config_yaml/jwt-key-resolution-*
-        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: stage-wiring-tests
       why: The server does not register this production auth stage or discards its failure.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::jwt_key_resolution::tests::/)
