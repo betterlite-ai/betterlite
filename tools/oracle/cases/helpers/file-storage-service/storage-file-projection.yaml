@@ -9,19 +9,14 @@ call:
     storage_url: "litellm_db://r"
     now: 1234.9
     uuid: "12345678-1234-5678-1234-567812345678"
-env: {}
-compare: {ignore: []}
----
-kind: helper
-name: storage-file-projection-empty-content
-call:
-  file_storage_service:
-    content: ""
-    filename: empty.bin
-    purpose: user_data
-    target_storage: azure_storage
-    storage_url: "https://acct.blob.core.windows.net/files/f"
-    now: 1234.9
-    uuid: "12345678-1234-5678-1234-567812345678"
+calls:
+  - file_storage_service:
+      content: ""
+      filename: empty.bin
+      purpose: user_data
+      target_storage: azure_storage
+      storage_url: "https://acct.blob.core.windows.net/files/f"
+      now: 1234.9
+      uuid: "12345678-1234-5678-1234-567812345678"
 env: {}
 compare: {ignore: []}
