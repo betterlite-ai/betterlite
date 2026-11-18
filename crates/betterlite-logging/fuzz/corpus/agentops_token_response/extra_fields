@@ -1,0 +1,1 @@
+{"token": "jwt-1", "project_id": "project-1", "expires_at": 1700000000, "scope": {"team": ["a", "b"]}}
