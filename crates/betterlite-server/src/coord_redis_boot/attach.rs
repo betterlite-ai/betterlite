@@ -21,7 +21,7 @@ impl<Memory: MemoryCacheOps> UsageCacheTarget for DualCache<Memory> {
 
 impl<Tier: AuthCacheTier> UsageCacheTarget for AuthCache<Tier> {
     fn attach_redis(&self, redis: Arc<RedisCache>, default_ttl: Option<f64>) {
-        AuthCache::attach_redis_cache(self, Some(redis), default_ttl);
+        Self::attach_redis_cache(self, Some(redis), default_ttl);
     }
 }
 
@@ -40,15 +40,15 @@ impl<Memory: MemoryCacheOps> ConfigCacheTarget for DualCache<Memory> {
     }
 }
 
-pub struct UsageCaches<'a> {
-    pub spend_counter: &'a dyn UsageCacheTarget,
-    pub cli_sso: &'a dyn UsageCacheTarget,
-    pub config: &'a dyn ConfigCacheTarget,
-    pub auth: &'a dyn UsageCacheTarget,
+pub struct UsageCaches<'caches> {
+    pub spend_counter: &'caches dyn UsageCacheTarget,
+    pub cli_sso: &'caches dyn UsageCacheTarget,
+    pub config: &'caches dyn ConfigCacheTarget,
+    pub auth: &'caches dyn UsageCacheTarget,
 }
 
-pub struct UsageAttach<'a> {
-    pub caches: UsageCaches<'a>,
+pub struct UsageAttach<'caches> {
+    pub caches: UsageCaches<'caches>,
     pub default_redis_ttl: Option<f64>,
 }
 
@@ -71,7 +71,7 @@ pub fn attach_usage_redis(
             .auth
             .attach_redis(Arc::clone(redis), attach.default_redis_ttl);
         tracing::info!(
-            "enable_redis_auth_cache=True: attached Redis to user_api_key_cache — virtual-key lookups are now shared across all proxy workers."
+            "enable_redis_auth_cache=True: attached Redis to user_api_key_cache \u{2014} virtual-key lookups are now shared across all proxy workers."
         );
     } else {
         tracing::info!(

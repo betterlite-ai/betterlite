@@ -39,6 +39,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use crate::coord_redis_boot::attach::{ConfigCacheTarget, UsageCacheTarget, UsageCaches};
 use crate::coord_redis_boot::env_refs::{CoordSecretLookup, EnvironmentSecrets};
+use crate::coord_redis_boot::error::CoordRedisError;
 use crate::coord_redis_boot::init::UsageRedisProbe;
 use crate::coord_redis_boot::settings::{CoordinationRedisBlock, CoordinationRedisSettings};
 use crate::proxy_request_contracts::coordination_redis::CoordinationRedisParams;
@@ -190,7 +191,7 @@ pub(crate) fn secret_lookup() -> SecretLookup {
     }
 }
 
-struct NoopOidc;
+pub(crate) struct NoopOidc;
 
 impl OidcHttp for NoopOidc {
     fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
@@ -227,17 +228,12 @@ pub(crate) struct Recorded {
     pub(crate) redis: Arc<RedisCache>,
 }
 
+#[derive(Default)]
 pub(crate) struct RecordingTarget {
     calls: Mutex<Vec<Recorded>>,
 }
 
 impl RecordingTarget {
-    pub(crate) fn new() -> Self {
-        Self {
-            calls: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn calls(&self) -> Vec<AttachCall> {
         self.calls
             .lock()
@@ -276,6 +272,7 @@ impl ConfigCacheTarget for RecordingTarget {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct RecordingCaches {
     pub(crate) spend: RecordingTarget,
     pub(crate) cli: RecordingTarget,
@@ -284,15 +281,6 @@ pub(crate) struct RecordingCaches {
 }
 
 impl RecordingCaches {
-    pub(crate) fn new() -> Self {
-        Self {
-            spend: RecordingTarget::new(),
-            cli: RecordingTarget::new(),
-            config: RecordingTarget::new(),
-            auth: RecordingTarget::new(),
-        }
-    }
-
     pub(crate) fn usage(&self) -> UsageCaches<'_> {
         UsageCaches {
             spend_counter: &self.spend,
@@ -367,9 +355,11 @@ impl CoordSecretLookup for FakeSecrets {
         &self,
         env: &BTreeMap<String, String>,
         name: &str,
-    ) -> Result<Option<SecretValue>, SecretLookupError> {
+    ) -> Result<Option<SecretValue>, CoordRedisError> {
         if self.fails {
-            return Err(SecretLookupError::GoogleOidcFailed);
+            return Err(CoordRedisError::Secrets(
+                SecretLookupError::GoogleOidcFailed,
+            ));
         }
         let stripped = name.replace("os.environ/", "");
         if let Some(value) = self.values.get(&stripped) {

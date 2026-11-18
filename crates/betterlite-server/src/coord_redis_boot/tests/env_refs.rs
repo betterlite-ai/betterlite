@@ -1,9 +1,19 @@
 #![cfg(test)]
 
-use betterlite_secret_managers::secret_lookup::SecretValue;
-use secrecy::{ExposeSecret as _, SecretString};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, sync_channel};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
-use super::support::{FakeSecrets, block, environment, secret_lookup};
+use betterlite_secret_managers::secret_lookup::SecretLookup;
+use betterlite_secret_managers::secret_lookup::SecretValue;
+use betterlite_secret_managers::secret_lookup::ports::{
+    OidcHttp, OidcHttpError, OidcRequest, OidcResponse, OidcTokenCache,
+};
+use secrecy::{ExposeSecret as _, SecretString};
+use tokio::task::{JoinSet, yield_now};
+
+use super::support::{FakeSecrets, NoopOidc, block, environment, secret_lookup};
 use crate::coord_redis_boot::env_refs::{ResolveContext, resolve_params};
 use crate::coord_redis_boot::error::CoordRedisError;
 use crate::proxy_request_contracts::coordination_redis::BoolOrText;
@@ -96,7 +106,7 @@ async fn resolve_params_rejects_a_boolean_reference_outside_a_typed_field() {
 
 #[tokio::test]
 async fn resolve_params_reads_through_the_secret_lookup() {
-    let secrets = secret_lookup();
+    let secrets = Arc::new(secret_lookup());
     let env = environment(&[
         ("COORD_HOST", "coordinator.internal"),
         ("COORD_SSL", "true"),
@@ -264,6 +274,75 @@ async fn resolve_params_names_a_flag_reference_that_is_not_a_boolean_word() {
         error.to_string(),
         "environment variable COORD_SSL must be a bool"
     );
+}
+
+struct BlockingOidc {
+    release: Mutex<Receiver<()>>,
+    blocked_the_worker: Arc<AtomicBool>,
+}
+
+impl OidcHttp for BlockingOidc {
+    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
+        let release = self.release.lock().unwrap_or_else(PoisonError::into_inner);
+        if release.recv_timeout(BLOCKING_TIMEOUT).is_err() {
+            self.blocked_the_worker.store(true, Ordering::SeqCst);
+            return Err(OidcHttpError::Request {
+                message: "the OIDC read blocked the async worker".to_owned(),
+            });
+        }
+        Ok(OidcResponse {
+            status: 200,
+            body: b"offloaded-token".to_vec(),
+        })
+    }
+}
+
+const BLOCKING_TIMEOUT: Duration = Duration::from_secs(2);
+
+// The async worker must stay free while a real SecretLookup does its blocking OIDC read.
+#[tokio::test]
+async fn secret_lookup_runs_a_blocking_oidc_read_off_the_worker() {
+    let (sender, receiver) = sync_channel(0);
+    let blocked_the_worker = Arc::new(AtomicBool::new(false));
+    let lookup = Arc::new(SecretLookup {
+        manager: None,
+        oidc_http: Arc::new(BlockingOidc {
+            release: Mutex::new(receiver),
+            blocked_the_worker: Arc::clone(&blocked_the_worker),
+        }),
+        azure_tokens: Arc::new(NoopOidc),
+        clock: Arc::new(NoopOidc),
+        oidc_cache: OidcTokenCache::default(),
+    });
+    let mut signallers = JoinSet::new();
+    signallers.spawn(async move {
+        yield_now().await;
+        sender.send(()).expect("the OIDC read still waits");
+    });
+    let env = no_environment();
+    let context = ResolveContext {
+        secrets: &lookup,
+        env: &env,
+    };
+    let outcome = resolve_params(
+        &block(r#"{"password": "os.environ/oidc/google/audience"}"#),
+        &context,
+    )
+    .await;
+    assert!(
+        !blocked_the_worker.load(Ordering::SeqCst),
+        "the blocking OIDC read ran on the async worker"
+    );
+    let params = outcome.expect("the offloaded lookup resolves the token");
+    assert!(
+        signallers
+            .join_next()
+            .await
+            .expect("the signaller ran")
+            .is_ok()
+    );
+    let password = params.password.expect("the password is set");
+    assert_eq!(password.expose_secret(), "offloaded-token");
 }
 
 #[tokio::test]

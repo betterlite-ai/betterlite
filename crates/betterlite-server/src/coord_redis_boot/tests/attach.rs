@@ -14,7 +14,7 @@ use crate::coord_redis_boot::attach::{
     attach_usage_redis,
 };
 
-fn attach_with<'a>(caches: &'a RecordingCaches, ttl: f64) -> UsageAttach<'a> {
+fn attach_with<'caches>(caches: &'caches RecordingCaches, ttl: f64) -> UsageAttach<'caches> {
     UsageAttach {
         caches: caches.usage(),
         default_redis_ttl: Some(ttl),
@@ -31,7 +31,7 @@ fn all_caches(caches: &RecordingCaches) -> Vec<Arc<RedisCache>> {
 #[tokio::test]
 async fn attach_usage_redis_backs_spend_cli_sso_and_config() {
     let redis = standalone_cache().await;
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     attach_usage_redis(&redis, false, &attach_with(&caches, 120.0));
     assert_eq!(
         caches.spend.calls(),
@@ -52,7 +52,7 @@ async fn attach_usage_redis_backs_spend_cli_sso_and_config() {
 #[test]
 fn cli_sso_session_ttl_is_ten_minutes() {
     assert_eq!(
-        Duration::from_secs_f64(CLI_SSO_SESSION_TTL_SECONDS),
+        Duration::try_from_secs_f64(CLI_SSO_SESSION_TTL_SECONDS).expect("the TTL is a duration"),
         Duration::from_secs(600)
     );
 }
@@ -60,7 +60,7 @@ fn cli_sso_session_ttl_is_ten_minutes() {
 #[tokio::test]
 async fn attach_usage_redis_backs_the_auth_cache_when_asked() {
     let redis = standalone_cache().await;
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     attach_usage_redis(&redis, true, &attach_with(&caches, 90.0));
     assert_eq!(
         caches.auth.calls(),
@@ -74,7 +74,7 @@ async fn attach_usage_redis_backs_the_auth_cache_when_asked() {
 #[tokio::test]
 async fn attach_usage_redis_gives_every_target_the_same_client() {
     let redis = standalone_cache().await;
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     attach_usage_redis(&redis, true, &attach_with(&caches, 90.0));
     let held = all_caches(&caches);
     assert_eq!(held.len(), 3);
@@ -84,15 +84,15 @@ async fn attach_usage_redis_gives_every_target_the_same_client() {
 #[tokio::test]
 async fn attach_usage_redis_logs_the_enabled_line() {
     let redis = standalone_cache().await;
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let ((), lines) = capture_logs(|| {
         attach_usage_redis(&redis, true, &attach_with(&caches, 120.0));
     });
-    let infos = messages(&lines, Level::Info);
+    let infos = messages(&lines, Level::INFO);
     assert_eq!(
         infos,
         vec![
-            "enable_redis_auth_cache=True: attached Redis to user_api_key_cache — virtual-key lookups are now shared across all proxy workers.".to_owned()
+            "enable_redis_auth_cache=True: attached Redis to user_api_key_cache \u{2014} virtual-key lookups are now shared across all proxy workers.".to_owned()
         ]
     );
 }
@@ -100,11 +100,11 @@ async fn attach_usage_redis_logs_the_enabled_line() {
 #[tokio::test]
 async fn attach_usage_redis_logs_the_disabled_line() {
     let redis = standalone_cache().await;
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let ((), lines) = capture_logs(|| {
         attach_usage_redis(&redis, false, &attach_with(&caches, 120.0));
     });
-    let infos = messages(&lines, Level::Info);
+    let infos = messages(&lines, Level::INFO);
     assert_eq!(
         infos,
         vec![

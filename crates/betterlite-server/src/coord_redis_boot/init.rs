@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache_admin::RedisAdminError;
 use betterlite_secret_managers::secret_lookup::text_to_bool;
+use tokio::time::timeout;
 
 use super::attach::{UsageAttach, attach_usage_redis};
 use super::build::{build_from_env, build_usage_redis};
@@ -113,7 +114,7 @@ pub async fn init_env_fallback(
             return None;
         }
     };
-    let reachable = match tokio::time::timeout(PING_TIMEOUT, probe.ping(&cache)).await {
+    let reachable = match timeout(PING_TIMEOUT, probe.ping(&cache)).await {
         Ok(Ok(reachable)) => Ok(reachable),
         Ok(Err(error)) => Err(error.to_string()),
         Err(elapsed) => Err(elapsed.to_string()),

@@ -34,6 +34,13 @@ pub enum CoordRedisError {
     Build(#[from] RedisCacheWiringError),
     #[error(transparent)]
     Secrets(#[from] SecretLookupError),
+    #[error("the coordination Redis secret lookup task failed: {source}")]
+    LookupTask {
+        #[from]
+        source: tokio::task::JoinError,
+    },
+    #[error("the coordination Redis secret lookup task ended without a result")]
+    LookupMissing,
     #[error(transparent)]
     Environment(#[from] EnvError),
 }

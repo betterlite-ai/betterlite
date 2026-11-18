@@ -34,7 +34,7 @@ pub struct CoordinationLitellmSettings {
 }
 
 // The block's fields stay unmodeled until CoordinationRedisParams validates them, so a non-mapping block is reported where it enters startup.
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(transparent)]
 pub struct CoordinationRedisBlock {
     pub value: JsonValue,

@@ -126,7 +126,9 @@ fn usage_cache_request(
         .map_err(|source| CoordRedisError::Overrides { source })?;
     overrides.password = params.password.clone().map(Some);
     overrides.url = params.url.clone().map(Some);
-    overrides.sentinel_password = params.sentinel_password.clone();
+    overrides
+        .sentinel_password
+        .clone_from(&params.sentinel_password);
     Ok(RedisCacheRequest {
         overrides,
         family,
@@ -148,7 +150,9 @@ fn selects_cluster(value: &JsonValue) -> bool {
     match value {
         JsonValue::Null => false,
         JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_none_or(|value| value != 0.0),
+        JsonValue::Number(number) => number
+            .as_f64()
+            .is_none_or(|number_value| number_value != 0.0_f64),
         JsonValue::String(text) => !text.is_empty(),
         JsonValue::Array(items) => !items.is_empty(),
         JsonValue::Object(fields) => !fields.is_empty(),

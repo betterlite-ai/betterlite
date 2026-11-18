@@ -1,11 +1,12 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_secret_managers::secret_lookup::error::SecretLookupError;
 use betterlite_secret_managers::secret_lookup::{SecretLookup, SecretValue, text_to_bool};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::de::Error as _;
+use tokio::task::JoinSet;
 
 use super::error::CoordRedisError;
 use super::settings::CoordinationRedisBlock;
@@ -21,17 +22,26 @@ pub trait CoordSecretLookup: Send + Sync {
         &self,
         env: &BTreeMap<String, String>,
         name: &str,
-    ) -> Result<Option<SecretValue>, SecretLookupError>;
+    ) -> Result<Option<SecretValue>, CoordRedisError>;
 }
 
+// get_secret can read a file or call an OIDC endpoint, so the owned lookup runs on a blocking task instead of the startup worker.
 #[async_trait]
-impl CoordSecretLookup for SecretLookup {
+impl CoordSecretLookup for Arc<SecretLookup> {
     async fn get_secret(
         &self,
         env: &BTreeMap<String, String>,
         name: &str,
-    ) -> Result<Option<SecretValue>, SecretLookupError> {
-        SecretLookup::get_secret(self, env, name, None)
+    ) -> Result<Option<SecretValue>, CoordRedisError> {
+        let lookup = Arc::clone(self);
+        let env = env.clone();
+        let name = name.to_owned();
+        let mut tasks = JoinSet::new();
+        tasks.spawn_blocking(move || SecretLookup::get_secret(&lookup, &env, &name, None));
+        Ok(tasks
+            .join_next()
+            .await
+            .ok_or(CoordRedisError::LookupMissing)???)
     }
 }
 
@@ -44,7 +54,7 @@ impl CoordSecretLookup for EnvironmentSecrets {
         &self,
         env: &BTreeMap<String, String>,
         name: &str,
-    ) -> Result<Option<SecretValue>, SecretLookupError> {
+    ) -> Result<Option<SecretValue>, CoordRedisError> {
         let stripped = name.strip_prefix(OS_ENVIRON_PREFIX).unwrap_or(name);
         Ok(env.get(stripped).map(|text| {
             text_to_bool(text).map_or_else(
@@ -55,9 +65,9 @@ impl CoordSecretLookup for EnvironmentSecrets {
     }
 }
 
-pub struct ResolveContext<'a> {
-    pub secrets: &'a dyn CoordSecretLookup,
-    pub env: &'a BTreeMap<String, String>,
+pub struct ResolveContext<'sources> {
+    pub secrets: &'sources dyn CoordSecretLookup,
+    pub env: &'sources BTreeMap<String, String>,
 }
 
 // Resolves the block and validates it; a credential moves straight into its SecretString field, so no JSON value holds one.

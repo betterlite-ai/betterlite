@@ -54,13 +54,13 @@ fn buffer_settings(flag: &str) -> CoordinationGeneralSettings {
 }
 
 fn only_warning(lines: &[LogLine]) -> String {
-    let warnings = messages(lines, Level::Warn);
+    let warnings = messages(lines, Level::WARN);
     assert_eq!(warnings.len(), 1, "exactly one warning is logged");
     warnings.first().cloned().unwrap_or_default()
 }
 
 fn assert_info(lines: &[LogLine], expected: &str) {
-    let infos = messages(lines, Level::Info);
+    let infos = messages(lines, Level::INFO);
     assert_eq!(
         infos.len(),
         2,
@@ -69,7 +69,7 @@ fn assert_info(lines: &[LogLine], expected: &str) {
     assert_eq!(infos.last().map(String::as_str), Some(expected));
 }
 
-fn attach_of<'a>(caches: &'a RecordingCaches) -> UsageAttach<'a> {
+fn attach_of<'caches>(caches: &'caches RecordingCaches) -> UsageAttach<'caches> {
     UsageAttach {
         caches: caches.usage(),
         default_redis_ttl: Some(120.0),
@@ -108,7 +108,7 @@ async fn config_without_a_block(config: &CoordinationRedisSettings) -> bool {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let cache = init_from_config(config, &context, &wiring(), &attach_of(&caches))
         .await
         .expect("an absent block is not an error");
@@ -138,7 +138,7 @@ async fn init_from_config_rejects_a_block_that_is_not_a_mapping() {
         env: &env,
     };
     let config = config_with_block(r#""redis://localhost:6379""#);
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let error = init_from_config(&config, &context, &wiring(), &attach_of(&caches))
         .await
         .err()
@@ -160,7 +160,7 @@ async fn init_from_config_rejects_a_block_without_a_target() {
         env: &env,
     };
     let config = config_with_block(r#"{"port": 6379, "ssl": true}"#);
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let error = init_from_config(&config, &context, &wiring(), &attach_of(&caches))
         .await
         .err()
@@ -190,7 +190,7 @@ async fn init_from_config_builds_and_attaches() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let (result, lines) = capture_async_logs(init_from_config(
         &config,
         &context,
@@ -222,7 +222,7 @@ async fn init_from_config_resolves_environment_references() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let cache = init_from_config(&config, &context, &wiring(), &attach_of(&caches))
         .await
         .expect("the references resolve")
@@ -241,17 +241,17 @@ async fn init_from_config_reads_the_auth_flag_from_litellm_settings() {
         secrets: &secrets,
         env: &env,
     };
-    let enabled = RecordingCaches::new();
+    let enabled = RecordingCaches::default();
     let config = config_with_block_and(&block_text, r#""enable_redis_auth_cache": true"#);
     init_from_config(&config, &context, &wiring(), &attach_of(&enabled))
         .await
         .expect("the block builds");
-    let disabled = RecordingCaches::new();
+    let disabled = RecordingCaches::default();
     let off = config_with_block_and(&block_text, r#""enable_redis_auth_cache": false"#);
     init_from_config(&off, &context, &wiring(), &attach_of(&disabled))
         .await
         .expect("a false flag leaves the auth cache alone");
-    let absent = RecordingCaches::new();
+    let absent = RecordingCaches::default();
     init_from_config(
         &config_with_block(&block_text),
         &context,
@@ -275,7 +275,7 @@ async fn init_from_config_reports_a_malformed_node_list() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let error = init_from_config(&config, &context, &wiring(), &attach_of(&caches))
         .await
         .err()
@@ -292,7 +292,7 @@ async fn init_from_config_reports_invalid_params() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let error = init_from_config(&config, &context, &wiring(), &attach_of(&caches))
         .await
         .err()
@@ -308,7 +308,7 @@ async fn init_from_db_returns_none_without_a_block() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_from_db(
         None,
@@ -332,7 +332,7 @@ async fn init_from_db_warns_without_a_target() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let litellm_settings = CoordinationLitellmSettings::default();
     let (result, lines) = capture_async_logs(init_from_db(
         Some(&persisted),
@@ -359,7 +359,7 @@ async fn init_from_db_builds_and_attaches() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let (result, lines) = capture_async_logs(init_from_db(
         Some(&persisted),
         &litellm_settings,
@@ -386,7 +386,7 @@ async fn init_from_db_rejects_a_block_that_is_not_a_mapping() {
         secrets: &secrets,
         env: &env,
     };
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let litellm_settings = CoordinationLitellmSettings::default();
     let error = init_from_db(
         Some(&persisted),
@@ -410,7 +410,7 @@ async fn admin_ping_reports_a_closed_port_as_an_error() {
 
 #[tokio::test]
 async fn init_env_fallback_returns_none_without_a_target() {
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Reachable,
     };
@@ -431,7 +431,7 @@ async fn init_env_fallback_returns_none_without_a_target() {
 #[tokio::test]
 async fn init_env_fallback_warns_when_the_build_fails() {
     let env = environment(&[("REDIS_CLUSTER_NODES", "not json")]);
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Reachable,
     };
@@ -458,7 +458,7 @@ async fn init_env_fallback_warns_when_the_build_fails() {
 #[tokio::test]
 async fn init_env_fallback_warns_when_the_ping_fails() {
     let env = port_environment(closed_port());
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Fails,
     };
@@ -490,7 +490,7 @@ fn ping_timeout_is_two_seconds() {
 #[tokio::test(start_paused = true)]
 async fn init_env_fallback_warns_when_the_ping_times_out() {
     let env = port_environment(closed_port());
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Hangs,
     };
@@ -514,7 +514,7 @@ async fn init_env_fallback_warns_when_the_ping_times_out() {
 #[tokio::test]
 async fn init_env_fallback_stays_silent_on_a_false_ping() {
     let env = port_environment(closed_port());
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Unreachable,
     };
@@ -528,8 +528,8 @@ async fn init_env_fallback_stays_silent_on_a_false_ping() {
     ))
     .await;
     assert!(result.is_none());
-    assert!(messages(&lines, Level::Warn).is_empty());
-    assert!(messages(&lines, Level::Info).is_empty());
+    assert!(messages(&lines, Level::WARN).is_empty());
+    assert!(messages(&lines, Level::INFO).is_empty());
     assert!(caches.calls().is_empty());
 }
 
@@ -537,7 +537,7 @@ async fn init_env_fallback_stays_silent_on_a_false_ping() {
 async fn init_env_fallback_attaches_when_reachable() {
     let port = closed_port();
     let env = port_environment(port);
-    let caches = RecordingCaches::new();
+    let caches = RecordingCaches::default();
     let probe = RecordingProbe {
         outcome: PingOutcome::Reachable,
     };
