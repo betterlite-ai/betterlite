@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::mem;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use rust_decimal::Decimal;
@@ -91,8 +92,12 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     // BaseRoutingStrategy.get_and_reset_in_memory_keys_to_update
     #[must_use]
     pub fn take_tracked_keys(&self) -> BTreeSet<String> {
-        self.state
-            .reset_tracked()
+        let mut tracked = self
+            .state
+            .tracked
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        mem::take(&mut *tracked)
             .into_iter()
             .map(|key| key.as_ref().to_owned())
             .collect()
@@ -118,19 +123,22 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     // track_deployment_metrics.get_deployment_successes_for_current_minute
     #[must_use]
     pub fn successes_for_minute(&self, deployment_id: &str) -> i64 {
-        match local_counter(self.state.as_ref(), &outcome_keys(deployment_id).successes) {
-            Some(value) => value,
-            None => 0,
-        }
+        let Some(value) =
+            local_counter(self.state.as_ref(), &outcome_keys(deployment_id).successes)
+        else {
+            return 0;
+        };
+        value
     }
 
     // track_deployment_metrics.get_deployment_failures_for_current_minute
     #[must_use]
     pub fn failures_for_minute(&self, deployment_id: &str) -> i64 {
-        match local_counter(self.state.as_ref(), &outcome_keys(deployment_id).failures) {
-            Some(value) => value,
-            None => 0,
-        }
+        let Some(value) = local_counter(self.state.as_ref(), &outcome_keys(deployment_id).failures)
+        else {
+            return 0;
+        };
+        value
     }
 }
 

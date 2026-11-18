@@ -27,8 +27,10 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
 
     // BaseRoutingStrategy.cancel_sync_task
     pub fn cancel_sync_task(&self) {
-        let mut tasks = self.tasks.lock().unwrap_or_else(PoisonError::into_inner);
-        tasks.abort_all();
+        self.tasks
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .abort_all();
     }
 
     // BaseRoutingStrategy.cleanup cancels the sync and waits for it to stop

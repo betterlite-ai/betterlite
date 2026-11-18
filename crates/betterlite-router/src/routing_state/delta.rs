@@ -96,11 +96,6 @@ impl<S: DeltaStore> SyncState<S> {
             .collect()
     }
 
-    pub(super) fn reset_tracked(&self) -> BTreeSet<RouteKey> {
-        let mut tracked = self.tracked.lock().unwrap_or_else(PoisonError::into_inner);
-        mem::take(&mut *tracked)
-    }
-
     pub(super) fn queue(&self, delta: Delta) -> bool {
         let mut pending = self.pending.lock().unwrap_or_else(PoisonError::into_inner);
         if pending.len() >= MAX_PENDING_DELTAS {
@@ -111,17 +106,15 @@ impl<S: DeltaStore> SyncState<S> {
     }
 }
 
-pub(super) fn take_pending<S: DeltaStore>(state: &SyncState<S>) -> Vec<Delta> {
-    let mut pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
-    mem::take(&mut *pending)
-}
-
 // BaseRoutingStrategy._push_in_memory_increments_to_redis: compress one batch by key, send it, discard it
 pub(super) async fn push_pending<S: DeltaStore>(
     state: &SyncState<S>,
 ) -> Option<BTreeMap<String, Decimal>> {
     let store = state.store.as_ref()?;
-    let batch = take_pending(state);
+    let batch = {
+        let mut pending = state.pending.lock().unwrap_or_else(PoisonError::into_inner);
+        mem::take(&mut *pending)
+    };
     if batch.is_empty() {
         return None;
     }
