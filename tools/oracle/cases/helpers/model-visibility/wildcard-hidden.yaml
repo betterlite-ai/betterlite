@@ -1,0 +1,34 @@
+kind: helper
+name: model-visibility-wildcard-hidden
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: gpt-*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w1
+          discoverable: false
+      - model_name: shared/*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w2
+          discoverable: false
+      - model_name: shared/visible
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w3
+      - model_name: open/*
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: w4
+    model_group_alias: {}
+    arguments:
+      model_names: [gpt-4o, shared/x, open/x, nothing]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}

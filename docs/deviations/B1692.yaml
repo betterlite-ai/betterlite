@@ -1,0 +1,31 @@
+task: B1692
+deviations:
+  - what: >-
+      A cancelled scheduled run keeps the rows it already landed but does not release the
+      rollup lease; the 900-second TTL expires instead, where the source's try/finally
+      releases the lock while the CancelledError propagates.
+    why: >-
+      Rust cancellation drops the future at its await point, so no code after the await runs;
+      awaiting the release from a drop cannot complete. The reconciliation is idempotent on the
+      sentinel key and the prune reads the row's own timestamp, so a held lease only delays the
+      next pod, and the source itself accepts a fixed TTL with no renewal when a long scan
+      outlives it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L648-L651
+  - what: >-
+      The config side of a run is the immutable deployment snapshot taken during proxy
+      startup, so a deployment added to the router after startup is priced on the next day's
+      run only after a restart, where the source reads router.model_list on every run.
+    why: >-
+      B1692 is required to supply an immutable B844 startup snapshot to the job, which keeps a
+      catalog reload from changing the deployments one run scans halfway through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L356
+  - what: >-
+      LITELLM_ENABLE_PTU_COST_ATTRIBUTION is read from the process environment with the
+      config's environment_variables section laid over it, without a secret-manager lookup, so
+      a flag held only in a hosted secret manager leaves attribution off.
+    why: >-
+      betterlite's flag reader takes a SecretLookup, and the secret-manager state lives in a
+      startup object this adapter's typed startup resource does not carry; the environment is
+      the source the source's own get_secret falls back to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L166-L186
+kept_bugs: []

@@ -12,17 +12,19 @@ description: >-
   credentials, B174 model resolution, B176 trusted controls, B1080 stream logging and B247 logger
   construction. B2464 owns file config and timeout selection. xAI batch-results detection/handling
   stays with its existing B1407 provider owner.
-  Register B2401 SDK HTTP operation file_content_stream for both SDK modes, actual bytes/headers,
-  error facts and close effects. No helper oracle, route authorization or new parser belongs here.
+  SdkHttpCall::FileContentStream covers both SDK modes, actual bytes/headers, error facts and close
+  effects. Main registers it as a placeholder: give tools/oracle/src/sdk_http/file_content_stream.rs its
+  real Call (implementing call_kind::CallKind) and the Outcome of SdkResult::FileContentStream, and fill
+  FileContentStreamRequest in tools/oracle/sdk_http/file_content_stream.py; the shared sdk_http files are
+  not touched. No helper oracle, route authorization or new parser belongs here.
   Tests are in api::file_content_stream::tests. Counted owned spans have 324 nonblank/non-comment
   lines; 250 implementation, 170 tests, 140 fixtures, 100 adapters and 30 wiring lines total 690.
 scope:
   paths:
   - crates/betterlite-core/src/api/file_content_stream.rs
   - crates/betterlite-core/src/api/file_content_stream/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_content_stream.rs
+  - tools/oracle/src/sdk_http/file_content_stream/**
   - tools/oracle/sdk_http/file_content_stream.py
   - tools/oracle/cases/sdk-http/file-content-stream/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-content-stream-*
@@ -94,7 +96,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_content_stream::tests::/) - test(/replays_/)'
   - id: sdk-python
     why: content SDK adapter does not execute and type-check independently
-    run: test -f tools/oracle/sdk_http/file_content_stream.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/file_content_stream.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-seeds
     why: SDK binary content operation has no new seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-content-stream-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

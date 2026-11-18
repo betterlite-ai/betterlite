@@ -84,6 +84,7 @@ pub(super) fn configure(
                 | ConfigError::InvalidInteger { .. }
                 | ConfigError::InvalidScalar { .. }
                 | ConfigError::Environment { .. }
+                | ConfigError::CustomDimensions(_)
                 | ConfigError::LoadThread { .. } => "ConfigError",
             };
             (class, error.to_string())
