@@ -16,8 +16,8 @@ use crate::database_failures::metrics::{
 use crate::database_faults::ErrorType;
 
 use super::support::{
-    RecordingResolver, RecordingSink, SinkFault, database_error, drain, failures, metric_call,
-    run_metric, span, successes,
+    RecordingResolver, RecordingSink, SinkFault, capture_logs, database_error, drain, failures,
+    metric_call, run_metric, span, successes,
 };
 
 #[tokio::test]
@@ -387,6 +387,28 @@ async fn proxy_success_zero_duration() {
     let recorded = successes(&sink);
     assert_eq!(recorded[0].duration_seconds.to_bits(), 0.0_f64.to_bits());
     assert!(recorded[0].start_time <= recorded[0].end_time);
+}
+
+#[tokio::test]
+async fn success_hook_failure_logged() {
+    let (logs, _guard) = capture_logs();
+    let tasks = TaskTracker::new();
+    let sink = Arc::new(RecordingSink::default());
+    sink.refuse_success.store(true, Ordering::SeqCst);
+    let resolver = RecordingResolver::default();
+    let call = metric_call("query_raw");
+    let output = run_metric(
+        async { Ok::<_, DbLookupError>(7) },
+        &call,
+        &sink,
+        &resolver,
+        &tasks,
+    )
+    .await
+    .expect("the metric failure does not fail the operation");
+    assert_eq!(output, 7);
+    drain(&tasks).await;
+    assert!(logs.text().contains("the database success metric failed"));
 }
 
 #[tokio::test]
