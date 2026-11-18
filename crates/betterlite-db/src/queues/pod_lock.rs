@@ -65,12 +65,12 @@ pub trait LockCache: Send + Sync {
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>>;
 }
 
-// async_register_script's handle: _compare_and_delete_lock compares against the JSON-encoded owner stored by async_set_cache.
+// async_register_script's handle: run receives the JSON text async_set_cache stored, so a Lua equality check compares like with like.
 pub trait LockScript: Send + Sync {
     fn run<'a>(
         &'a self,
         key: &'a str,
-        owner: &'a str,
+        owner_json: &'a str,
     ) -> BoxFuture<'a, Result<bool, LockCacheError>>;
 }
 
@@ -250,7 +250,9 @@ impl<C: LockCache> PodLockManager<C> {
 
     async fn compare_and_delete(&self, cache: &C, lock_key: &str) -> Result<bool, LockCacheError> {
         if let Some(script) = self.release_script(cache) {
-            match script.run(lock_key, self.pod_id.as_ref()).await {
+            // async_set_cache stored json.dumps(pod_id), so the Lua equality check needs the same quoted text.
+            let owner_json = serde_json::to_string(self.pod_id.as_ref())?;
+            match script.run(lock_key, &owner_json).await {
                 Ok(deleted) => return Ok(deleted),
                 Err(_script_error) => {
                     *self.script.lock().unwrap_or_else(PoisonError::into_inner) = None;

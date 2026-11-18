@@ -108,22 +108,23 @@ impl LockCache for RedisLockCache {
     }
 }
 
-// async_set_cache stored json.dumps(pod_id), so the script's ARGV[1] must carry the same quoted text.
+// ARGV[1] is the JSON text async_set_cache stored, which is what the Lua GET equality compares against.
 struct RedisLockScript {
     cache: Arc<RedisCache>,
     script: RegisteredScript,
 }
 
 impl LockScript for RedisLockScript {
+    // The handle needs a running Redis, which the db tests fake at the LockCache seam.
+    #[cfg_attr(test, mutants::skip)]
     fn run<'a>(
         &'a self,
         key: &'a str,
-        owner: &'a str,
+        owner_json: &'a str,
     ) -> BoxFuture<'a, Result<bool, LockCacheError>> {
         Box::pin(async move {
-            let owner_json = serde_json::to_string(owner)?;
             let keys = [key.to_owned()];
-            let args = [RedisScalar::Text(owner_json)];
+            let args = [RedisScalar::Text(owner_json.to_owned())];
             deleted_one(with_cache_error(
                 "run_script",
                 self.cache.run_script(&self.script, &keys, &args).await,

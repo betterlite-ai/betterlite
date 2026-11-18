@@ -1,8 +1,9 @@
 #![cfg(test)]
 
-use std::future::{Future, ready};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::future::{Future, pending, ready};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use futures_util::future::BoxFuture;
 use rstest::rstest;
@@ -15,19 +16,34 @@ use super::{
 };
 use crate::queues::test_support::captured_logs;
 
+// The JSON string B126's async_set_cache stores, the ARGV text the Lua compares, and the DEL bookkeeping of the fallback.
+#[derive(Default)]
+struct LeaseStore {
+    stored_json: Option<String>,
+    script_arguments: Vec<String>,
+    lease: Option<String>,
+    deleted_owners: Vec<String>,
+}
+
+#[derive(Clone, Copy)]
+enum ScriptMode {
+    Compare,
+    Fail,
+}
+
 struct FakeCache {
     set: Mutex<Result<bool, ()>>,
     get: Mutex<Result<Option<Vec<u8>>, ()>>,
     delete: Mutex<Result<i64, ()>>,
-    scripts: Mutex<Option<Result<bool, ()>>>,
+    script: Mutex<Option<ScriptMode>>,
+    store: Arc<Mutex<LeaseStore>>,
     registrations: AtomicUsize,
     deletes: AtomicUsize,
     script_runs: Arc<AtomicUsize>,
     set_ttls: Mutex<Vec<i64>>,
     stored_owners: Mutex<Vec<String>>,
-    lease: Mutex<Option<String>>,
     takeover: Mutex<Option<String>>,
-    deleted_owners: Mutex<Vec<String>>,
+    pending_delete: AtomicBool,
 }
 
 impl Default for FakeCache {
@@ -36,15 +52,15 @@ impl Default for FakeCache {
             set: Mutex::new(Ok(true)),
             get: Mutex::new(Ok(None)),
             delete: Mutex::new(Ok(0)),
-            scripts: Mutex::new(None),
+            script: Mutex::new(None),
+            store: Arc::default(),
             registrations: AtomicUsize::new(0),
             deletes: AtomicUsize::new(0),
             script_runs: Arc::new(AtomicUsize::new(0)),
             set_ttls: Mutex::new(Vec::new()),
             stored_owners: Mutex::new(Vec::new()),
-            lease: Mutex::new(None),
             takeover: Mutex::new(None),
-            deleted_owners: Mutex::new(Vec::new()),
+            pending_delete: AtomicBool::new(false),
         }
     }
 }
@@ -67,16 +83,51 @@ impl FakeCache {
         *self.get.lock().unwrap_or_else(PoisonError::into_inner) = Err(());
     }
 
-    fn scripted(&self, result: bool) {
-        *self.scripts.lock().unwrap_or_else(PoisonError::into_inner) = Some(Ok(result));
+    fn compare_script(&self) {
+        *self.script.lock().unwrap_or_else(PoisonError::into_inner) = Some(ScriptMode::Compare);
     }
 
     fn failing_script(&self) {
-        *self.scripts.lock().unwrap_or_else(PoisonError::into_inner) = Some(Err(()));
+        *self.script.lock().unwrap_or_else(PoisonError::into_inner) = Some(ScriptMode::Fail);
+    }
+
+    fn holds_lease(&self, owner: &str) {
+        self.store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stored_json = Some(serde_json::to_string(owner).unwrap());
+    }
+
+    fn has_lease(&self) -> bool {
+        self.store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .stored_json
+            .is_some()
+    }
+
+    fn held_owner(&self) -> Option<String> {
+        self.store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .lease
+            .clone()
+    }
+
+    fn script_arguments(&self) -> Vec<String> {
+        self.store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .script_arguments
+            .clone()
     }
 
     fn delete_count(&self, count: i64) {
         *self.delete.lock().unwrap_or_else(PoisonError::into_inner) = Ok(count);
+    }
+
+    fn delay_delete(&self) {
+        self.pending_delete.store(true, Ordering::SeqCst);
     }
 
     fn set_ttls(&self) -> Vec<i64> {
@@ -110,10 +161,19 @@ impl FakeCache {
         *self.takeover.lock().unwrap_or_else(PoisonError::into_inner) = Some(owner.to_owned());
     }
 
-    fn deleted_owners(&self) -> Vec<String> {
-        self.deleted_owners
+    // the lease the fallback's DEL removes when the command runs
+    fn lease_held_by(&self, owner: &str) {
+        self.store
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
+            .lease = Some(owner.to_owned());
+    }
+
+    fn deleted_owners(&self) -> Vec<String> {
+        self.store
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .deleted_owners
             .clone()
     }
 }
@@ -132,7 +192,7 @@ impl LockCache for FakeCache {
                 .unwrap_or_else(PoisonError::into_inner)
                 .take()
         {
-            *self.lease.lock().unwrap_or_else(PoisonError::into_inner) = Some(replacement);
+            self.store.lock().unwrap_or_else(PoisonError::into_inner).lease = Some(replacement);
         }
         ready(outcome)
     }
@@ -151,36 +211,43 @@ impl LockCache for FakeCache {
             Ok(stored) => Ok(*stored),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "set_owner_if_absent" }),
         };
+        if matches!(&outcome, Ok(true)) {
+            self.store.lock().unwrap_or_else(PoisonError::into_inner).stored_json =
+                Some(serde_json::to_string(owner).unwrap());
+        }
         ready(outcome)
     }
 
     #[rustfmt::skip]
     fn delete(&self, _key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
         self.deletes.fetch_add(1, Ordering::SeqCst);
-        if let Some(owner) = self
-            .lease
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-        {
-            self.deleted_owners
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push(owner);
-        }
+        let store = Arc::clone(&self.store);
+        let delayed = self.pending_delete.load(Ordering::SeqCst);
         let outcome = match &*self.delete.lock().unwrap_or_else(PoisonError::into_inner) {
             Ok(count) => Ok(*count),
             Err(()) => Err(LockCacheError::UnexpectedReply { operation: "delete" }),
         };
-        ready(outcome)
+        async move {
+            if delayed {
+                pending::<()>().await;
+            }
+            {
+                let mut lease = store.lock().unwrap_or_else(PoisonError::into_inner);
+                if let Some(owner) = lease.lease.take() {
+                    lease.deleted_owners.push(owner);
+                }
+            }
+            outcome
+        }
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {
         self.registrations.fetch_add(1, Ordering::SeqCst);
-        let scripted = *self.scripts.lock().unwrap_or_else(PoisonError::into_inner);
-        scripted.map(|result| -> Arc<dyn LockScript> {
+        let mode = *self.script.lock().unwrap_or_else(PoisonError::into_inner);
+        mode.map(|reply| -> Arc<dyn LockScript> {
             Arc::new(FakeScript {
-                result,
+                mode: reply,
+                store: Arc::clone(&self.store),
                 runs: Arc::clone(&self.script_runs),
             })
         })
@@ -188,7 +255,8 @@ impl LockCache for FakeCache {
 }
 
 struct FakeScript {
-    result: Result<bool, ()>,
+    mode: ScriptMode,
+    store: Arc<Mutex<LeaseStore>>,
     runs: Arc<AtomicUsize>,
 }
 
@@ -196,13 +264,21 @@ impl LockScript for FakeScript {
     fn run<'a>(
         &'a self,
         _key: &'a str,
-        _owner: &'a str,
+        owner_json: &'a str,
     ) -> BoxFuture<'a, Result<bool, LockCacheError>> {
         self.runs.fetch_add(1, Ordering::SeqCst);
-        let outcome = self
-            .result
-            .map_err(|()| LockCacheError::UnexpectedReply { operation: "run" });
-        Box::pin(ready(outcome))
+        Box::pin(async move {
+            let mut lease = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            lease.script_arguments.push(owner_json.to_owned());
+            match self.mode {
+                ScriptMode::Fail => Err(LockCacheError::UnexpectedReply { operation: "run" }),
+                ScriptMode::Compare if lease.stored_json.as_deref() == Some(owner_json) => {
+                    lease.stored_json = None;
+                    Ok(true)
+                }
+                ScriptMode::Compare => Ok(false),
+            }
+        })
     }
 }
 
@@ -285,6 +361,8 @@ async fn a_reentrant_acquire_succeeds_and_emits_the_acquired_gauge() {
     cache.contend();
     cache.respond_with_owner(manager.pod_id.as_ref());
     assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
+    // The reentrant path only reads: one failed NX SET, and no second SET that could push the expiry out.
+    assert_eq!(cache.set_ttls(), vec![60]);
     assert_eq!(
         events.events(),
         vec![PodLockEvent {
@@ -378,38 +456,54 @@ async fn release_uses_the_cached_script_and_emits_only_for_one() {
     let cache = Arc::new(FakeCache::default());
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
-    cache.scripted(true);
+    cache.compare_script();
+    assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
     manager.release_lock("job").await;
     manager.release_lock("job").await;
     assert_eq!(cache.registrations(), 1);
     assert_eq!(cache.script_runs(), 2);
     assert_eq!(cache.deletes(), 0);
+    assert!(!cache.has_lease());
     assert_eq!(
         events.events(),
-        vec![
-            PodLockEvent {
-                call_type: PodLockCallType::Released,
-                gauge_labels: format!("job:{}", manager.pod_id),
-                gauge_value: 0.0,
-                duration_seconds: 60.0,
-            },
-            PodLockEvent {
-                call_type: PodLockCallType::Released,
-                gauge_labels: format!("job:{}", manager.pod_id),
-                gauge_value: 0.0,
-                duration_seconds: 60.0,
-            }
-        ]
+        vec![PodLockEvent {
+            call_type: PodLockCallType::Released,
+            gauge_labels: format!("job:{}", manager.pod_id),
+            gauge_value: 0.0,
+            duration_seconds: 60.0,
+        }]
     );
 }
 
 #[tokio::test]
-async fn a_script_that_deletes_nothing_emits_nothing() {
+async fn the_release_script_compares_the_json_encoded_owner() {
     let cache = Arc::new(FakeCache::default());
     let events = Arc::new(RecordingEvents::default());
     let manager = build(&cache, &events);
-    cache.scripted(false);
+    cache.compare_script();
+    assert_eq!(manager.acquire_lock("job", None, true).await, Some(true));
     manager.release_lock("job").await;
+    assert_eq!(
+        cache.script_arguments(),
+        vec![format!("\"{}\"", manager.pod_id)]
+    );
+    assert!(!cache.has_lease());
+    assert_eq!(events.events().len(), 1);
+}
+
+#[tokio::test]
+async fn a_script_that_finds_another_owner_deletes_nothing() {
+    let cache = Arc::new(FakeCache::default());
+    let events = Arc::new(RecordingEvents::default());
+    let manager = build(&cache, &events);
+    cache.compare_script();
+    cache.holds_lease("another-pod");
+    manager.release_lock("job").await;
+    assert_eq!(
+        cache.script_arguments(),
+        vec![format!("\"{}\"", manager.pod_id)]
+    );
+    assert!(cache.has_lease());
     assert!(events.events().is_empty());
 }
 
@@ -486,6 +580,24 @@ async fn a_fallback_delete_that_removes_nothing_emits_nothing() {
     cache.delete_count(0);
     manager.release_lock("job").await;
     assert_eq!(cache.deletes(), 1);
+    assert!(events.events().is_empty());
+}
+
+#[tokio::test]
+async fn a_cancelled_release_keeps_the_lease_and_emits_nothing() {
+    let cache = Arc::new(FakeCache::default());
+    let events = Arc::new(RecordingEvents::default());
+    let manager = build(&cache, &events);
+    cache.respond_with_owner(manager.pod_id.as_ref());
+    cache.lease_held_by(manager.pod_id.as_ref());
+    cache.delete_count(1);
+    cache.delay_delete();
+    let cancelled =
+        tokio::time::timeout(Duration::from_millis(20), manager.release_lock("job")).await;
+    assert!(cancelled.is_err());
+    assert_eq!(cache.deletes(), 1);
+    assert!(cache.deleted_owners().is_empty());
+    assert_eq!(cache.held_owner(), Some(manager.pod_id.to_string()));
     assert!(events.events().is_empty());
 }
 
