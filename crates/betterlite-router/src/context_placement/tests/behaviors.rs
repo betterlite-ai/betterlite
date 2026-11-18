@@ -114,7 +114,7 @@ fn disabled_gate_skips_the_fit_and_placement() {
     assert!(counter.seen().is_empty());
 }
 
-// a pending compaction and an empty message list both leave the gate with nothing to fit or place
+// a pending compaction, an empty message list and an absent one all leave the gate with nothing to fit or place
 fn an_early_return_skips_the_fit_and_placement() {
     let config = config(true, 0.95);
     let deployments = catalog(vec![deployment(
@@ -130,6 +130,13 @@ fn an_early_return_skips_the_fit_and_placement() {
     let messages: &[betterlite_openai::chat::ChatMessage] = &[message(&"x".repeat(400))];
     let empty: &[betterlite_openai::chat::ChatMessage] = &[];
     let out_of_band = OutOfBand::default();
+    let instructions = Json::Text("y".repeat(100));
+    let over_window = OutOfBand {
+        instructions: Some(&instructions),
+        system: None,
+        body_tools: None,
+        request_tools: None,
+    };
     for request in [
         RequestFacts {
             messages: Some(messages),
@@ -139,6 +146,11 @@ fn an_early_return_skips_the_fit_and_placement() {
         RequestFacts {
             messages: Some(empty),
             out_of_band,
+            compaction_pending: false,
+        },
+        RequestFacts {
+            messages: None,
+            out_of_band: over_window,
             compaction_pending: false,
         },
     ] {
