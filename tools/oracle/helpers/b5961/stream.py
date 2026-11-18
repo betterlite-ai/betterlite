@@ -70,7 +70,7 @@ def tool_calls_value(calls: list[ToolCallView]) -> JsonValue:
             "index": call["index"],
             "id": call.get("id"),
             "type": call.get("type"),
-            "function": call["function"],
+            "function": JSON.validate_python(call["function"]),
         }
         for call in calls
     ]
@@ -83,7 +83,7 @@ def choice_value(choice: ChoiceView) -> JsonValue:
     value["content"] = delta.get("content")
     value["role"] = delta.get("role")
     value["refusal"] = delta.get("refusal")
-    value["function_call"] = delta.get("function_call")
+    value["function_call"] = JSON.validate_python(delta.get("function_call"))
     value["tool_calls"] = None if calls is None else tool_calls_value(calls)
     value["logprobs"] = choice.get("logprobs")
     return value
