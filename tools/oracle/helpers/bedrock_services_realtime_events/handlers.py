@@ -68,8 +68,7 @@ def client_messages_step(step: ClientMessagesStep) -> JsonObject:
 
 def parse_client_step(step: ParseClientStep) -> JsonObject:
     parsed = bedrock_handler._parse_client_message(step["message"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L201-L205
-    # invalid JSON comes back as an immutable empty mapping, which pydantic cannot read as a JSON value
-    return {"parsed": JsonAdapter.validate_python(dict(parsed))}
+    return {"parsed": dict[str, JsonValue](parsed)}
 
 
 def pending_step(step: PendingStep) -> JsonObject:
