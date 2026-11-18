@@ -19,6 +19,7 @@ enum Behavior {
     RecordsBothCallbacks,
     SkipsBatchRetrieve,
     SkipsMissingMetadata,
+    IntegerIdKey,
     SeparateMinutes,
     FirstObservationOrder,
     PicksLowestCost,
@@ -44,6 +45,7 @@ enum Behavior {
 #[case::records_both_callbacks(Behavior::RecordsBothCallbacks)]
 #[case::skips_batch_retrieve(Behavior::SkipsBatchRetrieve)]
 #[case::skips_missing_metadata(Behavior::SkipsMissingMetadata)]
+#[case::integer_id_key(Behavior::IntegerIdKey)]
 #[case::separate_minutes(Behavior::SeparateMinutes)]
 #[case::first_observation_order(Behavior::FirstObservationOrder)]
 #[case::picks_lowest_cost(Behavior::PicksLowestCost)]
@@ -69,6 +71,7 @@ async fn cost_routing_behaviors(#[case] behavior: Behavior) {
         Behavior::RecordsBothCallbacks => records_both_callbacks().await,
         Behavior::SkipsBatchRetrieve => skips_batch_retrieve().await,
         Behavior::SkipsMissingMetadata => skips_missing_metadata().await,
+        Behavior::IntegerIdKey => integer_id_key().await,
         Behavior::SeparateMinutes => separate_minutes().await,
         Behavior::FirstObservationOrder => first_observation_order().await,
         Behavior::PicksLowestCost => picks_lowest_cost(),
@@ -164,6 +167,29 @@ async fn skips_missing_metadata() {
         router.record_success(&event).await;
     }
     assert!(router.entries(GROUP, MINUTE).is_empty());
+}
+
+// an integer model_info id becomes the map key's decimal text, as the pinned callback's str(id) does
+async fn integer_id_key() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let mut params = JsonObject::new();
+    params.insert("model".to_owned(), Json::Text(MODEL.to_owned()));
+    let mut info = JsonObject::new();
+    info.insert("id".to_owned(), number("7"));
+    let deployment = DeploymentSpec::new(
+        GROUP.to_owned(),
+        params,
+        info,
+        JsonObject::new(),
+        String::new,
+    )
+    .unwrap();
+    let event = SuccessEvent {
+        deployment_id: deployment.id(),
+        ..success("7", 3)
+    };
+    router.record_success(&event).await;
+    assert_eq!(router.entries(GROUP, MINUTE), vec![entry("7", 3, 1)]);
 }
 
 async fn separate_minutes() {
