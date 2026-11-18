@@ -19,7 +19,7 @@ from pydantic import JsonValue, TypeAdapter
 
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 NO_OUTCOME: Final = ReconcileOutcome(still_desired=None, live_after=None)
-HELPER_LOGGER: Final = logging.Logger("betterlite.oracle.model_reload")
+HELPER_LOGGER: Final = logging.getLogger("betterlite.oracle.model_reload")
 HELPER_LOGGER.addHandler(logging.NullHandler())
 HELPER_LOGGER.propagate = False
 
@@ -222,7 +222,8 @@ def verdict_answer(call: VerdictCall) -> JsonValue:
             still_desired=frozen(call.get("still_desired")),
             live_after=frozen(call["live"].get("captured")),
         )
-    return JSON.validate_python({"missing": list(missing), "collateral": list(collateral)})
+    report = {"missing": list(missing), "collateral": list(collateral)}
+    return JSON.validate_python(report)
 
 
 def raise_answer(call: RaiseCall) -> JsonValue:
@@ -236,7 +237,7 @@ def raise_answer(call: RaiseCall) -> JsonValue:
                 still_desired=frozen(call.get("still_desired")),
                 live_after=frozen(call["live"].get("captured")),
             )
-        except ProxyException as error:
+        except ProxyException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325
             return {"raised": True, "type": error.type, "param": error.param, "code": error.code}
     return {"raised": False, "type": None, "param": None, "code": None}
 
@@ -262,15 +263,14 @@ def clear_cache_answer(call: ClearCacheCall) -> JsonValue:
     )
     desired = None if returned.still_desired is None else sorted(returned.still_desired)
     live = None if returned.live_after is None else sorted(returned.live_after)
-    return JSON.validate_python(
-        {
-            "deleted": deleted,
-            "remaining": remaining,
-            "registries": registries,
-            "reloads": config.reloads,
-            "outcome": {"still_desired": desired, "live_after": live},
-        }
-    )
+    report = {
+        "deleted": deleted,
+        "remaining": remaining,
+        "registries": registries,
+        "reloads": config.reloads,
+        "outcome": {"still_desired": desired, "live_after": live},
+    }
+    return JSON.validate_python(report)
 
 
 def answer(call: JsonValue) -> JsonValue:
