@@ -22,5 +22,5 @@ call:
 env: {}
 compare:
   ignore:
-    - pointer: /scan_key/tool_calls
+    - pointer: /value/scan_key/tool_calls
       why: "betterlite fingerprints use its compact JSON policy; LiteLLM uses json.dumps separators"
