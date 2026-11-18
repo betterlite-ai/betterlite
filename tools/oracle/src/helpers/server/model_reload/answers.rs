@@ -86,25 +86,20 @@ async fn clear_cache_answer(call: &ClearCacheCall) -> Value {
     let repository = call.database_present.then(|| database.repository());
     let gate = Mutex::new(());
     let returned = clear_cache(&gate, router.as_mut(), repository.as_ref()).await;
-    let (deleted, remaining, registries, reloads) = match &router {
-        Some(fake) => (
-            fake.deleted.clone(),
-            fake.remaining(),
-            registry_answer(&fake.strategies),
-            fake.reloads,
-        ),
-        None => (
-            Vec::new(),
-            Vec::new(),
-            json!({"adaptive": [], "auto": [], "complexity": [], "quality": []}),
-            0_usize,
-        ),
+    let Some(fake) = router.as_ref() else {
+        return json!({
+            "deleted": [],
+            "remaining": [],
+            "registries": {"adaptive": [], "auto": [], "complexity": [], "quality": []},
+            "reloads": 0_usize,
+            "outcome": outcome_answer(&returned),
+        });
     };
     json!({
-        "deleted": deleted,
-        "remaining": remaining,
-        "registries": registries,
-        "reloads": reloads,
+        "deleted": fake.deleted,
+        "remaining": fake.remaining(),
+        "registries": registry_answer(&fake.strategies),
+        "reloads": fake.reloads,
         "outcome": outcome_answer(&returned),
     })
 }
@@ -172,12 +167,12 @@ fn id_set(ids: &[String]) -> BTreeSet<String> {
 }
 
 fn reload_result(call: &ClearCacheCall) -> Result<ReconcileOutcome, ReloadFailure> {
-    match &call.reload_error {
-        Some(message) => Err(ReloadFailure {
-            message: message.clone(),
-        }),
-        None => Ok(reconcile_outcome(&call.outcome)),
-    }
+    let Some(message) = &call.reload_error else {
+        return Ok(reconcile_outcome(&call.outcome));
+    };
+    Err(ReloadFailure {
+        message: message.clone(),
+    })
 }
 
 fn reconcile_outcome(input: &OutcomeInput) -> ReconcileOutcome {
