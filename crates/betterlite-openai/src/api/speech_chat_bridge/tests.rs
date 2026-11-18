@@ -82,7 +82,9 @@ fn decodes_chat_audio_base64() {
     assert_eq!(decoded("QUJD="), b"ABC");
     assert_eq!(decoded("YQ=="), b"a");
     assert_eq!(decoded("Y Q==!"), b"a");
-    assert_eq!(decoded("QQ==QQ=="), [0x41, 0x04, 0x10]);
+    assert_eq!(decoded("QQ==QQ=="), [0x41]);
+    assert_eq!(decoded("ab==a"), [0x69]);
+    assert_eq!(decoded("QQ=Q="), [0x41, 0x04]);
     assert_eq!(decoded("=QUJD"), b"ABC");
     assert_eq!(decoded("===="), b"");
     assert_eq!(decoded("ABCD"), [0x00, 0x10, 0x83]);
@@ -98,12 +100,14 @@ fn sniff_media_type_honors_the_byte_limit() {
     let body = b"RIFF\x00\x00\x00\x00WAVE";
     let exact = AudioDecodeLimits {
         max_bytes: body.len(),
-        ..AudioDecodeLimits::default()
+        max_frames: 33_177_600_000,
+        max_sample_rate: 384_000,
     };
     assert_eq!(sniff_speech_audio(body, &exact), Some("audio/wav"));
     let short = AudioDecodeLimits {
         max_bytes: body.len().saturating_sub(1),
-        ..AudioDecodeLimits::default()
+        max_frames: 33_177_600_000,
+        max_sample_rate: 384_000,
     };
     assert_eq!(sniff_speech_audio(body, &short), None);
     assert_eq!(sniffed(b"RIFF"), None);
@@ -139,7 +143,7 @@ const EXPECTED: &[(&str, &str)] = &[
     ("base64-quantum", "base64:ok:[41, 42, 43]"),
     ("base64-padded", "base64:ok:[61]"),
     ("base64-garbage-skipped", "base64:ok:[61]"),
-    ("base64-pads-reset", "base64:ok:[41, 04, 10]"),
+    ("base64-pads-reset", "base64:ok:[41]"),
     (
         "base64-length-error",
         "base64:err:Invalid base64-encoded string: number of data characters (1) cannot be 1 more than a multiple of 4",
