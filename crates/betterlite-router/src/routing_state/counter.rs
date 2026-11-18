@@ -13,7 +13,7 @@ use crate::routing_value_store::{
 };
 
 use super::Settings;
-use super::delta::{DeltaStore, SyncState};
+use super::delta::{DeltaStore, Recorded, SyncState};
 use super::error::RoutingStateError;
 
 pub struct RouterCounters<S: DeltaStore + 'static> {
@@ -26,13 +26,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     #[must_use]
     pub fn new(settings: Settings, local: Arc<RoutingValueStore>, store: Option<Arc<S>>) -> Self {
         Self {
-            state: Arc::new(SyncState {
-                local,
-                store,
-                pending: Mutex::new(Vec::new()),
-                tracked: Mutex::new(BTreeSet::new()),
-                flush_lock: tokio::sync::Mutex::new(()),
-            }),
+            state: Arc::new(SyncState::new(local, store)),
             settings,
             tasks: Mutex::new(JoinSet::new()),
         }
@@ -42,18 +36,14 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     pub async fn increment_window_value(
         &self,
         key: &str,
-        value: i64,
+        value: Decimal,
         ttl: Duration,
     ) -> Result<Decimal, RoutingStateError> {
         let route_key = RouteKey::parse(key)?;
         self.state.track(&route_key);
-        let updated = self.state.local.increment(
-            &route_key,
-            &RouteIncrement::Spend(Decimal::from(value)),
-            Some(ttl.as_secs_f64()),
-        )?;
-        if self.state.store.is_some() {
-            self.queue_window_delta(route_key, value, ttl).await;
+        let (updated, recorded) = self.state.record(&route_key, value, ttl)?;
+        if let Recorded::Saturated(delta) = recorded {
+            self.flush_or_drop(delta).await;
         }
         spend_value(&route_key, &updated)
     }
@@ -61,7 +51,7 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
     // BaseRoutingStrategy._increment_value_list_in_current_window
     pub async fn increment_window_values(
         &self,
-        increments: &[(String, i64)],
+        increments: &[(String, Decimal)],
         ttl: Duration,
     ) -> Result<Vec<Decimal>, RoutingStateError> {
         let mut results = Vec::with_capacity(increments.len());

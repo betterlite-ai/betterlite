@@ -12,14 +12,12 @@ impl<S: DeltaStore + 'static> CounterSink for RouterCounters<S> {
         increment_local_counter(self.state.as_ref(), key, value, ttl)
     }
 
-    // cache.async_increment_cache_pipeline: the local result stands even when the store fails the batch
+    // cache.async_increment_cache_pipeline: the local value and its queued delta move together
     fn increment_pipeline(&self, increments: &[Increment]) -> Result<(), CounterError> {
         for increment in increments {
-            if let Err(error) = self.increment(&increment.key, increment.value, increment.ttl) {
+            if let Err(error) = self.queue_usage(increment) {
                 tracing::warn!(%error, "a usage counter could not be incremented in memory");
-                continue;
             }
-            self.queue_usage(increment);
         }
         Ok(())
     }
