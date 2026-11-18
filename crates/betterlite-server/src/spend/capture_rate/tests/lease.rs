@@ -1,7 +1,7 @@
 use betterlite_db::queues::pod_lock::owner::lease_key;
 use betterlite_models::capture_rate::CHECK_JOB_ID;
 
-use super::super::run_scheduled_check;
+use super::super::{CaptureRateJob, run_scheduled_check};
 use super::*;
 
 #[tokio::test]

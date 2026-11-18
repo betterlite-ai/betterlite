@@ -28,7 +28,7 @@ use uuid::Uuid;
 
 use super::credentials::{BillingCredentialError, BillingCredentials};
 use super::store::{CapturedSpendError, CapturedSpendRequest, CapturedSpendSource};
-use super::{CaptureRateAlert, CaptureRateJob, CaptureRatePublisher};
+use super::{CaptureRateAlert, CaptureRatePublisher};
 
 mod lease;
 mod postgres;
