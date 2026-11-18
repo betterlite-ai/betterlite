@@ -78,38 +78,34 @@ fn dispatch_response(
     provider: BedrockEmbeddingProvider,
     batch_data: Option<&[Object]>,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    match branch {
-        ResponseBranch::Async(reply) => {
-            if matches!(
-                provider,
-                BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon
-            ) {
-                return Ok(EmbeddingReply {
-                    object: RESPONSE_OBJECT,
-                    data: vec![EmbeddingRecord {
-                        object: EMBEDDING_OBJECT.to_owned(),
-                        embedding: EmbeddingVector::Floats(Vec::new()),
-                        index: 0,
-                    }],
-                    model: model.to_owned(),
-                    usage: EmbeddingUsage {
-                        prompt_tokens: 0,
-                        completion_tokens: 0,
-                        total_tokens: 0,
-                        prompt_tokens_details: None,
-                    },
-                    invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
-                });
-            }
-            provider_response(provider, model, response_list, Some(reply), batch_data)
+    let ResponseBranch::Async(reply) = branch else {
+        if let Some(reply) = titan_response(response_list, model, batch_data)? {
+            return Ok(reply);
         }
-        ResponseBranch::Regular => {
-            if let Some(reply) = titan_response(response_list, model, batch_data)? {
-                return Ok(reply);
-            }
-            provider_response(provider, model, response_list, None, batch_data)
-        }
+        return provider_response(provider, model, response_list, None, batch_data);
+    };
+    if matches!(
+        provider,
+        BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon
+    ) {
+        return Ok(EmbeddingReply {
+            object: RESPONSE_OBJECT,
+            data: vec![EmbeddingRecord {
+                object: EMBEDDING_OBJECT.to_owned(),
+                embedding: EmbeddingVector::Floats(Vec::new()),
+                index: 0,
+            }],
+            model: model.to_owned(),
+            usage: EmbeddingUsage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+                prompt_tokens_details: None,
+            },
+            invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
+        });
     }
+    provider_response(provider, model, response_list, Some(reply), batch_data)
 }
 
 fn titan_response(
