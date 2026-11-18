@@ -9,36 +9,102 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 
 use crate::case::Compare;
 use betterlite_oracle_runner::case::UpstreamAnswer;
-use chat_response_stream::call::ChatResponseStreamCall;
+use calls::{SdkHttpCall, validate_call};
 use error::SdkHttpError;
-use file_azure_storage::FileAzureStorageCall;
-use messages_chat_stream::call::MessagesChatStreamCall;
-use messages_stream_logging::call::MessagesStreamLoggingCall;
-use messages_stream_logging::relay::call::MessagesNativeStreamCall;
-use messages_sync_stream::call;
-use responses_agentic_continuation::AgenticContinuationCall;
-use result::SdkResult;
+use result::kinds::SdkResult;
 
 pub(crate) mod anthropic_beta_config;
+pub mod assistant_create;
+pub mod assistant_dispatch;
+pub mod assistant_messages;
+pub mod assistant_read_delete;
+pub mod assistant_run;
+pub mod assistant_threads;
 pub(crate) mod call_checks;
+pub mod call_kind;
+pub mod calls;
 pub(crate) mod capture;
 pub mod chat_response_stream;
 mod child;
+pub mod compression_interception;
+pub mod context_edit_dispatch;
+pub mod decisions_send;
 pub(crate) mod embedding_executor;
 pub mod error;
 pub mod file_azure_storage;
+pub mod file_content_stream;
+pub mod file_create_list_transport;
+pub mod file_http_content;
+pub mod file_http_metadata;
+pub mod file_http_upload;
+pub mod file_provider_read;
+pub mod file_provider_write;
+pub mod file_storage_service;
+pub mod file_stream_logging;
+pub mod file_upload_routing;
+pub mod fine_tuning_cancel;
+pub mod fine_tuning_create;
+pub mod fine_tuning_read;
+pub mod image_edit_call;
+pub mod image_edit_http;
+pub mod image_generation_call;
+pub mod image_generation_http;
+pub mod image_generation_plan;
+pub mod image_variations;
+pub mod messages_chat_call;
 pub mod messages_chat_stream;
+pub mod messages_chat_transform_stream;
+pub mod messages_context_preparation;
 pub(crate) mod messages_header_stream;
-pub(crate) mod messages_stream_factory;
+pub mod messages_native_execute;
+pub mod messages_stream_factory;
 pub mod messages_stream_logging;
 pub mod messages_sync_stream;
 pub(crate) mod native;
+mod native_dispatch;
 pub(crate) mod python;
+pub mod realtime_http_calls;
+pub mod realtime_http_transport;
+pub mod rerank_call;
+pub mod rerank_http;
+pub mod rerank_provider_plan;
+pub mod response_chat_dispatch;
 pub mod responses_agentic_continuation;
+pub mod responses_async_create;
+pub mod responses_chat_call;
+pub mod responses_compact;
+pub mod responses_compact_transport;
+pub mod responses_create;
+pub mod responses_create_transport;
+pub mod responses_lifecycle_read;
+pub mod responses_lifecycle_write;
+pub mod responses_poll_stream;
+pub mod responses_public_dispatch;
+pub mod responses_read_transport;
+pub mod responses_stream_driver;
+pub mod responses_write_transport;
 pub mod result;
+pub mod speech_call;
+pub mod speech_call_plan;
+pub mod speech_chat_bridge;
+pub mod speech_http;
+pub mod store_create_read_transport;
+pub mod summary_execution;
 mod tests;
-mod validate;
+pub mod transcription_call;
+pub mod transcription_http;
+pub mod vector_file_create_list;
+pub mod vector_file_read;
+pub mod vector_file_read_transport;
+pub mod vector_file_write;
+pub mod vector_file_write_transport;
 pub(crate) mod vector_query_embedding;
+pub mod vector_retrieval_context;
+pub mod vector_search_transport;
+pub mod vector_store_read;
+pub mod vector_store_search_create;
+pub mod vector_store_transport;
+pub mod vector_store_write;
 pub(crate) mod wrapper_stream;
 
 #[derive(Debug, Clone)]
@@ -73,24 +139,6 @@ pub struct SdkHttpCase {
     pub(crate) upstream: Vec<UpstreamAnswer>,
     #[serde(default)]
     pub(crate) compare: Compare,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SdkHttpCall {
-    OpenaiChat(OpenaiChat),
-    VectorStoreEmbeddingExecutor(VectorStoreEmbeddingCall),
-    VectorQueryEmbedding(VectorQueryEmbeddingCall),
-    AnthropicBetaConfig(AnthropicBetaConfigCall),
-    MessagesHeaderStream(MessagesHeaderStreamCall),
-    MessagesStreamFactory(MessagesStreamFactoryCall),
-    MessagesStreamLogging(MessagesStreamLoggingCall),
-    MessagesNativeStream(MessagesNativeStreamCall),
-    MessagesSyncStream(Box<call::MessagesSyncStreamCall>),
-    MessagesChatStream(Box<MessagesChatStreamCall>),
-    ChatResponseStream(Box<ChatResponseStreamCall>),
-    ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
-    FileAzureStorage(FileAzureStorageCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,14 +184,6 @@ pub struct MessagesHeaderStreamCall {
     pub(crate) body: Json,
     #[serde(default)]
     pub(crate) buffered_provider_output: Option<Json>,
-}
-
-// The factory takes no model, so this one is only carried to the Python call that ignores it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct MessagesStreamFactoryCall {
-    pub(crate) model: String,
-    pub(crate) body: Json,
 }
 
 // the call names no address: the harness points the endpoint at its own mock, or leaves it empty
@@ -210,7 +250,7 @@ pub fn decode_sdk_http_case(
     let text = str::from_utf8(bytes).map_err(SdkHttpError::Utf8)?;
     let case: SdkHttpCase =
         serde_saphyr::from_str(text).map_err(|source| SdkHttpError::CaseParse(Box::new(source)))?;
-    validate::validate(&case, limits)?;
+    validate(&case, limits)?;
     Ok(case)
 }
 
@@ -225,4 +265,54 @@ pub fn decode_sdk_http_result(
         });
     }
     serde_json::from_slice(bytes).map_err(SdkHttpError::ResultParse)
+}
+
+// the harness owns the child's proxy routing, interpreter startup and loader paths, so a case never sets them
+fn reserved_environment(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "ALL_PROXY"
+            | "HOME"
+            | "HTTP_PROXY"
+            | "HTTPS_PROXY"
+            | "LITELLM_LOCAL_MODEL_COST_MAP"
+            | "NO_PROXY"
+            | "PATH"
+    ) || upper.starts_with("PYTHON")
+        || upper.starts_with("UV_")
+}
+
+fn validate(case: &SdkHttpCase, limits: &OracleLimits) -> Result<(), SdkHttpError> {
+    let invalid = |message: &str| Err(SdkHttpError::Invalid(message.to_owned()));
+    if case.kind != "sdk_http" || case.name.is_empty() {
+        return invalid("the case needs kind sdk_http and a name");
+    }
+    if let Some(name) = case.env.keys().find(|name| reserved_environment(name)) {
+        return invalid(&format!("the case env may not set {name}"));
+    }
+    validate_call(&case.call, limits)?;
+    if case.upstream.len() > limits.max_requests {
+        return invalid("the case scripts more provider answers than the request limit");
+    }
+    for answer in &case.upstream {
+        if answer.body.is_some() == answer.events.is_some() {
+            return invalid("an upstream answer needs exactly one of body or events");
+        }
+        if !(100..=599).contains(&answer.status) {
+            return invalid("an upstream answer has an invalid status");
+        }
+    }
+    if !case.compare.headers.is_empty() || !case.compare.headers_present.is_empty() {
+        return invalid("compare.headers and compare.headers_present describe gateway responses");
+    }
+    for ignored in &case.compare.ignore {
+        if !ignored.pointer.is_empty() && !ignored.pointer.starts_with('/') {
+            return invalid("compare.ignore pointers must be JSON pointers");
+        }
+        if ignored.why.is_empty() {
+            return invalid("compare.ignore entries need a why");
+        }
+    }
+    Ok(())
 }

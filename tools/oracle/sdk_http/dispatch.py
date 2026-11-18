@@ -37,6 +37,7 @@ from messages_sync_stream import (
 )
 from openai_chat import ChatCall, run_chat
 from query_embedding_call import QueryEmbeddingCall, run_query
+from registered import RegisteredRequest
 from responses_agentic_continuation import ContinuationCall, run_continuation
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
 
@@ -188,6 +189,7 @@ class Request(BaseModel):
         | ChatResponseStreamRequest
         | ContinuationRequest
         | FileAzureStorageRequest
+        | RegisteredRequest
     )
     api_base: str
 

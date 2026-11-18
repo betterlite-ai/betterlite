@@ -3,7 +3,10 @@ title: Assistant list and delete SDK calls
 description: >-
   Implement whole get/aget_assistants and delete/adelete_assistant in core::api::assistant_read_delete.
   Use B519 OpenAI and B686 Azure operations, B174 provider resolution, B176 controls and B010 GenericLiteLLMParams,
-  B011 async exception mapping and B2487 settings. B2401 AssistantReadDelete compares actual SDK HTTP.
+  B011 async exception mapping and B2487 settings. SdkHttpCall::AssistantReadDelete compares actual SDK HTTP.
+  It is a placeholder on main: build its Call (implementing call_kind::CallKind) and Outcome in
+  tools/oracle/src/sdk_http/assistant_read_delete.rs and AssistantReadDeleteRequest in
+  tools/oracle/sdk_http/assistant_read_delete.py, leaving the shared sdk_http files and dispatch.py alone.
   Provider is required, delete also needs assistant_id; client/api_key/api_base/api_version are nullable.
   Getter flags default null; list rejects a nonboolean with Exception and delete with ValueError.
   Share settings projection with creation but preserve list's different Azure client handling.
@@ -16,9 +19,8 @@ scope:
   paths:
   - crates/betterlite-core/src/api/assistant_read_delete.rs
   - crates/betterlite-core/src/api/assistant_read_delete/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/assistant_read_delete.rs
+  - tools/oracle/src/sdk_http/assistant_read_delete/**
   - tools/oracle/sdk_http/assistant_read_delete.py
   - tools/oracle/cases/sdk-http/assistant-read-delete/**
   - tools/oracle/fuzz/corpus/sdk_http_case/assistant-read-delete-*
@@ -80,7 +82,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::assistant_read_delete::tests::/) - test(/::replays_corpus$/)'
   - id: python-adapter
     why: assistant list/delete has no independent SDK HTTP comparison
-    run: test -f tools/oracle/sdk_http/assistant_read_delete.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/assistant_read_delete.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: no new list/delete case exercises the SDK operation decoder
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/assistant-read-delete-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

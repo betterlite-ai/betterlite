@@ -18,7 +18,8 @@ use serde_json::Value;
 use super::capture::{Capture, Run, Sdk, Stop, capture, check_captures};
 use super::error::SdkHttpError;
 use super::python::{ProcessEnvironment, PythonSdk};
-use super::result::{Nullable, SdkResult};
+use super::result::Nullable;
+use super::result::kinds::SdkResult;
 use super::{
     OracleLimits, SdkHttpCase, Side, child, decode_sdk_http_case, decode_sdk_http_result, sides,
 };
@@ -324,22 +325,12 @@ fn assert_authentication_failure(side: &Capture) {
 }
 
 fn decoded_kind(text: &str) -> Nullable {
-    match decode_sdk_http_result(text.as_bytes(), &OracleLimits::default()).unwrap() {
-        SdkResult::Failure(failure) => failure.kind,
-        SdkResult::Success { .. }
-        | SdkResult::Embedding { .. }
-        | SdkResult::Vectors { .. }
-        | SdkResult::BetaConfig { .. }
-        | SdkResult::MessagesHeaderStream { .. }
-        | SdkResult::MessagesStreamFactory { .. }
-        | SdkResult::MessagesStreamLogging { .. }
-        | SdkResult::MessagesNativeStream { .. }
-        | SdkResult::MessagesSyncStream { .. }
-        | SdkResult::MessagesChatStream { .. }
-        | SdkResult::ChatResponseStream { .. }
-        | SdkResult::ResponsesAgenticContinuation { .. }
-        | SdkResult::FileAzureStorage { .. } => None,
-    }
+    let Ok(SdkResult::Failure(failure)) =
+        decode_sdk_http_result(text.as_bytes(), &OracleLimits::default())
+    else {
+        panic!("{text} does not decode to a failure");
+    };
+    failure.kind
 }
 
 fn error_body(text: &str) -> Value {

@@ -26,12 +26,35 @@ use futures_util::stream::{Stream, try_unfold};
 use indexmap::IndexMap;
 use reqwest::Response;
 
-use super::MessagesStreamFactoryCall;
 use super::error::SdkHttpError;
 use super::messages_header_stream::outbound;
 use super::messages_stream_logging::outcome::Flag;
-use super::result::{SdkResult, StreamFactoryRun};
+use super::result::StreamFactoryRun;
+use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
+use serde::{Deserialize, Serialize};
+
+// The factory takes no model, so this one is only carried to the Python call that ignores it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessagesStreamFactoryCall {
+    pub(crate) model: String,
+    pub(crate) body: Json,
+}
+
+pub(crate) fn validate(factory: &MessagesStreamFactoryCall) -> Result<(), SdkHttpError> {
+    if factory.model.is_empty() {
+        return Err(SdkHttpError::Invalid(
+            "the Messages factory call needs a model name".to_owned(),
+        ));
+    }
+    if !matches!(factory.body, Json::Object(_)) {
+        return Err(SdkHttpError::Invalid(
+            "the Messages factory request body must be an object".to_owned(),
+        ));
+    }
+    Ok(())
+}
 
 // drain awaits each chunk, so the boxed stream carries Send into the runner's future
 type Chunks = Pin<Box<dyn Stream<Item = Result<Vec<u8>, SdkHttpError>> + Send>>;

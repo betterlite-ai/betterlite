@@ -6,27 +6,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::rust::double_option;
 
-use super::messages_stream_logging::outcome::{Flag, StreamLoggingRun};
-use super::messages_stream_logging::relay::call::StepOutcome;
+use super::messages_stream_logging::outcome::Flag;
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
-pub enum SdkResult {
-    Success { value: ChatCompletion },
-    Embedding { value: EmbeddingOutcomes },
-    Vectors { value: QueryVectors },
-    BetaConfig { value: BetaConfigRun },
-    MessagesHeaderStream { value: HeaderStreamRun },
-    MessagesStreamFactory { value: StreamFactoryRun },
-    MessagesStreamLogging { value: StreamLoggingRun },
-    MessagesNativeStream { value: Vec<StepOutcome> },
-    MessagesSyncStream { value: SyncRun },
-    MessagesChatStream { value: ChatStreamRun },
-    ChatResponseStream { value: ChatResponseStreamRuns },
-    ResponsesAgenticContinuation { value: AgenticContinuationRun },
-    FileAzureStorage { value: FileStorageRun },
-    Failure(Failure),
-}
+pub mod kinds;
 
 // the mock origin an upload would echo is stripped, so both sides report the same blob-origin path
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

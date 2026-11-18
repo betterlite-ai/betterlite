@@ -1,0 +1,14 @@
+task: B9994
+deviations:
+  - what: >-
+      A Redis MGET reply asked for before SpendCounterBatch::forget on a counter key no longer fills that key's value
+      in the batch. A read that was waiting on that reply returns None, so the caller reads Redis itself, and once the
+      key is bound again the next MGET's value is the one read returns. The other keys of the same reply still load,
+      and a value written with record still outranks an older reply.
+    why: >-
+      LiteLLM's forget clears _keys, _fetched and _loaded while _load awaits _fetch or _collect_inflight awaits a
+      pipelined result, and the late reply is merged back under _loaded. The value from before the write that called
+      forget then stays authoritative, a later MGET for the rebound key can't replace it, and budget checks read a
+      stale, lower spend. No working setup relies on a counter value older than the write that dropped it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_counter_batch.py#L88-L126
+kept_bugs: []

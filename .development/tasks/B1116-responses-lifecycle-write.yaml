@@ -16,7 +16,11 @@ description: >-
   extra_query is accepted but dropped; extra_body reaches B2417 and is ignored there. timeout=0
   falls back to REQUEST_TIMEOUT, whereas a negative nonzero value is forwarded to transport.
 
-  Register SdkHttpCall::ResponsesLifecycleWrite in B2401. Python invokes the decorated SDK methods
+  SdkHttpCall::ResponsesLifecycleWrite is registered on main as a placeholder; fill
+  tools/oracle/src/sdk_http/responses_lifecycle_write.rs (its Call implements call_kind::CallKind, its Outcome
+  is carried by SdkResult::ResponsesLifecycleWrite) and ResponsesLifecycleWriteRequest in
+  tools/oracle/sdk_http/responses_lifecycle_write.py, with no edit to the shared sdk_http files or
+  dispatch.py. Python invokes the decorated SDK methods
   with its provider base set to the mock; native uses the production SDK service. Compare provider
   requests and returned/error fields. Pure native tests assert mode/context/logging effects; no
   helper oracle is involved. Resource decoding remains B509 through B2417. The four functions
@@ -27,9 +31,8 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_lifecycle_write.rs
   - crates/betterlite-core/src/api/responses_lifecycle_write/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/responses_lifecycle_write.rs
+  - tools/oracle/src/sdk_http/responses_lifecycle_write/**
   - tools/oracle/sdk_http/responses_lifecycle_write.py
   - tools/oracle/cases/sdk-http/responses-lifecycle-write/**
   - tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-write-*
@@ -96,7 +99,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::responses_lifecycle_write::tests::lifecycle_write_context($|::)/)'
   - id: python-adapter
     why: the SDK write driver is missing or replaces real requests with fixtures
-    run: test -f tools/oracle/sdk_http/responses_lifecycle_write.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/responses_lifecycle_write.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: write SDK input has no new replay seed
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/responses-lifecycle-write-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

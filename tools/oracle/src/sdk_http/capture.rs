@@ -4,22 +4,15 @@ use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use futures_util::future::LocalBoxFuture;
 use serde_json::Value;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
 
-use super::chat_response_stream;
 use super::error::SdkHttpError;
+use super::native_dispatch;
 use super::python::PythonSdk;
-use super::responses_agentic_continuation as agentic;
-use super::result::SdkResult;
+use super::result::kinds::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
-use super::{
-    anthropic_beta_config, embedding_executor, file_azure_storage, messages_chat_stream,
-    messages_header_stream, messages_stream_factory, messages_stream_logging, messages_sync_stream,
-    native, vector_query_embedding,
-};
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
@@ -51,54 +44,7 @@ impl<'sdk> Sdk<'sdk> {
     ) -> Execution {
         match self {
             Self::Python(python) => python.execute(call, api_base, stop),
-            Self::Native => run_until_stopped(native_send(call, api_base, env), stop),
-        }
-    }
-}
-
-// each native call sends through its sdk_http module, and the box lets the runner poll whichever future the call names
-fn native_send<'call>(
-    call: &'call SdkHttpCall,
-    api_base: &'call str,
-    env: &'call BTreeMap<String, String>,
-) -> LocalBoxFuture<'call, Result<SdkResult, SdkHttpError>> {
-    match call {
-        SdkHttpCall::OpenaiChat(chat) => Box::pin(native::send(chat, api_base, env)),
-        SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
-            Box::pin(embedding_executor::send(embedding, api_base, env))
-        }
-        SdkHttpCall::VectorQueryEmbedding(query) => {
-            Box::pin(vector_query_embedding::send(query, api_base, env))
-        }
-        SdkHttpCall::AnthropicBetaConfig(beta) => {
-            Box::pin(anthropic_beta_config::send(beta, api_base, env))
-        }
-        SdkHttpCall::MessagesHeaderStream(stream) => {
-            Box::pin(messages_header_stream::send(stream, api_base, env))
-        }
-        SdkHttpCall::MessagesStreamFactory(factory) => {
-            Box::pin(messages_stream_factory::send(factory, api_base, env))
-        }
-        SdkHttpCall::MessagesStreamLogging(logging) => {
-            Box::pin(messages_stream_logging::send(logging, api_base, env))
-        }
-        SdkHttpCall::MessagesNativeStream(relay) => {
-            Box::pin(messages_stream_logging::relay::send(relay, api_base, env))
-        }
-        SdkHttpCall::MessagesSyncStream(stream) => {
-            Box::pin(messages_sync_stream::send(stream, api_base, env))
-        }
-        SdkHttpCall::MessagesChatStream(stream) => {
-            Box::pin(messages_chat_stream::send(stream, api_base, env))
-        }
-        SdkHttpCall::ChatResponseStream(stream) => {
-            Box::pin(chat_response_stream::send(stream, api_base, env))
-        }
-        SdkHttpCall::ResponsesAgenticContinuation(continuation) => {
-            Box::pin(agentic::send(continuation, api_base, env))
-        }
-        SdkHttpCall::FileAzureStorage(storage) => {
-            Box::pin(file_azure_storage::send(storage, api_base, env))
+            Self::Native => native_dispatch::execute(call, api_base, env, stop),
         }
     }
 }
