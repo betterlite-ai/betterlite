@@ -10,11 +10,13 @@ use futures_util::{SinkExt as _, StreamExt as _};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::Sender;
 use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, accept_async};
 
-pub(crate) type Timeline = Arc<Mutex<Vec<String>>>;
+use super::input::MAX_FRAMES;
+
+pub(crate) type Timeline = Arc<Mutex<Vec<Value>>>;
 
 // A poisoned lock is recovered instead of panicking, since no code here can leave the guarded data inconsistent
 pub(crate) trait Locked<T> {
@@ -33,13 +35,21 @@ pub(crate) struct Recorded {
     pub(crate) payload: Value,
 }
 
-// A frame is compared as the JSON it encodes, because each side re-encodes a rewritten frame its own way
+// A text frame is compared as the JSON it encodes, because each side re-encodes a rewritten frame its own way
 pub(crate) fn recorded(wire: &'static str, data: &[u8]) -> Recorded {
     let payload = serde_json::from_slice::<Json>(data).map_or_else(
-        |_| json!({"kind": "text", "text": String::from_utf8_lossy(data)}),
+        |_error| json!({"kind": "text", "text": String::from_utf8_lossy(data)}),
         |value| json!({"kind": "json", "value": value}),
     );
     Recorded { wire, payload }
+}
+
+// A binary frame has no encoding of its own, so its bytes are compared one for one
+fn binary_recorded(data: &[u8]) -> Recorded {
+    Recorded {
+        wire: "binary",
+        payload: json!({"kind": "bytes", "bytes": data}),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -88,8 +98,14 @@ impl ScopedWebSocket for ClientSink {
 #[async_trait]
 impl ClientWebSocket for ClientSink {
     async fn send_text(&mut self, data: &str) -> Result<(), WebSocketError> {
-        self.log.locked().begin("the scripted client send failed")?;
-        self.log.locked().sent.push(data.to_owned());
+        let mut log = self.log.locked();
+        log.begin("the scripted client send failed")?;
+        if log.sent.len() >= MAX_FRAMES {
+            return Err(WebSocketError {
+                message: String::from("the scripted client capture is full"),
+            });
+        }
+        log.sent.push(data.to_owned());
         Ok(())
     }
 
@@ -130,7 +146,7 @@ impl RealtimeBackend for WireBackend {
         let mut log = self.log.locked();
         log.delivered = log.delivered.saturating_add(1);
         drop(log);
-        self.timeline.locked().push(String::from("backend"));
+        self.timeline.locked().push(json!("backend"));
         Ok(())
     }
 
@@ -145,7 +161,7 @@ impl RealtimeBackend for WireBackend {
     }
 }
 
-pub(crate) async fn relay(listener: TcpListener, sender: UnboundedSender<Recorded>) {
+pub(crate) async fn relay(listener: TcpListener, sender: Sender<Recorded>) {
     let Ok((stream, _)) = listener.accept().await else {
         return;
     };
@@ -155,12 +171,12 @@ pub(crate) async fn relay(listener: TcpListener, sender: UnboundedSender<Recorde
     while let Some(Ok(message)) = socket.next().await {
         let frame = match message {
             Message::Text(text) => recorded("text", text.as_str().as_bytes()),
-            Message::Binary(data) => recorded("binary", &data),
+            Message::Binary(data) => binary_recorded(&data),
             Message::Ping(_) | Message::Pong(_) | Message::Close(_) | Message::Frame(_) => {
                 continue;
             }
         };
-        if sender.send(frame).is_err() {
+        if sender.send(frame).await.is_err() {
             return;
         }
     }

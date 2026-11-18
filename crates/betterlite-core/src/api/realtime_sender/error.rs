@@ -55,6 +55,13 @@ where
     },
     #[error("the realtime session update is not a JSON object")]
     SessionUpdateNotObject,
+    #[error("the realtime session update is nested past the depth the sender enforces")]
+    SessionUpdateTooDeep,
+    #[error("the realtime session update cannot be read")]
+    SessionUpdateInvalid {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the realtime message cannot be written as JSON")]
     Encode {
         #[source]

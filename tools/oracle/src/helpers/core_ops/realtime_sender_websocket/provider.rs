@@ -16,6 +16,7 @@ use betterlite_core::api::realtime_session_state::RealtimeProviderConfig;
 use betterlite_core::api::request_destination::RequestData;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde_json::json;
 use thiserror::Error;
 
 use super::input::{Frame, GuardrailDocument, ProviderDocument};
@@ -61,25 +62,28 @@ impl BaseRealtimeConfig for ScriptedProvider {
 
     fn transform_realtime_request(
         &self,
-        _message: &str,
-        _model: &str,
-        _session_configuration_request: Option<&str>,
+        message: &str,
+        model: &str,
+        session_configuration_request: Option<&str>,
     ) -> Result<Vec<RealtimeMessage>, Self::Error> {
+        let decoded = serde_json::from_str::<Json>(message)
+            .unwrap_or_else(|_error| Json::Text(message.to_owned()));
+        self.timeline.locked().push(json!({
+            "transform": {
+                "message": decoded,
+                "model": model,
+                "session_configuration_request": session_configuration_request,
+            }
+        }));
         if self.fail_transform {
             return Err(ScriptError);
         }
         let frames = self.transforms.locked().pop_front().unwrap_or_default();
-        Ok(frames
-            .into_iter()
-            .map(|frame| match frame {
-                Frame::Text { text } => RealtimeMessage::Text(text),
-                Frame::Binary { text } => RealtimeMessage::Binary(text.into_bytes()),
-            })
-            .collect())
+        Ok(frames.into_iter().map(Frame::message).collect())
     }
 
     async fn pace_backend_send(&self, _message: &[u8]) {
-        self.timeline.locked().push(String::from("pace"));
+        self.timeline.locked().push(json!("pace"));
     }
 
     fn is_setup_message(&self, message: &Json) -> bool {

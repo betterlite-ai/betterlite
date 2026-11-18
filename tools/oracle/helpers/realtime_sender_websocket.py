@@ -1,6 +1,6 @@
 import asyncio
 import socketserver
-from typing import Literal, Protocol, TypedDict, cast
+from typing import Literal, NotRequired, Protocol, TypedDict, cast
 
 import litellm
 from litellm.integrations.custom_guardrail import CustomGuardrail
@@ -17,11 +17,17 @@ from websockets.asyncio.server import ServerConnection, serve
 WIRE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EVENT: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 SETTLE_SECONDS = 10.0
+DEADLINE_SECONDS = 120.0
+MAX_OPERATIONS = 32
+MAX_FRAMES = 64
+MAX_TEXT_BYTES = 16 * 1024
+MAX_CAPTURE_BYTES = 1024 * 1024
 
 
 class Frame(TypedDict):
     kind: Literal["text", "binary"]
-    text: str
+    text: NotRequired[str]
+    bytes: NotRequired[list[int]]
 
 
 class ProviderDocument(TypedDict):
@@ -39,7 +45,7 @@ class GuardrailDocument(TypedDict):
 
 class Operation(TypedDict):
     kind: str
-    text: str
+    text: NotRequired[str]
 
 
 class Input(TypedDict):
@@ -52,6 +58,27 @@ class Input(TypedDict):
     backend_failures: list[int]
     client_failures: list[int]
     operations: list[Operation]
+
+
+def checked(input_value: Input) -> None:
+    provider = input_value["provider"]
+    batches = [] if provider is None else provider["transforms"]
+    frames = [frame for batch in batches for frame in batch]
+    texts = [operation["text"] for operation in input_value["operations"] if "text" in operation]
+    sizes = [len(text) for text in texts] + [
+        len(frame["text"]) if frame["kind"] == "text" else len(frame["bytes"])
+        for frame in frames
+    ]
+    if (
+        len(texts) > MAX_OPERATIONS
+        or len(frames) > MAX_FRAMES
+        or len(input_value["guardrails"]) > MAX_FRAMES
+        or len(input_value["backend_failures"]) > MAX_FRAMES
+        or len(input_value["client_failures"]) > MAX_FRAMES
+        or any(size > MAX_TEXT_BYTES for size in sizes)
+        or sum(sizes) > MAX_CAPTURE_BYTES
+    ):
+        raise ValueError("the scripted sender input is past its limits")
 
 
 class SendFailureError(Exception): ...
@@ -77,6 +104,13 @@ def recorded(wire: str, data: bytes) -> dict[str, JsonValue]:
     except ValidationError:
         payload = {"kind": "text", "text": data.decode("utf-8", errors="replace")}
     return {"wire": wire, "payload": payload}
+
+
+def decoded(text: str) -> JsonValue:
+    try:
+        return WIRE.validate_json(text)
+    except ValidationError:
+        return text
 
 
 class ScriptedNormalizer:
@@ -109,13 +143,16 @@ class ScriptedProvider(ScriptedProviderView):
         self._timeline = timeline
 
     def transform_realtime_request(
-        self, _message: str, _model: str, _session_request: str | None = None
+        self, message: str, model: str, session_request: str | None = None
     ) -> list[str | bytes]:
+        transform: dict[str, JsonValue] = {"message": decoded(message), "model": model}
+        transform["session_configuration_request"] = session_request
+        self._timeline.append({"transform": transform})
         if self._document["fail_transform"]:
             raise SendFailureError("transform")
         frames = self._transforms.pop(0) if self._transforms else []
         return [
-            frame["text"] if frame["kind"] == "text" else frame["text"].encode()
+            frame["text"] if frame["kind"] == "text" else bytes(frame["bytes"])
             for frame in frames
         ]
 
@@ -156,6 +193,8 @@ class ClientSink:
 
     async def send_text(self, data: str) -> None:
         self.log.begin("client")
+        if len(self.log.sent) >= MAX_FRAMES:
+            raise SendFailureError("the scripted client capture is full")
         self.log.sent.append(data)
 
 
@@ -166,11 +205,13 @@ class Upstream:
 
     async def __call__(self, connection: ServerConnection) -> None:
         async for message in connection:
+            if len(self.frames) >= MAX_FRAMES:
+                raise SendFailureError("the scripted upstream capture is full")
             match message:
                 case str():
                     self.frames.append(recorded("text", message.encode("utf-8")))
                 case bytes():
-                    self.frames.append(recorded("binary", message))
+                    self.frames.append({"wire": "binary", "payload": {"kind": "bytes", "bytes": list(message)}})
             self.arrived.set()
 
     async def wait_for(self, delivered: int) -> None:
@@ -292,7 +333,13 @@ async def exchange(
         return await session(input_value, upstream, socket)
 
 
+async def bounded(input_value: Input, upstream: Upstream, server: socketserver.TCPServer) -> JsonValue:
+    call = exchange(input_value, upstream, server)
+    return await asyncio.wait_for(call, DEADLINE_SECONDS)
+
+
 def run(input_value: Input) -> JsonValue:
+    checked(input_value)
     upstream = Upstream()
     with socketserver.TCPServer(("127.0.0.1", 0), socketserver.BaseRequestHandler) as server:
-        return asyncio.run(exchange(input_value, upstream, server))
+        return asyncio.run(bounded(input_value, upstream, server))

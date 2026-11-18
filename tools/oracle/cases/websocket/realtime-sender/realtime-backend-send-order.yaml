@@ -15,7 +15,7 @@ call:
       transforms:
         - [{kind: text, text: '{"type": "setup", "session": {"model": "scripted"}}'}]
         - [{kind: text, text: '{"type": "realtimeInput", "text": "hello"}'}]
-        - [{kind: binary, text: '{"type": "realtimeInput", "text": "bytes"}'}]
+        - [{kind: binary, bytes: [0, 255, 10]}]
         - [{kind: text, text: '{"type": "setup", "session": {"model": "followup"}}'}]
         - [{kind: text, text: '{"type": "other", "value": 1}'}]
         - [{kind: text, text: '{"value": 2, "setup": null}'}]

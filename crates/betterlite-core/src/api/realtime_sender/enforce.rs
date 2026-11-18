@@ -1,16 +1,148 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 use super::RealtimeSender;
 use super::error::RealtimeSenderError;
 use crate::api::realtime_contracts::config::BaseRealtimeConfig;
 
+type Map = IndexMap<String, Json>;
+
+// LiteLLM's json.loads reads deeper frames than serde_json, so a frame past this depth is refused before any parse
+const MAX_NESTING: usize = 64;
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Root {
+    Update(Envelope),
+    Other(Json),
+}
+
+// The envelope only classifies the frame; the typed Update below reads it, and a duplicate key still fails closed
+#[derive(Debug, Deserialize)]
+struct Envelope {
+    #[serde(rename = "type")]
+    _kind: UpdateType,
+    #[serde(rename = "session")]
+    _session: Map,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+enum UpdateType {
+    #[serde(rename = "session.update")]
+    Session,
+    #[serde(rename = "transcription_session.update")]
+    Transcription,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+enum SessionType {
+    #[serde(rename = "transcription")]
+    Transcription,
+}
+
+// A session field is an object of the typed shape, any other JSON value it carries, or absent from the frame
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum Slot<T> {
+    Object(T),
+    Other(Json),
+    Missing,
+}
+
+impl<T> Slot<T> {
+    const fn is_missing(&self) -> bool {
+        match self {
+            Self::Missing => true,
+            Self::Object(_) | Self::Other(_) => false,
+        }
+    }
+}
+
+const fn default_slot<T>() -> Slot<T> {
+    Slot::Missing
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Update {
+    #[serde(rename = "type")]
+    kind: UpdateType,
+    session: Session,
+    #[serde(flatten)]
+    rest: Map,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Session {
+    #[serde(default = "default_slot", skip_serializing_if = "Slot::is_missing")]
+    r#type: Slot<SessionType>,
+    #[serde(default = "default_slot", skip_serializing_if = "Slot::is_missing")]
+    input_audio_transcription: Slot<Transcription>,
+    #[serde(default = "default_slot", skip_serializing_if = "Slot::is_missing")]
+    audio: Slot<Audio>,
+    #[serde(flatten)]
+    rest: Map,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Audio {
+    #[serde(default = "default_slot", skip_serializing_if = "Slot::is_missing")]
+    input: Slot<AudioInput>,
+    #[serde(flatten)]
+    rest: Map,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AudioInput {
+    #[serde(default = "default_slot", skip_serializing_if = "Slot::is_missing")]
+    transcription: Slot<Transcription>,
+    #[serde(flatten)]
+    rest: Map,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct Transcription {
+    #[serde(default = "default_slot", skip_serializing_if = "Slot::is_missing")]
+    model: Slot<String>,
+    #[serde(flatten)]
+    rest: Map,
+}
+
+impl Transcription {
+    fn set_model(&mut self, authorized_model: &str) -> bool {
+        if matches!(&self.model, Slot::Object(model) if model == authorized_model) {
+            return false;
+        }
+        self.model = Slot::Object(authorized_model.to_owned());
+        true
+    }
+}
+
+impl Session {
+    fn enforce(&mut self, authorized_model: &str) -> bool {
+        let mut changed = false;
+        if let Slot::Object(transcription) = &mut self.input_audio_transcription {
+            changed |= transcription.set_model(authorized_model);
+        }
+        let Slot::Object(audio) = &mut self.audio else {
+            return changed;
+        };
+        let Slot::Object(input) = &mut audio.input else {
+            return changed;
+        };
+        let Slot::Object(transcription) = &mut input.transcription else {
+            return changed;
+        };
+        changed | transcription.set_model(authorized_model)
+    }
+}
+
+// LiteLLM rewrites every transcription model a session update carries and dumps the frame only after a rewrite
 impl<Config, CallbackError> RealtimeSender<'_, Config, CallbackError>
 where
     Config: BaseRealtimeConfig,
     CallbackError: std::error::Error + 'static,
 {
-    // LiteLLM rewrites every transcription model a session update carries to the model the proxy already authorized
     pub fn enforce_session_model(
         &mut self,
         message: &str,
@@ -18,75 +150,57 @@ where
         let Some(authorized_model) = self.state.force_transcription_model.clone() else {
             return Ok(message.to_owned());
         };
-        let Ok(mut decoded) = serde_json::from_str::<Json>(message) else {
-            return Ok(message.to_owned());
-        };
-        let Json::Object(root) = &mut decoded else {
-            return Err(RealtimeSenderError::SessionUpdateNotObject);
-        };
-        if !is_session_update(root) {
-            return Ok(message.to_owned());
+        if nests_deeper_than(message, MAX_NESTING) {
+            return Err(RealtimeSenderError::SessionUpdateTooDeep);
         }
-        let Some(Json::Object(session)) = root.get_mut("session") else {
-            return Ok(message.to_owned());
-        };
-        if matches!(session.get("type"), Some(Json::Text(kind)) if kind == "transcription") {
+        match serde_json::from_str::<Root>(message) {
+            Ok(Root::Update(_)) => {}
+            Ok(Root::Other(Json::Object(_))) => return Ok(message.to_owned()),
+            Ok(Root::Other(_)) => return Err(RealtimeSenderError::SessionUpdateNotObject),
+            Err(_) => return Ok(message.to_owned()),
+        }
+        let mut update = serde_json::from_str::<Update>(message)
+            .map_err(|source| RealtimeSenderError::SessionUpdateInvalid { source })?;
+        if matches!(
+            &update.session.r#type,
+            Slot::Object(SessionType::Transcription)
+        ) {
             self.state.is_transcription_session.0 = true;
         }
-        if !rewrite_models(session, &authorized_model) {
+        if !update.session.enforce(&authorized_model) {
             return Ok(message.to_owned());
         }
-        serde_json::to_string(&decoded).map_err(|source| RealtimeSenderError::Encode { source })
+        serde_json::to_string(&update).map_err(|source| RealtimeSenderError::Encode { source })
     }
 }
 
-fn is_session_update(root: &IndexMap<String, Json>) -> bool {
-    let kind = match root.get("type") {
-        Some(Json::Text(kind)) => kind.as_str(),
-        _ => return false,
-    };
-    kind == "session.update" || kind == "transcription_session.update"
-}
-
-fn rewrite_models(session: &mut IndexMap<String, Json>, authorized_model: &str) -> bool {
-    let mut changed = false;
-    if let Some(Json::Object(transcription)) = session.get_mut("input_audio_transcription") {
-        if set_model(transcription, authorized_model) {
-            changed = true;
+fn nests_deeper_than(message: &str, limit: usize) -> bool {
+    let mut depth = 0_usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for byte in message.bytes() {
+        if in_string {
+            if byte == b'\\' && !escaped {
+                escaped = true;
+                continue;
+            }
+            if byte == b'"' && !escaped {
+                in_string = false;
+            }
+            escaped = false;
+            continue;
+        }
+        match byte {
+            b'"' => in_string = true,
+            b'{' | b'[' => {
+                depth = depth.saturating_add(1);
+                if depth > limit {
+                    return true;
+                }
+            }
+            b'}' | b']' => depth = depth.saturating_sub(1),
+            _ => {}
         }
     }
-    if let Some(transcription) = nested_transcription(session) {
-        if set_model(transcription, authorized_model) {
-            changed = true;
-        }
-    }
-    changed
-}
-
-// The GA shape nests the transcription object under audio.input; LiteLLM rebuilds the same dictionaries in place
-fn nested_transcription(
-    session: &mut IndexMap<String, Json>,
-) -> Option<&mut IndexMap<String, Json>> {
-    let Json::Object(audio) = session.get_mut("audio")? else {
-        return None;
-    };
-    let Json::Object(input) = audio.get_mut("input")? else {
-        return None;
-    };
-    let Json::Object(transcription) = input.get_mut("transcription")? else {
-        return None;
-    };
-    Some(transcription)
-}
-
-fn set_model(transcription: &mut IndexMap<String, Json>, authorized_model: &str) -> bool {
-    let unchanged = matches!(
-        transcription.get("model"),
-        Some(Json::Text(model)) if model == authorized_model
-    );
-    if unchanged {
-        return false;
-    }
-    transcription.insert("model".to_owned(), Json::Text(authorized_model.to_owned()));
-    true
+    false
 }

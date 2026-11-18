@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -17,19 +18,21 @@ use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use serde_json::{Value, json};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::mpsc::UnboundedReceiver;
+use tokio::sync::mpsc::Receiver;
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
 use super::Failure;
 use super::failure;
-use super::input::{Input, Operation};
+use super::input::{Input, MAX_FRAMES, Operation};
 use super::provider::{Guard, Normalizer, ProviderView, ScriptError, ScriptedProvider};
 use super::transport::{
     ClientSink, Locked as _, Recorded, Timeline, WireBackend, WireLog, recorded, relay,
 };
 
 const SETTLE: Duration = Duration::from_secs(10);
+const DEADLINE: Duration = Duration::from_secs(120);
 
 pub(crate) type DriverFuture<'driver, T> =
     Pin<Box<dyn Future<Output = Result<T, Failure>> + 'driver>>;
@@ -46,11 +49,21 @@ struct Session {
 }
 
 pub(crate) fn drive(input: &Input) -> HelperResult {
+    input
+        .check()
+        .map_err(|message| failure("InvalidInput", message))?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
-    runtime.block_on(open(input))
+    runtime
+        .block_on(timeout(DEADLINE, open(input)))
+        .map_err(|_elapsed| {
+            failure(
+                "TimeoutError",
+                String::from("the helper ran past its deadline"),
+            )
+        })?
 }
 
 fn open(input: &Input) -> DriverFuture<'_, Value> {
@@ -61,28 +74,40 @@ fn open(input: &Input) -> DriverFuture<'_, Value> {
         let address = listener
             .local_addr()
             .map_err(|error| failure("OSError", error.to_string()))?;
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
-        tokio::spawn(relay(listener, sender));
-        let (socket, _) = connect_async(format!("ws://{address}"))
-            .await
-            .map_err(|error| failure("TransportError", error.to_string()))?;
-        let mut streaming = session(input, socket);
-        let callbacks = streaming
-            .guards
-            .iter()
-            .map(|guard| guard as &dyn RealtimeGuardrailCallback<Error = ScriptError>)
-            .collect::<Vec<_>>();
-        let mut results = Vec::new();
-        let mut upstream = Vec::new();
-        for operation in &input.operations {
-            let state = &mut streaming.state;
-            let provider = streaming.provider.as_ref();
-            results.push(apply(state, provider, &callbacks, operation).await?);
-            let delivered = streaming.backend_log.locked().delivered;
-            settle(&mut receiver, &mut upstream, delivered).await?;
-        }
-        Ok(snapshot(&streaming, results, upstream))
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(MAX_FRAMES);
+        let mut relayed = JoinSet::new();
+        relayed.spawn(relay(listener, sender));
+        let outcome = run_operations(input, address, &mut receiver).await;
+        relayed.abort_all();
+        while relayed.join_next().await.is_some() {}
+        outcome
     })
+}
+
+async fn run_operations(
+    input: &Input,
+    address: SocketAddr,
+    receiver: &mut Receiver<Recorded>,
+) -> Result<Value, Failure> {
+    let (socket, _) = connect_async(format!("ws://{address}"))
+        .await
+        .map_err(|error| failure("TransportError", error.to_string()))?;
+    let mut streaming = session(input, socket);
+    let callbacks = streaming
+        .guards
+        .iter()
+        .map(|guard| guard as &dyn RealtimeGuardrailCallback<Error = ScriptError>)
+        .collect::<Vec<_>>();
+    let mut results = Vec::new();
+    let mut upstream = Vec::new();
+    for operation in &input.operations {
+        let state = &mut streaming.state;
+        let provider = streaming.provider.as_ref();
+        results.push(apply(state, provider, &callbacks, operation).await?);
+        let delivered = streaming.backend_log.locked().delivered;
+        settle(receiver, &mut upstream, delivered).await?;
+    }
+    Ok(snapshot(&streaming, results, upstream))
 }
 
 fn session(input: &Input, socket: WebSocketStream<MaybeTlsStream<TcpStream>>) -> Session {
@@ -152,25 +177,19 @@ fn apply<'driver>(
             provider,
             guardrails: callbacks,
         };
-        match operation.kind.as_str() {
-            "send" => Ok(outcome(sender.send_to_backend(&operation.text).await)),
-            "event" => {
-                let event = serde_json::from_str::<Json>(&operation.text).unwrap_or(Json::Null);
-                Ok(outcome(
-                    sender.send_event_to_client(&event, &operation.text).await,
-                ))
+        match operation {
+            Operation::Send { text } => Ok(outcome(sender.send_to_backend(text).await)),
+            Operation::Event { text } => {
+                let event = serde_json::from_str::<Json>(text).unwrap_or(Json::Null);
+                Ok(outcome(sender.send_event_to_client(&event, text).await))
             }
-            "disable" => Ok(outcome(
+            Operation::Disable => Ok(outcome(
                 sender.maybe_disable_auto_response().await.map(|()| true),
             )),
-            "cache" => {
-                sender.cache_session_configuration(&operation.text);
+            Operation::Cache { text } => {
+                sender.cache_session_configuration(text);
                 Ok(json!({ "ok": true }))
             }
-            other => Err(failure(
-                "InvalidInput",
-                format!("unknown operation kind: {other}"),
-            )),
         }
     })
 }
@@ -195,6 +214,8 @@ where
                 | RealtimeSenderError::BackendMissing
                 | RealtimeSenderError::ClientMissing
                 | RealtimeSenderError::Beta { .. }
+                | RealtimeSenderError::SessionUpdateTooDeep
+                | RealtimeSenderError::SessionUpdateInvalid { .. }
                 | RealtimeSenderError::Encode { .. } => "other",
             };
             json!({ "error": label })
@@ -203,12 +224,18 @@ where
 }
 
 fn settle<'driver>(
-    receiver: &'driver mut UnboundedReceiver<Recorded>,
+    receiver: &'driver mut Receiver<Recorded>,
     received: &'driver mut Vec<Recorded>,
     delivered: usize,
 ) -> DriverFuture<'driver, ()> {
     Box::pin(async move {
         while received.len() < delivered {
+            if received.len() >= MAX_FRAMES {
+                return Err(failure(
+                    "InvalidInput",
+                    String::from("the upstream capture is full"),
+                ));
+            }
             let next = timeout(SETTLE, receiver.recv()).await.map_err(|_elapsed| {
                 failure("TimeoutError", String::from("no upstream frame arrived"))
             })?;

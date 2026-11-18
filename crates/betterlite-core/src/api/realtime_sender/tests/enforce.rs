@@ -148,3 +148,23 @@ fn enforce_rejects_a_json_nonobject() {
         Err(RealtimeSenderError::SessionUpdateNotObject)
     ));
 }
+
+#[test]
+fn enforce_rejects_session_update_past_nesting_limit() {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = RealtimeSender {
+        state: &mut state,
+        provider: Some(&fixture.provider),
+        guardrails: &callbacks,
+    };
+    let nested = format!("{}null{}", "[".repeat(64), "]".repeat(64));
+    let deep = format!("{{\"type\":\"session.update\",\"session\":{{\"extension\":{nested}}}}}");
+    let result = sender.enforce_session_model(&deep);
+    assert!(matches!(
+        result,
+        Err(RealtimeSenderError::SessionUpdateTooDeep)
+    ));
+}
