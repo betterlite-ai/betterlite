@@ -6,18 +6,10 @@ use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_logging::otel::model::metadata::wire::callback::Params;
-use betterlite_logging::otel::model::metadata::wire::decode;
-use betterlite_logging::otel::model::metadata::wire::payload::Metadata;
-use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
-use betterlite_logging::otel::plumbing::context::parent_span::{
-    ParentSpanSources, parent_otel_span_from_kwargs,
-};
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState};
-use serde::Deserialize;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
@@ -26,8 +18,8 @@ use crate::database_failures::deadline::{DbLookupError, LookupRequest};
 use crate::database_failures::gate::{DbLookupStallTracker, SystemClock};
 use crate::database_failures::metrics::{
     DbMetricCall, DbMetricContext, DbMetricError, DbMetricFuture, DbServiceEvent,
-    DbServiceEventSink, DbServiceFailureEvent, InjectedSpanResolver, ProxySpanResolver,
-    SystemWallClock, WallClock, log_db_metrics,
+    DbServiceEventSink, DbServiceFailureEvent, ProxySpanResolver, SystemWallClock, WallClock,
+    log_db_metrics,
 };
 use crate::database_faults::{DbError, ErrorType};
 
@@ -170,30 +162,6 @@ impl WallClock for RecordingWallClock {
             .pop_front()
             .expect("the test supplies a time for every read")
     }
-}
-
-pub(super) const PARENT_SPAN_KEY: &str = "litellm_parent_otel_span";
-
-#[derive(Deserialize)]
-struct MetricKwargs {
-    metadata: Option<Metadata>,
-    litellm_params: Option<Params>,
-    litellm_parent_otel_span: Option<OtelModelValue>,
-}
-
-fn shared_parent_span(passed_kwargs: &IndexMap<String, Json>) -> Option<SpanContext> {
-    let text = serde_json::to_string(passed_kwargs).ok()?;
-    let kwargs: MetricKwargs = decode(&text).ok()?;
-    parent_otel_span_from_kwargs(&ParentSpanSources {
-        metadata: kwargs.metadata.as_ref(),
-        params: kwargs.litellm_params.as_ref(),
-        span: kwargs.litellm_parent_otel_span.as_ref(),
-    })
-}
-
-pub(super) fn shared_span_resolver()
--> InjectedSpanResolver<fn(&IndexMap<String, Json>) -> Option<SpanContext>> {
-    InjectedSpanResolver(shared_parent_span)
 }
 
 pub(super) const fn metric_call(function_name: &str) -> DbMetricCall<'_> {

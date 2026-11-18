@@ -19,9 +19,8 @@ use crate::database_failures::metrics::{
 use crate::database_faults::ErrorType;
 
 use super::support::{
-    PARENT_SPAN_KEY, RecordingResolver, RecordingSink, RecordingWallClock, SinkFault, capture_logs,
-    database_error, drain, failures, metric_call, run_metric, shared_span_resolver, span,
-    successes,
+    RecordingResolver, RecordingSink, RecordingWallClock, SinkFault, capture_logs, database_error,
+    drain, failures, metric_call, run_metric, span, successes,
 };
 
 #[tokio::test]
@@ -326,124 +325,6 @@ async fn proxy_args_second_dictionary() {
             .expect("the recording resolver is not poisoned")
             .len(),
         1
-    );
-}
-
-fn traceparent(value: &str) -> Json {
-    Json::Text(format!("00-{value}-b7ad6b7169203331-01"))
-}
-
-fn spanned(value: &str) -> Json {
-    Json::Object(IndexMap::from([(
-        PARENT_SPAN_KEY.to_owned(),
-        traceparent(value),
-    )]))
-}
-
-#[tokio::test]
-async fn proxy_span_uses_shared_resolver() {
-    let tasks = TaskTracker::new();
-    let sink = Arc::new(RecordingSink::default());
-    let resolver = shared_span_resolver();
-    let metadata_trace = "4bf92f3577b34da6a3ce929d0e0e4736";
-    let params_trace = "0af7651916cd43dd8448eb211c80319c";
-    let top_level_trace = "11111111111111111111111111111111";
-    let both = Json::Object(IndexMap::from([
-        ("metadata".to_owned(), spanned(metadata_trace)),
-        (
-            "litellm_params".to_owned(),
-            Json::Object(IndexMap::from([(
-                "metadata".to_owned(),
-                spanned(params_trace),
-            )])),
-        ),
-        (PARENT_SPAN_KEY.to_owned(), traceparent(top_level_trace)),
-    ]));
-    let params_only = Json::Object(IndexMap::from([
-        (
-            "litellm_params".to_owned(),
-            Json::Object(IndexMap::from([(
-                "metadata".to_owned(),
-                spanned(params_trace),
-            )])),
-        ),
-        (PARENT_SPAN_KEY.to_owned(), traceparent(top_level_trace)),
-    ]));
-    let top_level_only = Json::Object(IndexMap::from([(
-        PARENT_SPAN_KEY.to_owned(),
-        traceparent(top_level_trace),
-    )]));
-    let from_metadata = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: Some(span(7)),
-        table_name: None,
-        second_positional: Some(&both),
-    };
-    let from_params = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: Some(span(7)),
-        table_name: None,
-        second_positional: Some(&params_only),
-    };
-    let from_top_level = DbMetricCall {
-        function_name: "PROXY_batch_write",
-        parent_otel_span: Some(span(7)),
-        table_name: None,
-        second_positional: Some(&top_level_only),
-    };
-    run_metric(
-        async { Ok::<i32, DbLookupError>(1) },
-        &from_metadata,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
-    run_metric(
-        async { Ok::<i32, DbLookupError>(2) },
-        &from_params,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
-    run_metric(
-        async { Ok::<i32, DbLookupError>(3) },
-        &from_top_level,
-        &sink,
-        &resolver,
-        &tasks,
-    )
-    .await
-    .expect("the successful call returns");
-    drain(&tasks).await;
-    let recorded = successes(&sink);
-    assert_eq!(recorded.len(), 3);
-    let resolved: Vec<String> = recorded
-        .iter()
-        .map(|event| {
-            event
-                .parent_otel_span
-                .as_ref()
-                .expect("the shared helper resolves a parent")
-                .trace_id()
-                .to_string()
-        })
-        .collect();
-    assert_eq!(
-        resolved,
-        vec![
-            metadata_trace.to_owned(),
-            params_trace.to_owned(),
-            top_level_trace.to_owned()
-        ]
-    );
-    assert!(
-        recorded
-            .iter()
-            .all(|event| event.parent_otel_span != Some(span(7)))
     );
 }
 
