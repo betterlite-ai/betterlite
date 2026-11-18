@@ -1,6 +1,7 @@
 #![cfg(test)]
 use crate::guardrails::responses_translation::block_events::guardrail_json::blocked_original_response;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::anthropic_sse::error_frames::anthropic_sse_error_frames;
 use betterlite_guardrails::guardrail_message_scope::blocked_usage::OriginalResponse;
 use std::{collections::BTreeMap, str};
 
@@ -128,10 +129,7 @@ fn continuation_uses_the_original_output_tokens() {
 #[test]
 fn error_frames_match_shared_error_builder() {
     let frames = build_stream_error_items("blocked").unwrap();
-    assert_eq!(frames.len(), 1);
-    let frame = frame_text(&frames[0]);
-    assert!(frame.starts_with("event: error\n"), "{frame}");
-    assert!(frame.contains("\"guardrail_error\""), "{frame}");
+    assert_eq!(frames, anthropic_sse_error_frames("blocked").unwrap());
 }
 
 #[test]
