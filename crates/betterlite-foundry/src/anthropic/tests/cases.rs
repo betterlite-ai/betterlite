@@ -16,8 +16,8 @@ use crate::anthropic::request::Style;
 
 use super::harness::{KeyShape, Run, Setup, execute};
 use super::support::{
-    API_BASE, CALLER_KEY, CONFIGURED_KEY, FixtureReply, MODEL, TOKEN, Trip, headers_of, messages,
-    text_body,
+    API_BASE, CALLER_KEY, CONFIGURED_KEY, FixtureReply, MODEL, TIMEOUT, TOKEN, Trip, headers_of,
+    messages, text_body,
 };
 
 #[derive(Clone, Copy)]
@@ -75,6 +75,8 @@ fn foundry_anthropic_url() {
     });
     assert_eq!(direct.posts_supplied, 1);
     assert_eq!(direct.posted_urls, [API_BASE.to_owned()]);
+    // the caller's timeout is the deadline the buffered post carries
+    assert_eq!(direct.posted_deadlines, [TIMEOUT]);
 
     let queried_base =
         "https://resource.services.ai.azure.com/anthropic/v1/messages?api-version=2024-06-01";
@@ -83,6 +85,8 @@ fn foundry_anthropic_url() {
         ..Setup::chat()
     });
     assert_eq!(queried.posted_urls, [queried_base.to_owned()]);
+    // the sync path passes the same timeout to the post it makes
+    assert_eq!(queried.posted_deadlines, [TIMEOUT]);
 
     // httpx refuses a base without a scheme before the transport, and the handler raises that as a 500
     let unusable = execute(&Setup {

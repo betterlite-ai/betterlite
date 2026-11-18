@@ -150,6 +150,10 @@ impl FixtureTransport {
         self.all().iter().map(|post| post.url.to_string()).collect()
     }
 
+    pub(super) fn posted_deadlines(&self) -> Vec<Duration> {
+        self.all().iter().map(|post| post.deadline).collect()
+    }
+
     pub(super) fn posts(&self) -> usize {
         self.all().len()
     }

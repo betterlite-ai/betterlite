@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::mem::take;
 use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_anthropic::chat_call::transport::{ClientKind, SuppliedChatClient};
 use betterlite_anthropic::chat_call::{ChatClients, ChatDeps, ChatOutcome};
@@ -106,6 +107,7 @@ pub(super) struct Run {
     pub(super) posted_bodies: Vec<IndexMap<String, Json>>,
     pub(super) posted_headers: Vec<HeaderMap>,
     pub(super) posted_urls: Vec<String>,
+    pub(super) posted_deadlines: Vec<Duration>,
     pub(super) transforms: Vec<Recorded>,
     pub(super) calls: Vec<String>,
     pub(super) responses: Vec<ResponseRecord>,
@@ -207,6 +209,7 @@ pub(super) fn execute(setup: &Setup) -> Run {
         posted_bodies: posted.bodies,
         posted_headers: posted.headers,
         posted_urls: posted.urls,
+        posted_deadlines: posted.deadlines,
         transforms,
         calls,
         responses,
@@ -337,6 +340,7 @@ struct Posted {
     bodies: Vec<IndexMap<String, Json>>,
     headers: Vec<HeaderMap>,
     urls: Vec<String>,
+    deadlines: Vec<Duration>,
 }
 
 fn posts(supplied: &FixtureTransport, pooled: &FixtureTransport) -> Posted {
@@ -346,10 +350,13 @@ fn posts(supplied: &FixtureTransport, pooled: &FixtureTransport) -> Posted {
     headers.extend(pooled.posted_headers());
     let mut urls = supplied.posted_urls();
     urls.extend(pooled.posted_urls());
+    let mut deadlines = supplied.posted_deadlines();
+    deadlines.extend(pooled.posted_deadlines());
     Posted {
         bodies,
         headers,
         urls,
+        deadlines,
     }
 }
 
