@@ -263,6 +263,7 @@ async fn sync_read_backfills_with_redis_values() {
             Reply::Nil,
         ])],
     );
+    server.script("TTL", vec![Reply::Integer(-2)]);
     let (cache, _redis) = with_redis(&server).await;
     let read = cache
         .batch_get_cache(&keys(&["a", "b"]), false)
@@ -276,6 +277,14 @@ async fn sync_read_backfills_with_redis_values() {
         Some(Ttl::Expiry(1030.0))
     );
     assert_eq!(cache.async_get_ttl("b").await.ok().flatten(), None);
+}
+
+#[test]
+fn cache_from_json_skips_integers_past_u64() {
+    let past_u64: Number = "18446744073709551617"
+        .parse()
+        .expect("an integer token past u64 range");
+    assert_eq!(super::value::cache_from_json(&Json::Number(past_u64)), None);
 }
 
 #[test]
@@ -455,6 +464,7 @@ fn async_read_apply_prefers_the_redis_result() {
 async fn async_read_all_none_redis_result_leaves_result() {
     let server = FakeRedis::start().await;
     server.script("MGET", vec![Reply::Array(vec![Reply::Nil])]);
+    server.script("TTL", vec![Reply::Integer(-2)]);
     let (cache, _redis) = with_redis(&server).await;
     let read = cache.async_batch_get_cache(&keys(&["a"]), THROTTLED).await;
     assert_eq!(read, Some(vec![None]));
