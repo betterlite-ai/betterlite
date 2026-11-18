@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use crate::auth_reconnect::request::ReconnectRequest;
 use crate::auth_reconnect::stale::StaleReadEngine;
 use crate::budget_permission_rows::JsonData;
+use crate::database_availability::classification::STALE_PLAN_MARKER;
 use crate::database_failures::metrics::DbServiceEventSink;
 use crate::database_faults::DbError;
 use crate::key_hash::KeyHash;
@@ -17,7 +18,6 @@ use super::ports::{Diagnostic, KeyReadDatabase, KeyReadDiagnostics, PlanReconnec
 use super::reader::KeyReader;
 use super::view::ViewError;
 
-pub(crate) const CACHED_PLAN_MARKER: &str = "cached plan must not change result type";
 pub(crate) const RECONNECT_REASON: &str = "postgres_cached_plan_error";
 pub(crate) const CACHED_PLAN_WARNING: &str = "PostgreSQL cached plan error detected for token lookup; recreating the database connection and retrying with the same query. This may occur during rolling deployments when schema changes are applied.";
 
@@ -113,7 +113,8 @@ fn row_fields(row: Option<JsonData>) -> Result<Option<BTreeMap<String, JsonData>
 }
 
 fn is_cached_plan(error: &DbError) -> bool {
-    error.message.contains(CACHED_PLAN_MARKER)
+    // LiteLLM matches the marker as written, case-sensitively, unlike the availability classifier
+    error.message.contains(STALE_PLAN_MARKER)
 }
 
 fn reconnect_request<'request>() -> ReconnectRequest<'request> {
