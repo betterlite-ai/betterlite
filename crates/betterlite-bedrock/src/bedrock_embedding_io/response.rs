@@ -46,6 +46,11 @@ pub struct PromptTokenCounts {
     pub query_count: Option<u64>,
 }
 
+enum ResponseBranch<'response> {
+    Async(&'response Object),
+    Regular,
+}
+
 pub fn transform_response(
     response_list: &[Object],
     model: &str,
@@ -53,38 +58,58 @@ pub fn transform_response(
     is_async_invoke: bool,
     batch_data: Option<&[Object]>,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    if let Some(reply) = response_list.first()
-        && is_async_invoke
-        && response_list.len() == 1
-        && reply.contains_key("invocationArn")
-    {
-        if matches!(
-            provider,
-            BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon
-        ) {
-            return Ok(EmbeddingReply {
-                object: RESPONSE_OBJECT,
-                data: vec![EmbeddingRecord {
-                    object: EMBEDDING_OBJECT.to_owned(),
-                    embedding: EmbeddingVector::Floats(Vec::new()),
-                    index: 0,
-                }],
-                model: model.to_owned(),
-                usage: EmbeddingUsage {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0,
-                    prompt_tokens_details: None,
-                },
-                invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
-            });
+    let branch = response_branch(response_list, is_async_invoke);
+    dispatch_response(branch, response_list, model, provider, batch_data)
+}
+
+fn response_branch(response_list: &[Object], is_async_invoke: bool) -> ResponseBranch<'_> {
+    match response_list {
+        [reply] if is_async_invoke && reply.contains_key("invocationArn") => {
+            ResponseBranch::Async(reply)
         }
-        return provider_response(provider, model, response_list, Some(reply), batch_data);
+        _ => ResponseBranch::Regular,
     }
-    if let Some(reply) = titan_response(response_list, model, batch_data)? {
-        return Ok(reply);
+}
+
+fn dispatch_response(
+    branch: ResponseBranch<'_>,
+    response_list: &[Object],
+    model: &str,
+    provider: BedrockEmbeddingProvider,
+    batch_data: Option<&[Object]>,
+) -> Result<EmbeddingReply, EmbeddingIoError> {
+    match branch {
+        ResponseBranch::Async(reply) => {
+            if matches!(
+                provider,
+                BedrockEmbeddingProvider::Cohere | BedrockEmbeddingProvider::Amazon
+            ) {
+                return Ok(EmbeddingReply {
+                    object: RESPONSE_OBJECT,
+                    data: vec![EmbeddingRecord {
+                        object: EMBEDDING_OBJECT.to_owned(),
+                        embedding: EmbeddingVector::Floats(Vec::new()),
+                        index: 0,
+                    }],
+                    model: model.to_owned(),
+                    usage: EmbeddingUsage {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0,
+                        prompt_tokens_details: None,
+                    },
+                    invocation_arn: reply.get("invocationArn").cloned().unwrap_or(Json::Null),
+                });
+            }
+            provider_response(provider, model, response_list, Some(reply), batch_data)
+        }
+        ResponseBranch::Regular => {
+            if let Some(reply) = titan_response(response_list, model, batch_data)? {
+                return Ok(reply);
+            }
+            provider_response(provider, model, response_list, None, batch_data)
+        }
     }
-    provider_response(provider, model, response_list, None, batch_data)
 }
 
 fn titan_response(
