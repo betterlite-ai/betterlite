@@ -60,7 +60,8 @@ impl Section for Raw {
         let percentile =
             resolve_number(args.ttft_percentile, PERCENTILE_PATH, lookup, parse_float)?;
         // Field(gt=0, le=1) rejects a fraction outside the interval, NaN and an infinity
-        if percentile.is_some_and(|value| !value.is_finite() || value <= 0.0 || value > 1.0) {
+        if percentile.is_some_and(|value| !value.is_finite() || value <= 0.0_f64 || value > 1.0_f64)
+        {
             return Err(ConfigError::InvalidScalar {
                 path: PERCENTILE_PATH.to_owned(),
                 value: false,

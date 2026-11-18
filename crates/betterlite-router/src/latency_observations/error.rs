@@ -26,6 +26,8 @@ pub enum LatencyError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the stored latency samples are not text")]
+    UnexpectedValue,
     #[error("the logged times cannot be read as seconds")]
     Time,
     #[error("the clock value {seconds} is not a valid instant")]

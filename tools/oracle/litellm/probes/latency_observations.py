@@ -175,7 +175,7 @@ def failure_exception(kind: Literal["timeout", "other"]) -> BaseException:
 def deployment_view(entry: dict[str, JsonValue]) -> DeploymentView:
     minutes: dict[str, MinuteView] = {}
     for key, value in entry.items():
-        if key == "latency" or key == "time_to_first_token_seconds":
+        if key in {"latency", "time_to_first_token_seconds"}:
             continue
         usage = MINUTE_USAGE.validate_python(value)
         minutes[key] = MinuteView(tpm=usage["tpm"], rpm=usage["rpm"])

@@ -109,17 +109,19 @@ pub(crate) struct Failure<'event> {
     pub(crate) failure: FailureClass,
 }
 
+const DEFAULT_FAILURE: Failure<'static> = Failure {
+    call_type: None,
+    channels: RequestChannels {
+        litellm_metadata: Channel::Absent,
+        metadata: Channel::Present(Some(GROUP)),
+    },
+    deployment_id: Some(DEPLOYMENT),
+    failure: FailureClass::Timeout,
+};
+
 impl Default for Failure<'_> {
     fn default() -> Self {
-        Self {
-            call_type: None,
-            channels: RequestChannels {
-                litellm_metadata: Channel::Absent,
-                metadata: Channel::Present(Some(GROUP)),
-            },
-            deployment_id: Some(DEPLOYMENT),
-            failure: FailureClass::Timeout,
-        }
+        DEFAULT_FAILURE
     }
 }
 
@@ -142,10 +144,15 @@ pub(crate) fn record_success(service: &LatencyObservations, plan: &Success<'_>) 
 
 pub(crate) fn record_elapsed(service: &LatencyObservations, values: &[u64]) {
     for value in values {
-        let mut plan = Success::default();
-        plan.elapsed_millis = *value;
-        record_success(service, &plan);
+        record_success(service, &success_plan(*value, None));
     }
+}
+
+pub(crate) fn success_plan(elapsed_millis: u64, usage: Option<TokenUsage>) -> Success<'static> {
+    let mut plan = Success::default();
+    plan.elapsed_millis = elapsed_millis;
+    plan.usage = usage;
+    plan
 }
 
 pub(crate) fn record_failure(service: &LatencyObservations, plan: &Failure<'_>) {

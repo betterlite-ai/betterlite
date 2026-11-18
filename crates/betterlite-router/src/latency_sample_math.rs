@@ -10,7 +10,7 @@ use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 #[must_use]
 pub fn average(samples: &[f64]) -> f64 {
     if samples.is_empty() {
-        return 0.0;
+        return 0.0_f64;
     }
     let total: f64 = samples.iter().sum();
     let count = f64::from(u32::try_from(samples.len()).unwrap_or(u32::MAX));

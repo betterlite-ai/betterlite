@@ -7,17 +7,17 @@ use rstest::rstest;
 use super::Args;
 use crate::loader::{ConfigError, ConfigLoader};
 
-fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Box<Args>, ConfigError> {
+fn load_with(source: &str, variables: &[(&str, &str)]) -> Result<Args, ConfigError> {
     let lookup: BTreeMap<String, String> = variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     ConfigLoader { lookup }
         .load(source)
-        .map(|config| config.sections.latency_observations)
+        .map(|config| *config.sections.latency_observations)
 }
 
-fn load(source: &str) -> Box<Args> {
+fn load(source: &str) -> Args {
     load_with(source, &[]).unwrap()
 }
 
@@ -35,7 +35,10 @@ fn rejection(error: &ConfigError) -> Rejection {
         ConfigError::InvalidInteger { .. } => Rejection::InvalidInteger,
         ConfigError::InvalidScalar { .. } => Rejection::InvalidScalar,
         ConfigError::MissingEnvironment { .. } => Rejection::MissingEnvironment,
-        other => panic!("unexpected rejection {other:?}"),
+        ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::LoadThread { .. } => panic!("unexpected rejection {error:?}"),
     }
 }
 
@@ -45,10 +48,10 @@ fn rejection(error: &ConfigError) -> Rejection {
 #[case::all_args(
     "router_settings:\n  routing_strategy_args:\n    ttl: 120\n    lowest_latency_buffer: 0.2\n    max_latency_list_size: 5\n    ttft_percentile: 0.9\n",
     Args {
-        ttl_seconds: Some(120.0),
-        lowest_latency_buffer: Some(0.2),
+        ttl_seconds: Some(120.0_f64),
+        lowest_latency_buffer: Some(0.2_f64),
         max_latency_list_size: Some(5),
-        ttft_percentile: Some(0.9),
+        ttft_percentile: Some(0.9_f64),
     }
 )]
 #[case::whole_float_size(
@@ -79,11 +82,11 @@ fn rejection(error: &ConfigError) -> Rejection {
         ttl_seconds: None,
         lowest_latency_buffer: None,
         max_latency_list_size: None,
-        ttft_percentile: Some(1.0),
+        ttft_percentile: Some(1.0_f64),
     }
 )]
 fn converts(#[case] source: &str, #[case] expected: Args) {
-    assert_eq!(*load(source), expected);
+    assert_eq!(load(source), expected);
 }
 
 #[rstest]
@@ -91,7 +94,7 @@ fn converts(#[case] source: &str, #[case] expected: Args) {
     "router_settings:\n  routing_strategy_args:\n    ttl: os.environ/ROUTER_TTL\n",
     &[("ROUTER_TTL", "90")],
     Args {
-        ttl_seconds: Some(90.0),
+        ttl_seconds: Some(90.0_f64),
         lowest_latency_buffer: None,
         max_latency_list_size: None,
         ttft_percentile: None,
@@ -112,7 +115,7 @@ fn resolves_environment(
     #[case] variables: &[(&str, &str)],
     #[case] expected: Args,
 ) {
-    assert_eq!(*load_with(source, variables).unwrap(), expected);
+    assert_eq!(load_with(source, variables).unwrap(), expected);
 }
 
 #[rstest]
@@ -158,5 +161,5 @@ fn rejects_unknown_arguments(#[case] source: &str, #[case] expected: Rejection) 
 #[test]
 fn the_lar1_thresholds_share_the_same_arguments_object() {
     let source = "router_settings:\n  routing_strategy_args:\n    ttl: 60\n    confidence_threshold_high: 0.9\n";
-    assert_eq!(load(source).ttl_seconds, Some(60.0));
+    assert_eq!(load(source).ttl_seconds, Some(60.0_f64));
 }

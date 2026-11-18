@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
 use betterlite_router::cooldown_decisions::failure::FailureClass;
 use betterlite_router::latency_observations::LatencyObservations;
@@ -21,7 +22,7 @@ pub(crate) fn run(input: &Input) -> Result<Output, ScenarioError> {
     let scenario = Scenario::new(input)?;
     let mut steps = Vec::with_capacity(input.steps.len());
     for step in &input.steps {
-        scenario.advance(step.now_millis)?;
+        scenario.advance(step.now_millis);
         steps.push(scenario.apply(step)?);
     }
     Ok(Output { steps })
@@ -58,9 +59,10 @@ impl Scenario {
         })
     }
 
-    fn advance(&self, now_millis: u64) -> Result<(), ScenarioError> {
-        *self.clock.lock().unwrap_or_else(PoisonError::into_inner) = millis_seconds(now_millis)?;
-        Ok(())
+    // the probe's frozen wall clock reads the same millisecond count as Python's clock, as float seconds
+    fn advance(&self, now_millis: u64) {
+        *self.clock.lock().unwrap_or_else(PoisonError::into_inner) =
+            Duration::from_millis(now_millis).as_secs_f64();
     }
 
     fn apply(&self, step: &Step) -> Result<StepOutput, ScenarioError> {
@@ -72,7 +74,9 @@ impl Scenario {
         match step.kind {
             StepKind::Success => self.success(step)?,
             StepKind::Failure => self.failure(step)?,
-            StepKind::View => output.deployments = Some(self.view(step)?),
+            StepKind::View => {
+                output.deployments = Some(views(self.observations.samples(model_group(step)?)?));
+            }
             StepKind::Score => output.score = Some(self.score(step)?),
         }
         Ok(output)
@@ -80,22 +84,9 @@ impl Scenario {
 
     fn success(&self, step: &Step) -> Result<(), ScenarioError> {
         let start_millis = step.start_millis;
-        let end_millis =
-            start_millis
-                .checked_add(step.elapsed_millis)
-                .ok_or(ScenarioError::TimeOverflow {
-                    millis: start_millis,
-                })?;
+        let end_millis = added_millis(start_millis, step.elapsed_millis)?;
         let completion_start_time = match step.first_token_millis {
-            Some(first_token) => {
-                let first_token_millis =
-                    start_millis
-                        .checked_add(first_token)
-                        .ok_or(ScenarioError::TimeOverflow {
-                            millis: start_millis,
-                        })?;
-                Some(millis_seconds(first_token_millis)?)
-            }
+            Some(first_token) => Some(millis_seconds(added_millis(start_millis, first_token)?)?),
             None => None,
         };
         let event = SuccessEvent {
@@ -116,45 +107,13 @@ impl Scenario {
     }
 
     fn failure(&self, step: &Step) -> Result<(), ScenarioError> {
-        let event = FailureEvent {
-            call_type: step.call_type.as_deref(),
-            channels: channels(step),
-            deployment_id: step.deployment_id.as_deref(),
-            failure: match step.failure {
-                FailureKind::Timeout => FailureClass::Timeout,
-                FailureKind::Other => FailureClass::Unclassified,
-            },
-        };
-        self.observations.record_failure(&event)?;
+        self.observations.record_failure(&failure_event(step))?;
         Ok(())
     }
 
-    fn view(&self, step: &Step) -> Result<BTreeMap<String, DeploymentView>, ScenarioError> {
-        let model_group = step.model_group.as_deref().ok_or(ScenarioError::Missing {
-            what: "a model_group",
-        })?;
-        let samples = self.observations.samples(model_group)?;
-        Ok(views(samples))
-    }
-
     fn score(&self, step: &Step) -> Result<Seconds, ScenarioError> {
-        let model_group = step.model_group.as_deref().ok_or(ScenarioError::Missing {
-            what: "a model_group",
-        })?;
-        let deployment_id = step
-            .deployment_id
-            .as_deref()
-            .ok_or(ScenarioError::Missing {
-                what: "a deployment_id",
-            })?;
-        let samples = self.observations.samples(model_group)?;
-        let deployment = samples
-            .deployments
-            .get(deployment_id)
-            .ok_or(ScenarioError::Missing {
-                what: "a recorded deployment to score",
-            })?;
-        let score = self.score_window(step, deployment)?;
+        let samples = self.observations.samples(model_group(step)?)?;
+        let score = self.score_window(step, deployment(step, &samples)?)?;
         Ok(Seconds(score))
     }
 
@@ -196,15 +155,65 @@ impl Scenario {
     }
 }
 
+fn failure_event(step: &Step) -> FailureEvent<'_> {
+    FailureEvent {
+        call_type: step.call_type.as_deref(),
+        channels: channels(step),
+        deployment_id: step.deployment_id.as_deref(),
+        failure: failure_class(step.failure),
+    }
+}
+
+const fn failure_class(failure: FailureKind) -> FailureClass {
+    match failure {
+        FailureKind::Timeout => FailureClass::Timeout,
+        FailureKind::Other => FailureClass::Unclassified,
+    }
+}
+
+fn model_group(step: &Step) -> Result<&str, ScenarioError> {
+    step.model_group.as_deref().ok_or(ScenarioError::Missing {
+        what: "a model_group",
+    })
+}
+
+fn deployment<'samples>(
+    step: &Step,
+    samples: &'samples ModelGroupSamples,
+) -> Result<&'samples LatencySamples, ScenarioError> {
+    let deployment_id = step
+        .deployment_id
+        .as_deref()
+        .ok_or(ScenarioError::Missing {
+            what: "a deployment_id",
+        })?;
+    samples
+        .deployments
+        .get(deployment_id)
+        .ok_or(ScenarioError::Missing {
+            what: "a recorded deployment to score",
+        })
+}
+
+const fn added_millis(start_millis: u64, offset_millis: u64) -> Result<u64, ScenarioError> {
+    match start_millis.checked_add(offset_millis) {
+        Some(total) => Ok(total),
+        None => Err(ScenarioError::TimeOverflow {
+            millis: start_millis,
+        }),
+    }
+}
+
 fn channels(step: &Step) -> RequestChannels<'_> {
+    let metadata = step.model_group.as_deref();
     match step.channels {
         Channels::None => RequestChannels::default(),
         Channels::Metadata => RequestChannels {
             litellm_metadata: Channel::Absent,
-            metadata: Channel::Present(step.model_group.as_deref()),
+            metadata: Channel::Present(metadata),
         },
         Channels::LitellmMetadata => RequestChannels {
-            litellm_metadata: Channel::Present(step.model_group.as_deref()),
+            litellm_metadata: Channel::Present(metadata),
             metadata: Channel::Present(step.metadata_group.as_deref()),
         },
     }

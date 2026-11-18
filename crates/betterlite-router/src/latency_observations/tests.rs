@@ -82,6 +82,9 @@ fn latency_observations_behaviors(#[case] name: &str) {
 #[case::a_model_group_past_the_key_limit_is_an_error(
     "a_model_group_past_the_key_limit_is_an_error"
 )]
+#[case::a_cached_value_the_callback_did_not_write_is_an_error(
+    "a_cached_value_the_callback_did_not_write_is_an_error"
+)]
 #[case::a_negative_clock_is_an_error("a_negative_clock_is_an_error")]
 fn latency_observations_boundaries(#[case] name: &str) {
     boundaries::run(name);

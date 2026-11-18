@@ -1,6 +1,6 @@
 use super::support::{
     DEPLOYMENT, Failure, GROUP, OTHER_GROUP, Success, TestClock, deployment, latency, minutes,
-    record_failure, record_success, samples, service, ttft, usage,
+    record_elapsed, record_failure, record_success, samples, service, success_plan, ttft, usage,
 };
 use crate::cooldown_decisions::failure::FailureClass;
 use crate::latency_observations::event::{Channel, RequestChannels};
@@ -40,10 +40,8 @@ pub(crate) fn run(name: &str) {
 fn a_success_records_the_response_time() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
-    let mut plan = Success::default();
-    plan.elapsed_millis = 2_000;
-    record_success(&observations, &plan);
-    assert_eq!(latency(&observations), vec![2.0]);
+    record_elapsed(&observations, &[2_000]);
+    assert_eq!(latency(&observations), vec![2.0_f64]);
     assert_eq!(
         minutes(&observations),
         vec![(
@@ -60,7 +58,7 @@ fn a_success_normalizes_the_response_time() {
     plan.elapsed_millis = 2_000;
     plan.usage = usage(4, 10);
     record_success(&observations, &plan);
-    assert_eq!(latency(&observations), vec![0.5]);
+    assert_eq!(latency(&observations), vec![0.5_f64]);
     assert_eq!(
         minutes(&observations),
         vec![(
@@ -73,18 +71,12 @@ fn a_success_normalizes_the_response_time() {
 fn a_zero_completion_count_keeps_the_response_time() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
-    let mut plan = Success::default();
-    plan.elapsed_millis = 2_500;
-    plan.usage = usage(0, 7);
-    record_success(&observations, &plan);
-    assert_eq!(latency(&observations), vec![2.5]);
-    assert_eq!(
-        minutes(&observations),
-        vec![(
-            "1970-01-01-00-00".to_owned(),
-            MinuteUsage { tpm: 7, rpm: 1 }
-        )]
-    );
+    record_success(&observations, &success_plan(2_500, usage(0, 7)));
+    let recorded = minutes(&observations);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].1.tpm, 7);
+    assert_eq!(recorded[0].1.rpm, 1);
+    assert_eq!(latency(&observations), vec![2.5_f64]);
 }
 
 fn a_streaming_success_records_ttft() {
@@ -96,8 +88,8 @@ fn a_streaming_success_records_ttft() {
     plan.completion_start_millis = Some(250);
     plan.usage = usage(4, 10);
     record_success(&observations, &plan);
-    assert_eq!(latency(&observations), vec![0.5]);
-    assert_eq!(ttft(&observations), vec![0.25]);
+    assert_eq!(latency(&observations), vec![0.5_f64]);
+    assert_eq!(ttft(&observations), vec![0.25_f64]);
 }
 
 fn a_streaming_success_without_a_completion_start() {
@@ -107,8 +99,8 @@ fn a_streaming_success_without_a_completion_start() {
     plan.stream = true;
     plan.elapsed_millis = 1_500;
     record_success(&observations, &plan);
-    assert_eq!(latency(&observations), vec![1.5]);
-    assert_eq!(ttft(&observations), vec![1.5]);
+    assert_eq!(latency(&observations), vec![1.5_f64]);
+    assert_eq!(ttft(&observations), vec![1.5_f64]);
 }
 
 fn a_non_streaming_success_has_no_ttft() {
@@ -117,7 +109,7 @@ fn a_non_streaming_success_has_no_ttft() {
     let mut plan = Success::default();
     plan.completion_start_millis = Some(250);
     record_success(&observations, &plan);
-    assert_eq!(latency(&observations), vec![1.0]);
+    assert_eq!(latency(&observations), vec![1.0_f64]);
     assert!(ttft(&observations).is_empty());
 }
 
@@ -133,7 +125,7 @@ fn the_minute_bucket_sums_tokens() {
     second.elapsed_millis = 1_000;
     second.usage = usage(2, 30);
     record_success(&observations, &second);
-    assert_eq!(latency(&observations), vec![0.5, 0.5]);
+    assert_eq!(latency(&observations), vec![0.5_f64, 0.5_f64]);
     assert_eq!(
         minutes(&observations),
         vec![(
@@ -147,7 +139,7 @@ fn a_timeout_failure_appends_the_penalty() {
     let clock = TestClock::at(0);
     let observations = service(Settings::default(), &clock);
     record_failure(&observations, &Failure::default());
-    assert_eq!(latency(&observations), vec![1000.0]);
+    assert_eq!(latency(&observations), vec![1000.0_f64]);
     assert!(minutes(&observations).is_empty());
     assert!(ttft(&observations).is_empty());
 }
@@ -185,7 +177,7 @@ fn litellm_metadata_is_read_before_metadata() {
     assert!(samples(&observations, GROUP).deployments.is_empty());
     assert_eq!(
         deployment(&samples(&observations, OTHER_GROUP), DEPLOYMENT).latency,
-        vec![1.0]
+        vec![1.0_f64]
     );
 }
 

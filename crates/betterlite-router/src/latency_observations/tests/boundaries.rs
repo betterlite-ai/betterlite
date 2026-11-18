@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use betterlite_context::local_ttl_cache::CacheValue;
+
 use super::support::{
     Failure, GROUP, Success, TestClock, latency, minutes, record_elapsed, record_failure,
     record_success, samples, service, ttft, usage,
@@ -58,6 +60,9 @@ pub(crate) fn run(name: &str) {
         "a_model_group_past_the_key_limit_is_an_error" => {
             a_model_group_past_the_key_limit_is_an_error();
         }
+        "a_cached_value_the_callback_did_not_write_is_an_error" => {
+            a_cached_value_the_callback_did_not_write_is_an_error();
+        }
         "a_negative_clock_is_an_error" => a_negative_clock_is_an_error(),
         other => panic!("unknown boundary case {other}"),
     }
@@ -74,7 +79,10 @@ fn a_full_window_keeps_every_sample() {
     );
     assert_eq!(
         latency(&observations),
-        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0]
+        vec![
+            1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64, 5.0_f64, 6.0_f64, 7.0_f64, 8.0_f64, 9.0_f64,
+            10.0_f64
+        ]
     );
 }
 
@@ -89,7 +97,10 @@ fn the_sample_after_a_full_window_drops_the_oldest() {
     );
     assert_eq!(
         latency(&observations),
-        vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0]
+        vec![
+            2.0_f64, 3.0_f64, 4.0_f64, 5.0_f64, 6.0_f64, 7.0_f64, 8.0_f64, 9.0_f64, 10.0_f64,
+            11.0_f64
+        ]
     );
 }
 
@@ -120,22 +131,22 @@ fn the_ttft_window_drops_its_oldest_at_the_limit() {
         plan.completion_start_millis = Some(first_token);
         record_success(&observations, &plan);
     }
-    assert_eq!(ttft(&observations), vec![2.0, 3.0]);
-    assert_eq!(latency(&observations), vec![4.0, 4.0]);
+    assert_eq!(ttft(&observations), vec![2.0_f64, 3.0_f64]);
+    assert_eq!(latency(&observations), vec![4.0_f64, 4.0_f64]);
 }
 
 fn a_sample_at_the_exact_expiry_keeps_the_running_window() {
     let clock = TestClock::at(0);
-    let observations = service(ttl_settings(60.0), &clock);
+    let observations = service(ttl_settings(60.0_f64), &clock);
     record_success(&observations, &Success::default());
     clock.set(60_000);
     record_success(&observations, &Success::default());
-    assert_eq!(latency(&observations), vec![1.0, 1.0]);
+    assert_eq!(latency(&observations), vec![1.0_f64, 1.0_f64]);
 }
 
 fn a_sample_one_millisecond_past_the_expiry_starts_over() {
     let clock = TestClock::at(0);
-    let observations = service(ttl_settings(60.0), &clock);
+    let observations = service(ttl_settings(60.0_f64), &clock);
     let mut first = Success::default();
     first.usage = usage(1, 4);
     record_success(&observations, &first);
@@ -144,7 +155,7 @@ fn a_sample_one_millisecond_past_the_expiry_starts_over() {
     second.elapsed_millis = 2_000;
     second.usage = usage(1, 9);
     record_success(&observations, &second);
-    assert_eq!(latency(&observations), vec![2.0]);
+    assert_eq!(latency(&observations), vec![2.0_f64]);
     assert_eq!(
         minutes(&observations),
         vec![(
@@ -156,23 +167,23 @@ fn a_sample_one_millisecond_past_the_expiry_starts_over() {
 
 fn a_sample_just_before_the_expiry_keeps_the_running_deadline() {
     let clock = TestClock::at(0);
-    let observations = service(ttl_settings(60.0), &clock);
+    let observations = service(ttl_settings(60.0_f64), &clock);
     record_success(&observations, &Success::default());
     clock.set(59_999);
     record_success(&observations, &Success::default());
     clock.set(60_000);
-    assert_eq!(latency(&observations), vec![1.0, 1.0]);
+    assert_eq!(latency(&observations), vec![1.0_f64, 1.0_f64]);
     clock.set(60_001);
     assert!(latency(&observations).is_empty());
 }
 
 fn a_failure_just_past_the_expiry_starts_a_new_entry() {
     let clock = TestClock::at(0);
-    let observations = service(ttl_settings(60.0), &clock);
+    let observations = service(ttl_settings(60.0_f64), &clock);
     record_success(&observations, &Success::default());
     clock.set(60_001);
     record_failure(&observations, &Failure::default());
-    assert_eq!(latency(&observations), vec![1000.0]);
+    assert_eq!(latency(&observations), vec![1000.0_f64]);
 }
 
 fn the_penalty_window_is_bounded() {
@@ -183,37 +194,40 @@ fn the_penalty_window_is_bounded() {
     record_failure(&observations, &Failure::default());
     record_failure(&observations, &Failure::default());
     record_failure(&observations, &Failure::default());
-    assert_eq!(latency(&observations), vec![1000.0, 1000.0]);
+    assert_eq!(latency(&observations), vec![1000.0_f64, 1000.0_f64]);
 }
 
 fn a_percentile_at_the_exact_rank_takes_that_sample() {
-    let samples = [1.0, 2.0, 3.0, 4.0];
-    assert_eq!(percentile(&samples, 0.25), Some(1.0));
-    assert_eq!(percentile(&samples, 0.5), Some(2.0));
-    assert_eq!(percentile(&samples, 0.250_000_1), Some(2.0));
+    let samples = [1.0_f64, 2.0_f64, 3.0_f64, 4.0_f64];
+    assert_eq!(percentile(&samples, 0.25_f64), Some(1.0_f64));
+    assert_eq!(percentile(&samples, 0.5_f64), Some(2.0_f64));
+    assert_eq!(percentile(&samples, 0.250_000_1_f64), Some(2.0_f64));
 }
 
 fn a_percentile_at_one_takes_the_largest_sample() {
-    let samples = [3.0, 1.0, 2.0];
-    assert_eq!(percentile(&samples, 0.5), Some(2.0));
-    assert_eq!(percentile(&samples, 0.75), Some(3.0));
-    assert_eq!(percentile(&samples, 1.0), Some(3.0));
+    let samples = [3.0_f64, 1.0_f64, 2.0_f64];
+    assert_eq!(percentile(&samples, 0.5_f64), Some(2.0_f64));
+    assert_eq!(percentile(&samples, 0.75_f64), Some(3.0_f64));
+    assert_eq!(percentile(&samples, 1.0_f64), Some(3.0_f64));
 }
 
 fn an_empty_window_has_no_score() {
-    assert_eq!(average(&[]), 0.0);
-    assert_eq!(percentile(&[], 0.5), None);
+    assert_eq!(average(&[]).to_bits(), 0.0_f64.to_bits());
+    assert_eq!(percentile(&[], 0.5_f64), None);
 }
 
 fn the_average_divides_the_sum_by_the_sample_count() {
-    assert_eq!(average(&[1.0, 2.0, 3.0]), 2.0);
-    assert_eq!(average(&[0.5]), 0.5);
+    assert_eq!(
+        average(&[1.0_f64, 2.0_f64, 3.0_f64]).to_bits(),
+        2.0_f64.to_bits()
+    );
+    assert_eq!(average(&[0.5_f64]).to_bits(), 0.5_f64.to_bits());
 }
 
 fn a_non_positive_completion_count_has_no_normalized_time() {
-    assert_eq!(normalized(2.0, 4), Some(0.5));
-    assert_eq!(normalized(2.0, 0), None);
-    assert_eq!(normalized(2.0, -3), None);
+    assert_eq!(normalized(2.0_f64, 4), Some(0.5_f64));
+    assert_eq!(normalized(2.0_f64, 0), None);
+    assert_eq!(normalized(2.0_f64, -3), None);
 }
 
 fn a_minute_total_past_the_integer_limit_is_an_error() {
@@ -253,6 +267,21 @@ fn a_model_group_past_the_key_limit_is_an_error() {
         .record_success(&plan.event())
         .expect_err("the sample key is too long");
     assert!(matches!(error, LatencyError::Key { .. }));
+}
+
+fn a_cached_value_the_callback_did_not_write_is_an_error() {
+    let clock = TestClock::at(0);
+    let observations = service(Settings::default(), &clock);
+    observations
+        .cache
+        .lock()
+        .expect("the test cache lock")
+        .set("gpt_map", CacheValue::Null, None)
+        .expect("the test cache stores");
+    let error = observations
+        .samples(GROUP)
+        .expect_err("the stored value is not sample text");
+    assert!(matches!(error, LatencyError::UnexpectedValue));
 }
 
 fn a_negative_clock_is_an_error() {

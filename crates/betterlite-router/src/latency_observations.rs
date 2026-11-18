@@ -10,7 +10,6 @@ use std::time::Duration;
 
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
 use chrono::{DateTime, Utc};
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use crate::cooldown_decisions::failure::FailureClass;
@@ -23,7 +22,7 @@ use self::samples::ModelGroupSamples;
 use self::settings::Settings;
 
 const BATCH_RETRIEVE_CALL_TYPES: [&str; 2] = ["aretrieve_batch", "retrieve_batch"];
-const PENALTY_SECONDS: f64 = 1000.0;
+const PENALTY_SECONDS: f64 = 1000.0_f64;
 const ITEM_KIB: i64 = 1024;
 const MINUTE_FORMAT: &str = "%Y-%m-%d-%H-%M";
 
@@ -72,9 +71,15 @@ impl LatencyObservations {
         else {
             return Ok(());
         };
-        let elapsed = elapsed_seconds(event.start_time, event.end_time)?;
+        let elapsed = event
+            .end_time
+            .checked_sub(event.start_time)
+            .ok_or(LatencyError::Time)?
+            .to_f64()
+            .ok_or(LatencyError::Time)?;
         let sample = SuccessSample {
-            key: latency_key(model_group)?,
+            key: RouteKey::parse(&format!("{model_group}_map"))
+                .map_err(|source| LatencyError::Key { source })?,
             deployment_id,
             minute: minute_key((self.clock)())?,
             value: event.usage.map_or(elapsed, |usage| {
@@ -129,7 +134,8 @@ impl LatencyObservations {
         else {
             return Ok(());
         };
-        let key = latency_key(model_group)?;
+        let key = RouteKey::parse(&format!("{model_group}_map"))
+            .map_err(|source| LatencyError::Key { source })?;
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         let mut samples = read(&mut cache, &key)?;
         let deployment = samples
@@ -142,15 +148,11 @@ impl LatencyObservations {
 
     // the reader B315's selection takes its windows and minute counters from
     pub fn samples(&self, model_group: &str) -> Result<ModelGroupSamples, LatencyError> {
-        let key = latency_key(model_group)?;
+        let key = RouteKey::parse(&format!("{model_group}_map"))
+            .map_err(|source| LatencyError::Key { source })?;
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         read(&mut cache, &key)
     }
-}
-
-fn latency_key(model_group: &str) -> Result<RouteKey, LatencyError> {
-    let raw = format!("{model_group}_map");
-    RouteKey::parse(&raw).map_err(|source| LatencyError::Key { source })
 }
 
 // _ttft_seconds: LiteLLM reads the logged first-token time only for a streaming request
@@ -164,13 +166,12 @@ fn first_token_seconds(
     let Some(start) = event.completion_start_time else {
         return Ok(Some(elapsed));
     };
-    Ok(Some(elapsed_seconds(event.start_time, start)?))
-}
-
-// the timedelta LiteLLM subtracts, kept exact in Decimal until its total seconds are read
-fn elapsed_seconds(start: Decimal, end: Decimal) -> Result<f64, LatencyError> {
-    let elapsed = end.checked_sub(start).ok_or(LatencyError::Time)?;
-    elapsed.to_f64().ok_or(LatencyError::Time)
+    let first_token = start
+        .checked_sub(event.start_time)
+        .ok_or(LatencyError::Time)?
+        .to_f64()
+        .ok_or(LatencyError::Time)?;
+    Ok(Some(first_token))
 }
 
 fn minute_key(seconds: f64) -> Result<String, LatencyError> {
@@ -196,19 +197,23 @@ fn read(cache: &mut LocalTtlCache, key: &RouteKey) -> Result<ModelGroupSamples, 
     let Some(value) = cache.get(key.as_ref())? else {
         return Ok(ModelGroupSamples::default());
     };
-    let bytes = serde_json::to_vec(&value).map_err(|source| LatencyError::Decoding { source })?;
-    serde_json::from_slice(&bytes).map_err(|source| LatencyError::Decoding { source })
+    let CacheValue::Text(text) = value else {
+        return Err(LatencyError::UnexpectedValue);
+    };
+    serde_json::from_str(&text).map_err(|source| LatencyError::Decoding { source })
 }
 
+// LocalTtlCache reads valid JSON text back as a value, so the sample text travels as a JSON string
 fn write(
     cache: &mut LocalTtlCache,
     key: &RouteKey,
     samples: &ModelGroupSamples,
     ttl_seconds: f64,
 ) -> Result<(), LatencyError> {
-    let bytes = serde_json::to_vec(samples).map_err(|source| LatencyError::Encoding { source })?;
-    let value: CacheValue =
-        serde_json::from_slice(&bytes).map_err(|source| LatencyError::Encoding { source })?;
-    cache.set(key.as_ref(), value, Some(ttl_seconds))?;
+    let text =
+        serde_json::to_string(samples).map_err(|source| LatencyError::Encoding { source })?;
+    let stored =
+        serde_json::to_string(&text).map_err(|source| LatencyError::Encoding { source })?;
+    cache.set(key.as_ref(), CacheValue::Text(stored), Some(ttl_seconds))?;
     Ok(())
 }
