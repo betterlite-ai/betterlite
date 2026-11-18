@@ -196,6 +196,11 @@ async fn explicit_deadline_over_default() {
         .await
         .expect("the explicit budget outlives the default");
     assert_eq!(output, 7);
+    let fallback = request("work", None, 0.02, &tracker);
+    let default_expiry = bounded_db_lookup(pending_lookup(), fallback, &tasks)
+        .await
+        .expect_err("the configured default bounds the lookup");
+    assert_deadline(&default_expiry, "work", 0.02);
     drain(&tasks).await;
 }
 
