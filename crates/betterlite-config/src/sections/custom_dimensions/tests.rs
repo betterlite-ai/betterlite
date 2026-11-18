@@ -44,6 +44,10 @@ fn dimension(name: &str, keywords: &[&str], patterns: &[&str], scoring_mode: &st
     }
 }
 
+fn named(name: &str) -> Config {
+    dimension(name, &["alpha"], &[], "binary")
+}
+
 fn valid(config: &Config) -> Result<(), ()> {
     validate_dimension(config)
         .map(|_checked| ())
