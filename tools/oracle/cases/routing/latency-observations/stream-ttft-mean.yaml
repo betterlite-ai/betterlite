@@ -2,7 +2,7 @@ kind: probe
 name: latency-observations-stream-ttft-mean
 probes:
   - clock: {unix_millis: 0, monotonic_millis: 0}
-    samples: []
+    samples: [0, 0]
     operation:
       latency_observations:
         settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: null}

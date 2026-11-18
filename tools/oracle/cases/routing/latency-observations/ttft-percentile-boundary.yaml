@@ -2,7 +2,7 @@ kind: probe
 name: latency-observations-ttft-percentile-boundary
 probes:
   - clock: {unix_millis: 0, monotonic_millis: 0}
-    samples: []
+    samples: [0]
     operation:
       latency_observations:
         settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 0.5}
@@ -14,7 +14,7 @@ probes:
           - {kind: view, now_millis: 0, model_group: gpt}
           - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
   - clock: {unix_millis: 0, monotonic_millis: 0}
-    samples: []
+    samples: [0]
     operation:
       latency_observations:
         settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 0.25}
@@ -25,7 +25,7 @@ probes:
           - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 1000}
           - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
   - clock: {unix_millis: 0, monotonic_millis: 0}
-    samples: []
+    samples: [0]
     operation:
       latency_observations:
         settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 0.2500001}
@@ -36,7 +36,7 @@ probes:
           - {kind: success, now_millis: 0, model_group: gpt, deployment_id: dep-a, stream: true, elapsed_millis: 4000, first_token_millis: 1000}
           - {kind: score, now_millis: 0, model_group: gpt, deployment_id: dep-a, sample: ttft, statistic: percentile}
   - clock: {unix_millis: 0, monotonic_millis: 0}
-    samples: []
+    samples: [0]
     operation:
       latency_observations:
         settings: {ttl: 3600.0, lowest_latency_buffer: 0.0, max_latency_list_size: 10, ttft_percentile: 1.0}
