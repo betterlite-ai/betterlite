@@ -1,0 +1,12 @@
+model_list:
+  - model_name: quality-router
+    litellm_params:
+      model: auto_router/quality_router
+      quality_router_config:
+        available_models: [quality-fast]
+  - model_name: quality-fast
+    litellm_params:
+      model: openai/gpt-4o-mini
+    model_info:
+      litellm_routing_preferences:
+        quality_tier: "1"

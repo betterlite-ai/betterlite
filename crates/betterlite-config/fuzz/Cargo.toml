@@ -53,6 +53,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "spend_queue_setting"
+path = "fuzz_targets/spend_queue_setting.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "spend_proxy_selection"
 path = "fuzz_targets/spend_proxy_selection.rs"
 test = false

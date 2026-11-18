@@ -1,0 +1,30 @@
+task: B665
+deviations:
+  - what: Malformed provider JSON warning previews and client receive and send failure traces omit raw content and credentials and carry no Python traceback; skip, close and error behavior stay the same.
+    why: Repository redaction rules prohibit exposing realtime payloads or secrets through diagnostics, so both the 200-character preview and the forwarding-ended lines pass through the B187 redactor; tracing records the message without a Python traceback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1294-L1309
+  - what: A provider `event` value that is a JSON array or a string passes through LiteLLM's branch tests untouched, which treat the membership checks as empty and return the state with no events; betterlite decodes every `event` value as an object and answers EventNotAnObject.
+    why: docs/compatibility.md makes a value of the wrong type an error that names the field, and the dispatcher's declared shape for `event` is an object of known keys.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1326
+  - what: A committed failure scope value that is not a non-empty string counts as absent, where LiteLLM appends any truthy value's str() to the replay error; `_json_dict` answers None for a non-object where LiteLLM returns an empty mapping, and the client preface is an owned empty map rather than an immutable one.
+    why: docs/compatibility.md rules out porting Python truthiness and str() text, the failure key is written only as the redacted string, and no caller can observe the empty mapping's ownership or sharing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L180-L187
+  - what: A provider message that is not a JSON object, an `event` value that is a number or null, an event payload of the wrong type, or invalid UTF-8 comes back as a typed EventError that names the shape; LiteLLM lets AttributeError, TypeError, UnicodeDecodeError or pydantic ValidationError escape from the same inputs.
+    why: docs/compatibility.md makes a wrong-typed value an error that names what failed instead of a Python runtime exception, and Rust has no exception classes to carry the distinction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1323
+  - what: A client session.update whose session.modalities is not a list of strings fails with AckError::Modalities, where LiteLLM raises pydantic ValidationError from its list[str] | None adapter.
+    why: The same compatibility rule as above; the validated value is the client's field, so the error names it instead of carrying a Python exception class.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L222-L224
+  - what: raise_provider_failure returns the mapped error for the bridge to raise, where LiteLLM raises it inside the function; the provider exception stays attached as the error's source.
+    why: Rust reports failure through return values, and the bridge that owns the stream is the only place that can raise it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L193-L198
+  - what: A provider message or client preface above 1 MiB is refused before parsing, where LiteLLM parses any frame whatever its size; a provider message answers EventError::ExceedsLimit, a client preface reads as the empty mapping, and a response delta accumulator above 4096 chunks or 4 MiB of delta text answers EventError::ExceedsLimit before it is cloned or grown.
+    why: The bounded-inputs rule caps what untrusted input can size, and the accumulator is deep-cloned on every dispatch, so an unbounded one lets small textOutput frames spend memory and time without limit; the preface decoder is infallible, so it drops the message the way it drops JSON that is not an object, and both accumulator caps sit far past a long realtime response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1344-L1354
+kept_bugs:
+  - what: A session.update whose session.modalities fails validation leaves the scope committed to the stream, so a second attempt on the same websocket is refused as already committed.
+    why: LiteLLM commits the scope before it validates or sends the ack, and the bridge's retry path is written against that ordering.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L217-L224
+  - what: A failing close of the SDK client is swallowed with no log line, where a successful close logs one.
+    why: LiteLLM wraps close in contextlib.suppress(Exception), and a working bridge relies on a close failure never reaching the client loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L152-L157

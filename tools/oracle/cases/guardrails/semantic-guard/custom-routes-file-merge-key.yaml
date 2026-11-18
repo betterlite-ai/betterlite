@@ -1,0 +1,12 @@
+kind: helper
+name: custom-routes-file-merge-key
+call:
+  b3808:
+    function: build_routes
+    custom_routes_file: |-
+      - <<: {description: merged description, similarity_threshold: 0.8}
+        route_name: NuLL
+        utterances: [merged utterance]
+    global_threshold: 0.5
+env: {}
+compare: {ignore: []}

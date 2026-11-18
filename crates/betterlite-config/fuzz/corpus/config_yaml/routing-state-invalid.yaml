@@ -1,0 +1,2 @@
+environment_variables:
+  DEFAULT_REDIS_SYNC_INTERVAL: ["7"]

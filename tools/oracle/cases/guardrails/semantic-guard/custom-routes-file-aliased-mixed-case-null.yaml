@@ -1,0 +1,12 @@
+kind: helper
+name: custom-routes-file-aliased-mixed-case-null
+call:
+  b3808:
+    function: build_routes
+    custom_routes_file: |-
+      metadata: {note: &n NuLL}
+      route_name: *n
+      utterances: [*n]
+    global_threshold: 0.5
+env: {}
+compare: {ignore: []}
