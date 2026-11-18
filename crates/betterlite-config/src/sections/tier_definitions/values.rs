@@ -1,12 +1,12 @@
 use std::collections::BTreeMap;
 
-use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 use crate::sections::tier_definitions::{
-    RawFlag, TierDefinition, TierEntry, TierModelEntry, TierPool,
+    RawFlag, TierDefinition, TierEntry, TierModelEntry, TierParam, TierParams, TierPool,
 };
 
 pub(super) fn flag(
@@ -65,7 +65,6 @@ pub(super) fn definitions(
     Ok(Some(resolved))
 }
 
-// a tier-keyed map whose null entries are dropped and whose present values resolve once
 pub(super) fn resolve_map<T>(
     entries: BTreeMap<String, Option<T>>,
     prefix: &str,
@@ -103,8 +102,9 @@ pub(super) fn pools(
         let pool = match pool {
             TierPool::Single(TierEntry::Model(model)) => reference(model, &path, lookup)?
                 .map(|model| TierPool::Single(TierEntry::Model(model))),
-            TierPool::Single(TierEntry::Detailed(entry)) => detailed(entry, &path, lookup)?
-                .map(|entry| TierPool::Single(TierEntry::Detailed(entry))),
+            TierPool::Single(TierEntry::Detailed(entry)) => Some(TierPool::Single(
+                TierEntry::Detailed(detailed(entry, &path, lookup)?),
+            )),
             TierPool::Pool(entries) => Some(TierPool::Pool(pool_entries(entries, &path, lookup)?)),
         };
         resolved.extend(pool.map(|pool| (tier, pool)));
@@ -125,8 +125,7 @@ fn pool_entries(
             resolved.push(entry);
             continue;
         };
-        let entry = detailed(entry, &path, lookup)?;
-        resolved.extend(entry.map(TierEntry::Detailed));
+        resolved.push(TierEntry::Detailed(detailed(entry, &path, lookup)?));
     }
     Ok(resolved)
 }
@@ -135,55 +134,77 @@ fn detailed(
     entry: TierModelEntry,
     path: &str,
     lookup: &dyn EnvironmentLookup,
-) -> Result<Option<TierEntry>, ConfigError> {
-    let Some(model_name) = reference(entry.model_name, &format!("{path}.model_name"), lookup)?
-    else {
-        return Ok(None);
-    };
-    let values = entry.litellm_params.unwrap_or_default();
-    let resolved = resolve_json(
-        Json::Object(values),
+) -> Result<TierModelEntry, ConfigError> {
+    let model_name = required_model_name(entry.model_name, &format!("{path}.model_name"), lookup)?;
+    let litellm_params = resolve_params(
+        entry.litellm_params,
         &format!("{path}.litellm_params"),
         lookup,
     )?;
-    let Some(Json::Object(values)) = resolved else {
-        return Ok(None);
-    };
-    Ok(Some(TierEntry::Detailed(TierModelEntry {
+    Ok(TierModelEntry {
         model_name,
-        litellm_params: Some(values),
-    })))
+        litellm_params,
+    })
 }
 
-// a JSON value resolves its strings, recursing into mapping values and into the mapping items of lists
-fn resolve_json(
-    value: Json,
+fn required_model_name(
+    text: String,
     path: &str,
     lookup: &dyn EnvironmentLookup,
-) -> Result<Option<Json>, ConfigError> {
-    let resolved = match value {
-        Json::Text(text) => return Ok(reference(text, path, lookup)?.map(Json::Text)),
-        Json::Object(inner) => {
+) -> Result<String, ConfigError> {
+    let Some(name) = text.strip_prefix("os.environ/").map(str::to_owned) else {
+        return Ok(text);
+    };
+    let Some(value) = lookup.lookup(&name).filter(|value| !value.is_empty()) else {
+        return Err(ConfigError::MissingEnvironment {
+            variable: name,
+            path: path.to_owned(),
+        });
+    };
+    Ok(value)
+}
+
+fn resolve_params(
+    params: TierParams,
+    path: &str,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<TierParams, ConfigError> {
+    let mut entries = IndexMap::with_capacity(params.len());
+    for (key, value) in params.0 {
+        let path = format!("{path}.{key}");
+        entries.extend(resolve_param(value, &path, lookup)?.map(|item| (key, item)));
+    }
+    Ok(TierParams(entries))
+}
+
+fn resolve_param(
+    value: TierParam,
+    path: &str,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<Option<TierParam>, ConfigError> {
+    match value {
+        TierParam::Text(text) => Ok(reference(text.expose_secret().to_owned(), path, lookup)?
+            .map(|text| TierParam::Text(SecretString::from(text)))),
+        TierParam::Object(inner) => {
             let mut entries = IndexMap::with_capacity(inner.len());
             for (key, item) in inner {
-                let item = resolve_json(item, &format!("{path}.{key}"), lookup)?;
-                entries.extend(item.map(|item| (key, item)));
+                let path = format!("{path}.{key}");
+                entries.extend(resolve_param(item, &path, lookup)?.map(|item| (key, item)));
             }
-            Json::Object(entries)
+            Ok(Some(TierParam::Object(entries)))
         }
-        Json::List(items) => {
+        TierParam::List(items) => {
             let mut entries = Vec::with_capacity(items.len());
             for (position, item) in items.into_iter().enumerate() {
-                let target = format!("{path}.{position}");
-                let Json::Object(inner) = item else {
+                let TierParam::Object(inner) = item else {
                     entries.push(item);
                     continue;
                 };
-                entries.extend(resolve_json(Json::Object(inner), &target, lookup)?);
+                let target = format!("{path}.{position}");
+                entries.extend(resolve_param(TierParam::Object(inner), &target, lookup)?);
             }
-            Json::List(entries)
+            Ok(Some(TierParam::List(entries)))
         }
-        other => other,
-    };
-    Ok(Some(resolved))
+        other => Ok(Some(other)),
+    }
 }

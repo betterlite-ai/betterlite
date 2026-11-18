@@ -50,12 +50,10 @@ fn object(pairs: &[(&str, Json)]) -> Json {
 fn entry(model_name: &str, params: &[(&str, Json)]) -> TierEntry {
     TierEntry::Detailed(TierModelEntry {
         model_name: model_name.to_owned(),
-        litellm_params: Some(
-            params
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), value.clone()))
-                .collect(),
-        ),
+        litellm_params: params
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), value.clone()))
+            .collect(),
     })
 }
 
@@ -294,7 +292,6 @@ fn an_empty_variable_counts_as_unset() {
           SIMPLE: os.environ/EMPTY
         tier_models:
           ECO:
-            - model_name: os.environ/EMPTY
             - os.environ/EMPTY
             - kept
 ";
@@ -306,6 +303,17 @@ fn an_empty_variable_counts_as_unset() {
         &config.tier_models.unwrap()["ECO"],
         &TierPool::Pool(vec![model("os.environ/EMPTY"), model("kept")])
     );
+}
+
+#[test]
+fn an_empty_variable_model_name_fails_the_load() {
+    let keys = "        tier_models:
+          ECO:
+            model_name: os.environ/EMPTY
+";
+    let error = only(keys, &[("EMPTY", "")]).unwrap_err();
+    assert!(error.contains("EMPTY"), "{error}");
+    assert!(error.contains("model_name"), "{error}");
 }
 
 #[test]
@@ -422,4 +430,65 @@ fn a_number_parameter_survives_as_a_number() {
         &config.tier_models.unwrap()["SIMPLE"],
         &TierPool::Single(expected)
     );
+}
+
+#[test]
+fn absent_null_and_empty_parameters_are_one_empty_map() {
+    let absent = only(
+        "        tier_models:\n          SIMPLE:\n            model_name: small\n",
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    let empty = only(
+        "        tier_models:\n          SIMPLE:\n            model_name: small\n            litellm_params: {}\n",
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    let null = only(
+        "        tier_models:\n          SIMPLE:\n            model_name: small\n            litellm_params: null\n",
+        &[],
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(absent, empty);
+    assert_eq!(empty, null);
+    assert_eq!(
+        absent.tier_models.unwrap()["SIMPLE"],
+        TierPool::Single(entry("small", &[]))
+    );
+}
+
+#[test]
+fn parameter_text_equality_compares_every_byte() {
+    let first = entry("small", &[("api_key", text("sk-ab"))]);
+    let same = entry("small", &[("api_key", text("sk-ab"))]);
+    let swapped = entry("small", &[("api_key", text("sk-ba"))]);
+    let longer = entry("small", &[("api_key", text("sk-ab-longer"))]);
+    assert_eq!(first, same);
+    assert_ne!(first, swapped);
+    assert_ne!(first, longer);
+}
+
+#[test]
+fn parameter_values_serialize_in_the_shape_the_file_spells() {
+    let keys = "        tier_models:
+          SIMPLE:
+            model_name: small
+            litellm_params:
+              api_key: sk-secret
+              max_tokens: 512
+              thinking: {type: enabled}
+              stop: [END, STOP]
+";
+    let config = only(keys, &[]).unwrap().unwrap();
+    let rendered = serde_json::to_string(&config).unwrap();
+    assert!(rendered.contains(r#""api_key":"sk-secret""#), "{rendered}");
+    assert!(rendered.contains(r#""max_tokens":512"#), "{rendered}");
+    assert!(
+        rendered.contains(r#""thinking":{"type":"enabled"}"#),
+        "{rendered}"
+    );
+    assert!(rendered.contains(r#""stop":["END","STOP"]"#), "{rendered}");
 }
