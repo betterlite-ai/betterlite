@@ -2,7 +2,10 @@ use std::error::Error;
 
 use async_trait::async_trait;
 
+use super::build_routes;
+use super::error::RouteLoadError;
 use super::route::Route;
+use super::sources::RouteSources;
 
 #[async_trait]
 pub trait SemanticRouterBuilder: Send + Sync {
@@ -40,4 +43,29 @@ where
         .build(routes, global_threshold)
         .await
         .map_err(|source| RouterBuildError { source })
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum RouterSetupError<E>
+where
+    E: Error + Send + Sync + 'static,
+{
+    #[error(transparent)]
+    Load(#[from] RouteLoadError),
+    #[error(transparent)]
+    Build(#[from] RouterBuildError<E>),
+}
+
+// one entry point for the caller, which loads the routes first so a load failure never reaches the builder
+pub async fn load_and_build_router<B>(
+    builder: &B,
+    sources: &RouteSources,
+) -> Result<B::Router, RouterSetupError<B::Error>>
+where
+    B: SemanticRouterBuilder,
+{
+    let routes = build_routes(sources)?;
+    build_router(builder, routes, sources.global_threshold)
+        .await
+        .map_err(RouterSetupError::Build)
 }

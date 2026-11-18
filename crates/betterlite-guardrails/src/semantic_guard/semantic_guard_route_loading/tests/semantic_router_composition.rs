@@ -1,5 +1,7 @@
 use crate::semantic_guard::semantic_guard_route_loading::build_routes;
-use crate::semantic_guard::semantic_guard_route_loading::builder::build_router;
+use crate::semantic_guard::semantic_guard_route_loading::builder::{
+    RouterSetupError, build_router, load_and_build_router,
+};
 use crate::semantic_guard::semantic_guard_route_loading::error::RouteLoadError;
 
 use super::support::{FakeBuilder, array, block_on, object, routes_file, sources, text};
@@ -91,9 +93,35 @@ fn a_build_failure_is_reported() {
 fn a_load_failure_never_reaches_the_builder() {
     let sources = sources(&["not_a_template"], None, vec![], 0.5);
     let builder = FakeBuilder::passing();
+    let error = block_on(load_and_build_router(&builder, &sources)).unwrap_err();
     assert!(matches!(
-        build_routes(&sources),
-        Err(RouteLoadError::UnknownTemplate { .. })
+        error,
+        RouterSetupError::Load(RouteLoadError::UnknownTemplate { .. })
     ));
     assert!(builder.calls.lock().unwrap().is_empty());
+}
+
+#[test]
+fn the_composed_caller_builds_once_from_the_loaded_routes() {
+    let (_folder, path) = routes_file("- route_name: file_route\n  utterances: [\"file text\"]\n");
+    let sources = sources(&[], Some(&path), vec![], 0.62);
+    let builder = FakeBuilder::passing();
+    let names = block_on(load_and_build_router(&builder, &sources)).unwrap();
+    assert_eq!(names, vec!["file_route".to_owned()]);
+    let calls = builder.calls.lock().unwrap();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].routes[0].utterances, vec!["file text".to_owned()]);
+    assert_eq!(calls[0].threshold.to_bits(), 0.62_f64.to_bits());
+}
+
+#[test]
+fn a_build_failure_from_the_composed_caller_is_reported() {
+    let sources = sources(&[], None, vec![], 0.5);
+    let builder = FakeBuilder::failing();
+    let error = block_on(load_and_build_router(&builder, &sources)).unwrap_err();
+    assert!(matches!(&error, RouterSetupError::Build(_)));
+    assert_eq!(
+        error.to_string(),
+        "the semantic router could not be built: the fake semantic router build failed"
+    );
 }
