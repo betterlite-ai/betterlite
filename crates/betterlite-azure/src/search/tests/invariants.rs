@@ -8,6 +8,7 @@ use betterlite_config::sections::azure_search::{
 use betterlite_openai::openai_base_config::Headers;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::azure_default_chain::environment::ChainEnvironment;
 use crate::azure_default_chain::error::DefaultChainError;
 use crate::azure_default_chain::grant::{
     CertificateRecord, ChainToken, ClientSecretRecord, Grant, GrantError, Grants, LinkError,
@@ -16,8 +17,10 @@ use crate::azure_default_chain::grant::{
 use crate::azure_default_chain::provider::{AzureTokenProvider, ProviderInner};
 use crate::search::environment::{ProbeEnvironment, SettingsEnvironment};
 use crate::search::error::AzureSearchError;
-use crate::search::minter::{EntraTokenMinter, MintError, NativeMinter};
-use crate::search::{AzureSearchConfig, ENTRA_SCOPE};
+use crate::search::minter::{
+    EntraTokenMinter, MintError, NativeMinter, default_entra_token_minter,
+};
+use crate::search::{AzureSearchConfig, ENTRA_SCOPE, UI_FRIENDLY_NAME};
 
 use super::support::{PanicMinter, minter, model_settings, token_settings};
 
@@ -254,6 +257,41 @@ fn azure_search_native_minter_mints() {
     ));
 }
 
+#[test]
+fn azure_search_default_minter_uses_the_entra_scope() {
+    let environment = ChainEnvironment {
+        scope: None,
+        credential: Some(AzureCredentialType::ManagedIdentityCredential),
+        client_id: Some(String::from("fixture-client-id")),
+        tenant_id: None,
+        client_secret: None,
+        username: None,
+        password: None,
+        federated_token_file: None,
+        certificate_path: None,
+        certificate_password: None,
+        client_certificate_path: None,
+        client_certificate_password: None,
+        client_send_certificate_chain: false,
+        token_credentials: String::new(),
+        authority_host: None,
+    };
+    let grants = StubGrants {
+        outcome: Ok("fixture-native-token"),
+    };
+    let minter = default_entra_token_minter(&environment, &grants).unwrap();
+    assert_eq!(minter.provider.scope, ENTRA_SCOPE);
+    assert_eq!(
+        minter.mint().unwrap().expose_secret(),
+        "fixture-native-token"
+    );
+}
+
+#[test]
+fn azure_search_ui_friendly_name() {
+    assert_eq!(UI_FRIENDLY_NAME, "Grounding with Bing Search");
+}
+
 fn native_minter(outcome: Result<&'static str, &'static str>) -> NativeMinter<'static, StubGrants> {
     NativeMinter {
         provider: AzureTokenProvider {
@@ -265,7 +303,9 @@ fn native_minter(outcome: Result<&'static str, &'static str>) -> NativeMinter<'s
     }
 }
 
-struct StubGrants;
+struct StubGrants {
+    outcome: Result<&'static str, &'static str>,
+}
 
 struct StubGrant {
     outcome: Result<&'static str, &'static str>,
@@ -295,41 +335,44 @@ impl Grants for StubGrants {
         &'grants self,
         _record: &ClientSecretRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Err(unavailable_grant())
+        Ok(StubGrant {
+            outcome: self.outcome,
+        })
     }
 
     fn certificate<'grants>(
         &'grants self,
         _record: &CertificateRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Err(unavailable_grant())
+        Ok(StubGrant {
+            outcome: self.outcome,
+        })
     }
 
     fn username_password<'grants>(
         &'grants self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Err(unavailable_grant())
+        Ok(StubGrant {
+            outcome: self.outcome,
+        })
     }
 
     fn workload<'grants>(
         &'grants self,
         _record: &WorkloadRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Err(unavailable_grant())
+        Ok(StubGrant {
+            outcome: self.outcome,
+        })
     }
 
     fn managed_identity<'grants>(
         &'grants self,
         _record: &ManagedIdentityRecord,
     ) -> Result<Self::Grant<'grants>, GrantError> {
-        Err(unavailable_grant())
-    }
-}
-
-fn unavailable_grant() -> GrantError {
-    GrantError {
-        credential: "fixture",
-        message: String::from("the fixture provider builds no grant"),
+        Ok(StubGrant {
+            outcome: self.outcome,
+        })
     }
 }
