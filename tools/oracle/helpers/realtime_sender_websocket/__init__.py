@@ -54,7 +54,9 @@ async def session(input_value: Input, upstream: Upstream, socket: ClientConnecti
     capture = Capture()
     provider_document = input_value["provider"]
     provider = (
-        None if provider_document is None else ScriptedProvider(provider_document, timeline, capture)
+        None
+        if provider_document is None
+        else ScriptedProvider(provider_document, timeline, capture)
     )
     backend = WireBackend(socket, WireLog(input_value["backend_failures"], capture), timeline)
     client = ClientSink(

@@ -1,8 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::de::{DeserializeOwned, Error as _};
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::value::RawValue;
+use serde::{Deserialize, Serialize};
 
 use super::RealtimeSender;
 use super::error::RealtimeSenderError;
@@ -36,26 +34,23 @@ enum SessionType {
 }
 
 // A session field is an object of the typed shape, any other JSON value it carries, or absent from the frame
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(untagged)]
 enum Slot<T> {
     Object(T),
-    Other(Json),
+    Other(NonObject),
     Missing,
 }
 
-// Object-shaped fields must parse as their modeled type; duplicate keys cannot become passthrough.
-impl<'de, T: DeserializeOwned> Deserialize<'de> for Slot<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let raw = Box::<RawValue>::deserialize(deserializer)?;
-        match serde_json::from_str(raw.get()) {
-            Ok(value) => Ok(Self::Object(value)),
-            Err(error) if raw.get().starts_with('{') => Err(D::Error::custom(error)),
-            Err(_) => serde_json::from_str(raw.get())
-                .map(Self::Other)
-                .map_err(D::Error::custom),
-        }
-    }
+// No object alternative: a failed typed object (including duplicate fields) cannot become passthrough.
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(untagged)]
+enum NonObject {
+    Null,
+    Bool(bool),
+    Number(serde_json::Number),
+    Text(String),
+    List(Vec<Json>),
 }
 
 impl<T> Slot<T> {

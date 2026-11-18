@@ -110,10 +110,9 @@ class WireBackend:
         self.log.begin("backend")
         match message:
             case str():
-                size = len(message.encode("utf-8"))
+                self.log.capture.reserve([len(message.encode("utf-8"))], "backend")
             case bytes():
-                size = len(message)
-        self.log.capture.reserve([size], "backend")
+                self.log.capture.reserve([len(message)], "backend")
         await self._socket.send(message)
         self.log.delivered += 1
         self._timeline.append("backend")

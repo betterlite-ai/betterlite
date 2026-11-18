@@ -256,20 +256,35 @@ fn enforce_rejects_duplicate_modeled_keys(#[case] message: &str) {
     ));
 }
 
-#[test]
-fn replays_the_realtime_enforcement_corpus() {
-    let root =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/realtime_enforcement");
-    let entries: Vec<_> = std::fs::read_dir(root).unwrap().collect();
-    assert!(!entries.is_empty());
-    for entry in entries {
-        let bytes = std::fs::read(entry.unwrap().path()).unwrap();
-        let message = String::from_utf8_lossy(&bytes);
-        let mut transcription = false;
-        let _result = super::super::enforce::enforce_session_update::<Infallible, Infallible>(
-            &message,
-            "allowed",
-            &mut transcription,
-        );
-    }
+#[rstest]
+fn replays_the_realtime_enforcement_corpus(
+    #[files("fuzz/corpus/realtime_enforcement/*")] path: std::path::PathBuf,
+) {
+    let bytes = std::fs::read(path).unwrap();
+    let message = String::from_utf8_lossy(&bytes);
+    let mut transcription = false;
+    let _result = super::super::enforce::enforce_session_update::<Infallible, Infallible>(
+        &message,
+        "allowed",
+        &mut transcription,
+    );
+}
+
+#[rstest]
+#[case::null("null")]
+#[case::boolean("true")]
+#[case::integer("42")]
+#[case::decimal("1.25")]
+#[case::text(r#""not-an-object""#)]
+#[case::array(r#"[{"model":"forbidden"}]"#)]
+fn enforce_preserves_nonobject_transcription(#[case] value: &str) {
+    let fixture = Fixture::new();
+    let mut state = fixture.state();
+    state.force_transcription_model = Some("allowed".to_owned());
+    let callbacks = no_guardrails();
+    let mut sender = make(&mut state, &fixture, &callbacks);
+    let message = format!(
+        r#"{{"type":"session.update","session":{{"input_audio_transcription":{value},"audio":{{"input":{{"transcription":{value}}}}}}}}}"#
+    );
+    assert_eq!(sender.enforce_session_model(&message).unwrap(), message);
 }
