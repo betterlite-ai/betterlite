@@ -262,3 +262,10 @@ path = "fuzz_targets/key_fields.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sse_frame"
+path = "fuzz_targets/sse_frame.rs"
+test = false
+doc = false
+bench = false
