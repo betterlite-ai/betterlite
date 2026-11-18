@@ -140,7 +140,9 @@ class ScriptedMemory(InMemoryCache):
         self.values: dict[str, float] = {}
 
     def current(self, key: str) -> float | None:
-        return self.values.get(key, self.initial)
+        if key in self.values:
+            return self.values[key]
+        return self.initial
 
     @override
     def get_cache(self, key: str, **kwargs: JsonValue) -> float | None:
@@ -196,10 +198,9 @@ class ScriptedRedis(RedisCache):
 
 
 def build_table(data: Input) -> ScriptedTable:
-    window_input = data["window"]
     window: Row | None = None
-    if window_input is not None:
-        window = Row(float(window_input[1]), datetime.fromisoformat(window_input[0]))
+    if data["window"] is not None:
+        window = Row(float(data["window"][1]), datetime.fromisoformat(data["window"][0]))
     logs = [(datetime.fromisoformat(start), float(spend)) for start, spend in data["logs"]]
     spend = data["row_spend"]
     row = None if spend is None else Row(float(spend))
@@ -226,27 +227,19 @@ async def apply(data: Input, cache: DualCache, client: FakeClient | None) -> flo
             duration = data["duration"]
             if duration is None:
                 raise ValueError("window_from_table needs a duration")
+            expected = datetime.fromisoformat(data["expected_start"])
             value = await SpendCounterReseed.window_from_table(
-                client,
-                data["entity"],
-                data["entity_id"],
-                duration,
-                datetime.fromisoformat(data["expected_start"]),
+                client, data["entity"], data["entity_id"], duration, expected
             )
         case "window_from_db":
+            expected = datetime.fromisoformat(data["expected_start"])
             value = await SpendCounterReseed.window_from_db(
-                client,
-                data["entity"],
-                data["entity_id"],
-                data["duration"],
-                datetime.fromisoformat(data["expected_start"]),
+                client, data["entity"], data["entity_id"], data["duration"], expected
             )
         case "window_from_spend_logs":
+            start = datetime.fromisoformat(data["start"])
             value = await SpendCounterReseed.window_from_spend_logs(
-                client,
-                data["entity"],
-                data["entity_id"],
-                datetime.fromisoformat(data["start"]),
+                client, data["entity"], data["entity_id"], start
             )
     return value
 
@@ -287,9 +280,6 @@ def run(input_value: Input) -> JsonValue:
     cache_input = input_value["cache"]
     memory = ScriptedMemory(cache_input["memory"], fails=cache_input["memory_set_fails"])
     redis = ScriptedRedis(cache_input, input_value["batch"])
-    cache = DualCache(
-        in_memory_cache=memory,
-        redis_cache=redis if cache_input["redis"] else None,
-    )
+    cache = DualCache(in_memory_cache=memory, redis_cache=redis if cache_input["redis"] else None)
     client = FakeClient(build_table(input_value)) if input_value["prisma"] else None
     return asyncio.run(scenario(input_value, cache, client, memory, redis))
