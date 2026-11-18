@@ -53,6 +53,26 @@ call:
                 provider_specific_fields:
                   nullable: null
                   nested: {a: null, b: 1}
+      - kind: stream
+        body:
+          id: chatcmpl-audio
+          object: chat.completion.chunk
+          created: 44
+          model: gpt-4o-audio-preview
+          choices:
+            - index: 0
+              delta:
+                role: assistant
+                content: null
+                audio:
+                  id: audio_1
+                  data: ZGF0YQ==
+                  expires_at: 1700000000
+                  transcript: hi
+                  extra_null: null
+                  extra_obj: {a: null}
+                extra_null: null
+              finish_reason: null
       - kind: full
         body:
           id: chatcmpl-psf-3
@@ -184,6 +204,46 @@ call:
             store: null
             extra_null: null
             nested_extra: {a: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_text_dict
+            created_at: 40
+            status: in_progress
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            text: {format: {type: future_format, nullable: null}, nullable: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_text_schema
+            created_at: 41
+            status: in_progress
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            text:
+              format: {type: json_schema, name: n, schema: {type: object, x: null}, nullable: null}
+              verbosity: null
+              nullable: null
+              obj: {a: null}
+      - kind: event
+        body:
+          type: response.created
+          response:
+            id: resp_text_ok
+            created_at: 42
+            status: in_progress
+            model: gpt-4o
+            object: response
+            output: []
+            parallel_tool_calls: true
+            text: {format: {type: text, extra: null}, verbosity: null, extra_null: null}
       - kind: event
         body:
           type: response.created

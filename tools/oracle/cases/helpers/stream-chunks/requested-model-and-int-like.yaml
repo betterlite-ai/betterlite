@@ -23,6 +23,7 @@ calls:
         - {include_fallback_errors: "true"}
         - {include_fallback_errors: 1}
         - {include_fallback_errors: null}
+        - {include_fallback_errors: false}
   - b8602:
       function: include_errors
       expose: false

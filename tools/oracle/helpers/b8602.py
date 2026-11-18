@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 import litellm
 from litellm.proxy import proxy_server
@@ -17,7 +17,12 @@ from litellm.proxy.proxy_server import (
 )
 from litellm.types.llms import openai as openai_types
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as CarrierBase
-from litellm.types.utils import ModelResponse, ModelResponseStream
+from litellm.types.utils import (
+    ChatCompletionAudioResponse,
+    Delta,
+    ModelResponse,
+    ModelResponseStream,
+)
 from pydantic import JsonValue, TypeAdapter
 
 JsonObject: TypeAlias = dict[str, JsonValue]
@@ -111,6 +116,10 @@ class Input(TypedDict):
     endings: list[str]
 
 
+class StreamChoice(Protocol):
+    delta: Delta
+
+
 ChunkObject: TypeAlias = ModelResponseStream | ModelResponse | ModelCarrier | JsonObject
 
 
@@ -122,15 +131,17 @@ def chunk_object(case: ChunkCase) -> ChunkObject:
     if kind == "event":
         return ModelCarrier.model_validate(body)
     if kind == "stream":
-        return ModelResponseStream(**body)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103
+        chunk = ModelResponseStream(**body)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103
+        for choice in cast(list[StreamChoice], chunk.choices):  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006
+            if choice.delta.audio is not None:
+                choice.delta.audio = ChatCompletionAudioResponse.model_validate(choice.delta.audio)
+        return chunk
     return ModelResponse(**body)  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2181
 
 
 def chunk_model(chunk: ChunkObject) -> JsonValue:
     match chunk:
-        case ModelResponseStream() | ModelResponse():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103
-            return chunk.model
-        case ModelCarrier():
+        case ModelResponseStream() | ModelResponse() | ModelCarrier():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103
             return chunk.model
         case dict():
             return chunk.get("model")
@@ -151,19 +162,17 @@ def restamp_answer(case: RestampCase) -> JsonValue:
 
 
 def client_models_answer(input_value: Input) -> JsonValue:
-    models: list[JsonValue] = [
+    return [
         _get_client_requested_model_for_streaming(request)
         for request in input_value["requests"]
     ]
-    return models
 
 
 def int_like_answer(input_value: Input) -> JsonValue:
-    answers: list[JsonValue] = [
+    return [
         _is_positive_int_like(value)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9359
         for value in input_value["values"]
     ]
-    return answers
 
 
 def include_errors_answer(input_value: Input) -> JsonValue:
@@ -205,10 +214,7 @@ def fallback_events_answer(input_value: Input) -> JsonValue:
 
 
 def restamps_answer(input_value: Input) -> JsonValue:
-    answers: list[JsonValue] = [
-        restamp_answer(case) for case in input_value["restamps"]
-    ]
-    return answers
+    return [restamp_answer(case) for case in input_value["restamps"]]
 
 
 def serialized_chunk(case: ChunkCase) -> JsonValue:
@@ -244,10 +250,7 @@ VIEWS: Final[dict[ViewName, Callable[[ChunkCase], JsonValue]]] = {
 
 
 def chunk_views_answer(input_value: Input) -> JsonValue:
-    answers: list[JsonValue] = [
-        VIEWS[input_value["view"]](case) for case in input_value["chunks"]
-    ]
-    return answers
+    return [VIEWS[input_value["view"]](case) for case in input_value["chunks"]]
 
 
 def sse_frame(payload: str) -> str:
