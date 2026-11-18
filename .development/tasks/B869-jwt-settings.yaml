@@ -116,7 +116,7 @@ description: >-
 
   There are 274 nonblank noncomment source lines excluding docstrings. Allow 280 records/validators,
   330 focused tests, 90 adapters and 50 loader/dispatch/corpus wiring lines, 750 within 800. Moving
-  jwt_claims.rs in and deleting the eight stubs adds about 40 net lines, since its 13 fields replace ones this
+  jwt_claims.rs in and deleting the seven stubs adds about 40 net lines, since its 13 fields replace ones this
   section writes anyway.
 scope:
   paths:
