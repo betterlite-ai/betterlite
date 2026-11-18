@@ -1,0 +1,32 @@
+task: B1601
+deviations:
+  - what: >-
+      A credential store or encryption failure answers 500 with a fixed message, "credential
+      storage failed" or "credential encryption failed", where LiteLLM puts str(e) of the
+      caught exception in the error body.
+    why: >-
+      The database or encryption error text can carry connection strings, table names and row
+      values, and the status stays 500 with the same envelope shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L138-L140
+  - what: >-
+      A credential request body over 1 MiB is refused with 400 before it is parsed, where
+      LiteLLM hands the whole body to its JSON parser.
+    why: >-
+      Parsing is work proportional to untrusted input, and the bounded-inputs rule requires a
+      cap; a body at or under the cap decodes exactly as LiteLLM's.
+    link: ""
+kept_bugs:
+  - what: >-
+      A PATCH keeps the stored credential_info only when that map already carries a literal
+      credential_info key, so any other old info is dropped instead of merged into.
+    why: >-
+      The membership test reads the map's own field name, not the patch, which looks like a
+      mistake, but the task keeps it so a setup that patches info sees the same reset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/credential_endpoints/endpoints.py#L315-L319
+  - what: >-
+      An upsert of two credentials with one name appends both, because the name snapshot is
+      taken before the loop, and the first of the two answers every later lookup.
+    why: >-
+      A setup can rely on both entries staying in the list; the task keeps the snapshot and
+      first-match lookup behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/credential_accessor.py#L28-L38
