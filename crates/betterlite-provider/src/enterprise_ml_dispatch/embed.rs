@@ -145,11 +145,13 @@ async fn watsonx_request(
         call.api_base.as_deref(),
         &environment,
     )?;
-    if let Some(token) = &credentials.token {
-        let stored = serde_json::to_value(token.expose_secret())
-            .map_err(|source| EnterpriseError::Encode { source })?;
-        params.insert(String::from("token"), stored);
+    // LiteLLM copies the key whenever the credentials carry it, so an absent token reaches the body as null
+    let stored = match &credentials.token {
+        Some(token) => serde_json::to_value(token.expose_secret()),
+        None => Ok(serde_json::Value::Null),
     }
+    .map_err(|source| EnterpriseError::Encode { source })?;
+    params.insert(String::from("token"), stored);
     let auth = WatsonxAuth::new(
         environment,
         SharedTransport { inner: transport },

@@ -157,7 +157,8 @@ async fn sap_chat_prepare_runs_the_chat_deployment_lookup() {
     };
     let prepared =
         sap::prepare_chat(request, &transport, &FixedClock).expect("the chat session resolves");
-    assert_eq!(prepared.url, "https://dep.example.com/v2/completion");
+    // the chat config appends the path as LiteLLM does, so a trailing slash in the deployment URL stays
+    assert_eq!(prepared.url, "https://dep.example.com//v2/completion");
     assert_eq!(
         prepared
             .headers
@@ -194,7 +195,7 @@ async fn sap_service_key_supplies_the_credentials() {
     };
     let prepared =
         sap::prepare_chat(request, &transport, &FixedClock).expect("the service key resolves");
-    assert_eq!(prepared.url, "https://dep.example.com/v2/completion");
+    assert_eq!(prepared.url, "https://dep.example.com//v2/completion");
     let sent = transport.sent();
     assert_eq!(sent[0].url, "https://other-auth.example.com/oauth/token");
     assert_eq!(
@@ -313,7 +314,9 @@ async fn watsonx_embedding_sends_the_generation_body() {
         at(&body, &["inputs"]),
         &Json::List(vec![Json::Text(String::from("hi"))])
     );
-    assert_eq!(at(&body, &["parameters"]), &Json::Object(Object::new()));
+    // the credentials hold no token, and LiteLLM still copies the key into the parameters
+    let parameters = Object::from([(String::from("token"), Json::Null)]);
+    assert_eq!(at(&body, &["parameters"]), &Json::Object(parameters));
     assert_eq!(
         at(&body, &["model_id"]),
         &Json::Text(String::from("ibm/granite-embedding"))
