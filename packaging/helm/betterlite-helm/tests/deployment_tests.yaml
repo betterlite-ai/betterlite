@@ -3,6 +3,7 @@ templates:
   - deployment.yaml
   - configmap-betterlite.yaml
   - extra-resources.yaml
+  - NOTES.txt
 tests:
   - it: renders the deployment of the chart's release
     template: deployment.yaml
@@ -10,6 +11,7 @@ tests:
       - isKind: { of: Deployment }
       - equal: { path: apiVersion, value: apps/v1 }
       - equal: { path: metadata.name, value: RELEASE-NAME-betterlite }
+      - equal: { path: 'spec.template.spec.containers[0].name', value: betterlite }
       - equal: { path: 'metadata.labels["app.kubernetes.io/name"]', value: betterlite }
       - equal: { path: 'metadata.labels["app.kubernetes.io/instance"]', value: RELEASE-NAME }
 
@@ -203,8 +205,15 @@ tests:
 
   - it: annotates the pod with the checksum of the created ConfigMap
     template: deployment.yaml
+    set:
+      fullnameOverride: checksum-test
+      proxy_config:
+        model_list:
+          - model_name: pinned-model
+            litellm_params: { model: openai/pinned, api_key: pinned-key }
+        general_settings: { master_key: os.environ/PROXY_MASTER_KEY }
     asserts:
-      - matchRegex: { path: 'spec.template.metadata.annotations["checksum/config"]', pattern: '^[0-9a-f]{64}$' }
+      - equal: { path: 'spec.template.metadata.annotations["checksum/config"]', value: 34b3bff4787e71384dfae8fcff91626ff86c9f5fdbcb776151022539bed59b53 }
 
   - it: renders podAnnotations through tpl
     template: deployment.yaml
@@ -374,6 +383,43 @@ tests:
     asserts:
       - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DISABLE_SCHEMA_UPDATE }, any: true }
 
+  - it: orders DATABASE_READER_HOST before the read-replica URL
+    template: deployment.yaml
+    set:
+      db:
+        deployStandalone: false
+        useExisting: true
+        readReplicaUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_READER_HOST)/$(DATABASE_NAME)"
+        secret: { endpointKey: host, readReplicaEndpointKey: reader-host }
+    asserts:
+      - equal:
+          path: 'spec.template.spec.containers[0].env[7]'
+          value: { name: DATABASE_READER_HOST, valueFrom: { secretKeyRef: { name: postgres, key: reader-host } } }
+      - equal:
+          path: 'spec.template.spec.containers[0].env[8]'
+          value: { name: DATABASE_URL_READ_REPLICA, value: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_READER_HOST)/$(DATABASE_NAME)" }
+
+  - it: leaves the read-replica environment out without a replica URL
+    template: deployment.yaml
+    set: { db: { deployStandalone: false, useExisting: true, secret: { readReplicaEndpointKey: reader-host } } }
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_READER_HOST }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_URL_READ_REPLICA }, any: true }
+
+  - it: lets a read-replica URL secret replace the endpoint-key host
+    template: deployment.yaml
+    set:
+      db:
+        deployStandalone: false
+        useExisting: true
+        readReplicaUrl: postgresql://fallback
+        secret: { readReplicaEndpointKey: reader-host, readReplicaUrlKey: reader-url }
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: DATABASE_READER_HOST }, any: true }
+      - equal:
+          path: 'spec.template.spec.containers[0].env[7]'
+          value: { name: DATABASE_URL_READ_REPLICA, valueFrom: { secretKeyRef: { name: postgres, key: reader-url } } }
+
   - it: imports environmentSecrets and environmentConfigMaps
     template: deployment.yaml
     set: { environmentSecrets: [gateway-secrets], environmentConfigMaps: [gateway-config] }
@@ -408,3 +454,42 @@ tests:
         documentIndex: 1
       - equal: { path: metadata.name, value: second }
         documentIndex: 1
+
+  - it: prints the ingress URL in the notes
+    template: NOTES.txt
+    set:
+      ingress:
+        enabled: true
+        hosts:
+          - host: gateway.example.com
+            paths:
+              - { path: /v1, pathType: Prefix }
+    asserts:
+      - matchRegex: { path: raw, pattern: 'http://gateway\.example\.com/v1' }
+
+  - it: prints the NodePort commands in the notes
+    template: NOTES.txt
+    set: { service: { type: NodePort } }
+    asserts:
+      - matchRegex: { path: raw, pattern: 'export NODE_PORT=\$\(kubectl get --namespace NAMESPACE' }
+      - matchRegex: { path: raw, pattern: 'echo http://\$NODE_IP:\$NODE_PORT' }
+
+  - it: prints the LoadBalancer address with the proxy port in the notes
+    template: NOTES.txt
+    set: { service: { type: LoadBalancer, port: 8080 } }
+    asserts:
+      - matchRegex: { path: raw, pattern: 'NOTE: It may take a few minutes for the LoadBalancer IP to be available\.' }
+      - matchRegex: { path: raw, pattern: 'echo http://\$SERVICE_IP:8080' }
+
+  - it: prints the ClusterIP port-forward in the notes
+    template: NOTES.txt
+    asserts:
+      - matchRegex: { path: raw, pattern: 'kubectl --namespace NAMESPACE port-forward \$POD_NAME 8080:\$CONTAINER_PORT' }
+      - matchRegex: { path: raw, pattern: 'Visit http://127\.0\.0\.1:8080 to use your application' }
+      - matchRegex: { path: raw, pattern: 'PDB: disabled\. Configure via \.Values\.pdb\.\*' }
+
+  - it: prints the enabled PDB state in the notes
+    template: NOTES.txt
+    set: { pdb: { enabled: true } }
+    asserts:
+      - matchRegex: { path: raw, pattern: 'PDB: enabled\. Configure via \.Values\.pdb\.\*' }
