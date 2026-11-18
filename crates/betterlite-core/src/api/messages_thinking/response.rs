@@ -1,4 +1,4 @@
-use betterlite_anthropic::api::messages_errors::fields::Fields;
+use betterlite_anthropic::api::messages_errors::wire::ResponseRecord;
 use betterlite_anthropic::stream_events::error::AnthropicError;
 use serde_json::error::Category;
 use thiserror::Error;
@@ -32,11 +32,11 @@ pub fn decode_messages_response(
     body: &[u8],
     status: u16,
     limits: &ApiLimits,
-) -> Result<Fields, ResponseJsonError> {
+) -> Result<ResponseRecord, ResponseJsonError> {
     limits.check(ApiBoundariesInput::Json(JsonBoundary {
         known_bytes: body.len(),
     }))?;
-    match serde_json::from_slice::<Fields>(body) {
+    match serde_json::from_slice::<ResponseRecord>(body) {
         Ok(fields) => Ok(fields),
         // a valid body of the wrong shape only fails the keyword expansion, which is an internal failure
         Err(source) if source.classify() == Category::Data => Err(ResponseJsonError::NotAnObject),
