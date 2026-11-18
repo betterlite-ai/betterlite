@@ -117,6 +117,23 @@ async fn put_validation_rejects_an_invalid_patch(
 }
 
 #[rstest]
+#[case::request_bound(r#"{"backfill_days":0}"#, "Input should be greater than or equal to 1")]
+#[case::settings_value(
+    r#"{"update_interval_minutes":3}"#,
+    "Value error, Choose manual updates (0), or an interval of at least 5 minutes."
+)]
+#[tokio::test]
+async fn put_validation_messages_carry_pydantic_text(#[case] body: &str, #[case] message: &str) {
+    let memory = Arc::new(MemoryRepository::default());
+    let app = settings_app(Some(erased(&memory)), Some(catalog(Vec::new())));
+    let reply = call(app, put_request(Some(&admin_caller()), body)).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    let issues = reply.issues();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0].msg, message);
+}
+
+#[rstest]
 #[case::manual_updates(0.0)]
 #[case::five_minutes(5.0)]
 #[case::one_day(1440.0)]
