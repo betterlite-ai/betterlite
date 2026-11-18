@@ -10,6 +10,10 @@ use crate::chat::execution::ChatExecutor;
 use crate::moderation_request::{ModerationRequest, ModerationRequestError};
 use crate::moderation_response::{ModerationResponse, ModerationResponseError};
 
+// LiteLLM's _get_openai_client passes DEFAULT_MAX_RETRIES, two unless the environment overrides it, and the SDK's initial retry delay
+const MAX_RETRIES: u32 = 2;
+const INITIAL_RETRY_DELAY: Duration = Duration::from_millis(500);
+
 #[derive(Debug, Error)]
 pub enum ModerationError {
     #[error(transparent)]
@@ -47,25 +51,43 @@ pub async fn send(
     request: &ModerationRequest,
 ) -> Result<ModerationOutcome, ModerationError> {
     let (model, authorization) = servable(deployment)?;
-    let post = post(deployment, request, model, authorization)?;
-    let started = Instant::now();
-    let upstream = executor
-        .client
-        .post_json(post)
-        .await
-        .map_err(|source| ModerationError::Http { source })?;
-    let upstream_time = started.elapsed();
-    if upstream.status >= 400 {
-        return Err(ModerationError::Provider {
-            response: Box::new(upstream),
+    let mut attempts = 0;
+    loop {
+        let post = post(deployment, request, model, authorization.clone())?;
+        let started = Instant::now();
+        let upstream = executor
+            .client
+            .post_json(post)
+            .await
+            .map_err(|source| ModerationError::Http { source })?;
+        if upstream.status >= 400 {
+            if attempts < MAX_RETRIES && retryable(upstream.status) {
+                tokio::time::sleep(retry_delay(attempts)).await;
+                attempts = attempts.saturating_add(1);
+                continue;
+            }
+            return Err(ModerationError::Provider {
+                response: Box::new(upstream),
+            });
+        }
+        let upstream_time = started.elapsed();
+        let response = ModerationResponse::parse(&upstream.body)?;
+        return Ok(ModerationOutcome {
+            response,
+            upstream,
+            upstream_time,
         });
     }
-    let response = ModerationResponse::parse(&upstream.body)?;
-    Ok(ModerationOutcome {
-        response,
-        upstream,
-        upstream_time,
-    })
+}
+
+// openai's _should_retry without a telling response header: request timeouts, lock timeouts, rate limits and 5xx retry
+const fn retryable(status: u16) -> bool {
+    matches!(status, 408 | 409 | 429 | 500..=599)
+}
+
+// openai's _calculate_retry_timeout: the initial delay doubled per retry
+const fn retry_delay(attempts: u32) -> Duration {
+    INITIAL_RETRY_DELAY.saturating_mul(1 << attempts)
 }
 
 fn post(

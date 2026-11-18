@@ -69,25 +69,26 @@ fn moderations_moderation_tests_behavior(#[case] body: Vec<u8>) {
         vec![AppliedInputType::Text]
     );
     assert_eq!(
-        result.category_scores.violence_graphic.0,
+        result.category_scores.violence_graphic,
         parse_decimal_lexeme("0.0001").expect("score")
     );
     assert!(!result.flagged);
 }
 
 #[test]
-fn the_client_body_uses_the_names_litellm_dumps() {
+fn the_client_body_carries_the_field_names_and_the_provider_keys() {
     let response = ModerationResponse::parse(&body()).expect("moderation response");
     let text = serde_json::to_string(&response).expect("client body");
-    // the SDK model dumps its field names, so a slash key the provider sent fills a field and is not dumped again
+    // the SDK model dumps its field names beside every provider key it kept, so both spellings reach the client
     assert!(text.contains(r#""harassment_threatening":false"#), "{text}");
-    assert!(!text.contains("harassment/threatening"), "{text}");
+    assert!(text.contains(r#""harassment/threatening":false"#), "{text}");
     assert!(text.contains(r#""self_harm":["text"]"#), "{text}");
-    assert!(!text.contains("self-harm"), "{text}");
+    assert!(text.contains(r#""self-harm":["text"]"#), "{text}");
     assert!(text.contains(r#""violence_graphic":0.0001"#), "{text}");
-    assert!(!text.contains("violence/graphic"), "{text}");
+    assert!(text.contains(r#""violence/graphic":0.0001"#), "{text}");
     assert!(text.contains(r#""illicit":false"#), "{text}");
     assert!(text.contains(r#""illicit_violent":false"#), "{text}");
+    assert!(text.contains(r#""illicit/violent":false"#), "{text}");
 }
 
 #[test]
@@ -173,15 +174,16 @@ fn a_score_is_kept_exactly_or_refused(#[case] score: &str, #[case] expected: &st
         "the score must not be rounded: {text}"
     );
     assert!(
-        response.results[0].category_scores.hate.0 == parse_decimal_lexeme(score).expect("score")
+        response.results[0].category_scores.hate == parse_decimal_lexeme(score).expect("score")
     );
 }
 
+// LiteLLM constructs the SDK model leniently and answers 200 with a null field; these records need the field
 #[rstest]
 #[case::missing_result_field("flagged")]
 #[case::missing_categories("categories")]
 #[case::missing_scores("category_scores")]
-fn rejects_a_result_missing_a_field_litellm_requires(#[case] field: &str) {
+fn refuses_a_result_missing_a_field_the_typed_records_need(#[case] field: &str) {
     let mut result = result_with(every_category(json!(0.5)));
     result.as_object_mut().expect("result object").remove(field);
     assert!(matches!(
@@ -194,7 +196,7 @@ fn rejects_a_result_missing_a_field_litellm_requires(#[case] field: &str) {
 #[case::missing_category("harassment")]
 #[case::missing_score("hate")]
 #[case::missing_applied_type("sexual")]
-fn rejects_a_named_category_missing_from_one_map(#[case] name: &str) {
+fn refuses_a_named_category_missing_from_one_map(#[case] name: &str) {
     let mut result = result_with(every_category(json!(0.5)));
     for field in [
         "categories",
@@ -216,10 +218,10 @@ fn rejects_a_named_category_missing_from_one_map(#[case] name: &str) {
 #[case::score_is_text("category_scores", json!("high"))]
 #[case::flagged_is_text("flagged", json!("no"))]
 #[case::unknown_applied_type("category_applied_input_types", json!(["audio"]))]
-fn rejects_a_wrongly_typed_result_field(#[case] field: &str, #[case] value: Value) {
+fn refuses_a_wrongly_typed_result_field(#[case] field: &str, #[case] value: Value) {
     let mut result = result_with(every_category(json!(0.5)));
     if field == "category_applied_input_types" {
-        result[field] = every_category(value).into();
+        result[field] = Value::Object(every_category(value));
     } else {
         result[field] = value;
     }

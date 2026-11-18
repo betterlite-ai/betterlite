@@ -1,7 +1,7 @@
-use betterlite_models::price_fields::decimal_lexeme::{DecimalLexemeError, parse_decimal_lexeme};
+use betterlite_models::price_fields::decimal_lexeme::DecimalLexemeError;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -24,42 +24,58 @@ pub struct ModerationResult {
     pub extra: IndexMap<String, Value>,
 }
 
-// the provider names a category "harassment/threatening"; LiteLLM dumps the SDK model, which writes the field name only
-#[derive(Debug, Clone, PartialEq, Eq)]
+// the provider names a category "harassment/threatening"; LiteLLM dumps the SDK model, which writes the field name and keeps the provider's key
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ModerationCategories {
     pub harassment: bool,
+    #[serde(alias = "harassment/threatening")]
     pub harassment_threatening: bool,
     pub hate: bool,
+    #[serde(alias = "hate/threatening")]
     pub hate_threatening: bool,
     pub illicit: Option<bool>,
+    #[serde(alias = "illicit/violent")]
     pub illicit_violent: Option<bool>,
+    #[serde(alias = "self-harm")]
     pub self_harm: bool,
+    #[serde(alias = "self-harm/instructions")]
     pub self_harm_instructions: bool,
+    #[serde(alias = "self-harm/intent")]
     pub self_harm_intent: bool,
     pub sexual: bool,
+    #[serde(alias = "sexual/minors")]
     pub sexual_minors: bool,
     pub violence: bool,
+    #[serde(alias = "violence/graphic")]
     pub violence_graphic: bool,
-    #[doc(hidden)]
+    #[serde(flatten)]
     pub extra: IndexMap<String, Value>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AppliedInputTypes {
     pub harassment: Vec<AppliedInputType>,
+    #[serde(alias = "harassment/threatening")]
     pub harassment_threatening: Vec<AppliedInputType>,
     pub hate: Vec<AppliedInputType>,
+    #[serde(alias = "hate/threatening")]
     pub hate_threatening: Vec<AppliedInputType>,
     pub illicit: Vec<AppliedInputType>,
+    #[serde(alias = "illicit/violent")]
     pub illicit_violent: Vec<AppliedInputType>,
+    #[serde(alias = "self-harm")]
     pub self_harm: Vec<AppliedInputType>,
+    #[serde(alias = "self-harm/instructions")]
     pub self_harm_instructions: Vec<AppliedInputType>,
+    #[serde(alias = "self-harm/intent")]
     pub self_harm_intent: Vec<AppliedInputType>,
     pub sexual: Vec<AppliedInputType>,
+    #[serde(alias = "sexual/minors")]
     pub sexual_minors: Vec<AppliedInputType>,
     pub violence: Vec<AppliedInputType>,
+    #[serde(alias = "violence/graphic")]
     pub violence_graphic: Vec<AppliedInputType>,
-    #[doc(hidden)]
+    #[serde(flatten)]
     pub extra: IndexMap<String, Value>,
 }
 
@@ -70,45 +86,58 @@ pub enum AppliedInputType {
     Image,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CategoryScores {
-    pub harassment: ExactScore,
-    pub harassment_threatening: ExactScore,
-    pub hate: ExactScore,
-    pub hate_threatening: ExactScore,
-    pub illicit: ExactScore,
-    pub illicit_violent: ExactScore,
-    pub self_harm: ExactScore,
-    pub self_harm_instructions: ExactScore,
-    pub self_harm_intent: ExactScore,
-    pub sexual: ExactScore,
-    pub sexual_minors: ExactScore,
-    pub violence: ExactScore,
-    pub violence_graphic: ExactScore,
-    #[doc(hidden)]
-    pub extra: IndexMap<String, Value>,
-}
-
 // LiteLLM's score is a Python float; betterlite keeps the provider's exact decimal and writes it as a JSON number
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExactScore(pub Decimal);
-
-impl Serialize for ExactScore {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        rust_decimal::serde::arbitrary_precision::serialize(&self.0, serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ExactScore {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        rust_decimal::serde::arbitrary_precision::deserialize(deserializer).map(Self)
-    }
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct CategoryScores {
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub harassment: Decimal,
+    #[serde(
+        alias = "harassment/threatening",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub harassment_threatening: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub hate: Decimal,
+    #[serde(
+        alias = "hate/threatening",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub hate_threatening: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub illicit: Decimal,
+    #[serde(
+        alias = "illicit/violent",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub illicit_violent: Decimal,
+    #[serde(alias = "self-harm", with = "rust_decimal::serde::arbitrary_precision")]
+    pub self_harm: Decimal,
+    #[serde(
+        alias = "self-harm/instructions",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub self_harm_instructions: Decimal,
+    #[serde(
+        alias = "self-harm/intent",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub self_harm_intent: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub sexual: Decimal,
+    #[serde(
+        alias = "sexual/minors",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub sexual_minors: Decimal,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
+    pub violence: Decimal,
+    #[serde(
+        alias = "violence/graphic",
+        with = "rust_decimal::serde::arbitrary_precision"
+    )]
+    pub violence_graphic: Decimal,
+    #[serde(flatten)]
+    pub extra: IndexMap<String, Value>,
 }
 
 #[derive(Debug, Error)]
@@ -130,31 +159,14 @@ pub enum ModerationResponseError {
 
 impl ModerationResponse {
     pub fn parse(bytes: &[u8]) -> Result<Self, ModerationResponseError> {
-        check_scores(bytes)?;
-        serde_json::from_slice(bytes).map_err(|source| ModerationResponseError::Decode { source })
+        let provider = maps::ProviderMaps::parse(bytes)?;
+        provider.check_scores()?;
+        let mut response: Self = serde_json::from_slice(bytes)
+            .map_err(|source| ModerationResponseError::Decode { source })?;
+        provider.keep_alias_keys(&mut response)?;
+        maps::check_input_types(&response)?;
+        Ok(response)
     }
-}
-
-// the typed pass cannot say which score failed, so every numeric score is checked against B204's exact parser first
-fn check_scores(bytes: &[u8]) -> Result<(), ModerationResponseError> {
-    let body: Value = serde_json::from_slice(bytes)
-        .map_err(|source| ModerationResponseError::Decode { source })?;
-    let results = body.get("results").and_then(Value::as_array);
-    for result in results.into_iter().flatten() {
-        let scores = result.get("category_scores").and_then(Value::as_object);
-        for (category, score) in scores.into_iter().flatten() {
-            let Value::Number(number) = score else {
-                continue;
-            };
-            parse_decimal_lexeme(&number.to_string()).map_err(|source| {
-                ModerationResponseError::Decimal {
-                    category: category.clone(),
-                    source,
-                }
-            })?;
-        }
-    }
-    Ok(())
 }
 
 mod maps;
