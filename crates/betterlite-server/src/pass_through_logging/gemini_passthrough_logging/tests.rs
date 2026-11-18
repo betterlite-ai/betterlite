@@ -411,6 +411,19 @@ fn chunks_build_a_response_from_sse_lines() {
 }
 
 #[test]
+fn chunks_metadata_only_candidates_keep_the_candidate_index() {
+    let line = r#"data: {"responseId":"m1","candidates":[{"groundingMetadata":{"webSearchQueries":["q"]}},{"index":1,"safetyRatings":[{"category":"X"}]}]}"#;
+    let chunks = assembly::gemini_chunks(&[line.to_owned()], 1_700_000_000)
+        .expect("the metadata-only candidates are assembled");
+    assert_eq!(chunks.len(), 1);
+    let choices = &chunks[0].choices;
+    assert_eq!(choices.len(), 2);
+    assert_eq!(choices[0].index, Some(0));
+    assert_eq!(choices[1].index, Some(1));
+    assert_eq!(choices[1].finish_reason, None);
+}
+
+#[test]
 fn chunks_accumulated_mode_builds_and_drops_the_partial_tail() {
     let fixture = collected(
         STREAM_ROUTE,
