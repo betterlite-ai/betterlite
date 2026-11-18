@@ -3,7 +3,9 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::Level;
 
-use crate::model_reload::cache::{ReconcileOutcome, ReloadFailure, clear_cache};
+use crate::model_reload::cache::{
+    ReconcileOutcome, ReloadFailure, clear_cache as clear_router_cache,
+};
 
 use super::support::{
     Database, FakeRouter, capture_logs, deployment, ids, repository_without_client,
@@ -34,7 +36,7 @@ async fn clear_cache() {
     router.gate = Some(Arc::clone(&gate));
     let database = Database::new();
     let repository = database.repository();
-    let returned = clear_cache(&gate, Some(&mut router), Some(&repository)).await;
+    let returned = clear_router_cache(&gate, Some(&mut router), Some(&repository)).await;
     assert_eq!(
         returned,
         outcome(&["cfg-1", "db-1", "db-2", "db-3"], &["cfg-1", "db-1"])
@@ -67,7 +69,7 @@ async fn clear_cache_reload_failure() {
     let gate = Mutex::new(());
     let database = Database::new();
     let repository = database.repository();
-    let returned = clear_cache(&gate, Some(&mut router), Some(&repository)).await;
+    let returned = clear_router_cache(&gate, Some(&mut router), Some(&repository)).await;
     assert_eq!(returned, ReconcileOutcome::default());
     assert_eq!(router.deleted, vec!["db-2".to_owned()]);
     assert_eq!(router.reloads, 1);
@@ -83,7 +85,7 @@ async fn clear_cache_skips_without_router() {
     let gate = Mutex::new(());
     let database = Database::new();
     let repository = database.repository();
-    let returned = clear_cache::<FakeRouter>(&gate, None, Some(&repository)).await;
+    let returned = clear_router_cache::<FakeRouter>(&gate, None, Some(&repository)).await;
     assert_eq!(returned, ReconcileOutcome::default());
     assert!(
         logs.contents()
@@ -96,7 +98,7 @@ async fn clear_cache_skips_without_database() {
     let (logs, _guard) = capture_logs(Level::DEBUG);
     let mut router = FakeRouter::new(&[], &[]);
     let gate = Mutex::new(());
-    let returned = clear_cache(&gate, Some(&mut router), None).await;
+    let returned = clear_router_cache(&gate, Some(&mut router), None).await;
     assert_eq!(returned, ReconcileOutcome::default());
     assert_eq!(router.reloads, 0);
     assert!(router.deleted.is_empty());
@@ -112,7 +114,7 @@ async fn clear_cache_skips_without_a_database_client() {
     let mut router = FakeRouter::new(&[], &[]);
     let gate = Mutex::new(());
     let repository = repository_without_client();
-    let returned = clear_cache(&gate, Some(&mut router), Some(&repository)).await;
+    let returned = clear_router_cache(&gate, Some(&mut router), Some(&repository)).await;
     assert_eq!(returned, ReconcileOutcome::default());
     assert_eq!(router.reloads, 0);
     assert!(
