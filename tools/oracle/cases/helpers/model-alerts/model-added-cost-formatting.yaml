@@ -16,5 +16,26 @@ call:
         sample_rate: 0.5
         deprecation_date: null
     proxy_base_url: null
+calls:
+  - b4030:
+      function: model_added
+      model_name: my-model
+      litellm_model_name: litellm_name
+      base_model: null
+      model_info:
+        litellm_name:
+          input_cost_per_token: 7
+          output_cost_per_token: true
+      proxy_base_url: null
+  - b4030:
+      function: model_added
+      model_name: my-model
+      litellm_model_name: litellm_name
+      base_model: null
+      model_info:
+        litellm_name:
+          input_cost_per_token: 0
+          output_cost_per_token: false
+      proxy_base_url: null
 env: {}
 compare: {ignore: []}

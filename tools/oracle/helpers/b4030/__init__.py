@@ -4,8 +4,9 @@ from typing import Final, Literal, Protocol, TypedDict
 
 import litellm
 from litellm.integrations.SlackAlerting.slack_alerting import SlackAlerting
-from litellm.proxy._types import AlertType, WebhookEvent
+from litellm.proxy._types import WebhookEvent
 from litellm.router import Router
+from litellm.types.integrations.slack_alerting import AlertType
 from pydantic import JsonValue
 from typing_extensions import override
 
@@ -75,9 +76,7 @@ class ModelAddedCaller(Protocol):
 
 
 class AlertCapture(SlackAlerting):
-    def __init__(self) -> None:
-        super().__init__()
-        self.sent: list[CapturedAlert] = []
+    sent: list[CapturedAlert]
 
     @override
     async def send_alert(
@@ -132,6 +131,7 @@ def deprecation_rows(input_value: DeprecationInput) -> list[DeploymentRow]:
 def model_added(input_value: ModelAddedInput) -> Answer:
     litellm.model_cost = input_value["model_info"]
     capture = AlertCapture()
+    capture.sent = []
     caller: ModelAddedCaller = capture
     asyncio.run(
         caller.model_added_alert(
@@ -148,6 +148,7 @@ def deprecation_alert(input_value: DeprecationInput) -> Answer:
     storage: RouterStorage = router
     storage.model_list = deprecation_rows(input_value)
     capture = AlertCapture()
+    capture.sent = []
     sent = asyncio.run(capture.send_model_deprecation_alert(llm_router=router))
     if not sent:
         return {"level": None, "metadata": None}
