@@ -1,34 +1,35 @@
 use super::{
-    Call, Observed, TIMEOUT, fixture::Fixture, media::Media, response::observe, services::Services,
+    Invocation, Observed, TIMEOUT, fixture::Fixture, media::Media, response::observe,
+    services::Services,
 };
 use crate::anthropic_dispatch::{
-    CallLogging,
-    base::{Environment, Globals, Surface},
-    completion::CompletionSettings,
-    dispatch,
+    CallLogging, dispatch,
     fixtures::runtime::logging,
     native::{Native, Runtime, legacy::Legacy, preparation::Preparation},
     operations::{DispatchDeps, Operation},
 };
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
+use betterlite_anthropic::anthropic_http_stream::call::{StreamLogger, StreamPostCall};
 use betterlite_anthropic::request::BillingHeader;
+use betterlite_anthropic::stream_state::state::UuidV4;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
-use betterlite_config::sections::anthropic_completion::OptionValues;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
-use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_core::cost::completion::lookup::NoHfConfig;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json;
+use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_catalog_keys::ModelCostKeys;
 use betterlite_models::model_metadata_resolution::{
     MetadataEnvironment, dynamic::NoDynamicMetadata, names::NameNormalizers,
 };
+use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
+use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_prompts::anthropic::assembly::PromptDeps;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use chrono::DateTime;
 use futures_util::future::LocalBoxFuture;
-use std::collections::BTreeMap;
 use tokio::time::timeout;
 
 type Handler<'deps> =
@@ -38,12 +39,18 @@ type Capabilities<'deps> = CapabilityEnvironment<'deps, NoDynamicMetadata, NoHfC
 impl Fixture {
     pub(super) fn invoke<'call>(
         &'call self,
-        surface: Surface,
-        call: Call,
-        tag: ChatConfigTag,
+        invocation: Invocation<'call>,
     ) -> LocalBoxFuture<'call, Observed> {
         Box::pin(async move {
-            let resolution = ResolutionContext::from(self);
+            let resolution = ResolutionContext {
+                catalog: &self.catalog,
+                known_model_names: &self.names,
+                custom_providers: &self.names,
+                environment: &self.environment,
+                registry: JSONProviderRegistry::load(),
+                policies: ProviderPolicies::default(),
+                globals: GlobalCredentials::default(),
+            };
             let mut keys = ModelCostKeys::default();
             let capabilities = CapabilityEnvironment {
                 metadata: MetadataEnvironment {
@@ -63,107 +70,100 @@ impl Fixture {
                 provider_catalog: &self.provider_catalog,
                 provider_generation: 0,
             };
-            self.complete(capabilities, surface, call, tag).await
+            let mut handler = Handler::from((self, capabilities));
+            invocation.dispatch(&mut handler, &self.services).await
         })
     }
+}
 
-    fn complete<'call>(
-        &'call self,
-        capabilities: Capabilities<'call>,
-        surface: Surface,
-        call: Call,
-        tag: ChatConfigTag,
-    ) -> LocalBoxFuture<'call, Observed> {
-        Box::pin(async move {
-            let mut handler = Native {
-                runtime: Runtime::from(self),
-                preparation: Preparation {
-                    environment: capabilities,
-                    catalogs: CatalogSources {
-                        patterns: &self.patterns,
-                        runtime: &self.source,
-                        packaged: &self.source,
-                    },
-                    prompts: PromptDeps {
-                        fetcher: &Media,
-                        blocks: &Media,
-                        new_id: &self.new_id,
-                    },
-                    catalog: &self.catalog,
-                    defaults: &self.defaults,
-                    max_tokens: 17,
-                    billing: BillingHeader::Keep,
-                    modify_params: false,
-                    drop_params: false,
+impl<'deps> From<(&'deps Fixture, Capabilities<'deps>)> for Handler<'deps> {
+    fn from((fixture, capabilities): (&'deps Fixture, Capabilities<'deps>)) -> Self {
+        Self {
+            runtime: Runtime {
+                pooled: &fixture.client,
+                settings: &fixture.settings,
+                matrix: &fixture.matrix,
+                stream_logger: &Log,
+                ids: &UuidV4,
+                now: DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                max_event_bytes: 0x0001_0000,
+                max_error_body_bytes: 0x0001_0000,
+                disable_add_prefix_to_prompt: false,
+                effort_used: false,
+            },
+            preparation: Preparation {
+                environment: capabilities,
+                catalogs: CatalogSources {
+                    patterns: &fixture.patterns,
+                    runtime: &fixture.source,
+                    packaged: &fixture.source,
                 },
-                legacy: Legacy {
-                    prompts: &self.prompts,
-                    defaults: &OptionValues::default(),
-                    body_limit: 0x0001_0000,
+                prompts: PromptDeps {
+                    fetcher: &Media,
+                    blocks: &Media,
+                    new_id: &fixture.new_id,
                 },
-            };
-            self.dispatch(&mut handler, surface, call, tag).await
-        })
+                catalog: &fixture.catalog,
+                defaults: &fixture.defaults,
+                max_tokens: 17,
+                billing: BillingHeader::Keep,
+                modify_params: false,
+                drop_params: false,
+            },
+            legacy: Legacy {
+                prompts: &fixture.prompts,
+                defaults: &fixture.legacy_defaults,
+                body_limit: 0x0001_0000,
+            },
+        }
     }
+}
 
+struct Log;
+impl StreamLogger for Log {
+    fn post_call(&self, _call: StreamPostCall<'_>) {}
+}
+
+impl<'deps> Invocation<'deps> {
     fn dispatch<'call>(
-        &'call self,
+        self,
         handler: &'call mut Handler<'_>,
-        surface: Surface,
-        call: Call,
-        tag: ChatConfigTag,
-    ) -> LocalBoxFuture<'call, Observed> {
+        services: &'call Services,
+    ) -> LocalBoxFuture<'call, Observed>
+    where
+        'deps: 'call,
+    {
         Box::pin(async move {
-            let services = Services::from(self);
-            let globals = Globals::default();
-            let environment = Environment::default();
-            let completion = CompletionSettings {
-                globals: &globals,
-                environment: &environment,
-                custom_prompt_dict: &BTreeMap::new(),
-                disable_suffix: false,
-                selection: Some(tag),
+            let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+            let (mut state, env) = logging(&redactor).unwrap();
+            let mut log = CallLogging {
+                state: &mut state,
+                env: &env,
             };
             let mut deps = DispatchDeps {
-                completion: &completion,
+                completion: &self.completion,
                 handler,
                 count: &services.count,
                 batches: &services.batches,
                 files: &services.files,
                 file_client: &services.file_client,
             };
-            logged_call(&mut deps, surface, call).await
+            let outcome = timeout(
+                TIMEOUT,
+                dispatch(
+                    Operation::Completion(self.surface, Box::new(self.call)),
+                    &mut deps,
+                    &mut log,
+                ),
+            )
+            .await
+            .unwrap();
+            let mut observed = observe(outcome).await;
+            observed.logged = match state.model_call_details.get("original_response") {
+                Some(Json::Text(text)) => text.clone(),
+                _ => String::new(),
+            };
+            observed
         })
     }
-}
-
-fn logged_call<'call>(
-    deps: &'call mut DispatchDeps<'_, ProxiedClient, Handler<'_>>,
-    surface: Surface,
-    call: Call,
-) -> LocalBoxFuture<'call, Observed> {
-    Box::pin(async move {
-        let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-        let (mut state, env) = logging(&redactor).unwrap();
-        let mut log = CallLogging {
-            state: &mut state,
-            env: &env,
-        };
-        let outcome = timeout(
-            TIMEOUT,
-            dispatch(
-                Operation::Completion(surface, Box::new(call)),
-                deps,
-                &mut log,
-            ),
-        )
-        .await
-        .unwrap();
-        let mut observed = observe(outcome).await;
-        observed.logged = match state.model_call_details.get("original_response") {
-            Some(Json::Text(text)) => text.clone(),
-            _ => String::new(),
-        };
-        observed
-    })
 }

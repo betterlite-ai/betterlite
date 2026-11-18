@@ -6,19 +6,15 @@ mod services;
 mod wire;
 
 use crate::anthropic_dispatch::base::Surface;
-use crate::anthropic_dispatch::completion::CompletionCall;
+use crate::anthropic_dispatch::completion::{CompletionCall, CompletionSettings};
 use crate::anthropic_dispatch::native::ClientHandle;
 use betterlite_anthropic::chat_call::CallStyle;
 use betterlite_anthropic::request::error::RequestError;
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_tokenizer::engine::Engine;
 use fixture::Fixture;
-use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::runtime::Builder;
@@ -48,6 +44,12 @@ struct Scenario<'input> {
     options: &'input str,
 }
 
+struct Invocation<'deps> {
+    surface: Surface,
+    call: Call,
+    completion: CompletionSettings<'deps>,
+}
+
 pub(super) fn run(
     surface: Surface,
     style: CallStyle,
@@ -65,11 +67,7 @@ pub(super) fn run(
             Surface::Legacy => LEGACY_REPLY,
         };
         tasks.spawn(wire::server(listener, answer));
-        let client = ProxiedClient::outbound(&Arc::new(
-            ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap(),
-        ))
-        .unwrap();
-        let fixture = Fixture::from(client);
+        let fixture = Fixture::default();
         let scenario = Scenario {
             surface,
             style,
@@ -77,7 +75,12 @@ pub(super) fn run(
             options,
         };
         let call = fixture.call(&scenario, base);
-        let mut observed = fixture.invoke(surface, call, tag).await;
+        let invocation = Invocation {
+            surface,
+            call,
+            completion: CompletionSettings::from((&fixture, tag)),
+        };
+        let mut observed = fixture.invoke(invocation).await;
         if observed.posts == 1 {
             let (body, credential) = timeout(TIMEOUT, tasks.join_next())
                 .await
