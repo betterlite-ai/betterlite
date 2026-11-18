@@ -1,20 +1,21 @@
 use std::time::Duration;
 
-use betterlite_cache::cache_key::value::KeyValue;
+use betterlite_cache::cache_key::value::{KeyObject, KeyValue};
 use betterlite_cache::replay::{Replayed, ResponseKind};
 use betterlite_cache::types::call_type::CachingSupportedCallType;
 use betterlite_models::decisions::Json;
 
 use super::support::{
     Fixture, MODEL, Metadata, Tokens, cached_chat, cached_json, chat_kwargs, computed_key,
-    details_fields, duration_field, handler_named, hit_field, lookup, perf_clock, services, text,
-    worker,
+    details_fields, duration_field, handler_named, hit_field, lookup, object, perf_clock, services,
+    text, worker,
 };
 use crate::caching::lookup::async_lookup::async_get_cache;
 use crate::caching::lookup::error::HitError;
 use crate::caching::lookup::hit::{
     CacheTiming, HitKind, cache_duration, hit_cache_key, hit_record, resolve_provider,
 };
+use crate::caching::lookup::parent_span::add_parent_otel_span;
 use crate::caching::lookup::sync_lookup::sync_get_cache;
 
 #[tokio::test]
@@ -309,4 +310,23 @@ fn a_null_provider_field_names_no_provider() {
     let provider = resolve_provider(&resolution, MODEL, &request).expect("the provider resolves");
     assert_eq!(provider.provider, "openai");
     assert_eq!(provider.model, MODEL);
+}
+
+#[test]
+fn the_async_hit_writes_the_parent_span_back_as_a_traceparent() {
+    let traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    let mut request: KeyObject = chat_kwargs();
+    request.insert(
+        "metadata".to_owned(),
+        object(&[("litellm_parent_otel_span", text(traceparent))]),
+    );
+    add_parent_otel_span(&mut request);
+    assert_eq!(request.get("parent_otel_span"), Some(&text(traceparent)));
+}
+
+#[test]
+fn an_unreadable_parent_span_is_written_back_as_null() {
+    let mut request: KeyObject = chat_kwargs();
+    add_parent_otel_span(&mut request);
+    assert_eq!(request.get("parent_otel_span"), Some(&KeyValue::Null));
 }
