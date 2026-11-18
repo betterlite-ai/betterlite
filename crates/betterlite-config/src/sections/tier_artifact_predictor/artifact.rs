@@ -5,7 +5,6 @@ use serde::Deserialize;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::resolve::resolve_string;
 
-pub const DEFAULT_SCHEMA_VERSION: u32 = 1;
 pub const DEFAULT_DOMAIN_PRIOR_MASS: f64 = 200.0;
 pub const DEFAULT_COHORT_PRIOR_MASS: f64 = 20.0;
 pub const DEFAULT_ROUTING_THRESHOLD: f64 = 0.75;
@@ -114,8 +113,9 @@ where
     Ok(())
 }
 
+// a literal body, since a body naming a constant equal to 1 leaves an equivalent mutant behind
 const fn default_schema_version() -> u32 {
-    DEFAULT_SCHEMA_VERSION
+    1
 }
 
 const fn default_domain_prior_mass() -> f64 {

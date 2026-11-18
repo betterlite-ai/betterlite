@@ -391,7 +391,13 @@ fn threshold_outside(threshold: f64) {
 
 fn duplicate_global_statistic() {
     let global = "{\"tier\": 1, \"successes\": 1.0, \"observations\": 2.0}, {\"tier\": 1, \"successes\": 1.0, \"observations\": 2.0}, {\"tier\": 2, \"successes\": 1.0, \"observations\": 2.0}, {\"tier\": 3, \"successes\": 1.0, \"observations\": 2.0}";
-    match parse_error(global, "") {
+    let error = parse_error(global, "");
+    // the tier renders through TierNumber's Display, the pinned upper-case tier name
+    assert_eq!(
+        error.to_string(),
+        "the tier artifact declares tier SIMPLE twice in its global statistics"
+    );
+    match error {
         PredictorError::DuplicateGlobalTier { tier } => assert_eq!(tier, TierNumber::One),
         other => panic!("unexpected error: {other:?}"),
     }
