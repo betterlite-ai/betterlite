@@ -59,6 +59,8 @@ const ARGS_DELTA: &str = r#"{"type":"response.function_call_arguments.delta","it
 const CUSTOM_DELTA: &str = r#"{"type":"response.custom_tool_call_input.delta","item_id":"ct_1","output_index":0,"delta":"X"}"#;
 const MCP_DELTA: &str = r#"{"type":"response.mcp_call_arguments.delta","item_id":"mcp_1","output_index":0,"sequence_number":2,"delta":"Y"}"#;
 const REFUSAL_DELTA: &str = r#"{"type":"response.refusal.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":"no"}"#;
+const GENERIC_TEXT_DELTA: &str =
+    r#"{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"delta":"Z"}"#;
 const NON_STRING_DELTA: &str = r#"{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":7}"#;
 
 const CREATED: &str = r#"{"type":"response.created","sequence_number":0,"response":{"id":"resp_1","created_at":1,"object":"response","output":[{"type":"message","id":"msg_1","container_id":"c"}]}}"#;
@@ -69,11 +71,14 @@ const INCOMPLETE: &str = r#"{"type":"response.incomplete","sequence_number":3,"r
 const FAILED_USAGE: &str = r#"{"type":"response.failed","sequence_number":3,"response":{"id":"resp_1","created_at":1700000000,"object":"response","status":"failed","error":{"code":"server_error","message":"boom"},"output":[],"usage":{"input_tokens":7,"output_tokens":9,"total_tokens":16}}}"#;
 const FAILED_BARE: &str = r#"{"type":"response.failed","sequence_number":3,"response":{"id":"resp_1","created_at":1700000000,"object":"response","status":"failed","output":[]}}"#;
 const GENERIC_COMPLETED: &str = r#"{"type":"response.completed","response":{"id":"resp_1","created_at":1700000000,"object":"response","usage":{"input_tokens":7,"output_tokens":9,"total_tokens":16}}}"#;
+const GENERIC_INCOMPLETE: &str = r#"{"type":"response.incomplete","response":{"id":"resp_1","created_at":1700000000,"object":"response"}}"#;
+const GENERIC_FAILED: &str = r#"{"type":"response.failed","response":{"id":"resp_1","created_at":1700000000,"object":"response","error":{"code":"server_error","message":"boom"}}}"#;
 
 const ITEM_ADDED: &str = r#"{"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_1","container_id":"c"}}"#;
 const ITEM_DONE: &str = r#"{"type":"response.output_item.done","output_index":0,"sequence_number":1,"item":{"type":"message","id":"msg_1","container_id":"c"}}"#;
 const GENERIC_ITEM_ADDED: &str = r#"{"type":"response.output_item.added","item":{"type":"message","id":"msg_1","container_id":"c"}}"#;
 const ANNOTATION: &str = r#"{"type":"response.output_text.annotation.added","item_id":"msg_1","output_index":0,"content_index":0,"annotation_index":0,"annotation":{"type":"container_file_citation","container_id":"c"}}"#;
+const GENERIC_ANNOTATION: &str = r#"{"type":"response.output_text.annotation.added","item_id":"msg_1","output_index":0,"annotation":{"type":"container_file_citation","container_id":"c"}}"#;
 const PART_TYPED: &str = r#"{"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"hi","annotations":[{"type":"container_file_citation","container_id":"c"}],"logprobs":null}}"#;
 const PART_DICT: &str = r#"{"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"output_text","text":"hi","annotations":[{"type":"container_file_citation","container_id":"c"}]}}"#;
 const PART_REFUSAL: &str = r#"{"type":"response.content_part.done","item_id":"msg_1","output_index":0,"content_index":0,"part":{"type":"refusal","refusal":"no"}}"#;

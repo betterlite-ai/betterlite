@@ -211,6 +211,18 @@ async fn annotation_and_part_events_encode_containers() {
         decode_container_id(container).response_id,
         Some("c".to_owned())
     );
+    let generic = processor
+        .process(GENERIC_ANNOTATION, &mut state, &mut callback, &logging)
+        .await
+        .expect("the generic annotation is processed")
+        .expect("the generic annotation is handed on");
+    let Json::Text(container) = at(&event_json(&generic), &["annotation", "container_id"]) else {
+        panic!("the generic annotation keeps a container id");
+    };
+    assert_eq!(
+        decode_container_id(container).response_id,
+        Some("c".to_owned())
+    );
     let typed = processor
         .process(PART_TYPED, &mut state, &mut callback, &logging)
         .await
@@ -413,5 +425,39 @@ async fn affinity_keeps_an_existing_wrapper() {
     assert_eq!(
         unwrap_encrypted_content(wrapped),
         (Some("deployment_a".to_owned()), existing.to_owned())
+    );
+}
+
+#[tokio::test]
+async fn affinity_wraps_only_item_events_even_when_others_carry_an_item() {
+    let redactor = redactor();
+    let ports = Ports::recording();
+    let hooks = ports.hooks(&redactor, fixed_clock());
+    let transform: Option<Direct> = Some(Direct);
+    let tokenization: Option<Tokenization> = None;
+    let calculator: Option<Calculator> = None;
+    let limits = ApiLimits::default();
+    let mut details = IndexMap::new();
+    let mut state = affine_state(true, Some("deployment_a"));
+    let mut callback = ResponsesStreamHookState::default();
+    let logging = logging_object();
+    let mut processor = ResponsesEventProcessor {
+        transform: transform.as_ref(),
+        tokenization: tokenization.as_ref(),
+        calculator: calculator.as_ref(),
+        hooks: &hooks,
+        details: &mut details,
+        dispatch: Dispatch::Inline,
+        limits: &limits,
+    };
+    let payload = r#"{"type":"response.output_text.delta","item":{"type":"reasoning","encrypted_content":"cipher"}}"#;
+    let event = processor
+        .process(payload, &mut state, &mut callback, &logging)
+        .await
+        .expect("the delta carrying an item is processed")
+        .expect("the delta carrying an item is handed on");
+    assert_eq!(
+        at(&event_json(&event), &["item", "encrypted_content"]),
+        &Json::Text("cipher".to_owned())
     );
 }

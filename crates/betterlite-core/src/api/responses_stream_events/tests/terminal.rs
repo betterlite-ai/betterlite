@@ -29,13 +29,14 @@ async fn deltas_accumulate_only_string_text_and_arguments() {
         MCP_DELTA,
         REFUSAL_DELTA,
         NON_STRING_DELTA,
+        GENERIC_TEXT_DELTA,
     ] {
         processor
             .process(payload, &mut state, &mut callback, &logging)
             .await
             .expect("the delta is processed");
     }
-    assert_eq!(state.generated_content, "hi");
+    assert_eq!(state.generated_content, "hiZ");
     assert_eq!(state.generated_tool_arguments, "{}XY");
 }
 
@@ -529,5 +530,75 @@ async fn second_terminal_does_not_log_twice() {
             &["response", "usage", "total_tokens"]
         )),
         "16"
+    );
+}
+
+#[tokio::test]
+async fn generic_incomplete_and_failed_terminals_keep_their_branches() {
+    let redactor = redactor();
+    let ports = Ports::recording();
+    let hooks = ports.hooks(&redactor, fixed_clock());
+    let transform: Option<Direct> = Some(Direct);
+    let tokenization: Option<Tokenization> = Some(Tokenization::new(30, 50));
+    let calculator: Option<Calculator> = Some(Calculator::charging("0.5"));
+    let limits = ApiLimits::default();
+    let mut details = IndexMap::new();
+    let mut state = stream_state();
+    let mut callback = ResponsesStreamHookState::default();
+    let logging = logging_object();
+    let mut processor = ResponsesEventProcessor {
+        transform: transform.as_ref(),
+        tokenization: tokenization.as_ref(),
+        calculator: calculator.as_ref(),
+        hooks: &hooks,
+        details: &mut details,
+        dispatch: Dispatch::Inline,
+        limits: &limits,
+    };
+    let incomplete = processor
+        .process(GENERIC_INCOMPLETE, &mut state, &mut callback, &logging)
+        .await
+        .expect("the generic incomplete is processed")
+        .expect("the generic incomplete is handed on");
+    assert!(state.completed_response.is_some());
+    assert_eq!(ports.success.calls.entries(), vec!["async", "sync"]);
+    assert_eq!(
+        number_text(at(
+            &event_json(&incomplete),
+            &["response", "usage", "total_tokens"]
+        )),
+        "80"
+    );
+    let failure_ports = Ports::recording();
+    let failure_hooks = failure_ports.hooks(&redactor, fixed_clock());
+    let mut failure_state = stream_state();
+    let mut failure_callback = ResponsesStreamHookState::default();
+    let mut failure_processor = ResponsesEventProcessor {
+        transform: transform.as_ref(),
+        tokenization: tokenization.as_ref(),
+        calculator: calculator.as_ref(),
+        hooks: &failure_hooks,
+        details: &mut details,
+        dispatch: Dispatch::Inline,
+        limits: &limits,
+    };
+    let failed = failure_processor
+        .process(
+            GENERIC_FAILED,
+            &mut failure_state,
+            &mut failure_callback,
+            &logging,
+        )
+        .await
+        .expect("the generic failure is processed")
+        .expect("the generic failure is handed on");
+    await_pending_logging(&mut failure_callback).await;
+    assert!(failure_state.failure_handled);
+    assert!(failure_state.completed_response.is_some());
+    assert_eq!(failure_ports.failure.calls.entries(), vec!["async", "sync"]);
+    assert!(failure_ports.success.calls.entries().is_empty());
+    assert_eq!(
+        at(&event_json(&failed), &["type"]),
+        &Json::Text("response.failed".to_owned())
     );
 }
