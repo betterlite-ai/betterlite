@@ -234,8 +234,12 @@ fn guardrail_spans_come_from_the_request_data_bucket() {
     assert_eq!(text_attribute(&spans[0], "guardrail_name"), "pii");
 }
 
-#[test]
-fn guardrail_spans_skip_null_payload_attributes() {
+#[rstest::rstest]
+#[case::masked_entities("masked_entity_count")]
+#[case::response("guardrail_response")]
+#[case::usage("guardrail_usage")]
+#[case::cost("guardrail_cost")]
+fn guardrail_spans_skip_null_payload_attributes(#[case] key: &str) {
     let rig = Rig::new();
     let lifecycle = rig.in_memory(None);
     let mut kwargs = simple_kwargs("call-null");
@@ -256,12 +260,5 @@ fn guardrail_spans_skip_null_payload_attributes() {
         .handle_success(&call(&kwargs))
         .expect("success lifecycle");
     let span = &guardrails(&rig)[0];
-    for key in [
-        "masked_entity_count",
-        "guardrail_response",
-        "guardrail_usage",
-        "guardrail_cost",
-    ] {
-        assert_eq!(attribute(span, key), None);
-    }
+    assert_eq!(attribute(span, key), None);
 }
