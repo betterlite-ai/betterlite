@@ -6,13 +6,13 @@ use url::form_urlencoded;
 
 use super::DuckDuckGoSearchError;
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuckDuckGoSearchRequest {
     #[serde(rename = "_duckduckgo_params")]
     pub params: DuckDuckGoParams,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DuckDuckGoParams {
     #[serde(rename = "q")]
     pub query: String,
@@ -65,12 +65,14 @@ fn int_option(
     let Some(value) = optional_params.get(field).filter(|value| !value.is_null()) else {
         return Ok(None);
     };
-    match value.as_i64() {
-        Some(number) => Ok(Some(number)),
-        None => Err(DuckDuckGoSearchError::OptionType { field }),
-    }
+    value
+        .as_i64()
+        .map_or(Err(DuckDuckGoSearchError::OptionType { field }), |number| {
+            Ok(Some(number))
+        })
 }
 
+#[must_use]
 pub fn search_url(
     api_base: Option<&str>,
     environment_base: &str,
@@ -87,6 +89,7 @@ pub fn search_url(
     url
 }
 
+#[must_use]
 pub fn encode_params(params: &DuckDuckGoParams) -> String {
     let mut serializer = form_urlencoded::Serializer::new(String::new());
     serializer.append_pair("q", &params.query);
@@ -122,6 +125,6 @@ fn wire_text(value: &JsonValue) -> String {
         JsonValue::Bool(true) => "True".to_owned(),
         JsonValue::Bool(false) => "False".to_owned(),
         JsonValue::Null => "None".to_owned(),
-        scalar => scalar.to_string(),
+        JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => value.to_string(),
     }
 }

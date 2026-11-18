@@ -40,59 +40,85 @@ pub fn decode_duckduckgo_search(
     bytes: &[u8],
     params: &DuckDuckGoParams,
 ) -> Result<SearchResponse, DuckDuckGoSearchError> {
-    if bytes.len() > REPLY_MAX_BYTES {
-        return Err(DuckDuckGoSearchError::ReplyTooLarge {
-            limit: REPLY_MAX_BYTES,
-        });
-    }
     let DuckDuckGoReply {
         abstract_url,
         abstract_text,
         heading,
         related_topics,
-    } = parse_object::<DuckDuckGoReply>(bytes)?;
-    let limit = match params.max_results.as_ref() {
-        Some(JsonValue::Number(number)) => number.as_i64(),
-        Some(JsonValue::String(text)) => text.trim().parse::<i64>().ok(),
-        _ => None,
-    };
+    } = parse_reply(bytes)?;
+    let limit = limit_of(params);
     let mut results = Vec::new();
     push_abstract(abstract_url, abstract_text, heading, &mut results)?;
-    let topics = match related_topics {
-        None => Vec::new(),
-        Some(None) => {
-            return Err(DuckDuckGoSearchError::ReplyNull {
-                field: "RelatedTopics",
-            });
-        }
-        Some(Some(raw)) => parse_list(&raw, "RelatedTopics")?,
-    };
-    for topic in &topics {
-        if limit_reached(results.len(), limit) {
-            break;
-        }
-        if topic.get().trim_ascii_start().as_bytes().first() != Some(&b'{') {
-            continue;
-        }
-        let mut entry: RelatedTopic = parse_entry(topic.get().as_bytes())?;
-        match direct_topic(&mut entry)? {
-            Some(result) => results.push(result),
-            None => {
-                if let Some(nested) = &entry.topics {
-                    let Some(raw) = nested else {
-                        return Err(DuckDuckGoSearchError::ReplyNull { field: "Topics" });
-                    };
-                    append_nested(raw, limit, &mut results)?;
-                }
-            }
-        }
-    }
+    let topics = topics_of(related_topics)?;
+    append_topics(&topics, limit, &mut results)?;
     Ok(SearchResponse {
         results,
         object: SearchObject::default(),
         extra: Object::new(),
         hidden_params: Object::new(),
     })
+}
+
+fn parse_reply(bytes: &[u8]) -> Result<DuckDuckGoReply, DuckDuckGoSearchError> {
+    if bytes.len() > REPLY_MAX_BYTES {
+        return Err(DuckDuckGoSearchError::ReplyTooLarge {
+            limit: REPLY_MAX_BYTES,
+        });
+    }
+    parse_object::<DuckDuckGoReply>(bytes)
+}
+
+fn limit_of(params: &DuckDuckGoParams) -> Option<i64> {
+    match params.max_results.as_ref() {
+        Some(JsonValue::Number(number)) => number.as_i64(),
+        Some(JsonValue::String(text)) => text.trim().parse::<i64>().ok(),
+        _ => None,
+    }
+}
+
+fn topics_of(member: Member) -> Result<Vec<Box<RawValue>>, DuckDuckGoSearchError> {
+    match member {
+        None => Ok(Vec::new()),
+        Some(None) => Err(DuckDuckGoSearchError::ReplyNull {
+            field: "RelatedTopics",
+        }),
+        Some(Some(raw)) => parse_list(&raw, "RelatedTopics"),
+    }
+}
+
+fn append_topics(
+    topics: &[Box<RawValue>],
+    limit: Option<i64>,
+    results: &mut Vec<SearchResult>,
+) -> Result<(), DuckDuckGoSearchError> {
+    for topic in topics {
+        if limit_reached(results.len(), limit) {
+            break;
+        }
+        if topic.get().trim_ascii_start().as_bytes().first() != Some(&b'{') {
+            continue;
+        }
+        append_topic(&mut parse_entry(topic.get().as_bytes())?, limit, results)?;
+    }
+    Ok(())
+}
+
+fn append_topic(
+    entry: &mut RelatedTopic,
+    limit: Option<i64>,
+    results: &mut Vec<SearchResult>,
+) -> Result<(), DuckDuckGoSearchError> {
+    if let Some(result) = direct_topic(entry)? {
+        results.push(result);
+        return Ok(());
+    }
+    let Some(nested) = &entry.topics else {
+        return Ok(());
+    };
+    let Some(raw) = nested else {
+        return Err(DuckDuckGoSearchError::ReplyNull { field: "Topics" });
+    };
+    append_nested(raw, limit, results)
 }
 
 fn push_abstract(
@@ -190,13 +216,10 @@ fn truncated_title(text: &str) -> String {
 }
 
 fn limit_reached(count: usize, limit: Option<i64>) -> bool {
-    let Some(limit) = limit else {
+    let Some(maximum) = limit else {
         return false;
     };
-    match i64::try_from(count) {
-        Ok(number) => number >= limit,
-        Err(_) => true,
-    }
+    i64::try_from(count).map_or(true, |number| number >= maximum)
 }
 
 fn text_member(

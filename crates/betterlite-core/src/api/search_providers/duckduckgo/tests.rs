@@ -280,10 +280,10 @@ fn null_options_are_left_out() {
 fn an_unsupported_option_value_names_the_field(#[case] field: &str, #[case] value: JsonValue) {
     let error = build_request(&single("q"), &options(&[(field, value)])).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::OptionType { field: named } => assert_eq!(named, field),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::OptionType { field: named } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*named, field);
 }
 
 #[test]
@@ -545,20 +545,20 @@ fn an_empty_topic_text_is_kept() {
 fn related_topics_must_be_a_list(#[case] body: &str) {
     let error = decode(body, None).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyList { field, .. } => assert_eq!(field, "RelatedTopics"),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyList { field, .. } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*field, "RelatedTopics");
 }
 
 #[test]
 fn a_null_related_topics_field_fails() {
     let error = decode(r#"{"RelatedTopics":null}"#, None).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyNull { field } => assert_eq!(field, "RelatedTopics"),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyNull { field } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*field, "RelatedTopics");
 }
 
 #[test]
@@ -567,10 +567,10 @@ fn a_null_topics_field_fails() {
 
     let error = decode(body, None).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyNull { field } => assert_eq!(field, "Topics"),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyNull { field } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*field, "Topics");
 }
 
 #[test]
@@ -592,16 +592,16 @@ fn titles_split_at_the_first_separator() {
 
 #[test]
 fn long_titles_truncate_at_fifty_code_points() {
-    let long = "é".repeat(51);
+    let long = "\u{e9}".repeat(51);
     let response = decode(&topic_reply(&long), None).unwrap();
     assert_eq!(response.results[0].title.chars().count(), 53);
     assert!(response.results[0].title.ends_with("..."));
     assert_eq!(response.results[0].snippet, long);
 
-    let exact = "é".repeat(50);
-    let response = decode(&topic_reply(&exact), None).unwrap();
-    assert_eq!(response.results[0].title, exact);
-    assert_eq!(response.results[0].snippet, exact);
+    let exact = "\u{e9}".repeat(50);
+    let exact_response = decode(&topic_reply(&exact), None).unwrap();
+    assert_eq!(exact_response.results[0].title, exact);
+    assert_eq!(exact_response.results[0].snippet, exact);
 }
 
 #[test]
@@ -659,10 +659,10 @@ fn a_reply_that_is_too_large_fails() {
 
     let error = decode_duckduckgo_search(&bytes, &params(None)).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyTooLarge { limit } => assert_eq!(limit, REPLY_MAX_BYTES),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyTooLarge { limit } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*limit, REPLY_MAX_BYTES);
 }
 
 #[test]
@@ -686,10 +686,10 @@ fn a_reply_at_the_size_limit_is_read() {
 fn a_wrong_typed_abstract_fails(#[case] body: &str, #[case] field: &str) {
     let error = decode(body, None).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyText { field: named, .. } => assert_eq!(named, field),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyText { field: named, .. } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*named, field);
 }
 
 #[test]
@@ -698,10 +698,10 @@ fn a_null_heading_fails() {
 
     let error = decode(body, None).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyNull { field } => assert_eq!(field, "Heading"),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyNull { field } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*field, "Heading");
 }
 
 #[rstest]
@@ -727,10 +727,10 @@ fn a_wrong_typed_topic_field_fails(#[case] topic: &str, #[case] field: &str) {
 
     let error = decode(&body, None).unwrap_err();
 
-    match error {
-        DuckDuckGoSearchError::ReplyText { field: named, .. } => assert_eq!(named, field),
-        other => panic!("unexpected error {other:?}"),
-    }
+    let DuckDuckGoSearchError::ReplyText { field: named, .. } = &error else {
+        panic!("unexpected error {error:?}");
+    };
+    assert_eq!(*named, field);
 }
 
 #[test]
