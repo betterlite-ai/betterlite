@@ -17,9 +17,10 @@ use crate::headers::AnthropicHeaders;
 use crate::headers::environment::{
     EnvironmentRequest, HeaderLiteLlmParams, HeaderParams, validate_environment,
 };
+use crate::request::BillingHeader;
 use crate::usage::ReasoningTokenCounter;
 
-use super::config::{ChatConfig, TransformRequest};
+use super::config::{ChatConfig, TransformOutcome, TransformRequest};
 use super::error::ChatCallError;
 use super::transport::ChatTransport;
 use super::{CallStyle, ChatCall, ChatDeps};
@@ -62,18 +63,23 @@ where
         let validated = validated_headers(call, &params.optional, params.is_vertex_request)?;
         let transform = TransformRequest {
             model: call.model,
+            custom_llm_provider: Some(call.custom_llm_provider),
             messages: &call.messages,
             optional_params: &params.transform,
             litellm_params: &call.litellm_params,
             headers: &validated,
+            billing_header: BillingHeader::Keep,
         };
         let transformed = if call.style == CallStyle::Async {
-            deps.config.async_transform_request(&transform).await
+            deps.config.async_transform_outcome(&transform).await
         } else {
-            deps.config.transform_request(&transform)
+            deps.config.transform_outcome(&transform)
         };
-        let mut body = transformed.map_err(|source| ChatCallError::Prepare { source })?;
-        let mut headers = validated.values;
+        let TransformOutcome {
+            mut body,
+            headers: mapped,
+        } = transformed.map_err(|source| ChatCallError::Prepare { source })?;
+        let mut headers = mapped.values;
         deps.config
             .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
             .map_err(|source| ChatCallError::Filter { source })?;

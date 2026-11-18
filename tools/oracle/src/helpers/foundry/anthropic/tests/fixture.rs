@@ -8,9 +8,14 @@ use betterlite_anthropic::anthropic_http_stream::error::{PostFailure, StatusFail
 use betterlite_anthropic::anthropic_http_stream::transport::{
     LineChunks, StreamPost, StreamReply, StreamTransport,
 };
-use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest, TransformResponse};
+use betterlite_anthropic::chat_call::config::{
+    ChatConfig, TransformOutcome, TransformRequest, TransformResponse,
+};
 use betterlite_anthropic::chat_call::error::ConfigError;
 use betterlite_anthropic::chat_call::transport::{BufferedReply, ChatTransport};
+use betterlite_anthropic::request::BillingHeader;
+use betterlite_anthropic::request::beta_headers::add_context_management_beta;
+use betterlite_anthropic::request::system::translate_system_message;
 use betterlite_anthropic::response::error::ResponseError;
 use betterlite_anthropic::response::{Logging, transform_response};
 use betterlite_anthropic::stream_decode::TransportChunk;
@@ -26,12 +31,15 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::HeaderMap;
 use indexmap::IndexMap;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -119,22 +127,71 @@ impl ChatTransport for Wire {
     }
 }
 
-// The parent Anthropic mapper is B584's; this stands in for it and answers with the promoted options as the body
+// The parent Anthropic mapper is B584's; this stands in for it and maps the prompt the way its provider does
 pub(crate) struct Mapper;
+
+// The parent maps the leading system run and adds the optional betas to the headers it was handed
+fn mapped(request: &TransformRequest<'_>) -> Result<TransformOutcome, ConfigError> {
+    let mut body = request.optional_params.clone();
+    if let Some(system) = mapped_system(request)? {
+        body.insert("system".to_owned(), system);
+    }
+    let mut headers = request.headers.clone();
+    if let Some(context_management) = request.optional_params.get("context_management") {
+        add_context_management_beta(&mut headers, context_management).map_err(ConfigError::from)?;
+    }
+    Ok(TransformOutcome { body, headers })
+}
+
+// The parent turns the system run into the top-level prompt, dropping billing blocks when it was told to
+fn mapped_system(request: &TransformRequest<'_>) -> Result<Option<Json>, ConfigError> {
+    let mut messages: Vec<Message> = request
+        .messages
+        .iter()
+        .map(decode::<Message>)
+        .collect::<Result<_, _>>()?;
+    let blocks = translate_system_message(
+        &mut messages,
+        request.billing_header == BillingHeader::Strip,
+    );
+    if blocks.is_empty() {
+        return Ok(None);
+    }
+    encode(&blocks).map(Some)
+}
+
+// The message records and this JSON tree differ only in their field shapes, so one serde pass converts either way
+fn decode<Target: DeserializeOwned>(value: &Json) -> Result<Target, ConfigError> {
+    let plain = serde_json::to_value(value).map_err(ConfigError::from)?;
+    serde_json::from_value(plain).map_err(ConfigError::from)
+}
+
+fn encode<Source: Serialize>(value: &Source) -> Result<Json, ConfigError> {
+    let plain = serde_json::to_value(value).map_err(ConfigError::from)?;
+    serde_json::from_value(plain).map_err(ConfigError::from)
+}
 
 impl ChatConfig for Mapper {
     fn transform_request(
         &self,
         request: &TransformRequest<'_>,
     ) -> Result<IndexMap<String, Json>, ConfigError> {
-        Ok(request.optional_params.clone())
+        Ok(mapped(request)?.body)
     }
 
     fn async_transform_request(
         &self,
         request: &TransformRequest<'_>,
     ) -> impl Future<Output = Result<IndexMap<String, Json>, ConfigError>> + Send {
-        ready(self.transform_request(request))
+        let mapped_body = mapped(request).map(|outcome| outcome.body);
+        ready(mapped_body)
+    }
+
+    fn transform_outcome(
+        &self,
+        request: &TransformRequest<'_>,
+    ) -> Result<TransformOutcome, ConfigError> {
+        mapped(request)
     }
 
     fn filter_request_betas(

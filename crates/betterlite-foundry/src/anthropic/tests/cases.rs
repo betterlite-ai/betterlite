@@ -3,6 +3,8 @@ use betterlite_anthropic::chat_call::transport::ClientKind;
 use betterlite_anthropic::feature_flags::beta::{
     FILE_CODE_EXECUTION_BETA, FILES_API_BETA, MCP_CLIENT_BETA,
 };
+use betterlite_anthropic::request::BillingHeader;
+use betterlite_anthropic::request::beta_headers::CONTEXT_MANAGEMENT_BETA;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -11,7 +13,6 @@ use rstest::rstest;
 use crate::anthropic::environment::EnvironmentError;
 use crate::anthropic::error::ChatError;
 use crate::anthropic::request::Style;
-use crate::anthropic::{CUSTOM_LLM_PROVIDER, SHOULD_STRIP_BILLING_METADATA};
 
 use super::harness::{KeyShape, Run, Setup, execute};
 use super::support::{
@@ -66,12 +67,8 @@ fn option(key: &str, value: Json) -> IndexMap<String, Json> {
     IndexMap::from([(key.to_owned(), value)])
 }
 
-fn run(setup: Setup) -> Run {
-    execute(&setup)
-}
-
 fn foundry_anthropic_url() {
-    let direct = run(Setup {
+    let direct = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Async,
         ..Setup::chat()
@@ -81,14 +78,14 @@ fn foundry_anthropic_url() {
 
     let queried_base =
         "https://resource.services.ai.azure.com/anthropic/v1/messages?api-version=2024-06-01";
-    let queried = run(Setup {
+    let queried = execute(&Setup {
         api_base: queried_base,
         ..Setup::chat()
     });
     assert_eq!(queried.posted_urls, [queried_base.to_owned()]);
 
     // httpx refuses a base without a scheme before the transport, and the handler raises that as a 500
-    let unusable = run(Setup {
+    let unusable = execute(&Setup {
         api_base: "not a url",
         style: Style::Async,
         supplied_kind: ClientKind::Async,
@@ -108,7 +105,7 @@ fn azure_key_header() {
 
 // the caller's argument key reaches the Anthropic builder and the Azure resolver, so both headers carry it
 fn both_keys_sent() {
-    let both = run(Setup {
+    let both = execute(&Setup {
         configured_key: Some(CONFIGURED_KEY),
         ..Setup::chat()
     });
@@ -119,7 +116,7 @@ fn both_keys_sent() {
 
 fn configured_key_authenticates_azure() {
     // with no argument key the Anthropic builder drops x-api-key while the configured key still authenticates Azure
-    let configured = run(Setup {
+    let configured = execute(&Setup {
         argument_key: None,
         configured_key: Some(CONFIGURED_KEY),
         ..Setup::chat()
@@ -127,7 +124,7 @@ fn configured_key_authenticates_azure() {
     assert!(configured.posted_headers[0].get("x-api-key").is_none());
     assert_eq!(header(&configured, "api-key"), Some(CONFIGURED_KEY));
 
-    let no_key = run(Setup {
+    let no_key = execute(&Setup {
         argument_key: None,
         ..Setup::chat()
     });
@@ -135,7 +132,7 @@ fn configured_key_authenticates_azure() {
     assert!(no_key.posted_headers[0].get("api-key").is_none());
 
     // the caller's own api-key header survives the merge, while the generated x-api-key stays
-    let caller_wins = run(Setup {
+    let caller_wins = execute(&Setup {
         configured_key: Some(CONFIGURED_KEY),
         caller_headers: pairs(&[("api-key", "header-key")]),
         ..Setup::chat()
@@ -153,21 +150,21 @@ fn pairs(items: &[(&str, &str)]) -> IndexMap<String, String> {
 
 // a present null api_key in a dict blocks the argument key, while an empty typed field does not
 fn typed_key_shapes() {
-    let blocked = run(Setup {
+    let blocked = execute(&Setup {
         key_shape: KeyShape::DictNull,
         configured_key: Some(CONFIGURED_KEY),
         ..Setup::chat()
     });
     assert_eq!(header(&blocked, "api-key"), Some(CONFIGURED_KEY));
 
-    let empty_typed = run(Setup {
+    let empty_typed = execute(&Setup {
         key_shape: KeyShape::Typed(Some("")),
         configured_key: Some(CONFIGURED_KEY),
         ..Setup::chat()
     });
     assert_eq!(header(&empty_typed, "api-key"), Some(CALLER_KEY));
 
-    let typed_key = run(Setup {
+    let typed_key = execute(&Setup {
         key_shape: KeyShape::Typed(Some("typed-key")),
         ..Setup::chat()
     });
@@ -183,7 +180,7 @@ fn entra_bearer_header() {
 
 // a token is the last resort, after the argument and the configured key
 fn token_is_the_last_resort() {
-    let bearer = run(Setup {
+    let bearer = execute(&Setup {
         argument_key: None,
         token: Some(TOKEN),
         ..Setup::chat()
@@ -196,7 +193,7 @@ fn token_is_the_last_resort() {
     assert!(bearer.posted_headers[0].get("x-api-key").is_none());
     assert!(bearer.posted_headers[0].get("api-key").is_none());
 
-    let keyed = run(Setup {
+    let keyed = execute(&Setup {
         token: Some(TOKEN),
         ..Setup::chat()
     });
@@ -208,7 +205,7 @@ fn token_is_the_last_resort() {
 fn version_and_authorization_headers() {
     // Azure's Authorization replaces the caller's own header
     let expected_bearer = format!("Bearer {TOKEN}");
-    let overridden = run(Setup {
+    let overridden = execute(&Setup {
         argument_key: None,
         token: Some(TOKEN),
         caller_headers: IndexMap::from([(
@@ -223,7 +220,7 @@ fn version_and_authorization_headers() {
     );
 
     // a caller anthropic-version, even an empty one, survives; a missing one takes the default
-    let empty_version = run(Setup {
+    let empty_version = execute(&Setup {
         caller_headers: IndexMap::from([
             ("anthropic-version".to_owned(), String::new()),
             ("authorization".to_owned(), "Bearer caller-token".to_owned()),
@@ -236,7 +233,7 @@ fn version_and_authorization_headers() {
         header(&empty_version, "authorization"),
         Some("Bearer caller-token")
     );
-    let default_version = run(Setup::chat());
+    let default_version = execute(&Setup::chat());
     assert_eq!(
         header(&default_version, "anthropic-version"),
         Some("2023-06-01")
@@ -245,7 +242,7 @@ fn version_and_authorization_headers() {
 
 // a configured client secret routes to the token source, and its refusal is the native Azure failure
 fn offline_client_secret() {
-    let refused = run(Setup {
+    let refused = execute(&Setup {
         argument_key: None,
         client_secret: Some("fixture-client-secret"),
         ..Setup::chat()
@@ -256,7 +253,7 @@ fn offline_client_secret() {
 }
 
 fn extra_body_promotion() {
-    let run = run(Setup {
+    let run = execute(&Setup {
         optional_params: IndexMap::from([
             ("max_tokens".to_owned(), number(16)),
             (
@@ -286,7 +283,7 @@ fn extra_body_promotion() {
     // an empty or non-dict extra_body stays for the parent, and cleanup removes it from the body
     non_promoted_extra_body();
     self_referential_extra_body();
-    promoted_speed_reaches_the_reply();
+    promoted_option_reaches_the_reply();
 }
 
 fn body_with_cleanup_keys() -> IndexMap<String, Json> {
@@ -301,7 +298,7 @@ fn body_with_cleanup_keys() -> IndexMap<String, Json> {
 // an empty or non-dict extra_body is not promoted, so the parent sees it and the cleanup drops it
 fn non_promoted_extra_body() {
     for value in [Json::Object(IndexMap::new()), text("thinking")] {
-        let run = run(Setup {
+        let run = execute(&Setup {
             optional_params: option("extra_body", value.clone()),
             transform_body: Some(body_with_cleanup_keys()),
             ..Setup::chat()
@@ -322,7 +319,7 @@ fn self_referential_extra_body() {
             Json::Object(IndexMap::from([("thinking".to_owned(), text("enabled"))])),
         )])),
     );
-    let run = run(Setup {
+    let run = execute(&Setup {
         optional_params: options,
         transform_body: Some(IndexMap::from([("model".to_owned(), text(MODEL))])),
         ..Setup::chat()
@@ -333,45 +330,45 @@ fn self_referential_extra_body() {
 }
 
 // the response mapper receives the caller's dict after the in-place promotion, so a passthrough key reaches it
-fn promoted_speed_reaches_the_reply() {
-    let run = run(Setup {
+fn promoted_option_reaches_the_reply() {
+    let run = execute(&Setup {
         optional_params: option(
             "extra_body",
-            Json::Object(IndexMap::from([("speed".to_owned(), text("fast"))])),
+            Json::Object(IndexMap::from([("top_k".to_owned(), number(5))])),
         ),
         ..Setup::chat()
     });
     assert_eq!(
-        run.responses[0].optional_params.get("speed"),
-        Some(&text("fast"))
+        run.responses[0].optional_params.get("top_k"),
+        Some(&number(5))
     );
     assert!(!run.responses[0].optional_params.contains_key("extra_body"));
 }
 
+fn message(role: &str, content: Json) -> Json {
+    Json::Object(IndexMap::from([
+        ("role".to_owned(), text(role)),
+        ("content".to_owned(), content),
+    ]))
+}
+
 fn billing_messages() -> Vec<Json> {
-    vec![Json::Object(IndexMap::from([
-        ("role".to_owned(), text("user")),
+    let text_block = Json::Object(IndexMap::from([
+        ("type".to_owned(), text("text")),
+        ("text".to_owned(), text("hi")),
         (
-            "content".to_owned(),
-            Json::List(vec![
-                Json::Object(IndexMap::from([
-                    ("type".to_owned(), text("text")),
-                    ("text".to_owned(), text("hi")),
-                    (
-                        "cache_control".to_owned(),
-                        Json::Object(IndexMap::from([("type".to_owned(), text("ephemeral"))])),
-                    ),
-                ])),
-                Json::Object(IndexMap::from([
-                    ("type".to_owned(), text("file")),
-                    (
-                        "file".to_owned(),
-                        Json::Object(IndexMap::from([("file_id".to_owned(), text("file-1"))])),
-                    ),
-                ])),
-            ]),
+            "cache_control".to_owned(),
+            Json::Object(IndexMap::from([("type".to_owned(), text("ephemeral"))])),
         ),
-    ]))]
+    ]));
+    let file_block = Json::Object(IndexMap::from([
+        ("type".to_owned(), text("file")),
+        (
+            "file".to_owned(),
+            Json::Object(IndexMap::from([("file_id".to_owned(), text("file-1"))])),
+        ),
+    ]));
+    vec![message("user", Json::List(vec![text_block, file_block]))]
 }
 
 fn probe_options() -> IndexMap<String, Json> {
@@ -395,40 +392,116 @@ fn probe_options() -> IndexMap<String, Json> {
 }
 
 fn billing_metadata_stripped() {
-    assert_eq!(CUSTOM_LLM_PROVIDER, "azure_ai");
-    assert!(SHOULD_STRIP_BILLING_METADATA);
+    stripped_system_prompt();
+    context_management_beta();
     derived_betas();
     caller_beta_wins();
     vertex_request_has_no_betas();
     invalid_probe_types();
 }
 
+fn system_messages() -> Vec<Json> {
+    vec![
+        message(
+            "system",
+            text("x-anthropic-billing-header: cc_version=2.0.0; cc_entrypoint=cli"),
+        ),
+        message("system", text("answer in one line")),
+        message(
+            "system",
+            Json::List(vec![Json::Object(IndexMap::from([
+                ("type".to_owned(), text("text")),
+                (
+                    "text".to_owned(),
+                    text("x-anthropic-billing-header: block metadata"),
+                ),
+            ]))]),
+        ),
+        message("user", text("hi")),
+    ]
+}
+
+// Foundry tells the inherited mapper it is azure_ai and strips billing metadata; the sent prompt shows the effect
+fn stripped_system_prompt() {
+    let run = execute(&Setup {
+        messages: Some(system_messages()),
+        ..Setup::chat()
+    });
+    let recorded = &run.transforms[0];
+    assert_eq!(recorded.custom_llm_provider.as_deref(), Some("azure_ai"));
+    assert_eq!(recorded.billing_header, BillingHeader::Strip);
+    let system = run.posted_bodies[0]
+        .get("system")
+        .expect("the mapped system prompt is sent");
+    assert_eq!(
+        system,
+        &Json::List(vec![Json::Object(IndexMap::from([
+            ("type".to_owned(), text("text")),
+            ("text".to_owned(), text("answer in one line")),
+        ]))])
+    );
+}
+
+// the inherited mapper adds the context-management beta, and its updated header reaches the log and the wire
+fn context_management_beta() {
+    let edits = Json::List(vec![Json::Object(IndexMap::from([(
+        "type".to_owned(),
+        text("clear_tool_uses_20250919"),
+    )]))]);
+    let run = execute(&Setup {
+        optional_params: option(
+            "extra_body",
+            Json::Object(option(
+                "context_management",
+                Json::Object(IndexMap::from([("edits".to_owned(), edits)])),
+            )),
+        ),
+        ..Setup::chat()
+    });
+    assert_eq!(
+        header(&run, "anthropic-beta"),
+        Some(CONTEXT_MANAGEMENT_BETA)
+    );
+    assert_eq!(
+        run.detail(&["additional_args", "headers", "anthropic-beta"]),
+        Some(&text(CONTEXT_MANAGEMENT_BETA))
+    );
+}
+
 // a probe value of the wrong type is the environment's typed 400, before either client is used
 fn invalid_probe_types() {
-    for (field, options) in [
-        ("tools", option("tools", text("not a list"))),
-        ("mcp_servers", option("mcp_servers", text("not a list"))),
-    ] {
-        let run = run(Setup {
-            optional_params: options,
-            ..Setup::chat()
-        });
-        assert!(
-            matches!(
-                run.error(),
-                ChatError::Environment(EnvironmentError::Parameter(source)) if source.field == field
-            ),
-            "{}",
-            run.error()
-        );
-        assert_eq!(run.status(), Some(400));
-        assert_eq!(run.posts_supplied, 0);
-        assert_eq!(run.posts_pooled, 0);
-    }
+    let tools = execute(&Setup {
+        optional_params: option("tools", text("not a list")),
+        ..Setup::chat()
+    });
+    assert_environment_parameter(&tools, "tools");
+    let servers = execute(&Setup {
+        optional_params: option("mcp_servers", text("not a list")),
+        ..Setup::chat()
+    });
+    assert_environment_parameter(&servers, "mcp_servers");
+}
+
+fn assert_environment_parameter(run: &Run, field: &'static str) {
+    assert!(
+        matches!(
+            run.error(),
+            ChatError::Environment(EnvironmentError::Parameter(source)) if source.field == field
+        ),
+        "{}",
+        run.error()
+    );
+    assert_unposted(run);
+}
+
+fn assert_unposted(run: &Run) {
+    assert_eq!(run.status(), Some(400));
+    assert_eq!(run.posts_supplied, 0);
+    assert_eq!(run.posts_pooled, 0);
 }
 
 fn derived_betas() {
-    let run = run(Setup {
+    let run = execute(&Setup {
         messages: Some(billing_messages()),
         optional_params: probe_options(),
         ..Setup::chat()
@@ -445,7 +518,7 @@ fn derived_betas() {
 }
 
 fn caller_beta_wins() {
-    let caller_header = run(Setup {
+    let caller_header = execute(&Setup {
         caller_headers: IndexMap::from([(
             "anthropic-beta".to_owned(),
             "keep,caller-beta".to_owned(),
@@ -462,7 +535,7 @@ fn caller_beta_wins() {
 }
 
 fn vertex_request_has_no_betas() {
-    let vertex = run(Setup {
+    let vertex = execute(&Setup {
         optional_params: IndexMap::from([("is_vertex_request".to_owned(), Json::Bool(true))]),
         ..Setup::chat()
     });
@@ -486,7 +559,6 @@ fn stream_options() -> IndexMap<String, Json> {
     IndexMap::from([
         ("stream".to_owned(), Json::Bool(true)),
         ("json_mode".to_owned(), Json::Bool(true)),
-        ("speed".to_owned(), text("fast")),
     ])
 }
 
@@ -496,7 +568,7 @@ fn reverse_map() -> IndexMap<String, Json> {
 }
 
 fn chat_stream_native_events() {
-    let asynchronous = run(Setup {
+    let asynchronous = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Async,
         optional_params: stream_options(),
@@ -504,18 +576,12 @@ fn chat_stream_native_events() {
         reply: stream_reply(),
         ..Setup::chat()
     });
-    assert_stream(
-        &asynchronous,
-        "anthropic",
-        "lines",
-        Some("fast"),
-        Some("original"),
-    );
+    assert_stream(&asynchronous, "anthropic", "lines", Some("original"));
     assert_eq!(asynchronous.calls, ["sync".to_owned()]);
     assert_prepared_options(&asynchronous);
     assert_posted_auth(&asynchronous);
 
-    let synchronous = run(Setup {
+    let synchronous = execute(&Setup {
         supplied_kind: ClientKind::Sync,
         optional_params: stream_options(),
         litellm_params: reverse_map(),
@@ -526,7 +592,6 @@ fn chat_stream_native_events() {
         &synchronous,
         "azure_ai",
         "first stream response received",
-        None,
         None,
     );
     assert_prepared_options(&synchronous);
@@ -544,7 +609,6 @@ fn assert_stream(
     run: &Run,
     provider: &'static str,
     original_response: &str,
-    speed: Option<&str>,
     original_tool_name: Option<&str>,
 ) {
     let (model, actual, headers, options) = run.stream();
@@ -555,7 +619,7 @@ fn assert_stream(
         Some("stream-1")
     );
     assert_eq!(options.json_mode, Some(true));
-    assert_eq!(options.speed.as_deref(), speed);
+    assert_eq!(options.speed, None);
     assert_eq!(
         options
             .tool_name_reverse_map
@@ -592,7 +656,7 @@ fn assert_posted_auth(run: &Run) {
 
 fn client_kinds() {
     // an async stream ignores a sync client, while make_sync_call takes whatever client it is handed
-    let wrong_kind = run(Setup {
+    let wrong_kind = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Sync,
         optional_params: stream_options(),
@@ -601,7 +665,7 @@ fn client_kinds() {
     assert_eq!(wrong_kind.posts_supplied, 0);
     assert_eq!(wrong_kind.posts_pooled, 1);
 
-    let sync_any = run(Setup {
+    let sync_any = execute(&Setup {
         supplied_kind: ClientKind::Async,
         optional_params: stream_options(),
         ..Setup::chat()
@@ -610,19 +674,19 @@ fn client_kinds() {
     assert_eq!(sync_any.posts_pooled, 0);
 
     // async nonstream uses any supplied client; sync nonstream keeps only an HTTPHandler
-    let async_any = run(Setup {
+    let async_any = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Sync,
         ..Setup::chat()
     });
     assert_eq!(async_any.posts_supplied, 1);
-    let sync_wrong = run(Setup {
+    let sync_wrong = execute(&Setup {
         supplied_kind: ClientKind::Async,
         ..Setup::chat()
     });
     assert_eq!(sync_wrong.posts_supplied, 0);
     assert_eq!(sync_wrong.posts_pooled, 1);
-    let sync_kept = run(Setup {
+    let sync_kept = execute(&Setup {
         supplied_kind: ClientKind::Sync,
         ..Setup::chat()
     });
@@ -630,36 +694,32 @@ fn client_kinds() {
 }
 
 fn popped_types() {
-    for options in [
-        option("stream", text("true")),
-        option("json_mode", number(1)),
-        option("is_vertex_request", text("true")),
-    ] {
-        let run = run(Setup {
-            optional_params: options,
+    for field in ["stream", "json_mode", "is_vertex_request"] {
+        let run = execute(&Setup {
+            optional_params: option(field, text("true")),
             ..Setup::chat()
         });
-        assert_eq!(run.status(), Some(400));
-        assert_eq!(run.posts_supplied, 0);
-        assert_eq!(run.posts_pooled, 0);
+        let message = format!("the {field} parameter has the wrong type");
+        assert!(format!("{}", run.error()).contains(&message));
+        assert_unposted(&run);
     }
 }
 
 fn only_literal_true_streams() {
     for value in [Json::Null, Json::Bool(false)] {
-        let run = run(Setup {
+        let run = execute(&Setup {
             optional_params: option("stream", value),
             ..Setup::chat()
         });
         assert_eq!(run.posts_supplied, 1);
         assert_eq!(run.posts_pooled, 0);
         assert_eq!(run.logger_calls.len(), 0);
-        assert!(run.outcome.is_ok());
+        assert!(run.posted_bodies[0].get("stream").is_none());
     }
 }
 
 fn buffered_projection() {
-    let run = run(Setup {
+    let run = execute(&Setup {
         optional_params: IndexMap::from([("json_mode".to_owned(), Json::Bool(true))]),
         ..Setup::chat()
     });
@@ -690,7 +750,7 @@ fn failure_headers() -> HeaderMap {
 }
 
 fn status_call(status_code: u16, exception_headers: bool) -> Run {
-    run(Setup {
+    execute(&Setup {
         trip: Trip::Status {
             status_code,
             headers: failure_headers(),
@@ -706,11 +766,37 @@ fn chat_failure_projection() {
     transport_failures();
     sync_failure_keeps_the_pre_call_record();
     rejected_timeout();
+    rejected_speed();
+}
+
+// the inherited mapper rejects speed for azure_ai with its own 400, before either client is used
+fn rejected_speed() {
+    let run = execute(&Setup {
+        optional_params: option("extra_body", Json::Object(option("speed", text("fast")))),
+        ..Setup::chat()
+    });
+    assert_unposted(&run);
+    let ChatError::Call(error @ ChatCallError::Prepare { source }) = run.error() else {
+        panic!("a rejected speed is a preparation failure");
+    };
+    let metadata = error.metadata().unwrap();
+    assert_eq!(metadata.status_code, 400);
+    assert_eq!(serde_json::to_value(metadata.error_type).unwrap(), "None");
+    assert_eq!(
+        serde_json::to_value(metadata.param).unwrap(),
+        serde_json::Value::Null
+    );
+    assert_eq!(metadata.code, "400");
+    assert_eq!(metadata.openai_code, None);
+    assert!(
+        format!("{source}").contains(r#"does not support speed="fast""#),
+        "{source}"
+    );
 }
 
 fn status_failures() {
     // a masked httpx status error has no exception.headers, so the response headers are the fallback
-    let masked = run(Setup {
+    let masked = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Async,
         trip: Trip::Status {
@@ -732,7 +818,7 @@ fn status_failures() {
     assert_anthropic_error(&carried, 529, "rate limited");
 
     // the reused buffered step carries the body as text, so a body that is not utf-8 names its size
-    let invalid = run(Setup {
+    let invalid = execute(&Setup {
         trip: Trip::Status {
             status_code: 500,
             headers: HeaderMap::new(),
@@ -767,7 +853,7 @@ fn assert_anthropic_error(run: &Run, status_code: u16, message: &str) {
 }
 
 fn transport_failures() {
-    let asynchronous = run(Setup {
+    let asynchronous = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Async,
         trip: Trip::Unknown("boom"),
@@ -784,7 +870,7 @@ fn transport_failures() {
         Some(&text(MODEL))
     );
 
-    let unaddressed = run(Setup {
+    let unaddressed = execute(&Setup {
         api_base: "not a url",
         ..Setup::chat()
     });
@@ -807,7 +893,7 @@ fn sync_failure_keeps_the_pre_call_record() {
 
 fn rejected_timeout() {
     // a deadline with no response is a bare transport error here, so it takes the 500 path
-    let timed = run(Setup {
+    let timed = execute(&Setup {
         style: Style::Async,
         supplied_kind: ClientKind::Async,
         trip: Trip::Unknown("timed out after 1.5 seconds"),

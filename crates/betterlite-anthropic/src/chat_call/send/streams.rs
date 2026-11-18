@@ -30,8 +30,7 @@ pub struct StreamFacts<'facts> {
     pub litellm_params: &'facts IndexMap<String, Json>,
     // The sync wrapper stamps the provider its handler passes; the async helper always stamps anthropic
     pub custom_llm_provider: &'static str,
-    // Whether make_sync_call receives the caller's speed and reverse map; the parent passes them, Azure's
-    // override passes neither, and the async helper reads them from the params itself
+    // Whether make_sync_call receives the caller's speed and reverse map; Azure's override passes neither
     pub names: SyncStreamNames,
 }
 pub async fn open_stream<Client, Counter>(

@@ -1,7 +1,10 @@
-use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest};
+use betterlite_anthropic::chat_call::config::{ChatConfig, TransformOutcome, TransformRequest};
 use betterlite_anthropic::chat_call::error::ConfigError;
+use betterlite_anthropic::request::BillingHeader;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+
+use super::CUSTOM_LLM_PROVIDER;
 
 const EXTRA_BODY_FIELD: &str = "extra_body";
 const IS_VERTEX_REQUEST_FIELD: &str = "is_vertex_request";
@@ -33,27 +36,23 @@ pub fn promoted_for_environment(
 pub fn transform_request<Config>(
     config: &Config,
     request: &TransformRequest<'_>,
-) -> Result<IndexMap<String, Json>, ConfigError>
+) -> Result<TransformOutcome, ConfigError>
 where
     Config: ChatConfig,
 {
     let optional_params = promoted_options(request.optional_params);
-    let mut body = config.transform_request(&parent_of(request, &optional_params))?;
-    clean(&mut body);
-    Ok(body)
-}
-
-fn parent_of<'data>(
-    request: &'data TransformRequest<'data>,
-    optional_params: &'data IndexMap<String, Json>,
-) -> TransformRequest<'data> {
-    TransformRequest {
+    let parent = TransformRequest {
         model: request.model,
         messages: request.messages,
-        optional_params,
+        optional_params: &optional_params,
+        custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
+        billing_header: BillingHeader::Strip,
         litellm_params: request.litellm_params,
         headers: request.headers,
-    }
+    };
+    let mut outcome = config.transform_outcome(&parent)?;
+    clean(&mut outcome.body);
+    Ok(outcome)
 }
 
 // Azure Anthropic rejects the three OpenAI passthrough keys after the parent produced the body

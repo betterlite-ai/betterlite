@@ -2,6 +2,7 @@ pub mod config;
 pub mod error;
 pub mod prepare;
 pub mod send;
+pub mod steps;
 mod tests;
 pub mod transport;
 
@@ -15,7 +16,7 @@ use futures_util::future::LocalBoxFuture;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use crate::anthropic_http_stream::call::{StreamBuild, StreamLogger};
+use crate::anthropic_http_stream::call::StreamLogger;
 use crate::anthropic_http_stream::completion::WrappedStream;
 use crate::anthropic_http_stream::transport::StreamTransport;
 use crate::credentials::AnthropicSettings;
@@ -25,8 +26,7 @@ use crate::usage::ReasoningTokenCounter;
 
 use config::ChatConfig;
 use error::ChatCallError;
-use prepare::Prepared;
-use send::streams::{StreamFacts, open_stream};
+use steps::finish;
 use transport::{ChatTransport, SuppliedChatClient};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CallStyle {
@@ -79,8 +79,7 @@ pub struct CallFacts<'call> {
     pub model_response: ResponseEnvelope,
     pub sync_stream: SyncStream,
 }
-// What the sync stream branch adds: the wrapper's provider, and whether make_sync_call receives the caller's
-// speed and reverse map. The parent Anthropic handler passes them; Azure's Anthropic override passes neither.
+// The sync wrapper's provider, and whether make_sync_call receives the caller's speed and reverse map.
 pub struct SyncStream {
     pub custom_llm_provider: &'static str,
     pub names: SyncStreamNames,
@@ -116,7 +115,14 @@ where
             return Ok(ChatOutcome::Embedding);
         }
         let prepared = prepare::prepare(&call, &mut deps).await?;
-        let facts = CallFacts {
+        finish(CallFacts::from(call), prepared, deps).await
+    }
+    .boxed_local()
+}
+
+impl<'call> From<ChatCall<'call>> for CallFacts<'call> {
+    fn from(call: ChatCall<'call>) -> Self {
+        Self {
             model: call.model,
             messages: call.messages,
             litellm_params: call.litellm_params,
@@ -130,54 +136,6 @@ where
                 custom_llm_provider: "anthropic",
                 names: SyncStreamNames::FromParams,
             },
-        };
-        finish(facts, prepared, deps).await
-    }
-    .boxed_local()
-}
-// The buffered send and the stream open every provider's completion runs once its own prepare returned
-pub fn finish<'call, Config, Client, Counter>(
-    facts: CallFacts<'call>,
-    prepared: Prepared,
-    deps: ChatDeps<'call, Config, Client, Counter>,
-) -> LocalBoxFuture<'call, ChatResult<Client, Counter>>
-where
-    Config: ChatConfig,
-    Client: ChatTransport,
-    Counter: ReasoningTokenCounter + Unpin + Send + 'call,
-{
-    async move {
-        if !prepared.stream {
-            return send::buffered(facts, prepared, deps).await;
         }
-        let messages = Json::List(facts.messages);
-        let stream_facts = StreamFacts {
-            model: facts.model,
-            api_base: facts.api_base,
-            messages: &messages,
-            data: prepared.body,
-            headers: prepared.header_map,
-            timeout: facts.timeout,
-            json_mode: prepared.json_mode,
-            optional_params: &prepared.optional_params,
-            litellm_params: &facts.litellm_params,
-            custom_llm_provider: facts.sync_stream.custom_llm_provider,
-            names: facts.sync_stream.names,
-        };
-        let build = StreamBuild {
-            ids: deps.ids,
-            counter: deps.counter,
-            max_event_bytes: deps.max_event_bytes,
-            max_error_body_bytes: deps.max_error_body_bytes,
-        };
-        open_stream(
-            deps.clients,
-            deps.stream_logger,
-            build,
-            stream_facts,
-            facts.style == CallStyle::Async,
-        )
-        .await
     }
-    .boxed_local()
 }

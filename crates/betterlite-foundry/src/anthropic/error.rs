@@ -28,7 +28,7 @@ where
 {
     // The status LiteLLM puts on the exception this call raises, as far as the error carries one
     #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    pub fn status_code(&self) -> Option<u16> {
         match self {
             Self::Environment(source) => source.status(),
             Self::Call(source) => source.status_code(),

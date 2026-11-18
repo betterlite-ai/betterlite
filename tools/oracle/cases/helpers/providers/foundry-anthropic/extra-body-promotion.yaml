@@ -15,6 +15,9 @@ call:
         max_retries: 2
         extra_body:
           top_p: 0.5
+        context_management:
+          edits:
+            - type: clear_tool_uses_20250919
     litellm_params: {}
     caller_headers: {}
     api_key: sk-azure-key-fixture

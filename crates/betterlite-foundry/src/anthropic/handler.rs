@@ -8,12 +8,13 @@ use betterlite_anthropic::chat_call::ChatDeps;
 use betterlite_anthropic::chat_call::ChatOutcome;
 use betterlite_anthropic::chat_call::SyncStream;
 use betterlite_anthropic::chat_call::SyncStreamNames;
-use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest};
+use betterlite_anthropic::chat_call::config::{ChatConfig, TransformOutcome, TransformRequest};
 use betterlite_anthropic::chat_call::error::ChatCallError;
-use betterlite_anthropic::chat_call::finish;
 use betterlite_anthropic::chat_call::prepare::Prepared;
+use betterlite_anthropic::chat_call::steps::finish;
 use betterlite_anthropic::chat_call::transport::ChatTransport;
 use betterlite_anthropic::headers::AnthropicHeaders;
+use betterlite_anthropic::request::BillingHeader;
 use betterlite_anthropic::usage::ReasoningTokenCounter;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
@@ -24,11 +25,11 @@ use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 
-use super::CUSTOM_LLM_PROVIDER;
 use super::environment::{EnvironmentError, EnvironmentRequest, validate_environment};
 use super::error::ChatError;
 use super::request::{ChatRequest, Style};
 use super::transform::{promote_extra_body, promoted_for_environment, transform_request};
+use super::{CUSTOM_LLM_PROVIDER, SHOULD_STRIP_BILLING_METADATA};
 
 const STREAM_FIELD: &str = "stream";
 const JSON_MODE_FIELD: &str = "json_mode";
@@ -51,7 +52,7 @@ where
     Counter: ReasoningTokenCounter + Unpin + Send + 'call,
 {
     async move {
-        let prepared = prepare(&request, &mut deps).await?;
+        let prepared = prepare(&request, &mut deps)?;
         let facts = CallFacts {
             model: request.model,
             messages: request.messages,
@@ -71,12 +72,12 @@ where
                 names: SyncStreamNames::Omitted,
             },
         };
-        Ok(finish(facts, prepared, deps).await?)
+        finish(facts, prepared, deps).await.map_err(ChatError::Call)
     }
     .boxed_local()
 }
 
-async fn prepare<'call, Config, Client, Counter>(
+fn prepare<'call, Config, Client, Counter>(
     request: &ChatRequest<'call>,
     deps: &mut ChatDeps<'call, Config, Client, Counter>,
 ) -> Result<Prepared, ChatError<Client::Failure, Counter::Failure>>
@@ -95,16 +96,22 @@ where
     promote_extra_body(&mut optional_params);
     let transform = TransformRequest {
         model: request.model,
+        custom_llm_provider: Some(CUSTOM_LLM_PROVIDER),
         messages: &request.messages,
         optional_params: &optional_params,
         litellm_params: &request.litellm_params,
         headers: &headers,
+        billing_header: BillingHeader::from(SHOULD_STRIP_BILLING_METADATA),
     };
-    let (mut body, header_values) = transformed(deps.config, &transform)?;
+    let TransformOutcome {
+        mut body,
+        headers: mapped,
+    } = transformed(deps.config, &transform)?;
     // LiteLLM sets data["stream"] after filtering, and the stored pre_call body shares that dict
     if stream {
         body.insert(STREAM_FIELD.to_owned(), Json::Bool(true));
     }
+    let header_values = mapped.values;
     let header_map = header_map(&header_values)?;
     log_pre_call(request, deps, &body, &header_values)?;
     Ok(Prepared {
@@ -122,7 +129,7 @@ fn request_headers(
     is_vertex_request: bool,
 ) -> Result<AnthropicHeaders, EnvironmentError> {
     let probe_options = promoted_for_environment(optional_params, is_vertex_request);
-    Ok(validate_environment(&EnvironmentRequest {
+    validate_environment(&EnvironmentRequest {
         caller_headers: request.caller_headers.clone(),
         params_key: request.params_key,
         argument_key: request.argument_key,
@@ -130,26 +137,21 @@ fn request_headers(
         token: &request.token,
         messages: &request.messages,
         optional_params: &probe_options,
-    })?)
+    })
 }
 
-// Azure uses the parent mapper, then sends its already validated headers without the Anthropic beta filter
+// Azure uses the parent mapper, then sends its updated headers without the Anthropic beta filter
 fn transformed<Config, ClientFailure, CounterFailure>(
     config: &Config,
     transform: &TransformRequest<'_>,
-) -> Result<
-    (IndexMap<String, Json>, IndexMap<String, String>),
-    ChatError<ClientFailure, CounterFailure>,
->
+) -> Result<TransformOutcome, ChatError<ClientFailure, CounterFailure>>
 where
     Config: ChatConfig,
     ClientFailure: StdError + Send + Sync + 'static,
     CounterFailure: StdError + Send + Sync + 'static,
 {
-    let body = transform_request(config, transform)
-        .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))?;
-    let header_values = transform.headers.values.clone();
-    Ok((body, header_values))
+    transform_request(config, transform)
+        .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))
 }
 
 fn log_pre_call<Config, Client, Counter>(

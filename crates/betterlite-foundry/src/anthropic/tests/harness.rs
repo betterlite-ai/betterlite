@@ -8,6 +8,7 @@ use betterlite_anthropic::response::wire::ResponseEnvelope;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
 use betterlite_logging::logging_state::LoggingState;
+use betterlite_logging::python_json::dumps;
 use betterlite_models::decisions::Json;
 use http::HeaderMap;
 use indexmap::IndexMap;
@@ -29,7 +30,6 @@ use super::support::{
 pub(super) enum KeyShape {
     DictAbsent,
     DictNull,
-    Dict(&'static str),
     Typed(Option<&'static str>),
 }
 
@@ -93,6 +93,7 @@ pub(super) enum Outcome {
         headers: IndexMap<String, String>,
         options: Box<ConverterState>,
     },
+    Embedding,
 }
 
 pub(super) type FixtureError = ChatError<FixtureFailure, Infallible>;
@@ -118,10 +119,8 @@ impl Run {
     }
 
     pub(super) fn status(&self) -> Option<u16> {
-        self.outcome
-            .as_ref()
-            .err()
-            .and_then(|error| error.status_code())
+        let error = self.outcome.as_ref().err()?;
+        error.status_code()
     }
 
     pub(super) fn reply(&self) -> &ResponseEnvelope {
@@ -165,7 +164,7 @@ impl Run {
 
     pub(super) fn details_text(&self) -> String {
         let details = Json::Object(self.details.clone());
-        betterlite_logging::python_json::dumps(&details)
+        dumps(&details)
     }
 }
 
@@ -173,22 +172,6 @@ struct Keys {
     argument: Option<SecretString>,
     configured: Option<SecretString>,
     params: Option<SecretString>,
-}
-
-impl Keys {
-    fn new(
-        keys: (
-            Option<SecretString>,
-            Option<SecretString>,
-            Option<SecretString>,
-        ),
-    ) -> Self {
-        Self {
-            argument: keys.0,
-            configured: keys.1,
-            params: keys.2,
-        }
-    }
 }
 
 pub(super) fn execute(setup: &Setup) -> Run {
@@ -263,11 +246,14 @@ fn fixture_config(setup: &Setup) -> FixtureConfig {
 }
 
 fn credentials_of(setup: &Setup) -> DeploymentSettings {
+    let client_secret = setup.client_secret.map(SecretString::from);
+    let tenant_id = client_secret.as_ref().map(|_| "tenant".to_owned());
+    let client_id = client_secret.as_ref().map(|_| "client".to_owned());
     DeploymentSettings {
         azure_ad_token: setup.token.map(SecretString::from),
-        tenant_id: setup.client_secret.map(|_| "tenant".to_owned()),
-        client_id: setup.client_secret.map(|_| "client".to_owned()),
-        client_secret: setup.client_secret.map(SecretString::from),
+        tenant_id,
+        client_id,
+        client_secret,
         azure_scope: "https://cognitiveservices.azure.com/.default".to_owned(),
         azure_username: None,
         azure_password: None,
@@ -278,20 +264,16 @@ fn secret(text: &'static str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn key_source(shape: KeyShape) -> Option<SecretString> {
-    match shape {
-        KeyShape::Dict(key) => Some(secret(key)),
+fn keys_of(setup: &Setup) -> Keys {
+    let typed = match setup.key_shape {
         KeyShape::Typed(key) => key.map(secret),
         KeyShape::DictAbsent | KeyShape::DictNull => None,
+    };
+    Keys {
+        argument: setup.argument_key.map(secret),
+        configured: setup.configured_key.map(secret),
+        params: typed,
     }
-}
-
-fn keys_of(setup: &Setup) -> Keys {
-    Keys::new((
-        setup.argument_key.map(secret),
-        setup.configured_key.map(secret),
-        key_source(setup.key_shape),
-    ))
 }
 
 fn request_of<'setup>(
@@ -302,7 +284,6 @@ fn request_of<'setup>(
     let params_key = match setup.key_shape {
         KeyShape::DictAbsent => ParamsKey::DictAbsent,
         KeyShape::DictNull => ParamsKey::DictNull,
-        KeyShape::Dict(_) => ParamsKey::Dict(keys.params.as_ref().unwrap()),
         KeyShape::Typed(_) => ParamsKey::Typed(keys.params.as_ref()),
     };
     ChatRequest {
@@ -347,9 +328,7 @@ fn outcome_of(result: CallResult) -> Result<Outcome, Box<FixtureError>> {
                 options: Box::new(options),
             })
         }
-        Ok(ChatOutcome::Embedding) => {
-            panic!("a foundry anthropic chat call has no embedding outcome")
-        }
+        Ok(ChatOutcome::Embedding) => Ok(Outcome::Embedding),
         Err(error) => Err(Box::new(error)),
     }
 }

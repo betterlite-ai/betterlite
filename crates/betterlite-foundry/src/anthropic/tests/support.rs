@@ -3,14 +3,22 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
+use betterlite_anthropic::anthropic_capability_catalog::{CatalogSources, DropParams};
 use betterlite_anthropic::anthropic_http_stream::call::{StreamLogger, StreamPostCall};
 use betterlite_anthropic::anthropic_http_stream::error::{PostFailure, StatusFailure};
 use betterlite_anthropic::anthropic_http_stream::transport::{
     LineChunks, StreamPost, StreamReply, StreamTransport,
 };
-use betterlite_anthropic::chat_call::config::{ChatConfig, TransformRequest, TransformResponse};
-use betterlite_anthropic::chat_call::error::ConfigError;
+use betterlite_anthropic::capabilities::speed::{SpeedParam, SpeedRequest, maybe_drop_speed_param};
+use betterlite_anthropic::chat_call::config::{
+    ChatConfig, TransformOutcome, TransformRequest, TransformResponse,
+};
+use betterlite_anthropic::chat_call::error::{ClassifiedConfigError, ConfigError};
 use betterlite_anthropic::chat_call::transport::{BufferedReply, ChatTransport};
+use betterlite_anthropic::headers::AnthropicHeaders;
+use betterlite_anthropic::request::BillingHeader;
+use betterlite_anthropic::request::beta_headers::add_context_management_beta;
+use betterlite_anthropic::request::system::translate_system_message;
 use betterlite_anthropic::response::error::ResponseError;
 use betterlite_anthropic::response::{Logging as ResponseLogging, transform_response};
 use betterlite_anthropic::stream_decode::TransportChunk;
@@ -21,6 +29,8 @@ use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
+use betterlite_context::anthropic_catalog_lookup::RawCatalog;
+use betterlite_context::anthropic_catalog_lookup::candidates::CandidatePatterns;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
 };
@@ -30,13 +40,17 @@ use betterlite_logging::logging_state::correlation::{
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
+use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use http::HeaderMap;
+use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -88,15 +102,6 @@ impl FixtureReply {
                 "event: message_start".to_owned(),
                 "data: {\"type\":\"message_start\"}".to_owned(),
             ],
-        }
-    }
-
-    pub(super) fn raw(status_code: u16, headers: HeaderMap, body: &str) -> Self {
-        Self {
-            status_code,
-            headers,
-            body: body.as_bytes().to_vec(),
-            lines: body.lines().map(str::to_owned).collect(),
         }
     }
 }
@@ -213,19 +218,16 @@ impl ChatTransport for FixtureTransport {
 }
 
 pub(super) struct Recorded {
-    pub(super) model: String,
-    pub(super) messages: Vec<Json>,
     pub(super) optional_params: IndexMap<String, Json>,
-    pub(super) litellm_params: IndexMap<String, Json>,
     pub(super) headers: IndexMap<String, String>,
+    pub(super) custom_llm_provider: Option<String>,
+    pub(super) billing_header: BillingHeader,
 }
 
 pub(super) struct ResponseRecord {
     pub(super) json_mode: Option<bool>,
     pub(super) optional_params: IndexMap<String, Json>,
     pub(super) has_vertex_request: bool,
-    pub(super) litellm_params: IndexMap<String, Json>,
-    pub(super) request_data: IndexMap<String, Json>,
 }
 
 pub(super) struct FixtureConfig {
@@ -237,11 +239,12 @@ pub(super) struct FixtureConfig {
 }
 
 impl FixtureConfig {
-    fn record(
+    // The inherited mapper reads the provider identity and billing rule off its request, then maps the prompt
+    fn map(
         &self,
         request: &TransformRequest<'_>,
         mode: &str,
-    ) -> Result<IndexMap<String, Json>, ConfigError> {
+    ) -> Result<TransformOutcome, ConfigError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -250,27 +253,100 @@ impl FixtureConfig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(Recorded {
-                model: request.model.to_owned(),
-                messages: request.messages.to_vec(),
                 optional_params: request.optional_params.clone(),
-                litellm_params: request.litellm_params.clone(),
                 headers: request.headers.values.clone(),
+                custom_llm_provider: request.custom_llm_provider.map(str::to_owned),
+                billing_header: request.billing_header,
             });
-        self.transform_failure.as_ref().map_or_else(
-            || {
-                Ok(self
-                    .body
-                    .clone()
-                    .unwrap_or_else(|| request.optional_params.clone()))
-            },
-            |message| {
-                let error: ConfigError = Box::new(FixtureFailure {
-                    message: message.clone(),
-                });
-                Err(error)
-            },
-        )
+        if let Some(message) = &self.transform_failure {
+            let error: ConfigError = Box::new(FixtureFailure {
+                message: message.clone(),
+            });
+            return Err(error);
+        }
+        reject_unsupported_speed(request)?;
+        let headers = mapped_headers(request)?;
+        let mut body = self
+            .body
+            .clone()
+            .unwrap_or_else(|| request.optional_params.clone());
+        if let Some(system) = mapped_system(request)? {
+            body.insert("system".to_owned(), system);
+        }
+        Ok(TransformOutcome { body, headers })
     }
+}
+
+// The parent transform rejects speed for any provider but anthropic unless drop_params is on
+fn reject_unsupported_speed(request: &TransformRequest<'_>) -> Result<(), ConfigError> {
+    let Some(speed) = request.optional_params.get("speed") else {
+        return Ok(());
+    };
+    let patterns = CandidatePatterns::new().map_err(ConfigError::from)?;
+    let runtime = RawCatalog::new();
+    let packaged = RawCatalog::new();
+    let catalogs = CatalogSources {
+        patterns: &patterns,
+        runtime: &runtime,
+        packaged: &packaged,
+    };
+    let call = SpeedRequest {
+        model: request.model,
+        speed: SpeedParam::Present(speed),
+        drop: DropParams::default(),
+        custom_llm_provider: request.custom_llm_provider,
+    };
+    match maybe_drop_speed_param(&call, &catalogs) {
+        Ok(_) => Ok(()),
+        Err(error) => {
+            let class = error.classify();
+            let failure: ConfigError = match class {
+                Some(class) => Box::new(ClassifiedConfigError {
+                    source: Box::new(error),
+                    class,
+                }),
+                None => Box::new(error),
+            };
+            Err(failure)
+        }
+    }
+}
+
+// The parent transform adds the optional betas to the headers it was handed, and this override sends them on
+fn mapped_headers(request: &TransformRequest<'_>) -> Result<AnthropicHeaders, ConfigError> {
+    let mut headers = request.headers.clone();
+    if let Some(context_management) = request.optional_params.get("context_management") {
+        add_context_management_beta(&mut headers, context_management).map_err(ConfigError::from)?;
+    }
+    Ok(headers)
+}
+
+// The parent turns the system run into the top-level prompt, dropping billing blocks when it was told to
+fn mapped_system(request: &TransformRequest<'_>) -> Result<Option<Json>, ConfigError> {
+    let mut messages: Vec<Message> = request
+        .messages
+        .iter()
+        .map(decode::<Message>)
+        .collect::<Result<_, _>>()?;
+    let blocks = translate_system_message(
+        &mut messages,
+        request.billing_header == BillingHeader::Strip,
+    );
+    if blocks.is_empty() {
+        return Ok(None);
+    }
+    encode(&blocks).map(Some)
+}
+
+// The message records and this JSON tree differ only in their field shapes, so one serde pass converts either way
+fn decode<Target: DeserializeOwned>(value: &Json) -> Result<Target, ConfigError> {
+    let plain = serde_json::to_value(value).map_err(ConfigError::from)?;
+    serde_json::from_value(plain).map_err(ConfigError::from)
+}
+
+fn encode<Source: Serialize>(value: &Source) -> Result<Json, ConfigError> {
+    let plain = serde_json::to_value(value).map_err(ConfigError::from)?;
+    serde_json::from_value(plain).map_err(ConfigError::from)
 }
 
 impl ChatConfig for FixtureConfig {
@@ -278,15 +354,22 @@ impl ChatConfig for FixtureConfig {
         &self,
         request: &TransformRequest<'_>,
     ) -> Result<IndexMap<String, Json>, ConfigError> {
-        self.record(request, "sync")
+        Ok(self.map(request, "sync")?.body)
     }
 
     fn async_transform_request(
         &self,
         request: &TransformRequest<'_>,
     ) -> impl Future<Output = Result<IndexMap<String, Json>, ConfigError>> + Send {
-        let recorded = self.record(request, "async");
-        ready(recorded)
+        let mapped = self.map(request, "async").map(|outcome| outcome.body);
+        ready(mapped)
+    }
+
+    fn transform_outcome(
+        &self,
+        request: &TransformRequest<'_>,
+    ) -> Result<TransformOutcome, ConfigError> {
+        self.map(request, "sync")
     }
 
     fn filter_request_betas(
@@ -323,8 +406,6 @@ impl ChatConfig for FixtureConfig {
                 json_mode: request.json_mode,
                 optional_params: request.optional_params.clone(),
                 has_vertex_request: request.optional_params.contains_key("is_vertex_request"),
-                litellm_params: request.litellm_params.clone(),
-                request_data: request.request_data.clone(),
             });
         transform_response(envelope, raw, request, logging, counter)
     }
@@ -472,7 +553,7 @@ pub(super) fn body() -> IndexMap<String, Json> {
     body.insert("model".to_owned(), Json::Text(MODEL.to_owned()));
     body.insert(
         "max_tokens".to_owned(),
-        Json::Number(serde_json::Number::from(64)),
+        Json::Number(serde_json::Number::from(64_i64)),
     );
     body.insert("messages".to_owned(), Json::List(messages()));
     body
@@ -482,8 +563,8 @@ pub(super) fn headers_of(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in pairs {
         headers.insert(
-            http::header::HeaderName::from_static(name),
-            http::header::HeaderValue::from_static(value),
+            HeaderName::from_static(name),
+            HeaderValue::from_static(value),
         );
     }
     headers
