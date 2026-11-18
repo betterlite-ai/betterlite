@@ -327,18 +327,23 @@ fn embedding_jobs_secret_safe_failure() {
         error.to_string(),
         format!("Failed to get async invoke status: 500 - {reply_body}")
     );
-    assert!(!format!("{error:?}").contains(SECRET_KEY));
-    assert!(!format!("{error:?}").contains(SESSION_TOKEN));
+    let debug = format!("{error:?}");
+    assert!(debug.contains("HttpFailure"));
+    assert!(debug.contains("[REDACTED provider reply]"));
+    assert!(!debug.contains(SECRET_KEY));
+    assert!(!debug.contains(SESSION_TOKEN));
     let Ok(EmbeddingJobsError::HttpFailure { body, .. }) = &error else {
         panic!("the failure is an HTTP status failure");
     };
     assert_eq!(body.as_str(), reply_body);
 
     let request = run.requests.first().expect("the request was sent");
-    let debug = format!("{request:?}");
-    assert!(!debug.contains(SECRET_KEY));
-    assert!(!debug.contains(SESSION_TOKEN));
-    assert!(!debug.contains("AWS4-HMAC-SHA256"));
+    let request_debug = format!("{request:?}");
+    assert!(request_debug.contains("header_names"));
+    assert!(request_debug.contains("Content-Type"));
+    assert!(!request_debug.contains(SECRET_KEY));
+    assert!(!request_debug.contains(SESSION_TOKEN));
+    assert!(!request_debug.contains("AWS4-HMAC-SHA256"));
 
     let failed = super::fixture::run(&Scenario::new(Reply::Failed));
     let transport = failed.result.expect_err("the transport fails");
