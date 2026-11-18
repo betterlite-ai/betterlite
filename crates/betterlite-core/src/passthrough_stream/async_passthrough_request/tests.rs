@@ -317,23 +317,16 @@ async fn proxied_client_relays_a_streaming_reply_and_collects_chunks() {
     assert_eq!(body, b"data: one\n\n".to_vec());
     stream.background_tasks.close();
     stream.background_tasks.wait().await;
-    assert_eq!(
-        collected
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .len(),
-        1
-    );
+    let collected_count = collected
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .len();
+    assert_eq!(collected_count, 1);
     let flushes = logging.flushed();
     assert_eq!(flushes.len(), 1);
     assert_eq!(flushes[0].logged, "data: one");
-    assert!(
-        serving
-            .finish()
-            .unwrap()
-            .head
-            .contains("POST /v1/chat/completions")
-    );
+    let sent = serving.finish().unwrap();
+    assert!(sent.head.contains("POST /v1/chat/completions"));
 }
 
 #[tokio::test]
