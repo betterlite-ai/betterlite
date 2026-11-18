@@ -373,6 +373,14 @@ fn a_limit_is_read_from_a_numeric_string() {
 #[case(JsonValue::from(1.5_f64), 2)]
 #[case(JsonValue::Null, 2)]
 #[case(JsonValue::Array(Vec::new()), 2)]
+#[case(
+    JsonValue::Array(vec![
+        JsonValue::from(4_i64),
+        JsonValue::String("5".to_owned()),
+        JsonValue::Null,
+    ]),
+    2
+)]
 fn an_invalid_limit_leaves_every_topic(#[case] limit: JsonValue, #[case] expected: usize) {
     let body = r#"{"RelatedTopics":[
         {"Text":"A - one","FirstURL":"https://a.test"},
@@ -619,6 +627,15 @@ fn a_json_array_reply_is_not_an_object() {
 }
 
 #[test]
+fn a_non_standard_constant_fails_the_decode() {
+    let body = r#"{"Answer":NaN,"RelatedTopics":[{"Text":"A - one","FirstURL":"https://a.test"}]}"#;
+
+    let error = decode(body, None).unwrap_err();
+
+    assert!(matches!(error, DuckDuckGoSearchError::ReplyJson { .. }));
+}
+
+#[test]
 fn a_reply_that_is_too_large_fails() {
     let bytes = vec![b' '; REPLY_MAX_BYTES.saturating_add(1)];
 
@@ -641,6 +658,7 @@ fn a_reply_at_the_size_limit_is_read() {
 }
 
 #[rstest]
+#[case(r#"{"AbstractURL":5}"#, "AbstractURL")]
 #[case(r#"{"AbstractURL":5,"AbstractText":"text"}"#, "AbstractURL")]
 #[case(r#"{"AbstractURL":"https://a.test","AbstractText":5}"#, "AbstractText")]
 #[case(
