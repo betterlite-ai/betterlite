@@ -1,0 +1,33 @@
+task: B666
+deviations:
+  - what: Both forwarding directions run as futures inside one bridge future, cancelled through a CancellationToken and awaited in place, where LiteLLM creates two asyncio tasks, cancels both and gathers them.
+    why: The repository forbids tokio::spawn; joining the two futures inside the session future proves both directions stopped before the SDK client is closed, and the FIRST_COMPLETED order, the client-disconnected test and the client-exception-first choice are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L413-L457
+  - what: The SDK is linked statically and driven through an injected RealtimeRuntime, so an absent aws_sdk_bedrock_runtime package raises no import error and no install hint exists; LiteLLM imports the SDK at call time and raises a missing-package error with a pip hint.
+    why: The Rust SDK is a compile-time dependency and the connector, credentials and retries come from the injected runtime (B173), so there is no import or installed-version state to report; package checks belong to B159.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L286
+  - what: The owned call carries no api_key, timeout or catch-all kwargs; LiteLLM accepts them on async_realtime.
+    why: The owned preparation ignores both values and forwards neither to the SDK, so the typed call leaves them out instead of accepting and discarding them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L262
+  - what: The success-logged flag is set only when a success queue is present and its enqueue accepts the work; LiteLLM calls the global queue and sets the flag unless the call raises.
+    why: betterlite's queue answers with a bool, and a payload the worker refused must not look logged; the production queue accepts, so the flag matches LiteLLM there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L348-L411
+  - what: An SDK or forwarding failure reaches the caller as a typed RealtimeTransportError carrying the failure's class name and message, where LiteLLM lets the original exception, or the BedrockError built from its class name, escape; opening the stream likewise becomes a typed stream error rather than the raw SDK exception.
+    why: Rust reports failure through return values; the class name is preserved so the same status map applies, and the raw exception has no Rust analogue.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L346
+  - what: The SDK client is closed on every returned outcome from the session, including invoke, created-send, bridge and logging failures; when the caller drops the outer future, no async close sequence runs and the stream and client are dropped instead, leaving the injected connector's RAII to reap the HTTP IO.
+    why: LiteLLM's finally runs on asyncio cancellation, while a dropped Rust future runs no async code; the required cancellation proof sits at the connector (aws_duplex_cancel_reaps_io), which stops both IO directions when the session future is dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L344-L348
+  - what: The events handed to dispatch_success_handlers are JSON object maps converted once from the typed events, and a conversion failure ends the session with a typed logging error; LiteLLM hands pydantic/TypedDict values to the logger and any failure there escapes as the logger's exception.
+    why: The logging trait takes the repository's JSON value type, so the conversion happens in the session and gets a named failure instead of an unwrap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L348-L411
+  - what: A session.created event that cannot serialize ends the session with a typed SessionCreated error before any client send; LiteLLM's json.dumps raises TypeError for the same case.
+    why: The typed session event can only fail to serialize in theory, but the serialization step needs a named failure instead of an unwrap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L348-L366
+kept_bugs:
+  - what: A provider failure that arrives after the client disconnected is logged at debug and the session returns normally, so the caller never sees the provider error.
+    why: LiteLLM treats the gone client as the reason the stream ended and a working bridge relies on the session not failing when nobody is left to answer, so betterlite returns the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L399-L411
+  - what: An error from opening the bidirectional stream escapes without the stream-error status mapping, so a ModelStreamErrorException raised there keeps no mapped status while the same error during receive becomes 424.
+    why: LiteLLM maps only the failures collected by the bridge, and a working setup sees the raw SDK error from the open call, so betterlite keeps the unmapped stream error at open time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L344-L348
