@@ -161,7 +161,7 @@ impl<C: SensitiveRoutingCache> SensitiveDataRoutingHandler<C> {
 
 // _resolve_tenant: the authenticated principal scopes the session, and an absent api_key falls to claims
 fn resolve_tenant(principal: PrincipalIdentity<'_>) -> String {
-    if let Some(api_key) = principal.api_key.filter(|key| !key.is_empty()) {
+    if let Some(api_key) = principal.hashed_api_key.filter(|key| !key.is_empty()) {
         return api_key.to_owned();
     }
     let claims = [
@@ -182,7 +182,7 @@ fn resolve_tenant(principal: PrincipalIdentity<'_>) -> String {
     scope.join("|")
 }
 
-// _make_cache_key: LiteLLM's braces and colons keep the Redis and local tiers on one key
 fn cache_key(session_id: &str, tenant: &str) -> String {
+    // _make_cache_key: LiteLLM's braces and colons keep the Redis and local tiers on one key
     format!("{{{CACHE_PREFIX}{tenant}:{session_id}}}:model")
 }

@@ -184,7 +184,7 @@ fn request(model: Option<&str>) -> JsonMap {
 
 fn keyed(api_key: &str) -> PrincipalIdentity<'_> {
     PrincipalIdentity {
-        api_key: Some(api_key),
+        hashed_api_key: Some(api_key),
         user_id: None,
         team_id: None,
         org_id: None,
@@ -197,7 +197,7 @@ fn claims(
     org_id: Option<&str>,
 ) -> PrincipalIdentity<'_> {
     PrincipalIdentity {
-        api_key: None,
+        hashed_api_key: None,
         user_id,
         team_id,
         org_id,
@@ -215,7 +215,7 @@ fn cache_key_layout_matches_litellm() {
 #[test]
 fn tenant_prefers_the_hashed_api_key() {
     let principal = PrincipalIdentity {
-        api_key: Some("hashed-key"),
+        hashed_api_key: Some("hashed-key"),
         user_id: Some("user-1"),
         team_id: Some("team-1"),
         org_id: Some("org-1"),
@@ -268,7 +268,7 @@ fn tenant_falls_back_to_default_without_an_identity() {
 #[test]
 fn tenant_ignores_an_empty_api_key() {
     let principal = PrincipalIdentity {
-        api_key: Some(""),
+        hashed_api_key: Some(""),
         user_id: Some("user-1"),
         team_id: None,
         org_id: None,
