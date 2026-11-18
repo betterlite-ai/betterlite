@@ -37,7 +37,7 @@ call:
           created_at: 7
           output: []
           usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
-        cost: {kind: null}
+        cost: {kind: "null"}
       - response:
           id: resp_s8
           created_at: 8
