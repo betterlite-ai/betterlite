@@ -243,6 +243,11 @@ fn reconnect_backoff_cap_reset() {
             Some(5.0_f64),
         ]
     );
+    assert_eq!(
+        probe.count(&Entry::Close),
+        2,
+        "a failed subscribe has no pubsub to close"
+    );
 }
 
 #[test]
