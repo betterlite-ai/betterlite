@@ -25,8 +25,7 @@ pub enum StorageUploadError {
     Database(#[from] StorageError),
 }
 
-// both variants are boxed so the enum stays two pointers wide; the smaller one alone would have
-// let the upload error set its size
+// both variants are boxed so the enum stays two pointers wide despite the larger upload error
 #[derive(Debug, Error)]
 pub enum StorageServiceError {
     #[error(transparent)]

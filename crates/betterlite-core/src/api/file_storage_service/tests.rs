@@ -25,8 +25,7 @@ use crate::api::file_storage_service::error::{
 };
 use crate::api::file_storage_service::factory::get_storage_backend;
 use crate::api::file_storage_service::projection::{
-    FILE_ID_DIGITS, FILE_ID_PREFIX, FileMetadata, StoredFile,
-    create_file_object_with_storage_metadata,
+    FILE_ID_DIGITS, FILE_ID_PREFIX, FileMetadata, StoredFile, project_stored_file,
 };
 use crate::api::file_storage_service::service::{StorageUpload, upload_file_to_storage_backend};
 
@@ -195,7 +194,7 @@ fn projected(
     purpose: FilesPurpose,
     ids: &dyn IdSource,
 ) -> StoredFile {
-    create_file_object_with_storage_metadata(
+    project_stored_file(
         FileMetadata {
             content,
             filename,

@@ -22,7 +22,7 @@ pub struct FileMetadata<'data> {
 }
 
 #[must_use]
-pub fn create_file_object_with_storage_metadata(
+pub fn project_stored_file(
     metadata: FileMetadata<'_>,
     clock: &dyn Clock,
     ids: &dyn IdSource,
@@ -30,7 +30,7 @@ pub fn create_file_object_with_storage_metadata(
     let file = FileObject {
         id: file_id(ids),
         bytes: i64::try_from(metadata.content.len()).unwrap_or(i64::MAX),
-        created_at: created_at(clock),
+        created_at: i64::try_from(clock.now_unix().as_secs()).unwrap_or(i64::MAX),
         filename: metadata.filename.to_owned(),
         object: FileKind::File,
         purpose: metadata.purpose,
@@ -53,8 +53,4 @@ fn file_id(ids: &dyn IdSource) -> String {
         .take(FILE_ID_DIGITS)
         .collect();
     format!("{FILE_ID_PREFIX}{digits}")
-}
-
-fn created_at(clock: &dyn Clock) -> i64 {
-    i64::try_from(clock.now_unix().as_secs()).unwrap_or(i64::MAX)
 }

@@ -1,8 +1,6 @@
 use std::time::Duration;
 
-use betterlite_core::api::file_storage_service::projection::{
-    FileMetadata, create_file_object_with_storage_metadata,
-};
+use betterlite_core::api::file_storage_service::projection::{FileMetadata, project_stored_file};
 use betterlite_logging::azure_storage_logging::filename::IdSource;
 use betterlite_logging::datadog_logging::clock::Clock;
 use betterlite_openai::files::records::FilesPurpose;
@@ -48,7 +46,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let stored = create_file_object_with_storage_metadata(
+        let stored = project_stored_file(
             FileMetadata {
                 content: input.content.as_bytes(),
                 filename: &input.filename,

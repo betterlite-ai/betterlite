@@ -7,9 +7,9 @@ use betterlite_openai::files::records::FilesPurpose;
 
 use crate::api::file_storage_contracts::storage::FileContentRepository;
 
-use super::error::{StorageBackendError, StorageServiceError};
+use super::error::StorageServiceError;
 use super::factory::{StorageBackendDeps, get_storage_backend};
-use super::projection::{FileMetadata, StoredFile, create_file_object_with_storage_metadata};
+use super::projection::{FileMetadata, StoredFile, project_stored_file};
 
 pub const DEFAULT_FILENAME: &str = "file";
 pub const DEFAULT_CONTENT_TYPE: &str = "application/octet-stream";
@@ -59,19 +59,24 @@ pub async fn upload_file_to_storage_backend<R>(
 where
     R: FileContentRepository,
 {
-    let backend =
-        get_storage_backend(upload.target_storage, deps.backend).map_err(factory_failure)?;
+    let backend = get_storage_backend(upload.target_storage, deps.backend).map_err(|error| {
+        StorageServiceError::Proxy(Box::new(invalid_request(
+            error.to_string(),
+            "target_storage",
+        )))
+    })?;
     if !upload.target_model_names.is_empty() {
-        return Err(StorageServiceError::Proxy(
-            Box::new(target_models_failure()),
-        ));
+        return Err(StorageServiceError::Proxy(Box::new(invalid_request(
+            TARGET_MODELS_UNAVAILABLE.to_owned(),
+            "target_model_names",
+        ))));
     }
     let storage_url = backend
         .upload(upload.content, upload.filename(), upload.content_type())
         .await?;
     let target_storage = upload.target_storage;
     tracing::debug!("Storage backend upload complete: backend={target_storage}, url={storage_url}");
-    Ok(create_file_object_with_storage_metadata(
+    Ok(project_stored_file(
         FileMetadata {
             content: upload.content,
             filename: upload.filename(),
@@ -82,15 +87,6 @@ where
         deps.clock,
         deps.ids,
     ))
-}
-
-fn factory_failure(error: StorageBackendError) -> StorageServiceError {
-    let message = error.to_string();
-    StorageServiceError::Proxy(Box::new(invalid_request(message, "target_storage")))
-}
-
-fn target_models_failure() -> ProxyException {
-    invalid_request(TARGET_MODELS_UNAVAILABLE.to_owned(), "target_model_names")
 }
 
 fn invalid_request(message: String, param: &str) -> ProxyException {
