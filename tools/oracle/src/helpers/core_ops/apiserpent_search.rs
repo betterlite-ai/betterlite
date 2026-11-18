@@ -53,20 +53,7 @@ impl Helper for Op {
             )
             .or_value_error()?;
         let params = serde_json::to_value(&body).or_value_error()?;
-        let response = match &input.reply {
-            Some(text) => {
-                let empty_headers = Headers::new();
-                let reply = config
-                    .transform_search_response(&ProviderResponse {
-                        status_code: 200,
-                        headers: &empty_headers,
-                        text,
-                    })
-                    .or_value_error()?;
-                serde_json::to_value(&reply).or_value_error()?
-            }
-            None => serde_json::json!(null),
-        };
+        let response = response_value(&config, input)?;
         Ok(serde_json::json!({
             "headers": headers,
             "params": params,
@@ -74,6 +61,21 @@ impl Helper for Op {
             "response": response,
         }))
     }
+}
+
+fn response_value(config: &ApiserpentSearchConfig, input: &Input) -> HelperResult {
+    let Some(text) = input.reply.as_deref() else {
+        return Ok(serde_json::json!(null));
+    };
+    let empty_headers = Headers::new();
+    let reply = config
+        .transform_search_response(&ProviderResponse {
+            status_code: 200,
+            headers: &empty_headers,
+            text,
+        })
+        .or_value_error()?;
+    serde_json::to_value(&reply).or_value_error()
 }
 
 mod tests;
