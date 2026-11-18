@@ -7,7 +7,6 @@ mod support;
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http_fixture::reply::reply;
 use betterlite_http_fixture::server::serve;
@@ -18,8 +17,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use self::support::{
-    Events, Fixture, RecordingConfig, Reply, Source, Wire, body_bytes, body_json, caller_headers,
-    extra_body, openai_config, openai_settings, params, proxied_client, update_params,
+    Events, Fixture, IMPATIENT, ProxiedSource, RecordingConfig, Reply, Source, Wire, body_bytes,
+    body_json, caller_headers, extra_body, openai_config, openai_settings, params, update_params,
 };
 use crate::api::vector_store_http_write::config::{WriteConfig, WriteParams};
 use crate::api::vector_store_http_write::error::{
@@ -27,8 +26,7 @@ use crate::api::vector_store_http_write::error::{
 };
 use crate::api::vector_store_http_write::params::UpdateParams;
 use crate::api::vector_store_http_write::service::{
-    ClientKind, ClientSource, DeleteCall, SuppliedClient, UpdateCall, WriteCall, WriteDeps,
-    WriteTarget, send,
+    ClientKind, ClientSource, DeleteCall, UpdateCall, WriteCall, WriteDeps, WriteTarget, send,
 };
 
 fn json(text: &str) -> Json {
@@ -552,18 +550,14 @@ async fn transport_failure(#[case] case: FailureCase) {
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
-            let client = proxied_client(TransportLimits::DEFAULT);
+            let source = ProxiedSource::new(IMPATIENT);
             let config =
                 RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
             let events = Events::new();
-            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Asynchronous,
-                    transport: &client,
-                }),
+                supplied: None,
             };
             let params = params("http://unused.test");
             let optional = UpdateParams::default();
@@ -599,21 +593,14 @@ async fn transport_failure(#[case] case: FailureCase) {
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
-            let client = proxied_client(TransportLimits {
-                read_timeout: Duration::from_millis(100),
-                ..TransportLimits::DEFAULT
-            });
+            let source = ProxiedSource::new(IMPATIENT);
             let config =
                 RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
             let events = Events::new();
-            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Sync,
-                    transport: &client,
-                }),
+                supplied: None,
             };
             let params = params("http://unused.test");
             let optional = UpdateParams::default();
@@ -639,18 +626,14 @@ async fn transport_failure(#[case] case: FailureCase) {
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
-            let client = proxied_client(TransportLimits::DEFAULT);
+            let source = ProxiedSource::new(IMPATIENT);
             let config =
                 RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
             let events = Events::new();
-            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Asynchronous,
-                    transport: &client,
-                }),
+                supplied: None,
             };
             let params = params("http://unused.test");
             let mut fixture = Fixture::new("vector_store_delete");
@@ -755,21 +738,14 @@ async fn transport_failure(#[case] case: FailureCase) {
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
-            let client = proxied_client(TransportLimits {
-                read_timeout: Duration::from_millis(100),
-                ..TransportLimits::DEFAULT
-            });
+            let source = ProxiedSource::new(IMPATIENT);
             let config =
                 RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
             let events = Events::new();
-            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Asynchronous,
-                    transport: &client,
-                }),
+                supplied: None,
             };
             let params = params("http://unused.test");
             let optional = UpdateParams::default();
@@ -801,21 +777,14 @@ async fn transport_failure(#[case] case: FailureCase) {
                 Duration::from_millis(500),
             )
             .expect("the fixture serves");
-            let client = proxied_client(TransportLimits {
-                read_timeout: Duration::from_millis(100),
-                ..TransportLimits::DEFAULT
-            });
+            let source = ProxiedSource::new(IMPATIENT);
             let config =
                 RecordingConfig::new(&format!("http://{}/v1/vector_stores", serving.address));
             let events = Events::new();
-            let source = Source::new(Wire::replying(Reply::json(200, "{}"), &events));
             let deps = WriteDeps {
                 config: &config,
                 source: &source,
-                supplied: Some(SuppliedClient {
-                    kind: ClientKind::Sync,
-                    transport: &client,
-                }),
+                supplied: None,
             };
             let params = params("http://unused.test");
             let mut fixture = Fixture::new("vector_store_delete");

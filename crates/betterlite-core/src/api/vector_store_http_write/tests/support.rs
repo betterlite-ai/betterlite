@@ -403,3 +403,28 @@ pub(crate) fn body_json(request: &WriteRequest) -> Json {
     let body = body_bytes(request).expect("the request carries a JSON body");
     serde_json::from_slice(body).expect("the request body is JSON")
 }
+
+pub(crate) const IMPATIENT: TransportLimits = TransportLimits {
+    read_timeout: Duration::from_millis(100),
+    ..TransportLimits::DEFAULT
+};
+
+pub(crate) struct ProxiedSource {
+    client: ProxiedClient,
+}
+
+impl ProxiedSource {
+    pub(crate) fn new(limits: TransportLimits) -> Self {
+        Self {
+            client: proxied_client(limits),
+        }
+    }
+}
+
+impl ClientSource for ProxiedSource {
+    type Client = ProxiedClient;
+
+    fn client(&self, _ssl_verify: Option<bool>) -> Result<ProxiedClient, ClientError> {
+        Ok(self.client.clone())
+    }
+}
