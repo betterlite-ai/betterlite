@@ -44,8 +44,11 @@ pub(crate) fn user(role: Option<&str>) -> Result<UserAPIKeyAuth, AuthError> {
         "api_key".to_owned(),
         JsonData::String("sk-helper".to_owned()),
     );
-    if let Some(role) = role {
-        fields.insert("user_role".to_owned(), JsonData::String(role.to_owned()));
+    if let Some(assigned) = role {
+        fields.insert(
+            "user_role".to_owned(),
+            JsonData::String(assigned.to_owned()),
+        );
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields))
 }

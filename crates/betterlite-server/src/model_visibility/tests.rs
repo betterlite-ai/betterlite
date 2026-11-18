@@ -93,11 +93,11 @@ impl Fixture {
     }
 
     fn with_provider(mut self, resolved: Vec<(&str, &str)>) -> Self {
-        let resolved: BTreeMap<String, String> = resolved
+        let by_name: BTreeMap<String, String> = resolved
             .into_iter()
             .map(|(model, provider)| (model.to_owned(), provider.to_owned()))
             .collect();
-        self.provider = Box::new(move |model: &str| resolved.get(model).cloned());
+        self.provider = Box::new(move |model: &str| by_name.get(model).cloned());
         self
     }
 
@@ -135,8 +135,11 @@ impl Fixture {
 fn user(role: Option<&str>) -> UserAPIKeyAuth {
     let mut fields: BTreeMap<String, JsonData> = BTreeMap::new();
     fields.insert("api_key".to_owned(), JsonData::String("sk-test".to_owned()));
-    if let Some(role) = role {
-        fields.insert("user_role".to_owned(), JsonData::String(role.to_owned()));
+    if let Some(assigned) = role {
+        fields.insert(
+            "user_role".to_owned(),
+            JsonData::String(assigned.to_owned()),
+        );
     }
     UserAPIKeyAuth::construct(AuthInput::Dict(fields)).unwrap()
 }
@@ -411,7 +414,10 @@ const fn settings(enabled: bool) -> Settings {
     }
 }
 
-fn block_on<F: Future>(future: F) -> F::Output {
+fn block_on<F>(future: F) -> F::Output
+where
+    F: Future,
+{
     Builder::new_current_thread()
         .build()
         .unwrap()
@@ -430,21 +436,21 @@ fn healthy_only_default() {
     assert_eq!(hidden, BTreeSet::from(["hidden".to_owned()]));
     assert_eq!(report.calls(), 1);
     let off = HealthReport::ready(&["hidden"]);
-    let hidden = block_on(hidden_unhealthy_model_names(
+    let skipped = block_on(hidden_unhealthy_model_names(
         None,
         settings(false),
         Some(&off),
     ))
     .unwrap();
-    assert!(hidden.is_empty());
+    assert!(skipped.is_empty());
     assert_eq!(off.calls(), 0);
-    let hidden: BTreeSet<String> = block_on(hidden_unhealthy_model_names(
+    let missing_router: BTreeSet<String> = block_on(hidden_unhealthy_model_names(
         None,
         settings(true),
         None::<&HealthReport>,
     ))
     .unwrap();
-    assert!(hidden.is_empty());
+    assert!(missing_router.is_empty());
 }
 
 #[test]
@@ -460,22 +466,22 @@ fn explicit_healthy_only() {
     assert_eq!(requested.calls(), 1);
     // a request cannot turn the proxy-wide opt-in back off
     let global = HealthReport::ready(&["hidden"]);
-    let hidden = block_on(hidden_unhealthy_model_names(
+    let kept_by_setting = block_on(hidden_unhealthy_model_names(
         Some(false),
         settings(true),
         Some(&global),
     ))
     .unwrap();
-    assert_eq!(hidden, BTreeSet::from(["hidden".to_owned()]));
+    assert_eq!(kept_by_setting, BTreeSet::from(["hidden".to_owned()]));
     assert_eq!(global.calls(), 1);
     let refused = HealthReport::ready(&["hidden"]);
-    let hidden = block_on(hidden_unhealthy_model_names(
+    let not_enabled = block_on(hidden_unhealthy_model_names(
         Some(false),
         settings(false),
         Some(&refused),
     ))
     .unwrap();
-    assert!(hidden.is_empty());
+    assert!(not_enabled.is_empty());
     assert_eq!(refused.calls(), 0);
 }
 
