@@ -1,0 +1,15 @@
+task: B2212
+deviations:
+  - what: >-
+      A reply body is decoded as UTF-8, one leading UTF-8 byte-order mark is removed before the plain-JSON parse, and
+      the text is then parsed as standard JSON. A UTF-16 or UTF-32 body, a body whose declared charset would make
+      non-UTF-8 bytes decode for the SSE text, and non-standard JSON (the NaN and Infinity constants, a number outside
+      IEEE-754 double range) fail with a parse error.
+    why: >-
+      The reply arrives as bytes and betterlite's JSON is standard JSON (docs/compatibility.md); a gateway that sends a
+      non-UTF-8 or non-standard body is outside what its own JSON contract allows, so no working setup relies on it.
+      LiteLLM hands the bytes to httpx and json.loads, which also decode UTF-16 and UTF-32 from a byte-order mark and
+      accept the non-standard constants.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/search/transformation.py#L428-L430
+kept_bugs: []
