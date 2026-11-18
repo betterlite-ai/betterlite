@@ -26,38 +26,62 @@ pub(crate) struct Input {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "check", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OwnershipCall {
+    body: JsonData,
+    existing_user_id: Option<String>,
+    caller: Caller,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RoutesCall {
+    allowed_routes: Option<Vec<JsonData>>,
+    was_provided: bool,
+    allow_safe_presets: bool,
+    caller: Caller,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TransitionCall {
+    incoming: Option<Vec<JsonData>>,
+    existing: Option<Vec<JsonData>>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct RoutesUpdateCall {
+    body: JsonData,
+    existing_allowed_routes: Option<Vec<JsonData>>,
+    caller: Caller,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PermissionsCall {
+    body: JsonData,
+    caller: Caller,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct BudgetCall {
+    budget_limits: Option<Vec<WindowInput>>,
+    delegation_ceiling: Option<AmountInput>,
+    caller: Caller,
+    has_team: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "check", rename_all = "snake_case")]
 pub(crate) enum Call {
-    Ownership {
-        body: JsonData,
-        existing_user_id: Option<String>,
-        caller: Caller,
-    },
-    Routes {
-        allowed_routes: Option<Vec<JsonData>>,
-        was_provided: bool,
-        allow_safe_presets: bool,
-        caller: Caller,
-    },
-    Transition {
-        incoming: Option<Vec<JsonData>>,
-        existing: Option<Vec<JsonData>>,
-    },
-    RoutesUpdate {
-        body: JsonData,
-        existing_allowed_routes: Option<Vec<JsonData>>,
-        caller: Caller,
-    },
-    Permissions {
-        body: JsonData,
-        caller: Caller,
-    },
-    Budget {
-        budget_limits: Option<Vec<WindowInput>>,
-        delegation_ceiling: Option<AmountInput>,
-        caller: Caller,
-        has_team: bool,
-    },
+    Ownership(OwnershipCall),
+    Routes(RoutesCall),
+    Transition(TransitionCall),
+    RoutesUpdate(RoutesUpdateCall),
+    Permissions(PermissionsCall),
+    Budget(BudgetCall),
 }
 
 // LiteLLM's BudgetLimitEntry: budget_duration is required and max_budget carries the amount.
@@ -102,105 +126,78 @@ impl Helper for Op {
 
 fn call_outcome(call: &Call) -> HelperResult {
     match call {
-        Call::Ownership {
-            body,
-            existing_user_id,
-            caller,
-        } => row_outcome(
-            body,
-            &ExistingSide::UserId(existing_user_id.clone()),
-            *caller,
+        Call::Ownership(ownership) => row_outcome(
+            &ownership.body,
+            ExistingSide::UserId(ownership.existing_user_id.as_deref()),
+            ownership.caller,
         ),
-        Call::Routes {
-            allowed_routes,
-            was_provided,
-            allow_safe_presets,
-            caller,
-        } => {
-            let routes = Sent {
-                supplied: *was_provided,
-                value: allowed_routes.clone(),
-            };
-            Ok(outcome(check_routes_permission(
-                &routes,
-                *allow_safe_presets,
-                *caller,
-            )))
-        }
-        Call::Transition { incoming, existing } => {
-            Ok(transition_outcome(incoming.as_deref(), existing.as_deref()))
-        }
-        Call::RoutesUpdate {
-            body,
-            existing_allowed_routes,
-            caller,
-        } => row_outcome(
-            body,
-            &ExistingSide::AllowedRoutes(existing_allowed_routes.clone()),
-            *caller,
+        Call::Routes(routes) => Ok(routes_outcome(routes)),
+        Call::Transition(transition) => Ok(transition_outcome(transition)),
+        Call::RoutesUpdate(update) => row_outcome(
+            &update.body,
+            ExistingSide::AllowedRoutes(update.existing_allowed_routes.as_deref()),
+            update.caller,
         ),
-        Call::Permissions { body, caller } => permissions_outcome(body, *caller),
-        Call::Budget {
-            budget_limits,
-            delegation_ceiling,
-            caller,
-            has_team,
-        } => budget_outcome(
-            budget_limits.as_deref(),
-            delegation_ceiling.as_ref(),
-            *caller,
-            *has_team,
-        ),
+        Call::Permissions(permissions) => permissions_outcome(permissions),
+        Call::Budget(budget) => budget_outcome(budget),
     }
 }
 
 // The row value each row-based check compares the request against.
-enum ExistingSide {
-    UserId(Option<String>),
-    AllowedRoutes(Option<Vec<JsonData>>),
+enum ExistingSide<'a> {
+    UserId(Option<&'a str>),
+    AllowedRoutes(Option<&'a [JsonData]>),
 }
 
-fn row_outcome(body: &JsonData, existing: &ExistingSide, caller: Caller) -> HelperResult {
+fn row_outcome(body: &JsonData, existing: ExistingSide<'_>, caller: Caller) -> HelperResult {
     let request = projected(body)?;
     let checked = match existing {
-        ExistingSide::UserId(user_id) => {
-            validate_ownership_change(Some(&request), user_id.as_deref(), caller)
-        }
+        ExistingSide::UserId(user_id) => validate_ownership_change(Some(&request), user_id, caller),
         ExistingSide::AllowedRoutes(routes) => {
-            enforce_routes_update(&request.allowed_routes, routes.as_deref(), caller)
+            enforce_routes_update(&request.allowed_routes, routes, caller)
         }
     };
     Ok(outcome(checked))
 }
 
-fn transition_outcome(incoming: Option<&[JsonData]>, existing: Option<&[JsonData]>) -> Value {
+fn routes_outcome(routes: &RoutesCall) -> Value {
+    let sent = Sent {
+        supplied: routes.was_provided,
+        value: routes.allowed_routes.clone(),
+    };
+    outcome(check_routes_permission(
+        &sent,
+        routes.allow_safe_presets,
+        routes.caller,
+    ))
+}
+
+fn transition_outcome(transition: &TransitionCall) -> Value {
     json!({
         "ok": true,
-        "value": is_safe_route_transition(incoming, existing),
+        "value": is_safe_route_transition(
+            transition.incoming.as_deref(),
+            transition.existing.as_deref(),
+        ),
     })
 }
 
-fn permissions_outcome(body: &JsonData, caller: Caller) -> HelperResult {
-    let request = projected(body)?;
+fn permissions_outcome(permissions: &PermissionsCall) -> HelperResult {
+    let request = projected(&permissions.body)?;
     Ok(outcome(check_permissions_access(
         &request.permissions,
-        caller,
+        permissions.caller,
     )))
 }
 
-fn budget_outcome(
-    budget_limits: Option<&[WindowInput]>,
-    delegation_ceiling: Option<&AmountInput>,
-    caller: Caller,
-    has_team: bool,
-) -> HelperResult {
-    let limits = window_amounts(budget_limits)?;
-    let ceiling = delegation_ceiling.map(amount).transpose()?;
+fn budget_outcome(budget: &BudgetCall) -> HelperResult {
+    let limits = window_amounts(budget.budget_limits.as_deref())?;
+    let ceiling = budget.delegation_ceiling.as_ref().map(amount).transpose()?;
     Ok(outcome(check_budget_ceilings(
         limits.as_deref(),
         ceiling,
-        caller,
-        has_team,
+        budget.caller,
+        budget.has_team,
     )))
 }
 
