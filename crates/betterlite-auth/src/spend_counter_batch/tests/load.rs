@@ -40,6 +40,7 @@ async fn new_batch_empty_and_open() {
     assert!(state.keys.is_empty());
     assert!(state.fetched.is_empty());
     assert!(state.loaded.is_empty());
+    assert!(state.generations.is_empty());
     assert!(state.inflight.is_empty());
     drop(state);
 }
@@ -307,7 +308,7 @@ async fn failed_result_does_not_skip_later_results() {
 }
 
 #[tokio::test]
-async fn first_loaded_value_wins_duplicate_reply() {
+async fn rebound_key_skips_a_settled_older_reply() {
     let server = FakeRedis::start().await;
     let (_batches, ()) = request_redis_batch_scope(POST_CALL_FLUSH_DEADLINE, async {
         let cache = allow_cache(&server).await;
@@ -330,7 +331,7 @@ async fn first_loaded_value_wins_duplicate_reply() {
             .expect("the second dummy read");
         assert_eq!(
             batch.read("spend:key:a").await.unwrap(),
-            Some(CounterValue::Amount(decimal("1")))
+            Some(CounterValue::Amount(decimal("2")))
         );
     })
     .await;
@@ -350,6 +351,7 @@ async fn cancelled_load_propagates() {
                 .inflight
                 .first()
                 .expect("the declared result")
+                .result
                 .cancel();
         };
         let error = batch
