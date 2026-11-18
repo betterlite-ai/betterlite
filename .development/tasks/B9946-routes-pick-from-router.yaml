@@ -1,0 +1,127 @@
+id: B9946
+title: The chat, completions and embeddings routes pick deployments from the proxy router
+description: >-
+  LiteLLM's chat, text completion and embedding routes route through llm_router: route_request checks the model
+  against the router's model names and calls llm_router.acompletion, atext_completion or aembedding
+  (route_llm_request.py L638-L650). The router is live: B8381's database sync adds and removes deployments while the
+  proxy runs, and B9948's read-through adds a model on a miss. On main the three routes pick from ChatExecutor's
+  deployment list instead (crates/betterlite-server/src/routing/simple_shuffle.rs L8-L44, pick_deployment), built
+  once from config.yaml by server/chat_setup.rs's chat_executor. A model stored in the database never reaches them, and
+  B9947's retry after the read-through picks from the same list and misses again. This task makes the three routes
+  read the model group's deployments from the live router in Shared (B8610's `router_views`, B8611's RouterView).
+
+
+  The pick. Add `pick_router_deployment` to routing::simple_shuffle beside pick_deployment. It takes the executor,
+  the current `Option<RouterView>` (B8611's RouterViews::current, asked once per pick) and the model. With no router
+  it answers the not-found the routes already raise (LiteLLM raises ProxyModelNotFoundError when llm_router is None and
+  no user_model is set, L717-L725). With a router, the candidates are the rows of B844's get_model_list(model, None)
+  (RouterView's deployments_for: the exact group, its aliases, its routing groups, then wildcard rows renamed to the
+  requested model), and no rows is the same not-found. Each row maps to a ChatDeployment by its model_info.id: the
+  executor's deployment with that model_id when there is one, so a config entry keeps the ChatDeployment and the
+  outbound client it got at startup, else a ChatDeployment resolved from the row. The weighing and the pick stay
+  pick_deployment's (Candidate from weight, rpm and tpm, then betterlite_router::simple_shuffle::pick), LiteLLM's
+  default simple-shuffle; chat_executor already refuses any other routing_strategy at startup. Move that weighing into
+  one function both picks call.
+
+
+  Resolving a row. chat_setup.rs's chat_deployments turns a config entry into a ChatDeployment with
+  ChatDeployment::resolve_with over openai_defaults and resolution_context, prefix_provider and the aiohttp defaults
+  (L161-L182). Move those per-entry steps into one function the startup loop and pick_router_deployment both call, and
+  keep the defaults and the resolution inputs (the environment and the bundled catalog) where the pick can reach them,
+  for example as a field of ChatExecutor. Decode the row into betterlite-config's ModelDeployment (model_name,
+  litellm_params, model_info) before resolving it. A row that does not resolve is left out of the candidates with a
+  warning naming its id, as the router leaves out an invalid deployment.
+
+
+  Each route. B9947's attempt in routes/chat.rs, routes/completions.rs and routes/embeddings.rs calls
+  pick_router_deployment instead of pick_deployment, with `state.shared.router_views.current()` read inside the attempt.
+  Everything else on the routes stays: the dispatch, the answers and B9947's not-found.
+
+
+  Tests. routing::simple_shuffle::tests named `router_`: no router and a model no row serves both answer the not-found;
+  a config row maps to the executor's own ChatDeployment; a row added to the live router after the executor was built
+  resolves and gets picked; an alias and a wildcard row are picked under the requested name; the seeded pick over
+  router rows repeats the sequence pick_deployment gives over the same deployments. Each route's tests.rs gets tests
+  named `router_` that start the server, add a deployment for a new model group to the live router's catalog (the
+  ProxyRouter's own catalog upsert from B8611, not B8381's sync) pointing at the mock upstream, and send one request for that model: it reaches the mock
+  upstream and answers 200. No HTTP oracle case: a model added after boot needs a step that adds it over HTTP, and POST
+  /model/new is B838's (todo, with twenty open dependencies). The oracle scenario setup writes no model row after the
+  proxy boots, and it substitutes {{upstream}} only in config, not in a request body.
+scope:
+  paths:
+  - crates/betterlite-server/src/routing/simple_shuffle.rs
+  - crates/betterlite-server/src/routing/simple_shuffle/tests.rs
+  - crates/betterlite-server/src/server/chat_setup.rs
+  - crates/betterlite-server/src/server/chat_setup/tests.rs
+  - crates/betterlite-openai/src/chat/execution.rs
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  - crates/betterlite-server/src/routes/completions.rs
+  - crates/betterlite-server/src/routes/completions/tests.rs
+  - crates/betterlite-server/src/routes/embeddings.rs
+  - crates/betterlite-server/src/routes/embeddings/tests.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L545-L725
+  why: The router branches of _route_request_single_attempt and the not-found raise when no branch applies.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L449-L466
+  why: The retry reads proxy_server.llm_router again after the read-through (L462).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L13282-L13432
+  why: Router.async_get_available_deployment, the selection over the live model list.
+dod:
+- text: >-
+    A deployment added to the live router after startup serves POST /v1/chat/completions, /v1/completions and
+    /v1/embeddings for its model group.
+  proof: [route-router-tests]
+- text: >-
+    With no router, or a model no router row serves, the routes answer B9947's not-found; alias and wildcard rows are
+    picked under the requested name.
+  proof: [router-pick-tests, route-router-tests]
+- text: >-
+    A config deployment keeps the ChatDeployment and client it got at startup, a new row is resolved with the same
+    steps as a config entry, and the seeded pick repeats pick_deployment's sequence.
+  proof: [router-pick-tests]
+- text: The other simple-shuffle, chat setup, route and server tests still pass.
+  proof: [regressions]
+checks:
+  optional: []
+  commands:
+  - id: router-pick-tests
+    why: The pick ignores the live router, resolves a config entry twice, drops alias or wildcard rows or weighs them
+      differently than pick_deployment.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::simple_shuffle::tests::router_/)'
+  - id: route-router-tests
+    why: A route still picks from the executor's config list, so a deployment added after startup is an unknown model.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::tests::router_/)'
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::tests::router_/)'
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::embeddings::tests::router_/)'
+  - id: regressions
+    why: The shared weighing, the moved resolve step or the router pick broke a simple-shuffle, chat setup, route or
+      server test.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::simple_shuffle::tests::router_/)'
+      && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routing::simple_shuffle::/) | test(/^server::/) | test(/^routes::chat::/) | test(/^routes::completions::/) | test(/^routes::embeddings::/)'
+oracle_cases: []
+deviations:
+- what: >-
+    A deployment the router gains after startup is called through the default outbound client, so its
+    litellm_params.ssl_verify has no effect; config deployments keep their own clients.
+  why: >-
+    chat_setup.rs builds the per-deployment clients once from config.model_list before the async runtime starts,
+    since it reads certificate files.
+out_of_scope:
+- "The not-found error and the retry call on these routes: B9947. The production read-through: B9948. Putting router_views in Shared: B8610."
+- "The rest of the router call (cooldowns, pre-call checks, retries, fallbacks) through RouterCompletion: B8630 builds it, and no task moves these routes onto it."
+- "The rest of _route_request_single_attempt on these routes (team model names, team public models, pass_through_all_models, deployment_names, blocked models, the acompletion batch branch): no task owns it."
+- "/v1/messages: B8804 swaps the router into B9800's MessagesRouting."
+pitfalls:
+- 'Read RouterViews::current inside B9947''s attempt, not once before it: LiteLLM reads proxy_server.llm_router again for the retry (route_llm_request.py L462), and the read-through can install the first router.'
+- 'Match a row to the executor by model_info.id only. Both sides derive a missing id with LiteLLM''s generate_model_id (betterlite-openai chat/deployment.rs L227 and betterlite-router deployment_identity/stable_id.rs L9), so a config entry must find its startup ChatDeployment instead of a second resolution with no client.'
+- 'Take the rows as an owned list and drop the router before any await: ProxyRouter keeps its catalog behind a std::sync::RwLock that B8381''s sync writes.'
+- 'Wildcard rows come back renamed to the requested model; keep each row''s own litellm_params model, or the call goes to the wildcard text.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
