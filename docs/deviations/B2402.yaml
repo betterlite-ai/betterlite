@@ -9,6 +9,9 @@ deviations:
   - what: An error body that is not UTF-8 becomes "{bytes} bytes that are not UTF-8", where LiteLLM's response.text decodes it with replacement characters.
     why: betterlite records the text as JSON; replacement characters hide that the body was binary, and the byte count keeps the record truthful without inventing text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L6082-L6085
+  - what: The async timeout message renders both durations from Duration values, so a timeout without a fraction prints as whole seconds and the elapsed time as seconds plus zero-padded milliseconds (time taken=0.100). LiteLLM interpolates Python floats, so a float 7.0 prints 7.0 and a hundred milliseconds prints 0.1.
+    why: The message still reports the timeout the caller passed and the time the failed request took, the same numbers LiteLLM shows; only the float rendering differs, since betterlite keeps durations typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L852-L866
 kept_bugs:
   - what: Caller extra_headers cannot override Authorization or Content-Type. Validation mutates the caller's map in place (provider Bearer key, application/json), and the handler's later headers.update re-applies that same map, so the caller's values are gone.
     why: A setup passing its own Authorization gets the provider key on the wire, and code depending on that would send the wrong credential if the caller's header won.
