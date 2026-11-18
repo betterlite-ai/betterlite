@@ -157,17 +157,17 @@ fn merged(
 }
 
 fn payload<'src>(sources: &'src DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'src str> {
-    match sources.payload_metadata.as_ref() {
-        Some(metadata) => metadata.text(key),
-        None => None,
-    }
+    let Some(metadata) = sources.payload_metadata.as_ref() else {
+        return None;
+    };
+    metadata.text(key)
 }
 
 fn params<'src>(sources: &'src DeploymentFailureSources<'_>, key: LabelKey) -> Option<&'src str> {
-    match sources.litellm_params_metadata {
-        Some(metadata) => text_field(metadata, key.metadata_name()),
-        None => None,
-    }
+    let Some(metadata) = sources.litellm_params_metadata else {
+        return None;
+    };
+    text_field(metadata, key.metadata_name())
 }
 
 // requester_ip_address and user_agent merge with Python's `or`, so only a non-empty payload value stops the cascade.
