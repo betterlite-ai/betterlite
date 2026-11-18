@@ -407,7 +407,7 @@ fn unknown_keys_are_reported_and_the_route_still_runs() {
     }
     let router = QualityRouter::new("qr", Some(&config), None, &[one]).unwrap();
     assert_eq!(
-        router.warnings,
+        router.warnings(),
         strings(&[
             "quality_router: ignoring unknown QualityRouterConfig field 'mystery' for router 'qr'",
             "quality_router: ignoring unknown RoutingPreferences field 'odd' for model 'one'",
@@ -423,7 +423,7 @@ fn the_shipped_seeds_define_the_routers_document() {
     let config = settings.deployments[0].config.as_ref().unwrap();
     let router =
         QualityRouter::new("quality-router", Some(config), None, &settings.deployments).unwrap();
-    assert!(router.warnings.is_empty());
+    assert!(router.warnings().is_empty());
     let request = messages(r#"[{"role":"user","content":"please write code"}]"#);
     assert_eq!(pick(&router, &request).as_deref(), Some("quality-fast"));
     text_settings(CONFIG_INVALID).unwrap_err();

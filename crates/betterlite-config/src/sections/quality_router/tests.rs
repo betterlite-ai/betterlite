@@ -148,6 +148,37 @@ model_list:
     assert_eq!(preferences.order, None);
 }
 
+// a deployment no router's available_models names is skipped before its preferences are validated
+#[test]
+fn an_unreferenced_deployment_keeps_partial_preferences_unread() {
+    let source = "\
+model_list:
+  - model_name: router
+    litellm_params:
+      quality_router_config:
+        available_models: [fast]
+  - model_name: fast
+    model_info:
+      litellm_routing_preferences:
+        quality_tier: 1
+  - model_name: unused
+    model_info:
+      litellm_routing_preferences:
+        keywords: [code]
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(resolved.deployments.len(), 3);
+    assert_eq!(
+        resolved.deployments[1]
+            .preferences
+            .as_ref()
+            .unwrap()
+            .quality_tier,
+        1
+    );
+    assert_eq!(resolved.deployments[2].preferences, None);
+}
+
 const ENVIRONMENT: &str = "\
 model_list:
   - model_name: router
