@@ -1,0 +1,26 @@
+task: B715
+deviations:
+  - what: >-
+      LoopBoundSemaphore::current returns None when no tokio runtime is running, where LiteLLM's
+      asyncio.get_running_loop() raises RuntimeError.
+    why: >-
+      betterlite has no event loop object to compare against, so the runtime id is the loop identity;
+      outside a runtime there is no loop to bind to, and returning None lets a caller skip the gate
+      instead of panicking on a path a serving proxy never takes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L22-L27
+  - what: >-
+      A scheduled success metric whose hook fails logs a warning, where LiteLLM's bare asyncio task
+      reports the failure through the loop's exception handler.
+    why: >-
+      The task tracker that schedules the hook is the only owner of that failure in betterlite, so it
+      reports it on the gateway's tracing instead of leaving it unreported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/log_db_metrics.py#L56-L66
+  - what: >-
+      A lookup that outlives its deadline and later fails or panics logs at debug, where LiteLLM's
+      _consume_abandoned_lookup only retrieves the exception to silence the loop's report.
+    why: >-
+      Retrieving the exception is how Python suppresses the unhandled-task report; betterlite has no
+      such report, so an abandoned failure or panic is traced at debug instead of being dropped
+      without a trace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/db_lookup_gate.py#L60-L62
+kept_bugs: []

@@ -105,5 +105,7 @@ pub fn span_context_from_value(input: &OtelModelValue) -> Option<SpanContext> {
     span_context.is_valid().then_some(span_context)
 }
 
+pub mod db_metrics;
+
 #[path = "parent_span/tests.rs"]
 mod tests;

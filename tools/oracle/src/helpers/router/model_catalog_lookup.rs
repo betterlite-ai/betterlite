@@ -1,11 +1,17 @@
+mod error;
+mod input;
+mod output;
+mod snapshot;
+
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("model_catalog_lookup")
+    fn run(input: &Self::Input) -> HelperResult {
+        output::answer(input).or_value_error()
     }
 }
