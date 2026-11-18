@@ -286,6 +286,48 @@ fn transform_null_incomplete_reason_is_not_incomplete() {
         },
     })
 )]
+#[case::nested_cached_details(
+    json!({
+        "input_tokens": 10, "output_tokens": 20, "total_tokens": 30,
+        "input_tokens_details": {
+            "cached_tokens": 1,
+            "cached_tokens_details": {"text_tokens": 2, "audio_tokens": 3, "image_tokens": 4},
+        },
+        "output_tokens_details": {"reasoning_tokens": 2},
+    }),
+    json!({
+        "prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30,
+        "prompt_tokens_details": {
+            "audio_tokens": null, "cached_tokens": 1, "text_tokens": null,
+            "image_tokens": null, "video_tokens": null,
+            "cached_tokens_details": {"text_tokens": 2, "audio_tokens": 3, "image_tokens": 4},
+        },
+        "completion_tokens_details": {
+            "accepted_prediction_tokens": null, "audio_tokens": null,
+            "reasoning_tokens": 2, "rejected_prediction_tokens": null,
+            "text_tokens": null, "image_tokens": null, "video_tokens": null,
+        },
+    })
+)]
+#[case::optional_input_counters(
+    json!({
+        "input_tokens": 10, "output_tokens": 20, "total_tokens": 30,
+        "input_tokens_details": {
+            "cached_tokens": 1, "cache_write_tokens": 4,
+            "web_search_requests": 5, "google_maps_grounding_requests": 6,
+        },
+    }),
+    json!({
+        "prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30,
+        "prompt_tokens_details": {
+            "audio_tokens": null, "cached_tokens": 1, "text_tokens": null,
+            "image_tokens": null, "video_tokens": null,
+            "cache_write_tokens": 4, "cache_creation_tokens": 4,
+            "web_search_requests": 5, "google_maps_grounding_requests": 6,
+        },
+        "completion_tokens_details": null,
+    })
+)]
 fn transform_projects_usage(#[case] usage: Value, #[case] expected: Value) {
     let mut response = decoded_with(json!([typed_message("a")]), json!({"usage": usage}));
     let record = record_of(&mut response);
