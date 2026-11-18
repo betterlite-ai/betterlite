@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::panic;
+use std::thread;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
@@ -73,14 +75,31 @@ fn environment_region(
     environment: &BTreeMap<String, String>,
     secrets: &SecretLookup,
 ) -> Result<String, EmbeddingIoError> {
-    let mut selected = secrets
-        .get_secret_str(environment, REGION_NAME_VARIABLE, None)?
-        .map(|value| value.expose_secret().to_owned());
-    let standard = secrets
-        .get_secret_str(environment, REGION_VARIABLE, None)?
-        .map(|value| value.expose_secret().to_owned());
-    if standard.is_some() {
-        selected = standard;
-    }
-    Ok(selected.unwrap_or_else(|| DEFAULT_AWS_REGION.to_owned()))
+    // a secret manager read blocks on its own HTTP client, which refuses to run on a tokio worker
+    let (name, standard) = if secrets.manager.is_some() {
+        thread::scope(|scope| {
+            let handle = thread::Builder::new()
+                .name("bedrock-region-secret".to_owned())
+                .spawn_scoped(scope, || region_secrets(environment, secrets))
+                .map_err(|source| EmbeddingIoError::RegionThread { source })?;
+            handle
+                .join()
+                .unwrap_or_else(|payload| panic::resume_unwind(payload))
+        })?
+    } else {
+        region_secrets(environment, secrets)?
+    };
+    Ok(standard.or(name).map_or_else(
+        || DEFAULT_AWS_REGION.to_owned(),
+        |text| text.expose_secret().to_owned(),
+    ))
+}
+
+fn region_secrets(
+    environment: &BTreeMap<String, String>,
+    secrets: &SecretLookup,
+) -> Result<(Option<SecretString>, Option<SecretString>), EmbeddingIoError> {
+    let name = secrets.get_secret_str(environment, REGION_NAME_VARIABLE, None)?;
+    let standard = secrets.get_secret_str(environment, REGION_VARIABLE, None)?;
+    Ok((name, standard))
 }

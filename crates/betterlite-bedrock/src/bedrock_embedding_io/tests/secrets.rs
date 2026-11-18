@@ -1,7 +1,10 @@
+use std::sync::Arc;
+
 use super::fixture::{
-    ACCESS_KEY, Factory, FixtureClient, Reply, SECRET_KEY, SESSION_TOKEN, credentials, headers,
-    now, object, runtime,
+    ACCESS_KEY, Factory, FixtureClient, ManagedReader, Reply, SECRET_KEY, SESSION_TOKEN, Source,
+    credentials, environment, headers, managed_secrets, now, object, raw, runtime,
 };
+use crate::bedrock_embedding_io::credentials::{CredentialRequest, load_credentials};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
     EmbeddingCall, EmbeddingRequest, SuppliedClient, post_embedding,
@@ -9,6 +12,35 @@ use crate::bedrock_embedding_io::transport::{
 
 const URL: &str =
     "https://bedrock-runtime.us-west-2.amazonaws.com/model/amazon.titan-embed-text-v1/invoke";
+
+#[test]
+fn bedrock_embedding_io_managed_region_secret_is_read_off_runtime() {
+    let reader = Arc::new(ManagedReader::new("eu-north-1"));
+    let secrets = managed_secrets(Arc::clone(&reader));
+    let source = Source::new(credentials(ACCESS_KEY, SECRET_KEY, None));
+    let mut parameters = raw(&[]);
+    let variables = environment(&[("AWS_REGION_NAME", "us-east-1")]);
+    let loaded = runtime()
+        .block_on(load_credentials(
+            CredentialRequest {
+                optional_params: &mut parameters,
+                environment: &variables,
+                bearer_token: None,
+            },
+            &secrets,
+            source.resolve(),
+        ))
+        .expect("the managed region secret loads");
+    assert_eq!(loaded.region, "eu-north-1");
+    assert_eq!(source.calls()[0].1, "eu-north-1");
+    assert_eq!(
+        reader.reads(),
+        [
+            ("AWS_REGION_NAME".to_owned(), false),
+            ("AWS_REGION".to_owned(), false),
+        ]
+    );
+}
 
 #[test]
 fn bedrock_embedding_io_secret_safe_failure() {
