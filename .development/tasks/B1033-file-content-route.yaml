@@ -13,6 +13,8 @@ description: >-
   unified ids fail before database/storage access. Remove the previous dependencies on managed
   repositories/backends; there is no reachable storage download branch here in the MIT proxy.
   Provider hints use path, custom-llm-provider header, custom_llm_provider query/body, then openai.
+  The header, query and body values come from B2400's get_custom_llm_provider_from_request_headers,
+  _query and _body accessors (betterlite-server api::proxy_endpoint_support); the route applies the order.
 
   Provider alone selects streaming, not a stream query parameter. Buffered replies return a new
   Response with upstream status/headers, losing the custom headers written on fastapi_response.

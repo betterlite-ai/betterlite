@@ -10,7 +10,9 @@ description: >-
   Retrieve validates require_managed_files first, then selects provider and performs pre-call
   processing. Model-based routing precedes legacy unified-ID handling. List never calls the managed-ID
   requirement: limit is validated before pre-call and the source route_type is alist_fine_tuning_jobs,
-  despite this being Files. Model routing wins over target_model_names and provider hints. MIT has
+  despite this being Files. Model routing wins over target_model_names and provider hints. The
+  header, query and body hints come from B2400's get_custom_llm_provider_from_request_headers, _query
+  and _body accessors (betterlite-server api::proxy_endpoint_support); the route applies the order. MIT has
   no managed hook, so list falls back to provider/openai; limit and after are not sent on that path.
 
   Keep the complete functions together and exercise every alias with B900 HTTP cases, master key
