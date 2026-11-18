@@ -42,6 +42,14 @@ deviations:
     error shape; credentials still come only from the deployment or the operator's environment.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L164
 - what: >-
+    A request whose resolved model names no model_list entry answers 400 invalid_request_error with the model named
+    before any provider call; LiteLLM hands the model to the router, whose missing deployment ends as a 429
+    ProxyException.
+  why: >-
+    betterlite answers every inference request from a configured deployment, so an unconfigured model is a caller
+    error here rather than a rate limit.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4352-L4359
+- what: >-
     A moderation deployment whose model names a provider other than OpenAI answers 501 with the model named; LiteLLM
     routes every moderation model through the OpenAI client, so it either calls OpenAI or fails inside that call.
   why: >-
