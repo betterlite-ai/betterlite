@@ -75,7 +75,7 @@ impl Helper for Op {
             output_policies.insert(name.clone(), registry.output_policy(name));
         }
         serde_json::to_value(Output {
-            initialized: true,
+            initialized: registry.initialized,
             queries,
             output_policies,
         })
