@@ -1,11 +1,37 @@
 kind: helper
-name: sagemaker-runtime-signed-call-header-inputs
+name: sagemaker-runtime-signed-call-headers
 call:
   b5840:
-    function: component_header
-    model_id: null
+    function: signed_request
+    api_base: https://runtime.sagemaker.us-east-1.amazonaws.com/endpoints/endpoint-a/invocations
+    model: endpoint-a
     headers:
-      Content-Type: application/json
-      X-Amzn-SageMaker-Inference-Component: supplied
+      X-Amzn-SageMaker-Inference-Component: blue
+      X-Forwarded-For: 203.0.113.7
+    optional_params: {aws_region_name: us-east-1}
+    request_data:
+      inputs: hello
+      parameters:
+        do_sample: false
+        max_new_tokens: 4
+    credentials:
+      access_key_id: AKIDEXAMPLE
+      secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+      session_token: session-token
+    now: 1767225600
+calls:
+  - b5840:
+      function: signed_request
+      api_base: https://runtime.sagemaker.eu-west-1.amazonaws.com/endpoints/endpoint-b/invocations-response-stream
+      model: endpoint-b
+      headers:
+        Content-Type: application/json
+      optional_params: {aws_region_name: eu-west-1}
+      request_data: {inputs: bye}
+      credentials:
+        access_key_id: AKIDEXAMPLE
+        secret_access_key: wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY
+        session_token: null
+      now: 1767225601
 env: {}
 compare: {ignore: []}
