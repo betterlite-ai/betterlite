@@ -352,15 +352,25 @@ fn message(role: &str, content: Json) -> Json {
     ]))
 }
 
-fn billing_messages() -> Vec<Json> {
-    let text_block = Json::Object(IndexMap::from([
+fn text_block(content: &str, cache_control: Option<Json>) -> Json {
+    let mut fields = IndexMap::from([
         ("type".to_owned(), text("text")),
-        ("text".to_owned(), text("hi")),
-        (
-            "cache_control".to_owned(),
-            Json::Object(IndexMap::from([("type".to_owned(), text("ephemeral"))])),
-        ),
-    ]));
+        ("text".to_owned(), text(content)),
+    ]);
+    if let Some(cache) = cache_control {
+        fields.insert("cache_control".to_owned(), cache);
+    }
+    Json::Object(fields)
+}
+
+fn billing_messages() -> Vec<Json> {
+    let cached_text = text_block(
+        "hi",
+        Some(Json::Object(IndexMap::from([(
+            "type".to_owned(),
+            text("ephemeral"),
+        )]))),
+    );
     let file_block = Json::Object(IndexMap::from([
         ("type".to_owned(), text("file")),
         (
@@ -368,7 +378,7 @@ fn billing_messages() -> Vec<Json> {
             Json::Object(IndexMap::from([("file_id".to_owned(), text("file-1"))])),
         ),
     ]));
-    vec![message("user", Json::List(vec![text_block, file_block]))]
+    vec![message("user", Json::List(vec![cached_text, file_block]))]
 }
 
 fn probe_options() -> IndexMap<String, Json> {
@@ -409,13 +419,10 @@ fn system_messages() -> Vec<Json> {
         message("system", text("answer in one line")),
         message(
             "system",
-            Json::List(vec![Json::Object(IndexMap::from([
-                ("type".to_owned(), text("text")),
-                (
-                    "text".to_owned(),
-                    text("x-anthropic-billing-header: block metadata"),
-                ),
-            ]))]),
+            Json::List(vec![text_block(
+                "x-anthropic-billing-header: block metadata",
+                None,
+            )]),
         ),
         message("user", text("hi")),
     ]

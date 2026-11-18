@@ -132,13 +132,9 @@ class Recorder(Logging):
         return 0.0
 
     def success_handler(
-        self,
-        response: ModelResponse,
-        start_time: datetime | None,
-        end_time: datetime | None,
-        cache_hit: bool,
+        self, *args: ModelResponse | datetime | bool | None
     ) -> None:
-        del response, start_time, end_time, cache_hit
+        del args
 
 
 class Silent:
@@ -164,7 +160,7 @@ POSTED: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonVal
 # what the consumed stream emitted and what its wrapper says it was, which the Rust answer compares
 def stream_value(stream: Stream) -> JsonObject:
     texts: list[str] = []
-    finishes: list[str] = []
+    finishes: list[JsonValue] = []
     for chunk in stream:
         choice = chunk.choices[0]
         content = choice.delta.content
