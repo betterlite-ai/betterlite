@@ -8,11 +8,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_logging_state::logger::PassThroughEndpointLogging;
+use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
 use betterlite_logging::passthrough_stream_logging::types::{
-    CollectedChunksCall, CollectedChunksHandler, EndpointType,
+    CollectedChunksCall, CollectedChunksHandler, EndpointType, HandlerOutcome,
 };
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::pass_through_logging::gemini_passthrough_logging::cost::{
     CostRequest, CostResponse, PassthroughCompletionCost, PassthroughCostError,
@@ -21,7 +22,7 @@ use betterlite_server::pass_through_logging::gemini_passthrough_logging::{
     GeminiPassthroughInput, GeminiPassthroughLogger,
 };
 use betterlite_server::pass_through_logging::vertex_stream_collection::VertexStreamCollector;
-use chrono::DateTime;
+use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -112,50 +113,83 @@ impl Helper for Op {
         let passthrough = PassThroughEndpointLogging {
             injected_log_dispatch: None,
         };
-        let call = CollectedChunksCall {
-            logging_obj: &logging_obj,
-            passthrough: &passthrough,
-            url_route: &input.url_route,
-            request_body: None,
-            endpoint_type: EndpointType::Gemini,
-            start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
-                .or_value_error()?,
-            end_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()?,
-            lines: &input.lines,
-            model: input.model.as_deref(),
-        };
+        let call = collected_call(input, &logging_obj, &passthrough)?;
         let outcome = match input.operation {
-            Operation::GeminiHandler => {
-                let bytes = serde_json::to_vec(&input.body).or_value_error()?;
-                let empty = Map::new();
-                let request_body = input.request_body.as_ref().unwrap_or(&empty);
-                GeminiPassthroughLogger::new(Arc::clone(&cost))
-                    .gemini_passthrough_handler(GeminiPassthroughInput {
-                        logging_obj: &logging_obj,
-                        url_route: &input.url_route,
-                        response_headers: &http::HeaderMap::new(),
-                        response_body: &bytes,
-                        request_body,
-                        start_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
-                            .or_value_error()?,
-                        end_time: DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00")
-                            .or_value_error()?,
-                        kwargs: PassThroughLoggingKwargs::default(),
-                    })
-                    .map_err(|error| error.to_string())
-            }
-            Operation::GeminiChunks => GeminiPassthroughLogger::new(Arc::clone(&cost))
-                .handle(&call)
-                .map_err(|error| error.to_string()),
-            Operation::VertexChunks => VertexStreamCollector::new(Arc::clone(&cost))
-                .handle(&call)
-                .map_err(|error| error.to_string()),
+            Operation::GeminiHandler => gemini_handler(input, &cost, &logging_obj),
+            Operation::GeminiChunks => gemini_chunks(&call, &cost),
+            Operation::VertexChunks => vertex_chunks(&call, &cost),
         };
         outcome.map_or_else(
             |_error| Ok(json!({ "failed": true })),
             |handled| view::outcome_view(&handled, &logging_obj, &cost),
         )
     }
+}
+
+fn collected_call<'input>(
+    input: &'input Input,
+    logging_obj: &'input StreamLoggingObject,
+    passthrough: &'input PassThroughEndpointLogging,
+) -> Result<CollectedChunksCall<'input>, Box<HelperError>> {
+    Ok(CollectedChunksCall {
+        logging_obj,
+        passthrough,
+        url_route: &input.url_route,
+        request_body: None,
+        endpoint_type: EndpointType::Gemini,
+        start_time: start_time()?,
+        end_time: start_time()?,
+        lines: &input.lines,
+        model: input.model.as_deref(),
+    })
+}
+
+fn start_time() -> Result<DateTime<FixedOffset>, Box<HelperError>> {
+    DateTime::parse_from_rfc3339("2024-01-01T00:00:00+00:00").or_value_error()
+}
+
+fn gemini_handler(
+    input: &Input,
+    cost: &Arc<RecordingCost>,
+    logging_obj: &StreamLoggingObject,
+) -> Result<HandlerOutcome, Box<HelperError>> {
+    let bytes = serde_json::to_vec(&input.body).or_value_error()?;
+    let empty = Map::new();
+    let request_body = input.request_body.as_ref().unwrap_or(&empty);
+    let headers = http::HeaderMap::new();
+    let call_cost = Arc::clone(cost);
+    GeminiPassthroughLogger::new(call_cost)
+        .gemini_passthrough_handler(GeminiPassthroughInput {
+            logging_obj,
+            url_route: &input.url_route,
+            response_headers: &headers,
+            response_body: &bytes,
+            request_body,
+            start_time: start_time()?,
+            end_time: start_time()?,
+            kwargs: PassThroughLoggingKwargs::default(),
+        })
+        .map_err(|error| view::helper_error("HandlerError", &error.to_string()))
+}
+
+fn gemini_chunks(
+    call: &CollectedChunksCall<'_>,
+    cost: &Arc<RecordingCost>,
+) -> Result<HandlerOutcome, Box<HelperError>> {
+    let call_cost = Arc::clone(cost);
+    GeminiPassthroughLogger::new(call_cost)
+        .handle(call)
+        .map_err(|error| view::helper_error("HandlerError", &error.to_string()))
+}
+
+fn vertex_chunks(
+    call: &CollectedChunksCall<'_>,
+    cost: &Arc<RecordingCost>,
+) -> Result<HandlerOutcome, Box<HelperError>> {
+    let call_cost = Arc::clone(cost);
+    VertexStreamCollector::new(call_cost)
+        .handle(call)
+        .map_err(|error| view::helper_error("HandlerError", &error.to_string()))
 }
 
 fn body_model(body: &Json) -> Option<String> {

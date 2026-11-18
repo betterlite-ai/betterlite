@@ -162,7 +162,7 @@ fn cost_view(cost: &RecordingCost) -> Value {
     Value::Array(rendered)
 }
 
-fn helper_error(class: &str, message: &str) -> Box<HelperError> {
+pub(super) fn helper_error(class: &str, message: &str) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
         status: None,
