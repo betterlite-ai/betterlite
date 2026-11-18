@@ -40,10 +40,10 @@ impl GatewayRequestsList for RedisGatewayRequestsList {
     #[cfg_attr(test, mutants::skip)]
     fn take<'call>(&'call self, count: usize) -> ListFuture<'call, Vec<String>> {
         Box::pin(async move {
-            let count = i64::try_from(count).unwrap_or(i64::MAX);
+            let requested = i64::try_from(count).unwrap_or(i64::MAX);
             let popped = self
                 .lists
-                .async_lpop(GATEWAY_REQUESTS_BUFFER_KEY, Some(count))
+                .async_lpop(GATEWAY_REQUESTS_BUFFER_KEY, Some(requested))
                 .await
                 .map_err(|source| GatewayRequestRedisError::List {
                     operation: "async_lpop",
