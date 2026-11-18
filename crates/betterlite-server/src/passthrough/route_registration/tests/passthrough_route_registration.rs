@@ -13,6 +13,7 @@ use uuid::Uuid;
 use super::super::*;
 use super::support::*;
 
+mod missing_target;
 mod stale_removal;
 
 #[test]
