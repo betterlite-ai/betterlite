@@ -231,7 +231,10 @@ pub async fn stream_error(status: u16, mut chunks: ChunkStream) -> SagemakerErro
     let mut body = Vec::new();
     while body.len() < ERROR_BODY_BYTES {
         match chunks.next().await {
-            Some(Ok(chunk)) => body.extend_from_slice(&chunk),
+            Some(Ok(chunk)) => {
+                let remaining = ERROR_BODY_BYTES - body.len();
+                body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+            }
             Some(Err(_)) | None => break,
         }
     }
@@ -265,4 +268,186 @@ pub fn body_text(body: &[u8]) -> String {
 pub fn epoch_seconds(now: SystemTime) -> u64 {
     now.duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        OutboundRequest, PreparedCall, ProxiedClient, RequestBody, SagemakerEnvironment,
+        SagemakerRuntime, SagemakerTransport, header_map,
+    };
+    use crate::sagemaker_runtime::error::RuntimeError;
+    use betterlite_logging::logging_pre_post::args::RawBody;
+    use betterlite_models::decisions::Json;
+    use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
+    use indexmap::IndexMap;
+    use std::time::Duration;
+
+    struct Counter;
+
+    impl TextTokenCounter for Counter {
+        fn count_response_tokens(&self, text: &str) -> u64 {
+            u64::try_from(text.split_whitespace().count()).unwrap_or_default()
+        }
+    }
+
+    #[test]
+    fn environment_inputs_keep_each_region_source() {
+        let environment = SagemakerEnvironment {
+            region_name: Some(String::from("eu-west-1")),
+            region: Some(String::from("us-east-1")),
+            session_region: Some(String::from("ap-south-1")),
+        };
+        let inputs = environment.inputs();
+        assert_eq!(inputs.environment_region_name, Some("eu-west-1"));
+        assert_eq!(inputs.environment_region, Some("us-east-1"));
+        assert_eq!(inputs.session_region, Some("ap-south-1"));
+        assert_eq!(
+            SagemakerEnvironment::default().inputs().environment_region,
+            None
+        );
+    }
+
+    #[test]
+    fn runtime_reads_its_injected_clock_and_environment() {
+        let counter = Counter;
+        let runtime = SagemakerRuntime {
+            transport: (),
+            credentials: (),
+            environment: SagemakerEnvironment {
+                region_name: Some(String::from("eu-west-1")),
+                region: Some(String::from("us-east-1")),
+                session_region: None,
+            },
+            clock: aws_smithy_async::time::SharedTimeSource::new(
+                aws_smithy_async::time::StaticTimeSource::new(
+                    std::time::UNIX_EPOCH + Duration::from_secs(12),
+                ),
+            ),
+            counter: &counter,
+            timeout: Duration::from_secs(3),
+        };
+        assert_eq!(
+            runtime.now(),
+            std::time::UNIX_EPOCH + Duration::from_secs(12)
+        );
+        assert_eq!(runtime.inputs().environment_region_name, Some("eu-west-1"));
+        assert_eq!(runtime.inputs().environment_region, Some("us-east-1"));
+    }
+
+    #[test]
+    fn header_map_validates_names_and_values_and_marks_secrets() {
+        let headers = vec![
+            (String::from("Authorization"), String::from("signature")),
+            (String::from("X-Amz-Security-Token"), String::from("token")),
+            (
+                String::from("Content-Type"),
+                String::from("application/json"),
+            ),
+        ];
+        let map = header_map(&headers).expect("valid headers");
+        assert!(
+            map.get("authorization")
+                .is_some_and(|value| value.is_sensitive())
+        );
+        assert!(
+            map.get("x-amz-security-token")
+                .is_some_and(|value| value.is_sensitive())
+        );
+        assert!(
+            map.get("content-type")
+                .is_some_and(|value| !value.is_sensitive())
+        );
+        assert!(matches!(
+            header_map(&[(String::from("bad name"), String::from("value"))]),
+            Err(RuntimeError::Header { name }) if name == "bad name"
+        ));
+        assert!(matches!(
+            header_map(&[(String::from("x-test"), String::from("bad\nvalue"))]),
+            Err(RuntimeError::Header { name }) if name == "x-test"
+        ));
+    }
+
+    #[test]
+    fn outbound_validates_url_and_builds_post_request() {
+        let counter = Counter;
+        let runtime = SagemakerRuntime {
+            transport: (),
+            credentials: (),
+            environment: SagemakerEnvironment::default(),
+            clock: aws_smithy_async::time::SharedTimeSource::new(
+                aws_smithy_async::time::StaticTimeSource::new(std::time::UNIX_EPOCH),
+            ),
+            counter: &counter,
+            timeout: Duration::from_secs(3),
+        };
+        let prepared = PreparedCall {
+            url: String::from("https://runtime.example/invocations"),
+            headers: vec![(
+                String::from("Content-Type"),
+                String::from("application/json"),
+            )],
+            body: br#"{"inputs":"hi"}"#.to_vec(),
+            body_json: IndexMap::from([(String::from("inputs"), Json::Text(String::from("hi")))]),
+            region: String::from("us-west-2"),
+        };
+        let request = runtime.outbound(&prepared).expect("valid outbound request");
+        assert_eq!(request.method, http::Method::POST);
+        assert_eq!(request.url.as_str(), "https://runtime.example/invocations");
+        assert_eq!(request.deadline, Duration::from_secs(3));
+        assert!(matches!(
+            runtime.outbound(&PreparedCall {
+                url: String::from("not a URL"),
+                ..prepared
+            }),
+            Err(RuntimeError::Endpoint { .. })
+        ));
+    }
+
+    #[test]
+    fn prepared_call_logging_uses_body_object_and_signed_headers() {
+        let prepared = PreparedCall {
+            url: String::from("https://runtime.example/invocations"),
+            headers: vec![(String::from("Authorization"), String::from("secret"))],
+            body: Vec::new(),
+            body_json: IndexMap::from([(String::from("inputs"), Json::Text(String::from("hi")))]),
+            region: String::from("us-west-2"),
+        };
+        let logged = prepared.additional_args();
+        assert_eq!(
+            logged.api_base.as_deref(),
+            Some("https://runtime.example/invocations")
+        );
+        assert!(matches!(
+            logged.complete_input_dict,
+            Some(RawBody::Object(_))
+        ));
+        assert!(logged.headers.is_some());
+        assert!(logged.passthrough.is_empty());
+    }
+
+    #[tokio::test]
+    async fn proxied_client_transport_reports_unavailable_upstream() {
+        let policy = betterlite_config::proxy::ProxyPolicy::resolve(
+            &betterlite_config::types::ProxyTrust::default(),
+            &std::collections::BTreeMap::new(),
+        )
+        .expect("default proxy policy");
+        let client =
+            ProxiedClient::outbound(&std::sync::Arc::new(policy)).expect("outbound client");
+        let outbound = || OutboundRequest {
+            method: Method::POST,
+            url: Url::parse("http://127.0.0.1:9/invocations").expect("test URL"),
+            query: Vec::new(),
+            headers: HeaderMap::new(),
+            body: RequestBody::Empty,
+            deadline: Duration::from_millis(200),
+        };
+        assert!(SagemakerTransport::send(&client, outbound()).await.is_err());
+        assert!(
+            SagemakerTransport::open_stream(&client, outbound())
+                .await
+                .is_err()
+        );
+    }
 }
