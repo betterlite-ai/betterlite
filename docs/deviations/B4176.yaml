@@ -38,13 +38,15 @@ deviations:
       and the error shape differ.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_logging.py#L642-L649
   - what: >-
-      The reload watch list resolves the current directory and the config parent by canonicalizing them on
-      disk, where LiteLLM's `_get_reload_options` builds them with `os.path.abspath`, which keeps a symlink
-      as it is. A config reached through a symlinked directory therefore watches the real directory here.
+      The reload watch list canonicalizes the current directory on disk, where LiteLLM's `_get_reload_options`
+      builds it with `os.path.abspath`, which keeps a symlink as it is. A caller that hands over a symlinked
+      current directory watches the directory it points at.
     why: >-
-      One resolver serves the reload kwargs and the StatReload extra paths, and LiteLLM resolves the latter
-      with `Path.resolve()`, so the two lists cannot disagree in betterlite. The watcher still sees every file
-      LiteLLM watches at the location the config really lives in.
+      LiteLLM's own current directory comes from `os.getcwd()`, which the kernel already reports resolved, so
+      the canonical form agrees with LiteLLM on a real start while the watch list names a directory that
+      exists. The config parent and the config basename keep the `os.path.abspath` rule, so a symlinked
+      config still watches its configured name, and the StatReload extra paths keep `Path.resolve()`
+      semantics through soft-canonicalize.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L365-L369
   - what: >-
       A `--config` path whose file name is not valid UTF-8 (or has no file name at all) fails the reload

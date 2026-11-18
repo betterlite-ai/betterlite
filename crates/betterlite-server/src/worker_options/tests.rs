@@ -391,6 +391,30 @@ fn reload_options_follow_a_symlinked_watch_directory_to_its_target() {
 
 #[cfg(unix)]
 #[test]
+fn reload_options_keep_the_configured_name_of_a_symlinked_config() {
+    use std::os::unix::fs::symlink;
+
+    let (_directory, root) = temporary_directory();
+    let versions = root.join("versions");
+    fs::create_dir_all(&versions).expect("versions directory");
+    let target = versions.join("live.yaml");
+    fs::write(&target, "{}").expect("target file");
+    let config = root.join("proxy.yaml");
+    symlink(&target, &config).expect("config symlink");
+    let options = resolve_reload_options(&root, Some(config.as_path())).expect("reload options");
+    assert_eq!(options.reload_dirs, vec![root]);
+    assert_eq!(
+        options.reload_includes,
+        vec![
+            "*.py".to_owned(),
+            ".env".to_owned(),
+            "proxy.yaml".to_owned()
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn reload_options_surface_a_watch_directory_that_cannot_be_resolved() {
     use std::os::unix::fs::symlink;
 
