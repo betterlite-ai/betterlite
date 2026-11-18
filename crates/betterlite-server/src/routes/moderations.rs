@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use axum::body::Bytes;
@@ -8,6 +8,7 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
+use betterlite_config::sections::detailed_timing::DetailedTiming;
 use betterlite_context::call_context::{CallContext as DispatchContext, CallInputs};
 use betterlite_core::api::request_destination::model::{
     InferenceModelKind, ModelDefaults, resolve_inference_model,
@@ -25,14 +26,16 @@ use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::moderation_execution::{ModerationError, send};
 use betterlite_openai::moderation_request::ModerationRequest;
+use betterlite_openai::openai_base_config::Object as JsonMap;
 use uuid::Uuid;
 
+use crate::custom_headers::custom_headers;
+use crate::custom_headers::input::{CustomHeadersInput, KeyHeaderView};
 use crate::pre_call::rewrites::resolve_call_id;
 use crate::routing::simple_shuffle::pick_deployment;
 use crate::state::ServerState;
 
-use self::render::{dispatch_failure, missing_deployment, model_required, render_failure};
-use super::chat::headers::success_headers;
+use self::render::{dispatch_failure, refusal, render_failure};
 
 mod render;
 mod tests;
@@ -63,6 +66,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
             .sections
             .error_body_call_id
             .include_call_id_in_error_body,
+        detailed_timing: state.config.sections.detailed_timing,
     })
 }
 
@@ -72,6 +76,7 @@ struct ModerationState {
     dispatch: Arc<Dispatch>,
     moderation_model: Option<String>,
     include_call_id: bool,
+    detailed_timing: DetailedTiming,
 }
 
 // the OpenAI moderation call sits behind the dispatch port, so the route keeps no provider code
@@ -101,7 +106,6 @@ async fn moderations(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    let started = Instant::now();
     let call_id = resolve_call_id(
         headers
             .get("x-litellm-call-id")
@@ -118,12 +122,12 @@ async fn moderations(
         }
     };
     let Some(model) = resolve_model(request.model.as_deref(), &state.moderation_model) else {
-        return render_failure(&model_required(), &call_id, state.include_call_id);
+        return render_failure(&refusal(None), &call_id, state.include_call_id);
     };
     let Ok(deployment) = pick_deployment(&state.calls.executor, &model) else {
-        return render_failure(&missing_deployment(&model), &call_id, state.include_call_id);
+        return render_failure(&refusal(Some(&model)), &call_id, state.include_call_id);
     };
-    execute(&state, request, deployment, &call_id, started).await
+    execute(&state, request, deployment, &call_id).await
 }
 
 // resolve_inference_model's moderation arm: the configured default overrides the body, and the launch model is unset
@@ -147,7 +151,6 @@ async fn execute(
     request: ModerationRequest,
     deployment: &ChatDeployment,
     call_id: &str,
-    started: Instant,
 ) -> Response {
     let operation = Operation::Moderation(DispatchRequest {
         call_id: call_id.to_owned(),
@@ -164,17 +167,7 @@ async fn execute(
     });
     let redactor = &state.calls.executor.redactor;
     match state.dispatch.execute(operation, &context).await {
-        Ok(CallResult::Moderation(result)) => {
-            // proxy_server.py's moderation handler gives get_custom_headers no provider header, so none is forwarded
-            let headers = success_headers(
-                &HeaderMap::new(),
-                deployment,
-                call_id,
-                result.upstream_time,
-                started.elapsed(),
-            );
-            (headers, Json(result.response)).into_response()
-        }
+        Ok(CallResult::Moderation(result)) => answered(state, result, call_id),
         Ok(_) => dispatch_failure(
             DispatchError::NotBuilt {
                 entry: "moderation",
@@ -185,4 +178,27 @@ async fn execute(
         ),
         Err(error) => dispatch_failure(error, call_id, state.include_call_id, redactor),
     }
+}
+
+// proxy_server.py's moderation handler gives get_custom_headers no model id, cache key, api base or logging object
+fn answered(state: &ModerationState, result: ModerationResult, call_id: &str) -> Response {
+    let input = CustomHeadersInput {
+        key: KeyHeaderView::default(),
+        call_id: Some(call_id.to_owned()),
+        model_id: None,
+        cache_key: None,
+        api_base: None,
+        version: Some(env!("CARGO_PKG_VERSION").to_owned()),
+        model_region: None,
+        response_cost: None,
+        hidden_params: JsonMap::new(),
+        fastest_batch: None,
+        request_data: JsonMap::new(),
+        timeout: None,
+        logging: None,
+        read_timing_from_logging: true,
+        extra: Vec::new(),
+    };
+    let headers = custom_headers(&input, state.detailed_timing);
+    (headers, Json(result.response)).into_response()
 }

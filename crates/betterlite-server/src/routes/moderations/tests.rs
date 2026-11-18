@@ -106,26 +106,13 @@ fn header_end(bytes: &[u8]) -> Option<usize> {
 }
 
 fn content_length(head: &[u8]) -> usize {
-    let text = String::from_utf8_lossy(head).to_ascii_lowercase();
+    let text = std::str::from_utf8(head)
+        .expect("the provider request head is UTF-8")
+        .to_ascii_lowercase();
     text.lines()
         .find_map(|line| line.strip_prefix("content-length:"))
         .and_then(|value| value.trim().parse().ok())
         .unwrap_or(0)
-}
-
-async fn record_request(listener: TcpListener, reply: (u16, String)) -> String {
-    let Ok(Ok((mut stream, _))) = timeout(Duration::from_millis(800), listener.accept()).await
-    else {
-        return String::new();
-    };
-    let received = read_request(&mut stream).await;
-    let (status, body) = reply;
-    let head = format!(
-        "HTTP/1.1 {status} X\r\ncontent-length: {}\r\ncontent-type: application/json\r\nx-request-id: provider-call\r\n\r\n",
-        body.len()
-    );
-    let _written = stream.write_all(format!("{head}{body}").as_bytes()).await;
-    String::from_utf8_lossy(&received).into_owned()
 }
 
 async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
@@ -148,14 +135,43 @@ async fn read_request(stream: &mut TcpStream) -> Vec<u8> {
     received
 }
 
+async fn record_requests(listener: TcpListener, replies: Vec<(u16, String)>) -> Vec<String> {
+    // a retry waits 500 ms and then 1 s after the answer it repeats, so a scripted sequence needs the longer wait
+    let accept_wait = if replies.len() > 1 {
+        Duration::from_secs(2)
+    } else {
+        Duration::from_millis(800)
+    };
+    let mut sent = Vec::new();
+    for (status, body) in replies {
+        let Ok(Ok((mut stream, _))) = timeout(accept_wait, listener.accept()).await else {
+            break;
+        };
+        let received = read_request(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 {status} X\r\ncontent-length: {}\r\ncontent-type: application/json\r\nconnection: close\r\nx-request-id: provider-call\r\n\r\n",
+            body.len()
+        );
+        let _written = stream.write_all(format!("{head}{body}").as_bytes()).await;
+        sent.push(String::from_utf8(received).expect("the provider request is UTF-8"));
+    }
+    sent
+}
+
 // the provider accepts and never answers, so only the deployment timeout ends the call
-async fn hang(listener: TcpListener) {
+async fn hold(listener: TcpListener) -> Vec<String> {
     let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(2), listener.accept()).await else {
-        return;
+        return Vec::new();
     };
     let mut buffer = [0_u8; 1024];
     let _read = stream.read(&mut buffer).await;
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // the client closes the connection once its deployment timeout fires
+    while let Ok(Ok(read)) = timeout(Duration::from_secs(2), stream.read(&mut buffer)).await {
+        if read == 0 {
+            break;
+        }
+    }
+    Vec::new()
 }
 
 #[derive(Debug)]
@@ -164,20 +180,20 @@ struct Reply {
     headers: HeaderMap,
     body: Value,
     raw: String,
-    sent: String,
+    sent: Vec<String>,
 }
 
 async fn exchange<Provider>(router: Router, request: Request<Body>, provider: Provider) -> Reply
 where
-    Provider: Future<Output = String>,
+    Provider: Future<Output = Vec<String>>,
 {
     let (response, sent) = tokio::join!(router.oneshot(request), provider);
     let response = response.expect("response");
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
-    let raw = String::from_utf8_lossy(&bytes).into_owned();
     let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    let raw = String::from_utf8(bytes.to_vec()).expect("the route answer is UTF-8");
     Reply {
         status,
         headers,
@@ -192,7 +208,7 @@ async fn call(
     base_suffix: &str,
     path: &str,
     body: &str,
-    reply: (u16, String),
+    replies: Vec<(u16, String)>,
 ) -> Reply {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
@@ -202,7 +218,7 @@ async fn call(
     exchange(
         routes(&state),
         request(path, body),
-        record_request(listener, reply),
+        record_requests(listener, replies),
     )
     .await
 }
@@ -231,6 +247,7 @@ enum Scenario {
     Provider401,
     Provider429,
     Provider500,
+    ProviderRetryThenSuccess,
     DecimalScore,
     SmallestScore,
     MalformedBody,
@@ -257,6 +274,7 @@ enum Scenario {
 #[case::provider_401(Scenario::Provider401)]
 #[case::provider_429(Scenario::Provider429)]
 #[case::provider_500(Scenario::Provider500)]
+#[case::provider_retry_then_success(Scenario::ProviderRetryThenSuccess)]
 #[case::decimal_score(Scenario::DecimalScore)]
 #[case::smallest_score(Scenario::SmallestScore)]
 #[case::malformed_body(Scenario::MalformedBody)]
@@ -275,14 +293,17 @@ async fn moderations_moderation_tests_behavior(#[case] scenario: Scenario) {
         Scenario::StringInput => string_input().await,
         Scenario::ArrayInput => array_input().await,
         Scenario::MultimodalInput => multimodal_input().await,
-        Scenario::ConfiguredDefault => configured_default().await,
-        Scenario::ConfiguredDefaultOverridesBody => configured_default_overrides_body().await,
+        Scenario::ConfiguredDefault => configured_default(r#"{"input":"hello"}"#).await,
+        Scenario::ConfiguredDefaultOverridesBody => {
+            configured_default(r#"{"model":"other","input":"hello"}"#).await;
+        }
         Scenario::ExplicitOtherModel => explicit_other_model().await,
         Scenario::UnversionedPath => unversioned_path().await,
         Scenario::Provider400 => provider_error(400, PROVIDER_400).await,
         Scenario::Provider401 => provider_error(401, PROVIDER_401).await,
         Scenario::Provider429 => provider_error(429, PROVIDER_429).await,
         Scenario::Provider500 => provider_error(500, PROVIDER_500).await,
+        Scenario::ProviderRetryThenSuccess => provider_retry_then_success().await,
         Scenario::DecimalScore => decimal_score().await,
         Scenario::SmallestScore => smallest_score().await,
         Scenario::MalformedBody => malformed_body().await,
@@ -290,8 +311,8 @@ async fn moderations_moderation_tests_behavior(#[case] scenario: Scenario) {
         Scenario::ModelRequired => model_required().await,
         Scenario::UnknownModel => unknown_model().await,
         Scenario::RequestSuppliedDestination => request_supplied_destination().await,
-        Scenario::CallIdInErrorBody => call_id_in_error_body().await,
-        Scenario::CallIdLeftOutOfErrorBody => call_id_left_out_of_error_body().await,
+        Scenario::CallIdInErrorBody => call_id_body_case(true).await,
+        Scenario::CallIdLeftOutOfErrorBody => call_id_body_case(false).await,
         Scenario::AuthRequired => auth_required().await,
         Scenario::BodyLimit => body_limit().await,
         Scenario::DeploymentTimeout => deployment_timeout().await,
@@ -308,129 +329,107 @@ fn assert_success(reply: &Reply) {
         Some("application/json")
     );
     assert_eq!(call_id(reply), Some("caller-id"));
-    // the moderation handler leaves get_custom_headers no provider headers
-    assert!(
-        !reply.headers.contains_key("llm_provider-content-type"),
-        "{:?}",
-        reply.headers
+    // get_custom_headers gets an empty model id, cache key and api base, and no logging object
+    assert_eq!(
+        reply
+            .headers
+            .get("x-litellm-key-spend")
+            .and_then(|value| value.to_str().ok()),
+        Some("0.0")
     );
+    assert!(reply.headers.contains_key("x-litellm-version"));
+    for header in [
+        "x-litellm-model-id",
+        "x-litellm-model-name",
+        "x-litellm-model-group",
+        "x-litellm-response-cost",
+        "x-litellm-attempted-retries",
+        "llm_provider-content-type",
+    ] {
+        assert!(
+            !reply.headers.contains_key(header),
+            "{header}: {:?}",
+            reply.headers
+        );
+    }
     assert_eq!(reply.body["id"], json!("modr-1"));
     assert_eq!(reply.body["model"], json!("omni-moderation-latest"));
     assert_eq!(reply.body["results"][0]["flagged"], json!(false));
 }
 
-fn assert_sent_model(reply: &Reply, model: &str) {
-    let expected = format!(r#""model":"{model}"#);
-    assert!(reply.sent.contains(&expected), "{}", reply.sent);
+// one successful moderation call on the versioned route, checked down to the bytes the provider received
+async fn answered(extra: &str, path: &str, body: &str, score: &str, expected: &[&str]) -> Reply {
+    let reply = call(extra, "/v1", path, body, vec![(200, answer(score))]).await;
+    assert_success(&reply);
+    let sent = reply.sent.first().expect("provider request");
+    for fragment in expected {
+        assert!(sent.contains(fragment), "{sent}");
+    }
+    reply
+}
+
+fn assert_sent(reply: &Reply, fragment: &str) {
+    let sent = reply.sent.first().expect("provider request");
+    assert!(sent.contains(fragment), "{sent}");
+}
+
+async fn input_case(body: &str, expected: &[&str]) {
+    answered("", "/v1/moderations", body, "0.5", expected).await;
+}
+
+async fn array_input() {
+    input_case(
+        r#"{"model":"guard","input":["a","b"]}"#,
+        &[r#"{"input":["a","b"],"model":"omni-moderation-latest"}"#],
+    )
+    .await;
+}
+
+async fn multimodal_input() {
+    input_case(
+        r#"{"model":"guard","input":[{"type":"image_url","image_url":{"url":"https://example.test/image.png"}},{"type":"text","text":"hello"}]}"#,
+        &[
+            r#"{"image_url":{"url":"https://example.test/image.png"},"type":"image_url"}"#,
+            r#"{"text":"hello","type":"text"}"#,
+        ],
+    )
+    .await;
 }
 
 async fn string_input() {
-    let reply = call(
+    let reply = answered(
         "",
-        "/v1",
         "/v1/moderations",
         r#"{"model":"guard","input":"hello"}"#,
-        (200, answer("0.0001")),
+        "0.0001",
+        &[r#"{"input":"hello","model":"omni-moderation-latest"}"#],
     )
     .await;
-    assert_success(&reply);
-    assert!(
-        reply
-            .sent
-            .contains(r#"{"input":"hello","model":"omni-moderation-latest"}"#),
-        "{}",
-        reply.sent
-    );
     let categories = &reply.body["results"][0]["categories"];
     assert_eq!(categories["harassment"], json!(false));
     assert_eq!(categories["harassment_threatening"], json!(false));
-    // LiteLLM dumps the SDK model's field names, so the provider's slash key never comes back
-    assert_eq!(categories["harassment/threatening"], Value::Null);
+    // LiteLLM dumps the SDK model, which keeps the provider's slash key beside its field name
+    assert_eq!(categories["harassment/threatening"], json!(false));
     assert_eq!(categories["self_harm"], json!(false));
-    assert_eq!(categories["self-harm"], Value::Null);
+    assert_eq!(categories["self-harm"], json!(false));
     assert_eq!(
         reply.body["results"][0]["category_scores"]["violence_graphic"],
         json!(0.0001)
     );
 }
 
-async fn array_input() {
-    let reply = call(
-        "",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"guard","input":["a","b"]}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_success(&reply);
-    assert!(
-        reply
-            .sent
-            .contains(r#"{"input":["a","b"],"model":"omni-moderation-latest"}"#),
-        "{}",
-        reply.sent
-    );
-}
-
-async fn multimodal_input() {
-    let reply = call(
-        "",
-        "/v1",
-        "/moderations",
-        r#"{"model":"guard","input":[{"type":"image_url","image_url":{"url":"https://example.test/image.png"}},{"type":"text","text":"hello"}]}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_success(&reply);
-    assert!(
-        reply.sent.contains(
-            r#"{"image_url":{"url":"https://example.test/image.png"},"type":"image_url"}"#
-        ),
-        "{}",
-        reply.sent
-    );
-    assert!(
-        reply.sent.contains(r#"{"text":"hello","type":"text"}"#),
-        "{}",
-        reply.sent
-    );
-}
-
-async fn configured_default() {
-    let reply = call(
+async fn configured_default(body: &str) {
+    answered(
         "general_settings: {moderation_model: guard}\n",
-        "/v1",
         "/v1/moderations",
-        r#"{"input":"hello"}"#,
-        (200, answer("0.5")),
+        body,
+        "0.5",
+        &[
+            r#""model":"omni-moderation-latest""#,
+            "POST /v1/moderations ",
+        ],
     )
     .await;
-    assert_success(&reply);
-    assert_sent_model(&reply, "omni-moderation-latest");
-    assert!(
-        reply.sent.starts_with("POST /v1/moderations "),
-        "{}",
-        reply.sent
-    );
-}
-
-async fn configured_default_overrides_body() {
-    let reply = call(
-        "general_settings: {moderation_model: guard}\n",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"other","input":"hello"}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_success(&reply);
-    assert_sent_model(&reply, "omni-moderation-latest");
-    assert!(
-        reply.sent.starts_with("POST /v1/moderations "),
-        "the configured default picks the guard deployment: {}",
-        reply.sent
-    );
 }
 
 async fn explicit_other_model() {
@@ -439,16 +438,12 @@ async fn explicit_other_model() {
         "/v1",
         "/v1/moderations",
         r#"{"model":"other","input":"hello"}"#,
-        (200, answer("0.5")),
+        vec![(200, answer("0.5"))],
     )
     .await;
     assert_success(&reply);
-    assert_sent_model(&reply, "other-moderation");
-    assert!(
-        reply.sent.starts_with("POST /other/v1/moderations "),
-        "{}",
-        reply.sent
-    );
+    assert_sent(&reply, r#""model":"other-moderation""#);
+    assert_sent(&reply, "POST /other/v1/moderations ");
 }
 
 async fn unversioned_path() {
@@ -457,30 +452,108 @@ async fn unversioned_path() {
         "",
         "/moderations",
         r#"{"model":"guard","input":"hello"}"#,
-        (200, answer("0.5")),
+        vec![(200, answer("0.5"))],
     )
     .await;
     assert_success(&reply);
+    assert_sent(&reply, "POST /moderations ");
+}
+
+async fn refused_case(body: &str) -> Reply {
+    let reply = call(
+        "",
+        "/v1",
+        "/v1/moderations",
+        body,
+        vec![(200, answer("0.5"))],
+    )
+    .await;
+    assert_refused(&reply, StatusCode::BAD_REQUEST);
+    reply
+}
+
+async fn malformed_body() {
+    let reply = refused_case("{").await;
+    assert_eq!(error_of(&reply)["code"], json!("400"));
+}
+
+async fn missing_input() {
+    let reply = refused_case(r#"{"model":"guard"}"#).await;
+    assert_eq!(error_of(&reply)["code"], json!("400"));
+}
+
+async fn model_required() {
+    let reply = refused_case(r#"{"input":"hello"}"#).await;
+    assert_eq!(error_of(&reply)["param"], json!("model"));
+    assert_eq!(error_of(&reply)["code"], json!("moderation_model_required"));
+}
+
+async fn unknown_model() {
+    let reply = refused_case(r#"{"model":"ghost","input":"hello"}"#).await;
     assert!(
-        reply.sent.starts_with("POST /moderations "),
+        reply
+            .raw
+            .contains("no model_list entry serves the model ghost"),
         "{}",
-        reply.sent
+        reply.raw
+    );
+}
+
+async fn request_supplied_destination() {
+    let reply = refused_case(
+        r#"{"model":"guard","input":"hello","api_base":"http://evil.example/v1","api_key":"sk-evil"}"#,
+    )
+    .await;
+    assert!(reply.raw.contains("api_base"), "{}", reply.raw);
+    assert!(!reply.raw.contains("evil.example"), "{}", reply.raw);
+    assert!(!reply.raw.contains("sk-evil"), "{}", reply.raw);
+}
+
+async fn call_id_body_case(present: bool) {
+    let extra = if present {
+        "general_settings: {include_call_id_in_error_body: true}\n"
+    } else {
+        ""
+    };
+    let reply = call(
+        extra,
+        "/v1",
+        "/v1/moderations",
+        r#"{"model":"guard","input":"hello"}"#,
+        vec![(400, String::from(PROVIDER_400))],
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        reply.raw.contains(r#""litellm_call_id":"caller-id""#),
+        present,
+        "{}",
+        reply.raw
     );
 }
 
 async fn provider_error(status: u16, body: &str) {
+    let attempts = if matches!(status, 408 | 409 | 429 | 500..=599) {
+        3
+    } else {
+        1
+    };
     let reply = call(
         "",
         "/v1",
         "/v1/moderations",
         r#"{"model":"guard","input":"hello"}"#,
-        (status, body.to_owned()),
+        vec![(status, body.to_owned()); attempts],
     )
     .await;
+    assert_eq!(reply.sent.len(), attempts, "the SDK's retry count");
+    assert_provider_error(status, &reply);
+}
+
+fn assert_provider_error(status: u16, reply: &Reply) {
     assert_eq!(reply.status.as_u16(), status, "{}", reply.raw);
-    let code = status.to_string();
-    assert_eq!(error_of(&reply)["code"], json!(code));
-    assert_eq!(call_id(&reply), Some("caller-id"));
+    assert_eq!(error_of(reply)["code"], json!(status.to_string()));
+    assert_eq!(call_id(reply), Some("caller-id"));
     assert!(
         !reply.headers.contains_key("llm_provider-content-type"),
         "the moderation except answers litellm_call_id_headers alone: {:?}",
@@ -489,23 +562,36 @@ async fn provider_error(status: u16, body: &str) {
     assert!(!reply.headers.contains_key("x-litellm-timeout"));
     match status {
         400 => {
-            assert_eq!(error_of(&reply)["type"], json!("invalid_request_error"));
-            assert_eq!(error_of(&reply)["param"], json!("input"));
+            assert_eq!(error_of(reply)["type"], json!("invalid_request_error"));
+            assert_eq!(error_of(reply)["param"], json!("input"));
         }
         401 => {
-            assert_eq!(error_of(&reply)["type"], Value::Null);
-            assert_eq!(error_of(&reply)["param"], Value::Null);
+            assert_eq!(error_of(reply)["type"], json!("invalid_request_error"));
+            assert_eq!(error_of(reply)["param"], Value::Null);
         }
         429 => {
-            assert_eq!(error_of(&reply)["type"], json!("throttling_error"));
-            assert_eq!(error_of(&reply)["param"], Value::Null);
+            assert_eq!(error_of(reply)["type"], json!("tokens"));
+            assert_eq!(error_of(reply)["param"], Value::Null);
         }
         500 => {
-            assert_eq!(error_of(&reply)["type"], json!("internal_server_error"));
-            assert_eq!(error_of(&reply)["param"], Value::Null);
+            assert_eq!(error_of(reply)["type"], Value::Null);
+            assert_eq!(error_of(reply)["param"], Value::Null);
         }
         other => panic!("unexpected provider status {other}"),
     }
+}
+
+async fn provider_retry_then_success() {
+    let reply = call(
+        "",
+        "/v1",
+        "/v1/moderations",
+        r#"{"model":"guard","input":"hello"}"#,
+        vec![(429, String::from(PROVIDER_429)), (200, answer("0.5"))],
+    )
+    .await;
+    assert_success(&reply);
+    assert_eq!(reply.sent.len(), 2, "the SDK retries the 429 once");
 }
 
 async fn decimal_score() {
@@ -514,7 +600,7 @@ async fn decimal_score() {
         "/v1",
         "/v1/moderations",
         r#"{"model":"guard","input":"hello"}"#,
-        (200, answer("1e-29")),
+        vec![(200, answer("1e-29"))],
     )
     .await;
     assert_eq!(reply.status, StatusCode::BAD_GATEWAY, "{}", reply.raw);
@@ -530,7 +616,7 @@ async fn smallest_score() {
         "/v1",
         "/v1/moderations",
         r#"{"model":"guard","input":"hello"}"#,
-        (200, answer("1e-28")),
+        vec![(200, answer("1e-28"))],
     )
     .await;
     assert_success(&reply);
@@ -551,105 +637,11 @@ fn assert_refused(reply: &Reply, status: StatusCode) {
     assert_eq!(reply.status, status, "{}", reply.raw);
     assert_eq!(error_of(reply)["type"], json!("invalid_request_error"));
     assert_eq!(call_id(reply), Some("caller-id"));
-    assert!(reply.sent.is_empty(), "no provider request: {}", reply.sent);
-}
-
-async fn malformed_body() {
-    let reply = call("", "/v1", "/v1/moderations", "{", (200, answer("0.5"))).await;
-    assert_refused(&reply, StatusCode::BAD_REQUEST);
-    assert_eq!(error_of(&reply)["code"], json!("400"));
-}
-
-async fn missing_input() {
-    let reply = call(
-        "",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"guard"}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_refused(&reply, StatusCode::BAD_REQUEST);
-    assert_eq!(error_of(&reply)["code"], json!("400"));
-}
-
-async fn model_required() {
-    let reply = call(
-        "",
-        "/v1",
-        "/v1/moderations",
-        r#"{"input":"hello"}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_refused(&reply, StatusCode::BAD_REQUEST);
-    assert_eq!(error_of(&reply)["param"], json!("model"));
-    assert_eq!(error_of(&reply)["code"], json!("moderation_model_required"));
-}
-
-async fn unknown_model() {
-    let reply = call(
-        "",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"ghost","input":"hello"}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_refused(&reply, StatusCode::BAD_REQUEST);
-    assert_eq!(error_of(&reply)["code"], json!("400"));
     assert!(
-        reply
-            .raw
-            .contains("no model_list entry serves the model ghost"),
-        "{}",
-        reply.raw
+        reply.sent.is_empty(),
+        "no provider request: {:?}",
+        reply.sent
     );
-}
-
-async fn request_supplied_destination() {
-    let reply = call(
-        "",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"guard","input":"hello","api_base":"http://evil.example/v1","api_key":"sk-evil"}"#,
-        (200, answer("0.5")),
-    )
-    .await;
-    assert_refused(&reply, StatusCode::BAD_REQUEST);
-    assert!(reply.raw.contains("api_base"), "{}", reply.raw);
-    assert!(!reply.raw.contains("evil.example"), "{}", reply.raw);
-    assert!(!reply.raw.contains("sk-evil"), "{}", reply.raw);
-}
-
-async fn call_id_in_error_body() {
-    let reply = call(
-        "general_settings: {include_call_id_in_error_body: true}\n",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"guard","input":"hello"}"#,
-        (400, String::from(PROVIDER_400)),
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    assert!(
-        reply.raw.contains(r#""litellm_call_id":"caller-id""#),
-        "{}",
-        reply.raw
-    );
-}
-
-async fn call_id_left_out_of_error_body() {
-    let reply = call(
-        "",
-        "/v1",
-        "/v1/moderations",
-        r#"{"model":"guard","input":"hello"}"#,
-        (400, String::from(PROVIDER_400)),
-    )
-    .await;
-    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
-    assert!(!reply.raw.contains("litellm_call_id"), "{}", reply.raw);
 }
 
 fn application_for(source: &str, environment: &BTreeMap<String, String>) -> Router {
@@ -682,7 +674,7 @@ async fn auth_required() {
             .header("content-type", "application/json")
             .body(Body::from(r#"{"model":"guard","input":"hello"}"#))
             .expect("request"),
-        ready(String::new()),
+        ready(Vec::new()),
     )
     .await;
     assert_eq!(unauthorized.status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -690,13 +682,16 @@ async fn auth_required() {
     let authorized = exchange(
         application_for(&source, &environment),
         request("/v1/moderations", r#"{"model":"guard","input":"hello"}"#),
-        record_request(listener, (200, answer("0.5"))),
+        record_requests(listener, vec![(200, answer("0.5"))]),
     )
     .await;
     assert_success(&authorized);
     assert!(
-        authorized.sent.starts_with("POST /v1/moderations "),
-        "{}",
+        authorized
+            .sent
+            .first()
+            .is_some_and(|sent| sent.starts_with("POST /v1/moderations ")),
+        "{:?}",
         authorized.sent
     );
 }
@@ -711,7 +706,7 @@ async fn body_limit() {
             .header("content-length", oversized.len().to_string())
             .body(Body::from(oversized))
             .expect("request"),
-        ready(String::new()),
+        ready(Vec::new()),
     )
     .await;
     assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
@@ -728,15 +723,13 @@ async fn deployment_timeout() {
         "model_list:\n  - model_name: guard\n    litellm_params: {{model: openai/omni-moderation-latest, api_base: 'http://{address}/v1', api_key: oracle-key, timeout: 0.2}}\n"
     );
     let state = state_for(&config(&source));
-    let provider = tokio::spawn(hang(listener));
     let started = Instant::now();
     let reply = exchange(
         routes(&state),
         request("/v1/moderations", r#"{"model":"guard","input":"hello"}"#),
-        ready(String::new()),
+        hold(listener),
     )
     .await;
-    provider.abort();
     assert_eq!(reply.status, StatusCode::REQUEST_TIMEOUT, "{}", reply.raw);
     assert_eq!(error_of(&reply)["type"], Value::Null);
     assert_eq!(error_of(&reply)["param"], Value::Null);

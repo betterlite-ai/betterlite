@@ -14,6 +14,12 @@ upstream:
   - status: 429
     headers: {content-type: application/json}
     body: {error: {message: Rate limit reached for requests, type: tokens, code: rate_limit_exceeded}}
+  - status: 429
+    headers: {content-type: application/json}
+    body: {error: {message: Rate limit reached for requests, type: tokens, code: rate_limit_exceeded}}
+  - status: 429
+    headers: {content-type: application/json}
+    body: {error: {message: Rate limit reached for requests, type: tokens, code: rate_limit_exceeded}}
 compare:
   headers: [content-type, x-litellm-call-id]
   headers_present: []
