@@ -23,8 +23,7 @@ class ModelInfo(TypedDict):
 
 class Metadata(TypedDict):
     model_info: NotRequired[ModelInfo]
-    # ast-grep-ignore: no-long-names
-    encrypted_content_affinity_enabled: NotRequired[bool]
+    encrypted_content_affinity_enabled: NotRequired[bool]  # ast-grep-ignore: no-long-names
 
 
 class RequestData(TypedDict):
@@ -184,7 +183,7 @@ def run(input_value: Input) -> JsonValue:
     original_estimate = streaming_iterator._estimate_usage_safely  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1564-L1580
     original_executor = streaming_iterator.executor  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/thread_pool_executor.py#L79
     streaming_iterator._estimate_usage_safely = estimate  # type: ignore[assignment]  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1564-L1580
-    streaming_iterator.executor = InlineExecutor()  # type: ignore[attr-defined]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/thread_pool_executor.py#L79
+    streaming_iterator.executor = InlineExecutor()  # type: ignore[assignment, attr-defined]  # pyright: ignore[reportAssignmentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/thread_pool_executor.py#L79
     try:
         events: list[JsonValue] = []
         error: str | None = None
