@@ -7,7 +7,13 @@ use betterlite_bedrock::agentcore_stream::IdSource;
 use betterlite_bedrock::agentcore_stream::adapter::header_pairs;
 use betterlite_bedrock::agentcore_stream::transport::StreamHandler;
 use betterlite_bedrock::bedrock_http_stream::StreamDeps;
+use betterlite_bedrock::image_call::plan::LogContext;
 use betterlite_bedrock::invoke_events::DecoderClock;
+use betterlite_bedrock::invoke_stream::timing::{ApiTiming, TimingCall};
+use betterlite_bedrock::invoke_stream::{
+    StreamGlobals, StreamSetup, StreamTransport, WrappedInvokeStream, custom_stream_wrapper,
+};
+use betterlite_core::rules::{RuleDecision, RuleEvaluator};
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, LoggerFn, PrePostEnv,
 };
@@ -16,9 +22,20 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_logging::logging_streams::assembly::StreamBuild;
+use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
+use betterlite_sdk::call_setup::RequestMap;
+use betterlite_sdk::call_setup::correlation::CorrelationRestore;
+use betterlite_sdk::chat_stream::config::REPEATED_CHUNK_LIMIT;
+use betterlite_sdk::chat_stream::ports::{
+    ChatStreamPorts, StreamClock, StreamFailure, StreamLogging,
+};
+use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
+use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use chrono::DateTime;
 use http::{HeaderMap, HeaderName, HeaderValue};
+use tokio::runtime::Runtime;
 use uuid::Uuid;
 
 use betterlite_oracle_helper_api::error::HelperError;
@@ -78,6 +95,101 @@ pub(super) fn pre_post_env<'env>(
         logger_fn: Some(logger),
         now: DateTime::parse_from_rfc3339(NOW).map_err(failure)?,
     })
+}
+
+// The ports' state the identity case has to own: a request map and the correlation the wrapper restores.
+#[derive(Default)]
+pub(super) struct World {
+    request_data: RequestMap,
+    correlation: CorrelationContext,
+}
+
+// B004's ports read here; the identity payload names none of them, so each one answers a fixed value.
+pub(super) struct Clock;
+
+impl StreamClock for Clock {
+    fn now(&self) -> StreamInstant {
+        StreamInstant {
+            seconds: i64::try_from(SECONDS).unwrap_or(0),
+            timestamp: 0.0,
+        }
+    }
+}
+
+pub(super) struct QuietLogging;
+
+impl StreamLogging for QuietLogging {
+    fn started(&self, _at: StreamInstant) {}
+
+    fn log_chunk(&self, _chunk: &StreamChunk, _cache_hit: bool) {}
+
+    fn completed(&self, _chunks: &[StreamChunk]) -> StreamBuild {
+        StreamBuild::Empty
+    }
+
+    fn partial_usage(&self, _chunks: &[StreamChunk]) {}
+
+    fn log_failure(&self, _failure: &StreamFailure) {}
+
+    fn log_success(&self, _response: Option<Json>, _cache_hit: bool) {}
+}
+
+pub(super) struct NoTiming;
+
+impl ApiTiming for NoTiming {
+    fn service_success(&self, _call: &TimingCall<'_>) {}
+}
+
+pub(super) struct NoRules;
+
+impl RuleEvaluator for NoRules {
+    fn evaluate(&self, _index: usize, _input: &str) -> Option<RuleDecision> {
+        None
+    }
+}
+
+pub(super) struct NoRestore;
+
+impl CorrelationRestore for NoRestore {
+    fn restore_correlation_context(&self, _context: &mut CorrelationContext) {}
+}
+
+// The wrapper B004 builds over B691's opened stream; the identity payload reads it without consuming the body, as LiteLLM's own case does.
+pub(super) fn wrapper_of<'deps>(
+    runtime: &Runtime,
+    transport: &StreamTransport<'_>,
+    deps: &StreamDeps<'deps>,
+    world: &'deps mut World,
+    log: &mut LogContext<'_, '_>,
+) -> Result<WrappedInvokeStream<'deps>, Box<HelperError>> {
+    let World {
+        request_data,
+        correlation,
+    } = world;
+    let ports = ChatStreamPorts {
+        clock: &Clock,
+        logging: &QuietLogging,
+        cache: None,
+        hooks: &[],
+        request_data,
+        call_type: "completion",
+        rules: &NoRules,
+        restore: &NoRestore,
+        correlation,
+        redactor: deps.redactor,
+    };
+    let setup = StreamSetup {
+        ports,
+        timing: &NoTiming,
+        globals: StreamGlobals {
+            max_streaming_duration: None,
+            repeated_chunk_limit: REPEATED_CHUNK_LIMIT,
+            logging_disable: false,
+        },
+    };
+    runtime
+        .block_on(custom_stream_wrapper(transport, deps, setup, log))
+        .map_err(failure)
 }
 
 // The supplied slot is the case's caller client; the default one stands for the module's own client.

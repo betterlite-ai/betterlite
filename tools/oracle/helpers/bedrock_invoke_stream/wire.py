@@ -180,9 +180,9 @@ class WrapperMethods(Protocol):
         data: Payload,
         messages: Messages,
         client: AsyncHTTPHandler | None = None,
-        json_mode: bool | None = None,
         signed_json_body: bytes | None = None,
         *,
+        json_mode: bool | None = None,
         litellm_params: Mapping[str, ControlOptions],
     ) -> CustomStreamWrapper: ...
 
@@ -196,9 +196,9 @@ class WrapperMethods(Protocol):
         data: Payload,
         messages: Messages,
         client: HTTPHandler | AsyncHTTPHandler | None = None,
-        json_mode: bool | None = None,
         signed_json_body: bytes | None = None,
         *,
+        json_mode: bool | None = None,
         litellm_params: Mapping[str, ControlOptions],
     ) -> CustomStreamWrapper: ...
 

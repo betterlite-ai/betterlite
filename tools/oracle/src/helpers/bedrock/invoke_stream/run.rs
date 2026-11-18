@@ -5,9 +5,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_bedrock::agentcore_stream::transport::{HandlerKind, StreamHandler};
 use betterlite_bedrock::bedrock_http_stream::StreamDeps;
 use betterlite_bedrock::image_call::plan::LogContext;
-use betterlite_bedrock::invoke_stream::{
-    InvokeStreamCall, custom_stream_wrapper, stream_transport, sync_client,
-};
+use betterlite_bedrock::invoke_stream::{InvokeStreamCall, stream_transport, sync_client};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::controls::control_options::ControlOptions;
 use betterlite_models::decisions::Json;
@@ -18,7 +16,9 @@ use tokio::runtime::Runtime;
 use betterlite_oracle_helper_api::error::HelperError;
 
 use super::fixture::Fixture;
-use super::support::{Quiet, failure, header_map, logging_state, pre_post_env, stream_deps};
+use super::support::{
+    Quiet, World, failure, header_map, logging_state, pre_post_env, stream_deps, wrapper_of,
+};
 use super::types::{Client, Input, Run, Wrapper};
 use super::views::{arguments_view, config_view, log_view, wrapper_view};
 
@@ -51,7 +51,7 @@ fn transport_case(run: &Run) -> Result<Value, Box<HelperError>> {
 
 // A real call through B691 and B004: the POST, the log entry and the wrapper's identity around the stream.
 fn identity_case(run: &Run, runtime: &Runtime) -> Result<Value, Box<HelperError>> {
-    let kind = identity_client(run)?;
+    let kind = run.identity_kind().map_err(failure)?;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
     let supplied = Fixture::make(kind, &run.response_headers)?;
     let shared: Arc<dyn StreamHandler> = Arc::clone(&supplied);
@@ -70,13 +70,12 @@ fn identity_case(run: &Run, runtime: &Runtime) -> Result<Value, Box<HelperError>
     };
     let env = pre_post_env(&redactor, &sink, &logger)?;
     let mut state = logging_state(&redactor)?;
+    let mut world = World::default();
     let mut log = LogContext {
         state: &mut state,
         env: &env,
     };
-    let wrapped = runtime
-        .block_on(custom_stream_wrapper(&transport, &deps, &mut log))
-        .map_err(failure)?;
+    let wrapped = wrapper_of(runtime, &transport, &deps, &mut world, &mut log)?;
     let logs = mem::take(&mut *recorded.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({
         "wrapper": wrapper_view(&wrapped),
@@ -123,17 +122,6 @@ fn client_label(wrapper: Wrapper, deps: &StreamDeps<'_>) -> &'static str {
             Some(supplied) if Arc::ptr_eq(supplied, &sync_client(deps)) => "supplied",
             Some(_) | None => "module",
         },
-    }
-}
-
-// A real POST needs a fixture of the wrapper's own kind, the pair LiteLLM's typed client argument allows.
-fn identity_client(run: &Run) -> Result<HandlerKind, Box<HelperError>> {
-    match (run.wrapper, run.client) {
-        (Wrapper::Async, Client::Async) => Ok(HandlerKind::Async),
-        (Wrapper::Sync, Client::Sync) => Ok(HandlerKind::Sync),
-        (Wrapper::Async | Wrapper::Sync, Client::None | Client::Async | Client::Sync) => Err(
-            failure("a wrapper identity run needs a client of the wrapper's kind"),
-        ),
     }
 }
 
