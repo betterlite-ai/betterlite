@@ -39,7 +39,7 @@ description: >-
   assert every role sees global totals. Model and date filters must visibly affect at least
   one populated result. All data is provisioned separately for Python and Rust, never by a
   production repository or a handler helper. Use the ordinary HTTP case discriminator and
-  B5076's boot setup, with no real provider network traffic.
+  B9942's boot setup, with no real provider network traffic.
 
   team-user-and-gateway.yaml sends the TeamUserSpendCard request to GET /team/spend/by_user
   with comma-separated team_ids and the same YYYY-MM-DD window, GET /gateway/daily/activity

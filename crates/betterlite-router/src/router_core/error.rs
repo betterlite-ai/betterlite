@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use crate::deployment_catalog::error::CatalogLookupError;
+use crate::least_busy::error::LeastBusyError;
 use crate::prompt_affinity::service::PromptAffinityError;
 use crate::router_core::no_deployment::NoDeployment;
 use crate::router_core::services::Cancelled;
@@ -33,6 +34,9 @@ pub enum RoutingError {
     // _metric_weight's TypeError: a litellm_params weight that is not a number names its field
     #[error("Deployment {field} must be numeric")]
     Metric { field: &'static str },
+    // the in-flight counts the least-busy strategy reads could not answer
+    #[error(transparent)]
+    LeastBusy(#[from] LeastBusyError),
 }
 
 impl RoutingError {
@@ -47,7 +51,8 @@ impl RoutingError {
             | Self::Cancelled
             | Self::PromptAffinity(_)
             | Self::Shuffle { .. }
-            | Self::Metric { .. } => None,
+            | Self::Metric { .. }
+            | Self::LeastBusy(_) => None,
         }
     }
 }
