@@ -75,16 +75,6 @@ pub enum ScoringMode {
     MatchCount,
 }
 
-impl ScoringMode {
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "binary" => Some(Self::Binary),
-            "match_count" => Some(Self::MatchCount),
-            _ => None,
-        }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Checked {
     pub name: String,
@@ -111,7 +101,7 @@ pub enum DimensionProblem {
     BlankMatchers,
     #[error("custom dimensions allow at most 32 matchers and 4096 matcher characters each")]
     MatcherLimits,
-    #[error("custom dimension pattern {pattern:?} {problem}")]
+    #[error("custom dimension pattern {pattern:?} {}", problem.message())]
     Pattern {
         pattern: String,
         problem: PatternProblem,
@@ -124,37 +114,41 @@ pub struct Settings {
 }
 
 pub fn validate_dimension(config: &Config) -> Result<Checked, DimensionProblem> {
-    if !valid_name(&config.name) {
+    let mut characters = config.name.chars();
+    let first = characters.next();
+    if !first.is_some_and(|first| first.is_ascii_alphabetic())
+        || config.name.chars().count() > MAX_NAME_CHARS
+        || !characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
+    {
         return Err(DimensionProblem::Name);
     }
-    if !valid_weight(config.weight) {
+    if !(config.weight.is_finite() && config.weight > 0.0 && config.weight <= 1.0) {
         return Err(DimensionProblem::Weight);
     }
-    if config
-        .keywords
-        .iter()
-        .chain(&config.patterns)
-        .any(|item| !valid_matcher_length(item))
+    let matchers = config.keywords.iter().chain(&config.patterns);
+    if matchers
+        .clone()
+        .any(|item| !(1..=MAX_MATCHER_CHARS).contains(&item.chars().count()))
     {
         return Err(DimensionProblem::MatcherLength);
     }
-    let scoring_mode =
-        ScoringMode::parse(&config.scoring_mode).ok_or(DimensionProblem::ScoringMode)?;
+    let scoring_mode = match config.scoring_mode.as_str() {
+        "binary" => ScoringMode::Binary,
+        "match_count" => ScoringMode::MatchCount,
+        _ => return Err(DimensionProblem::ScoringMode),
+    };
     if config.keywords.is_empty() && config.patterns.is_empty() {
         return Err(DimensionProblem::BlankMatchers);
     }
-    let matchers = config.keywords.iter().chain(&config.patterns);
-    if matchers.clone().any(|item| blank(item)) {
+    if matchers.clone().any(|item| {
+        item.chars()
+            .all(|character| character.is_whitespace() || matches!(character, '\u{1C}'..='\u{1F}'))
+    }) {
         return Err(DimensionProblem::BlankMatchers);
     }
     let count = config.keywords.len().saturating_add(config.patterns.len());
-    let characters = config
-        .keywords
-        .iter()
-        .chain(&config.patterns)
-        .map(|item| item.chars().count())
-        .fold(0_usize, usize::saturating_add);
-    if count > MAX_MATCHERS || characters > MAX_MATCHER_TOTAL_CHARS {
+    let total_chars = matchers.map(|item| item.chars().count()).sum::<usize>();
+    if count > MAX_MATCHERS || total_chars > MAX_MATCHER_TOTAL_CHARS {
         return Err(DimensionProblem::MatcherLimits);
     }
     let mut work = 0_u64;
@@ -179,93 +173,8 @@ pub fn validate_dimension(config: &Config) -> Result<Checked, DimensionProblem> 
     })
 }
 
-fn valid_name(name: &str) -> bool {
-    let mut characters = name.chars();
-    let Some(first) = characters.next() else {
-        return false;
-    };
-    if !first.is_ascii_alphabetic() || name.chars().count() > MAX_NAME_CHARS {
-        return false;
-    }
-    characters.all(|character| character.is_ascii_alphanumeric() || character == '_')
-}
-
-fn valid_weight(weight: f64) -> bool {
-    weight.is_finite() && weight > 0.0 && weight <= 1.0
-}
-
-fn valid_matcher_length(item: &str) -> bool {
-    let length = item.chars().count();
-    length >= 1 && length <= MAX_MATCHER_CHARS
-}
-
-fn blank(item: &str) -> bool {
-    item.chars().all(python_space)
-}
-
-fn python_space(character: char) -> bool {
-    character.is_whitespace() || matches!(character, '\u{1C}'..='\u{1F}')
-}
-
 fn default_scoring_mode() -> String {
     "binary".to_owned()
-}
-
-impl RawDimension {
-    fn resolve<L>(self, path: &str, lookup: &L) -> Result<Config, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
-        Ok(Config {
-            name: resolve_string(
-                self.name.unwrap_or_default(),
-                &format!("{path}.name"),
-                lookup,
-            )?,
-            weight: resolve_weight(self.weight, &format!("{path}.weight"), lookup)?,
-            keywords: resolve_texts(
-                self.keywords.unwrap_or_default(),
-                &format!("{path}.keywords"),
-                lookup,
-            )?,
-            patterns: resolve_texts(
-                self.patterns.unwrap_or_default(),
-                &format!("{path}.patterns"),
-                lookup,
-            )?,
-            scoring_mode: resolve_string(
-                self.scoring_mode.unwrap_or_else(default_scoring_mode),
-                &format!("{path}.scoring_mode"),
-                lookup,
-            )?,
-        })
-    }
-}
-
-fn resolve_weight<L>(value: Option<RawNumber>, path: &str, lookup: &L) -> Result<f64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    if let Some(RawNumber::Text(text)) = &value
-        && !text.starts_with("os.environ/")
-    {
-        return Err(ConfigError::InvalidScalar {
-            path: path.to_owned(),
-            value: false,
-        });
-    }
-    Ok(resolve_number(value, path, lookup, parse_float)?.unwrap_or(0.0))
-}
-
-fn resolve_texts<L>(values: Vec<String>, path: &str, lookup: &L) -> Result<Vec<String>, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let mut resolved = Vec::with_capacity(values.len());
-    for (index, value) in values.into_iter().enumerate() {
-        resolved.push(resolve_string(value, &format!("{path}.{index}"), lookup)?);
-    }
-    Ok(resolved)
 }
 
 impl Section for Raw {
@@ -283,9 +192,53 @@ impl Section for Raw {
                 .and_then(|config| config.custom_dimensions)
                 .unwrap_or_default();
             let mut dimensions = Vec::with_capacity(configured.len());
-            for (position, dimension) in configured.into_iter().enumerate() {
+            for (position, raw) in configured.into_iter().enumerate() {
                 let path = format!("model_list.{index}.{PATH_ROOT}.{position}");
-                dimensions.push(dimension.resolve(&path, lookup)?);
+                let name = resolve_string(
+                    raw.name.unwrap_or_default(),
+                    &format!("{path}.name"),
+                    lookup,
+                )?;
+                let weight = match raw.weight {
+                    Some(RawNumber::Text(text)) if !text.starts_with("os.environ/") => {
+                        return Err(ConfigError::InvalidScalar {
+                            path: format!("{path}.weight"),
+                            value: false,
+                        });
+                    }
+                    weight => {
+                        resolve_number(weight, &format!("{path}.weight"), lookup, parse_float)?
+                            .unwrap_or(0.0)
+                    }
+                };
+                let mut keywords = Vec::with_capacity(raw.keywords.len());
+                for (matcher, keyword) in raw.keywords.into_iter().enumerate() {
+                    keywords.push(resolve_string(
+                        keyword,
+                        &format!("{path}.keywords.{matcher}"),
+                        lookup,
+                    )?);
+                }
+                let mut patterns = Vec::with_capacity(raw.patterns.len());
+                for (matcher, pattern) in raw.patterns.into_iter().enumerate() {
+                    patterns.push(resolve_string(
+                        pattern,
+                        &format!("{path}.patterns.{matcher}"),
+                        lookup,
+                    )?);
+                }
+                let scoring_mode = resolve_string(
+                    raw.scoring_mode.unwrap_or_else(default_scoring_mode),
+                    &format!("{path}.scoring_mode"),
+                    lookup,
+                )?;
+                dimensions.push(Config {
+                    name,
+                    weight,
+                    keywords,
+                    patterns,
+                    scoring_mode,
+                });
             }
             deployments.push(dimensions);
         }

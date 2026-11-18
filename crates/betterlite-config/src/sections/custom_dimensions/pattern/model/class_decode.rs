@@ -5,7 +5,11 @@ use super::{ClassItem, PyNode, category};
 
 pub(super) fn node(bracketed: &ast::ClassBracketed) -> Result<PyNode, PatternProblem> {
     let mut items = Vec::new();
-    decode_set(&bracketed.kind, &mut items)?;
+    match &bracketed.kind {
+        ast::ClassSet::Item(item) => decode_item(item, &mut items)?,
+        // a node, so a refusal earlier in the sequence still reports first
+        ast::ClassSet::BinaryOp(_) => return Ok(PyNode::Unsupported),
+    }
     dedupe(&mut items);
     if let [ClassItem::Literal(character)] = items.as_slice() {
         if bracketed.negated {
@@ -17,13 +21,6 @@ pub(super) fn node(bracketed: &ast::ClassBracketed) -> Result<PyNode, PatternPro
         negated: bracketed.negated,
         items,
     })
-}
-
-fn decode_set(set: &ast::ClassSet, items: &mut Vec<ClassItem>) -> Result<(), PatternProblem> {
-    match set {
-        ast::ClassSet::Item(item) => decode_item(item, items),
-        ast::ClassSet::BinaryOp(_) => Err(PatternProblem::Unsupported),
-    }
 }
 
 fn decode_item(item: &ast::ClassSetItem, items: &mut Vec<ClassItem>) -> Result<(), PatternProblem> {
