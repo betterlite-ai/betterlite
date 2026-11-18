@@ -27,8 +27,8 @@ fn format_is_config(format: Option<&Json>) -> bool {
     }
 }
 
+// name and schema must be present, since a missing key reads as a value the declared type rejects
 fn schema_is_config(entries: &JsonObject) -> bool {
-    let required = entries.contains_key("name") && entries.contains_key("schema");
     let name = matches!(entries.get("name"), Some(Json::Null | Json::Text(_)));
     let schema = matches!(entries.get("schema"), Some(Json::Null | Json::Object(_)));
     let described = matches!(
@@ -39,7 +39,7 @@ fn schema_is_config(entries: &JsonObject) -> bool {
         entries.get("strict"),
         None | Some(Json::Null | Json::Bool(_))
     );
-    required && name && schema && described && strict
+    name && schema && described && strict
 }
 
 fn verbosity_is_config(verbosity: Option<&Json>) -> bool {

@@ -38,6 +38,17 @@ fn serialize_text_keeps_dictionary_alternative_nulls() {
             r#""text":{"format":{"type":"text"},"verbosity":"loud","nullable":null}}}"#
         )
     );
+    let bad_name = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_text_name", "created_at": 47, "output": [], "text": {"format": {"type": "json_schema", "name": 5, "schema": {"type": "object"}, "nullable": null}, "nullable": null}}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&bad_name),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_text_name","created_at":47,"output":[],"#,
+            r#""text":{"format":{"type":"json_schema","name":5,"schema":{"type":"object"},"nullable":null},"nullable":null}}}"#
+        )
+    );
 }
 
 #[test]
@@ -51,6 +62,39 @@ fn serialize_text_config_strips_declared_nulls() {
         concat!(
             r#"{"type":"response.created","response":{"id":"resp_text_ok","created_at":43,"output":[],"#,
             r#""text":{"format":{"type":"json_schema","name":"n","schema":{"type":"object","x":null},"extra":5},"obj":{"a":null}}}}"#
+        )
+    );
+    let text_format = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_text_text", "created_at": 44, "output": [], "text": {"format": {"type": "text", "extra": null}, "verbosity": null, "extra_null": null}}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&text_format),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_text_text","created_at":44,"output":[],"#,
+            r#""text":{"format":{"type":"text"}}}}"#
+        )
+    );
+    let no_format = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_text_none", "created_at": 45, "output": [], "text": {"verbosity": "low", "nullable": null}}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&no_format),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_text_none","created_at":45,"output":[],"#,
+            r#""text":{"verbosity":"low"}}}"#
+        )
+    );
+    let null_format = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.created", "response": {"id": "resp_text_null", "created_at": 46, "output": [], "text": {"format": null, "nullable": null}}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&null_format),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_text_null","created_at":46,"output":[],"#,
+            r#""text":{}}}"#
         )
     );
 }
