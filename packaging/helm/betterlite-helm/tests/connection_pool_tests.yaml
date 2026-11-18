@@ -1,0 +1,49 @@
+suite: in-container connection pool
+templates:
+  - deployment.yaml
+  - configmap-betterlite.yaml
+tests:
+  - it: emits no pool variables by default
+    template: deployment.yaml
+    asserts:
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN }, any: true }
+
+  - it: enables the pool with the default sizing
+    template: deployment.yaml
+    set: { db: { connectionPool: { enabled: true } } }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_ENABLED, value: "true" } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "20" } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "1000" } }
+
+  - it: passes custom sizing through as strings next to the worker count
+    template: deployment.yaml
+    set:
+      numWorkers: 4
+      db: { connectionPool: { enabled: true, maxDbConnections: 8, maxClientConn: 400 } }
+    asserts:
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "8" } }
+      - contains: { path: 'spec.template.spec.containers[0].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "400" } }
+      - contains: { path: 'spec.template.spec.containers[0].args', content: "4" }
+
+  - it: gives the collector sidecar the same pool variables as the proxy
+    template: deployment.yaml
+    set:
+      collector: { enabled: true }
+      db: { connectionPool: { enabled: true, maxDbConnections: 8, maxClientConn: 400 } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[1].name', value: betterlite-collector }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_ENABLED, value: "true" } }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS, value: "8" } }
+      - contains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN, value: "400" } }
+
+  - it: gives the collector sidecar no pool variables when the pool is off
+    template: deployment.yaml
+    set: { collector: { enabled: true } }
+    asserts:
+      - equal: { path: 'spec.template.spec.containers[1].name', value: betterlite-collector }
+      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_ENABLED }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_MAX_DB_CONNECTIONS }, any: true }
+      - notContains: { path: 'spec.template.spec.containers[1].env', content: { name: LITELLM_PGBOUNCER_MAX_CLIENT_CONN }, any: true }

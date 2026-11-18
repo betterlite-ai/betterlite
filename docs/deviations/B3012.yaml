@@ -1,0 +1,18 @@
+task: B3012
+deviations:
+  - what: Database write retries happen silently and do not replay a write that may have already reached Postgres, using the B3009 task-level DB_RETRY_SAFE_ERROR_TYPES filter instead of retrying all exceptions.
+    why: A reset unconditionally erases spend when it lands at the database. Replaying a failed connection attempt blindly would wipe out spend that accumulated after the first write succeeded but before the network error signaled.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L537
+  - what: A success event is handed to the injected PhaseSuccessSink inside report_phase_success, where LiteLLM schedules async_service_success_hook on a detached asyncio task and returns at once.
+    why: betterlite bans detached tasks because they outlive shutdown and lose their errors; the sink is the service-logging hook from B012, and it owns whether delivery is queued or awaited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1113
+  - what: A spend or max_budget the database returns as NaN, an infinity or a value too large for rust_decimal reads as zero, where LiteLLM's float() keeps the value and carries NaN or the huge number into the reset and the spend decrement.
+    why: betterlite keeps money out of floats and reads each row once into Decimal, which has no NaN or infinity and stops at 96 bits of mantissa; such a value has nothing to subtract and no cap to roll over, so it resets as no spend at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1065
+  - what: The error text a failed read or write hands to the failure hook is the repo's sanitized driver text, where LiteLLM passes the raw exception including Postgres's message.
+    why: DriverError stops the source chain before driver diagnostics can expose parameter or row values; the fault keeps its error type and the statement that failed, and the phase still fails the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1133
+  - what: The per-row failure event's error text is the shared RowFailures summary naming each failed row and its error, where LiteLLM json-dumps each failed row's whole model beside its error string.
+    why: RowFailures is B3009's typed collection for every reset phase and names the row identifier and its error, which is what the service-logging hook records; dumping the full Prisma row would put row values into a log line and the event.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/reset_budget_job.py#L1104
+kept_bugs: []

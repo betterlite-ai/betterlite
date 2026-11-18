@@ -1,0 +1,73 @@
+kind: helper
+name: singleton-absence-and-existing-null
+call:
+  spend_queue_merge:
+    steps:
+      singleton:
+        kind: daily
+        updates:
+          - solo:
+              date: "2026-01-01"
+              api_key: "sk-solo"
+              model: "gpt-4o"
+              model_group: "group-solo"
+              mcp_namespaced_tool_name: null
+              custom_llm_provider: "openai"
+              endpoint: null
+              prompt_tokens: 3
+              completion_tokens: 2
+              cache_read_input_tokens: 1
+              cache_creation_input_tokens: 0
+              compression_saved_tokens: 0
+              compression_savings_spend: 0.5
+              prompt_caching_savings_spend: 0
+              gateway_injected_caching_savings_spend: 0.0
+              spend: 1.5
+              api_requests: 1
+              successful_requests: 1
+              failed_requests: 0
+      existing_null:
+        kind: daily
+        updates:
+          - null-row:
+              spend: 1.5
+              prompt_tokens: 3
+              completion_tokens: 2
+              api_requests: 1
+              successful_requests: 1
+              failed_requests: 0
+              timed_requests: null
+          - null-row:
+              spend: 2.5
+              prompt_tokens: 4
+              completion_tokens: 3
+              api_requests: 2
+              successful_requests: 0
+              failed_requests: 1
+              timed_requests: 2
+      falsey_incoming:
+        kind: daily
+        updates:
+          - falsey-row:
+              spend: 1.0
+              prompt_tokens: 2
+              completion_tokens: 1
+              api_requests: 1
+              successful_requests: 1
+              failed_requests: 0
+              cache_read_input_tokens: 4
+              timed_requests: 3
+              autorouter_savings_spend: 0.5
+          - falsey-row:
+              spend: 0.5
+              prompt_tokens: 1
+              completion_tokens: 1
+              api_requests: 1
+              successful_requests: 1
+              failed_requests: 0
+              cache_read_input_tokens: null
+              timed_requests: 0
+              autorouter_savings_spend: false
+env: {}
+compare:
+  ignore: []

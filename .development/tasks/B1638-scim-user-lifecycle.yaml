@@ -15,10 +15,11 @@ description: >-
   treats absent/empty groups as unspecified. Reconcile team writes before replacing email,
   alias, sso_user_id, teams and SCIM metadata; unrelated metadata is not merged. Resolve a
   role only for nonempty supplied teams with admin-group mapping enabled. After the user
-  write, broadcast user-cache eviction, then change key blocks only for an explicitly
+  write, evict and broadcast the user cache entry with B878's evict_and_broadcast (betterlite-auth
+  auth_pubsub) and the one key user_id, then change key blocks only for an explicitly
   supplied active transition. DELETE visits the user's teams, removes legacy members
   entries and canonical membership where present, blocks owned keys, deletes referencing
-  rows through B1637, deletes the user, then evicts the user cache. Keep keys blocked in
+  rows through B1637, deletes the user, then calls the same evict_and_broadcast. Keep keys blocked in
   storage rather than deleting them. Return 204 with an empty body; POST/PUT use the
   SCIM JSON content type and B1633 projections. Export deletion as a service for B1643.
   Test every write boundary with PostgreSQL faults, including a PUT error after user update
@@ -27,6 +28,14 @@ description: >-
   subsequent authenticated behavior; license-removal coverage belongs to B064's composition.
   The 208 owned function lines budget 260 handlers/service, 240 tests, 120 HTTP fixtures and
   70 decoder seeds/wiring, within 775. Extend B1632's resource corpus rather than add a parser.
+
+  B9941 mounts scim_router and leaves crates/betterlite-server/src/scim_user_lifecycle.rs as a stub routes function
+  that scim_router already merges, so fill only scim_user_lifecycle.rs and scim_user_lifecycle/** and leave scim.rs
+  and routes.rs as they are. POST /scim/v2/Users and PUT and DELETE /scim/v2/Users/{user_id} keep the full prefix and
+  LiteLLM's {user_id} name, since B1639's PATCH and B1641's GET share that path. The cases seed blocked keys with
+  their scim_blocked metadata, user teams and the users' SCIM metadata through B9941's `scim:` block under
+  `database: seed:`. LiteLLM boots on the case database through B9942's Prisma client, and the handlers read the
+  store from B8610's shared.db.
 scope:
   paths:
     - crates/betterlite-server/Cargo.toml

@@ -1,0 +1,16 @@
+kind: probe
+name: cost-routing-input-plus-output-price
+probes:
+  - clock: {unix_millis: 1795003200000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cost_routing:
+        model_group: cost-routing
+        model_cost: {}
+        deployments:
+          - {id: a, model: openai/probe, input_cost_per_token: 0.01, output_cost_per_token: 0.9}
+          - {id: b, model: openai/probe, input_cost_per_token: 0.9, output_cost_per_token: 0.01}
+          - {id: c, model: openai/probe, input_cost_per_token: 0.3, output_cost_per_token: 0.3}
+        steps:
+          - {kind: select, now_millis: 1795003200000}
+compare: {ignore: []}

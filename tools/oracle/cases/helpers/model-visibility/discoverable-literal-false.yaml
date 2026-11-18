@@ -1,0 +1,48 @@
+kind: helper
+name: model-visibility-discoverable-literal-false
+call:
+  model_visibility:
+    function: discoverable_rows
+    model_list:
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+      - model_name: marked
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: b
+          discoverable: true
+      - model_name: unmarked
+        litellm_params:
+          model: openai/gpt-4o
+    model_group_alias: {}
+    arguments:
+      user_role: internal_user
+calls:
+  - model_visibility:
+      function: discoverable_rows
+      model_list:
+        - model_name: hidden
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+            discoverable: false
+        - model_name: marked
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: b
+            discoverable: true
+        - model_name: unmarked
+          litellm_params:
+            model: openai/gpt-4o
+      model_group_alias: {}
+      arguments:
+        user_role: proxy_admin
+env: {}
+compare: {ignore: []}

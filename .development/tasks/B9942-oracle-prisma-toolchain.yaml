@@ -1,0 +1,135 @@
+id: B9942
+title: Prisma client for the oracle's LiteLLM and the booted fixture tests
+description: >-
+  B860 built the Postgres fixture and the HTTP runner's optional database field, but the oracle's LiteLLM cannot boot
+  on a database. The `prisma` Python package is not in tools/oracle/litellm/pyproject.toml (LiteLLM lists it only in
+  its extra_proxy and proxy-dev extras, and the oracle installs `litellm[proxy,semantic-router]`), so `grep -c prisma
+  tools/oracle/litellm/uv.lock` prints 0 and the PrismaClient LiteLLM builds for general_settings.database_url fails
+  with "Unable to find Prisma binaries". Every HTTP case with a `database:` seed waits on this. The task makes the
+  database boot work and proves it with four booted tests. It adds no product code, no fixture code and no oracle
+  case; B5076 keeps the four /user/new cases that need betterlite's routes.
+
+
+  Step one is the toolchain. Add `prisma==0.11.0` (the pin LiteLLM's own proxy-dev extra uses) to the dependencies of
+  tools/oracle/litellm/pyproject.toml and run `uv lock` in that folder, so uv.lock comes from uv and is never edited by
+  hand. Since #2015, `sync_litellm` (the `uv sync --locked` of that folder) lives in
+  tools/oracle/runner/src/helpers.rs with its errors in tools/oracle/runner/src/error.rs. Add
+  `generate_prisma_client(root: &Path) -> Result<(), HelperRunError>` beside it. It finds the venv's python folder
+  under tools/oracle/litellm/.venv/lib/ (one python3.* entry), and returns at once when
+  site-packages/prisma/client.py exists, since prisma writes that file only when it generates the client. Otherwise it
+  runs `uv run --locked prisma generate --schema <schema>` in tools/oracle/litellm, with the schema at
+  site-packages/litellm/proxy/schema.prisma. Its failures are new HelperRunError variants: the schema or the venv
+  python folder is missing (with the path), the command cannot start (with the io::Error as source) and it exits
+  non-zero (with the ExitStatus), matching ProcessSync and ProcessSyncExited. Call it from provision_pair in
+  tools/oracle/src/runner/fixtures.rs, after `sync_litellm`, so only a case group with a database pays for it and every
+  database path (HTTP groups, scenarios, browser flows) gets it. Add
+  `prisma_generate_reports_a_missing_schema` to tools/oracle/runner/src/helpers/tests.rs, next to
+  litellm_sync_reports_a_missing_project, asserting the typed variant for a root with no venv.
+
+
+  Step two is four Rust tests in tools/oracle/src/http/postgres/tests.rs (module `http::postgres::tests`, next to
+  B860's tests). Each decodes its case with `decode_case`, runs it with `run_group_with_url` in `self_check: true`
+  mode (LiteLLM on both sides, so no betterlite binary or route is needed), and reads the two captures
+  (`client-litellm.json`, `client-betterlite.json`) under the group's artifact folder the way public_route_without_key
+  already does. Each case sets `general_settings.master_key: oracle-master` and a `database:` seed, and leaves
+  database_url and disable_prisma_schema_update to the runner.
+
+  - independent_initial_rows: the admin key creates the already seeded user `fixture-seeded` with POST /user/new.
+    Both captures carry the same non-2xx status and the same error body, which shows each database started with the
+    seeded row.
+  - first_gateway_write_not_shared: the admin key creates `fixture-created`, a user nobody seeded. Both captures are
+    200. If the second gateway shared the first one's database it would answer with the duplicate-user error, so two
+    200s prove the first write stayed in its own database.
+  - hashed_fixture_keys_and_roles: two cases in one group with the same fixture. The seed lists the raw tokens
+    `sk-fixture-admin` (role proxy_admin) and `sk-fixture-internal` (role internal_user), and the fixture stores their
+    SHA256 hex. The admin key creates a user (200) and the internal key is refused on the same route with an error
+    whose message starts with "Only proxy admin can be used to generate, delete, update info for new
+    keys/users/teams". Both captures agree in each case. Auth working with only the raw token in the request proves
+    the stored value is the hash and the role came from the seed.
+  - disabled_schema_update_still_checks_current_schema: boot LiteLLM on a fixture database with the runner's
+    `disable_prisma_schema_update: true` and read the group's `litellm.log`. At the pin the switch still runs
+    `check_prisma_schema_diff`, which prints "Failed to generate migration diff" when it cannot produce a diff and
+    "Changes to DB Schema detected" when it finds one. The gateway's working directory has no ./schema.prisma, so the
+    first line is what the log should hold. Assert that exactly one of the two lines is in the log and that the
+    gateway still answered, and record which line appeared in a one-line comment on the assertion.
+
+
+  Budget: about 60 lines for generate and its errors, 10 for the call site and its test, 220 for the four booted
+  tests, plus the lock file uv writes, within 400.
+scope:
+  paths:
+    - tools/oracle/litellm/pyproject.toml
+    - tools/oracle/litellm/uv.lock
+    - tools/oracle/runner/src/helpers.rs
+    - tools/oracle/runner/src/helpers/tests.rs
+    - tools/oracle/runner/src/error.rs
+    - tools/oracle/src/runner/fixtures.rs
+    - tools/oracle/src/http/postgres.rs
+    - tools/oracle/src/http/postgres/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4415-L4436
+    why: PrismaClient imports prisma and raises "Unable to find Prisma binaries" when the client is not generated.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L102-L103
+    why: prisma is in the extra_proxy extra, which the oracle's litellm[proxy] install does not pull in.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/pyproject.toml#L244-L245
+    why: LiteLLM's own proxy-dev extra pins prisma==0.11.0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/schema.prisma#L1-L10
+    why: The schema the generate step reads, with the prisma-client-py generator block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_cli.py#L1386-L1405
+    why: With disable_prisma_schema_update true the CLI calls check_prisma_schema_diff instead of migrating.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/check_migration.py#L47-L120
+    why: The diff helper runs `prisma migrate diff --to-schema-datamodel ./schema.prisma`, prints "Failed to generate migration diff" on failure and never raises.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/prisma_client.py#L1012-L1036
+    why: should_update_prisma_schema returns false when the setting is true and so selects the diff check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L233-L256
+    why: The admin-only error text an internal_user key gets on management routes, with the masked user id.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7119-L7125
+    why: Virtual keys are stored as SHA256 hex, the form the fixture seeds.
+dod:
+  - text: The oracle's LiteLLM environment pins prisma==0.11.0 in pyproject.toml, uv.lock holds it, and a case group with a database generates the Prisma client once before LiteLLM boots.
+    proof: [litellm-prisma, booted-fixture-tests]
+  - text: A failed generate is a typed HelperRunError that names what failed.
+    proof: [prisma-generate-tests]
+  - text: >-
+      independent_initial_rows, first_gateway_write_not_shared, hashed_fixture_keys_and_roles and
+      disabled_schema_update_still_checks_current_schema boot LiteLLM on fixture databases and pass.
+    proof: [booted-fixture-tests]
+checks:
+  optional: []
+  commands:
+    - id: litellm-prisma
+      why: The oracle's LiteLLM environment still lacks the prisma package, or nothing generates its client.
+      run: >-
+        grep -q '"prisma==0.11.0"' tools/oracle/litellm/pyproject.toml &&
+        grep -q '^name = "prisma"' tools/oracle/litellm/uv.lock &&
+        grep -qF '"generate"' tools/oracle/runner/src/helpers.rs &&
+        grep -qF 'generate_prisma_client(' tools/oracle/src/runner/fixtures.rs
+    - id: prisma-generate-tests
+      why: A missing schema or a failed generate is not a typed error.
+      run: cargo nextest run --locked -p betterlite-oracle-runner --no-tests=fail -E 'test(/^helpers::tests::prisma_generate_reports_a_missing_schema$/)'
+    - id: booted-fixture-tests
+      why: LiteLLM cannot boot on a fixture database, or a key, a role, a write or the schema check behaves differently from the text.
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-oracle -E 'test(/^http::postgres::tests::/)' --message-format oneline) &&
+        for name in independent_initial_rows first_gateway_write_not_shared hashed_fixture_keys_and_roles disabled_schema_update_still_checks_current_schema; do grep -q "::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^http::postgres::tests::(independent_initial_rows|first_gateway_write_not_shared|hashed_fixture_keys_and_roles|disabled_schema_update_still_checks_current_schema)$/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The four /user/new HTTP cases under tools/oracle/cases/management/postgres-fixture/ that compare betterlite with LiteLLM stay in B5076, since they need B052 and B056 on the betterlite side."
+  - "The Postgres fixture, the HTTP runner and the comparison belong to B860 and B001; detects_role_mismatch already exists there."
+  - No LiteLLM function is ported. This is test tooling, so there is nothing to list per file.
+pitfalls:
+  - sync_litellm runs on every gateway boot and every Python helper run, so the generate step must not hide inside it; a helper-only run would then pay for Node and the Prisma engines it never uses.
+  - The first `prisma generate` downloads Node through nodeenv (when no node is on PATH) and the Prisma engines into ~/.cache/prisma-python, so a cold run needs network and is slow; keep Prisma's own timeouts and the oracle's existing process timeout.
+  - prisma==0.11.0 must come from `uv lock`, never from a hand edit of uv.lock, and the lock must keep `litellm-enterprise` excluded through the existing override-dependencies line.
+  - LiteLLM runs from tools/oracle/litellm with no ./schema.prisma there, so the schema diff cannot report real drift in the oracle. The test asserts that the check ran, not that the schema matched.
+  - run_group_with_url closes both fixture databases before it returns, so a test cannot query a database afterwards. Prove independence through the two HTTP answers.
+  - The runner refuses a case whose config already sets general_settings.database_url or disable_prisma_schema_update, so the test cases leave both out and let the runner add them.
+  - Tokens in the seed are raw. The fixture hashes them, and the request must carry the raw token; a hash in the Authorization header is an unknown key.
+  - The admin-only error carries the caller's user id masked to its first six characters, so compare the two captures with each other and never type the expected text into a test.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard
