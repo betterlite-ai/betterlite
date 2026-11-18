@@ -242,7 +242,7 @@ where
         Err(_elapsed) => return Err(ReadFault::Expired(lookup)),
     };
     match bounded_statement(&client, bounds, client.query(sql, &[])).await {
-        Ok(rows) => Ok(rows.iter().map(map).collect()),
+        Ok(rows) => rows.iter().map(map).collect(),
         Err(StatementFailure::Driver(source)) => Err(ReadFault::Native(backend(source))),
         Err(StatementFailure::Expired {
             cancelled: false, ..
