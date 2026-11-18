@@ -23,7 +23,7 @@ use crate::identity_rows::key::Expiry;
 use crate::key_user_writes::hash::hash_token;
 use crate::team_rows::member::MemberRole;
 
-use crate::combined_key_read::error::{DatabaseFailure, KeyReadError, ReconnectFailure};
+use crate::combined_key_read::error::{DatabaseFailure, KeyReadError};
 use crate::combined_key_read::grace::DeprecatedKeyCache;
 use crate::combined_key_read::ports::{NoSpanResolver, PlanReconnect, ReconnectFuture};
 use crate::combined_key_read::postgres::PostgresKeyDatabase;
@@ -191,32 +191,6 @@ impl DatabaseClient for TestClient {
     }
 }
 
-struct NoReconnect;
-
-impl PlanReconnect for NoReconnect {
-    type Handle = ();
-
-    fn read_target(&self) -> crate::database_refresh::generation::Observation<()> {
-        crate::database_refresh::generation::Observation {
-            generation: 0,
-            handle: None,
-            connected: true,
-        }
-    }
-
-    fn attempt<'reconnect>(
-        &'reconnect self,
-        _request: &'reconnect ReconnectRequest<'_>,
-        _stale: Option<&'reconnect StaleReadEngine<Self::Handle>>,
-    ) -> ReconnectFuture<'reconnect> {
-        Box::pin(async {
-            Err(ReconnectFailure {
-                message: String::from("the fixture never reconnects"),
-            })
-        })
-    }
-}
-
 #[derive(Default)]
 struct ObservedReconnects {
     attempts: Mutex<Vec<(String, bool)>>,
@@ -296,9 +270,10 @@ impl Fixture {
         let database = PostgresKeyDatabase {
             database: Some(WriterPinnedClient::Writer(&self.client)),
         };
+        let reconnect = ObservedReconnects::default();
         let reader = KeyReader {
             database: &database,
-            reconnect: &NoReconnect,
+            reconnect: &reconnect,
             sink,
             services: ReadServices {
                 clock: &crate::key_user_writes::retry::SystemWriteClock,
@@ -318,7 +293,9 @@ impl Fixture {
             use_writer: false,
             parent_otel_span: None,
         };
-        reader.read(&request).await
+        let outcome = reader.read(&request).await;
+        assert!(reconnect.attempts.lock().unwrap().is_empty());
+        outcome
     }
 }
 

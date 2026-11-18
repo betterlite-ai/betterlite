@@ -362,14 +362,13 @@ async fn failure_hook_carries_the_original_failure() {
         other => panic!("expected the reported database failure, got {other:?}"),
     }
     let malformed = Harness::new(Duration::ZERO);
-    for _ in 0..3 {
-        malformed
-            .database
-            .push_row(Ok(Some(JsonData::Object(view_fields(vec![(
-                "end_user_id",
-                JsonData::Number(serde_json::Number::from_f64(1.5).unwrap()),
-            )])))));
-    }
+    let fractional = JsonData::Object(view_fields(vec![(
+        "end_user_id",
+        JsonData::Number(serde_json::Number::from_f64(1.5).unwrap()),
+    )]));
+    malformed.database.push_row(Ok(Some(fractional.clone())));
+    malformed.database.push_row(Ok(Some(fractional.clone())));
+    malformed.database.push_row(Ok(Some(fractional)));
     let malformed_request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-typed")),
         query_type: KeyQueryType::FindUnique,
@@ -393,9 +392,9 @@ async fn failure_traceback_keeps_the_cause_chain() {
     let cause = fault(ErrorType::RawQuery, "the connection dropped");
     let mut outer = fault(ErrorType::RawQuery, "the lookup failed");
     outer.cause = Some(Box::new(cause));
-    for _ in 0..3 {
-        harness.database.push_row(Err(outer.clone()));
-    }
+    harness.database.push_row(Err(outer.clone()));
+    harness.database.push_row(Err(outer.clone()));
+    harness.database.push_row(Err(outer));
     let request = CombinedKeyRequest {
         token: Some(SecretString::from("sk-cause")),
         query_type: KeyQueryType::FindUnique,
