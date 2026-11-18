@@ -1,0 +1,39 @@
+kind: helper
+name: stream-chunks-usage-artifact-shapes
+call:
+  b8602:
+    function: chunk_view
+    view: usage_artifact
+    chunks:
+      - kind: stream
+        body: {id: usage-1, object: chat.completion.chunk, created: 1, model: gpt-4o, choices: []}
+      - kind: stream
+        body: {id: usage-2, object: chat.completion.chunk, created: 2, model: gpt-4o}
+      - kind: stream
+        body: {id: usage-3, object: chat.completion.chunk, created: 3, model: gpt-4o, choices: null}
+      - kind: stream
+        body: {id: usage-4, object: chat.completion.chunk, created: 4, model: gpt-4o, choices: [{}]}
+      - kind: stream
+        body: {id: usage-5, object: chat.completion.chunk, created: 5, model: gpt-4o, choices: [{index: 0}]}
+      - kind: stream
+        body: {id: usage-6, object: chat.completion.chunk, created: 6, model: gpt-4o, choices: [{delta: {content: null}}]}
+      - kind: stream
+        body: {id: usage-7, object: chat.completion.chunk, created: 7, model: gpt-4o, choices: [{delta: {content: hi}}]}
+      - kind: stream
+        body: {id: usage-8, object: chat.completion.chunk, created: 8, model: gpt-4o, choices: [{finish_reason: stop}]}
+      - kind: stream
+        body: {id: usage-9, object: chat.completion.chunk, created: 9, model: gpt-4o, choices: [{logprobs: {}}]}
+      - kind: stream
+        body: {id: usage-10, object: chat.completion.chunk, created: 10, model: gpt-4o, provider_specific_fields: {x: 1}, choices: []}
+      - kind: stream
+        body: {id: usage-11, object: chat.completion.chunk, created: 11, model: gpt-4o, provider_specific_fields: null, choices: []}
+      - kind: stream
+        body: {id: usage-12, object: chat.completion.chunk, created: 12, model: gpt-4o, choices: [{}, {delta: {content: x}}]}
+      - kind: full
+        body: {id: usage-13, object: chat.completion, created: 13, model: gpt-4o, choices: []}
+      - kind: event
+        body: {type: response.created}
+      - kind: plain
+        body: {type: response.created}
+env: {}
+compare: {ignore: []}

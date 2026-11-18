@@ -1,0 +1,96 @@
+kind: helper
+name: embedding-usage
+call:
+  bedrock_embedding_io:
+    function: embedding_usage
+    model: amazon.titan-embed-text-v1
+    provider: amazon
+    response_list:
+      - embedding:
+          - 0.5
+          - 0.25
+        inputTextTokenCount: 3
+calls:
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: amazon.titan-embed-text-v2:0
+      provider: amazon
+      response_list:
+        - embedding:
+            - 0.25
+          inputTextTokenCount: 3
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: amazon.titan-embed-text-v2:0
+      provider: amazon
+      response_list:
+        - embedding: AAAA
+          inputTextTokenCount: 1
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: amazon.titan-embed-image-v1
+      provider: amazon
+      response_list:
+        - embedding:
+            - 0.5
+          inputTextTokenCount: 4
+      batch_data:
+        - inputImage: aW1n
+        - inputText: hello
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      provider: twelvelabs
+      response_list:
+        - data:
+            - embedding:
+                - 1.5
+                - 2.5
+      batch_data:
+        - inputType: text
+        - inputType: image
+        - inputType: multi_input
+          multi_input:
+            inputText: hi
+            mediaSources:
+              - {}
+              - {}
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: amazon.nova-2-multimodal-embeddings-v1:0
+      provider: nova
+      response_list:
+        - embeddings:
+            - embedding:
+                - 1
+                - 2
+                - 3
+                - 4
+              truncatedCharLength: 12
+      batch_data:
+        - singleEmbeddingParams:
+            image:
+              format: png
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: cohere.embed-english-v3
+      provider: cohere
+      response_list:
+        - {}
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: amazon.titan-embed-g1-text-02
+      provider: amazon
+      response_list:
+        - embedding:
+            - 0.75
+          inputTextTokenCount: 2
+  - bedrock_embedding_io:
+      function: embedding_usage
+      model: amazon.titan-embed-unknown
+      provider: amazon
+      response_list:
+        - {}
+env: {}
+compare:
+  ignore: []

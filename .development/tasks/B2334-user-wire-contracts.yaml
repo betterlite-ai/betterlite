@@ -12,7 +12,7 @@ description: >-
   users=null,all_users=false,user_updates=null; all_users may be null. Its combination validator
   runs ONLY when user_updates is explicitly provided: require truthy users OR all_users with
   truthy user_updates, then reject truthy users plus all_users. Omitted user_updates skips it
-  because defaults are not validated, so {} and conflicting users/all_users can reach B795.
+  because defaults are not validated, so {} and conflicting users/all_users can reach B795. Decode BulkUpdateUserRequest through one serde-derived wire record whose users and user_updates fields hold betterlite-db's JsonData, then pass each row through B8411's UpdateUserRequest::from_value and the updates through UpdateUserFields::from_value. A deserialize_with adapter would turn B8411's typed ContractError into a serde message, and those decoders read the raw keys to track supplied fields, so this is the typed path for the nested records, with no hand lookups in the Fields map.
   Cases update_defaults, update_explicit_null, update_valid_selection,
   update_present_field_conflict and update_omitted_field_skips_validation preserve this difference.
 
