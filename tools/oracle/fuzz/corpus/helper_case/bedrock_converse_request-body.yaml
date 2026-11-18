@@ -1,0 +1,20 @@
+kind: helper
+name: bedrock-converse-request-body
+call:
+  bedrock_converse_request:
+    model: anthropic.claude-3-5-test
+    messages: [{role: user, content: hi}]
+    model_cost:
+      anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_adaptive_thinking: false}
+    optional_params:
+      maxTokens: 256
+      temperature: 0.5
+      custom_field: {a: 1}
+      _output_config_normalized: false
+    litellm_params: {}
+    global_drop: false
+    modify_params: false
+    neutralize_orphaned_blocks: true
+    request_metadata_fields: null
+env: {}
+compare: {ignore: []}

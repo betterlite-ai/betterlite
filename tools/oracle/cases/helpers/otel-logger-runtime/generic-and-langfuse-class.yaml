@@ -1,0 +1,31 @@
+kind: helper
+name: generic-and-langfuse-class
+call:
+  b8910:
+    function: logger_class
+    config:
+      exporters: []
+      mapper_names: [genai]
+      capture_message_content: no_content
+calls:
+  - b8910:
+      function: logger_class
+      config:
+        exporters: []
+        mapper_names: [genai, langfuse]
+        capture_message_content: no_content
+  - b8910:
+      function: logger_class
+      config:
+        exporters: []
+        mapper_names: [genai, langfuse]
+        capture_message_content: event_only
+  - b8910:
+      function: logger_class
+      config:
+        exporters: []
+        mapper_names: [langfuse]
+        capture_message_content: no_content
+env: {}
+compare:
+  ignore: []
