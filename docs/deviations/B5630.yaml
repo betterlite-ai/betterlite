@@ -52,19 +52,20 @@ deviations:
       unbounded queue grows with traffic. The warning line says the event was lost.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_service_logger.py#L139-L155
   - what: >-
-      A Redis error without a source records no failure, even though LiteLLM counts it as a
-      health failure. This covers the errors redis builds from a description alone, such as
-      `RedisError::from((ErrorKind::Io, "connection dropped"))` and an SSL handshake
-      failure. `RedisCache.error()`, `ClientReuseError` and `LiveClientError` are transparent
-      `thiserror` wrappers whose `source()` returns the inner error's own source, so a source
-      walk reaches the io error only when redis attached one. The `RedisError` itself, whose
-      kind says `Io`, is never a link in that walk. The gate starts the walk at the error it
-      was handed, so an error whose own node is the only classifier, a bare `io::Error` for
-      one, records nothing either.
+      A Redis error that carries no cause records no failure, even though LiteLLM counts it
+      as a health failure. This covers the errors redis builds from a description alone,
+      such as `RedisError::from((ErrorKind::Io, "connection dropped"))` and an SSL handshake
+      failure. `RedisCacheError`, `ClientReuseError` and `LiveClientError` are transparent
+      `thiserror` wrappers, so the `source()` of the error a cache call hands over forwards
+      past the `RedisError` itself to whatever redis attached to it, and an error with
+      nothing attached leaves the walk with no class. The same walk drops
+      `LiveClientError::TlsFile` and `LiveClientError::NoSentinelMaster`, which LiteLLM
+      counts as an `OSError` and as `MasterNotFoundError`, a `ConnectionError`.
     why: >-
-      The task reads the error through `source()`, and reaching the hidden wrapper fields
+      The gate classifies through `source()` chains, and reaching the hidden wrapper fields
       would match every betterlite-redis error enum inside the server wiring. Every cache
-      call site hands over one of those wrappers, so the bare root is not reachable there.
+      call site hands over one of those wrappers, so the `RedisError` never has a node of
+      its own in the chain.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L318-L341
   - what: >-
       A half-open probe whose call ends without a success or a health failure frees the
