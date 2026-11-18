@@ -137,23 +137,23 @@ impl IntoResponse for RoiSettingsError {
 }
 
 fn internal_response(error: &InternalError) -> Response {
-    if matches!(error, InternalError::Config(source) if is_database_outage(source)) {
-        return database_unavailable();
-    }
-    if let InternalError::DbNotConnected = error {
-        return detail_response(
+    match error {
+        InternalError::DbNotConnected => detail_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             CommonProxyErrors::DbNotConnectedError.as_str().to_owned(),
-        );
+        ),
+        InternalError::Config(source) if is_database_outage(source) => database_unavailable(),
+        InternalError::Config(_) | InternalError::Encode(_) | InternalError::Encryption(_) => {
+            tracing::error!(error = ?error, "the ROI settings request failed");
+            let body = InternalBody {
+                error: InternalMessage {
+                    message: "Internal server error",
+                    error_type: "internal_server_error",
+                },
+            };
+            (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
+        }
     }
-    tracing::error!(error = ?error, "the ROI settings request failed");
-    let body = InternalBody {
-        error: InternalMessage {
-            message: "Internal server error",
-            error_type: "internal_server_error",
-        },
-    };
-    (StatusCode::INTERNAL_SERVER_ERROR, Json(body)).into_response()
 }
 
 fn detail_response(status: StatusCode, detail: String) -> Response {
