@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::{Future, Pending, pending};
+use std::future::{Future, pending};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::sync_channel;
 use std::sync::{Arc, Mutex};
@@ -49,10 +49,6 @@ fn fake_tracker() -> DbLookupStallTracker<FakeClock> {
         clock: FakeClock::new(),
         last_hit: Mutex::new(None),
     }
-}
-
-fn pending_lookup() -> Pending<Result<i32, DbLookupError>> {
-    pending()
 }
 
 async fn delayed_lookup() -> Result<i32, DbLookupError> {
@@ -199,7 +195,7 @@ async fn explicit_deadline_over_default() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
     let short = request("work", Some(0.0), 30.0, &tracker);
-    let error = bounded_db_lookup(pending_lookup(), short, &tasks)
+    let error = bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), short, &tasks)
         .await
         .expect_err("the explicit zero deadline wins over the default");
     assert_deadline(&error, "work", 0.0);
@@ -209,9 +205,10 @@ async fn explicit_deadline_over_default() {
         .expect("the explicit budget outlives the default");
     assert_eq!(output, 7);
     let fallback = request("work", None, 0.02, &tracker);
-    let default_expiry = bounded_db_lookup(pending_lookup(), fallback, &tasks)
-        .await
-        .expect_err("the configured default bounds the lookup");
+    let default_expiry =
+        bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), fallback, &tasks)
+            .await
+            .expect_err("the configured default bounds the lookup");
     assert_deadline(&default_expiry, "work", 0.02);
     drain(&tasks).await;
 }
@@ -221,7 +218,7 @@ async fn zero_negative_explicit_deadline() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
     let zero = request("zero", Some(0.0), 10.0, &tracker);
-    let expired_at_zero = bounded_db_lookup(pending_lookup(), zero, &tasks)
+    let expired_at_zero = bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), zero, &tasks)
         .await
         .expect_err("a zero deadline expires at once");
     assert_deadline(&expired_at_zero, "zero", 0.0);
@@ -232,7 +229,7 @@ async fn zero_negative_explicit_deadline() {
     let negative = request("negative", Some(-1.0), 10.0, &tracker);
     let expired_negative = timeout(
         Duration::from_secs(2),
-        bounded_db_lookup(pending_lookup(), negative, &tasks),
+        bounded_db_lookup(pending::<Result<i32, DbLookupError>>(), negative, &tasks),
     )
     .await
     .expect("a negative deadline does not wait forever")
@@ -271,9 +268,13 @@ async fn timeout_fields_and_exact_message() {
     let tasks = TaskTracker::new();
     let tracker = stall_tracker();
     let lookup_request = request("user_api_key_cache", Some(2.5), 10.0, &tracker);
-    let error = bounded_db_lookup(pending_lookup(), lookup_request, &tasks)
-        .await
-        .expect_err("the pending lookup cannot answer");
+    let error = bounded_db_lookup(
+        pending::<Result<i32, DbLookupError>>(),
+        lookup_request,
+        &tasks,
+    )
+    .await
+    .expect_err("the pending lookup cannot answer");
     let DbLookupError::Deadline(exceeded) = &error else {
         panic!("the lookup must fail with a deadline, got {error:?}");
     };
