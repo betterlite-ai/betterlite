@@ -119,20 +119,11 @@ fn branch<'a>(event: &EventFields<'a>) -> Option<Branch<'a>> {
     if let Some(raw) = event.get("contentEnd").copied() {
         return Some(Branch::ContentEnd(raw));
     }
-    speech_or_end(event)
-}
-
-fn speech_or_end<'a>(event: &EventFields<'a>) -> Option<Branch<'a>> {
-    let speech = event
-        .contains_key("userSpeechStart")
-        .then_some(Branch::UserSpeechStart)
-        .or_else(|| {
-            event
-                .contains_key("userSpeechEnd")
-                .then_some(Branch::UserSpeechEnd)
-        });
-    if speech.is_some() {
-        return speech;
+    if event.contains_key("userSpeechStart") {
+        return Some(Branch::UserSpeechStart);
+    }
+    if event.contains_key("userSpeechEnd") {
+        return Some(Branch::UserSpeechEnd);
     }
     if let Some(raw) = event.get("usageEvent").copied() {
         return Some(Branch::UsageEvent(raw));

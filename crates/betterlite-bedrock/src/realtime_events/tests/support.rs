@@ -121,12 +121,10 @@ pub(super) fn next_input(response: &RealtimeResponseTypedDict) -> RealtimeRespon
 }
 
 pub(super) fn events(response: &RealtimeResponseTypedDict) -> &[Json] {
-    match &response.response {
-        Json::List(events) => events,
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            panic!("the response is a list")
-        }
-    }
+    let Json::List(events) = &response.response else {
+        panic!("the response is a list");
+    };
+    events
 }
 
 pub(super) fn event_type(event: &Json) -> Option<&str> {
