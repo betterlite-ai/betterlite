@@ -282,6 +282,19 @@ fn named_team_ids() {
     assert_eq!(lookup.get_model_ids(Some("gpt-4o"), true), vec![text("g")]);
 }
 
+// A global row with no model name lists as an empty name, in row order.
+#[test]
+fn unnamed_global_name() {
+    let snapshot = Snapshot::new(&[
+        raw("", "{\"id\": \"n\"}"),
+        named("gpt-4o", "g", "openai/gpt-4o"),
+    ]);
+    assert_eq!(
+        snapshot.lookup().get_model_names(None).unwrap(),
+        vec!["", "gpt-4o"]
+    );
+}
+
 #[test]
 fn unknown_id() {
     let snapshot = Snapshot::new(&[named("gpt-4o", "a", "openai/gpt-4o")]);
