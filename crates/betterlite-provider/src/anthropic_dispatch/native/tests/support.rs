@@ -75,6 +75,7 @@ pub(super) struct Observed {
     pub key: String,
     pub status: Option<u16>,
     pub logged: String,
+    pub tool_name: Option<String>,
 }
 
 struct Media;
@@ -153,7 +154,7 @@ pub(super) async fn run(
     let mut tasks = JoinSet::new();
     let answer = match surface {
         Surface::Messages => {
-            r#"{"id":"msg_native","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"native answer"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":2}}"#
+            r#"{"id":"msg_native","type":"message","role":"assistant","model":"claude-3-haiku-20240307","content":[{"type":"text","text":"native answer"},{"type":"tool_use","id":"tool_native","name":"bad_name","input":{}}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":3,"output_tokens":2}}"#
         }
         Surface::Legacy => r#"{"completion":"legacy answer","stop_reason":"stop_sequence"}"#,
     };
@@ -261,7 +262,10 @@ pub(super) async fn run(
             vec![betterlite_models::decisions::Json::Bool(true)]
         },
         model_response: ResponseEnvelope::new("chatcmpl-native".to_owned()),
-        optional_params: IndexMap::new(),
+        optional_params: match surface {
+            Surface::Messages => serde_json::from_str(r#"{"tools":[{"type":"function","function":{"name":"bad/name","parameters":{"type":"object","properties":{}}}}]}"#).unwrap(),
+            Surface::Legacy => IndexMap::new(),
+        },
         litellm_params: IndexMap::new(),
         headers: BTreeMap::new(),
         api_key: key.then(|| SecretString::from("native-key")),
@@ -334,15 +338,25 @@ pub(super) async fn run(
     )
     .await
     .unwrap();
-    let (content, status, posted) = match outcome {
+    let (content, status, posted, tool_name) = match outcome {
         Ok(Outcome::Completion(Reply::Messages(
             betterlite_anthropic::chat_call::ChatOutcome::Reply(reply),
-        ))) => (reply.choices[0].message.content.clone(), None, true),
+        ))) => (
+            reply.choices[0].message.content.clone(),
+            None,
+            true,
+            reply.choices[0].message.tool_calls.as_ref().unwrap()[0]
+                .function
+                .name
+                .clone(),
+        ),
         Ok(Outcome::Completion(Reply::Legacy(super::super::legacy::Reply::Buffered(reply)))) => {
-            (reply.choices[0].message.content.clone(), None, true)
+            (reply.choices[0].message.content.clone(), None, true, None)
         }
-        Err(DispatchError::Completion(Failure::Chat(error))) => (None, error.status_code(), false),
-        Err(DispatchError::Completion(Failure::Config)) => (None, None, false),
+        Err(DispatchError::Completion(Failure::Chat(error))) => {
+            (None, error.status_code(), false, None)
+        }
+        Err(DispatchError::Completion(Failure::Config)) => (None, None, false, None),
         _ => panic!("unexpected native outcome"),
     };
     let logged = match state.model_call_details.get("original_response") {
@@ -362,6 +376,7 @@ pub(super) async fn run(
             key,
             status,
             logged,
+            tool_name,
         }
     } else {
         Observed {
@@ -371,6 +386,7 @@ pub(super) async fn run(
             key: String::new(),
             status,
             logged,
+            tool_name,
         }
     };
     client.drain(TIMEOUT).await.unwrap();

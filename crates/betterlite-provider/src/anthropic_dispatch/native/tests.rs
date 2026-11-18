@@ -23,6 +23,8 @@ async fn native_messages_uses_preparation_and_transport(#[case] asynchronous: bo
     assert_eq!(observed.content.as_deref(), Some("native answer"));
     assert_eq!(observed.body["model"], "claude-3-haiku-20240307");
     assert_eq!(observed.body["max_tokens"], 17);
+    assert_eq!(observed.body["tools"][0]["name"], "bad_name");
+    assert_eq!(observed.tool_name.as_deref(), Some("bad/name"));
     assert_eq!(observed.body["messages"][0]["content"][0]["text"], "hi");
     assert_eq!(observed.key, "native-key");
 }
