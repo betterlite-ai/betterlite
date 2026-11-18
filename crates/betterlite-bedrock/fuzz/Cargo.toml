@@ -99,6 +99,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_other_embedding_jobs"
+path = "fuzz_targets/bedrock_other_embedding_jobs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sagemaker_stream"
 path = "fuzz_targets/sagemaker_stream.rs"
 test = false
@@ -185,6 +192,13 @@ bench = false
 [[bin]]
 name = "bedrock_embedding_io"
 path = "fuzz_targets/bedrock_embedding_io.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_services_realtime_events"
+path = "fuzz_targets/bedrock_services_realtime_events.rs"
 test = false
 doc = false
 bench = false

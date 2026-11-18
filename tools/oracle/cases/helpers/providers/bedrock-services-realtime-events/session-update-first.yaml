@@ -1,0 +1,38 @@
+kind: helper
+name: session-update-first
+call:
+  bedrock_services_realtime_events:
+    ids:
+    - 00000000-0000-4000-8000-000000000001
+    - 00000000-0000-4000-8000-000000000002
+    - 00000000-0000-4000-8000-000000000003
+    - 00000000-0000-4000-8000-000000000004
+    steps:
+    - method: client_messages
+      initial: ''
+      received:
+      - first
+      - second
+      - null
+      - after-failure
+    - method: client_messages
+      initial: null
+      received: []
+    - method: client_messages
+      initial: preface
+      received: []
+    - method: parse_client_message
+      message: '{"type": "session.update", "session": {"modalities": ["text"]}}'
+    - method: parse_client_message
+      message: '{"type": 3}'
+    - method: parse_client_message
+      message: '{'
+    - method: parse_client_message
+      message: '[]'
+    - method: parse_client_message
+      message: 'null'
+    - method: parse_client_message
+      message: ''
+env: {}
+compare:
+  ignore: []

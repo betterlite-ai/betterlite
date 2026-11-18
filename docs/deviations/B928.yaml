@@ -1,0 +1,12 @@
+task: B928
+deviations:
+  - what: A bool usage cost is not read as a number, so stamping leaves the usage object untouched; Python validates True as 1.0 and keeps it as the existing cost.
+    why: betterlite's usage wire takes a number, a total_cost mapping or null, which is the declared cost type; docs/compatibility.md does not copy Python's bool-as-number coercion.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1355-L1366
+  - what: A response whose text, refusal, arguments, item ids, summaries, parts, annotations, items or completed copies would expand into more than 1000000 events or 256 MiB of cloned event payloads raises an error instead of building the list.
+    why: LiteLLM builds every event, so a 64 KiB item id with tiny chunks or a large reasoning_text part clones the same payload into several events before memory runs out; betterlite charges every event and its complete cloned payload before allocating it instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1406-L1466
+  - what: The validation-failure fallback hands out a fully detached clone, so mutating a nested object through the copy never reaches the original event; LiteLLM shallow-copies the event and its nested response, which shares the usage object.
+    why: betterlite events are owned values, so a fallback copy cannot share a nested usage object the way Python's model_copy does, and the copy is strictly more detached.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/streaming_iterator.py#L1514-L1518
+kept_bugs: []

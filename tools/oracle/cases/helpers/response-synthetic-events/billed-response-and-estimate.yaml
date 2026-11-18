@@ -1,0 +1,80 @@
+kind: helper
+name: response-synthetic-events-billed-response-and-estimate
+call:
+  response_synthetic_events:
+    operation: terminal
+    rows:
+      - kind: typed
+        response:
+          id: resp_t1
+          created_at: 1
+          status: completed
+          output: []
+          usage: {input_tokens: 3, output_tokens: 2, total_tokens: 5}
+        estimate: {kind: value, input_tokens: 5, output_tokens: 7}
+      - kind: typed
+        response:
+          id: resp_t2
+          created_at: 2
+          status: completed
+          output: []
+        estimate: {kind: value, input_tokens: 5, output_tokens: 7}
+      - kind: typed
+        response:
+          id: resp_t3
+          created_at: 3
+          status: completed
+          output: []
+        estimate: {kind: empty}
+      - kind: typed
+        response:
+          id: resp_t4
+          created_at: 4
+          status: completed
+          output: []
+        estimate: null
+      - kind: dict
+        response: {id: resp_d1, created_at: 5, output: [], usage: null}
+        estimate: {kind: value, input_tokens: 2, output_tokens: 3}
+      - kind: dict
+        response: {id: resp_d2, created_at: 6, output: []}
+        estimate: null
+      - kind: dict
+        response:
+          id: resp_d3
+          created_at: 7
+          output: []
+          usage: {input_tokens: 1, output_tokens: 1, total_tokens: 2}
+        estimate: {kind: empty}
+      - kind: dict
+        response:
+          id: resp_d4
+          created_at: 8
+          output:
+            - type: reasoning
+              id: rs_1
+              summary: []
+              status: null
+              content: null
+              encrypted_content: null
+              namespace: null
+        estimate: null
+      - kind: dict
+        response:
+          id: resp_d5
+          created_at: 9
+          output:
+            - type: message
+              id: msg_1
+              status: null
+              content: null
+            - type: reasoning
+              id: rs_2
+              summary: []
+              status: completed
+        estimate: {kind: empty}
+      - kind: other
+        response: 7
+        estimate: {kind: value, input_tokens: 1, output_tokens: 1}
+env: {}
+compare: {ignore: []}

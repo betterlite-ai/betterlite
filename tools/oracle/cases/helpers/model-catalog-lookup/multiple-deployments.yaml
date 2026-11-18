@@ -1,0 +1,29 @@
+kind: helper
+name: model-catalog-lookup-multiple-deployments
+call:
+  model_catalog_lookup:
+    function: get_model_list
+    model_list:
+      - model_name: gpt-4o
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+      - model_name: gpt-4o
+        litellm_params:
+          model: azure/gpt-4o
+        model_info:
+          id: b
+      - model_name: gpt-4o
+        litellm_params:
+          model: bedrock/gpt-4o
+        model_info:
+          id: c
+    model_group_alias: {}
+    routing_groups: []
+    inferred_provider: null
+    stale_index: false
+    arguments:
+      model_name: gpt-4o
+env: {}
+compare: {ignore: []}

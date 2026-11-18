@@ -1,0 +1,13 @@
+kind: helper
+name: default-threshold-from-environment
+call:
+  b3808:
+    function: build_routes
+    custom_routes:
+      - route_name: env_route
+        utterances: ["an environment route"]
+    environment:
+      DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD: "0.91"
+env:
+  DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD: "0.91"
+compare: {ignore: []}
