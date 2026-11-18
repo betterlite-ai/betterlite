@@ -1,0 +1,18 @@
+task: B338
+deviations:
+  - what: The tier index is built once when the router service is constructed, so a model listed in available_models without routing preferences, or an available model missing from the catalog, is refused at startup instead of on the first request.
+    why: LiteLLM builds the index lazily because its router assembles model_list incrementally during init; betterlite receives the whole catalog snapshot, so it can validate once per snapshot and keep the hook free of a first-request failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L96-L100
+  - what: A text content part whose text is not a string is refused with a typed PartTextNotString error naming the role and part index, instead of the TypeError Python's " ".join raises and the 500 that follows.
+    why: A malformed request should be a 4xx that names the field, not a server error; the typed refusal is tested by a_text_part_whose_text_is_not_a_string_is_refused.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L349
+  - what: Unknown QualityRouterConfig and RoutingPreferences keys are preserved and reported as router warnings while the route still runs; LiteLLM accepts them silently through pydantic's extra="allow".
+    why: The task keeps the keys accepted so a valid LiteLLM config still starts, and reports the keys an operator wrote but betterlite ignores.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/config.py#L74
+  - what: Keyword ties compare input_cost_per_token as Decimal and order as an exact i64, so two prices or two orders that Python's float() collapses into one value stay ordered, and the cheaper or lower-order model can win where LiteLLM falls through to the model name.
+    why: B338 keeps configuration numbers exactly as declared and price arithmetic in Decimal; the difference shows only beyond f64 precision, and decimal_prices_keep_more_precision_than_python_floats and large_orders_keep_more_precision_than_python_floats pin it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L217-L229
+kept_bugs:
+  - what: A keyword matches anywhere in the lowercased user message, so a keyword "code" also matches "encode" and "decode"; betterlite keeps the substring match.
+    why: Operator configs rely on the substring rule LiteLLM documents as a case-insensitive substring match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/quality_router/quality_router.py#L252
