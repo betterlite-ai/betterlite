@@ -200,7 +200,7 @@ pub(crate) struct FakeBatch {
 }
 
 impl FakeBatch {
-    pub(crate) fn new(answer: Option<Answer>) -> Self {
+    pub(crate) const fn new(answer: Option<Answer>) -> Self {
         Self {
             answer,
             recorded: Mutex::new(None),

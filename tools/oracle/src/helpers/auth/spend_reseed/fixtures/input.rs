@@ -36,6 +36,11 @@ pub(crate) enum SetNx {
     Fail,
 }
 
+// A bool on the wire; the newtype keeps struct_excessive_bools off the case input.
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(transparent)]
+pub(crate) struct Flag(pub(crate) bool);
+
 #[derive(Deserialize, Default)]
 pub(crate) struct CacheInput {
     #[serde(default)]
@@ -56,7 +61,7 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) counter_key: String,
     #[serde(default)]
-    pub(crate) prisma: bool,
+    pub(crate) prisma: Flag,
     #[serde(default)]
     pub(crate) row_spend: Option<f64>,
     #[serde(default)]
@@ -74,7 +79,7 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) logs: Vec<(String, f64)>,
     #[serde(default)]
-    pub(crate) fails: bool,
+    pub(crate) fails: Flag,
     #[serde(default)]
     pub(crate) cache: CacheInput,
     #[serde(default)]
@@ -82,5 +87,5 @@ pub(crate) struct Input {
     #[serde(default)]
     pub(crate) increment: f64,
     #[serde(default)]
-    pub(crate) require_cache_warm: bool,
+    pub(crate) require_cache_warm: Flag,
 }

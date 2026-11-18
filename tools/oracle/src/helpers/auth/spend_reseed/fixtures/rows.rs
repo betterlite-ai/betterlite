@@ -43,7 +43,7 @@ impl FakeRows {
             row: input.row_spend,
             window,
             logs,
-            fails: input.fails,
+            fails: input.fails.0,
         })
     }
 }
