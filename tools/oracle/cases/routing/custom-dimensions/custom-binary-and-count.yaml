@@ -473,3 +473,107 @@ probes:
                 - 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
                 - 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
                 - 'b'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['a\Z']
+              scoring_mode: binary
+        prompt: 'xxxxa'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['\111']
+              scoring_mode: binary
+        prompt: 'xxxxi'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['a{,3}']
+              scoring_mode: binary
+        prompt: 'xxxxaa'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['(?s)a.b']
+              scoring_mode: binary
+        prompt: "xxxxa\nb"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['(?m)^b']
+              scoring_mode: binary
+        prompt: "xxxxa\nb"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['(?x)a b', '(?x)ab']
+              scoring_mode: match_count
+        prompt: 'xxxxab'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['ab', 'ab']
+              scoring_mode: match_count
+        prompt: 'xxxxab'
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      custom_dimensions:
+        function: classify
+        config:
+          classifier_type: heuristic
+          custom_dimensions:
+            - name: domain
+              weight: 0.8
+              patterns: ['\111', '\x49']
+              scoring_mode: match_count
+        prompt: 'xxxxI'

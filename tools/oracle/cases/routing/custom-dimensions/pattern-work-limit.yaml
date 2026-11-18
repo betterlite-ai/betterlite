@@ -94,20 +94,13 @@ b'
           - '(?ii:a)'
           - '(?-i:a)'
           - '(?x-i:a)'
-          - '(?a-i:a)'
           - '(?i)(?m)a'
           - '(?x) (?i)a'
           - '(?i)(?x)a'
           - '(?x)(?i)a'
           - '(?x)'
-          - '(?a)'
           - '(?u)'
-          - '(?a)(?a:a)'
-          - '(?am:a)'
-          - '(?ai:a)'
           - '(?iu:a)'
-          - '(?aa:a)'
-          - '(?a:a)(?u:b)'
           - '(?#c)a'
           - '(?#a\)b)c'
           - '(?#c)(?x)a'
@@ -255,6 +248,9 @@ b'
           - '(((((((((((((((((a)))))))))))))))))'
           - 'a{64}'
           - 'a{65}'
+          - '^|$'
+          - 'a{0,3}b{0,63}(?:^|$)'
+          - '(?x)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        a'
 compare:
   expected_difference:
     - pointer: /output/custom_dimensions/results/0/work
@@ -442,6 +438,26 @@ compare:
       rust: 'requires a single character or class repeated at most 64 times; use {n,m} instead of *, + or {n,}'
       why: 'Python commits the first quantifier before the ignored space and sees a second repeat; betterlite drops the space first.'
       link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L802'
+    - pointer: /output/custom_dimensions/results/80/work
+      reference: 3
+      rust: null
+      why: 'LiteLLM reads Python inline flags, including the ASCII mode this pattern asks for; betterlite refuses a flag its matcher has no mode to carry.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/80/message
+      reference: null
+      rust: 'contains an unsupported regex construct'
+      why: 'LiteLLM reads Python inline flags, including the ASCII mode this pattern asks for; betterlite refuses a flag its matcher has no mode to carry.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L800'
+    - pointer: /output/custom_dimensions/results/242/work
+      reference: 2
+      rust: null
+      why: 'LiteLLM reads and scores a verbose pattern of any length; betterlite refuses a pattern beyond its 4096-character input bound.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798'
+    - pointer: /output/custom_dimensions/results/242/message
+      reference: null
+      rust: 'is not a valid regex'
+      why: 'LiteLLM reads and scores a verbose pattern of any length; betterlite refuses a pattern beyond its 4096-character input bound.'
+      link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/complexity_router/config.py#L798'
     - pointer: /warnings
       reference: ['Possible set intersection at position 2', 'Possible set intersection at position 2', 'Possible set symmetric difference at position 2', 'Possible set symmetric difference at position 2', 'Possible nested set at position 1', 'Possible nested set at position 1', 'Possible nested set at position 1', 'Possible nested set at position 1', 'Possible set difference at position 4', 'Possible set difference at position 4', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 2', 'Possible set difference at position 4', 'Possible set difference at position 2', 'Possible set difference at position 4', 'Possible set difference at position 2', 'Possible set difference at position 2']
       rust: []
