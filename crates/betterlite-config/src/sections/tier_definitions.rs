@@ -141,8 +141,7 @@ pub enum TierEntry {
     Detailed(TierModelEntry),
 }
 
-// LiteLLM accepts one entry or a list of them under a tier key; the list comes first, since an
-// untagged struct also parses a one-element sequence positionally and would swallow the list
+// Lists come first because an untagged struct can swallow a one-element sequence positionally.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(
     untagged,
