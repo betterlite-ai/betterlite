@@ -279,6 +279,39 @@ async fn the_response_carries_every_declared_field() {
 }
 
 #[tokio::test]
+async fn a_settings_failure_with_an_endpoint_id_reads_no_endpoint() {
+    let settings = Arc::new(FakeSettings::refusing(NotAllowed));
+    let config = Arc::new(FakeConfig::of(&[C1]));
+    let teams = Arc::new(FakeTeams::new());
+    let uri = format!("{LIST}?endpoint_id=db-1");
+    let reply = call(
+        read_app(&settings, &config, &teams),
+        get(&uri, Some(&admin())),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(reply.data(), json(r#"{"endpoints": []}"#));
+}
+
+#[tokio::test]
+async fn a_missing_team_is_still_checked_when_the_endpoint_id_finds_nothing() {
+    let settings = Arc::new(FakeSettings::returning(json_list(&[DB1])));
+    let config = Arc::new(FakeConfig::none());
+    let teams = Arc::new(FakeTeams::new());
+    let uri = format!("{LIST}?endpoint_id=missing&team_id=missing");
+    let reply = call(
+        read_app(&settings, &config, &teams),
+        get(&uri, Some(&admin())),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        reply.data(),
+        json(r#"{"detail": {"error": "Team not found"}}"#)
+    );
+}
+
+#[tokio::test]
 async fn an_endpoint_id_and_a_team_filter_are_both_applied() {
     let teams =
         Arc::new(FakeTeams::new().with_team("t1", r#"{"allowed_passthrough_routes": ["/db1"]}"#));

@@ -84,17 +84,15 @@ async fn get_team_endpoints(
     caller: Option<Extension<AuthContext>>,
     Path(team_id): Path<String>,
     Query(query): Query<TeamEndpointQuery>,
-) -> Result<Json<PassThroughEndpointResponse>, PassThroughReadError> {
+) -> Response {
     let Some(Extension(context)) = caller else {
-        return Err(PassThroughReadError::Unauthenticated);
+        return PassThroughReadError::Unauthenticated.into_response();
     };
-    serve(
-        &state,
-        access_of(&context),
-        query.endpoint_id.as_deref(),
-        Some(&team_id),
-    )
-    .await
+    let endpoint_id = query.endpoint_id.as_deref();
+    match serve(&state, access_of(&context), endpoint_id, Some(&team_id)).await {
+        Ok(found) => found.into_response(),
+        Err(error) => error.into_response(),
+    }
 }
 
 // both routes share it: the database wins over the config file on a path, and an endpoint_id narrows the answer to the database

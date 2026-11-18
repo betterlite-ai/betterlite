@@ -47,33 +47,31 @@ fn allowed_by_metadata(
     team_id: &str,
     endpoints: &[PassThroughGenericEndpoint],
 ) -> Result<Vec<PassThroughGenericEndpoint>, TeamFilterError> {
-    let Some(allowed) = fields.get(ALLOWED_ROUTES_KEY) else {
-        return Ok(endpoints.to_vec());
-    };
-    match allowed {
-        JsonData::Null => Ok(endpoints.to_vec()),
-        JsonData::Array(routes) => {
-            let paths: BTreeSet<&str> = routes
-                .iter()
-                .filter_map(|route| match route {
-                    JsonData::String(path) => Some(path.as_str()),
-                    JsonData::Null
-                    | JsonData::Bool(_)
-                    | JsonData::Number(_)
-                    | JsonData::Array(_)
-                    | JsonData::Object(_) => None,
-                })
-                .collect();
-            Ok(endpoints
-                .iter()
-                .filter(|endpoint| paths.contains(endpoint.path.as_str()))
-                .cloned()
-                .collect())
-        }
-        JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Object(_) => {
-            Err(TeamFilterError::AllowedRoutes {
+    let routes = match fields.get(ALLOWED_ROUTES_KEY) {
+        None | Some(JsonData::Null) => return Ok(endpoints.to_vec()),
+        Some(JsonData::Array(routes)) => routes,
+        Some(
+            JsonData::Bool(_) | JsonData::Number(_) | JsonData::String(_) | JsonData::Object(_),
+        ) => {
+            return Err(TeamFilterError::AllowedRoutes {
                 team_id: team_id.to_owned(),
-            })
+            });
         }
-    }
+    };
+    let paths: BTreeSet<&str> = routes
+        .iter()
+        .filter_map(|route| match route {
+            JsonData::String(path) => Some(path.as_str()),
+            JsonData::Null
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_) => None,
+        })
+        .collect();
+    Ok(endpoints
+        .iter()
+        .filter(|endpoint| paths.contains(endpoint.path.as_str()))
+        .cloned()
+        .collect())
 }

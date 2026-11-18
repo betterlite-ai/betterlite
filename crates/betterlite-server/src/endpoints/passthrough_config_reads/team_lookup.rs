@@ -21,8 +21,8 @@ impl TeamLookup for DatabaseTeamLookup {
     async fn find_team_metadata(&self, team_id: &str) -> Result<Option<JsonData>, TeamQueryError> {
         let teams = TeamRepository {
             database: TeamDatabase {
-                db: &self.store,
-                writer_db: &self.store,
+                db: self.store.as_ref(),
+                writer_db: self.store.as_ref(),
             },
             use_writer: false,
         };
