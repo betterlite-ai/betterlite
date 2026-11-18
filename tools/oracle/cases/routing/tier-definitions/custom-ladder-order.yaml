@@ -1,0 +1,37 @@
+kind: probe
+name: tier-definitions-custom-ladder-order
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ECO, description: cheap relay asks}
+            - {name: DEEP, description: hard multi-step asks}
+          tier_models: {ECO: eco-mini, DEEP: [deep-a, deep-b]}
+        knobs: {classifier_type: llm, fallback_tier: ECO}
+        queries: [eco, "  DEEP  ", MEDIUM, ""]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: DEEP, description: hard multi-step asks}
+            - {name: ECO, description: cheap relay asks}
+          tier_models: {DEEP: [deep-a, deep-b], ECO: eco-mini}
+        knobs: {classifier_type: llm, fallback_tier: DEEP}
+        queries: [DEEP, ECO]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_definitions:
+        config:
+          tier_definitions:
+            - {name: ZENITH, description: hardest asks}
+            - {name: ALPHA, description: cheapest asks}
+            - {name: MIDWAY, description: middle asks}
+          tier_models: {ZENITH: z, ALPHA: a, MIDWAY: m}
+        knobs: {classifier_type: llm, fallback_tier: ALPHA}
+        queries: [zenith, Alpha, midway, BETA]

@@ -1,0 +1,33 @@
+kind: probe
+name: threshold-last-tier
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0, observations: 4}
+            - {tier: 2, successes: 2, observations: 4}
+            - {tier: 3, successes: 0, observations: 4}
+            - {tier: 4, successes: 4, observations: 4}
+          routing_threshold: 1.0
+        prompt: 'Hello.'
+        request_type: general
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      tier_artifact_predictor:
+        function: predict
+        artifact:
+          global_statistics:
+            - {tier: 1, successes: 0, observations: 4}
+            - {tier: 2, successes: 2, observations: 4}
+            - {tier: 3, successes: 0, observations: 4}
+            - {tier: 4, successes: 4, observations: 4}
+          routing_threshold: 1.0
+        prompt: 'Hello.'
+        request_type: general
+        threshold: '0.84'
+compare: {ignore: []}

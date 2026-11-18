@@ -1,0 +1,13 @@
+id: B9988
+milestone: M3 providers
+title: OpenAI output-limit and rejected-field recovery on the proxy chat path
+status: todo
+depends_on: [B505, B024]
+file: tasks/B9988-openai-output-limit-proxy-path.yaml
+covers: []
+parent: B025
+split_from: B505
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

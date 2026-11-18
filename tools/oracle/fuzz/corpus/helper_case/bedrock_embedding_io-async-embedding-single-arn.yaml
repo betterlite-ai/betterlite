@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock_embedding_io-async-embedding-single-arn-seed
+call:
+  bedrock_embedding_io:
+    function: async_embedding_single_arn
+    model: cohere.embed-english-v3
+    provider: cohere
+    is_async_invoke: true
+    response_list:
+      - invocationArn: arn:aws:bedrock:us-east-1:123456789012:async-invoke/abc
+env: {}
+compare: {ignore: []}

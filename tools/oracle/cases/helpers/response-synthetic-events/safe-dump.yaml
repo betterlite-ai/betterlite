@@ -1,0 +1,42 @@
+kind: helper
+name: response-synthetic-events-safe-dump
+call:
+  response_synthetic_events:
+    operation: dump
+    rows:
+      - response:
+          id: resp_dm
+          created_at: 1
+          status: completed
+          usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3, cost: 0.25}
+          output:
+            - type: message
+              id: msg_dm
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: "héllo", annotations: []}
+            - type: reasoning
+              id: rs_dm
+              summary:
+                - {type: summary_text, text: why}
+      - response:
+          id: resp_dw
+          created_at: 2
+          status: completed
+          output:
+            - type: message
+              id: 0
+              role: assistant
+              status: completed
+              content:
+                - {type: output_text, text: [1, 2]}
+                - {type: mystery, value: 1}
+      - response:
+          id: resp_de
+          created_at: 3
+          status: failed
+          error: {code: upstream_error, message: boom}
+          output: []
+env: {}
+compare: {ignore: []}

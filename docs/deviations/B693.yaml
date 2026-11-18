@@ -1,0 +1,12 @@
+task: B693
+deviations:
+  - what: A caller-supplied Date header is dropped and the request is signed with X-Amz-Date instead of LiteLLM's SignedHeaders=date form.
+    why: "The shared B595 signer owns this behavior: aws-sigv4 only signs the X-Amz-Date form, and Bedrock clients do not send Date themselves."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1629-L1655
+  - what: A provider error body whose bytes are not UTF-8 reports a message naming its byte count, such as "3 bytes that are not UTF-8"; LiteLLM reports err.response.text, which its HTTP client decodes with replacement characters.
+    why: Rust strings hold only UTF-8, so the same bytes cannot be carried through the message as text. The status code, the headers and the response object stay as LiteLLM builds them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L131-L138
+  - what: A 2xx body that is not valid JSON fails with a typed Decode error, and valid JSON that is not an object fails the same way; LiteLLM's response.json() raises json.JSONDecodeError for the first and hands the list or scalar back for the second, leaving any failure to the caller.
+    why: _make_sync_call and _make_async_call declare a dict return, and betterlite decodes the body into that declared object shape. A non-object JSON value is outside the declared type, which docs/compatibility.md turns into an error that names the field rather than a pass-through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L142
+kept_bugs: []
