@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock_other_embedding_call-ordered-multi-input-result-seed
+call:
+  bedrock_other_embedding_call:
+    function: ordered_multi_input_result
+    model: amazon.titan-embed-text-v1
+    input: [one, two]
+    now: 1700000000
+env: {}
+compare: {ignore: []}

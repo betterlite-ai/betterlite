@@ -14,8 +14,12 @@ description: >-
   storage_url values are retained internally but not exposed as new public fields. Neither a
   successful write nor object construction implies a transaction with later metadata registration.
 
-  Use B2401's file_storage_service SDK HTTP operation for actual Azure service calls against the
-  mock and native B726-backed repository tests for database storage. The B171 helper of the same
+  Use the SdkHttpCall::FileStorageService operation for actual Azure service calls against the
+  mock and native B726-backed repository tests for database storage. Its placeholder is on main: replace
+  the Call and Outcome aliases in tools/oracle/src/sdk_http/file_storage_service.rs (Call implements
+  call_kind::CallKind, Outcome is the value of SdkResult::FileStorageService) and fill
+  FileStorageServiceRequest in tools/oracle/sdk_http/file_storage_service.py, with no edit to the shared
+  sdk_http files or dispatch.py. The B171 helper of the same
   name tests only pure file-object projection with fixed clock/UUID. Route registration and multipart
   decoding stay in B1032; do not depend on it. Tests use api::file_storage_service::tests.
   Owned factory/service spans contain 141 nonblank, non-comment lines. Allow 150 implementation,
@@ -32,9 +36,8 @@ scope:
   - tools/oracle/helpers/file_storage_service/**
   - tools/oracle/fuzz/corpus/helper_case/file_storage_service-*
   - tools/oracle/cases/helpers/file-storage-service/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/file_storage_service.rs
+  - tools/oracle/src/sdk_http/file_storage_service/**
   - tools/oracle/sdk_http/file_storage_service.py
   - tools/oracle/cases/sdk-http/file-storage-service/**
   - tools/oracle/fuzz/corpus/sdk_http_case/file-storage-service-*
@@ -93,7 +96,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::file_storage_service::/) - test(/::replays_corpus$/)'
   - id: python-adapters
     why: storage projection or provider HTTP adapter is missing
-    run: test -f tools/oracle/helpers/file_storage_service.py && test -f tools/oracle/sdk_http/file_storage_service.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -f tools/oracle/helpers/file_storage_service.py && ! grep -q not_built tools/oracle/sdk_http/file_storage_service.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: case-seeds
     why: storage operations are not present in both decoder corpora
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/file_storage_service-*)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/file-storage-service-*)" && grep -qE '^[[:space:]]+file_storage_service:' tools/oracle/fuzz/corpus/helper_case/file_storage_service-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'
