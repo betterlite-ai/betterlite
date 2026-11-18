@@ -34,10 +34,6 @@ pub(super) struct Parameters {
 }
 
 impl Parameters {
-    pub(super) fn new() -> Self {
-        Self { values: Vec::new() }
-    }
-
     fn push(&mut self, bound: Bound) -> usize {
         self.values.push(bound);
         self.values.len()
@@ -159,7 +155,7 @@ where
     if !create.contains_key(&Column::KEY) {
         return Err(TableOpsError::MissingField { field: key_name });
     }
-    let mut parameters = Parameters::new();
+    let mut parameters = Parameters { values: Vec::new() };
     let mut names = Vec::new();
     let mut placeholders = Vec::new();
     for (column, value) in create {
@@ -200,7 +196,7 @@ where
         Some(_) => return Err(TableOpsError::WrongType { column: key_name }),
         None => return Err(TableOpsError::MissingField { field: key_name }),
     };
-    let mut parameters = Parameters::new();
+    let mut parameters = Parameters { values: Vec::new() };
     let mut assignments = Vec::new();
     for (column, value) in payload {
         if *column == Column::KEY {
