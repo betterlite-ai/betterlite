@@ -86,6 +86,15 @@ fn rejection(error: &ConfigError) -> Rejection {
         ttft_percentile: Some(1.0_f64),
     }
 )]
+#[case::whole_float_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: 120.0\n",
+    Args {
+        ttl_seconds: Some(120.0_f64),
+        lowest_latency_buffer: None,
+        max_latency_list_size: None,
+        ttft_percentile: None,
+    }
+)]
 fn converts(#[case] source: &str, #[case] expected: Args) {
     assert_eq!(load(source), expected);
 }
@@ -144,6 +153,22 @@ fn resolves_environment(
     "router_settings:\n  routing_strategy_args:\n    ttl: os.environ/ROUTER_TTL\n",
     Rejection::MissingEnvironment
 )]
+#[case::list_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: [60]\n",
+    Rejection::InvalidScalar
+)]
+#[case::boolean_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: true\n",
+    Rejection::InvalidScalar
+)]
+#[case::words_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: soon\n",
+    Rejection::InvalidInteger
+)]
+#[case::fractional_ttl(
+    "router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n",
+    Rejection::InvalidInteger
+)]
 fn rejects(#[case] source: &str, #[case] expected: Rejection) {
     let error = load_with(source, &[]).expect_err("the section rejects the source");
     assert_eq!(rejection(&error), expected);
@@ -157,6 +182,17 @@ fn rejects(#[case] source: &str, #[case] expected: Rejection) {
 fn rejects_unknown_arguments(#[case] source: &str, #[case] expected: Rejection) {
     let error = load_with(source, &[]).expect_err("the section rejects the source");
     assert_eq!(rejection(&error), expected);
+}
+
+#[test]
+fn a_rejected_ttl_names_the_shared_argument() {
+    let source = "router_settings:\n  routing_strategy_args:\n    ttl: 1.5\n";
+    let error = load_with(source, &[]).expect_err("the section rejects the fractional ttl");
+    assert!(matches!(
+        error,
+        ConfigError::InvalidInteger { path, .. }
+            if path == "router_settings.routing_strategy_args.ttl"
+    ));
 }
 
 #[test]
