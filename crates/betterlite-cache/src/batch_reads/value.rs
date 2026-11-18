@@ -57,8 +57,7 @@ pub(super) fn cache_from_json(value: &Json) -> Option<CacheValue> {
         Json::Bool(flag) => CacheValue::Boolean(*flag),
         Json::Number(number) => match (number.as_i64(), number.as_u64(), number.as_f64()) {
             (Some(whole), _, _) => CacheValue::Integer(whole),
-            // an integer token past u64 has no CacheValue form; rounding it into a float would
-            // serve a different number from the memory tier than Redis returned
+            // an integer token past u64 has no CacheValue form, so it stays unbackfilled
             (None, None, Some(float)) if number.is_f64() => CacheValue::Float(float),
             _ => return None,
         },
