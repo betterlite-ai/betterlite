@@ -1,0 +1,32 @@
+kind: helper
+name: entities-empty-ids-and-member-pair
+call:
+  counter_keys:
+    function: admission_counter_keys
+    token: ""
+    team_id: team-a
+    user_id: ""
+    org_id: org-z
+    project_id: proj-1
+    end_user_id: ""
+calls:
+  - counter_keys:
+      function: admission_counter_keys
+      token: tok-1
+      team_id: team-b
+      user_id: null
+      org_id: null
+      project_id: null
+      end_user_id: end-1
+  - counter_keys:
+      function: post_call_counter_keys
+      token: null
+      team_id: null
+      user_id: user-1
+      org_id: ""
+      end_user_id: null
+      project_id: proj-2
+      tags: []
+      model_access_groups: []
+env: {}
+compare: {ignore: []}

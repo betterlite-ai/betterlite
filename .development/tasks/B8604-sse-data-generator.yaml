@@ -24,6 +24,9 @@ description: >-
   Tests use recording fakes for every port, scripted item streams and `tokio::time::pause` for the pings. No route on main streams through this generator (the chat route uses its own relay in crates/betterlite-server/src/routes/chat/streaming.rs), so this task has no HTTP oracle cases; B8633 proves it over HTTP.
 scope:
   paths:
+  - "crates/betterlite-server/src/stream_keepalive/wrapper.rs"
+  - "crates/betterlite-server/src/stream_keepalive.rs"
+  - "crates/betterlite-server/src/stream_chunks.rs"
   - crates/betterlite-server/src/sse_data_generator.rs
   - crates/betterlite-server/src/sse_data_generator/**
   lint_tables: false
