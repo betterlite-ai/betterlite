@@ -3,14 +3,14 @@ pub mod collect_cascade;
 pub mod enduser_counter_key;
 pub mod enduser_invalidation;
 pub mod fetch_failure;
-pub mod key__counter_key;
+pub mod key_counter_key;
 pub mod linked_rows;
 pub mod model_access_group_counter_key;
-pub mod org__counter_key;
+pub mod org_counter_key;
 pub mod project_counter_key;
 pub mod rollover_carry;
 pub mod rollover_order;
-pub mod tag__counter_key;
+pub mod tag_counter_key;
 pub mod team_membership_counter_key;
 pub mod transaction;
 
