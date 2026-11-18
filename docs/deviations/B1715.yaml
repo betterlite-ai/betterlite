@@ -1,0 +1,14 @@
+task: B1715
+deviations:
+  - what: >-
+      A nonzero JSON number whose decimal text Python's float underflows to zero, such as
+      1e-999, counts as truthy usage_info: betterlite keeps the number's decimal text and
+      answers the zeroed token usage, where LiteLLM's float parse makes it 0.0 and falls
+      back to the response object's usage_info attribute.
+    why: >-
+      betterlite decodes JSON numbers at arbitrary precision, so a subnormal value keeps its
+      nonzero mantissa; rounding every number through a float to copy the underflow would lose
+      the precision the rest of the metadata needs. No working OCR response carries a number
+      that underflows to zero. The tiny_number case of
+      spend_metadata::ocr::tests::extracts_pages_instead_of_tokens pins the answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L338
