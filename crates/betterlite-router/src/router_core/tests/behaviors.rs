@@ -387,7 +387,7 @@ pub(super) async fn least_busy_picks_lowest_count() {
         local: in_flight_store(),
         shared: None,
     });
-    let busy_key = request_count_key("gpt-4o", "b").unwrap();
+    let busy_key = request_count_key("gpt-4o", "a").unwrap();
     service
         .local
         .set(
@@ -408,9 +408,9 @@ pub(super) async fn least_busy_picks_lowest_count() {
     )
     .await
     .unwrap();
-    assert_eq!(picked(&result), "a");
+    assert_eq!(picked(&result), "b");
     assert_eq!(result.strategy, Some(Strategy::LeastBusy));
-    let picked_key = request_count_key("gpt-4o", "a").unwrap();
+    let picked_key = request_count_key("gpt-4o", "b").unwrap();
     assert_eq!(in_flight(&service, &picked_key), 1);
     let started = result
         .least_busy
@@ -428,7 +428,7 @@ pub(super) async fn least_busy_picks_lowest_count() {
         )
         .await
         .unwrap();
-        assert_eq!(picked(&dropped), "a");
+        assert_eq!(picked(&dropped), "b");
         assert_eq!(in_flight(&service, &picked_key), 1);
     }
     assert_eq!(in_flight(&service, &picked_key), 0);

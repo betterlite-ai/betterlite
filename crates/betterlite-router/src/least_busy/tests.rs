@@ -537,21 +537,22 @@ async fn shared_absent() {
     ));
 }
 
-fn ttl_expiry() {
+async fn ttl_expiry() {
     assert_eq!(IN_FLIGHT_COUNT_TTL_SECONDS.to_bits(), 3600.0_f64.to_bits());
     let clock = TestClock::default();
-    let service = LeastBusy {
-        local: local_store(&clock),
-        shared: None,
-    };
-    service
-        .local
-        .increment(
-            &group_key("a"),
-            &RouteIncrement::Counter(1),
-            Some(IN_FLIGHT_COUNT_TTL_SECONDS),
-        )
+    let server = FakeRedis::try_start().await.unwrap();
+    let shared = shared_store(&server, 5);
+    let service = service(local_store(&clock), Some(shared));
+    let started = service
+        .pre_call(&facts(Some(GROUP), Some("a"), None))
+        .await
         .unwrap();
+    assert!(started.call.is_some());
+    // the shared write carries the same hour that this worker's counter gets
+    assert_eq!(
+        server.raw("gpt_request_count:a").map(|entry| entry.1),
+        Some(3600)
+    );
     let key = group_key("a");
     clock.at(601.0);
     assert_eq!(
@@ -583,7 +584,7 @@ async fn run_named_case(name: &str) -> bool {
         "attempt_facts_from_events" => attempt_facts_from_events(),
         "local_values_read" => local_values_read(),
         "shared_absent" => shared_absent().await,
-        "ttl_expiry" => ttl_expiry(),
+        "ttl_expiry" => ttl_expiry().await,
         "key_lengths" => key_lengths(),
         "missing_deployment_id_index" => missing_deployment_id_index().await,
         "local_spend_is_error" => local_spend_is_error().await,
@@ -731,7 +732,10 @@ async fn pre_call_over_limit() {
         Ok(_started) => panic!("the key is past the limit"),
     };
     assert!(matches!(error, LeastBusyError::Key { .. }));
-    assert_eq!(service.local_count_values(&[]).unwrap(), Vec::<i64>::new());
+    assert_eq!(
+        service.local_count_values(&[]).unwrap(),
+        Vec::<Option<i64>>::new()
+    );
 }
 
 async fn guard_debug() {
