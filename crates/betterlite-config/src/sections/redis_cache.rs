@@ -61,14 +61,11 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let settings = self.litellm_settings;
-        let cache_switch = match settings.cache {
-            Some(ScalarBool::Boolean(value)) => value,
-            Some(ScalarBool::Text(text)) => {
-                let _text_length = text.len();
-                false
-            }
-            None => false,
-        };
+        // the proxy tests `value is True`, so text of any spelling leaves the switch off
+        let cache_switch = settings.cache.is_some_and(|switch| match switch {
+            ScalarBool::Boolean(value) => value,
+            ScalarBool::Text(_text) => false,
+        });
         let (ttl_number, ttl_path) = if cache_switch {
             match settings.cache_params.default_redis_ttl {
                 Some(number) => (Some(number), CACHE_PARAMS_TTL_PATH),
