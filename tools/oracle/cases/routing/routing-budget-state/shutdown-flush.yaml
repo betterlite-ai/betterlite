@@ -1,0 +1,15 @@
+kind: probe
+name: shutdown-flush
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_budget_state:
+        provider_budget_config:
+          openai: {budget_limit: "10", time_period: 1d}
+        steps:
+          - {kind: success, provider: openai, cost: "0.5"}
+          - {kind: shutdown}
+          - {kind: redis, key: "provider_spend:openai:1d"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+compare: {ignore: []}

@@ -39,10 +39,9 @@ pub(crate) fn ensure(
     worktrees: &str,
     task: &Task,
 ) -> Result<(PathBuf, String), GateError> {
-    let branch = branch_name(task);
     let folder = root.join(worktrees);
     let path = folder.join(&task.id);
-    prepare(root, &path, &branch)?;
+    let branch = prepare(root, &path, &task.id, &branch_name(task))?;
     // inside the worker sandbox uv cannot hardlink from its cache and copies the whole LiteLLM venv
     finish(
         "uv",
@@ -135,7 +134,7 @@ fn configure(root: &Path, target: &Path) -> Result<(), GateError> {
     Ok(())
 }
 
-fn prepare(root: &Path, target: &Path, branch: &str) -> Result<(), GateError> {
+fn prepare(root: &Path, target: &Path, id: &str, branch: &str) -> Result<String, GateError> {
     let canonical = fs::canonicalize(root).map_err(|source| GateError::Read {
         path: root.to_owned(),
         source,
@@ -144,13 +143,18 @@ fn prepare(root: &Path, target: &Path, branch: &str) -> Result<(), GateError> {
     if dotgit.is_symlink() {
         return Err(refuse(target, "refusing a symlinked .git"));
     }
-    if dotgit.exists() {
-        if git(target, &["branch", "--show-current"])?.trim() != branch {
+    let used = if dotgit.exists() {
+        let current = git(target, &["branch", "--show-current"])?
+            .trim()
+            .to_owned();
+        // a re-plan may retitle the task, and the checkout keeps the branch its PR was opened from (B1601, 11-18)
+        if !current.starts_with(&format!("task/{id}-")) {
             return Err(refuse(target, "checkout is on a different task branch"));
         }
         if dotgit.is_file() {
             migrate(&canonical, target)?;
         }
+        current
     } else {
         clone(&canonical, target)?;
         let reference = format!("refs/heads/{branch}");
@@ -160,8 +164,10 @@ fn prepare(root: &Path, target: &Path, branch: &str) -> Result<(), GateError> {
             "origin/main".to_owned()
         };
         git(target, &["switch", "--no-track", "-c", branch, &base])?;
-    }
-    configure(&canonical, target)
+        branch.to_owned()
+    };
+    configure(&canonical, target)?;
+    Ok(used)
 }
 
 fn idle(target: &Path) -> Result<(), GateError> {

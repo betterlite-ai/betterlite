@@ -17,7 +17,10 @@ description: >-
   is exactly srt/vtt, call B1002 on transformed.words, replace text only if it returns a document, and delete
   words whenever present even if synthesis returns None. Other formats/capability=false preserve words/text.
   This is provider response policy over decoded records; its byte decoders belong to the supplied provider.
-  Add B2401 sdk_http transcription_http using finite config transforms and real mock HTTP. Count 228 nonblank/
+  SdkHttpCall::TranscriptionHttp uses finite config transforms and real mock HTTP. It is on main as a
+  placeholder, so this task replaces the Call and Outcome aliases in tools/oracle/src/sdk_http/transcription_http.rs
+  (Call implements call_kind::CallKind) and fills TranscriptionHttpRequest in
+  tools/oracle/sdk_http/transcription_http.py; the shared sdk_http files stay untouched. Count 228 nonblank/
   non-comment lines across four complete functions; budget 210 implementation,125 tests,120 fixtures,85 adapters
   and 35 wiring, 575 lines.
 
@@ -27,9 +30,8 @@ scope:
   paths:
   - crates/betterlite-provider/src/api/transcription_http.rs
   - crates/betterlite-provider/src/api/transcription_http/**
-  - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/**
-  - tools/oracle/sdk_http/dispatch.py
+  - tools/oracle/src/sdk_http/transcription_http.rs
+  - tools/oracle/src/sdk_http/transcription_http/**
   - tools/oracle/sdk_http/transcription_http.py
   - tools/oracle/cases/sdk-http/transcription-http/**
   - tools/oracle/fuzz/corpus/sdk_http_case/transcription-http-*
@@ -80,7 +82,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^api::transcription_http::tests::/)'
   - id: sdk-python
     why: This provider handler performs HTTP and requires a checked SDK adapter.
-    run: test -f tools/oracle/sdk_http/transcription_http.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
+    run: test -z "$(grep -l not_built tools/oracle/sdk_http/transcription_http.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/sdk_http && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/sdk_http/pyrightconfig.json
   - id: sdk-corpus
     why: The transcription HTTP operation needs a newly added shared-parser seed.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/sdk_http_case/transcription-http-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^sdk_http::tests::replays_corpus$/)'

@@ -1,0 +1,32 @@
+task: B505
+deviations:
+  - what: >-
+      The output-limit marker is matched inside the provider's error text: the raw response body on the buffered path,
+      and the transport error's message on the Azure raw-send path. LiteLLM matches it inside the SDK exception's
+      message, which is the "Error code: 400 - {body}" rendering of the same reply.
+    why: >-
+      The marker is a provider sentence, and both texts contain it for every reply that carries it. Matching the
+      provider's own text keeps the check off the SDK's string formatting, which betterlite does not reproduce.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L138-L145
+  - what: >-
+      The async Azure timeout text renders the elapsed seconds with two decimals and an integer-valued timeout
+      without a trailing zero, where LiteLLM interpolates Python's repr of the rounded float.
+    why: >-
+      Python's float repr is the runtime formatting docs/compatibility.md keeps out of parity, so betterlite prints
+      its own fixed two-decimal local string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/azure.py#L184-L187
+kept_bugs:
+  - what: >-
+      Any 400 whose text carries the full output-limit sentence is repaired, whatever model the call names. There is
+      no GPT-5.x model guard even though that family is what motivated the repair.
+    why: >-
+      LiteLLM recovers on the message alone, and a setup that sends the sentence from another model relies on the
+      recovery, so betterlite copies it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L138-L145
+  - what: >-
+      The streaming repair counts the prompt tokens before it returns its one chunk, and the chunk then carries no
+      usage object, so that count is spent and never reported.
+    why: >-
+      LiteLLM calls token_counter in both branches before it checks stream. A working setup only sees the length chunk
+      and never the count, so the waste is not observable and betterlite keeps the same order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/common_utils.py#L189-L203

@@ -1,0 +1,11 @@
+kind: helper
+name: output-limits-malformed-nested-error-failure
+call:
+  openai_output_limits:
+    drop:
+      channel: sdk
+      body:
+        message: '{"detail":[{"loc":["body","temperature"]},5]}'
+      data: {"model": "gpt-3.5-turbo", "temperature": 2, "messages": []}
+compare: {ignore: []}
+env: {}

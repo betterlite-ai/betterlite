@@ -1,0 +1,60 @@
+kind: helper
+name: model-visibility-admin-view-bypass
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+      - model_name: visible
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: b
+    model_group_alias: {}
+    arguments:
+      model_names: [hidden, visible]
+      user_role: proxy_admin
+calls:
+  - model_visibility:
+      function: undiscoverable_model_names
+      model_list:
+        - model_name: hidden
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+            discoverable: false
+        - model_name: visible
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: b
+      model_group_alias: {}
+      arguments:
+        model_names: [hidden, visible]
+        user_role: proxy_admin_viewer
+  - model_visibility:
+      function: undiscoverable_model_names
+      model_list:
+        - model_name: hidden
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: a
+            discoverable: false
+        - model_name: visible
+          litellm_params:
+            model: openai/gpt-4o
+          model_info:
+            id: b
+      model_group_alias: {}
+      arguments:
+        model_names: [hidden, visible]
+        user_role: internal_user
+env: {}
+compare: {ignore: []}
