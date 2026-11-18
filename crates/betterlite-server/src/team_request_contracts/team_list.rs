@@ -32,20 +32,14 @@ impl TeamListItem {
     pub fn from_value(value: &JsonData) -> Result<Self, TeamContractError> {
         let counts: TeamListCounts = decode_request(value)?;
         let team = LiteLLMTeamTable::try_from(value.clone())?;
-        Ok(counts.with_team(team))
-    }
-}
-
-impl TeamListCounts {
-    fn with_team(self, team: LiteLLMTeamTable) -> TeamListItem {
-        TeamListItem {
+        Ok(Self {
             team,
-            members_count: self.members_count,
-            keys_count: self.keys_count,
-            access_group_models: self.access_group_models,
-            access_group_mcp_server_ids: self.access_group_mcp_server_ids,
-            access_group_agent_ids: self.access_group_agent_ids,
-        }
+            members_count: counts.members_count,
+            keys_count: counts.keys_count,
+            access_group_models: counts.access_group_models,
+            access_group_mcp_server_ids: counts.access_group_mcp_server_ids,
+            access_group_agent_ids: counts.access_group_agent_ids,
+        })
     }
 }
 
