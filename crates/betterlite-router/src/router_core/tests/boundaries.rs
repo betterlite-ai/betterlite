@@ -15,7 +15,7 @@ use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_rate_limits::tests::support::{
-    FakeCache, WithRateLimits, rpm_key, service as rate_limit_service, tpm_key,
+    FakeCache, WithRateLimits, rpm_key, service as rate_limit_service, tpm_key, with_extra,
 };
 use crate::prompt_affinity::service::PromptAffinity;
 use crate::prompt_affinity::tests::support::{
@@ -231,7 +231,7 @@ pub(super) async fn model_rate_limit_unconfigured_keeps_the_pick() {
 // a limit the check cannot read never stops a route, as pre_call_check swallows every non-rate-limit failure
 pub(super) async fn model_rate_limit_unreadable_limit_keeps_the_pick() {
     keeps(
-        deployment("gpt-4o", "a", &[("tpm", text("1"))]),
+        with_extra(deployment("gpt-4o", "a", &[]), "tpm", text("1")),
         &rate_limited(Arc::new(FakeCache::new())),
     )
     .await;
