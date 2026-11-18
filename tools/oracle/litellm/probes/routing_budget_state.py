@@ -134,7 +134,7 @@ class FakeStore(RedisCache):
     ) -> list[float] | None:
         if self.hold:
             self.entered.set()
-            await self.release.wait()
+            _ = await self.release.wait()
         if self.fail:
             raise RedisConnectionError("connection down")
         totals: list[float] = []
@@ -299,7 +299,7 @@ async def begin_sync(index: int, step: Step, context: Context) -> Observation:
     context.sync_task = asyncio.create_task(
         context.limiter.periodic_sync_in_memory_spend_with_redis()
     )
-    await context.store.entered.wait()
+    _ = await context.store.entered.wait()
     return Observation(kind=step.kind, step=index)
 
 
@@ -307,9 +307,9 @@ async def end_sync(index: int, step: Step, context: Context) -> Observation:
     task = context.sync_task
     if task is None:
         raise ProbeError("invalid_request", "end_sync needs a begin_sync before it")
-    await context.store.read_done.wait()
+    _ = await context.store.read_done.wait()
     await asyncio.sleep(0)
-    task.cancel()
+    _ = task.cancel()
     with suppress(asyncio.CancelledError):
         await task
     context.sync_task = None
