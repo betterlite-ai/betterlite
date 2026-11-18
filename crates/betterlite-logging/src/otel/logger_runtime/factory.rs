@@ -73,7 +73,8 @@ pub(super) fn build_generic_otel_v2_logger(
     config: Settings,
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let provider = fan_out_provider_for(runtime, &config)?;
-    build_logger(runtime, config, BuildInputs::generic(&provider))
+    let inputs = BuildInputs::generic(&provider);
+    build_logger(runtime, config, inputs)
 }
 
 fn build_logger(

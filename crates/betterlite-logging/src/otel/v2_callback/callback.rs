@@ -98,7 +98,6 @@ pub struct V2Callback {
     pub error_info: ErrorInformationConfig,
 }
 
-// what B3853's callback owns once assembled: V2Callback keeps it whole, a B8250 wrapper owns the logger
 pub struct V2CallbackAssembly {
     pub provider: SdkTracerProvider,
     pub logger: OpenTelemetryV2,
@@ -267,7 +266,6 @@ impl CallbackLogger for V2Callback {
         self.logger.callback_name()
     }
 
-    // CustomLogger stores both flags on itself; the assembled logger carries what the factory passed
     fn turn_off_message_logging(&self) -> bool {
         self.logger.settings.turn_off_message_logging
     }

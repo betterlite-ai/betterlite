@@ -169,7 +169,7 @@ fn langfuse_built(
         provider,
         logger,
         recorder_providers,
-        error_info: _,
+        ..
     } = assembly;
     let inner = LangfuseOtel {
         inner: logger,

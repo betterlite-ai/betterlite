@@ -55,7 +55,7 @@ pub fn fan_out_provider(runtime: &LoggerRuntime) -> FanOutProvider {
 
 // attach_tenant_fan_out answers false on a repeat, which is the registry's idempotence, not an error
 fn attach_fan_out(runtime: &LoggerRuntime, configs: &[Settings], excluded: BTreeSet<String>) {
-    let mut registry = super::locked(&runtime.fan_out);
+    let mut registry = locked(&runtime.fan_out);
     let _attached = attach_tenant_fan_out(
         &mut registry,
         Arc::clone(&runtime.factories),
