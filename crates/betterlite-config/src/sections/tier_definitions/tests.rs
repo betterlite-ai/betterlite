@@ -408,8 +408,8 @@ fn the_loader_accepts_the_task_keys_as_supported() {
 }
 
 #[test]
-fn a_number_in_a_text_slot_is_a_load_error() {
-    only("        tier_labels:\n          SIMPLE: 3\n", &[]).unwrap_err();
+fn a_list_in_a_text_slot_is_a_load_error() {
+    only("        tier_labels:\n          SIMPLE: [Cheap]\n", &[]).unwrap_err();
 }
 
 #[test]
