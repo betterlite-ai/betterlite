@@ -1,13 +1,13 @@
 id: B9994
 milestone: R2 bug fixes
 title: Spend counter batch drops replies that predate a forget
-status: todo
+status: done
 depends_on: [B2316]
 file: tasks/B9994-spend-counter-forget-race.yaml
 covers: []
 parent: B070
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2450
