@@ -125,3 +125,64 @@ fn team_public_names_are_exempt_from_model_syntax() {
         &teams
     ));
 }
+
+#[test]
+fn catalog_aliases_supply_group_deployments() {
+    use betterlite_models::model_registration::JsonObject;
+    use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
+    use betterlite_router::deployment_identity::spec::DeploymentSpec;
+    use betterlite_router::model_catalog_lookup::alias::{AliasMap, AliasTarget};
+    use betterlite_router::model_catalog_lookup::lookup::CatalogLookup;
+    use betterlite_router::routing_groups::index::RoutingGroupIndex;
+
+    let mut catalog = DeploymentCatalog::default();
+    catalog.push(DeploymentSpec {
+        model_name: "internal".to_owned(),
+        litellm_params: serde_json::from_str(
+            r#"{"model":"openai/gpt-4o","use_litellm_proxy":true}"#,
+        )
+        .unwrap(),
+        model_info: JsonObject::new(),
+        extra: JsonObject::new(),
+    });
+    let aliases = AliasMap::from([(
+        "public".to_owned(),
+        AliasTarget::Name("internal".to_owned()),
+    )]);
+    let groups = RoutingGroupIndex::default();
+    let lookup = CatalogLookup {
+        catalog: &catalog,
+        model_group_alias: &aliases,
+        routing_groups: &groups,
+        inferred_provider: &|_| None,
+    };
+    let fixture = Fixture::new();
+    let context = fixture.context();
+    assert_eq!(
+        super::catalog_group_provider("public", Some(&lookup), &Settings::default(), &context)
+            .unwrap()
+            .as_deref(),
+        Some("litellm_proxy")
+    );
+    assert_eq!(
+        super::catalog_group_provider("missing", Some(&lookup), &Settings::default(), &context)
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        super::catalog_group_provider("public", None, &Settings::default(), &context).unwrap(),
+        None
+    );
+    assert_eq!(
+        super::catalog_group_provider("", Some(&lookup), &Settings::default(), &context).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn empty_groups_are_never_configured() {
+    let names = BTreeSet::from([String::new()]);
+    assert!(!super::configured_model_group("", &names, &names));
+    assert!(!super::configured_model_group("unlisted", &names, &names));
+    assert!(super::model_name_is_valid("openai/gpt-4o", &names, &names));
+}

@@ -54,5 +54,32 @@ pub fn model_name_is_valid(
         || betterlite_logging::spend_metadata::looks_like_model_name(model)
 }
 
-#[cfg(test)]
+#[derive(Debug, thiserror::Error)]
+pub enum AttributionError {
+    #[error(transparent)]
+    Lookup(#[from] betterlite_router::model_catalog_lookup::error::LookupError),
+}
+
+pub fn catalog_group_provider(
+    model_group: &str,
+    catalog: Option<&betterlite_router::model_catalog_lookup::lookup::CatalogLookup<'_>>,
+    settings: &SpendAttributionSettings,
+    resolution: &ResolutionContext<'_>,
+) -> Result<Option<String>, AttributionError> {
+    let Some(catalog) = catalog.filter(|_| !model_group.is_empty()) else {
+        return Ok(None);
+    };
+    let rows = catalog.get_model_list(Some(model_group), None)?;
+    let deployments: Vec<_> = rows
+        .iter()
+        .map(|row| DeploymentIdentity::from_litellm_params(&row.litellm_params))
+        .collect();
+    Ok(model_group_provider(
+        model_group,
+        &deployments,
+        settings,
+        resolution,
+    ))
+}
+
 mod tests;

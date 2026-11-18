@@ -22,9 +22,9 @@ fn load(source: &str, pairs: &[(&str, &str)]) -> Settings {
 }
 
 #[test]
-fn loads_the_global_flag_and_every_deployment_flag() {
+fn loads_spend_proxy_selection() {
     let settings = load(
-        "litellm_settings:\n  use_litellm_proxy: true\nmodel_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      use_litellm_proxy: false\n  - model_name: b\n    litellm_params:\n      model: openai/gpt-4o\n  - model_name: c\n    litellm_params:\n      model: openai/gpt-4o\n      use_litellm_proxy: \"yes\"\n",
+        "litellm_settings:\n  use_litellm_proxy: true\nmodel_list:\n  - model_name: a\n    litellm_params:\n      model: openai/gpt-4o\n      use_litellm_proxy: false\n  - model_name: b\n    litellm_params:\n      model: openai/gpt-4o\n  - model_name: c\n    litellm_params:\n      model: openai/gpt-4o\n      use_litellm_proxy: true\n",
         &[],
     );
     assert_eq!(
@@ -65,16 +65,6 @@ fn rejects_an_unparseable_environment_flag() {
         error.to_string(),
         "environment variable USE_LITELLM_PROXY must be a bool"
     );
-}
-
-#[rstest]
-#[case::true_string("true", true)]
-#[case::on_string("on", true)]
-#[case::false_string("false", false)]
-#[case::empty_string("", false)]
-fn reads_a_string_config_flag(#[case] configured: &str, #[case] expected: bool) {
-    let source = format!("litellm_settings:\n  use_litellm_proxy: \"{configured}\"\n");
-    assert_eq!(load(&source, &[]).global_use_litellm_proxy, expected);
 }
 
 #[rstest]

@@ -8,24 +8,7 @@ pub fn extract_usage_for_ocr_call(
     usage_info: Option<&Json>,
     attribute_usage_info: Option<&Json>,
 ) -> JsonObject {
-    let resolved = match usage_info {
-        Some(Json::Bool(true)) => usage_info,
-        Some(Json::Number(number)) if number.as_f64().is_none_or(|value| value != 0.0_f64) => {
-            usage_info
-        }
-        Some(Json::Text(text)) if !text.is_empty() => usage_info,
-        Some(Json::List(items)) if !items.is_empty() => usage_info,
-        Some(Json::Object(entries)) if !entries.is_empty() => usage_info,
-        Some(
-            Json::Null
-            | Json::Bool(false)
-            | Json::Number(_)
-            | Json::Text(_)
-            | Json::List(_)
-            | Json::Object(_),
-        )
-        | None => attribute_usage_info.or(usage_info),
-    };
+    let resolved = preferred_usage(usage_info, attribute_usage_info);
     match resolved {
         None | Some(Json::Null) => JsonObject::new(),
         Some(Json::Object(entries)) => {
@@ -46,6 +29,38 @@ pub fn extract_usage_for_ocr_call(
             );
             usage
         }
+    }
+}
+
+fn preferred_usage<'usage>(
+    usage_info: Option<&'usage Json>,
+    attribute_usage_info: Option<&'usage Json>,
+) -> Option<&'usage Json> {
+    match usage_info {
+        Some(Json::Bool(true)) => usage_info,
+        Some(Json::Number(number))
+            if number
+                .as_str()
+                .split(['e', 'E'])
+                .next()
+                .is_some_and(|mantissa| {
+                    mantissa.bytes().any(|digit| matches!(digit, b'1'..=b'9'))
+                }) =>
+        {
+            usage_info
+        }
+        Some(Json::Text(text)) if !text.is_empty() => usage_info,
+        Some(Json::List(items)) if !items.is_empty() => usage_info,
+        Some(Json::Object(entries)) if !entries.is_empty() => usage_info,
+        Some(
+            Json::Null
+            | Json::Bool(false)
+            | Json::Number(_)
+            | Json::Text(_)
+            | Json::List(_)
+            | Json::Object(_),
+        )
+        | None => attribute_usage_info.or(usage_info),
     }
 }
 

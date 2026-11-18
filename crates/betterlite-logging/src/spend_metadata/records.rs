@@ -1,4 +1,6 @@
 use betterlite_models::decisions::Json;
+use rust_decimal::Decimal;
+use rust_decimal::serde::arbitrary_precision_option;
 use serde::{Deserialize, Serialize};
 use serde_with::rust::double_option as nullable;
 
@@ -60,14 +62,16 @@ pub struct SpendLogsMetadata {
     pub usage_object: Option<Json>,
     pub model_map_information: Option<Json>,
     pub cold_storage_object_key: Option<String>,
-    pub litellm_overhead_time_ms: Option<f64>,
+    #[serde(default, with = "arbitrary_precision_option")]
+    pub litellm_overhead_time_ms: Option<Decimal>,
     pub attempted_retries: Option<i64>,
     pub max_retries: Option<i64>,
     pub attempted_fallbacks: Option<i64>,
     pub original_model_group: Option<String>,
     pub cost_breakdown: Option<Json>,
     pub compression_savings: Option<Json>,
-    pub autorouter_savings: Option<f64>,
+    #[serde(default, with = "arbitrary_precision_option")]
+    pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<Json>,
     pub litellm_gateway_injected_cache: Option<String>,
     pub router_metadata: Option<SpendLogsRouterMetadata>,

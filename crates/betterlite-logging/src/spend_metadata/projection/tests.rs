@@ -3,6 +3,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use serde_json::Value;
 
 use super::{SpendMetadataArguments, project_spend_logs_metadata};
@@ -45,7 +46,7 @@ fn the_absent_mapping_builds_the_constructor_payload() {
     let mut arguments = SpendMetadataArguments::default();
     arguments.cold_storage_object_key = Some("cold".to_owned());
     arguments.litellm_call_id = Some("call".to_owned());
-    arguments.autorouter_savings = Some(1.5);
+    arguments.autorouter_savings = Some(Decimal::new(15, 1));
     arguments.autorouter_savings_estimate = Some(object(r#"{"saved":1}"#));
     arguments.baseline_observation = Some("baseline".to_owned());
     arguments.router_metadata = Some(SpendLogsRouterMetadata {
@@ -176,10 +177,10 @@ fn the_arguments_are_projected_into_the_record() {
     arguments.usage_object = Some(object(r#"{"total_tokens":4}"#));
     arguments.model_map_information = Some(object(r#"{"model":"mapped"}"#));
     arguments.cold_storage_object_key = Some("cold".to_owned());
-    arguments.litellm_overhead_time_ms = Some(2.25);
+    arguments.litellm_overhead_time_ms = Some(Decimal::new(225, 2));
     arguments.cost_breakdown = Some(object(r#"{"total":0.5}"#));
     arguments.litellm_call_id = Some("call".to_owned());
-    arguments.autorouter_savings = Some(0.75);
+    arguments.autorouter_savings = Some(Decimal::new(75, 2));
     arguments.autorouter_savings_estimate = Some(object(r#"{"saved":2}"#));
     arguments.baseline_observation = Some("baseline".to_owned());
     arguments.router_metadata = Some(SpendLogsRouterMetadata::default());
@@ -394,5 +395,16 @@ fn guardrail_information_is_sanitized_unless_bodies_are_stored() {
     assert_eq!(
         stored["guardrail_information"][0]["guardrail_response"],
         "secret"
+    );
+}
+
+#[test]
+fn savings_preserve_decimal_precision() {
+    let arguments: SpendMetadataArguments =
+        serde_json::from_str(r#"{"autorouter_savings":0.1234567890123456789012345678}"#).unwrap();
+    let value = serialized(&project(Some(&object("{}")), arguments, true));
+    assert_eq!(
+        value["autorouter_savings"].to_string(),
+        "0.1234567890123456789012345678"
     );
 }

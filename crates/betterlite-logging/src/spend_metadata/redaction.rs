@@ -59,3 +59,6 @@ fn is_cli_session_alias(value: &str, key_alias: Option<&str>) -> bool {
     };
     value.starts_with(CLI_SESSION_VALUE_PREFIX) && value == alias
 }
+
+#[path = "redaction/tests.rs"]
+mod tests;

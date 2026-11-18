@@ -61,6 +61,31 @@ const EMPTY: &str =
 #[case::truthy_number_is_not_an_object(Some("1"), None, EMPTY)]
 #[case::empty_list_is_not_an_object(Some("[]"), None, EMPTY)]
 #[case::falsy_attribute_is_not_an_object(None, Some("0"), EMPTY)]
+#[case::truthy_text(Some(r#""pages""#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::empty_text(
+    Some(r#""""#),
+    Some(r#"{"pages_processed":3}"#),
+    r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
+)]
+#[case::truthy_list(Some(r#"[1]"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::empty_list_fallback(
+    Some(r#"[]"#),
+    Some(r#"{"pages_processed":3}"#),
+    r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
+)]
+#[case::true_usage(Some(r#"true"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::false_usage(
+    Some(r#"false"#),
+    Some(r#"{"pages_processed":3}"#),
+    r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
+)]
+#[case::truthy_number_fallback(Some(r#"2"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::tiny_number(Some(r#"1e-999"#), Some(r#"{"pages_processed":3}"#), EMPTY)]
+#[case::zero_with_exponent(
+    Some(r#"0e99"#),
+    Some(r#"{"pages_processed":3}"#),
+    r#"{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0,"pages_processed":3}"#
+)]
 fn extracts_pages_instead_of_tokens(
     #[case] usage_info: Option<&str>,
     #[case] attribute_usage_info: Option<&str>,

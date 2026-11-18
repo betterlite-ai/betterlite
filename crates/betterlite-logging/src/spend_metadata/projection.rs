@@ -1,5 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rust_decimal::Decimal;
+use rust_decimal::serde::arbitrary_precision_option;
 use serde::Deserialize;
 
 use super::records::{SpendLogsMetadata, SpendLogsRouterMetadata};
@@ -50,10 +52,12 @@ pub struct SpendMetadataArguments {
     pub usage_object: Option<JsonObject>,
     pub model_map_information: Option<JsonObject>,
     pub cold_storage_object_key: Option<String>,
-    pub litellm_overhead_time_ms: Option<f64>,
+    #[serde(default, with = "arbitrary_precision_option")]
+    pub litellm_overhead_time_ms: Option<Decimal>,
     pub cost_breakdown: Option<JsonObject>,
     pub litellm_call_id: Option<String>,
-    pub autorouter_savings: Option<f64>,
+    #[serde(default, with = "arbitrary_precision_option")]
+    pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<JsonObject>,
     pub baseline_observation: Option<String>,
     pub router_metadata: Option<SpendLogsRouterMetadata>,
@@ -69,6 +73,13 @@ pub fn project_spend_logs_metadata(
     let Some(metadata) = metadata else {
         return Ok(absent_metadata(arguments));
     };
+    let mut record = project_identity(metadata)?;
+    supply_provenance(&mut record, &arguments);
+    enrich_record(&mut record, arguments, policy);
+    Ok(record)
+}
+
+fn project_identity(metadata: &JsonObject) -> Result<SpendLogsMetadata, SpendMetadataError> {
     let mut fields = metadata.clone();
     let raw_key = fields.shift_remove(USER_API_KEY_FIELD);
     for field in OVERRIDDEN_FIELDS {
@@ -90,6 +101,14 @@ pub fn project_spend_logs_metadata(
         trusted_redaction(metadata, raw_key.as_ref()),
         metadata_text(metadata, "user_api_key_alias"),
     );
+    Ok(record)
+}
+
+fn enrich_record(
+    record: &mut SpendLogsMetadata,
+    arguments: SpendMetadataArguments,
+    policy: &SpendSanitizePolicy,
+) {
     record.applied_guardrails = arguments.applied_guardrails;
     record.batch_models = arguments.batch_models;
     record.batch_successful_requests = arguments.batch_successful_requests;
@@ -109,31 +128,39 @@ pub fn project_spend_logs_metadata(
     };
     record.usage_object = arguments.usage_object.map(Json::Object);
     record.model_map_information = arguments.model_map_information.map(Json::Object);
-    record.cold_storage_object_key = arguments.cold_storage_object_key;
     record.litellm_overhead_time_ms = arguments.litellm_overhead_time_ms;
     record.cost_breakdown = arguments.cost_breakdown.map(Json::Object);
-    record.litellm_call_id = arguments.litellm_call_id;
+}
+
+fn supply_provenance(record: &mut SpendLogsMetadata, arguments: &SpendMetadataArguments) {
+    record
+        .cold_storage_object_key
+        .clone_from(&arguments.cold_storage_object_key);
+    record
+        .litellm_call_id
+        .clone_from(&arguments.litellm_call_id);
     record.autorouter_savings = arguments.autorouter_savings;
-    record.autorouter_savings_estimate = arguments.autorouter_savings_estimate.map(Json::Object);
-    record.baseline_observation = arguments.baseline_observation;
-    record.router_metadata = arguments.router_metadata;
-    record.azure_spillover = arguments.azure_spillover.map(Json::Object);
+    record.autorouter_savings_estimate = arguments
+        .autorouter_savings_estimate
+        .clone()
+        .map(Json::Object);
+    record
+        .baseline_observation
+        .clone_from(&arguments.baseline_observation);
+    record
+        .router_metadata
+        .clone_from(&arguments.router_metadata);
+    record.azure_spillover = arguments.azure_spillover.clone().map(Json::Object);
     record.used_client_oauth_token = arguments.used_client_oauth_token;
-    Ok(record)
 }
 
 // The metadata=None constructor: success status, no agent fields, and only the enrichment arguments the source keeps.
 fn absent_metadata(arguments: SpendMetadataArguments) -> SpendLogsMetadata {
-    let mut record = SpendLogsMetadata::default();
-    record.status = Some("success".to_owned());
-    record.cold_storage_object_key = arguments.cold_storage_object_key;
-    record.litellm_call_id = arguments.litellm_call_id;
-    record.autorouter_savings = arguments.autorouter_savings;
-    record.autorouter_savings_estimate = arguments.autorouter_savings_estimate.map(Json::Object);
-    record.baseline_observation = arguments.baseline_observation;
-    record.router_metadata = arguments.router_metadata;
-    record.azure_spillover = arguments.azure_spillover.map(Json::Object);
-    record.used_client_oauth_token = arguments.used_client_oauth_token;
+    let mut record = SpendLogsMetadata {
+        status: Some("success".to_owned()),
+        ..SpendLogsMetadata::default()
+    };
+    supply_provenance(&mut record, &arguments);
     record
 }
 
