@@ -28,8 +28,7 @@ use betterlite_server::team_request_contracts::team_list::{TeamListEntry, TeamLi
 use betterlite_server::team_request_contracts::update::{PatchTeamRequest, UpdateTeamRequest};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
-use serde::Deserialize;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 #[derive(Debug, Deserialize)]
@@ -113,7 +112,10 @@ impl Helper for Op {
     }
 }
 
-fn invalid(message: impl Display) -> Box<HelperError> {
+fn invalid<E>(message: E) -> Box<HelperError>
+where
+    E: Display,
+{
     Box::new(HelperError {
         class: "ValidationError".to_owned(),
         status: None,
@@ -148,7 +150,10 @@ const fn clocks() -> ResetClocks<'static> {
 
 fn reference_answer(document: &JsonData) -> HelperResult {
     let reference = TeamMemberRef::from_value(document).map_err(invalid)?;
-    Ok(json!({"user_id": reference.user_id, "user_email": reference.user_email}))
+    Ok(json!({
+        "user_id": reference.user_id,
+        "user_email": reference.user_email,
+    }))
 }
 
 fn budget_patch_answer(document: &JsonData, database: &TimeZoneDatabase) -> HelperResult {
@@ -161,53 +166,39 @@ fn budget_patch_answer(document: &JsonData, database: &TimeZoneDatabase) -> Help
     .map_err(invalid)?;
     let supplied_fields = serde_json::to_value(&patch.supplied_fields)?;
     let dump = serde_json::to_value(&patch)?;
-    Ok(json!({
-        "supplied_fields": supplied_fields,
-        "dump": dump,
-    }))
+    Ok(json!({ "supplied_fields": supplied_fields, "dump": dump }))
 }
 
 fn bulk_update_answer(document: &JsonData, database: &TimeZoneDatabase) -> HelperResult {
-    let request = BulkBudgetUpdateRequest::from_value(
+    answered(BulkBudgetUpdateRequest::from_value(
         document,
         &BudgetResetSettings::default(),
         clocks(),
         database,
-    )
-    .map_err(invalid)?;
-    let output = serde_json::to_value(request)?;
-    Ok(output)
+    ))
 }
 
 fn team_list_answer(document: &JsonData) -> HelperResult {
     let response = TeamListResponse::from_value(document).map_err(invalid)?;
-    let teams: Vec<Value> = response.teams.iter().map(entry_answer).collect();
     Ok(json!({
-        "teams": teams, "total": response.total, "page": response.page,
-        "page_size": response.page_size, "total_pages": response.total_pages,
-    }))
+        "teams": response.teams.iter().map(entry_answer).collect::<Vec<Value>>(),
+        "total": response.total, "page": response.page,
+        "page_size": response.page_size, "total_pages": response.total_pages, }))
 }
 
 fn entry_answer(entry: &TeamListEntry) -> Value {
     match entry {
         TeamListEntry::Enriched(item) => json!({
-            "kind": "enriched",
-            "team_id": item.team.fields.base.team_id,
-            "members_count": item.members_count,
-            "keys_count": item.keys_count,
+            "kind": "enriched", "team_id": item.team.fields.base.team_id,
+            "members_count": item.members_count, "keys_count": item.keys_count,
             "access_group_models": item.access_group_models,
             "access_group_mcp_server_ids": item.access_group_mcp_server_ids,
             "access_group_agent_ids": item.access_group_agent_ids,
         }),
-        TeamListEntry::Live(team) => json!({
-            "kind": "live",
-            "team_id": team.fields.base.team_id,
-        }),
+        TeamListEntry::Live(team) => json!({ "kind": "live", "team_id": team.fields.base.team_id }),
         TeamListEntry::Deleted(team) => json!({
-            "kind": "deleted",
-            "team_id": team.team.fields.base.team_id,
-            "deleted_at": team.audit.deleted_at,
-            "deleted_by": team.audit.deleted_by,
+            "kind": "deleted", "team_id": team.team.fields.base.team_id,
+            "deleted_at": team.audit.deleted_at, "deleted_by": team.audit.deleted_by,
             "id": team.audit.id,
         }),
     }
@@ -216,13 +207,9 @@ fn entry_answer(entry: &TeamListEntry) -> Value {
 fn member_info_answer(document: &JsonData) -> HelperResult {
     let info = decode_request::<TeamMemberInfoResponse>(document).map_err(invalid)?;
     Ok(json!({
-        "user_id": info.membership.user_id,
-        "team_id": info.membership.team_id,
-        "budget_id": info.membership.budget_id,
-        "role": info.role,
-        "user_email": info.user_email,
-        "team_alias": info.team_alias,
-    }))
+        "user_id": info.membership.user_id, "team_id": info.membership.team_id,
+        "budget_id": info.membership.budget_id, "role": info.role,
+        "user_email": info.user_email, "team_alias": info.team_alias, }))
 }
 
 fn bulk_add_answer(document: &JsonData) -> HelperResult {
@@ -232,12 +219,14 @@ fn bulk_add_answer(document: &JsonData) -> HelperResult {
         .as_ref()
         .map(|list| list.iter().map(member_answer).collect::<Vec<Value>>());
     Ok(json!({
-        "team_id": request.team_id,
-        "members": members,
-        "all_users": request.all_users,
-        "max_budget_in_team": request.max_budget_in_team,
+        "team_id": request.team_id, "members": members,
+        "all_users": request.all_users, "max_budget_in_team": request.max_budget_in_team,
     }))
 }
 fn member_answer(member: &Member) -> Value {
-    json!({"user_id": member.base.user_id, "user_email": member.base.user_email, "role": member.role})
+    json!({
+        "user_id": member.base.user_id,
+        "user_email": member.base.user_email,
+        "role": member.role,
+    })
 }
