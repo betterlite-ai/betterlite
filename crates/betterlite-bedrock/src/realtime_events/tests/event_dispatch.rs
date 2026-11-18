@@ -90,6 +90,10 @@ fn payload_errors() {
         let error = decode_realtime_native_event(message.as_bytes()).expect_err("an array payload");
         assert!(matches!(error, EventError::Payload { field: actual, .. } if actual == field));
     }
+    scalar_payloads();
+}
+
+fn scalar_payloads() {
     assert!(matches!(
         decode_realtime_native_event(br#"{"event":{"contentStart":3}}"#),
         Err(EventError::Payload {
@@ -151,9 +155,9 @@ fn malformed_message() {
     assert_eq!(response, expected);
     assert!(log.text().contains(r#"Invalid JSON message: {"event": "#));
     let secret_message = format!(r#"{{"secret":"{SECRET}"#);
-    let response = support::transform(&mut session, &ids, &secret_message, &input)
+    let redacted = support::transform(&mut session, &ids, &secret_message, &input)
         .expect("a syntax error is a warning");
-    assert_eq!(support::events(&response).len(), 0);
+    assert_eq!(support::events(&redacted).len(), 0);
     assert!(log.text().contains("REDACTED"));
     assert!(!log.text().contains(SECRET));
     let truncated = format!(r#"{{"broken":{}"#, "x".repeat(250));
@@ -201,73 +205,79 @@ fn branch_priority() {
         Some(r#"{"configured": true}"#)
     );
 
-    let events = support::transform_events(
+    let content_events = support::transform_events(
         r#"{"event":{"contentStart":{"role":"ASSISTANT","type":"TEXT"},"textOutput":{"content":"x"}}}"#,
         &support::input(),
     );
-    assert_eq!(events.len(), 3);
-    assert_eq!(support::event_type(&events[0]), Some("response.created"));
+    assert_eq!(content_events.len(), 3);
+    assert_eq!(
+        support::event_type(&content_events[0]),
+        Some("response.created")
+    );
 
-    let events = support::transform_events(
+    let text_events = support::transform_events(
         r#"{"event":{"textOutput":{"content":"x"},"audioOutput":{"content":"y"}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 1);
-    assert_eq!(support::event_type(&events[0]), Some("response.text.delta"));
+    assert_eq!(text_events.len(), 1);
+    assert_eq!(
+        support::event_type(&text_events[0]),
+        Some("response.text.delta")
+    );
 }
 
 fn speech_priority() {
     let input = support::input_with_ids("item", "resp", "conv");
-    let events = support::transform_events(
+    let audio_events = support::transform_events(
         r#"{"event":{"audioOutput":{"content":"y"},"contentEnd":{"stopReason":"END_TURN"}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 1);
+    assert_eq!(audio_events.len(), 1);
     assert_eq!(
-        support::event_type(&events[0]),
+        support::event_type(&audio_events[0]),
         Some("response.audio.delta")
     );
 
-    let events = support::transform_events(
+    let start_events = support::transform_events(
         r#"{"event":{"userSpeechStart":{},"userSpeechEnd":{}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 1);
+    assert_eq!(start_events.len(), 1);
     assert_eq!(
-        support::event_type(&events[0]),
+        support::event_type(&start_events[0]),
         Some("input_audio_buffer.speech_started")
     );
 
-    let events = support::transform_events(
+    let end_events = support::transform_events(
         r#"{"event":{"userSpeechEnd":{},"usageEvent":{"totalInputTokens":5}}}"#,
         &input,
     );
     assert_eq!(
-        support::event_type(&events[0]),
+        support::event_type(&end_events[0]),
         Some("input_audio_buffer.speech_stopped")
     );
 }
 
 fn tool_and_end_priority() {
     let input = support::input_with_ids("item", "resp", "conv");
-    let events = support::transform_events(
+    let usage_events = support::transform_events(
         r#"{"event":{"usageEvent":{"totalInputTokens":5},"toolUse":{"toolUseId":"call","toolName":"lookup"}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 0);
+    assert_eq!(usage_events.len(), 0);
 
-    let events = support::transform_events(
+    let tool_events = support::transform_events(
         r#"{"event":{"toolUse":{"toolUseId":"call","toolName":"lookup"},"promptEnd":{}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 1);
+    assert_eq!(tool_events.len(), 1);
     assert_eq!(
-        support::event_type(&events[0]),
+        support::event_type(&tool_events[0]),
         Some("response.function_call_arguments.done")
     );
 
-    let events =
+    let end_events =
         support::transform_events(r#"{"event":{"promptEnd":{},"completionEnd":{}}}"#, &input);
-    assert_eq!(events.len(), 1);
-    assert_eq!(support::event_type(&events[0]), Some("response.done"));
+    assert_eq!(end_events.len(), 1);
+    assert_eq!(support::event_type(&end_events[0]), Some("response.done"));
 }

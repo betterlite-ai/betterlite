@@ -8,6 +8,7 @@ use betterlite_models::decisions::Json;
 use std::collections::VecDeque;
 use std::io;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 pub(super) enum Received {
     Text(String),
@@ -55,13 +56,12 @@ impl RealtimeClientWebSocket for FakeClient {
 
     async fn send_text(&self, data: String) -> Result<(), ClientError<io::Error>> {
         self.sent.lock().unwrap().push(data);
-        match &self.send_error {
-            Some(message) => Err(ClientError {
+        self.send_error.as_ref().map_or(Ok(()), |message| {
+            Err(ClientError {
                 message: message.clone(),
                 source: None,
-            }),
-            None => Ok(()),
-        }
+            })
+        })
     }
 
     async fn close(&self, _code: u16, _reason: Option<String>) {}
@@ -96,7 +96,7 @@ impl BedrockOutputStream for FakeOutput {
 pub(super) struct FakeStream {
     pub(super) input: FakeInput,
     pub(super) error: Option<String>,
-    pub(super) awaited: Mutex<u32>,
+    pub(super) awaited: AtomicU32,
 }
 
 impl FakeStream {
@@ -104,12 +104,12 @@ impl FakeStream {
         Self {
             input: FakeInput,
             error: None,
-            awaited: Mutex::new(0),
+            awaited: AtomicU32::new(0),
         }
     }
 
     pub(super) fn awaited(&self) -> u32 {
-        *self.awaited.lock().unwrap()
+        self.awaited.load(Ordering::SeqCst)
     }
 }
 
@@ -125,14 +125,16 @@ impl BedrockBidirectionalStream for FakeStream {
         &self,
     ) -> Result<(Json, Box<dyn BedrockOutputStream<Error = io::Error>>), StreamError<io::Error>>
     {
-        *self.awaited.lock().unwrap() += 1;
-        match &self.error {
-            Some(message) => Err(StreamError {
-                message: message.clone(),
-                source: None,
-            }),
-            None => Ok((Json::Null, Box::new(FakeOutput))),
-        }
+        self.awaited.fetch_add(1, Ordering::SeqCst);
+        self.error.as_ref().map_or_else(
+            || Ok((Json::Null, Box::new(FakeOutput))),
+            |message| {
+                Err(StreamError {
+                    message: message.clone(),
+                    source: None,
+                })
+            },
+        )
     }
 }
 

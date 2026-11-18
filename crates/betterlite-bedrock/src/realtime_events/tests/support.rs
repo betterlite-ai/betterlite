@@ -122,9 +122,8 @@ pub(super) fn events(response: &RealtimeResponseTypedDict) -> &[Json] {
 }
 
 pub(super) fn event_type(event: &Json) -> Option<&str> {
-    json_dict(event)
-        .and_then(|fields| fields.get("type"))
-        .and_then(|value| json_str(value))
+    let value = json_dict(event).and_then(|fields| fields.get("type"))?;
+    json_str(value)
 }
 
 pub(super) fn json(text: &str) -> Json {

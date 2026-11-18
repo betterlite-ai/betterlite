@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::error::Error as _;
 use std::io;
 
 use betterlite_models::decisions::Json;
@@ -19,11 +19,10 @@ pub(super) async fn session_update_first() {
 async fn client_messages() {
     let (log, _guard) = support::capture();
     let client = transport::FakeClient::new();
-    {
-        let mut received = client.received.lock().unwrap();
-        received.push_back(transport::Received::Text("first".to_owned()));
-        received.push_back(transport::Received::Error(format!("{SECRET} died")));
-    }
+    let mut received = client.received.lock().unwrap();
+    received.push_back(transport::Received::Text("first".to_owned()));
+    received.push_back(transport::Received::Error(format!("{SECRET} died")));
+    drop(received);
     let redactor = support::redactor();
     let mut messages: ClientMessages<'_, io::Error> = ClientMessages {
         client: &client,
@@ -96,9 +95,11 @@ pub(super) fn pending_session_update() {
 }
 
 fn committed_errors() {
-    let mut scope = EventScope::default();
-    scope.session_committed = Json::Bool(true);
-    scope.committed_failure = Json::Text("boom".to_owned());
+    let mut scope = EventScope {
+        pending_session_update: Json::Null,
+        session_committed: Json::Bool(true),
+        committed_failure: Json::Text("boom".to_owned()),
+    };
     let error = scope.pending_session_update().expect_err("committed");
     assert_eq!(error.status_code, 400);
     assert_eq!(
@@ -114,14 +115,29 @@ fn committed_errors() {
         "Bedrock realtime session already committed to a provider stream; it cannot be replayed"
     );
     scope.committed_failure = Json::Null;
-    assert!(scope.pending_session_update().is_err());
+    assert_eq!(
+        scope
+            .pending_session_update()
+            .expect_err("committed")
+            .status_code,
+        400
+    );
     scope.committed_failure = support::json(r#"{"boom":1}"#);
-    assert!(scope.pending_session_update().is_err());
+    assert_eq!(
+        scope
+            .pending_session_update()
+            .expect_err("committed")
+            .status_code,
+        400
+    );
 }
 
 fn identity_only() {
-    let mut scope = EventScope::default();
-    scope.pending_session_update = Json::Text("update".to_owned());
+    let mut scope = EventScope {
+        pending_session_update: Json::Text("update".to_owned()),
+        session_committed: Json::Null,
+        committed_failure: Json::Null,
+    };
     let not_committed = [
         Json::Bool(false),
         support::json("1"),
@@ -139,7 +155,13 @@ fn identity_only() {
         );
     }
     scope.session_committed = support::json("1");
-    assert!(scope.pending_session_update().is_ok());
+    assert_eq!(
+        scope
+            .pending_session_update()
+            .expect("not committed")
+            .as_deref(),
+        Some("update")
+    );
 }
 
 fn pending_reads() {
@@ -162,5 +184,11 @@ fn pending_reads() {
     scope.commit();
     assert_eq!(scope.pending_session_update, Json::Null);
     assert_eq!(scope.session_committed, Json::Bool(true));
-    assert!(scope.pending_session_update().is_err());
+    assert_eq!(
+        scope
+            .pending_session_update()
+            .expect_err("committed")
+            .status_code,
+        400
+    );
 }

@@ -1,8 +1,11 @@
-use betterlite_core::api::realtime_contracts::events::AllDeltaType;
+use betterlite_core::api::realtime_contracts::events::{
+    AllDeltaType, RealtimeResponseTransformInput,
+};
 use betterlite_models::decisions::Json;
 
 use super::support;
 use crate::realtime_events::decode::json_dict;
+use crate::realtime_session::RealtimeSession;
 
 pub(super) fn native_session_and_state() {
     session_start_marker();
@@ -71,7 +74,7 @@ fn session_start_marker() {
     assert_eq!(response.current_response_id.as_deref(), Some("resp"));
     assert_eq!(response.current_conversation_id.as_deref(), Some("conv"));
     assert_eq!(response.current_delta_chunks, input.current_delta_chunks);
-    let response = support::transform(
+    let fresh = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"sessionStart":{}}}"#,
@@ -79,7 +82,7 @@ fn session_start_marker() {
     )
     .expect("a session start");
     assert_eq!(
-        response.session_configuration_request.as_deref(),
+        fresh.session_configuration_request.as_deref(),
         Some(r#"{"configured": true}"#)
     );
 }
@@ -126,16 +129,16 @@ fn user_transcript_deltas() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
     let input = support::input_with_ids("item", "resp", "conv");
-    let response = support::transform(
+    let started = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"contentStart":{"role":"USER","type":"TEXT"}}}"#,
         &input,
     )
     .expect("a user content start");
-    assert_eq!(support::events(&response).len(), 0);
+    assert_eq!(support::events(&started).len(), 0);
     assert!(session.transcript.active);
-    let response = support::transform(
+    let hello = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"textOutput":{"content":"hello"}}}"#,
@@ -143,28 +146,41 @@ fn user_transcript_deltas() {
     )
     .expect("a transcript delta");
     assert_eq!(
-        support::event_type(&support::events(&response)[0]),
+        support::event_type(&support::events(&hello)[0]),
         Some("conversation.item.input_audio_transcription.delta")
     );
     assert_eq!(session.transcript.buffer, "hello");
-    let response = support::transform(&mut session, &ids, r#"{"event":{"textOutput":{}}}"#, &input)
+    let empty = support::transform(&mut session, &ids, r#"{"event":{"textOutput":{}}}"#, &input)
         .expect("an empty transcript delta");
     assert_eq!(
-        support::event_type(&support::events(&response)[0]),
+        support::event_type(&support::events(&empty)[0]),
         Some("conversation.item.input_audio_transcription.delta")
     );
     assert_eq!(session.transcript.buffer, "hello");
     let transcript_id = session.transcript.item_id.clone();
     let stage = session.transcript.generation_stage.clone();
-    // An audioOutput during an active transcription still reaches the client as an audio delta
-    let response = support::transform(
-        &mut session,
-        &ids,
+    transcript_audio(&mut session, &ids, &input);
+    assert!(session.transcript.active);
+    assert_eq!(session.transcript.buffer, "hello");
+    assert_eq!(session.transcript.item_id, transcript_id);
+    assert_eq!(session.transcript.generation_stage, stage);
+    transcript_end(&mut session, &ids, &input);
+}
+
+// An audioOutput during an active transcription still reaches the client as an audio delta
+fn transcript_audio(
+    session: &mut RealtimeSession,
+    ids: &support::CountingIds,
+    input: &RealtimeResponseTransformInput,
+) {
+    let audio = support::transform(
+        session,
+        ids,
         r#"{"event":{"audioOutput":{"content":"YXVkaW8="}}}"#,
-        &input,
+        input,
     )
     .expect("an audio delta during a transcript");
-    let events = support::events(&response);
+    let events = support::events(&audio);
     assert_eq!(events.len(), 1);
     assert_eq!(
         support::event_type(&events[0]),
@@ -177,21 +193,24 @@ fn user_transcript_deltas() {
         delta.get("response_id"),
         Some(&Json::Text("resp".to_owned()))
     );
-    assert!(session.transcript.active);
-    assert_eq!(session.transcript.buffer, "hello");
-    assert_eq!(response.current_delta_chunks, input.current_delta_chunks);
-    assert_eq!(session.transcript.item_id, transcript_id);
-    assert_eq!(session.transcript.generation_stage, stage);
-    let response = support::transform(
-        &mut session,
-        &ids,
+    assert_eq!(audio.current_delta_chunks, input.current_delta_chunks);
+}
+
+fn transcript_end(
+    session: &mut RealtimeSession,
+    ids: &support::CountingIds,
+    input: &RealtimeResponseTransformInput,
+) {
+    let ended = support::transform(
+        session,
+        ids,
         r#"{"event":{"contentEnd":{"stopReason":"END_TURN"}}}"#,
-        &input,
+        input,
     )
     .expect("a transcript end");
-    assert_eq!(support::events(&response).len(), 1);
+    assert_eq!(support::events(&ended).len(), 1);
     assert_eq!(
-        support::event_type(&support::events(&response)[0]),
+        support::event_type(&support::events(&ended)[0]),
         Some("conversation.item.input_audio_transcription.completed")
     );
     assert!(!session.transcript.active);
@@ -230,17 +249,20 @@ fn speculative_transcript() {
 
 fn inactive_text_output() {
     let input = support::input_with_ids("item", "resp", "conv");
-    let events = support::transform_events(
+    let with_ids = support::transform_events(
         r#"{"event":{"textOutput":{"content":"assistant"}}}"#,
         &input,
     );
-    assert_eq!(events.len(), 1);
-    assert_eq!(support::event_type(&events[0]), Some("response.text.delta"));
-    let events = support::transform_events(
+    assert_eq!(with_ids.len(), 1);
+    assert_eq!(
+        support::event_type(&with_ids[0]),
+        Some("response.text.delta")
+    );
+    let without_ids = support::transform_events(
         r#"{"event":{"textOutput":{"content":"assistant"}}}"#,
         &support::input(),
     );
-    assert_eq!(events.len(), 0);
+    assert_eq!(without_ids.len(), 0);
 }
 
 pub(super) fn transcript_content_end() {
@@ -261,24 +283,27 @@ pub(super) fn transcript_content_end() {
         &input,
     )
     .expect("a transcript delta");
-    let response = support::transform(
+    let ended = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
         &input,
     )
     .expect("a transcript end");
-    assert_eq!(support::events(&response).len(), 1);
+    assert_eq!(support::events(&ended).len(), 1);
     assert_eq!(
-        support::event_type(&support::events(&response)[0]),
+        support::event_type(&support::events(&ended)[0]),
         Some("conversation.item.input_audio_transcription.completed")
     );
     assert!(!session.transcript.active);
     assert!(session.transcript.buffer.is_empty());
+    closed_content_end(&input);
+}
 
+fn closed_content_end(input: &RealtimeResponseTransformInput) {
     let events = support::transform_events(
         r#"{"event":{"contentEnd":{"stopReason":"END_TURN"},"userSpeechStart":{}}}"#,
-        &input,
+        input,
     );
     assert_eq!(events.len(), 2);
     assert_eq!(

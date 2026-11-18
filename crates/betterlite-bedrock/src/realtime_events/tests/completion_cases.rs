@@ -1,4 +1,4 @@
-use betterlite_core::api::realtime_contracts::events::AllDeltaType;
+use betterlite_core::api::realtime_contracts::events::{AllDeltaType, RealtimeResponseTypedDict};
 use betterlite_models::decisions::Json;
 
 use super::support;
@@ -59,35 +59,39 @@ fn text_deltas_and_end_turn() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
     let mut input = support::input();
-    let response =
+    let started =
         support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
-    let response = support::transform(
+    input = support::next_input(&started);
+    let hello = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"textOutput":{"content":"Hello"}}}"#,
         &input,
     )
     .expect("a text delta");
-    assert_eq!(support::events(&response).len(), 1);
-    assert!(response.current_delta_chunks.is_some());
-    input = support::next_input(&response);
-    let response = support::transform(
+    assert_eq!(support::events(&hello).len(), 1);
+    assert!(hello.current_delta_chunks.is_some());
+    input = support::next_input(&hello);
+    let world = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"textOutput":{"content":" world"}}}"#,
         &input,
     )
     .expect("a text delta");
-    input = support::next_input(&response);
-    let response = support::transform(
+    input = support::next_input(&world);
+    let ended = support::transform(
         &mut session,
         &ids,
         r#"{"event":{"contentEnd":{"stopReason":"END_TURN"}}}"#,
         &input,
     )
     .expect("a content end");
-    let events = support::events(&response);
+    end_turn_events(&ended);
+}
+
+fn end_turn_events(response: &RealtimeResponseTypedDict) {
+    let events = support::events(response);
     assert_eq!(events.len(), 4);
     assert_eq!(support::event_type(&events[0]), Some("response.text.done"));
     let done = json_dict(&events[0]).expect("a text done object");
@@ -97,7 +101,7 @@ fn text_deltas_and_end_turn() {
     );
     assert_eq!(
         done.get("event_id"),
-        Some(&Json::Text(support::numbered("event", 7)))
+        Some(&Json::Text(support::numbered("event", 8)))
     );
     assert_eq!(
         support::event_type(&events[1]),
@@ -219,9 +223,9 @@ fn tool_use_output() {
         Some(&Json::Text(r#"{"city":"Paris"}"#.to_owned()))
     );
     assert!(log.text().contains("Tool use event: lookup (ID: call-1)"));
-    let response = support::transform(&mut session, &ids, message, &support::input())
+    let without_ids = support::transform(&mut session, &ids, message, &support::input())
         .expect("a tool use event without ids");
-    assert_eq!(support::events(&response).len(), 0);
+    assert_eq!(support::events(&without_ids).len(), 0);
     assert!(log.text().contains("Tool use event:  (ID: )"));
 }
 

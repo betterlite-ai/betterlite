@@ -35,12 +35,12 @@ fn mapped_classes() {
         ("ValidationException", 400),
     ];
     for (class_name, status) in expected {
-        let failure = Failure {
+        let provider_failure = Failure {
             class_name: class_name.to_owned(),
             message: "boom".to_owned(),
             source: None,
         };
-        let error = as_bedrock_error(failure);
+        let error = as_bedrock_error(provider_failure);
         match &error {
             ProviderStreamError::Bedrock {
                 message,
@@ -96,9 +96,10 @@ fn redaction() {
         source: None,
     };
     let error = raise_provider_failure(&mut scope, failure, &support::redactor());
+    // The raised error keeps the provider's message; the log line and the stored failure are what get redacted
     assert_eq!(
         error.to_string(),
-        "ThrottlingException: upstream said REDACTED"
+        format!("ThrottlingException: upstream said {SECRET}")
     );
     assert_eq!(
         scope.committed_failure,
@@ -110,11 +111,11 @@ fn redaction() {
     assert!(!log.text().contains(SECRET));
 
     let mut uncommitted = EventScope::default();
-    let failure = Failure {
+    let uncommitted_failure = Failure {
         class_name: "ValidationException".to_owned(),
         message: "bad".to_owned(),
         source: None,
     };
-    raise_provider_failure(&mut uncommitted, failure, &support::redactor());
+    raise_provider_failure(&mut uncommitted, uncommitted_failure, &support::redactor());
     assert_eq!(uncommitted.committed_failure, Json::Null);
 }

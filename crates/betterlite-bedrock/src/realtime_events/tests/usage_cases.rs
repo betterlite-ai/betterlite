@@ -1,3 +1,5 @@
+use betterlite_core::api::realtime_contracts::events::RealtimeResponseTypedDict;
+
 use super::support;
 use crate::realtime_events::decode::json_dict;
 use crate::realtime_events::error::EventError;
@@ -40,9 +42,9 @@ pub(super) fn usage_array_rejected() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
     let mut input = support::input();
-    let response =
+    let started =
         support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
+    input = support::next_input(&started);
     support::transform(&mut session, &ids, USAGE_EVENT, &input).expect("a usage event");
     let error = support::transform(&mut session, &ids, r#"{"event":{"usageEvent":[]}}"#, &input)
         .expect_err("an array usage event");
@@ -53,45 +55,39 @@ pub(super) fn usage_array_rejected() {
             ..
         }
     ));
-    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
+    let ended = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
         .expect("a prompt end");
-    let done = json_dict(&support::events(&response)[0]).expect("a response.done object");
-    let object = done
-        .get("response")
-        .and_then(json_dict)
-        .expect("a response object");
-    assert_eq!(object.get("usage"), Some(&support::json(USAGE_JSON)));
+    assert_usage(&ended, USAGE_JSON);
 }
 
 pub(super) fn usage_delta() {
     let ids = support::CountingIds::new();
     let mut session = support::new_session();
     let mut input = support::input();
-    let response =
+    let started =
         support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
+    input = support::next_input(&started);
     support::transform(&mut session, &ids, USAGE_EVENT, &input).expect("a usage event");
-    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
+    let ended = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
         .expect("a prompt end");
-    let events = support::events(&response);
+    assert_usage(&ended, USAGE_JSON);
+    input = support::next_input(&ended);
+    let restarted =
+        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
+    input = support::next_input(&restarted);
+    let ended_again =
+        support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
+            .expect("a prompt end");
+    assert_usage(&ended_again, ZERO_USAGE_JSON);
+}
+
+fn assert_usage(response: &RealtimeResponseTypedDict, expected: &str) {
+    let events = support::events(response);
     assert_eq!(events.len(), 1);
     let done = json_dict(&events[0]).expect("a response.done object");
     let object = done
         .get("response")
         .and_then(json_dict)
         .expect("a response object");
-    assert_eq!(object.get("usage"), Some(&support::json(USAGE_JSON)));
-    input = support::next_input(&response);
-    let response =
-        support::transform(&mut session, &ids, CONTENT_START, &input).expect("a content start");
-    input = support::next_input(&response);
-    let response = support::transform(&mut session, &ids, r#"{"event":{"promptEnd":{}}}"#, &input)
-        .expect("a prompt end");
-    let events = support::events(&response);
-    let done = json_dict(&events[0]).expect("a response.done object");
-    let object = done
-        .get("response")
-        .and_then(json_dict)
-        .expect("a response object");
-    assert_eq!(object.get("usage"), Some(&support::json(ZERO_USAGE_JSON)));
+    assert_eq!(object.get("usage"), Some(&support::json(expected)));
 }

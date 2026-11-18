@@ -7,11 +7,11 @@ use crate::realtime_events::dispatch::{MAX_DELTA_BYTES, MAX_DELTA_CHUNKS};
 use crate::realtime_events::error::EventError;
 use betterlite_models::decisions::Json;
 
-const TEXT: &str = r#"{"event":{"textOutput":{"content":"é"}}}"#;
+const TEXT: &str = "{\"event\":{\"textOutput\":{\"content\":\"\u{e9}\"}}}";
 
 pub(super) fn delta_accumulator_limits() {
     assert_eq!(MAX_DELTA_CHUNKS, 4096);
-    assert_eq!(MAX_DELTA_BYTES, 4_194_304);
+    assert_eq!(MAX_DELTA_BYTES, 0x0040_0000);
     repeated_small_frames();
     byte_boundary();
     oversized_state();
@@ -112,7 +112,7 @@ fn padded_message(size: usize, head: &str) -> String {
 
 // Both decoders refuse a message past the cap before parsing it, and parse one of exactly the cap
 pub(super) fn decoder_limits() {
-    assert_eq!(MAX_MESSAGE_BYTES, 1_048_576);
+    assert_eq!(MAX_MESSAGE_BYTES, 0x0010_0000);
     let at_cap = padded_message(MAX_MESSAGE_BYTES, r#"{"event":{"sessionStart":{}},"pad":""#);
     assert!(matches!(
         decode_realtime_native_event(at_cap.as_bytes()),
