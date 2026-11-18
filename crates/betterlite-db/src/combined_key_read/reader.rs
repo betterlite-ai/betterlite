@@ -148,17 +148,17 @@ where
     // log_db_metrics wraps each get_data call: it awaits a failure metric and schedules a success metric
     async fn measured_attempt(
         &self,
-        request: &CombinedKeyRequest,
+        query: &CombinedKeyRequest,
     ) -> Result<Option<CombinedKeyView>, KeyReadError> {
         let parked: Mutex<Option<KeyReadError>> = Mutex::new(None);
         let table = Json::Text(String::from(COMBINED_VIEW_TABLE));
         let call = DbMetricCall {
             function_name: READ_CALL_TYPE,
-            parent_otel_span: request.parent_otel_span.clone(),
+            parent_otel_span: query.parent_otel_span.clone(),
             table_name: Some(&table),
             second_positional: None,
         };
-        let operation = self.lookup_operation(request, &parked);
+        let operation = self.lookup_operation(query, &parked);
         let metric_clock = MetricWallClock(self.services.clock);
         let context = DbMetricContext {
             sink: Arc::clone(&self.sink),
