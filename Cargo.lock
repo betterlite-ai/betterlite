@@ -1703,6 +1703,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-redis-fixture",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -4154,6 +4155,16 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+]
+
+[[package]]
+name = "betterlite-redis-fixture"
+version = "0.1.0"
+dependencies = [
+ "redis",
+ "tempfile",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
