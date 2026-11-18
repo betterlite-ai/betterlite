@@ -153,6 +153,8 @@ where
                 error_type: FailureType::Missing,
                 param: FailureParam::Missing,
                 status_code: None,
+                code: None,
+                body: None,
                 kind: FailureKind::Other,
             });
             pending = false;

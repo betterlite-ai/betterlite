@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::http::request::Parts;
+use betterlite_error::facts::ErrorCode;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 use futures_util::stream::BoxStream;
@@ -44,6 +45,9 @@ pub struct StreamFailure {
     pub error_type: FailureType,
     pub param: FailureParam,
     pub status_code: Option<u16>,
+    // Keep provider payloads out of the inline Result error size.
+    pub code: Option<Box<ErrorCode>>,
+    pub body: Option<Box<Json>>,
     pub kind: FailureKind,
 }
 

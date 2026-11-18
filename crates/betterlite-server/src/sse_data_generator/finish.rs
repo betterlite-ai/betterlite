@@ -72,10 +72,10 @@ where
     vec![Ok(Bytes::from(frame))]
 }
 
-fn call_failure_hook<'a, Key>(
-    drive: &'a Drive<Key>,
-    failure: &'a StreamFailure,
-) -> BoxFuture<'a, Result<(), StreamFailure>>
+fn call_failure_hook<'hook, Key>(
+    drive: &'hook Drive<Key>,
+    failure: &'hook StreamFailure,
+) -> BoxFuture<'hook, Result<(), StreamFailure>>
 where
     Key: Send + Sync + 'static,
 {

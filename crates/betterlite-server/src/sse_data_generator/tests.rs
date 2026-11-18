@@ -292,6 +292,8 @@ fn other_failure(message: &str) -> StreamFailure {
         error_type: FailureType::Missing,
         param: FailureParam::Missing,
         status_code: None,
+        code: None,
+        body: None,
         kind: FailureKind::Other,
     }
 }
@@ -558,6 +560,7 @@ fn request_converts_every_value() {
 
 mod behavior;
 mod cleanup_tests;
+mod failure_details;
 mod failures;
 mod keepalive;
 
