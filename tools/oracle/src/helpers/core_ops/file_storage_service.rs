@@ -57,6 +57,10 @@ impl Helper for Op {
             &FixedClock { now: input.now },
             &FixedIds { uuid: &input.uuid },
         );
-        Ok(serde_json::to_value(stored.file)?)
+        Ok(serde_json::json!({
+            "file": stored.file,
+            "storage_backend": stored.storage_backend,
+            "storage_url": stored.storage_url,
+        }))
     }
 }

@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_config::loader::EnvironmentLookup;
 use betterlite_logging::azure_storage_logging::filename::IdSource;
 use betterlite_logging::azure_storage_logging::token::{
     ChainError, ChainProviderFactory, ChainTokenProvider,
@@ -196,64 +195,27 @@ pub(crate) fn environment() -> BTreeMap<String, String> {
     ])
 }
 
-pub(crate) fn azure_deps(recorder: &Arc<Recorder>) -> AzureFileStorageDeps {
-    AzureFileStorageDeps {
-        transport: Arc::clone(recorder),
-        clock: Arc::new(FixedClock),
-        environment: Arc::new(environment()),
-        ids: Arc::new(FixedIds),
-        chain_factory: Arc::new(FixedChain),
-    }
-}
-
-pub(crate) fn azure_deps_without_environment(recorder: &Arc<Recorder>) -> AzureFileStorageDeps {
-    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
-        Arc::new(BTreeMap::<String, String>::new());
-    AzureFileStorageDeps {
-        environment,
-        ..azure_deps(recorder)
-    }
-}
-
 pub(crate) fn backend_deps<R>(
     recorder: &Arc<Recorder>,
     database: Option<R>,
+    environment: BTreeMap<String, String>,
 ) -> StorageBackendDeps<R> {
     StorageBackendDeps {
-        azure: azure_deps(recorder),
+        azure: AzureFileStorageDeps {
+            transport: Arc::clone(recorder),
+            clock: Arc::new(FixedClock),
+            environment: Arc::new(environment),
+            ids: Arc::new(FixedIds),
+            chain_factory: Arc::new(FixedChain),
+        },
         azure_settings: None,
         database,
     }
 }
 
-pub(crate) fn backend_deps_without_environment<R>(
-    recorder: &Arc<Recorder>,
-    database: Option<R>,
-) -> StorageBackendDeps<R> {
-    StorageBackendDeps {
-        azure: azure_deps_without_environment(recorder),
-        azure_settings: None,
-        database,
-    }
-}
-
-pub(crate) fn upload_deps<R>(
-    recorder: &Arc<Recorder>,
-    database: Option<R>,
-) -> StorageUploadDeps<'static, R> {
+pub(crate) fn upload_deps<R>(backend: StorageBackendDeps<R>) -> StorageUploadDeps<'static, R> {
     StorageUploadDeps {
-        backend: backend_deps(recorder, database),
-        clock: &FixedClock,
-        ids: &FixedIds,
-    }
-}
-
-pub(crate) fn upload_deps_without_environment<R>(
-    recorder: &Arc<Recorder>,
-    database: Option<R>,
-) -> StorageUploadDeps<'static, R> {
-    StorageUploadDeps {
-        backend: backend_deps_without_environment(recorder, database),
+        backend,
         clock: &FixedClock,
         ids: &FixedIds,
     }

@@ -97,62 +97,41 @@ async fn send(
     api_base: &str,
     env: &BTreeMap<String, String>,
 ) -> Result<SdkResult, SdkHttpError> {
-    match call {
-        Call::Factory(factory) => factory_answer(factory, api_base, env).await,
-        Call::Upload(upload) => upload_answer(upload, api_base, env).await,
-    }
-}
-
-async fn factory_answer(
-    call: &FactoryCall,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
+    let mut settings = None;
+    let mut storage_ids: Arc<dyn IdSource> = Arc::new(RandomIds);
+    let upload = match call {
+        Call::Factory(factory) => StorageUpload {
+            content: &[],
+            filename: None,
+            content_type: None,
+            purpose: FilesPurpose::UserData,
+            target_storage: &factory.backend_type,
+            target_model_names: &factory.target_model_names,
+        },
+        Call::Upload(upload) => {
+            let mut configured = Settings::from_environment(env)
+                .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
+            // the mock origin stands in for the account host, and both service prefixes stay distinct
+            configured.dfs_endpoint = format!("{api_base}/.dfs.");
+            configured.blob_endpoint = format!("{api_base}/.blob.");
+            settings = Some(configured);
+            storage_ids = Arc::new(FixedIds(upload.uuid.clone()));
+            StorageUpload {
+                content: &upload.file_content,
+                filename: Some(&upload.filename),
+                content_type: Some(&upload.content_type),
+                purpose: FilesPurpose::UserData,
+                target_storage: &upload.target_storage,
+                target_model_names: &upload.target_model_names,
+            }
+        }
+    };
     let clock = SystemClock;
-    let ids = RandomIds;
+    let projection_ids = RandomIds;
     let deps = StorageUploadDeps {
-        backend: backend_deps(env, None, Arc::new(RandomIds))?,
+        backend: backend_deps(env, settings, storage_ids)?,
         clock: &clock,
-        ids: &ids,
-    };
-    let upload = StorageUpload {
-        content: &[],
-        filename: None,
-        content_type: None,
-        purpose: FilesPurpose::UserData,
-        target_storage: call.backend_type.as_str(),
-        target_model_names: call.target_model_names.as_slice(),
-    };
-    Ok(outcome(
-        upload_file_to_storage_backend(upload, deps).await,
-        api_base,
-    ))
-}
-
-async fn upload_answer(
-    call: &UploadCall,
-    api_base: &str,
-    env: &BTreeMap<String, String>,
-) -> Result<SdkResult, SdkHttpError> {
-    let mut settings = Settings::from_environment(env)
-        .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    // the mock origin stands in for the account host, and both service prefixes stay distinct
-    settings.dfs_endpoint = format!("{api_base}/.dfs.");
-    settings.blob_endpoint = format!("{api_base}/.blob.");
-    let clock = SystemClock;
-    let ids = RandomIds;
-    let deps = StorageUploadDeps {
-        backend: backend_deps(env, Some(settings), Arc::new(FixedIds(call.uuid.clone())))?,
-        clock: &clock,
-        ids: &ids,
-    };
-    let upload = StorageUpload {
-        content: call.file_content.as_slice(),
-        filename: Some(call.filename.as_str()),
-        content_type: Some(call.content_type.as_str()),
-        purpose: FilesPurpose::UserData,
-        target_storage: call.target_storage.as_str(),
-        target_model_names: call.target_model_names.as_slice(),
+        ids: &projection_ids,
     };
     Ok(outcome(
         upload_file_to_storage_backend(upload, deps).await,

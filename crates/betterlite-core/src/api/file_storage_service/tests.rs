@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::str;
 use std::sync::Arc;
 
@@ -32,8 +33,8 @@ use crate::api::file_storage_service::service::{StorageUpload, upload_file_to_st
 mod support;
 
 use support::{
-    Captured, FixedClock, FixedIds, HexIds, Recorded, Recorder, backend_deps,
-    backend_deps_without_environment, capture_logs, upload_deps, upload_deps_without_environment,
+    Captured, FixedClock, FixedIds, HexIds, Recorded, Recorder, backend_deps, capture_logs,
+    environment, upload_deps,
 };
 
 const FIXED_UUID: &str = "12345678-1234-5678-1234-567812345678";
@@ -91,25 +92,17 @@ async fn refusal(
     target_storage: &str,
     targets: &[String],
     recorder: &Arc<Recorder>,
+    env: BTreeMap<String, String>,
 ) -> ProxyException {
-    let deps = upload_deps(recorder, None::<ManagedFileContentRepository<'static>>);
+    let deps = upload_deps(backend_deps(
+        recorder,
+        None::<ManagedFileContentRepository<'static>>,
+        env,
+    ));
     let error = upload_file_to_storage_backend(upload_with(target_storage, targets), deps)
         .await
         .err()
         .expect("the upload is refused");
-    refused(error)
-}
-
-async fn refusal_without_environment(
-    recorder: &Arc<Recorder>,
-    targets: &[String],
-) -> ProxyException {
-    let deps =
-        upload_deps_without_environment(recorder, None::<ManagedFileContentRepository<'static>>);
-    let error = upload_file_to_storage_backend(upload_with("azure_storage", targets), deps)
-        .await
-        .err()
-        .expect("the Azure settings are missing");
     refused(error)
 }
 
@@ -155,29 +148,27 @@ fn assert_upload_arguments() {
     assert_eq!(explicit.content_type(), "text/plain");
 }
 
-async fn default_upload_result() -> StoredFile {
+async fn upload_result(upload: StorageUpload<'_>, extension: &str) -> StoredFile {
     let recorder = Recorder::new(&[(201, ""), (202, ""), (200, "")]);
-    let deps = upload_deps(&recorder, None::<ManagedFileContentRepository<'static>>);
-    let stored = upload_file_to_storage_backend(default_upload("azure_storage"), deps)
+    let deps = upload_deps(backend_deps(
+        &recorder,
+        None::<ManagedFileContentRepository<'static>>,
+        environment(),
+    ));
+    let stored = upload_file_to_storage_backend(upload, deps)
         .await
         .expect("the storage-only upload");
-    assert_upload_requests(&recorder.calls(), "");
-    stored
-}
-
-async fn explicit_upload_result() -> StoredFile {
-    let recorder = Recorder::new(&[(201, ""), (202, ""), (200, "")]);
-    let deps = upload_deps(&recorder, None::<ManagedFileContentRepository<'static>>);
-    let stored = upload_file_to_storage_backend(upload_with("azure_storage", &[]), deps)
-        .await
-        .expect("the explicit upload");
-    assert_upload_requests(&recorder.calls(), ".txt");
+    assert_upload_requests(&recorder.calls(), extension);
     stored
 }
 
 async fn assert_storage_error() {
     let recorder = Recorder::new(&[(500, "")]);
-    let deps = upload_deps(&recorder, None::<ManagedFileContentRepository<'static>>);
+    let deps = upload_deps(backend_deps(
+        &recorder,
+        None::<ManagedFileContentRepository<'static>>,
+        environment(),
+    ));
     let error = upload_file_to_storage_backend(upload_with("azure_storage", &[]), deps)
         .await
         .err()
@@ -317,20 +308,31 @@ async fn storage_factory_errors() {
     let recorder = Recorder::new(&[]);
     let unsupported = get_storage_backend(
         "other",
-        backend_deps(&recorder, None::<ManagedFileContentRepository<'static>>),
+        backend_deps(
+            &recorder,
+            None::<ManagedFileContentRepository<'static>>,
+            environment(),
+        ),
     )
     .err()
     .expect("the unsupported backend");
     assert_eq!(unsupported.to_string(), UNSUPPORTED_OTHER);
     let database = get_storage_backend(
         LITELLM_DB_BACKEND_NAME,
-        backend_deps(&recorder, None::<ManagedFileContentRepository<'static>>),
+        backend_deps(
+            &recorder,
+            None::<ManagedFileContentRepository<'static>>,
+            environment(),
+        ),
     )
     .err()
     .expect("the missing database");
     assert_eq!(database.to_string(), DATABASE_REQUIRED);
-    let no_settings =
-        backend_deps_without_environment(&recorder, None::<ManagedFileContentRepository<'static>>);
+    let no_settings = backend_deps(
+        &recorder,
+        None::<ManagedFileContentRepository<'static>>,
+        BTreeMap::new(),
+    );
     let settings = get_storage_backend("azure_storage", no_settings)
         .err()
         .expect("the Azure settings are missing");
@@ -339,11 +341,11 @@ async fn storage_factory_errors() {
     let cause = std::error::Error::source(&settings).expect("the settings cause");
     assert_eq!(cause.to_string(), MISSING_ACCOUNT);
 
-    let other = refusal("other", &[], &recorder).await;
+    let other = refusal("other", &[], &recorder, environment()).await;
     assert_invalid_request(&other, UNSUPPORTED_OTHER, "target_storage");
-    let missing = refusal(LITELLM_DB_BACKEND_NAME, &[], &recorder).await;
+    let missing = refusal(LITELLM_DB_BACKEND_NAME, &[], &recorder, environment()).await;
     assert_invalid_request(&missing, DATABASE_REQUIRED, "target_storage");
-    let missing_settings = refusal_without_environment(&recorder, &[]).await;
+    let missing_settings = refusal("azure_storage", &[], &recorder, BTreeMap::new()).await;
     assert_invalid_request(&missing_settings, MISSING_ACCOUNT, "target_storage");
     assert!(recorder.calls().is_empty());
     assert_factory_logs(&logs);
@@ -353,15 +355,15 @@ async fn storage_factory_errors() {
 async fn storage_targets_before_write() {
     let recorder = Recorder::new(&[]);
     let targets = ["m".to_owned()];
-    let missing_settings = refusal_without_environment(&recorder, &targets).await;
+    let missing_settings = refusal("azure_storage", &targets, &recorder, BTreeMap::new()).await;
     assert_invalid_request(&missing_settings, MISSING_ACCOUNT, "target_storage");
-    let invalid = refusal("other", &targets, &recorder).await;
+    let invalid = refusal("other", &targets, &recorder, environment()).await;
     assert_invalid_request(&invalid, UNSUPPORTED_OTHER, "target_storage");
 
     let (fixture, store) = provision().await;
     let availability = Availability::default();
     let repository = database_repository(&store, &availability);
-    let deps = upload_deps(&recorder, Some(repository));
+    let deps = upload_deps(backend_deps(&recorder, Some(repository), environment()));
     let failure = upload_file_to_storage_backend(upload_with("azure_storage", &targets), deps)
         .await
         .err()
@@ -376,12 +378,20 @@ async fn storage_targets_before_write() {
 #[tokio::test]
 async fn storage_only_upload() {
     let (logs, _guard) = capture_logs();
-    assert_uploaded_file(&default_upload_result().await, "file", "");
+    assert_uploaded_file(
+        &upload_result(default_upload("azure_storage"), "").await,
+        "file",
+        "",
+    );
     let completed = format!(
         "Storage backend upload complete: backend=azure_storage, url={AZURE_BLOB_PREFIX}{FIXED_UUID}"
     );
     assert!(logs.text().contains(&completed), "the upload debug line");
-    assert_uploaded_file(&explicit_upload_result().await, "a.txt", ".txt");
+    assert_uploaded_file(
+        &upload_result(upload_with("azure_storage", &[]), ".txt").await,
+        "a.txt",
+        ".txt",
+    );
     assert_upload_arguments();
     assert_storage_error().await;
 
@@ -389,7 +399,7 @@ async fn storage_only_upload() {
     let availability = Availability::default();
     let repository = database_repository(&store, &availability);
     let recorder = Recorder::new(&[(201, ""), (202, ""), (200, "")]);
-    let deps = upload_deps(&recorder, Some(repository));
+    let deps = upload_deps(backend_deps(&recorder, Some(repository), environment()));
     let stored = upload_file_to_storage_backend(default_upload("azure_storage"), deps)
         .await
         .expect("the connected storage-only upload");
@@ -428,7 +438,11 @@ fn storage_file_projection() {
 async fn managed_storage_unavailable() {
     let recorder = Recorder::new(&[]);
     let targets = ["m".to_owned()];
-    let deps = upload_deps(&recorder, None::<ManagedFileContentRepository<'static>>);
+    let deps = upload_deps(backend_deps(
+        &recorder,
+        None::<ManagedFileContentRepository<'static>>,
+        environment(),
+    ));
     let failure = upload_file_to_storage_backend(upload_with("azure_storage", &targets), deps)
         .await
         .err()
@@ -444,7 +458,7 @@ async fn database_storage_only() {
     let availability = Availability::default();
     let repository = database_repository(&store, &availability);
     let recorder = Recorder::new(&[]);
-    let deps = upload_deps(&recorder, Some(repository));
+    let deps = upload_deps(backend_deps(&recorder, Some(repository), environment()));
     let stored = upload_file_to_storage_backend(upload_with(LITELLM_DB_BACKEND_NAME, &[]), deps)
         .await
         .expect("the database upload");
