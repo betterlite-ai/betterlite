@@ -13,7 +13,9 @@ use betterlite_router::routing_state_store::test_support::FakeRedis;
 use betterlite_router::routing_state_store::{
     RedisSettings, RoutingStateStore, Settings as StateSettings,
 };
-use betterlite_router::routing_value_store::{RoutingValueStore, StoreSettings};
+use betterlite_router::routing_value_store::{
+    RouteIncrement, RouteKey, RoutingValueStore, StoreSettings,
+};
 
 use super::{ModelRateLimitStores, RoutingRateLimitCache, build};
 
@@ -134,6 +136,33 @@ fn a_configured_remote_answers_reads() {
         runtime.block_on(cache.remote("router:tpm")),
         super::RemoteRead::Value(None)
     );
+}
+
+#[test]
+fn the_remote_counter_wins_when_it_answers() {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the test runtime builds");
+    let server = runtime
+        .block_on(FakeRedis::try_start())
+        .expect("the fake redis starts");
+    let store =
+        RoutingStateStore::new(&remote_settings(server.port()), Arc::new(|| Duration::ZERO))
+            .expect("the state store opens");
+    let key = RouteKey::parse("router:rpm").expect("the key is valid");
+    runtime
+        .block_on(store.increment(&key, &RouteIncrement::Counter(5), None))
+        .expect("the remote seed lands");
+    let cache = RoutingRateLimitCache {
+        local: local(),
+        remote: Some(Arc::new(store)),
+    };
+    assert_eq!(
+        runtime.block_on(cache.increment("router:rpm", 1, 60)),
+        Some(6)
+    );
+    assert_eq!(cache.local("router:rpm"), Some(1));
 }
 
 #[test]

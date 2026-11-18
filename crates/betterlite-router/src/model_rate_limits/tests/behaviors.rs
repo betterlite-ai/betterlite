@@ -12,7 +12,7 @@ pub(super) fn run(name: &str) {
     run_case_table(name, &CASES);
 }
 
-const CASES: [(&str, fn()); 18] = [
+const CASES: [(&str, fn()); 19] = [
     ("limits_disabled_allows", || {
         super::runtime().block_on(limits_disabled_allows());
     }),
@@ -51,6 +51,9 @@ const CASES: [(&str, fn()); 18] = [
     }),
     ("coexist_warning_logs_once", || {
         super::runtime().block_on(coexist_warning_logs_once());
+    }),
+    ("coexist_warning_without_id_logs_every_time", || {
+        super::runtime().block_on(coexist_warning_without_id_logs_every_time());
     }),
     ("sync_facade_counts_local_only", || {
         super::runtime().block_on(sync_facade_counts_local_only());
@@ -303,6 +306,22 @@ async fn coexist_warning_logs_once() {
     assert!(!check.logs_coexist_warning(&deployment).unwrap());
 }
 
+async fn coexist_warning_without_id_logs_every_time() {
+    let check = service(Arc::new(FakeCache::new()), None);
+    let mut deployment = with_param(
+        with_info(
+            spec("gpt-4o", "a", "openai/gpt-4o"),
+            "itpm",
+            betterlite_models::decisions::Json::Number(10.into()),
+        ),
+        "tpm",
+        100,
+    );
+    deployment.model_info.shift_remove("id");
+    assert!(check.logs_coexist_warning(&deployment).unwrap());
+    assert!(check.logs_coexist_warning(&deployment).unwrap());
+}
+
 async fn sync_facade_counts_local_only() {
     let cache = Arc::new(FakeCache::new());
     let check = service(Arc::clone(&cache), None);
@@ -347,6 +366,8 @@ fn sync_facade_tpm_rejects_at_limit() {
     let exceeded = exceeded(error);
     assert_eq!(exceeded.channel, RateLimitChannel::Tpm);
     assert_eq!(exceeded.current, 5);
+    // the blocking facade leaves num_retries unset, where the async check sets zero
+    assert_eq!(exceeded.num_retries, None);
 }
 
 async fn rpm_rejection_carries_error_fields() {

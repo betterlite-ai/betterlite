@@ -25,6 +25,7 @@ fn runtime() -> Runtime {
 #[case::failure_event_refunds("failure_event_refunds")]
 #[case::io_reservation_before_the_checks("io_reservation_before_the_checks")]
 #[case::coexist_warning_logs_once("coexist_warning_logs_once")]
+#[case::coexist_warning_without_id_logs_every_time("coexist_warning_without_id_logs_every_time")]
 #[case::sync_facade_counts_local_only("sync_facade_counts_local_only")]
 #[case::sync_success_event_counts_local_only("sync_success_event_counts_local_only")]
 #[case::sync_failure_event_refunds("sync_failure_event_refunds")]
