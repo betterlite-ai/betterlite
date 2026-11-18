@@ -1,0 +1,284 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use betterlite_models::decisions::Json;
+use opentelemetry::trace::{Span as _, SpanKind, Status, Tracer as _};
+use opentelemetry::{Array, Context, KeyValue, StringValue, Value};
+use opentelemetry_sdk::trace::{SdkTracer, Span as SdkSpan};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
+
+use crate::callback_logger::CallbackLogger;
+use crate::callback_logger::error::LoggerError;
+use crate::callback_logger::event::LoggerEvent;
+use crate::fields::payload::StandardLoggingPayload;
+use crate::otel::callbacks::{object_of, text_of};
+use crate::otel::legacy_lifecycle::context::instant_from_ns;
+use crate::otel::legacy_policy::error_recording::{RecordedException, record_exception_on_span};
+use crate::otel::model::metadata::wire::MetadataMap;
+use crate::otel::vocabulary::constants::attribute_keys::gen_ai;
+
+pub const CALLBACK_NAME: &str = "traceloop";
+pub const APP_NAME: &str = "Litellm-Server";
+pub const DISABLE_BATCH: bool = true;
+pub const SPAN_NAME: &str = "litellm.completion";
+pub const EXCEPTION_TYPE: &str = "Exception";
+
+// the names opentelemetry.semconv.ai's SpanAttributes carries, which traceloop.py imports
+const LLM_CHAT_STOP_SEQUENCES: &str = "llm.chat.stop_sequences";
+const LLM_FREQUENCY_PENALTY: &str = "llm.frequency_penalty";
+const LLM_PRESENCE_PENALTY: &str = "llm.presence_penalty";
+const LLM_REQUEST_FUNCTIONS: &str = "llm.request.functions";
+const LLM_USER: &str = "llm.user";
+const LLM_PROMPTS: &str = "gen_ai.prompt";
+const LLM_COMPLETIONS: &str = "gen_ai.completion";
+const LLM_USAGE_TOTAL_TOKENS: &str = "llm.usage.total_tokens";
+const LLM_USAGE_COMPLETION_TOKENS: &str = "gen_ai.usage.completion_tokens";
+const LLM_USAGE_PROMPT_TOKENS: &str = "gen_ai.usage.prompt_tokens";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TraceloopConfig {
+    pub app_name: &'static str,
+    pub disable_batch: bool,
+}
+
+impl Default for TraceloopConfig {
+    fn default() -> Self {
+        Self {
+            app_name: APP_NAME,
+            disable_batch: DISABLE_BATCH,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EventLevel {
+    Default,
+    Error,
+}
+
+pub struct TraceloopLogger {
+    tracer: SdkTracer,
+}
+
+impl TraceloopLogger {
+    // tracer_wrapper's tracer is the SDK one, so the callback takes the SDK's tracer directly
+    #[must_use]
+    pub fn new(tracer: SdkTracer) -> Self {
+        Self { tracer }
+    }
+
+    fn log_event(&self, event: &LoggerEvent, level: EventLevel, status_message: Option<&str>) {
+        let payload = &event.payload;
+        let builder = self
+            .tracer
+            .span_builder(SPAN_NAME)
+            .with_kind(SpanKind::Client)
+            .with_start_time(instant_from_ns(whole_seconds(payload.start_time)));
+        let mut span = self.tracer.build_with_context(builder, &Context::current());
+        if span.is_recording() {
+            // Python's TypeError and AttributeError inside the try leave the span unended
+            let Some(()) = write_attributes(&mut span, payload) else {
+                return;
+            };
+        }
+        if level == EventLevel::Error
+            && let Some(message) = status_message
+        {
+            let exception = RecordedException {
+                type_name: EXCEPTION_TYPE.to_owned(),
+                message: message.to_owned(),
+                stacktrace: String::new(),
+            };
+            record_exception_on_span(&mut span, Some(&exception), &MetadataMap::new());
+            span.set_status(Status::error(message.to_owned()));
+        }
+        span.end_with_timestamp(instant_from_ns(whole_seconds(payload.end_time)));
+    }
+}
+
+fn write_attributes(span: &mut SdkSpan, payload: &StandardLoggingPayload) -> Option<()> {
+    write_request_parameters(span, payload);
+    write_call_parameters(span, payload);
+    write_prompts(span, payload.messages.as_ref())?;
+    let response = object_of(payload.response.as_ref()?)?;
+    write_attribute(span, gen_ai::RESPONSE_MODEL, response.get("model"));
+    write_usage(span, response.get("usage"));
+    write_completions(span, response.get("choices"))
+}
+
+fn write_request_parameters(span: &mut SdkSpan, payload: &StandardLoggingPayload) {
+    let optional_params = &payload.model_parameters;
+    write_attribute(
+        span,
+        gen_ai::REQUEST_MODEL,
+        Some(&Json::Text(payload.model.clone())),
+    );
+    if optional_params.contains_key("stop") {
+        write_attribute(span, LLM_CHAT_STOP_SEQUENCES, optional_params.get("stop"));
+    }
+    if optional_params.contains_key("frequency_penalty") {
+        write_attribute(
+            span,
+            LLM_FREQUENCY_PENALTY,
+            optional_params.get("frequency_penalty"),
+        );
+    }
+    if optional_params.contains_key("presence_penalty") {
+        write_attribute(
+            span,
+            LLM_PRESENCE_PENALTY,
+            optional_params.get("presence_penalty"),
+        );
+    }
+    if optional_params.contains_key("top_p") {
+        write_attribute(span, gen_ai::REQUEST_TOP_P, optional_params.get("top_p"));
+    }
+}
+
+// the second half of the same attribute block, split where Python's kwargs lookups move on
+fn write_call_parameters(span: &mut SdkSpan, payload: &StandardLoggingPayload) {
+    let optional_params = &payload.model_parameters;
+    if let Some(request_functions) = optional_params
+        .get("tools")
+        .or_else(|| optional_params.get("functions"))
+    {
+        write_attribute(span, LLM_REQUEST_FUNCTIONS, Some(request_functions));
+    }
+    if optional_params.contains_key("user") {
+        write_attribute(span, LLM_USER, optional_params.get("user"));
+    }
+    // the typed event keeps one model-parameter snapshot, which carries both the guard and the value
+    if optional_params.contains_key("max_tokens") {
+        write_attribute(
+            span,
+            gen_ai::REQUEST_MAX_TOKENS,
+            optional_params.get("max_tokens"),
+        );
+    }
+    if optional_params.contains_key("temperature") {
+        write_attribute(
+            span,
+            gen_ai::REQUEST_TEMPERATURE,
+            optional_params.get("temperature"),
+        );
+    }
+}
+
+fn write_prompts(span: &mut SdkSpan, messages: Option<&Json>) -> Option<()> {
+    let Some(Json::List(messages)) = messages else {
+        // kwargs.get("messages") is None here and enumerate(None) raises
+        return None;
+    };
+    for (index, message) in messages.iter().enumerate() {
+        let fields = object_of(message)?;
+        let prefix = format!("{LLM_PROMPTS}.{index}");
+        write_attribute(span, &format!("{prefix}.role"), fields.get("role"));
+        write_attribute(span, &format!("{prefix}.content"), fields.get("content"));
+    }
+    Some(())
+}
+
+fn write_usage(span: &mut SdkSpan, usage: Option<&Json>) {
+    let Some(usage) = usage.and_then(object_of) else {
+        return;
+    };
+    write_attribute(span, LLM_USAGE_TOTAL_TOKENS, usage.get("total_tokens"));
+    write_attribute(
+        span,
+        LLM_USAGE_COMPLETION_TOKENS,
+        usage.get("completion_tokens"),
+    );
+    write_attribute(span, LLM_USAGE_PROMPT_TOKENS, usage.get("prompt_tokens"));
+}
+
+fn write_completions(span: &mut SdkSpan, choices: Option<&Json>) -> Option<()> {
+    let Some(Json::List(choices)) = choices else {
+        // response_obj.get("choices") is None here and enumerate(None) raises
+        return None;
+    };
+    for (index, choice) in choices.iter().enumerate() {
+        let fields = object_of(choice)?;
+        let message = fields.get("message").and_then(object_of)?;
+        let prefix = format!("{LLM_COMPLETIONS}.{index}");
+        write_attribute(
+            span,
+            &format!("{prefix}.finish_reason"),
+            fields.get("finish_reason"),
+        );
+        write_attribute(span, &format!("{prefix}.role"), message.get("role"));
+        write_attribute(span, &format!("{prefix}.content"), message.get("content"));
+    }
+    Some(())
+}
+
+fn write_attribute<S>(span: &mut S, key: &str, value: Option<&Json>)
+where
+    S: opentelemetry::trace::Span,
+{
+    let Some(attribute) = value.and_then(attribute_value) else {
+        return;
+    };
+    span.set_attribute(KeyValue::new(key.to_owned(), attribute));
+}
+
+// Python's set_attribute drops a dict, so only scalars and string sequences become one
+fn attribute_value(value: &Json) -> Option<Value> {
+    match value {
+        Json::Text(text) => Some(Value::from(text.clone())),
+        Json::Bool(flag) => Some(Value::Bool(*flag)),
+        Json::Number(number) => number.as_i64().map_or_else(
+            || number.as_f64().map(Value::F64),
+            |value| Some(Value::I64(value)),
+        ),
+        Json::List(items) => string_array(items),
+        Json::Null | Json::Object(_) => None,
+    }
+}
+
+fn string_array(items: &[Json]) -> Option<Value> {
+    let mut strings = Vec::with_capacity(items.len());
+    for item in items {
+        strings.push(StringValue::from(text_of(item)?.to_owned()));
+    }
+    Some(Value::Array(Array::String(strings)))
+}
+
+// LiteLLM hands int(seconds) to start_span, whose argument is nanoseconds
+fn whole_seconds(seconds: Decimal) -> i64 {
+    seconds.trunc().to_i64().unwrap_or_default()
+}
+
+#[async_trait]
+impl CallbackLogger for TraceloopLogger {
+    fn callback_name(&self) -> &str {
+        CALLBACK_NAME
+    }
+
+    fn log_success_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
+        self.log_event(event, EventLevel::Default, None);
+        Ok(())
+    }
+
+    fn log_failure_event(&self, event: &LoggerEvent) -> Result<(), LoggerError> {
+        let message = event
+            .payload
+            .error_information
+            .as_ref()
+            .and_then(|information| information.error_message.clone().flatten())
+            .or_else(|| event.payload.error_str.clone());
+        self.log_event(event, EventLevel::Error, message.as_deref());
+        Ok(())
+    }
+
+    async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        self.log_event(&event, EventLevel::Default, None);
+        Ok(())
+    }
+
+    async fn async_log_failure_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        self.log_failure_event(&event)
+    }
+}
+
+mod tests;
