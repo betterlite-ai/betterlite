@@ -1,6 +1,7 @@
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::parse_float;
 use crate::sections::Section;
 
 mod tests;
@@ -47,7 +48,7 @@ impl Section for Raw {
         };
         let deadline_seconds = match lookup.lookup(DEADLINE_VARIABLE) {
             None => DEFAULT_DEADLINE_SECONDS,
-            Some(text) => deadline_from_text(&text)?,
+            Some(text) => parse_float(text.trim(), DEADLINE_VARIABLE)?.max(MIN_DEADLINE_SECONDS),
         };
         Ok(Settings {
             max_concurrency,
@@ -66,15 +67,4 @@ fn concurrency_from_text(text: &str) -> Result<usize, ConfigError> {
             source,
         }),
     }
-}
-
-fn deadline_from_text(text: &str) -> Result<f64, ConfigError> {
-    let parsed = text
-        .trim()
-        .parse::<f64>()
-        .map_err(|source| ConfigError::InvalidFloat {
-            path: DEADLINE_VARIABLE.to_owned(),
-            source,
-        })?;
-    Ok(parsed.max(MIN_DEADLINE_SECONDS))
 }
