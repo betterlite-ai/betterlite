@@ -2348,6 +2348,7 @@ dependencies = [
  "serde_repr",
  "serde_with",
  "sha1",
+ "sha2",
  "speedate",
  "strum",
  "thiserror",
