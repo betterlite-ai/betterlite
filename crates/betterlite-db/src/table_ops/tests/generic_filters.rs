@@ -12,6 +12,7 @@ use crate::table_ops::columns::ConfigColumn;
 use crate::table_ops::columns::spend_notification::SpendColumn;
 use crate::table_ops::generic::GenericReads as _;
 use crate::table_ops::generic::columns::ColumnFilter;
+use crate::table_ops::{OperationCallType, TableOps, TableOpsError};
 
 #[rstest]
 #[case::decimal(TokenColumn::MaxBudget, TokenValue::Number(Decimal::new(105, 1)))]
@@ -59,24 +60,7 @@ async fn generic_columns_cover_users_config_and_spend() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let user = ops
-        .generic_row(ColumnFilter {
-            column: UserColumn::MaxBudget,
-            value: &TokenValue::Number(Decimal::new(105, 1)),
-        })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(user.user_id, "user");
-    let config = ops
-        .generic_row(ColumnFilter {
-            column: ConfigColumn::ParamValue,
-            value: &TokenValue::Null,
-        })
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(config.param_name, "null");
+    assert_user_and_config_filters(&ops).await;
     let spend = ops
         .generic_row(ColumnFilter {
             column: SpendColumn::TotalTokens,
@@ -111,12 +95,30 @@ async fn generic_column_type_errors_report_once() {
         .unwrap_err();
     assert!(matches!(
         error,
-        crate::table_ops::TableOpsError::WrongType { column: "blocked" }
+        TableOpsError::WrongType { column: "blocked" }
     ));
     let events = ports.sink.events();
     assert_eq!(events.len(), 1);
-    assert_eq!(
-        events[0].call_type,
-        crate::table_ops::OperationCallType::GetGenericData
-    );
+    assert_eq!(events[0].call_type, OperationCallType::GetGenericData);
+}
+
+async fn assert_user_and_config_filters(ops: &TableOps<'_, TableClient>) {
+    let user = ops
+        .generic_row(ColumnFilter {
+            column: UserColumn::MaxBudget,
+            value: &TokenValue::Number(Decimal::new(105, 1)),
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(user.user_id, "user");
+    let config = ops
+        .generic_row(ColumnFilter {
+            column: ConfigColumn::ParamValue,
+            value: &TokenValue::Null,
+        })
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(config.param_name, "null");
 }

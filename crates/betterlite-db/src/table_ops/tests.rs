@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
+use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::time::Duration;
@@ -198,7 +199,9 @@ fn budget_maps_decode_from_objects_text_and_null(#[case] field: &str, #[case] po
     use crate::budget_permission_rows::LiteLLMBudgetTableFull;
     use crate::table_ops::rows::RowDecoder as _;
 
-    let text = format!(r#"{{"budget_id":"b-1","created_at":"2024-01-01T00:00:00"{field}}}"#);
+    let text = format!(
+        r#"{{"budget_id":"b-1","created_at":"2024-01-01T00:00:00","max_budget":null,"soft_budget":null,"temp_budget_increase":null{field}}}"#
+    );
     let row = LiteLLMBudgetTableFull::decode_row(&text).unwrap();
     assert_eq!(row.budget.budget_id.as_deref(), Some("b-1"));
     assert_eq!(row.budget.model_max_budget.is_some(), populated);
@@ -211,10 +214,20 @@ fn budget_maps_decode_from_objects_text_and_null(#[case] field: &str, #[case] po
 fn invalid_budget_map_text_is_rejected() {
     use crate::budget_permission_rows::LiteLLMBudgetTableFull;
     use crate::table_ops::rows::RowDecoder as _;
-    assert!(
-        LiteLLMBudgetTableFull::decode_row(
-            r#"{"created_at":"2024-01-01T00:00:00","model_max_budget":"invalid"}"#
-        )
-        .is_err()
-    );
+    LiteLLMBudgetTableFull::decode_row(
+        r#"{"created_at":"2024-01-01T00:00:00","model_max_budget":"invalid"}"#,
+    )
+    .unwrap_err();
+}
+
+#[test]
+fn budget_decimal_fields_survive_map_normalization() {
+    use crate::budget_permission_rows::LiteLLMBudgetTableFull;
+    use crate::table_ops::rows::RowDecoder as _;
+    let row = LiteLLMBudgetTableFull::decode_row(
+        r#"{"created_at":"2024-01-01T00:00:00","max_budget":10.5,"soft_budget":2.25,"temp_budget_increase":1.75,"model_max_budget":"{}"}"#
+    ).unwrap();
+    assert_eq!(row.budget.max_budget, Some(Decimal::new(105, 1)));
+    assert_eq!(row.budget.soft_budget, Some(Decimal::new(225, 2)));
+    assert_eq!(row.budget.temp_budget_increase, Some(Decimal::new(175, 2)));
 }

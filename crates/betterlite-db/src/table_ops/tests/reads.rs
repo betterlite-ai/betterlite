@@ -37,7 +37,7 @@ fn moment(seconds: i64) -> DateTime<Utc> {
 async fn generic_user_reads_the_row_or_none() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, USER_INSERT, &[&"u-1", &"first", &2.0]).await;
+    seed(&db, USER_INSERT, &[&"u-1", &"first", &2.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -91,7 +91,7 @@ async fn generic_user_filters_on_a_caller_selected_column() {
 async fn generic_key_reads_the_stored_token() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, KEY_INSERT, &[&"stored-token", &"k-1", &"", &0.0]).await;
+    seed(&db, KEY_INSERT, &[&"stored-token", &"k-1", &"", &0.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -123,25 +123,7 @@ async fn generic_key_reads_the_stored_token() {
 async fn generic_config_decodes_json_text_and_object_values() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    db.execute(
-        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\") VALUES ($1, to_jsonb($2::text))",
-        &[&"general_settings", &r#"{"store_model_in_db": true}"#],
-    )
-    .await
-    .expect("the text config row commits");
-    db.execute(
-        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\") VALUES ($1, $2::jsonb)",
-        &[&"litellm_settings", &r#"{"num_retries": 3}"#],
-    )
-    .await
-    .expect("the object config row commits");
-    let run_at = at(1_700_000_000).utc().naive_utc();
-    db.execute(
-        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\", \"reload_revision\", \"last_run_at\") VALUES ($1, NULL, $2, $3)",
-        &[&"revision", &7_i64, &run_at],
-    )
-    .await
-    .expect("the revision config row commits");
+    seed_generic_configs(&db).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -206,9 +188,9 @@ async fn configs_named_reads_only_the_named_rows() {
 async fn keys_for_user_reads_only_the_users_keys() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, KEY_INSERT, &[&"tok-1", &"k-1", &"u-1", &1.0]).await;
-    seed(&db, KEY_INSERT, &[&"tok-2", &"k-2", &"u-1", &2.0]).await;
-    seed(&db, KEY_INSERT, &[&"tok-3", &"k-3", &"u-2", &3.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-1", &"k-1", &"u-1", &1.0_f64]).await;
+    seed(&db, KEY_INSERT, &[&"tok-2", &"k-2", &"u-1", &2.0_f64]).await;
+    seed(&db, KEY_INSERT, &[&"tok-3", &"k-3", &"u-2", &3.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -232,10 +214,10 @@ async fn keys_matching_hashes_plaintext_tokens() {
     seed(
         &db,
         KEY_INSERT,
-        &[&hash_token("sk-abc"), &"hashed", &"", &0.0],
+        &[&hash_token("sk-abc"), &"hashed", &"", &0.0_f64],
     )
     .await;
-    seed(&db, KEY_INSERT, &[&"plain", &"literal", &"", &0.0]).await;
+    seed(&db, KEY_INSERT, &[&"plain", &"literal", &"", &0.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -264,9 +246,9 @@ async fn keys_matching_hashes_plaintext_tokens() {
 async fn keys_matching_without_tokens_orders_by_spend() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, KEY_INSERT, &[&"tok-low", &"low", &"", &1.0]).await;
-    seed(&db, KEY_INSERT, &[&"tok-high", &"high", &"", &9.0]).await;
-    seed(&db, KEY_INSERT, &[&"tok-mid", &"mid", &"", &4.0]).await;
+    seed(&db, KEY_INSERT, &[&"tok-low", &"low", &"", &1.0_f64]).await;
+    seed(&db, KEY_INSERT, &[&"tok-high", &"high", &"", &9.0_f64]).await;
+    seed(&db, KEY_INSERT, &[&"tok-mid", &"mid", &"", &4.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -385,25 +367,7 @@ async fn users_matching_reads_each_identity_column() {
 async fn user_unique_returns_organization_memberships() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    db.execute(
-        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\") VALUES ('org-budget', 'c', 'u')",
-        &[],
-    )
-    .await
-    .expect("the budget row commits");
-    db.execute(
-        "INSERT INTO \"LiteLLM_OrganizationTable\" (\"organization_id\", \"organization_alias\", \"budget_id\", \"created_by\", \"updated_by\") VALUES ('org-1', 'acme', 'org-budget', 'c', 'u')",
-        &[],
-    )
-    .await
-    .expect("the organization row commits");
-    seed(&db, USER_INSERT, &[&"u-1", &"member", &0.0]).await;
-    db.execute(
-        "INSERT INTO \"LiteLLM_OrganizationMembership\" (\"user_id\", \"organization_id\") VALUES ('u-1', 'org-1')",
-        &[],
-    )
-    .await
-    .expect("the membership row commits");
+    seed_organization_member(&db).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -471,9 +435,9 @@ async fn users_due_for_reset_keeps_budget_durations() {
 async fn users_by_ids_returns_each_requested_row() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, USER_INSERT, &[&"u-1", &"one", &0.0]).await;
-    seed(&db, USER_INSERT, &[&"u-2", &"two", &0.0]).await;
-    seed(&db, USER_INSERT, &[&"u-3", &"three", &0.0]).await;
+    seed(&db, USER_INSERT, &[&"u-1", &"one", &0.0_f64]).await;
+    seed(&db, USER_INSERT, &[&"u-2", &"two", &0.0_f64]).await;
+    seed(&db, USER_INSERT, &[&"u-3", &"three", &0.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -491,10 +455,20 @@ async fn users_by_ids_returns_each_requested_row() {
 async fn users_all_joins_key_aliases_and_orders_by_spend() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, USER_INSERT, &[&"u-high", &"high", &9.0]).await;
-    seed(&db, USER_INSERT, &[&"u-low", &"low", &1.0]).await;
-    seed(&db, KEY_INSERT, &[&"tok-1", &"alias-1", &"u-high", &0.0]).await;
-    seed(&db, KEY_INSERT, &[&"tok-2", &"alias-2", &"u-high", &0.0]).await;
+    seed(&db, USER_INSERT, &[&"u-high", &"high", &9.0_f64]).await;
+    seed(&db, USER_INSERT, &[&"u-low", &"low", &1.0_f64]).await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&"tok-1", &"alias-1", &"u-high", &0.0_f64],
+    )
+    .await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&"tok-2", &"alias-2", &"u-high", &0.0_f64],
+    )
+    .await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -844,4 +818,48 @@ async fn generic_key_boolean_filter_binds_true_and_false(#[case] flag: bool, #[c
         .unwrap();
     assert_eq!(row.token.as_ref().unwrap().expose_secret(), token);
     harness.close().await;
+}
+
+async fn seed_generic_configs(db: &Client) {
+    db.execute(
+        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\") VALUES ($1, to_jsonb($2::text))",
+        &[&"general_settings", &r#"{"store_model_in_db": true}"#],
+    )
+    .await
+    .expect("the text config row commits");
+    db.execute(
+        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\") VALUES ($1, $2::text::jsonb)",
+        &[&"litellm_settings", &r#"{"num_retries": 3}"#],
+    )
+    .await
+    .expect("the object config row commits");
+    let run_at = at(1_700_000_000).utc().naive_utc();
+    db.execute(
+        "INSERT INTO \"LiteLLM_Config\" (\"param_name\", \"param_value\", \"reload_revision\", \"last_run_at\") VALUES ($1, NULL, $2, $3)",
+        &[&"revision", &7_i64, &run_at],
+    )
+    .await
+    .expect("the revision config row commits");
+}
+
+async fn seed_organization_member(db: &Client) {
+    db.execute(
+        "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\") VALUES ('org-budget', 'c', 'u')",
+        &[],
+    )
+    .await
+    .expect("the budget row commits");
+    db.execute(
+        "INSERT INTO \"LiteLLM_OrganizationTable\" (\"organization_id\", \"organization_alias\", \"budget_id\", \"created_by\", \"updated_by\") VALUES ('org-1', 'acme', 'org-budget', 'c', 'u')",
+        &[],
+    )
+    .await
+    .expect("the organization row commits");
+    seed(db, USER_INSERT, &[&"u-1", &"member", &0.0_f64]).await;
+    db.execute(
+        "INSERT INTO \"LiteLLM_OrganizationMembership\" (\"user_id\", \"organization_id\") VALUES ('u-1', 'org-1')",
+        &[],
+    )
+    .await
+    .expect("the membership row commits");
 }

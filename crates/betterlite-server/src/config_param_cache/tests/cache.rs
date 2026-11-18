@@ -1,5 +1,5 @@
 use std::convert::Infallible;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{CacheOptions, DualCache};
@@ -29,7 +29,7 @@ impl ConfigChangePublisher for OrderPublisher<'_> {
             let present = self.cache.async_get_cache(&self.key, true).await.is_some();
             self.seen
                 .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .unwrap_or_else(PoisonError::into_inner)
                 .push((param_name.to_owned(), present));
         })
     }
@@ -178,7 +178,7 @@ async fn invalidate_evicts_before_it_publishes() {
         *publisher
             .seen
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
+            .unwrap_or_else(PoisonError::into_inner),
         vec![("settings".to_owned(), false)]
     );
     assert!(
@@ -219,7 +219,7 @@ async fn the_insert_invalidator_evicts_before_it_publishes() {
         *publisher
             .seen
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
+            .unwrap_or_else(PoisonError::into_inner),
         vec![("settings".to_owned(), false)]
     );
 }
@@ -239,7 +239,7 @@ async fn prefetch_reads_every_name_in_one_query() {
         *store
             .last_batch
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
+            .unwrap_or_else(PoisonError::into_inner),
         names
     );
     assert!(
@@ -325,7 +325,7 @@ async fn object_cache_entries_round_trip_without_a_database_read() {
             "litellm_config:param:settings",
             &value,
             CacheOptions {
-                ttl: Some(60.0),
+                ttl: Some(60.0_f64),
                 local_only: false,
                 refresh_ttl: false,
             },

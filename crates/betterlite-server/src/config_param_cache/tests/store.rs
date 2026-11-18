@@ -232,24 +232,19 @@ async fn the_store_reads_the_config_rows_it_serves() {
             .expect("the config miss runs")
             .is_none()
     );
+    let requested = vec![
+        String::from("general_settings"),
+        String::from("litellm_settings"),
+    ];
     let mut names: Vec<String> = store
-        .find_params(&[
-            String::from("general_settings"),
-            String::from("litellm_settings"),
-        ])
+        .find_params(&requested)
         .await
-        .expect("the named read runs")
+        .unwrap()
         .into_iter()
         .map(|row| row.param_name)
         .collect();
     names.sort();
-    assert_eq!(
-        names,
-        vec![
-            String::from("general_settings"),
-            String::from("litellm_settings")
-        ]
-    );
+    assert_eq!(names, requested);
     harness.close().await;
 }
 

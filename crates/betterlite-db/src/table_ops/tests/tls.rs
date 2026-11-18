@@ -25,11 +25,13 @@ async fn tls_timeout_stops_server_work_while_the_lock_stays_held(#[case] batch: 
     let db = harness.pool.get().await.unwrap();
     db.batch_execute(
         r#"INSERT INTO "LiteLLM_VerificationToken" (token, key_alias, models)
-        VALUES ('tls-token', 'original', ARRAY[]::text[]);
-        BEGIN; LOCK TABLE "LiteLLM_VerificationToken" IN ACCESS EXCLUSIVE MODE"#,
+        VALUES ('tls-token', 'original', ARRAY[]::text[])"#,
     )
     .await
     .unwrap();
+    db.batch_execute(r#"BEGIN; LOCK TABLE "LiteLLM_VerificationToken" IN ACCESS EXCLUSIVE MODE"#)
+        .await
+        .unwrap();
     let front = front::Front::start(&harness.fixture.options.url).await;
     let client = TableClient::new(front.pool.clone());
     let ports = Ports::new();

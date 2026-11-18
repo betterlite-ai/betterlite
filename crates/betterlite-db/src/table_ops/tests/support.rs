@@ -4,8 +4,11 @@ use crate::key_repository::table::TokenValue;
 use crate::table_ops::columns::TeamColumn;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::mem::take;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
+use tokio::task::yield_now;
+use tokio::time::timeout;
 
 use chrono::{DateTime, Utc};
 use clap::Parser as _;
@@ -188,7 +191,7 @@ pub(crate) struct RecordingSink {
 impl RecordingSink {
     pub(crate) fn events(&self) -> Vec<RecordedFailure> {
         let mut events = self.events.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *events)
+        take(&mut *events)
     }
 }
 
@@ -214,7 +217,7 @@ pub(crate) struct RecordingInvalidator {
 impl RecordingInvalidator {
     pub(crate) fn params(&self) -> Vec<String> {
         let mut params = self.params.lock().unwrap_or_else(PoisonError::into_inner);
-        std::mem::take(&mut *params)
+        take(&mut *params)
     }
 }
 
@@ -347,10 +350,10 @@ pub(crate) async fn text_column(db: &Client, sql: &str, parameter: &str) -> Opti
 pub(crate) async fn wait_for_idle(client: &Client, sql: &str) {
     let poll = async {
         while client.query_one(sql, &[]).await.unwrap().get::<_, i64>(0) != 0 {
-            tokio::task::yield_now().await;
+            yield_now().await;
         }
     };
-    tokio::time::timeout(Duration::from_secs(2), poll)
+    timeout(Duration::from_secs(2), poll)
         .await
         .expect("server execution stops while the blocking lock remains held");
 }

@@ -18,10 +18,11 @@ async fn a_miss_reads_the_user_row_and_caches_its_json_text() {
     assert_eq!(store.user_calls(), 1);
     let key = format!("u1{USER_ROW_KEY_SUFFIX}");
     let cached = harness.dual.async_get_cache(&key, false).await;
-    let Some(Json::Text(text)) = cached else {
-        panic!("the user row is cached as JSON text");
-    };
-    let decoded: LiteLLMUserTable = serde_json::from_str(&text).expect("the cached text decodes");
+    let cached_row = cached.expect("the cached JSON text is decoded by the memory tier");
+    assert!(matches!(&cached_row, Json::Object(_)));
+    let decoded: LiteLLMUserTable =
+        serde_json::from_str(&serde_json::to_string(&cached_row).unwrap())
+            .expect("the cached row decodes");
     assert_eq!(decoded.user_id, "u1");
     cache_user_row("u1", &cache, &store)
         .await
@@ -80,7 +81,7 @@ async fn a_cached_user_row_skips_the_store() {
         &key,
         &Json::Text(text),
         CacheOptions {
-            ttl: Some(600.0),
+            ttl: Some(600.0_f64),
             local_only: false,
             refresh_ttl: false,
         },

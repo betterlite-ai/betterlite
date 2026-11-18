@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_cache::backend::memory::local::LocalMemoryOps;
 use betterlite_cache::dual_cache::{DualCache, DualCacheSettings};
@@ -18,7 +19,7 @@ where
     T: Clone,
 {
     map.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .get(key)
         .cloned()
 }
@@ -38,14 +39,14 @@ impl FakeStore {
     pub(super) fn add_param(&self, name: &str, value: &str) {
         self.rows
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(name.to_owned(), config_row(name, value));
     }
 
     pub(super) fn add_user(&self, user_id: &str) {
         self.users
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .insert(user_id.to_owned(), user_row(user_id));
     }
 
@@ -69,38 +70,40 @@ impl FakeStore {
 impl ConfigParamStore for FakeStore {
     type ClientError = Infallible;
 
-    async fn find_param(
+    fn find_param(
         &self,
         param_name: &str,
-    ) -> Result<Option<ConfigParamRow>, TableOpsError<Infallible>> {
+    ) -> impl Future<Output = Result<Option<ConfigParamRow>, TableOpsError<Infallible>>> + Send
+    {
         self.param_reads.fetch_add(1, Ordering::SeqCst);
-        Ok(lookup(&self.rows, param_name))
+        ready(Ok(lookup(&self.rows, param_name)))
     }
 
-    async fn find_params(
+    fn find_params(
         &self,
         param_names: &[String],
-    ) -> Result<Vec<ConfigParamRow>, TableOpsError<Infallible>> {
+    ) -> impl Future<Output = Result<Vec<ConfigParamRow>, TableOpsError<Infallible>>> + Send {
         self.batch_reads.fetch_add(1, Ordering::SeqCst);
         *self
             .last_batch
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner) = param_names.to_vec();
+            .unwrap_or_else(PoisonError::into_inner) = param_names.to_vec();
         if self.batch_fails.load(Ordering::SeqCst) {
-            return Err(TableOpsError::NoDbConnected);
+            return ready(Err(TableOpsError::NoDbConnected));
         }
-        Ok(param_names
+        ready(Ok(param_names
             .iter()
             .filter_map(|name| lookup(&self.rows, name))
-            .collect())
+            .collect()))
     }
 
-    async fn user_row(
+    fn user_row(
         &self,
         user_id: &str,
-    ) -> Result<Option<LiteLLMUserTable>, TableOpsError<Infallible>> {
+    ) -> impl Future<Output = Result<Option<LiteLLMUserTable>, TableOpsError<Infallible>>> + Send
+    {
         self.user_reads.fetch_add(1, Ordering::SeqCst);
-        Ok(lookup(&self.users, user_id))
+        ready(Ok(lookup(&self.users, user_id)))
     }
 }
 

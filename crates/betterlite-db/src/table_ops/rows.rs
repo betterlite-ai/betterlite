@@ -98,6 +98,13 @@ impl BudgetMap {
 #[derive(Deserialize)]
 struct BudgetRecord {
     model_max_budget: Option<BudgetMap>,
+    // Decimal's optional visitor rejects null after serde flatten buffers it as a unit.
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    max_budget: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    soft_budget: Option<Decimal>,
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
+    temp_budget_increase: Option<Decimal>,
     #[serde(flatten)]
     row: LiteLLMBudgetTableFull,
 }
@@ -111,6 +118,9 @@ impl RowDecoder for LiteLLMBudgetTableFull {
             .transpose()
             .map_err(RowError::Model)?
             .flatten();
+        stored.row.budget.max_budget = stored.max_budget;
+        stored.row.budget.soft_budget = stored.soft_budget;
+        stored.row.budget.temp_budget_increase = stored.temp_budget_increase;
         Ok(stored.row)
     }
 }

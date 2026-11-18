@@ -1,4 +1,10 @@
 #![cfg(test)]
+mod fixtures;
+use fixtures::{
+    budget_batch_rows, budget_payload, config_values, notification_payload, rollback_rows,
+    spend_payload, team_clock_rows, user_batch_rows,
+};
+
 use crate::table_ops::deletes::TableDeletes as _;
 use crate::table_ops::inserts::TableInserts as _;
 use crate::table_ops::reads::resets::ResetReads as _;
@@ -10,6 +16,7 @@ use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
 use secrecy::SecretString;
+use tokio_postgres::Client;
 
 use super::support::{
     Harness, ManualClock, Ports, TableClient, at, json, seed, team_payload, text_column,
@@ -17,7 +24,6 @@ use super::support::{
 use crate::budget_permission_rows::JsonData;
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
-use crate::key_user_writes::columns::UserColumn;
 use crate::key_user_writes::hash::hash_token;
 use crate::table_ops::columns::TeamColumn;
 use crate::table_ops::columns::budget_enduser::BudgetColumn;
@@ -263,26 +269,7 @@ async fn update_many_teams_stamps_updated_at_from_the_injected_clock() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::with_clock(Box::new(ManualClock::new(1_800_000_000)));
     let ops = ports.operations(&client);
-    let rows = vec![
-        BTreeMap::from([
-            (TeamColumn::TeamId, TokenValue::Text(String::from("team-1"))),
-            (
-                TeamColumn::TeamAlias,
-                TokenValue::Text(String::from("stamped")),
-            ),
-        ]),
-        BTreeMap::from([
-            (TeamColumn::TeamId, TokenValue::Text(String::from("team-2"))),
-            (
-                TeamColumn::TeamAlias,
-                TokenValue::Text(String::from("explicit")),
-            ),
-            (
-                TeamColumn::UpdatedAt,
-                TokenValue::Timestamp(at(1_700_000_000)),
-            ),
-        ]),
-    ];
+    let rows = team_clock_rows();
     ops.update_many_teams(&rows)
         .await
         .expect("the team batch runs");
@@ -350,17 +337,13 @@ async fn update_many_budgets_reads_back_the_json_text_budget_map() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let rows = vec![BTreeMap::from([
-        (
-            BudgetColumn::BudgetId,
-            TokenValue::Text(String::from("b-3")),
-        ),
-        (
-            BudgetColumn::ModelMaxBudget,
-            TokenValue::Json(json(r#"{"gpt-4":{"max_budget":10}}"#)),
-        ),
-        (BudgetColumn::MaxParallelRequests, TokenValue::Integer(7)),
-    ])];
+    let mut payload = budget_payload("b-3");
+    payload.insert(
+        BudgetColumn::ModelMaxBudget,
+        TokenValue::Json(json(r#"{"gpt-4":{"max_budget":10}}"#)),
+    );
+    payload.insert(BudgetColumn::MaxParallelRequests, TokenValue::Integer(7));
+    let rows = [payload];
     ops.update_many_budgets(&rows)
         .await
         .expect("the budget batch runs");
@@ -388,16 +371,7 @@ async fn insert_config_writes_json_text_and_invalidates_each_param() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let data = [
-        (
-            String::from("general_settings"),
-            json(r#"{"store_model_in_db": true}"#),
-        ),
-        (
-            String::from("litellm_settings"),
-            json(r#"{"num_retries": 3}"#),
-        ),
-    ];
+    let data = config_values();
     ops.insert_config(&data)
         .await
         .expect("the config insert runs");
@@ -408,18 +382,7 @@ async fn insert_config_writes_json_text_and_invalidates_each_param() {
             String::from("litellm_settings")
         ]
     );
-    let row = db
-        .query_one(
-            "SELECT jsonb_typeof(param_value), param_value #>> '{}' FROM \"LiteLLM_Config\" WHERE param_name = 'general_settings'",
-            &[],
-        )
-        .await
-        .expect("the config row reads");
-    assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("string"));
-    assert_eq!(
-        row.get::<_, Option<String>>(1).as_deref(),
-        Some(r#"{"store_model_in_db":true}"#)
-    );
+    assert_config_json_text(&db).await;
     ops.insert_config(&[(
         String::from("general_settings"),
         json(r#"{"store_model_in_db": false}"#),
@@ -447,32 +410,7 @@ async fn insert_spend_writes_the_row_and_keeps_an_existing_one() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let mut data = BTreeMap::from([
-        (
-            SpendColumn::RequestId,
-            TokenValue::Text(String::from("req-1")),
-        ),
-        (
-            SpendColumn::CallType,
-            TokenValue::Text(String::from("completion")),
-        ),
-        (
-            SpendColumn::ApiKey,
-            TokenValue::Text(String::from("sk-fixture")),
-        ),
-        (SpendColumn::Spend, TokenValue::Number(Decimal::new(15, 1))),
-        (SpendColumn::TotalTokens, TokenValue::Integer(10)),
-        (
-            SpendColumn::StartTime,
-            TokenValue::Timestamp(at(1_000_000_000)),
-        ),
-        (
-            SpendColumn::EndTime,
-            TokenValue::Timestamp(at(1_000_000_000)),
-        ),
-        (SpendColumn::Model, TokenValue::Text(String::from("gpt-4"))),
-        (SpendColumn::User, TokenValue::Text(String::from("u-1"))),
-    ]);
+    let mut data = spend_payload();
     data.insert(
         SpendColumn::Metadata,
         TokenValue::Json(json(r#"{"trace":"abc"}"#)),
@@ -510,28 +448,7 @@ async fn insert_user_notification_writes_the_row_and_keeps_the_first_status() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let data = BTreeMap::from([
-        (
-            NotificationColumn::RequestId,
-            TokenValue::Text(String::from("req-n")),
-        ),
-        (
-            NotificationColumn::UserId,
-            TokenValue::Text(String::from("u-1")),
-        ),
-        (
-            NotificationColumn::Models,
-            TokenValue::TextArray(vec![String::from("gpt-4")]),
-        ),
-        (
-            NotificationColumn::Justification,
-            TokenValue::Text(String::from("needs access")),
-        ),
-        (
-            NotificationColumn::Status,
-            TokenValue::Text(String::from("pending")),
-        ),
-    ]);
+    let data = notification_payload();
     let row = ops
         .insert_user_notification(&data)
         .await
@@ -562,7 +479,12 @@ async fn insert_user_notification_writes_the_row_and_keeps_the_first_status() {
 async fn update_many_keys_hashes_the_token_column() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, KEY_INSERT, &[&hash_token("sk-abc"), &"old", &"", &0.0]).await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&hash_token("sk-abc"), &"old", &"", &0.0_f64],
+    )
+    .await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -605,40 +527,19 @@ async fn update_many_keys_rolls_back_the_whole_batch() {
     seed(
         &db,
         KEY_INSERT,
-        &[&hash_token("sk-tok-1"), &"first", &"", &0.0],
+        &[&hash_token("sk-tok-1"), &"first", &"", &0.0_f64],
     )
     .await;
     seed(
         &db,
         KEY_INSERT,
-        &[&hash_token("sk-tok-2"), &"second", &"", &0.0],
+        &[&hash_token("sk-tok-2"), &"second", &"", &0.0_f64],
     )
     .await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let rows = vec![
-        BTreeMap::from([
-            (
-                TokenColumn::Token,
-                TokenValue::Text(String::from("sk-tok-1")),
-            ),
-            (
-                TokenColumn::KeyAlias,
-                TokenValue::Text(String::from("changed")),
-            ),
-        ]),
-        BTreeMap::from([
-            (
-                TokenColumn::Token,
-                TokenValue::Text(String::from("sk-tok-2")),
-            ),
-            (
-                TokenColumn::Spend,
-                TokenValue::Text(String::from("not-a-number")),
-            ),
-        ]),
-    ];
+    let rows = rollback_rows();
     let error = ops
         .update_many_keys(&rows)
         .await
@@ -665,17 +566,7 @@ async fn update_many_users_sets_values_omits_nulls_and_inserts_rows() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let rows = vec![
-        BTreeMap::from([
-            (UserColumn::UserId, TokenValue::Text(String::from("u-1"))),
-            (UserColumn::Spend, TokenValue::Number(Decimal::new(25, 1))),
-            (UserColumn::UserAlias, TokenValue::Null),
-        ]),
-        BTreeMap::from([
-            (UserColumn::UserId, TokenValue::Text(String::from("u-2"))),
-            (UserColumn::UserAlias, TokenValue::Text(String::from("new"))),
-        ]),
-    ];
+    let rows = user_batch_rows();
     ops.update_many_users(&rows)
         .await
         .expect("the user batch runs");
@@ -692,20 +583,7 @@ async fn update_many_users_sets_values_omits_nulls_and_inserts_rows() {
         .expect("the user read runs")
         .expect("the user row");
     assert_eq!(inserted.user_alias.as_deref(), Some("new"));
-    let updated_stamp = text_column(
-        &db,
-        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
-        "u-1",
-    )
-    .await;
-    assert_ne!(updated_stamp.as_deref(), Some("2000-01-01 00:00:00"));
-    let inserted_stamp = text_column(
-        &db,
-        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_UserTable\" WHERE user_id = $1",
-        "u-2",
-    )
-    .await;
-    assert!(inserted_stamp.is_some(), "the new user row is stamped");
+    assert_batch_timestamps(&db, "LiteLLM_UserTable", "user_id").await;
     harness.close().await;
 }
 
@@ -761,32 +639,7 @@ async fn update_many_budgets_sets_values_and_inserts_rows() {
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
-    let rows = vec![
-        BTreeMap::from([
-            (
-                BudgetColumn::BudgetId,
-                TokenValue::Text(String::from("b-1")),
-            ),
-            (
-                BudgetColumn::MaxBudget,
-                TokenValue::Number(Decimal::new(1000, 2)),
-            ),
-        ]),
-        BTreeMap::from([
-            (
-                BudgetColumn::BudgetId,
-                TokenValue::Text(String::from("b-2")),
-            ),
-            (
-                BudgetColumn::CreatedBy,
-                TokenValue::Text(String::from("created")),
-            ),
-            (
-                BudgetColumn::UpdatedBy,
-                TokenValue::Text(String::from("updated")),
-            ),
-        ]),
-    ];
+    let rows = budget_batch_rows();
     ops.update_many_budgets(&rows)
         .await
         .expect("the budget batch runs");
@@ -804,20 +657,7 @@ async fn update_many_budgets_sets_values_and_inserts_rows() {
     )
     .await;
     assert_eq!(inserted.as_deref(), Some("updated"));
-    let updated_stamp = text_column(
-        &db,
-        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_BudgetTable\" WHERE budget_id = $1",
-        "b-1",
-    )
-    .await;
-    assert_ne!(updated_stamp.as_deref(), Some("2000-01-01 00:00:00"));
-    let inserted_stamp = text_column(
-        &db,
-        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"LiteLLM_BudgetTable\" WHERE budget_id = $1",
-        "b-2",
-    )
-    .await;
-    assert!(inserted_stamp.is_some(), "the new budget row is stamped");
+    assert_batch_timestamps(&db, "LiteLLM_BudgetTable", "budget_id").await;
     harness.close().await;
 }
 
@@ -866,9 +706,19 @@ async fn update_many_end_users_sets_values_and_inserts_rows() {
 async fn delete_keys_hashes_tokens_and_applies_the_user_filter() {
     let harness = Harness::start().await;
     let db = harness.pool.get().await.expect("a fixture connection");
-    seed(&db, KEY_INSERT, &[&hash_token("sk-a"), &"a", &"u-1", &0.0]).await;
-    seed(&db, KEY_INSERT, &[&hash_token("sk-b"), &"b", &"u-2", &0.0]).await;
-    seed(&db, KEY_INSERT, &[&"literal-key", &"c", &"u-2", &0.0]).await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&hash_token("sk-a"), &"a", &"u-1", &0.0_f64],
+    )
+    .await;
+    seed(
+        &db,
+        KEY_INSERT,
+        &[&hash_token("sk-b"), &"b", &"u-2", &0.0_f64],
+    )
+    .await;
+    seed(&db, KEY_INSERT, &[&"literal-key", &"c", &"u-2", &0.0_f64]).await;
     let client = TableClient::new(harness.pool.clone());
     let ports = Ports::new();
     let ops = ports.operations(&client);
@@ -937,4 +787,29 @@ async fn delete_keys_for_teams_and_delete_teams_report_what_they_removed() {
         .get(0);
     assert_eq!(remaining, 1);
     harness.close().await;
+}
+
+async fn assert_batch_timestamps(db: &Client, table: &str, key: &str) {
+    let sql = format!(
+        "SELECT to_char(updated_at, 'YYYY-MM-DD HH24:MI:SS') FROM \"{table}\" ORDER BY {key}"
+    );
+    let rows = db.query(&sql, &[]).await.unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_ne!(rows[0].get::<_, String>(0), "2000-01-01 00:00:00");
+    assert!(!rows[1].get::<_, String>(0).is_empty());
+}
+
+async fn assert_config_json_text(db: &Client) {
+    let row = db
+        .query_one(
+            "SELECT jsonb_typeof(param_value), param_value #>> '{}' FROM \"LiteLLM_Config\" WHERE param_name = 'general_settings'",
+            &[],
+        )
+        .await
+        .expect("the config row reads");
+    assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("string"));
+    assert_eq!(
+        row.get::<_, Option<String>>(1).as_deref(),
+        Some(r#"{"store_model_in_db":true}"#)
+    );
 }
