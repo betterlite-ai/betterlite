@@ -1519,6 +1519,7 @@ dependencies = [
  "shellexpand",
  "soft-canonicalize",
  "strum",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
