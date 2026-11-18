@@ -127,12 +127,12 @@ fn built_logger(
     let roots = Arc::clone(&constructor.roots);
     match request.class {
         LoggerClass::Generic => Ok(generic_built(assembly)),
-        LoggerClass::Langfuse => Ok(langfuse_built(assembly, roots)),
+        LoggerClass::Langfuse => Ok(langfuse_built(assembly, roots, None)),
         LoggerClass::LangfuseContent => {
             let Some(assembler) = request.assembler else {
                 return Err(LoggerRuntimeError::MissingAssembler);
             };
-            Ok(langfuse_content_built(assembly, roots, assembler))
+            Ok(langfuse_built(assembly, roots, Some(assembler)))
         }
     }
 }
@@ -161,31 +161,12 @@ fn generic_built(assembly: V2CallbackAssembly) -> BuiltLogger {
     }
 }
 
-// B8250's wrapper owns the assembled logger and keeps the request root span source
-fn langfuse_built(assembly: V2CallbackAssembly, roots: Arc<dyn RootSpanSource>) -> BuiltLogger {
-    let V2CallbackAssembly {
-        provider,
-        logger,
-        recorder_providers,
-        error_info: _,
-    } = assembly;
-    let typed = Arc::new(LangfuseOtel {
-        inner: logger,
-        roots,
-    });
-    let hooks = Some(CallbackHooks::Langfuse(Arc::clone(&typed)));
-    BuiltLogger {
-        callback: typed,
-        hooks,
-        provider,
-        recorder_providers,
-    }
-}
-
-fn langfuse_content_built(
+// B8250's wrapper owns the assembled logger and keeps the request root span source; the content
+// variant adds the runtime's stream assembler around the same inner wrapper
+fn langfuse_built(
     assembly: V2CallbackAssembly,
     roots: Arc<dyn RootSpanSource>,
-    stream_assembler: &Arc<dyn StreamOutputAssembler>,
+    stream_assembler: Option<&Arc<dyn StreamOutputAssembler>>,
 ) -> BuiltLogger {
     let V2CallbackAssembly {
         provider,
@@ -193,14 +174,25 @@ fn langfuse_content_built(
         recorder_providers,
         error_info: _,
     } = assembly;
-    let typed = Arc::new(LangfuseContentOtel {
-        inner: LangfuseOtel {
-            inner: logger,
-            roots,
-        },
-        stream_assembler: Arc::clone(stream_assembler),
-    });
-    let hooks = Some(CallbackHooks::LangfuseContent(Arc::clone(&typed)));
+    let inner = LangfuseOtel {
+        inner: logger,
+        roots,
+    };
+    if let Some(assembler) = stream_assembler {
+        let typed = Arc::new(LangfuseContentOtel {
+            inner,
+            stream_assembler: Arc::clone(assembler),
+        });
+        let hooks = Some(CallbackHooks::LangfuseContent(Arc::clone(&typed)));
+        return BuiltLogger {
+            callback: typed,
+            hooks,
+            provider,
+            recorder_providers,
+        };
+    }
+    let typed = Arc::new(inner);
+    let hooks = Some(CallbackHooks::Langfuse(Arc::clone(&typed)));
     BuiltLogger {
         callback: typed,
         hooks,

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use opentelemetry_sdk::trace::SdkTracerProvider;
 
 use crate::otel::config::Settings;
+use crate::otel::content_projections::StreamOutputAssembler;
 use crate::otel::v2_callback::error::CallbackError;
 use crate::otel_provider_assembly::tracer_provider_assembly::{
     AssemblyOptions, build_fan_out_tracer_provider,
@@ -14,6 +15,15 @@ use super::types::{
     BuiltLogger, ConstructorSettings, InjectedProviders, LoggerBuildRequest, LoggerClass, V2Logger,
 };
 use super::{LoggerRuntime, locked};
+
+// the class, callback name, providers, assembler and settings one build request carries
+struct BuildInputs<'inputs> {
+    class: LoggerClass,
+    callback_name: Option<&'inputs str>,
+    providers: InjectedProviders<'inputs>,
+    assembler: Option<&'inputs Arc<dyn StreamOutputAssembler>>,
+    settings: ConstructorSettings,
+}
 
 // litellm.integrations.otel.logger.build_otel_v2_logger: class choice, then the constructor port
 pub fn build_otel_v2_logger(
@@ -30,9 +40,8 @@ pub fn build_otel_v2_logger(
         .is_none()
         .then(|| fan_out_provider_for(runtime, &config))
         .transpose()?;
-    let request = LoggerBuildRequest {
+    let inputs = BuildInputs {
         class,
-        config: &config,
         callback_name,
         providers: InjectedProviders {
             tracer_provider: providers.tracer_provider.or(built_provider.as_ref()),
@@ -40,13 +49,8 @@ pub fn build_otel_v2_logger(
         },
         assembler,
         settings,
-        factories: Arc::clone(&runtime.factories),
-        scope_source: Arc::clone(&runtime.scope),
-        trace: Arc::clone(&runtime.trace),
-        environment: Arc::clone(&runtime.environment),
     };
-    let built = runtime.constructor.build(&request)?;
-    Ok(finish(runtime, built, config))
+    build_logger(runtime, config, inputs)
 }
 
 // logger.py:871: the OTEL_* fallback builds plain OpenTelemetryV2, so a config naming langfuse still gets that class
@@ -55,9 +59,8 @@ pub(super) fn build_generic_otel_v2_logger(
     config: Settings,
 ) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
     let provider = fan_out_provider_for(runtime, &config)?;
-    let request = LoggerBuildRequest {
+    let inputs = BuildInputs {
         class: LoggerClass::Generic,
-        config: &config,
         callback_name: None,
         providers: InjectedProviders {
             tracer_provider: Some(&provider),
@@ -66,6 +69,22 @@ pub(super) fn build_generic_otel_v2_logger(
         },
         assembler: None,
         settings: ConstructorSettings::default(),
+    };
+    build_logger(runtime, config, inputs)
+}
+
+fn build_logger(
+    runtime: &LoggerRuntime,
+    config: Settings,
+    inputs: BuildInputs<'_>,
+) -> Result<Arc<V2Logger>, LoggerRuntimeError> {
+    let request = LoggerBuildRequest {
+        class: inputs.class,
+        config: &config,
+        callback_name: inputs.callback_name,
+        providers: inputs.providers,
+        assembler: inputs.assembler,
+        settings: inputs.settings,
         factories: Arc::clone(&runtime.factories),
         scope_source: Arc::clone(&runtime.scope),
         trace: Arc::clone(&runtime.trace),
