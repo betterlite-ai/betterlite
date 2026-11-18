@@ -303,7 +303,7 @@ async fn periodic_sync_writes_on_the_interval() {
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2_i64)));
     // a failed tick logs and sleeps again, so the next interval retries
     retry_after_a_failed_tick(&harness).await;
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
 }
 
 async fn retry_after_a_failed_tick(harness: &Harness) {
@@ -332,14 +332,14 @@ async fn no_periodic_task_without_batching() {
     advance(Duration::from_secs(10)).await;
     yield_now().await;
     assert_eq!(harness.store.calls(), 0);
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
 }
 
 async fn cleanup_stops_the_periodic_task() {
     let harness = Harness::with_store(settings(true, Some(Duration::from_millis(50))));
     harness.counters.start();
     yield_now().await;
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
     harness
         .counters
         .increment_window_value(RPM_KEY, Decimal::from(1_i64), TTL)
@@ -359,7 +359,7 @@ async fn retire_pushes_and_stops_the_task() {
         .increment_window_value(RPM_KEY, Decimal::from(2_i64), TTL)
         .await
         .unwrap();
-    harness.counters.retire().await;
+    harness.retire().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2_i64)));
     harness
         .counters
@@ -369,7 +369,7 @@ async fn retire_pushes_and_stops_the_task() {
     advance(Duration::from_secs(1)).await;
     yield_now().await;
     assert_eq!(harness.store.amount(RPM_KEY), Some(Decimal::from(2_i64)));
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
 }
 
 async fn usage_pipeline_increments_locally_and_queues() {
@@ -455,7 +455,7 @@ async fn cleanup_waits_for_the_scheduled_flush() {
     let sink: &dyn CounterSink = harness.counters.as_ref();
     sink.increment_pipeline(&usage_batch(TPM_KEY, MAX_PENDING_DELTAS + 1))
         .unwrap();
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
     assert_eq!(harness.store.calls(), 1);
     assert_eq!(
         harness.store.amount(TPM_KEY),
@@ -586,7 +586,7 @@ async fn periodic_sync_drains_queued_callbacks() {
     );
     assert_eq!(harness.pending_len(), 0);
     assert_eq!(harness.counters.read(TPM_KEY), Some(1_025));
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
 }
 
 // a store that never answers: the one second deadline ends the caller's wait and the new delta is dropped

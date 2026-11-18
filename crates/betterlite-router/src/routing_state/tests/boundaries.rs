@@ -225,7 +225,7 @@ async fn drop_at_the_deadline(
     if let Some(joined) = syncs.join_next().await {
         assert!(!joined.unwrap());
     }
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
     assert_eq!(harness.pending_len(), 0);
     harness.store.set_stalled(false);
     assert!(!harness.counters.sync_with_redis().await);
@@ -418,7 +418,7 @@ async fn cancelled_sync_task_does_not_tick() {
     advance(Duration::from_secs(10)).await;
     yield_now().await;
     assert_eq!(harness.store.calls(), 0);
-    harness.counters.cleanup().await;
+    harness.cleanup().await;
 }
 
 async fn sync_without_a_store_returns_false() {

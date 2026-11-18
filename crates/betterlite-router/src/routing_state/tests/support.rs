@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use betterlite_config::sections::routing_state_store::connection::Connection;
 use rust_decimal::Decimal;
 use tokio::sync::Semaphore;
+use tokio::time::timeout;
 
 use crate::redis_failure_policy::Settings as BreakerSettings;
 use crate::router_observations::counter::Increment;
@@ -21,6 +22,9 @@ use crate::routing_value_store::{
     Clock, MAX_KEY_BYTES, RouteKey, RouteValue, RoutingValueStore, StoreError, StoreRead,
     StoreSettings,
 };
+
+// a stop that ignores its abort must fail the test; a hang would only end at the mutant run's timeout
+const STOP_LIMIT: Duration = Duration::from_secs(5);
 
 pub(crate) struct TestClock(Arc<AtomicU64>);
 
@@ -228,6 +232,16 @@ impl Harness {
                 .unwrap_or_else(PoisonError::into_inner),
         );
         while flushes.join_next().await.is_some() {}
+    }
+
+    pub(crate) async fn cleanup(&self) {
+        let stopped = timeout(STOP_LIMIT, self.counters.cleanup()).await;
+        assert!(stopped.is_ok(), "cleanup did not stop the sync task");
+    }
+
+    pub(crate) async fn retire(&self) {
+        let retired = timeout(STOP_LIMIT, self.counters.retire()).await;
+        assert!(retired.is_ok(), "retire did not stop the sync task");
     }
 
     pub(crate) fn local_amount(&self, key: &str) -> Option<Decimal> {
