@@ -240,9 +240,9 @@ fn the_fallback_times_are_null_without_a_start_time(#[case] call_details: &str) 
 }
 
 #[test]
-fn an_unparseable_start_time_is_an_error() {
+fn an_unparsable_start_time_is_an_error() {
     let error = payload_result(r#"{"litellm_call_id":"call-1","start_time":"not a time"}"#)
-        .expect_err("an unparseable time is an error");
+        .expect_err("an unparsable time is an error");
     assert!(matches!(error, EventPayloadError::StartTime { .. }));
 }
 
