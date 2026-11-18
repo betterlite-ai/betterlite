@@ -2,7 +2,7 @@ use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
 use betterlite_tokenizer::engine::error::EngineError;
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
 use tokio::net::TcpListener;
 
@@ -11,12 +11,13 @@ use aws_smithy_eventstream::frame::write_message_to;
 use aws_smithy_types::event_stream::{Header, HeaderValue, Message as EventMessage};
 use aws_smithy_types::str_bytes::StrBytes;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_config::{proxy::ProxyPolicy, types::ProxyTrust};
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::compatible_wire::{NEW_ID, ReplyOptions, system_clock};
@@ -33,11 +34,12 @@ use betterlite_prompts::factory::hub::Hub;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use futures_util::StreamExt as _;
 use futures_util::stream;
-use http::HeaderMap;
+use http::{HeaderMap, Method};
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use serde_json::json;
+use url::Url;
 use uuid::Uuid;
 
 use crate::aws_settings::sources::{Credentials, SourceError};
@@ -353,17 +355,23 @@ async fn timeout_failure() -> TransportError {
         .await
         .expect("loopback listener");
     let address = listener.local_addr().expect("listener address");
-    let client = reqwest::ClientBuilder::new()
-        .no_proxy()
-        .read_timeout(Duration::from_millis(100))
-        .build()
-        .expect("timeout client");
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+        .expect("default proxy policy");
+    let client = ProxiedClient::outbound(&Arc::new(policy)).expect("timeout client");
+    let request = OutboundRequest {
+        method: Method::GET,
+        url: Url::parse(&format!("http://{address}/invocations")).expect("loopback URL"),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: Duration::from_millis(100),
+    };
     let failure = client
-        .get(format!("http://{address}/invocations"))
-        .send()
+        .send_buffered(request)
         .await
         .expect_err("the listener never answers");
-    TransportError::sending(failure)
+    assert!(matches!(failure, TransportError::Deadline(_)));
+    failure
 }
 
 #[tokio::test]

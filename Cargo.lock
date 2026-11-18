@@ -1265,7 +1265,6 @@ dependencies = [
  "mutants",
  "num-traits",
  "percent-encoding",
- "reqwest",
  "rstest",
  "rust_decimal",
  "secrecy",
