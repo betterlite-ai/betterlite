@@ -95,9 +95,18 @@ impl Walker<'_> {
         if !class {
             self.at_start = false;
         }
+        let mut following = self.input.clone();
+        let digits = (following.next(), following.next());
         match character {
             'Z' => self.output.push_str("\\z"),
             'b' if class => self.output.push_str("\\x08"),
+            '1'..='7'
+                if !class
+                    && matches!(digits.0, Some('0'..='9'))
+                    && !matches!(digits, (Some('0'..='7'), Some('0'..='7'))) =>
+            {
+                return Err(PatternProblem::Syntax);
+            }
             // Python reads up to three octal digits; the matcher engine reads a codepoint escape
             '0'..='7' => self.octal(character),
             'z' | 'p' | 'P' => return Err(PatternProblem::Syntax),

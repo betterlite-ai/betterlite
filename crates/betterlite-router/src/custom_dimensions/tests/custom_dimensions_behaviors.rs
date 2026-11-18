@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::slice;
 
+use betterlite_config::sections::complexity_scoring as scoring_section;
 use betterlite_config::sections::custom_dimensions as section;
 use betterlite_config::sections::custom_dimensions::pattern::PatternProblem;
 use rstest::rstest;
@@ -46,9 +47,7 @@ fn classifier_names_parse_and_gate_dimensions(
 #[test]
 fn dollar_continuation_deviation_is_explicit() {
     let declared = [config("domain", 0.8_f64, &[], &["a$\\n"], "binary")];
-    let mut settings =
-        Config::resolve(&betterlite_config::sections::complexity_scoring::Config::default())
-            .unwrap();
+    let mut settings = Config::resolve(&scoring_section::Config::default()).unwrap();
     settings.custom_dimensions = validate(&declared, "heuristic", &BTreeMap::new())
         .unwrap()
         .dimensions;

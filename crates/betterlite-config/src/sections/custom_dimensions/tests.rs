@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 
@@ -131,6 +132,8 @@ fn an_empty_environment_weight_reads_as_zero() {
 #[case::bounded("a{64}", true)]
 #[case::over_repeat_limit("a{65}", false)]
 #[case::unbounded("a+", false)]
+#[case::decimal_reference("\\12", false)]
+#[case::octal_escape("\\123", true)]
 #[case::over_work_limit("a{0,64}b{0,64}", false)]
 fn config_loading_validates_pattern_bounds(#[case] pattern: &str, #[case] accepted: bool) {
     let keys = format!(
@@ -164,9 +167,7 @@ fn configuration_errors_retain_the_dimension_problem(
     };
     assert_eq!(error.category(), "custom_dimensions");
     assert_eq!(
-        std::error::Error::source(&error)
-            .unwrap()
-            .downcast_ref::<DimensionProblem>(),
+        error.source().unwrap().downcast_ref::<DimensionProblem>(),
         Some(&expected)
     );
     let ConfigError::CustomDimensions(LoadError::Dimension { path, source }) = error else {
@@ -290,6 +291,9 @@ fn a_malformed_dimension_is_an_error(#[case] keys: &str) {
 #[case::verbose_class_range("(?x)[a-b]", 3)]
 #[case::class_escaped_dash("[a\\-b]", 5)]
 #[case::escaped_brace("a\\{", 3)]
+#[case::three_octal_digits("\\123", 2)]
+#[case::class_two_octal_digits("[\\12]", 2)]
+#[case::leading_zero_octal("\\012", 2)]
 #[case::escaped_brace_repeat("\\{2}", 4)]
 #[case::escaped_close_brace("\\}", 2)]
 #[case::empty_braces("{}", 3)]
@@ -382,6 +386,11 @@ fn accepted_patterns_report_their_measured_work(#[case] pattern: &str, #[case] e
 #[case::named_escape_bare("\\N", PatternProblem::Syntax)]
 #[case::class_named_escape("[\\N]", PatternProblem::Syntax)]
 #[case::g_group_reference("\\g<1>", PatternProblem::Syntax)]
+#[case::two_digit_reference("\\12", PatternProblem::Syntax)]
+#[case::decimal_reference("\\18", PatternProblem::Syntax)]
+#[case::ten_reference("\\10", PatternProblem::Syntax)]
+#[case::octal_prefix_reference("\\128", PatternProblem::Syntax)]
+#[case::decimal_prefix_reference("\\183", PatternProblem::Syntax)]
 #[case::k_group_reference("\\k<n>", PatternProblem::Syntax)]
 #[case::unknown_named_backref("(?P=name)", PatternProblem::Syntax)]
 #[case::short_hex("\\x4", PatternProblem::Syntax)]

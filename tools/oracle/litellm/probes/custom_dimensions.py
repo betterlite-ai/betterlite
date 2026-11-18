@@ -3,7 +3,7 @@ from typing import Final, Literal, assert_never
 
 from litellm.router import Router
 from litellm.router_strategy import complexity_router
-from litellm.router_strategy.complexity_router.config import custom_pattern_work
+from litellm.router_strategy.complexity_router import config
 from pydantic import Field, TypeAdapter, ValidationError
 from typing_extensions import TypedDict, override
 
@@ -44,7 +44,7 @@ class Output(Strict):
 
 
 def _entry(pattern: str) -> Entry:
-    result = _WORK.validate_python(custom_pattern_work(pattern))
+    result = _WORK.validate_python(config.custom_pattern_work(pattern))
     match result:
         case int() as work:
             return Entry(work=work)
