@@ -76,12 +76,12 @@ pub fn reload_serving_verdict(
 pub fn raise_if_reload_degraded_serving(
     state: &ReloadState<'_>,
     action: &str,
-) -> Result<(), ProxyException> {
+) -> Result<(), Box<ProxyException>> {
     let verdict = reload_serving_verdict(state, ServeObligation::MustServe);
     if verdict.missing.is_empty() && verdict.collateral.is_empty() {
         return Ok(());
     }
-    Err(ProxyException::new(ProxyExceptionInit {
+    Err(Box::new(ProxyException::new(ProxyExceptionInit {
         message: degraded_message(&verdict, action),
         error_type: ProxyErrorTypes::InternalServerError.to_string(),
         param: None,
@@ -89,7 +89,7 @@ pub fn raise_if_reload_degraded_serving(
         headers: BTreeMap::new(),
         openai_code: None,
         provider_specific_fields: BTreeMap::new(),
-    }))
+    })))
 }
 
 fn violates(
