@@ -50,6 +50,7 @@ async fn roll_back(holder: Client) {
         .batch_execute("ROLLBACK")
         .await
         .expect("the rollback");
+    drop(holder);
 }
 
 // A delivered cancel stops the statement on the server, so its lock waiter is gone before the rollback.
