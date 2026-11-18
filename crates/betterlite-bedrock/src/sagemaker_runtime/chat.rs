@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_models::decisions::Json as Plain;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::compatible_wire::{
@@ -27,8 +28,6 @@ use super::runtime::{
     ChunkStream, PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport,
     body_text, reply_headers, stream_error,
 };
-
-const BASE_URL_FIELD: &str = "sagemaker_base_url";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChatVariant {
@@ -58,7 +57,7 @@ where
     T: Sync,
     C: SagemakerCredentials,
 {
-    let base_url = text_field(call.optional_params, BASE_URL_FIELD)?;
+    let base_url = text_field(call.optional_params, "sagemaker_base_url")?;
     let region = resolve_region(call.signing, Some(call.model), runtime.environment.inputs())?;
     let url = endpoint::runtime_url(&EndpointRequest {
         model: call.model,
@@ -165,9 +164,22 @@ where
     T: SagemakerTransport,
     C: SagemakerCredentials,
 {
-    let (status, chunks) = runtime
-        .transport
-        .open_stream(runtime.outbound(&prepare_chat(runtime, call).await?)?)
+    open_chat_stream(
+        &runtime.transport,
+        runtime.outbound(&prepare_chat(runtime, call).await?)?,
+    )
+    .await
+}
+
+async fn open_chat_stream<T>(
+    transport: &T,
+    request: OutboundRequest,
+) -> Result<SagemakerEvents<ChunkStream>, SagemakerError>
+where
+    T: SagemakerTransport,
+{
+    let (status, chunks) = transport
+        .open_stream(request)
         .await
         .map_err(timeout_error)?;
     if status != 200 {
@@ -188,7 +200,6 @@ where
     })
 }
 
-// a null entry is the absent one, as dict.get reads it; any other non-string names the field
 fn text_field<'body>(
     params: &'body Body,
     name: &'static str,

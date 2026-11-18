@@ -1,3 +1,4 @@
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json as Plain;
 use betterlite_openai::cohere_embedding::TextEncoding;
@@ -20,10 +21,7 @@ use super::runtime::{
 };
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
-const SERVICE: &str = "sagemaker";
 const CUSTOM_ATTRIBUTES: &str = "X-Amzn-SageMaker-Custom-Attributes";
-const ACCEPT_EULA: &str = "accept_eula=true";
-const MOCK_STATUS: u16 = 200;
 
 pub struct EmbeddingCall<'call> {
     pub model: &'call str,
@@ -66,13 +64,13 @@ where
         stream: false,
     });
     let signed = sign_aws_json_post(JsonPost {
-        service_name: SERVICE,
+        service_name: "sagemaker",
         region: Some(&region),
         url: &url,
         body: &text,
         headers: &[
             (CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned()),
-            (CUSTOM_ATTRIBUTES.to_owned(), ACCEPT_EULA.to_owned()),
+            (CUSTOM_ATTRIBUTES.to_owned(), "accept_eula=true".to_owned()),
         ],
         credentials: &credentials,
         now: runtime.clock.now(),
@@ -103,6 +101,14 @@ where
         .send(runtime.outbound(&prepared.call)?)
         .await
         .map_err(RuntimeError::from)?;
+    embedding_reply(&response, call, &prepared.body)
+}
+
+fn embedding_reply(
+    response: &UpstreamResponse,
+    call: &EmbeddingCall<'_>,
+    body: &Body,
+) -> Result<EmbeddingReply, RuntimeFailure> {
     if !(200..300).contains(&response.status) {
         return Err(RuntimeFailure::from(wire_error(
             response.status,
@@ -115,7 +121,7 @@ where
             &serde_json::to_vec(&project_response(&reply))?,
         )?)),
         EmbeddingConfig::HuggingFace => Ok(EmbeddingReply::HuggingFace(
-            hf::transform_response(&response.body, MOCK_STATUS, call.model, &prepared.body)
+            hf::transform_response(&response.body, 200, call.model, body)
                 .map_err(SagemakerError::from)?,
         )),
         EmbeddingConfig::Cohere => Ok(EmbeddingReply::Cohere(
@@ -123,7 +129,7 @@ where
                 &response.body,
                 call.model,
                 Some(call.input),
-                &prepared.body,
+                body,
                 call.encoding,
             )
             .map_err(|source| SagemakerError::from(RuntimeError::from(source)))?,
@@ -143,7 +149,6 @@ fn embedding_body(
     }
 }
 
-// VoyageEmbeddingConfig.transform_embedding_request: the input and model first, then the caller's options
 fn voyage_body(model: &str, input: &EmbeddingInput, optional_params: &Body) -> Body {
     let rendered = hf::transform_request(input, &Body::new());
     let mut body = Body::new();

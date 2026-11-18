@@ -13,6 +13,7 @@ use crate::aws_settings::sources::Credentials;
 use crate::signing::error::SigningError;
 use crate::signing::json_post::{JsonPost, sign_aws_json_post};
 use crate::signing::target::RegionInputs;
+use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use futures_util::stream;
 use http::{HeaderMap, HeaderValue};
@@ -182,9 +183,10 @@ fn explicit_completion_region_overrides_environment() {
 
 #[test]
 fn prepared_call_logging_contains_signed_request_data() {
+    let authorization = "AWS4-HMAC-SHA256 Credential=access, SignedHeaders=host, Signature=example";
     let prepared = PreparedCall {
         url: String::from("https://runtime.example/invocations"),
-        headers: vec![(String::from("Authorization"), String::from("signature"))],
+        headers: vec![(String::from("Authorization"), authorization.to_owned())],
         body: br#"{"inputs":"hi"}"#.to_vec(),
         body_json: IndexMap::from([(String::from("inputs"), Json::Text(String::from("hi")))]),
         region: String::from("us-west-2"),
@@ -194,8 +196,13 @@ fn prepared_call_logging_contains_signed_request_data() {
         logged.api_base.as_deref(),
         Some("https://runtime.example/invocations")
     );
-    assert!(logged.headers.is_some());
-    assert!(logged.complete_input_dict.is_some());
+    assert_eq!(
+        logged.headers.expect("logged headers").get("Authorization"),
+        Some(&Json::Text(authorization.to_owned()))
+    );
+    assert!(
+        matches!(logged.complete_input_dict, Some(RawBody::Object(body)) if body.get("inputs") == Some(&Json::Text(String::from("hi"))))
+    );
 }
 
 #[test]

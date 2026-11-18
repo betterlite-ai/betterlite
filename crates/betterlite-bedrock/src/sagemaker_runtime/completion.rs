@@ -28,10 +28,7 @@ use super::runtime::{
 };
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
-const SERVICE: &str = "sagemaker";
 const COMPONENT_HEADER: &str = "X-Amzn-SageMaker-Inference-Component";
-const BASE_URL_FIELD: &str = "sagemaker_base_url";
-const MODEL_ID_FIELD: &str = "model_id";
 
 pub struct CompletionCall<'call> {
     pub model: &'call str,
@@ -54,8 +51,8 @@ where
 {
     let region = endpoint::call_region(call.signing, runtime.environment.inputs())?;
     let credentials = runtime.credentials_for(call.signing, &region).await?;
-    let base_url = text_option(call.optional_params, BASE_URL_FIELD)?;
-    let model_id = text_option(call.optional_params, MODEL_ID_FIELD)?;
+    let base_url = text_option(call.optional_params, "sagemaker_base_url")?;
+    let model_id = text_option(call.optional_params, "model_id")?;
     let stream = call
         .optional_params
         .get("stream")
@@ -70,7 +67,7 @@ where
         stream,
     });
     let signed = sign_aws_json_post(JsonPost {
-        service_name: SERVICE,
+        service_name: "sagemaker",
         region: Some(&region),
         url: &url,
         body: &text,
@@ -175,7 +172,6 @@ async fn completion_body(
     .map_err(RuntimeError::from)
 }
 
-// a null entry is the absent one, as dict.get reads it; any other non-string names the field
 fn text_option<'params>(
     params: &'params Options,
     name: &'static str,

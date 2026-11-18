@@ -181,9 +181,10 @@ fn outbound_validates_url_and_builds_post_request() {
 
 #[test]
 fn prepared_call_logging_uses_body_object_and_signed_headers() {
+    let authorization = "AWS4-HMAC-SHA256 Credential=access, SignedHeaders=host, Signature=example";
     let prepared = PreparedCall {
         url: String::from("https://runtime.example/invocations"),
-        headers: vec![(String::from("Authorization"), String::from("secret"))],
+        headers: vec![(String::from("Authorization"), authorization.to_owned())],
         body: Vec::new(),
         body_json: IndexMap::from([(String::from("inputs"), Json::Text(String::from("hi")))]),
         region: String::from("us-west-2"),
@@ -195,9 +196,12 @@ fn prepared_call_logging_uses_body_object_and_signed_headers() {
     );
     assert!(matches!(
         logged.complete_input_dict,
-        Some(RawBody::Object(_))
+        Some(RawBody::Object(body)) if body.get("inputs") == Some(&Json::Text(String::from("hi")))
     ));
-    assert!(logged.headers.is_some());
+    assert_eq!(
+        logged.headers.expect("logged headers").get("Authorization"),
+        Some(&Json::Text(authorization.to_owned()))
+    );
     assert!(logged.passthrough.is_empty());
 }
 

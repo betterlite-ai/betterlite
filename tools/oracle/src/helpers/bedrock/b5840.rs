@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::future::{Future, ready};
 use std::time::{Duration, UNIX_EPOCH};
 
 use aws_smithy_async::time::{SharedTimeSource, StaticTimeSource};
@@ -16,7 +17,7 @@ use betterlite_openai::compatible_wire::{NEW_ID, ReplyOptions, system_clock};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::sagemaker_chat::request;
 use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json as PromptJson;
 use betterlite_prompts::arguments::json::Object;
@@ -113,12 +114,12 @@ fn component_result(case: &ComponentHeaderInput) -> Value {
 struct FixedCredentials(Credentials);
 
 impl SagemakerCredentials for FixedCredentials {
-    async fn resolve(
+    fn resolve(
         &self,
         _settings: AwsSettings,
         _region: String,
-    ) -> Result<Credentials, CredentialError> {
-        Ok(self.0.clone())
+    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send {
+        ready(Ok(self.0.clone()))
     }
 }
 
@@ -130,7 +131,6 @@ impl TextTokenCounter for ZeroCounter {
     }
 }
 
-// Compare the runtime preparation with the public LiteLLM chat configuration.
 fn signed_result(case: &SignedRequestInput) -> HelperResult {
     let credentials = Credentials {
         access_key_id: case.credentials.access_key_id.clone(),

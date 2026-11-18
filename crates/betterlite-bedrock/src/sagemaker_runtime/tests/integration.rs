@@ -143,14 +143,14 @@ impl FakeTransport {
         let failure = self
             .failure
             .lock()
-            .map_err(|_| TransportError::Closed)?
+            .map_err(|_poisoned| TransportError::Closed)?
             .take();
         if let Some(error) = failure {
             return Err(error);
         }
         self.requests
             .lock()
-            .map_err(|_| TransportError::Closed)?
+            .map_err(|_poisoned| TransportError::Closed)?
             .push(request);
         Ok((self.status, self.chunks.clone()))
     }
@@ -175,14 +175,16 @@ impl SagemakerTransport for FakeTransport {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<(u16, ChunkStream), TransportError>> + Send {
-        ready(self.reply(request).map(|(status, chunks)| {
-            let items = chunks
-                .into_iter()
-                .map(Ok::<Vec<u8>, HttpError>)
-                .collect::<Vec<_>>();
-            let body: ChunkStream = Box::pin(stream::iter(items));
-            (status, body)
-        }))
+        let (status, chunks) = match self.reply(request) {
+            Ok(reply) => reply,
+            Err(error) => return ready(Err(error)),
+        };
+        let items = chunks
+            .into_iter()
+            .map(Ok::<Vec<u8>, HttpError>)
+            .collect::<Vec<_>>();
+        let body: ChunkStream = Box::pin(stream::iter(items));
+        ready(Ok((status, body)))
     }
 }
 

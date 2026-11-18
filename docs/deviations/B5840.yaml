@@ -6,6 +6,12 @@ deviations:
   - what: A failing sync completion call returns SagemakerError with the upstream status.
     why: LiteLLM's sync branch calls get on an httpx.Response and raises AttributeError; betterlite returns the intended wire error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L200-L260
+  - what: Async completion also preserves the upstream error status instead of replacing it with 500.
+    why: LiteLLM catches its own wire error and wraps it in a generic 500; the shared execution keeps the actionable upstream status, including 429 throttling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L491-L520
+  - what: A transport timeout opening a completion stream returns SagemakerError 408.
+    why: AsyncHTTPHandler converts httpx timeouts into litellm.Timeout, bypassing the handler's timeout catch and reaching its generic 500; betterlite keeps the timeout-specific status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L373-L376
   - what: Sync and async completion share one async execution path.
     why: A single transport path keeps the stream decoder and error policies consistent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L118-L560

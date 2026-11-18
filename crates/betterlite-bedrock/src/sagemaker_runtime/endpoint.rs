@@ -10,18 +10,12 @@ use crate::signing::target::RegionInputs;
 
 pub type ParamMap = BTreeMap<String, Box<RawValue>>;
 
-const COMPLETION_PREFIX: &str = "sagemaker/";
-const CHAT_PREFIX: &str = "sagemaker_chat/";
-const NOVA_PREFIX: &str = "sagemaker_nova/";
-const INVOCATIONS: &str = "invocations";
-const RESPONSE_STREAM: &str = "invocations-response-stream";
-
 #[must_use]
 pub fn endpoint_name(model: &str) -> &str {
     model
-        .strip_prefix(COMPLETION_PREFIX)
-        .or_else(|| model.strip_prefix(CHAT_PREFIX))
-        .or_else(|| model.strip_prefix(NOVA_PREFIX))
+        .strip_prefix("sagemaker/")
+        .or_else(|| model.strip_prefix("sagemaker_chat/"))
+        .or_else(|| model.strip_prefix("sagemaker_nova/"))
         .unwrap_or(model)
 }
 
@@ -40,9 +34,9 @@ pub fn runtime_url(request: &EndpointRequest<'_>) -> String {
     }
     let suffix = get_aws_partition(Some(request.region)).dns_suffix;
     let path = if request.stream {
-        RESPONSE_STREAM
+        "invocations-response-stream"
     } else {
-        INVOCATIONS
+        "invocations"
     };
     format!(
         "https://runtime.sagemaker.{}.{}/endpoints/{}/{}",

@@ -109,7 +109,6 @@ pub struct SagemakerRuntime<'deps, T, C> {
     pub clock: SharedTimeSource,
     pub counter: &'deps (dyn TextTokenCounter + Sync),
     pub timeout: Duration,
-    // the reply ids come from here instead of a random source read inside the call
     pub identifier: fn() -> Uuid,
 }
 
