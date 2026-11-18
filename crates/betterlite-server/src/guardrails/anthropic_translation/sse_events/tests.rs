@@ -83,6 +83,17 @@ fn event_text_delta_is_read_without_checking_its_event_type() {
 }
 
 #[test]
+fn mixed_chunks_append_text_in_order_and_skip_non_text() {
+    let items = [
+        SseChunk::Bytes(b"event: content_block_delta\ndata: {\"delta\":{\"type\":\"text_delta\",\"text\":\"first\"}}\n\n".to_vec()),
+        SseChunk::Other,
+        SseChunk::Event(serde_json::from_value(json!({"delta":{"type":"input_json_delta","partial_json":"ignored"}})).unwrap()),
+        SseChunk::Event(serde_json::from_value(json!({"delta":{"type":"text_delta","text":" second"}})).unwrap()),
+    ];
+    assert_eq!(streaming_string_so_far(&items), "first second");
+}
+
+#[test]
 fn invalid_utf8_does_not_end_stream_and_text_reader_returns_empty() {
     let invalid = SseChunk::Bytes(vec![0xff]);
     assert!(!streaming_has_ended(std::slice::from_ref(&invalid)));
