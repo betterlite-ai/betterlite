@@ -13,13 +13,11 @@ use betterlite_db_admin::command_shell::{
 };
 use betterlite_db_admin::commands::{Operation, VERIFICATION_TOKENS_KEY};
 use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::sql::DATABASE_REPAIR_TABLES;
 use clap::Parser;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::JoinSet;
 use tokio_postgres::{Client, NoTls};
-
-const SCHEMA_SQL: &str =
-    include_str!("../../../../crates/betterlite-db/src/database_repair/fixtures/schema.sql");
 
 const SEED_SQL: &str = r#"INSERT INTO "LiteLLM_VerificationToken" ("token", "team_id", "key_name") VALUES ('tok-one', 'team-a', 'one');
 INSERT INTO "LiteLLM_SpendLogs" ("request_id", "call_type", "api_key", "team_id", "startTime", "endTime") VALUES ('req-one', 'completion', 'tok-one', NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);"#;
@@ -81,20 +79,19 @@ impl Postgres {
         let url = Environment::parse_from(["database-repair-admin"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_schema(url.as_ref())
-            .resolve()
-            .await
-            .expect("a test schema");
+        let fixture = PostgresFixture::provision_with_statements(
+            url.as_ref(),
+            vec![DATABASE_REPAIR_TABLES.to_owned()],
+        )
+        .resolve()
+        .await
+        .expect("a test database");
         let (client, connection) =
             tokio_postgres::connect(fixture.options.url.expose_secret(), NoTls)
                 .await
                 .expect("a test connection");
         let mut tasks = JoinSet::new();
         tasks.spawn(connection);
-        client
-            .batch_execute(SCHEMA_SQL)
-            .await
-            .expect("the pinned LiteLLM schema");
         Self {
             fixture,
             client,
@@ -110,7 +107,10 @@ impl Postgres {
         } = self;
         drop(client);
         drop(tasks);
-        fixture.close_async().await.expect("the schema is dropped");
+        fixture
+            .close_async()
+            .await
+            .expect("the database is dropped");
     }
 
     async fn spend_team(&self, request_id: &str) -> Option<String> {

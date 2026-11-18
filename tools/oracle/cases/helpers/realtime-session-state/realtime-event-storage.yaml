@@ -1,0 +1,136 @@
+kind: helper
+name: realtime-event-storage
+call:
+  realtime_session_state:
+    model: ""
+    logged_event_types: null
+    client_wants_beta: false
+    backend_uses_beta_protocol: null
+    force_transcription_model: null
+    request_data: null
+    user_api_key_dict: null
+    provider: null
+    store:
+      - kind: text
+        text: '{"type":"session.created","session":{"id":"s1"}}'
+      - kind: text
+        text: '{"type":"response.create"}'
+      - kind: text
+        text: '{"type":"response.done","response":{"output":[]}}'
+      - kind: text
+        text: '{"type":"conversation.item.added"}'
+      - kind: text
+        text: '{"type":"conversation.item.done"}'
+      - kind: text
+        text: '{"type":"response.output_text.delta","delta":"hi"}'
+      - kind: text
+        text: '{"type":"conversation.item.deleted"}'
+    inputs: []
+    backend_events: []
+    usage_events: []
+    flush: false
+calls:
+  - realtime_session_state:
+      model: ""
+      logged_event_types: "*"
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: text
+          text: '{"untyped":true}'
+        - kind: text
+          text: '{"type":"some.new.event","payload":[1,2.5,null]}'
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: []
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: record
+          values:
+            type: response.done
+            response:
+              output:
+                - {type: function_call, call_id: call_1, name: lookup, arguments: '{"city":"Paris"}'}
+                - {type: message}
+                - {type: function_call}
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: bytes
+          text: '{"type":"response.create"}'
+        - kind: record
+          values: {type: session.created, session: {}}
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: record
+          values:
+            type: response.done
+            response:
+              output:
+                - {type: function_call, call_id: null, name: "", arguments: null}
+        - kind: record
+          values:
+            type: response.done
+            response:
+              output:
+                - {type: message, role: assistant, content: [{type: text, text: hi}]}
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: false
+  - realtime_session_state:
+      model: ""
+      logged_event_types: null
+      client_wants_beta: false
+      backend_uses_beta_protocol: null
+      force_transcription_model: null
+      request_data: null
+      user_api_key_dict: null
+      provider: null
+      store:
+        - kind: text
+          text: '{"type":"session.created"}'
+        - kind: text
+          text: '{"type":"response.done"}'
+      inputs: []
+      backend_events: []
+      usage_events: []
+      flush: false
+env: {}
+compare: {ignore: []}

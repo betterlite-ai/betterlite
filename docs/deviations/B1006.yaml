@@ -1,0 +1,21 @@
+task: B1006
+deviations:
+  - what: A logged frame goes through the shared realtime decoder, which caps a frame at 16 MiB and rejects a frame that is not a JSON object or not valid UTF-8 or JSON.
+    why: LiteLLM runs json.loads over a frame of any size, drops a string or list frame without a word, and raises on a number; a frame that is not an event belongs in a typed error, and an oversized relay frame must not grow the connection's log without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L247-L255
+  - what: A session.created or session.updated record whose session value is missing or is not an object is still stored, after the debug line "Error parsing message for logging:" is written.
+    why: LiteLLM builds a TypedDict from the mapping, which keeps every key and never raises, so its fallback path cannot fire for a JSON object; betterlite checks the one field the typed event needs, which makes the same fallback path reachable. The stored record and the return are the same in both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L261-L270
+  - what: A session.update whose tools list holds an entry that is not an object leaves the previous session tools in place.
+    why: LiteLLM assigns any nonempty list, including one of the wrong shape; betterlite replaces session tools only with a list of tool objects, so a malformed update cannot erase the tools already collected for the spend log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L298-L300
+  - what: log_messages returns whether the success flag was written, and writes realtime_session_success_logged only when the injected queue admits the work.
+    why: LiteLLM hands a coroutine to its global worker and marks the session logged once that call returns; B191's bounded queue arrives as an object-safe trait whose enqueue reports admission, and this task requires the flag to stay unset when submission fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L411-L425
+  - what: An os.environ/ reference in litellm_settings.logged_real_time_event_types that names an unset variable fails the load with MissingEnvironment.
+    why: LiteLLM's proxy resolver stores None for an unset reference, so the setting stays None and RealTimeStreaming falls back to its five default event types; every betterlite setting resolves references through the same rule, so a mistyped variable names the key at startup instead of quietly turning the event log back on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
+kept_bugs:
+  - what: An empty tools list in session.update does not clear the session tools collected earlier.
+    why: LiteLLM assigns the list only when it is truthy, and a client that re-sends session.update without tools relies on the earlier tools staying in the spend log.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L298-L300

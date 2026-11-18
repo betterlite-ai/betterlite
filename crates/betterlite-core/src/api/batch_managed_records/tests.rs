@@ -430,28 +430,21 @@ async fn provision() -> (PostgresFixture, PostgresStore) {
     let url = Environment::parse_from(["batch-managed-records"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
+    let statements = vec![
+        from_utf8(ADD_MANAGED_FILE_TABLE.bytes).unwrap().to_owned(),
+        from_utf8(MANAGED_OBJECT_TABLE.bytes).unwrap().to_owned(),
+        from_utf8(STORAGE_BACKEND_MANAGED_FILES.bytes)
+            .unwrap()
+            .to_owned(),
+        SEED_SQL.to_owned(),
+    ];
+    let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
         .resolve()
         .await
         .unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(2).build().unwrap();
     (fixture, PostgresStore { pool: Some(pool) })
-}
-
-async fn migrate(store: &PostgresStore) {
-    let session = store.session().await.unwrap();
-    for migration in [
-        ADD_MANAGED_FILE_TABLE,
-        MANAGED_OBJECT_TABLE,
-        STORAGE_BACKEND_MANAGED_FILES,
-    ] {
-        session
-            .batch_execute(from_utf8(migration.bytes).unwrap())
-            .await
-            .unwrap();
-    }
-    session.batch_execute(SEED_SQL).await.unwrap();
 }
 
 async fn resolved<Files>(
@@ -470,7 +463,6 @@ where
 #[tokio::test]
 async fn postgres_managed_file_row_resolution() {
     let (fixture, store) = provision().await;
-    migrate(&store).await;
     let availability = Availability::default();
     let client = PrismaClient {
         writer: &store,

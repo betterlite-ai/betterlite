@@ -1,0 +1,59 @@
+task: B313
+deviations:
+  - what: >-
+      A generalization rule whose regex exceeds 2048 pattern bytes or whose search exceeds 100000 backtracking
+      steps is warned about and skipped, where LiteLLM compiles and runs both without a bound.
+    why: >-
+      The pinned rule compiler has no execution bound; bounded-inputs requires one. Supported Python syntax and
+      first-match semantics stay the same inside the bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L130-L181
+  - what: >-
+      The model_rules byte parser rejects a rule document over 1048576 bytes before decoding it, with
+      ModelsError::RulesTooLarge, where LiteLLM's json.loads reads any length.
+    why: >-
+      The source has no equivalent byte bound at this parser boundary; bounded-inputs requires a finite limit.
+      Existing structural field limits remain unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L74-L277
+  - what: >-
+      The proxy config accepts a top-level fallback_generalizations block with a rules list and reads it as the
+      rule document, where LiteLLM reads that block only from the model cost map.
+    why: >-
+      betterlite's router reads its catalog rules from config.yaml rather than a remote cost map, so the same
+      rule document needs a configured home; a config that names no rules installs the shipped cost map's
+      fallback_generalizations rules instead, as LiteLLM installs the loaded map's rules at startup, and a
+      reload to such a config reinstalls them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_model_cost_map.py#L537-L544
+  - what: >-
+      At route selection the router fills each candidate deployment's model_info from the capability rules
+      when the deployment declares no provider and from the fill rules for the provider it declares, the
+      deployment's own keys and explicit nulls winning, and writes a missing litellm_provider from the first
+      matching routing rule, where LiteLLM instead resolves a request's model through get_llm_provider and
+      get_model_info before a call. The stage runs whenever the router's RouteServices carries installed
+      rules: the server builds that state from its loaded config at startup, or from the shipped cost map's
+      rules when the config names none (RoutingState in
+      crates/betterlite-server/src/routing/routing_state.rs, constructed by ServerState::new), exposes
+      RoutingState::reload for a config change, and its route entry
+      (crates/betterlite-server/src/routing/router_core.rs) passes it as the RouteServices of pipeline::route.
+    why: >-
+      betterlite selects among configured deployments, so the rule document reaches a deployment's entry at
+      selection: a deployment without a provider or capability metadata gets it there, and both the filters and
+      the chosen deployment see what a LiteLLM call would have resolved. A router without rules leaves every
+      deployment unchanged; a deployment whose model prefix names its provider is not re-inferred at selection,
+      so a routing rule may supply a provider its records leave out. The chat handler still picks its
+      deployment with simple shuffle directly (crates/betterlite-server/src/routes/chat.rs:165) and the server
+      has no config reload path yet, so no request reaches the route entry and nothing calls the reload: B021 is
+      the unfinished owner of the request path, since it adapts Chat, Responses and Messages at the server
+      boundary through the router pipeline and B9810 records all three routes on automatic routing; B8379 owns
+      reload_config, the config-reload task that calls RoutingState::reload. Until they land the stage runs only
+      where pipeline::route is called.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5742-L5778
+  - what: >-
+      A rule document the server cannot install at startup is logged as an error and the server starts with no
+      generalization rules, where LiteLLM installs whatever rule list it is handed and only warns about
+      individual malformed rules.
+    why: >-
+      betterlite's rule document crosses a parser that can refuse it (the byte bound above), and LiteLLM's
+      startup never fails on a bad rule list; logging the refusal and serving no rules keeps that startup
+      contract while naming the failure. A reload that fails keeps the rules the server already serves.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/fallback_generalizations.py#L236-L244
+kept_bugs: []

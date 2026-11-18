@@ -1,0 +1,8 @@
+{
+  "budget_id": "b",
+  "max_budget": 5,
+  "soft_budget": 2.5,
+  "tpm_limit": 100,
+  "budget_duration": "1d",
+  "budget_reset_at": "2024-06-01T00:00:00Z"
+}

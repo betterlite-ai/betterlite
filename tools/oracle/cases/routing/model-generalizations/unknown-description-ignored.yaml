@@ -1,0 +1,17 @@
+kind: probe
+name: unknown-description-ignored
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      model_generalizations:
+        rules:
+          - pattern: "^acme-"
+            description: ignored text
+            model_info: {litellm_provider: acme, mode: chat}
+        queries:
+          - {query: routing, model: acme-1}
+          - {query: capabilities, model: acme-1}
+compare:
+  ignore: []
+  expected_difference: []

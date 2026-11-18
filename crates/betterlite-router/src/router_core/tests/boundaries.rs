@@ -1,17 +1,23 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::support::{
-    Cancelling, Checked, Cooldown, Fixture, Providers, RequestSetup, Windows, body, deployment,
-    error_of, group_and_ids, hidden, hidden_with, metadata, no_deployment_of, number, object,
-    paused, picked, run_checked, run_healthy, run_route, run_simple, run_windowed, seeded, text,
-    weighted, with_info,
+    Cancelling, Checked, Cooldown, Fixture, Grouped, Providers, RequestSetup, Windows, body,
+    deployment, error_of, group_and_ids, hidden, hidden_with, metadata, no_deployment_of, number,
+    object, paused, picked, run_checked, run_healthy, run_route, run_simple, run_windowed, seeded,
+    text, weighted, with_info,
 };
 use crate::context::{self, RouteStage};
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_identity::spec::DeploymentSpec;
+use crate::prompt_affinity::service::PromptAffinity;
+use crate::prompt_affinity::tests::support::{
+    FakePins, MARKED_MESSAGES, cache_key, json_messages, messages, pin, service,
+};
 use crate::router_core::candidates::{CandidateSet, weights};
 use crate::router_core::error::RoutingError;
 use crate::router_core::headers::{
@@ -23,6 +29,7 @@ use crate::router_core::services::RouteServices;
 use crate::router_core::tests::support::{
     NoLimits, NoServices, route_context, route_request, strategy_context,
 };
+use crate::routing_groups::group::RoutingGroup;
 use crate::simple_shuffle::Candidate;
 use crate::simple_shuffle::error::ShuffleError;
 use crate::static_eligibility::error::EligibilityError;
@@ -65,6 +72,81 @@ pub(super) async fn stage_skips(stage: RouteStage) {
     assert_eq!(skipped, set);
     let error = context::apply(stage, set, &context).await.unwrap_err();
     assert_eq!(error.unbuilt_entry(), Some(stage_name(stage)));
+}
+
+// The B325 stage as the registered check: the router consults it once, and a pinned prefix narrows the pool.
+pub(super) async fn prompt_affinity_narrows_the_pool() {
+    let pins = Arc::new(FakePins::default());
+    pins.seed(
+        &cache_key(&json_messages(MARKED_MESSAGES), None).unwrap(),
+        pin("a"),
+    );
+    let services = Pinned {
+        affinity: service(pins, 2000, false),
+        calls: AtomicUsize::new(0),
+    };
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[("model", text("claude-min"))]),
+        deployment("gpt-4o", "b", &[("model", text("claude-min"))]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.messages = Some(messages(MARKED_MESSAGES));
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &setup,
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(picked(&result), "a");
+    assert_eq!(services.calls.load(Ordering::SeqCst), 1);
+}
+
+// The check narrows before the pre-call checks, so the pinned deployment's own param rejection empties the pool.
+pub(super) async fn prompt_affinity_before_pre_call_checks() {
+    let pins = Arc::new(FakePins::default());
+    pins.seed(
+        &cache_key(&json_messages(MARKED_MESSAGES), None).unwrap(),
+        pin("a"),
+    );
+    let services = Pinned {
+        affinity: service(pins, 2000, false),
+        calls: AtomicUsize::new(0),
+    };
+    let fixture = Fixture::plain(vec![
+        deployment("gpt-4o", "a", &[("model", text("claude-min"))]),
+        deployment("gpt-4o", "b", &[("model", text("gpt-4o-mini"))]),
+    ]);
+    let mut setup = RequestSetup::new("gpt-4o");
+    setup.messages = Some(messages(MARKED_MESSAGES));
+    // the pre-call checks read a prompt, and the request asks for a param only one deployment declares
+    setup.facts.messages = Some(Vec::new());
+    setup.facts.response_format = true;
+    let checks = Checked {
+        limits: &NoLimits,
+        params: &Providers::Mini,
+        pre_call: true,
+    };
+    let error = run_checked(&fixture, &setup, &services, &checks)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, RoutingError::NoDeployment(_)));
+    assert_eq!(services.calls.load(Ordering::SeqCst), 1);
+}
+
+struct Pinned {
+    affinity: PromptAffinity,
+    calls: AtomicUsize,
+}
+
+impl RouteServices for Pinned {
+    fn prompt_affinity(&self) -> Option<&PromptAffinity> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Some(&self.affinity)
+    }
 }
 
 pub(super) async fn strategy_unbuilt(strategy: RoutingStrategy, entry: &'static str) {
@@ -670,4 +752,76 @@ pub(super) fn token_count_non_numeric() {
         Json::Object(object(&[("total_tokens", text("9"))])),
     )]);
     assert_eq!(response_total_token_count(&response), 0);
+}
+
+// A priority group's order is written before the order filter runs, so the pick carries it.
+pub(super) async fn routing_group_priority_reaches_the_pick() {
+    let fixture = Fixture::aliased(
+        group_and_ids(&[("member", "m1"), ("member", "m2")]),
+        &[("cheap", "member")],
+        &[],
+    );
+    let group = RoutingGroup::new(
+        String::from("cheap"),
+        vec![String::from("member")],
+        "priority",
+        None,
+        Some(BTreeMap::from([(String::from("member"), 4)])),
+    )
+    .unwrap();
+    let services = Grouped {
+        name: String::from("cheap"),
+        group,
+    };
+    let mut random = seeded();
+    let result = run_route(
+        &fixture,
+        &RequestSetup::new("cheap"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.group, "member");
+    assert_eq!(
+        result.deployment.litellm_params.get("order"),
+        Some(&number(4))
+    );
+    assert!(matches!(picked(&result), "m1" | "m2"));
+}
+
+// A group whose members are absent from the resolved pool leaves the route with nothing to pick.
+pub(super) async fn routing_group_members_missing_from_the_pool_leave_none() {
+    let fixture = Fixture::aliased(
+        group_and_ids(&[("member", "m1")]),
+        &[("cheap", "member")],
+        &[],
+    );
+    let group = RoutingGroup::new(
+        String::from("cheap"),
+        vec![String::from("other")],
+        "simple-shuffle",
+        None,
+        None,
+    )
+    .unwrap();
+    let services = Grouped {
+        name: String::from("cheap"),
+        group,
+    };
+    let mut random = seeded();
+    let error = run_route(
+        &fixture,
+        &RequestSetup::new("cheap"),
+        &services,
+        RoutingStrategy::SimpleShuffle,
+        &mut random,
+    )
+    .await
+    .unwrap_err();
+    let RoutingError::NoDeployment(no_deployment) = error else {
+        panic!("an empty pool reports no deployment");
+    };
+    assert_eq!(no_deployment.model, "member");
 }

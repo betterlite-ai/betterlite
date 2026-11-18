@@ -1,0 +1,8 @@
+model_list:
+  - model_name: semantic-router
+    litellm_params:
+      model: auto_router/semantic_router
+      auto_router_config_path: ./semantic_routes.json
+      auto_router_default_model: fast
+      auto_router_embedding_model: openai/text-embedding-3-small
+      auto_router_max_input_chars: sixteen

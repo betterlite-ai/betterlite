@@ -1,12 +1,12 @@
-use crate::schema_baseline::{BASELINE_MIGRATION, MigrationFile};
+use crate::migration_ledger::baseline::catalog_statements;
+use crate::schema_baseline::{MIGRATION_CATALOG as BASELINE_CATALOG, MigrationFile};
 use crate::schema_daily_usage::MIGRATION_CATALOG as DAILY_USAGE_CATALOG;
 use crate::schema_identity_history::MIGRATION_CATALOG as IDENTITY_HISTORY_CATALOG;
 use crate::schema_managed_resources::MIGRATION_CATALOG as MANAGED_RESOURCES_CATALOG;
 use crate::schema_policy_resources::MIGRATION_CATALOG;
 use crate::schema_policy_resources::fixtures::PINNED_MIGRATION_CATALOG;
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_postgres_fixture::error::FixtureError;
-use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use futures_util::future::join_all;
 use rstest::rstest;
@@ -36,7 +36,6 @@ fn postgres_test_url() -> Option<SecretString> {
 
 type ConnectionTasks = JoinSet<Result<(), tokio_postgres::Error>>;
 
-const RESET_PUBLIC_SCHEMA_SQL: &str = "DROP SCHEMA public CASCADE; CREATE SCHEMA public;";
 const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 const BODY_TIMEOUT: Duration = Duration::from_secs(30);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
@@ -55,12 +54,14 @@ enum HarnessError {
 
 async fn provision() -> Result<PostgresFixture, HarnessError> {
     let url = postgres_test_url();
-    let mut generator = RandomDatabaseName;
-    let mut task = PostgresFixture::provision_with_name_generator(
-        url.as_ref(),
-        &FixtureSeed::default(),
-        &mut generator,
-    );
+    let statements = catalog_statements(&[
+        BASELINE_CATALOG,
+        DAILY_USAGE_CATALOG,
+        MANAGED_RESOURCES_CATALOG,
+        IDENTITY_HISTORY_CATALOG,
+    ])
+    .unwrap();
+    let mut task = PostgresFixture::provision_with_statements(url.as_ref(), statements);
     let result = timeout(SETUP_TIMEOUT, task.resolve())
         .await
         .map_err(HarnessError::Timeout)
@@ -85,43 +86,19 @@ async fn provision_all<const N: usize>() -> [PostgresFixture; N] {
     fixtures.try_into().unwrap()
 }
 
-async fn initialize_schema(
-    fixture: &PostgresFixture,
-    sql: &str,
-    duration: Duration,
-) -> Result<(Client, ConnectionTasks), HarnessError> {
-    let (client, connection) = timeout(
-        duration,
-        tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls),
-    )
-    .await??;
-    let mut tasks = JoinSet::new();
-    tasks.spawn(connection);
-    let result = timeout(duration, client.batch_execute(sql))
-        .await
-        .map_err(HarnessError::Timeout)
-        .and_then(|result| result.map_err(HarnessError::Database));
-    match result {
-        Ok(()) => Ok((client, tasks)),
-        Err(error) => {
-            let cancelled = cancel_queries(&[client.cancel_token()]).await;
-            drop(client);
-            let drained = drain_connection(tasks).await;
-            cancelled?;
-            drained?;
-            Err(error)
-        }
-    }
-}
-
 async fn initialize_all(
     fixtures: &[PostgresFixture],
     connections: &mut Vec<ConnectionTasks>,
 ) -> Result<Vec<Client>, HarnessError> {
     let mut clients = Vec::with_capacity(fixtures.len());
     for fixture in fixtures {
-        let (client, tasks) =
-            initialize_schema(fixture, RESET_PUBLIC_SCHEMA_SQL, SETUP_TIMEOUT).await?;
+        let (client, connection) = timeout(
+            SETUP_TIMEOUT,
+            tokio_postgres::connect(fixture.options.url.expose_secret(), tokio_postgres::NoTls),
+        )
+        .await??;
+        let mut tasks = JoinSet::new();
+        tasks.spawn(connection);
         clients.push(client);
         connections.push(tasks);
     }
@@ -462,21 +439,7 @@ fn sql_state(error: &tokio_postgres::Error) -> &str {
     error.code().map_or("", SqlState::code)
 }
 
-async fn apply_baseline(client: &Client) {
-    batch_execute(client, str::from_utf8(BASELINE_MIGRATION.bytes).unwrap()).await;
-    for file in DAILY_USAGE_CATALOG.files {
-        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
-    }
-    for file in MANAGED_RESOURCES_CATALOG.files {
-        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
-    }
-    for file in IDENTITY_HISTORY_CATALOG.files {
-        batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
-    }
-}
-
 async fn apply_migrations_through(client: &Client, directory: &str) {
-    apply_baseline(client).await;
     for file in MIGRATION_CATALOG.files {
         batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
         if file.directory == directory {
@@ -492,7 +455,6 @@ async fn apply_migrations_all(client: &Client) {
 }
 
 async fn apply_pinned_migrations_all(client: &Client) {
-    apply_baseline(client).await;
     for file in PINNED_MIGRATION_CATALOG.files {
         batch_execute(client, str::from_utf8(file.bytes).unwrap()).await;
     }
