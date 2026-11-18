@@ -166,4 +166,10 @@ async fn proxy_span_uses_shared_resolver() {
             .iter()
             .all(|event| event.service == DbService::BatchWriteToDb)
     );
+    assert!(
+        recorded
+            .iter()
+            .all(|event| event.call_type == "PROXY_batch_write")
+    );
+    assert!(recorded.iter().all(|event| event.event_metadata.is_none()));
 }
