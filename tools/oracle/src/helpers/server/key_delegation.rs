@@ -1,5 +1,4 @@
 use betterlite_auth::model_budget_values::amount_text::amount_from_text;
-use betterlite_auth::user_roles::UserRole;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -16,7 +15,7 @@ use betterlite_server::key_fields::base::KeyRequestBase;
 use betterlite_server::key_fields::decode::TypedValue;
 use betterlite_server::management_guards::amounts::Amount;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Number, Value, json};
 
 pub(crate) struct Op;
 
@@ -32,13 +31,13 @@ pub(crate) enum Call {
     Ownership {
         body: JsonData,
         existing_user_id: Option<String>,
-        caller: CallerInput,
+        caller: Caller,
     },
     Routes {
         allowed_routes: Option<Vec<JsonData>>,
         was_provided: bool,
         allow_safe_presets: bool,
-        caller: CallerInput,
+        caller: Caller,
     },
     Transition {
         incoming: Option<Vec<JsonData>>,
@@ -47,42 +46,45 @@ pub(crate) enum Call {
     RoutesUpdate {
         body: JsonData,
         existing_allowed_routes: Option<Vec<JsonData>>,
-        caller: CallerInput,
+        caller: Caller,
     },
     Permissions {
         body: JsonData,
-        caller: CallerInput,
+        caller: Caller,
     },
     Budget {
         budget_limits: Option<Vec<WindowInput>>,
-        delegation_ceiling: Option<JsonData>,
-        caller: CallerInput,
+        delegation_ceiling: Option<AmountInput>,
+        caller: Caller,
         has_team: bool,
     },
 }
 
+// LiteLLM's BudgetLimitEntry: budget_duration is required and max_budget carries the amount.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct CallerInput {
-    role: Option<UserRole>,
-    is_session_token: bool,
-    is_ui_session_team_key: bool,
-}
-
-// LiteLLM's BudgetLimitEntry also carries budget_duration; the check never reads it.
-#[derive(Deserialize)]
 pub(crate) struct WindowInput {
-    max_budget: JsonData,
+    #[serde(rename = "budget_duration")]
+    _budget_duration: String,
+    max_budget: AmountInput,
 }
 
-impl CallerInput {
-    const fn to_caller(&self) -> Caller {
-        Caller {
-            role: self.role,
-            is_session_token: self.is_session_token,
-            is_ui_session_team_key: self.is_ui_session_team_key,
-        }
-    }
+// A JSON number keeps its exact decimal text; the strings are the non-finite markers LiteLLM accepts.
+#[derive(Deserialize)]
+#[serde(untagged)]
+pub(crate) enum AmountInput {
+    Number(Number),
+    Marker(NonFiniteMarker),
+}
+
+#[derive(Deserialize)]
+pub(crate) enum NonFiniteMarker {
+    #[serde(rename = "nan")]
+    Nan,
+    #[serde(rename = "inf")]
+    Inf,
+    #[serde(rename = "-inf")]
+    NegativeInf,
 }
 
 impl Helper for Op {
@@ -107,7 +109,7 @@ fn call_outcome(call: &Call) -> HelperResult {
         } => row_outcome(
             body,
             &ExistingSide::UserId(existing_user_id.clone()),
-            caller,
+            *caller,
         ),
         Call::Routes {
             allowed_routes,
@@ -119,10 +121,14 @@ fn call_outcome(call: &Call) -> HelperResult {
                 supplied: *was_provided,
                 value: allowed_routes.clone(),
             };
-            routes_outcome(&routes, *allow_safe_presets, caller)
+            Ok(outcome(check_routes_permission(
+                &routes,
+                *allow_safe_presets,
+                *caller,
+            )))
         }
         Call::Transition { incoming, existing } => {
-            transition_outcome(incoming.as_deref(), existing.as_deref())
+            Ok(transition_outcome(incoming.as_deref(), existing.as_deref()))
         }
         Call::RoutesUpdate {
             body,
@@ -131,9 +137,9 @@ fn call_outcome(call: &Call) -> HelperResult {
         } => row_outcome(
             body,
             &ExistingSide::AllowedRoutes(existing_allowed_routes.clone()),
-            caller,
+            *caller,
         ),
-        Call::Permissions { body, caller } => permissions_outcome(body, caller),
+        Call::Permissions { body, caller } => permissions_outcome(body, *caller),
         Call::Budget {
             budget_limits,
             delegation_ceiling,
@@ -142,7 +148,7 @@ fn call_outcome(call: &Call) -> HelperResult {
         } => budget_outcome(
             budget_limits.as_deref(),
             delegation_ceiling.as_ref(),
-            caller,
+            *caller,
             *has_team,
         ),
     }
@@ -154,65 +160,48 @@ enum ExistingSide {
     AllowedRoutes(Option<Vec<JsonData>>),
 }
 
-fn row_outcome(body: &JsonData, existing: &ExistingSide, caller: &CallerInput) -> HelperResult {
+fn row_outcome(body: &JsonData, existing: &ExistingSide, caller: Caller) -> HelperResult {
     let request = projected(body)?;
     let checked = match existing {
         ExistingSide::UserId(user_id) => {
-            validate_ownership_change(Some(&request), user_id.as_deref(), caller.to_caller())
+            validate_ownership_change(Some(&request), user_id.as_deref(), caller)
         }
-        ExistingSide::AllowedRoutes(routes) => enforce_routes_update(
-            &request.allowed_routes,
-            routes.as_deref(),
-            caller.to_caller(),
-        ),
+        ExistingSide::AllowedRoutes(routes) => {
+            enforce_routes_update(&request.allowed_routes, routes.as_deref(), caller)
+        }
     };
-    outcome(checked)
+    Ok(outcome(checked))
 }
 
-fn routes_outcome(
-    routes: &Sent<Vec<JsonData>>,
-    allow_safe_presets: bool,
-    caller: &CallerInput,
-) -> HelperResult {
-    outcome(check_routes_permission(
-        routes,
-        allow_safe_presets,
-        caller.to_caller(),
-    ))
-}
-
-fn transition_outcome(
-    incoming: Option<&[JsonData]>,
-    existing: Option<&[JsonData]>,
-) -> HelperResult {
-    Ok(json!({
+fn transition_outcome(incoming: Option<&[JsonData]>, existing: Option<&[JsonData]>) -> Value {
+    json!({
         "ok": true,
         "value": is_safe_route_transition(incoming, existing),
-    }))
+    })
 }
 
-fn permissions_outcome(body: &JsonData, caller: &CallerInput) -> HelperResult {
+fn permissions_outcome(body: &JsonData, caller: Caller) -> HelperResult {
     let request = projected(body)?;
-    outcome(check_permissions_access(
+    Ok(outcome(check_permissions_access(
         &request.permissions,
-        caller.to_caller(),
-    ))
+        caller,
+    )))
 }
 
 fn budget_outcome(
     budget_limits: Option<&[WindowInput]>,
-    delegation_ceiling: Option<&JsonData>,
-    caller: &CallerInput,
+    delegation_ceiling: Option<&AmountInput>,
+    caller: Caller,
     has_team: bool,
 ) -> HelperResult {
     let limits = window_amounts(budget_limits)?;
     let ceiling = delegation_ceiling.map(amount).transpose()?;
-    outcome(check_budget_ceilings(
+    Ok(outcome(check_budget_ceilings(
         limits.as_deref(),
         ceiling,
-        caller.to_caller(),
+        caller,
         has_team,
-    ))
+    )))
 }
 
 fn projected(body: &JsonData) -> Result<KeyDelegationRequest, Box<HelperError>> {
@@ -234,18 +223,15 @@ fn window_amounts(
         .transpose()
 }
 
-fn amount(value: &JsonData) -> Result<Amount, Box<HelperError>> {
-    let parsed = match value {
-        JsonData::Number(number) => amount_from_text(&number.to_string()).map(Amount::Finite),
-        JsonData::String(text) => match text.as_str() {
-            "nan" => Some(Amount::Nan),
-            "inf" | "infinity" => Some(Amount::PositiveInfinity),
-            "-inf" | "-infinity" => Some(Amount::NegativeInfinity),
-            _ => None,
-        },
-        JsonData::Null | JsonData::Bool(_) | JsonData::Array(_) | JsonData::Object(_) => None,
-    };
-    parsed.ok_or_else(|| invalid("an amount is a number or one of nan, inf, -inf"))
+fn amount(value: &AmountInput) -> Result<Amount, Box<HelperError>> {
+    match value {
+        AmountInput::Number(number) => amount_from_text(&number.to_string())
+            .map(Amount::Finite)
+            .ok_or_else(|| invalid("an amount is a number or one of nan, inf, -inf")),
+        AmountInput::Marker(NonFiniteMarker::Nan) => Ok(Amount::Nan),
+        AmountInput::Marker(NonFiniteMarker::Inf) => Ok(Amount::PositiveInfinity),
+        AmountInput::Marker(NonFiniteMarker::NegativeInf) => Ok(Amount::NegativeInfinity),
+    }
 }
 
 fn invalid(message: &str) -> Box<HelperError> {
@@ -259,16 +245,16 @@ fn invalid(message: &str) -> Box<HelperError> {
     })
 }
 
-fn outcome(result: Result<(), DelegationError>) -> HelperResult {
+fn outcome(result: Result<(), DelegationError>) -> Value {
     match result {
-        Ok(()) => Ok(json!({ "ok": true })),
+        Ok(()) => json!({ "ok": true }),
         Err(failure) => {
             let detail_error = matches!(failure.detail(), DelegationDetail::Error(_));
-            Ok(json!({
+            json!({
                 "ok": false,
                 "status": failure.status_code().as_u16(),
                 "detail_error": detail_error,
-            }))
+            })
         }
     }
 }
