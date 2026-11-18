@@ -6,6 +6,8 @@ probes:
     operation:
       usage_routing:
         group: probe-group
+        # routing_strategy_args.ttl shortens both window writes from the 60 RoutingArgs declares
+        ttl: 45
         # get_available_deployments picks the lowest absolute count, not the lowest share of the limit: dep-a has
         # spent a tenth of its 1000 tpm while dep-b has spent a quarter of its 200, so dep-b wins at 50 over 100.
         deployments:
