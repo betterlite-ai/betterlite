@@ -238,10 +238,10 @@ pub(super) fn end_parents(input: &Input, parent: Option<&LiveSpan>, key_parent: 
 }
 
 fn end_span(spec: Option<&ParentInput>, span: Option<&LiveSpan>, fallback_end: f64) {
-    let (Some(spec), Some(live)) = (spec, span) else {
+    let (Some(parent), Some(live)) = (spec, span) else {
         return;
     };
-    let end = spec.end.unwrap_or(fallback_end);
+    let end = parent.end.unwrap_or(fallback_end);
     live.lock()
         .end_with_timestamp(instant_from_ns(to_ns(SpanTime::Seconds(end), 0)));
 }

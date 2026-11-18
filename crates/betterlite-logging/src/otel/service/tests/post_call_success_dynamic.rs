@@ -39,7 +39,7 @@ impl DynamicOtel for RecordingDynamic {
 fn otel_legacy_service_callbacks_behavior_tests_behavior() {
     let rig = Rig::new();
     let recorder = Arc::new(RecordingDynamic::default());
-    let dynamic: Arc<dyn DynamicOtel> = Arc::clone(&recorder);
+    let dynamic = Arc::clone(&recorder);
     let lifecycle = rig.lifecycle_with_dynamic(dynamic);
     let mut call_details = details("call-y", Some(vec![guardrail_entry()]), None);
     let params = MetadataMap::from([(

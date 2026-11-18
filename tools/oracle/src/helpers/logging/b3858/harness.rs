@@ -89,11 +89,11 @@ fn build_span(
     default_start: f64,
     roots: &RootSpans,
 ) -> Option<LiveSpan> {
-    let spec = spec?;
-    let start = spec.start.unwrap_or(default_start);
+    let parent = spec?;
+    let start = parent.start.unwrap_or(default_start);
     let builder = otel
         .tracer
-        .span_builder(spec.name.clone())
+        .span_builder(parent.name.clone())
         .with_start_time(instant_from_ns(to_ns(SpanTime::Seconds(start), 0)));
     let live = LiveSpan::from(otel.tracer.build_with_context(builder, &Context::new()));
     roots.register(&live);
