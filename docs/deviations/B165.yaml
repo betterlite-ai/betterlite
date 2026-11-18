@@ -1,0 +1,24 @@
+task: B165
+deviations:
+  - what: The embedded interpreter starts on the first Python hook load, not when the proxy starts.
+    why: Most deployments use no Python hook, and an interpreter costs memory and start time.
+    link: ""
+  - what: A hook call that runs past 30 seconds returns a timeout error to the caller, and the pool reports the job it could not stop when the service shuts down.
+    why: LiteLLM sets no deadline on these hooks. B054 needs a bound, and a Python thread cannot be stopped, so the pool keeps the job and its slot until it ends.
+    link: ""
+  - what: Loading a hook, or running a startup hook, that runs past 60 seconds returns a timeout error.
+    why: The config load cannot wait forever on a module that blocks at import; LiteLLM waits without a bound.
+    link: ""
+  - what: The proxy cannot import litellm. A user module imports betterlite instead.
+    why: The module is named betterlite so that LiteLLM's name stays out of what betterlite ships.
+    link: ""
+  - what: CustomRoutingStrategyBase names its third parameter input_value instead of input, and specific_deployment and request_kwargs are keyword-only.
+    why: ruff A002 rejects a parameter named input because it shadows the builtin, and flake8-boolean-trap (FBT001 and FBT002) requires a boolean parameter with a default to be keyword-only. LiteLLM passes specific_deployment and request_kwargs by keyword at every call site, so those two keep reaching a caller; a caller of input passes input_value= instead of input=.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L890-L935
+  - what: CustomRoutingStrategyBase types input_value and request_kwargs with JsonValue instead of a bare list and a bare dict.
+    why: the no-loose-types rule bans bare list and dict, and both parameters carry JSON-shaped request data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L895-L920
+kept_bugs:
+  - what: Only litellm_settings.callbacks checks what a dotted entry resolved to. In success_callback, failure_callback and audit_log_callbacks a class loads without complaint and is then skipped at call time, with no log line and no error.
+    why: LiteLLM applies its class and callable check to callbacks alone, and a config that puts a class in one of the other three lists starts today; failing it instead would refuse a working config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6472-L6487
