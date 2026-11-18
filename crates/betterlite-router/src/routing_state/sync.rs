@@ -51,9 +51,10 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             );
             return;
         }
-        if !self.state.queue(delta) {
-            tracing::warn!("the routing delta queue stayed full; the observation is dropped");
+        if self.state.queue(delta) {
+            return;
         }
+        tracing::warn!("the routing delta queue stayed full; the observation is dropped");
     }
 
     // B397's synchronous CounterSink cannot await redis, so the usage delta joins the owner's batch
@@ -70,8 +71,9 @@ impl<S: DeltaStore + 'static> RouterCounters<S> {
             value: increment.value,
             ttl: increment.ttl,
         };
-        if !self.state.queue(delta) {
-            tracing::warn!(key = %increment.key, "the queue is full; the usage delta is not stored");
+        if self.state.queue(delta) {
+            return;
         }
+        tracing::warn!(key = %increment.key, "the queue is full; the usage delta is not stored");
     }
 }
