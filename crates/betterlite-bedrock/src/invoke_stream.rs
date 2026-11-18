@@ -183,6 +183,8 @@ fn assemble<'deps>(
             config,
             source::InvokeChunks {
                 chunks: Mutex::new(chunks),
+                model: transport.model.to_owned(),
+                redactor: deps.redactor,
                 now: deps.clock.now,
             },
             ports,
