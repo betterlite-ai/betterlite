@@ -28,7 +28,8 @@ deviations:
       An `os.environ/` reference in a tier definition name or description, a tier label, a pool
       entry's model name or a parameter value that names an unset variable fails the load with
       MissingEnvironment, where LiteLLM's environment walk stores None and lets the field's
-      validation decide.
+      validation decide. A variable set to the empty string counts as unset, so an optional value
+      takes its absent behavior and a parameterized entry's required model name fails the load.
     why: >-
       betterlite resolves references in these keys with the same rule as every other scalar
       setting, so a mistyped variable can't quietly become a missing tier name, a dropped label or
