@@ -1,10 +1,13 @@
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::decisions::Json;
+use betterlite_redact::structured::REDACTED;
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::super::{EmbeddingJobsError, StatusWireRequest};
 use super::fixture::{
-    ENCODED_ARN, INVOCATION_ARN, Reply, SECRET_KEY, SESSION_TOKEN, Scenario, credentials_with,
+    ACCESS_KEY, ENCODED_ARN, INVOCATION_ARN, Reply, SECRET_KEY, SESSION_TOKEN, Scenario,
+    credentials_with,
 };
 
 #[derive(Clone, Copy)]
@@ -38,15 +41,39 @@ fn header<'request>(request: &'request StatusWireRequest, name: &str) -> &'reque
         .expect("the fixture header was sent")
 }
 
+fn header_names(request: &StatusWireRequest) -> Vec<&str> {
+    request
+        .headers
+        .iter()
+        .map(|(name, _)| name.as_str())
+        .collect()
+}
+
+fn object<'json>(value: &'json Json) -> &'json IndexMap<String, Json> {
+    let Json::Object(fields) = value else {
+        panic!("the fixture value is an object");
+    };
+    fields
+}
+
 fn field<'json>(value: &'json Json, name: &str) -> &'json Json {
-    value
-        .as_object()
-        .and_then(|object| object.get(name))
-        .expect("the fixture field exists")
+    object(value).get(name).expect("the fixture field exists")
+}
+
+fn text<'json>(value: &'json Json) -> &'json str {
+    let Json::Text(text) = value else {
+        panic!("the fixture value is text");
+    };
+    text
 }
 
 fn additional_args(snapshot: &Json) -> &Json {
     field(snapshot, "additional_args")
+}
+
+fn complete_input() -> Json {
+    serde_json::from_str(&format!("{{\"invocation_arn\":\"{INVOCATION_ARN}\"}}"))
+        .expect("the fixture object is JSON")
 }
 
 fn url_case() {
@@ -59,13 +86,19 @@ fn url_case() {
         request.url,
         format!("https://runtime.example/async-invoke/{ENCODED_ARN}")
     );
-    let names: Vec<&str> = request
-        .headers
-        .iter()
-        .map(|(name, _)| name.as_str())
-        .collect();
+    assert_signed_headers(request);
+    // credential loading follows the environment region; the signature follows the method argument
     assert_eq!(
-        names,
+        run.resolved.first().map(|(_, region)| region.as_str()),
+        Some("eu-west-1")
+    );
+    assert_eq!(run.factory_calls, vec![("bedrock".to_owned(), None)]);
+    endpoint_precedence();
+}
+
+fn assert_signed_headers(request: &StatusWireRequest) {
+    assert_eq!(
+        header_names(request),
         [
             "Content-Type",
             "X-Amz-Date",
@@ -83,13 +116,9 @@ fn url_case() {
         header(request, "Authorization")
             .contains("SignedHeaders=content-type;host;x-amz-date;x-amz-security-token")
     );
-    // credential loading follows the environment region; the signature follows the method argument
-    assert_eq!(
-        run.resolved.first().map(|(_, region)| region.as_str()),
-        Some("eu-west-1")
-    );
-    assert_eq!(run.factory_calls, vec![("bedrock".to_owned(), None)]);
+}
 
+fn endpoint_precedence() {
     let mut environment_scenario = Scenario::new(Reply::ok("{}"));
     environment_scenario.environment.insert(
         "AWS_BEDROCK_RUNTIME_ENDPOINT".to_owned(),
@@ -100,7 +129,6 @@ fn url_case() {
         environment_run.requests[0].url,
         format!("https://env.example/async-invoke/{ENCODED_ARN}")
     );
-
     let mut default_scenario = Scenario::new(Reply::ok("{}"));
     default_scenario.environment.clear();
     let default_run = super::fixture::run(&default_scenario);
@@ -111,14 +139,19 @@ fn url_case() {
 }
 
 fn passthrough_case() {
-    let body = r#"{"status":"Failed","metadata":null,"unknown":{"s3":"s3://bucket/output"},"nested":[1,true,null]}"#;
-    let run = super::fixture::run(&Scenario::new(Reply::ok(body)));
+    passthrough_bodies();
+    malformed_bodies_fail();
+}
+
+fn passthrough_bodies() {
+    let failed = r#"{"status":"Failed","metadata":null,"unknown":{"s3":"s3://bucket/output"},"nested":[1,true,null]}"#;
+    let run = super::fixture::run(&Scenario::new(Reply::ok(failed)));
     let value = run
         .result
         .expect("a Failed job in a 200 body is a lookup success");
     assert_eq!(
         value,
-        serde_json::from_str::<Json>(body).expect("the fixture body is JSON")
+        serde_json::from_str::<Json>(failed).expect("the fixture body is JSON")
     );
     assert_eq!(run.requests.len(), 1);
     assert_eq!(field(&value, "status"), &Json::Text("Failed".to_owned()));
@@ -126,24 +159,14 @@ fn passthrough_case() {
         field(field(&value, "unknown"), "s3"),
         &Json::Text("s3://bucket/output".to_owned())
     );
-
-    let completed = r#"{"status":"Completed","output":{"s3Uri":"s3://bucket/out"}}"#;
-    let completed_run = super::fixture::run(&Scenario::new(Reply::ok(completed)));
-    assert_eq!(
-        completed_run
-            .result
-            .expect("a Completed job returns its body"),
-        serde_json::from_str::<Json>(completed).expect("the fixture body is JSON")
+    passthrough_body(
+        r#"{"status":"Completed","output":{"s3Uri":"s3://bucket/out"}}"#,
+        "a Completed job returns its body",
     );
-
-    let in_progress = r#"{"status":"InProgress","unknown":{"s3":"s3://bucket/x"}}"#;
-    assert_eq!(
-        super::fixture::run(&Scenario::new(Reply::ok(in_progress)))
-            .result
-            .expect("an InProgress job returns its body"),
-        serde_json::from_str::<Json>(in_progress).expect("the fixture body is JSON")
+    passthrough_body(
+        r#"{"status":"InProgress","unknown":{"s3":"s3://bucket/x"}}"#,
+        "an InProgress job returns its body",
     );
-
     for nonobject in ["[1,2]", "42", "\"text\"", "null"] {
         assert_eq!(
             super::fixture::run(&Scenario::new(Reply::ok(nonobject)))
@@ -153,7 +176,18 @@ fn passthrough_case() {
             "body {nonobject}"
         );
     }
+}
 
+fn passthrough_body(body: &str, message: &str) {
+    assert_eq!(
+        super::fixture::run(&Scenario::new(Reply::ok(body)))
+            .result
+            .expect(message),
+        serde_json::from_str::<Json>(body).expect("the fixture body is JSON")
+    );
+}
+
+fn malformed_bodies_fail() {
     for malformed in ["", "{\"status\":", "not json"] {
         assert!(
             matches!(
@@ -166,6 +200,11 @@ fn passthrough_case() {
 }
 
 fn http_failure_case() {
+    status_messages();
+    logged_and_transport_failures();
+}
+
+fn status_messages() {
     let run = super::fixture::run(&Scenario::new(Reply::status(500, "boom")));
     let error = run.result.expect_err("a 500 is a status failure");
     assert!(matches!(
@@ -176,7 +215,6 @@ fn http_failure_case() {
         error.to_string(),
         "Failed to get async invoke status: 500 - boom"
     );
-
     for status in [201_u16, 204, 302] {
         let error = super::fixture::run(&Scenario::new(Reply::status(status, "created")))
             .result
@@ -186,7 +224,18 @@ fn http_failure_case() {
             format!("Failed to get async invoke status: {status} - created")
         );
     }
+    // httpx's response.text replaces each invalid sequence with one U+FFFD
+    let invalid_body = super::fixture::run(&Scenario::new(Reply::bytes(500, b"bad \xff \xe2\x82")));
+    assert_eq!(
+        invalid_body
+            .result
+            .expect_err("a 500 is a status failure")
+            .to_string(),
+        "Failed to get async invoke status: 500 - bad \u{fffd} \u{fffd}"
+    );
+}
 
+fn logged_and_transport_failures() {
     let mut logged_scenario = Scenario::new(Reply::status(503, "unavailable"));
     logged_scenario.logging = true;
     let logged = super::fixture::run(&logged_scenario);
@@ -196,14 +245,12 @@ fn http_failure_case() {
         field(&logged.snapshots[1], "original_response"),
         &Json::Text("unavailable".to_owned())
     );
-
     assert!(matches!(
         super::fixture::run(&Scenario::new(Reply::Failed)).result,
         Err(EmbeddingJobsError::Transport(
             crate::bedrock_embedding_io::transport::TransferError::Failed(TransportError::Closed)
         ))
     ));
-
     let mut unsigned = Scenario::new(Reply::ok("{}"));
     unsigned.endpoint = Some("://not-a-url".to_owned());
     assert!(matches!(
@@ -212,19 +259,36 @@ fn http_failure_case() {
     ));
 }
 
-fn logging_case() {
+fn logging_scenario() -> Scenario {
     let mut scenario = Scenario::new(Reply::ok(r#"{"status":"Completed"}"#));
     scenario.endpoint = Some("https://runtime.example".to_owned());
     scenario.logging = true;
-    let run = super::fixture::run(&scenario);
+    scenario
+}
+
+fn logging_case() {
+    pre_call_snapshot();
+    post_call_and_quiet_run();
+}
+
+fn pre_call_snapshot() {
+    let run = super::fixture::run(&logging_scenario());
     run.result.as_ref().expect("the status lookup succeeds");
     assert_eq!(run.snapshots.len(), 2, "pre_call and post_call ran");
     let url = format!("https://runtime.example/async-invoke/{ENCODED_ARN}");
     let pre = additional_args(&run.snapshots[0]);
-    assert_eq!(field(pre, "api_base").as_str(), Some(url.as_str()));
-    let headers = field(pre, "headers")
-        .as_object()
-        .expect("the pre_call headers are an object");
+    assert_eq!(text(field(pre, "api_base")), url.as_str());
+    assert_logged_headers(pre);
+    let request_str = format!(
+        "\n\nGET Request Sent from LiteLLM:\ncurl -X GET \\\n{url} \\\n-H 'Content-Type: application/json' -H 'X-Amz-Date: 20231114T221320Z' -H 'X-Amz-Security-Token: se****en' -H 'Authorization: AW****32'\n"
+    );
+    assert_eq!(text(field(pre, "request_str")), request_str.as_str());
+    assert_eq!(field(pre, "complete_input_dict"), &complete_input());
+    assert_eq!(text(field(&run.snapshots[0], "input")), INVOCATION_ARN);
+}
+
+fn assert_logged_headers(pre: &Json) {
+    let headers = object(field(pre, "headers"));
     let names: Vec<&str> = headers.keys().map(String::as_str).collect();
     assert_eq!(
         names,
@@ -243,47 +307,32 @@ fn logging_case() {
         headers.get("X-Amz-Date"),
         Some(&Json::Text("20231114T221320Z".to_owned()))
     );
+    // the callback snapshot scrubs a sensitive header key to B244's marker, so only the curl view shows the mask
     assert_eq!(
         headers.get("X-Amz-Security-Token"),
-        Some(&Json::Text("se****en".to_owned()))
+        Some(&Json::Text(REDACTED.to_owned()))
     );
     assert_eq!(
         headers.get("Authorization"),
-        Some(&Json::Text("AW****32".to_owned()))
+        Some(&Json::Text(REDACTED.to_owned()))
     );
-    let request_str = format!(
-        "\n\nGET Request Sent from LiteLLM:\ncurl -X GET \\\n{url} \\\n-H 'Content-Type: application/json' -H 'X-Amz-Date: 20231114T221320Z' -H 'X-Amz-Security-Token: se****en' -H 'Authorization: AW****32'\n"
-    );
-    assert_eq!(
-        field(pre, "request_str").as_str(),
-        Some(request_str.as_str())
-    );
-    assert_eq!(
-        field(pre, "complete_input_dict"),
-        &serde_json::from_str::<Json>(&format!("{{\"invocation_arn\":\"{INVOCATION_ARN}\"}}"))
-            .expect("the fixture object is JSON")
-    );
-    assert_eq!(
-        field(&run.snapshots[0], "input").as_str(),
-        Some(INVOCATION_ARN)
-    );
+}
 
+fn post_call_and_quiet_run() {
+    let run = super::fixture::run(&logging_scenario());
+    run.result.as_ref().expect("the status lookup succeeds");
     assert_eq!(
-        field(&run.snapshots[1], "original_response").as_str(),
-        Some(r#"{"status":"Completed"}"#)
+        text(field(&run.snapshots[1], "original_response")),
+        r#"{"status":"Completed"}"#
     );
-    assert_eq!(
-        field(&run.snapshots[1], "input").as_str(),
-        Some(INVOCATION_ARN)
-    );
+    assert_eq!(text(field(&run.snapshots[1], "input")), INVOCATION_ARN);
     assert_eq!(
         field(additional_args(&run.snapshots[1]), "complete_input_dict"),
-        &serde_json::from_str::<Json>(&format!("{{\"invocation_arn\":\"{INVOCATION_ARN}\"}}"))
-            .expect("the fixture object is JSON")
+        &complete_input()
     );
-
-    scenario.logging = false;
-    let quiet = super::fixture::run(&scenario);
+    let mut quiet_scenario = logging_scenario();
+    quiet_scenario.logging = false;
+    let quiet = super::fixture::run(&quiet_scenario);
     assert!(
         quiet.snapshots.is_empty(),
         "no logging object means no masking"
@@ -320,22 +369,30 @@ fn embedding_jobs_credential_identity_isolation() {
 
 #[test]
 fn embedding_jobs_secret_safe_failure() {
-    let reply_body = format!("rejected {SECRET_KEY} and {SESSION_TOKEN}");
-    let run = super::fixture::run(&Scenario::new(Reply::status(500, &reply_body)));
+    let reply_body = format!("rejected {ACCESS_KEY}, {SECRET_KEY} and {SESSION_TOKEN}");
+    let mut scenario = Scenario::new(Reply::status(500, &reply_body));
+    scenario.logging = true;
+    let run = super::fixture::run(&scenario);
     let error = run.result.expect_err("a 500 fails");
     assert_eq!(
         error.to_string(),
-        format!("Failed to get async invoke status: 500 - {reply_body}")
+        "Failed to get async invoke status: 500 - rejected [REDACTED], [REDACTED] and [REDACTED]"
     );
+    let post = field(&run.snapshots[1], "original_response");
+    assert_eq!(
+        post,
+        &Json::Text("rejected [REDACTED], [REDACTED] and [REDACTED]".to_owned())
+    );
+    assert!(!error.to_string().contains(ACCESS_KEY));
     let debug = format!("{error:?}");
     assert!(debug.contains("HttpFailure"));
     assert!(debug.contains("[REDACTED provider reply]"));
     assert!(!debug.contains(SECRET_KEY));
     assert!(!debug.contains(SESSION_TOKEN));
-    let Ok(EmbeddingJobsError::HttpFailure { body, .. }) = &error else {
+    let EmbeddingJobsError::HttpFailure { body, .. } = &error else {
         panic!("the failure is an HTTP status failure");
     };
-    assert_eq!(body.as_str(), reply_body);
+    assert_eq!(body.0, "rejected [REDACTED], [REDACTED] and [REDACTED]");
 
     let request = run.requests.first().expect("the request was sent");
     let request_debug = format!("{request:?}");
@@ -349,4 +406,65 @@ fn embedding_jobs_secret_safe_failure() {
     let transport = failed.result.expect_err("the transport fails");
     assert!(!format!("{transport:?}").contains(SECRET_KEY));
     assert!(!transport.to_string().contains(SECRET_KEY));
+}
+
+#[rstest]
+#[case::null("null", true)]
+#[case::wrong_type("42", false)]
+fn endpoint_parameter_types(#[case] value: &str, #[case] accepted: bool) {
+    let mut scenario = Scenario::new(Reply::ok("{}"));
+    scenario.optional_params.insert(
+        "aws_bedrock_runtime_endpoint".to_owned(),
+        serde_json::value::RawValue::from_string(value.to_owned()).unwrap(),
+    );
+    let run = super::fixture::run(&scenario);
+    if accepted {
+        assert!(run.result.is_ok());
+        assert_eq!(
+            run.requests[0].url,
+            format!("https://bedrock-runtime.us-west-2.amazonaws.com/async-invoke/{ENCODED_ARN}")
+        );
+    } else {
+        assert!(matches!(
+            run.result,
+            Err(EmbeddingJobsError::Endpoint { .. })
+        ));
+        assert!(run.requests.is_empty());
+    }
+}
+
+#[test]
+fn bearer_parameters_do_not_skip_signing() {
+    let mut scenario = Scenario::new(Reply::ok("{}"));
+    scenario.environment.insert(
+        "AWS_BEARER_TOKEN_BEDROCK".to_owned(),
+        "unused-bearer".to_owned(),
+    );
+    scenario.optional_params.insert(
+        "api_key".to_owned(),
+        serde_json::value::RawValue::from_string("\"unused-api-key\"".to_owned()).unwrap(),
+    );
+    let run = super::fixture::run(&scenario);
+    assert!(run.result.is_ok());
+    assert_eq!(run.resolved.len(), 1);
+    assert_signed_headers(&run.requests[0]);
+}
+
+#[test]
+fn status_timeout_is_not_converted() {
+    let run = super::fixture::run(&Scenario::new(Reply::Timeout));
+    assert!(
+        matches!(run.result, Err(EmbeddingJobsError::Transport(crate::bedrock_embedding_io::transport::TransferError::Timeout { elapsed })) if elapsed == std::time::Duration::from_secs(7))
+    );
+}
+
+#[test]
+fn empty_credentials_do_not_change_failure_text() {
+    let mut scenario = Scenario::new(Reply::status(500, "plain failure"));
+    scenario.credentials = credentials_with("", "", Some(""));
+    let run = super::fixture::run(&scenario);
+    assert_eq!(
+        run.result.unwrap_err().to_string(),
+        "Failed to get async invoke status: 500 - plain failure"
+    );
 }

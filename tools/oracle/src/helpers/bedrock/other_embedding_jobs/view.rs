@@ -12,16 +12,22 @@ const HEADER_NAMES: [&str; 4] = [
 ];
 
 fn field<'json>(value: &'json Json, name: &str) -> &'json Json {
-    value
-        .as_object()
-        .and_then(|object| object.get(name))
-        .unwrap_or(&Json::Null)
+    match value {
+        Json::Object(fields) => fields.get(name).unwrap_or(&Json::Null),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => &Json::Null,
+    }
 }
 
 fn error_text(error: &EmbeddingJobsError) -> Value {
     match error {
         EmbeddingJobsError::HttpFailure { .. } => Value::String(error.to_string()),
-        _ => Value::String(String::new()),
+        EmbeddingJobsError::Credentials(_)
+        | EmbeddingJobsError::MissingCredentials
+        | EmbeddingJobsError::Signing(_)
+        | EmbeddingJobsError::Transport(_)
+        | EmbeddingJobsError::Logging(_)
+        | EmbeddingJobsError::Endpoint { .. }
+        | EmbeddingJobsError::Decode { .. } => Value::String(String::new()),
     }
 }
 
@@ -30,7 +36,12 @@ const fn error_kind(error: &EmbeddingJobsError) -> &'static str {
     match error {
         EmbeddingJobsError::HttpFailure { .. } => "status",
         EmbeddingJobsError::Decode { .. } => "decode",
-        _ => "other",
+        EmbeddingJobsError::Credentials(_)
+        | EmbeddingJobsError::MissingCredentials
+        | EmbeddingJobsError::Signing(_)
+        | EmbeddingJobsError::Transport(_)
+        | EmbeddingJobsError::Logging(_)
+        | EmbeddingJobsError::Endpoint { .. } => "other",
     }
 }
 
@@ -46,10 +57,10 @@ fn request_value(request: &StatusWireRequest) -> Value {
 
 fn pre_value(snapshot: &Json) -> Value {
     let args = field(snapshot, "additional_args");
-    let names: Vec<&String> = field(args, "headers")
-        .as_object()
-        .map(|headers| headers.keys().collect())
-        .unwrap_or_default();
+    let names: Vec<&String> = match field(args, "headers") {
+        Json::Object(headers) => headers.keys().collect(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Vec::new(),
+    };
     json!({
         "input": field(snapshot, "input"),
         "api_base": field(args, "api_base"),
@@ -67,21 +78,20 @@ fn post_value(snapshot: &Json) -> Value {
     })
 }
 
-pub(crate) fn render(execution: &Execution) -> Value {
-    let (kind, value, error, error_kind) = match &execution.result {
-        Ok(parsed) => (
-            "returned",
-            serde_json::to_value(parsed).unwrap_or(Value::Null),
-            Value::Null,
-            Value::Null,
-        ),
+fn outcome(result: &Result<Json, EmbeddingJobsError>) -> (&'static str, Value, Value, Value) {
+    match result {
+        Ok(parsed) => ("returned", json!(parsed), Value::Null, Value::Null),
         Err(error) => (
             "failed",
             Value::Null,
             error_text(error),
             json!(error_kind(error)),
         ),
-    };
+    }
+}
+
+pub(crate) fn render(execution: &Execution) -> Value {
+    let (kind, value, error, error_kind) = outcome(&execution.result);
     let requests: Vec<Value> = execution.requests.iter().map(request_value).collect();
     let factory: Vec<Value> = execution
         .factory_calls

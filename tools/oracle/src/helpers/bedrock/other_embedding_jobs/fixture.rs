@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::bedrock_embedding_io::credentials::ManagedRegionWorker;
@@ -10,33 +10,20 @@ use betterlite_bedrock::bedrock_embedding_io::transport::{
 };
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::embedding_jobs::{
-    AsyncInvokeStatusCall, EmbeddingJobsError, StatusCredentials, StatusReply, StatusServices,
-    StatusTransport, StatusWireRequest, get_async_invoke_status,
+    AsyncInvokeStatusCall, EmbeddingJobsError, StatusReply, StatusServices, StatusTransport,
+    StatusWireRequest, get_async_invoke_status,
 };
-use betterlite_bedrock::image_call::plan::LogContext;
+use betterlite_bedrock::image_call::plan::{CredentialSource, LogContext};
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_logging::logging_pre_post::env::{
-    DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
-};
-use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_logging::logging_privacy::request::Decision;
-use betterlite_logging::logging_state::correlation::{
-    CorrelationContext, CorrelationSettings, CorrelationSetup,
-};
-use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
-use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use betterlite_secret_managers::secret_lookup::SecretLookup;
-use betterlite_secret_managers::secret_lookup::ports::{
-    AzureOidcError, AzureOidcTokens, OidcClock, OidcHttp, OidcHttpError, OidcRequest, OidcResponse,
-    OidcTokenCache,
-};
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 
 use super::Failure;
+use super::env::{NoPorts, with_logging};
 use super::input::Call;
+use betterlite_secret_managers::secret_lookup::ports::OidcTokenCache;
 
 const CLOCK_SECONDS: u64 = 1_700_000_000;
 
@@ -53,7 +40,7 @@ struct Source {
     regions: Mutex<Vec<String>>,
 }
 
-impl StatusCredentials for Source {
+impl CredentialSource for Source {
     fn resolve(
         &self,
         _settings: AwsSettings,
@@ -130,70 +117,6 @@ impl ClientFactory for Factory {
     }
 }
 
-struct NoPorts;
-
-impl OidcHttp for NoPorts {
-    fn get(&self, _request: OidcRequest) -> Result<OidcResponse, OidcHttpError> {
-        Err(OidcHttpError::Request {
-            message: "the fixture has no OIDC transport".to_owned(),
-        })
-    }
-}
-
-impl AzureOidcTokens for NoPorts {
-    fn token(&self, _scope: &str) -> Result<Option<SecretString>, AzureOidcError> {
-        Ok(None)
-    }
-}
-
-impl OidcClock for NoPorts {
-    fn now(&self) -> Instant {
-        Instant::now()
-    }
-
-    fn unix_seconds(&self) -> i64 {
-        0
-    }
-}
-
-fn secrets() -> SecretLookup {
-    SecretLookup {
-        manager: None,
-        oidc_http: Arc::new(NoPorts),
-        azure_tokens: Arc::new(NoPorts),
-        clock: Arc::new(NoPorts),
-        oidc_cache: OidcTokenCache::default(),
-    }
-}
-
-#[derive(Default)]
-struct DiscardingSink;
-
-impl LogSink for DiscardingSink {
-    fn emit(&self, _record: LogRecord) {}
-}
-
-fn redactor() -> Result<Redactor, Failure> {
-    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|_| Failure::Fixture)
-}
-
-fn logging_state(redactor: &Redactor) -> Result<LoggingState, Failure> {
-    let init: LoggingInit = serde_json::from_str(
-        r#"{"model":"embedding-model","call_type":"embeddings","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
-    )?;
-    LoggingState::new(
-        init,
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        redactor,
-        || "generated".to_owned(),
-        Duration::default,
-    )
-    .map_err(|_| Failure::Fixture)
-}
-
 fn parameters(call: &Call) -> Result<BTreeMap<String, Box<RawValue>>, Failure> {
     let mut parameters = BTreeMap::new();
     parameters.insert(
@@ -219,6 +142,29 @@ fn parameters(call: &Call) -> Result<BTreeMap<String, Box<RawValue>>, Failure> {
     Ok(parameters)
 }
 
+fn invoke(
+    call: &Call,
+    parameters: &mut BTreeMap<String, Box<RawValue>>,
+    services: &StatusServices<'_, Source, Factory>,
+    log: Option<&mut LogContext<'_, '_>>,
+) -> Result<Result<Json, EmbeddingJobsError>, Failure> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(Failure::from)?;
+    let now = SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(CLOCK_SECONDS))
+        .ok_or(Failure::Fixture)?;
+    let request = AsyncInvokeStatusCall {
+        invocation_arn: &call.invocation_arn,
+        region: &call.region,
+        optional_params: parameters,
+        environment: &call.environment,
+        now,
+    };
+    Ok(runtime.block_on(get_async_invoke_status(request, services, log)))
+}
+
 pub(crate) fn execute(call: &Call) -> Result<Execution, Failure> {
     let source = Source {
         credentials: Credentials {
@@ -232,8 +178,22 @@ pub(crate) fn execute(call: &Call) -> Result<Execution, Failure> {
         },
         regions: Mutex::new(Vec::new()),
     };
-    let secrets = secrets();
-    let region_worker = ManagedRegionWorker::new().map_err(|_| Failure::Fixture)?;
+    let secrets = SecretLookup {
+        manager: None,
+        oidc_http: Arc::new(NoPorts),
+        azure_tokens: Arc::new(NoPorts),
+        clock: Arc::new(NoPorts),
+        oidc_cache: OidcTokenCache::default(),
+    };
+    execute_with_source(call, source, &secrets)
+}
+
+fn execute_with_source(
+    call: &Call,
+    source: Source,
+    secrets: &SecretLookup,
+) -> Result<Execution, Failure> {
+    let region_worker = ManagedRegionWorker::new().map_err(Failure::from)?;
     let seen: Arc<Mutex<Vec<StatusWireRequest>>> = Arc::new(Mutex::new(Vec::new()));
     let factory = Factory {
         status: call.status,
@@ -242,74 +202,28 @@ pub(crate) fn execute(call: &Call) -> Result<Execution, Failure> {
         calls: Mutex::new(Vec::new()),
     };
     let mut parameters = parameters(call)?;
-    let redactor = redactor()?;
-    let mut state = logging_state(&redactor)?;
-    let snapshots: Arc<Mutex<Vec<Json>>> = Arc::new(Mutex::new(Vec::new()));
-    let captured = Arc::clone(&snapshots);
-    let logger = move |snapshot: &Json| -> Result<(), PrePostError> {
-        captured
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(snapshot.clone());
-        Ok(())
-    };
-    let sink = DiscardingSink;
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: &redactor,
-        log: &sink,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: Some(&logger),
-        now: state.start_time,
-    };
-    let mut log = LogContext {
-        state: &mut state,
-        env: &env,
-    };
-    let now = SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_secs(CLOCK_SECONDS))
-        .ok_or(Failure::Fixture)?;
-    let request = AsyncInvokeStatusCall {
-        invocation_arn: &call.invocation_arn,
-        region: &call.region,
-        optional_params: &mut parameters,
-        environment: &call.environment,
-        now,
-    };
+    let signing = betterlite_bedrock::signing::executor::AwsSigningExecutor::default();
     let services = StatusServices {
         source: &source,
-        secrets: &secrets,
+        secrets,
         region_worker: &region_worker,
         factory: &factory,
+        signing: &signing,
     };
-    let logging = call.logging.then_some(&mut log);
-    let result = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|_| Failure::Fixture)?
-        .block_on(get_async_invoke_status(request, &services, logging));
+    let (result, snapshots) = with_logging(call.logging, |log| {
+        invoke(call, &mut parameters, &services, log)
+    })?;
     Ok(Execution {
-        result,
+        result: result?,
         requests: seen.lock().unwrap_or_else(PoisonError::into_inner).clone(),
         factory_calls: factory
             .calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner),
         resolved_regions: source
             .regions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
-        snapshots: snapshots
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner),
+        snapshots,
     })
 }

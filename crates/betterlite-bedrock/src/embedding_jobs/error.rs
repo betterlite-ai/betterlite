@@ -9,29 +9,11 @@ use crate::signing::error::SigningError;
 
 // A provider reply can echo credentials, so Debug names the failure and hides the text
 #[derive(Clone, PartialEq, Eq)]
-pub struct FailureBody(String);
-
-impl FailureBody {
-    #[must_use]
-    pub fn new(text: String) -> Self {
-        Self(text)
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+pub struct FailureBody(pub String);
 
 impl Debug for FailureBody {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         formatter.write_str("[REDACTED provider reply]")
-    }
-}
-
-impl fmt::Display for FailureBody {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
     }
 }
 
@@ -57,6 +39,6 @@ pub enum EmbeddingJobsError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("Failed to get async invoke status: {status} - {body}")]
+    #[error("Failed to get async invoke status: {status} - {}", body.0)]
     HttpFailure { status: u16, body: FailureBody },
 }

@@ -1,3 +1,6 @@
 task: B632
-deviations: []
+deviations:
+  - what: Redact the request credentials from status failure messages and response logging.
+    why: Provider replies can echo credentials; preserving those bytes in an error or log leaks secrets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L648-L667
 kept_bugs: []

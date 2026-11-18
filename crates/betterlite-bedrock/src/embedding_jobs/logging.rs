@@ -1,3 +1,4 @@
+use betterlite_logging::clickhouse::clickhouse_logging::convert::coerced_text;
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_logging::logging_pre_post::masking::masked_headers;
@@ -16,19 +17,12 @@ fn complete_input_dict(invocation_arn: &str) -> RawBody {
     )]))
 }
 
-fn live_headers(headers: &[(String, String)]) -> IndexMap<String, Json> {
-    headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect()
-}
-
 // the curl view masks the signed headers but keeps the prepared order
-fn curl_request(url: &str, headers: &[(String, String)]) -> String {
-    let masked = masked_headers(&live_headers(headers), false);
+fn curl_request(url: &str, live: &IndexMap<String, Json>) -> String {
+    let masked = masked_headers(live, false);
     let formatted: Vec<String> = masked
         .iter()
-        .map(|(name, value)| format!("-H '{name}: {}'", value.as_str().unwrap_or_default()))
+        .map(|(name, value)| format!("-H '{name}: {}'", coerced_text(value)))
         .collect();
     format!(
         "\n\nGET Request Sent from LiteLLM:\ncurl -X GET \\\n{url} \\\n{}\n",
@@ -42,6 +36,11 @@ pub(crate) fn log_pre_call(
     headers: &[(String, String)],
     log: &mut LogContext<'_, '_>,
 ) -> Result<(), PrePostError> {
+    let live: IndexMap<String, Json> = headers
+        .iter()
+        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
+        .collect();
+    let request_str = curl_request(url, &live);
     pre_call(
         log.state,
         &PreCall {
@@ -49,9 +48,9 @@ pub(crate) fn log_pre_call(
             model: None,
             additional_args: AdditionalArgs {
                 api_base: Some(url.to_owned()),
-                headers: Some(live_headers(headers)),
+                headers: Some(live),
                 complete_input_dict: Some(complete_input_dict(invocation_arn)),
-                request_str: Some(curl_request(url, headers)),
+                request_str: Some(request_str),
                 openai_sdk: None,
                 passthrough: IndexMap::new(),
             },
@@ -62,8 +61,14 @@ pub(crate) fn log_pre_call(
 }
 
 pub(crate) fn log_post_call(invocation_arn: &str, text: &str, log: &mut LogContext<'_, '_>) {
-    let mut additional = AdditionalArgs::default();
-    additional.complete_input_dict = Some(complete_input_dict(invocation_arn));
+    let additional = AdditionalArgs {
+        api_base: None,
+        headers: None,
+        complete_input_dict: Some(complete_input_dict(invocation_arn)),
+        request_str: None,
+        openai_sdk: None,
+        passthrough: IndexMap::new(),
+    };
     post_call(
         log.state,
         &PostCall {

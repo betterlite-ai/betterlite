@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::time::SystemTime;
 
 use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_models::decisions::Json;
 use betterlite_secret_managers::secret_lookup::SecretLookup;
+use secrecy::ExposeSecret as _;
 use serde_json::value::RawValue;
 
 use super::decode::decode_async_embedding_status;
@@ -18,8 +18,8 @@ use crate::bedrock_embedding_io::credentials::{
 };
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{ASYNC_CLIENT_PROVIDER, ClientFactory};
-use crate::credentials::error::CredentialError;
-use crate::image_call::plan::LogContext;
+use crate::image_call::plan::{CredentialSource, LogContext};
+use crate::signing::executor::AwsSigningExecutor;
 
 const RUNTIME_ENDPOINT_VARIABLE: &str = "AWS_BEDROCK_RUNTIME_ENDPOINT";
 const ENDPOINT_PARAMETER: &str = "aws_bedrock_runtime_endpoint";
@@ -32,50 +32,49 @@ pub struct AsyncInvokeStatusCall<'source> {
     pub now: SystemTime,
 }
 
-pub trait StatusCredentials {
-    fn resolve(
-        &self,
-        settings: AwsSettings,
-        region: String,
-    ) -> impl Future<Output = Result<Credentials, CredentialError>> + Send;
-}
-
 pub struct StatusServices<'source, Source, Factory> {
     pub source: &'source Source,
     pub secrets: &'source SecretLookup,
     pub region_worker: &'source ManagedRegionWorker,
     pub factory: &'source Factory,
+    pub signing: &'source AwsSigningExecutor,
 }
 
 struct PreparedStatusRequest {
     url: String,
     headers: Vec<(String, String)>,
+    credentials: Credentials,
 }
 
 pub async fn get_async_invoke_status<Source, Factory>(
-    call: AsyncInvokeStatusCall<'_>,
+    mut call: AsyncInvokeStatusCall<'_>,
     services: &StatusServices<'_, Source, Factory>,
     mut log: Option<&mut LogContext<'_, '_>>,
 ) -> Result<Json, EmbeddingJobsError>
 where
-    Source: StatusCredentials + Sync,
+    Source: CredentialSource + Sync,
     Factory: ClientFactory + Sync,
     Factory::Client: StatusTransport,
 {
-    let prepared = prepare_status_request(&call, services).await?;
-    if let Some(log) = log.as_deref_mut() {
-        log_pre_call(call.invocation_arn, &prepared.url, &prepared.headers, log)?;
+    let prepared = prepare_status_request(&mut call, services).await?;
+    if let Some(context) = log.as_deref_mut() {
+        log_pre_call(
+            call.invocation_arn,
+            &prepared.url,
+            &prepared.headers,
+            context,
+        )?;
     }
     let reply = send_status_request(&prepared, services.factory).await?;
-    complete_status_request(call.invocation_arn, reply, log)
+    complete_status_request(call.invocation_arn, reply, &prepared.credentials, log)
 }
 
 async fn prepare_status_request<Source, Factory>(
-    call: &AsyncInvokeStatusCall<'_>,
+    call: &mut AsyncInvokeStatusCall<'_>,
     services: &StatusServices<'_, Source, Factory>,
 ) -> Result<PreparedStatusRequest, EmbeddingJobsError>
 where
-    Source: StatusCredentials + Sync,
+    Source: CredentialSource + Sync,
 {
     let configured = configured_endpoint(call.optional_params)?;
     let endpoint = StatusEndpoint {
@@ -87,6 +86,30 @@ where
         region: call.region,
     };
     let url = async_invoke_status_url(endpoint, call.invocation_arn);
+    let credentials = status_credentials(call, services).await?;
+    let headers = vec![("Content-Type".to_owned(), "application/json".to_owned())];
+    // the explicit method region signs the request even when credential loading resolved another
+    let signer_credentials = credentials.clone();
+    let region = call.region.to_owned();
+    let now = call.now;
+    let signed = services
+        .signing
+        .run(move || sign_get_request(&signer_credentials, &url, &headers, &region, now))
+        .await??;
+    Ok(PreparedStatusRequest {
+        url: signed.url,
+        headers: prepared_headers(&signed.headers),
+        credentials,
+    })
+}
+
+async fn status_credentials<Source, Factory>(
+    call: &mut AsyncInvokeStatusCall<'_>,
+    services: &StatusServices<'_, Source, Factory>,
+) -> Result<Credentials, EmbeddingJobsError>
+where
+    Source: CredentialSource + Sync,
+{
     let loaded = load_credentials(
         CredentialRequest {
             optional_params: call.optional_params,
@@ -100,16 +123,9 @@ where
         },
     )
     .await?;
-    let Some(credentials) = loaded.credentials else {
-        return Err(EmbeddingJobsError::MissingCredentials);
-    };
-    let headers = vec![("Content-Type".to_owned(), "application/json".to_owned())];
-    // the explicit method region signs the request even when credential loading resolved another
-    let signed = sign_get_request(&credentials, &url, &headers, call.region, call.now)?;
-    Ok(PreparedStatusRequest {
-        url: signed.url,
-        headers: prepared_headers(&signed.headers),
-    })
+    loaded
+        .credentials
+        .ok_or(EmbeddingJobsError::MissingCredentials)
 }
 
 fn configured_endpoint(
@@ -157,14 +173,27 @@ where
         .map_err(EmbeddingJobsError::from)
 }
 
+// httpx's response.text replaces each invalid sequence with one U+FFFD, which clippy.toml keeps String::from_utf8_lossy from doing
+fn response_text(bytes: &[u8]) -> String {
+    let mut text = String::with_capacity(bytes.len());
+    for chunk in bytes.utf8_chunks() {
+        text.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            text.push('\u{FFFD}');
+        }
+    }
+    text
+}
+
 fn complete_status_request(
     invocation_arn: &str,
     reply: StatusReply,
+    credentials: &Credentials,
     log: Option<&mut LogContext<'_, '_>>,
 ) -> Result<Json, EmbeddingJobsError> {
-    let text = String::from_utf8_lossy(&reply.body).into_owned();
-    if let Some(log) = log {
-        log_post_call(invocation_arn, &text, log);
+    let text = scrub_credentials(response_text(&reply.body), credentials);
+    if let Some(context) = log {
+        log_post_call(invocation_arn, &text, context);
     }
     // only an exact 200 is a status body; a Failed job in a 200 body is still a success
     if reply.status == 200 {
@@ -172,6 +201,21 @@ fn complete_status_request(
     }
     Err(EmbeddingJobsError::HttpFailure {
         status: reply.status,
-        body: FailureBody::new(text),
+        body: FailureBody(text),
     })
+}
+
+// An upstream error or callback must not echo the credentials used for this request.
+fn scrub_credentials(mut text: String, credentials: &Credentials) -> String {
+    let secrets = [
+        Some(&credentials.access_key_id),
+        Some(&credentials.secret_access_key),
+        credentials.session_token.as_ref(),
+    ];
+    for secret in secrets.into_iter().flatten() {
+        if !secret.expose_secret().is_empty() {
+            text = text.replace(secret.expose_secret(), "[REDACTED]");
+        }
+    }
+    text
 }

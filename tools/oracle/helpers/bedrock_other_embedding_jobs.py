@@ -4,9 +4,9 @@ import os
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from functools import partial
-from typing import NotRequired, TypedDict, cast
+from typing import cast
 
-import botocore.auth
+import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L55
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
@@ -15,7 +15,7 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.types.llms.bedrock import AwsAuthParams
 from litellm.types.utils import LlmProviders
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
-from typing_extensions import override
+from typing_extensions import NotRequired, TypedDict, override
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -74,9 +74,9 @@ class Recorder(Logging):
             {
                 "input": values["input"],
                 "api_base": additional["api_base"],
-                "header_names": list(additional["headers"].keys()),
+                "header_names": JSON.validate_python(list(additional["headers"].keys())),
                 "request_str": additional["request_str"],
-                "complete_input_dict": additional["complete_input_dict"],
+                "complete_input_dict": JSON.validate_python(additional["complete_input_dict"]),
             }
         )
 
@@ -88,7 +88,7 @@ class Recorder(Logging):
             {
                 "input": values["input"],
                 "original_response": response.text,
-                "complete_input_dict": additional["complete_input_dict"],
+                "complete_input_dict": JSON.validate_python(additional["complete_input_dict"]),
             }
         )
 
@@ -149,10 +149,7 @@ class Caller(embedding_module.BedrockEmbedding):
         endpoint = value.get("endpoint")
         if endpoint is not None:
             kwargs["aws_bedrock_runtime_endpoint"] = endpoint
-        call = cast(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L587-L667
-            Callable[..., Coroutine[None, None, JsonValue]],
-            self._get_async_invoke_status,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L587-L667
-        )
+        call = cast(Callable[..., Coroutine[None, None, JsonValue]], self._get_async_invoke_status)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L587-L667
         return await call(
             value["invocation_arn"], value["region"], logging_obj=logging_obj, **kwargs
         )
@@ -169,9 +166,9 @@ def record_value(
     pre = None if recorder is None or not recorder.pre else recorder.pre[0]
     post = None if recorder is None or not recorder.post else recorder.post[0]
     return {
-        "requests": fixture.sent,
-        "factory": fixture.factory,
-        "resolved_regions": provider.regions,
+        "requests": JSON.validate_python(fixture.sent),
+        "factory": JSON.validate_python(fixture.factory),
+        "resolved_regions": JSON.validate_python(provider.regions),
         "pre": pre,
         "post": post,
     }
@@ -182,12 +179,19 @@ def run(value: Input) -> JsonValue:
     set_environment({} if environment is None else environment)
     provider = Provider(value["credentials"])
     BaseAWSLLM.resolve_credentials = provider  # type: ignore[assignment, method-assign]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L512
-    botocore.auth.get_current_datetime = partial(  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1758
+    botocore.auth.get_current_datetime = partial(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1758
         datetime.fromtimestamp, CLOCK_SECONDS, tz=UTC
     )
-    fixture = Fixture(value.get("status", 200), value.get("body", ""))
+    status = value.get("status")
+    if status is None:
+        status = 200
+    body = value.get("body")
+    if body is None:
+        body = ""
+    logging = value.get("logging")
+    fixture = Fixture(status, body)
     embedding_module.get_async_httpx_client = fixture.client  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L641
-    recorder = Recorder() if value.get("logging", False) else None
+    recorder = Recorder() if logging is True else None
     try:
         returned = asyncio.run(Caller().status(value, recorder))
     except json.JSONDecodeError:

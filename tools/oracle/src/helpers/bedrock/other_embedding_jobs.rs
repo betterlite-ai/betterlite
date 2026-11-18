@@ -1,8 +1,8 @@
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use serde_json::Value;
 use thiserror::Error;
 
+mod env;
 mod fixture;
 mod input;
 mod view;
@@ -15,7 +15,15 @@ pub(crate) enum Failure {
     Status(#[from] betterlite_bedrock::embedding_jobs::EmbeddingJobsError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error("the fixture is not usable")]
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Credentials(#[from] betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError),
+    #[error(transparent)]
+    Logging(#[from] betterlite_logging::logging_state::LoggingStateError),
+    #[error(transparent)]
+    Redaction(#[from] betterlite_redact::error::RedactionError),
+    #[error("the fixture clock is out of range")]
     Fixture,
 }
 
@@ -38,9 +46,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let call = input.call();
         let execution = fixture::execute(call).map_err(Box::<HelperError>::from)?;
-        let answer: Value =
-            serde_json::to_value(view::render(&execution)).map_err(Failure::from)?;
-        Ok(answer)
+        Ok(view::render(&execution))
     }
 }
 

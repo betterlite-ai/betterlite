@@ -25,8 +25,8 @@ use secrecy::SecretString;
 use serde_json::value::RawValue;
 
 use super::super::{
-    AsyncInvokeStatusCall, EmbeddingJobsError, StatusCredentials, StatusReply, StatusServices,
-    StatusTransport, StatusWireRequest, get_async_invoke_status,
+    AsyncInvokeStatusCall, EmbeddingJobsError, StatusReply, StatusServices, StatusTransport,
+    StatusWireRequest, get_async_invoke_status,
 };
 use crate::aws_settings::sources::Credentials;
 use crate::bedrock_embedding_io::credentials::ManagedRegionWorker;
@@ -34,7 +34,7 @@ use crate::bedrock_embedding_io::transport::{
     ClientFactory, EmbeddingReply, EmbeddingRequest, EmbeddingTransport, Timeout, TransferError,
 };
 use crate::credentials::error::CredentialError;
-use crate::image_call::plan::LogContext;
+use crate::image_call::plan::{CredentialSource, LogContext};
 
 pub(super) const ACCESS_KEY: &str = "AKIDEXAMPLE";
 pub(super) const SECRET_KEY: &str = "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY";
@@ -75,8 +75,9 @@ pub(super) fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 #[derive(Clone, Debug)]
 pub(super) enum Reply {
-    Answer { status: u16, body: String },
+    Answer { status: u16, body: Vec<u8> },
     Failed,
+    Timeout,
 }
 
 impl Reply {
@@ -85,9 +86,13 @@ impl Reply {
     }
 
     pub(super) fn status(status: u16, body: &str) -> Self {
+        Self::bytes(status, body.as_bytes())
+    }
+
+    pub(super) fn bytes(status: u16, body: &[u8]) -> Self {
         Self::Answer {
             status,
-            body: body.to_owned(),
+            body: body.to_vec(),
         }
     }
 }
@@ -95,6 +100,7 @@ impl Reply {
 #[derive(Clone)]
 pub(super) struct Scenario {
     pub(super) endpoint: Option<String>,
+    pub(super) optional_params: BTreeMap<String, Box<RawValue>>,
     pub(super) environment: BTreeMap<String, String>,
     pub(super) region: String,
     pub(super) credentials: Credentials,
@@ -106,6 +112,7 @@ impl Scenario {
     pub(super) fn new(reply: Reply) -> Self {
         Self {
             endpoint: None,
+            optional_params: BTreeMap::new(),
             environment: environment(&[("AWS_REGION", "eu-west-1")]),
             region: "us-west-2".to_owned(),
             credentials: credentials(),
@@ -133,7 +140,7 @@ impl Source {
     }
 }
 
-impl StatusCredentials for Source {
+impl CredentialSource for Source {
     fn resolve(
         &self,
         settings: AwsSettings,
@@ -158,9 +165,12 @@ impl StatusTransport for FixtureClient {
         let answer = match &self.reply {
             Reply::Answer { status, body } => Ok(StatusReply {
                 status: *status,
-                body: body.as_bytes().to_vec(),
+                body: body.clone(),
             }),
             Reply::Failed => Err(TransferError::Failed(TransportError::Closed)),
+            Reply::Timeout => Err(TransferError::Timeout {
+                elapsed: Duration::from_secs(7),
+            }),
         };
         ready(answer)
     }
@@ -295,12 +305,8 @@ pub(super) struct Run {
     pub(super) snapshots: Vec<Json>,
 }
 
-pub(super) fn run(scenario: &Scenario) -> Run {
-    let factory = Factory::new(scenario.reply.clone());
-    let source = Source::new(scenario.credentials.clone());
-    let secrets = secret_lookup();
-    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
-    let mut parameters = BTreeMap::new();
+fn parameters(scenario: &Scenario) -> BTreeMap<String, Box<RawValue>> {
+    let mut parameters = scenario.optional_params.clone();
     if let Some(endpoint) = &scenario.endpoint {
         parameters.insert(
             "aws_bedrock_runtime_endpoint".to_owned(),
@@ -308,29 +314,62 @@ pub(super) fn run(scenario: &Scenario) -> Run {
                 .expect("the endpoint serializes"),
         );
     }
-    let mut state = logging_state();
-    let snapshots: Arc<Mutex<Vec<Json>>> = Arc::new(Mutex::new(Vec::new()));
-    let captured = Arc::clone(&snapshots);
-    let logger = move |snapshot: &Json| -> Result<(), PrePostError> {
-        captured.lock().unwrap().push(snapshot.clone());
-        Ok(())
-    };
-    let redactor = redactor();
-    let sink = DiscardingSink;
-    let env = PrePostEnv {
+    parameters
+}
+
+pub(super) fn prepost_env<'env>(
+    state: &LoggingState,
+    redactor: &'env Redactor,
+    sink: &'env DiscardingSink,
+    logger: &'env dyn Fn(&Json) -> Result<(), PrePostError>,
+) -> PrePostEnv<'env> {
+    PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
         decision: Decision {
             content: false,
             key_info: false,
         },
-        redactor: &redactor,
-        log: &sink,
+        redactor,
+        log: sink,
         input_callbacks: &[],
         sentry: None,
-        logger_fn: Some(&logger),
+        logger_fn: Some(logger),
         now: state.start_time,
-    };
+    }
+}
+
+fn snapshot_logger(snapshots: Arc<Mutex<Vec<Json>>>) -> impl Fn(&Json) -> Result<(), PrePostError> {
+    move |snapshot: &Json| -> Result<(), PrePostError> {
+        snapshots.lock().unwrap().push(snapshot.clone());
+        Ok(())
+    }
+}
+
+fn invoke(
+    call: AsyncInvokeStatusCall<'_>,
+    services: &StatusServices<'_, Source, Factory>,
+    log: Option<&mut LogContext<'_, '_>>,
+) -> Result<Json, EmbeddingJobsError> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("the fixture runtime builds")
+        .block_on(get_async_invoke_status(call, services, log))
+}
+
+pub(super) fn run(scenario: &Scenario) -> Run {
+    let factory = Factory::new(scenario.reply.clone());
+    let source = Source::new(scenario.credentials.clone());
+    let secrets = secret_lookup();
+    let region_worker = ManagedRegionWorker::new().expect("the region worker starts");
+    let mut optional_params = parameters(scenario);
+    let mut state = logging_state();
+    let snapshots: Arc<Mutex<Vec<Json>>> = Arc::new(Mutex::new(Vec::new()));
+    let logger = snapshot_logger(Arc::clone(&snapshots));
+    let redactor = redactor();
+    let sink = DiscardingSink;
+    let env = prepost_env(&state, &redactor, &sink, &logger);
     let mut log = LogContext {
         state: &mut state,
         env: &env,
@@ -338,22 +377,19 @@ pub(super) fn run(scenario: &Scenario) -> Run {
     let call = AsyncInvokeStatusCall {
         invocation_arn: INVOCATION_ARN,
         region: &scenario.region,
-        optional_params: &mut parameters,
+        optional_params: &mut optional_params,
         environment: &scenario.environment,
         now: now(),
     };
+    let signing = crate::signing::executor::AwsSigningExecutor::default();
     let services = StatusServices {
         source: &source,
         secrets: &secrets,
         region_worker: &region_worker,
         factory: &factory,
+        signing: &signing,
     };
-    let logging = scenario.logging.then_some(&mut log);
-    let result = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("the fixture runtime builds")
-        .block_on(get_async_invoke_status(call, &services, logging));
+    let result = invoke(call, &services, scenario.logging.then_some(&mut log));
     Run {
         result,
         requests: factory.requests(),

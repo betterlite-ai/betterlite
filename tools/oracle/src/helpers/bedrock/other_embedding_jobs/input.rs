@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
     AsyncInvokeStatusUrl(Call),
     StatusBodyPassthrough(Call),
