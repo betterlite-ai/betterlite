@@ -594,7 +594,7 @@ fn rejects_a_deployment_record_with_a_non_object_params() {
 #[test]
 fn rejects_a_record_that_parses_as_no_deployment() {
     let rows: Vec<JsonObject> =
-        serde_json::from_str(r#"[{"model_name":"x","model_info":{"id":5}}]"#).unwrap();
+        serde_json::from_str(r#"[{"model_name":"x","model_info":{"id":true}}]"#).unwrap();
     assert!(DeploymentSet::from_records(&rows).is_err());
 }
 

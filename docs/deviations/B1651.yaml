@@ -17,4 +17,11 @@ deviations:
       them, and the helper oracle cases prove input, output, cache-read and cache-write collection,
       deployment precedence over model_info, and the backend and input-rate fallbacks.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L59-L87
+  - what: >-
+      A request body that is not UTF-8 or not JSON answers a json_invalid issue whose loc is
+      ["body"]; FastAPI appends the byte offset where decoding stopped, so its loc has two elements.
+    why: >-
+      serde_json reports no byte position in its syntax error, and the location list keeps the same
+      type and message. Error messages are betterlite's own per docs/compatibility.md.
+    link: ""
 kept_bugs: []
