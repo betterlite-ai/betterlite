@@ -1,9 +1,7 @@
 use std::io;
-use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -13,12 +11,8 @@ use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
+use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use crate::postgres_store::session::PostgresStore;
-use crate::{
-    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
-    schema_identity_history, schema_managed_resources, schema_policy_resources,
-    schema_routing_state,
-};
 
 #[derive(Parser)]
 struct Environment {
@@ -36,10 +30,9 @@ impl Db {
         let url = Environment::parse_from(["tool-records"])
             .url
             .map(SecretString::from);
-        let fixture = PostgresFixture::provision_with_name_generator(
+        let fixture = PostgresFixture::provision_with_statements(
             url.as_ref(),
-            &FixtureSeed::default(),
-            &mut RandomDatabaseName,
+            catalog_statements(&PACKAGED_CATALOGS).unwrap(),
         )
         .resolve()
         .await
@@ -48,24 +41,6 @@ impl Db {
         let manager = Manager::new(config, NoTls);
         let pool = Pool::builder(manager).max_size(2).build().unwrap();
         let store = PostgresStore { pool: Some(pool) };
-        let client = store.session().await.unwrap();
-        for catalog in [
-            schema_baseline::MIGRATION_CATALOG,
-            schema_daily_usage::MIGRATION_CATALOG,
-            schema_managed_resources::MIGRATION_CATALOG,
-            schema_identity_history::MIGRATION_CATALOG,
-            schema_policy_resources::MIGRATION_CATALOG,
-            schema_routing_state::MIGRATION_CATALOG,
-            schema_budget_windows::MIGRATION_CATALOG,
-            schema_agent_identity::MIGRATION_CATALOG,
-        ] {
-            for migration in catalog.files {
-                client
-                    .batch_execute(from_utf8(migration.bytes).unwrap())
-                    .await
-                    .unwrap();
-            }
-        }
         Self { fixture, store }
     }
 

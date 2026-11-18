@@ -22,7 +22,6 @@ async fn refuse_baseline(database: &TestDatabase, catalog: &[Migration], schema_
 }
 
 async fn accepted_baseline(live: &TestDatabase, expected: &SchemaContract) -> Vec<Migration> {
-    apply_history(&live.pool, HistorySource::Compiled).await;
     let catalog = runtime_catalog().await;
     let schema_prisma = schema_prisma_bytes();
     let inputs = baseline_input(&catalog, &schema_prisma, Some(expected));
@@ -72,9 +71,7 @@ async fn assert_ledger_catalog(pool: &Pool) {
 #[tokio::test]
 async fn native_baseline_current_only() {
     database_pair(|live, reference| async move {
-        apply_history(&reference.pool, HistorySource::Pinned).await;
         let expected = read_contract(&reference.pool).await;
-        apply_history(&live.pool, HistorySource::Compiled).await;
         let catalog = runtime_catalog().await;
         let schema_prisma = schema_prisma_bytes();
         let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
@@ -112,43 +109,45 @@ async fn native_baseline_current_only() {
 
 #[tokio::test]
 async fn baseline_rows_zero_steps() {
-    database(|database| async move {
-        apply_history(&database.pool, HistorySource::Compiled).await;
-        let expected = read_contract(&database.pool).await;
-        let catalog = runtime_catalog().await;
-        let schema_prisma = schema_prisma_bytes();
-        let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
-        let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(30)).await;
-        baseline_current_schema(&coordinator, &inputs, &DrawingJitter(0))
-            .await
-            .unwrap();
-        coordinator.finish().await.unwrap();
-        let rows = ledger_rows(&database.pool).await;
-        assert_eq!(rows.len(), catalog.len());
-        assert!(
-            rows.iter()
-                .all(|row| row.get::<_, i32>("applied_steps_count") == 0_i32)
-        );
-        assert!(
-            rows.iter()
-                .all(|row| row.get::<_, String>("logs").is_empty())
-        );
-        assert!(
-            rows.iter()
-                .all(|row| row.get::<_, bool>("finished") && row.get::<_, bool>("equal_times"))
-        );
-        assert!(rows.iter().all(|row| !row.get::<_, bool>("rolled_back")));
-        assert!(
-            rows.iter()
-                .all(|row| row.get::<_, String>("id").len() == 36)
-        );
-    })
+    database(
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+        |database| async move {
+            let expected = read_contract(&database.pool).await;
+            let catalog = runtime_catalog().await;
+            let schema_prisma = schema_prisma_bytes();
+            let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
+            let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(30)).await;
+            baseline_current_schema(&coordinator, &inputs, &DrawingJitter(0))
+                .await
+                .unwrap();
+            coordinator.finish().await.unwrap();
+            let rows = ledger_rows(&database.pool).await;
+            assert_eq!(rows.len(), catalog.len());
+            assert!(
+                rows.iter()
+                    .all(|row| row.get::<_, i32>("applied_steps_count") == 0_i32)
+            );
+            assert!(
+                rows.iter()
+                    .all(|row| row.get::<_, String>("logs").is_empty())
+            );
+            assert!(
+                rows.iter()
+                    .all(|row| row.get::<_, bool>("finished") && row.get::<_, bool>("equal_times"))
+            );
+            assert!(rows.iter().all(|row| !row.get::<_, bool>("rolled_back")));
+            assert!(
+                rows.iter()
+                    .all(|row| row.get::<_, String>("id").len() == 36)
+            );
+        },
+    )
     .await;
 }
 
 #[tokio::test]
 async fn baseline_custom_history_refused() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let catalog = runtime_catalog().await;
         let schema_prisma = schema_prisma_bytes();
         let mut extended = catalog.clone();
@@ -168,7 +167,7 @@ async fn baseline_custom_history_refused() {
 
 #[tokio::test]
 async fn baseline_existing_ledger_noop() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         create_ledger(&database.pool).await;
         insert_confirmed(
             &database.pool,
@@ -199,42 +198,43 @@ async fn baseline_existing_ledger_noop() {
 
 #[tokio::test]
 async fn baseline_warns_backfills() {
-    database(|database| async move {
-        apply_history(&database.pool, HistorySource::Compiled).await;
-        let expected = read_contract(&database.pool).await;
-        let catalog = runtime_catalog().await;
-        let schema_prisma = schema_prisma_bytes();
-        let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
-        let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(30)).await;
-        let (logs, subscriber) = capture_logs();
-        let guard = set_default(subscriber);
-        baseline_current_schema(&coordinator, &inputs, &DrawingJitter(0))
-            .await
-            .unwrap();
-        coordinator.finish().await.unwrap();
-        drop(guard);
-        let captured = logs.contents();
-        assert!(
-            captured.contains("Legacy migration history was missing"),
-            "{captured}"
-        );
-        assert!(
-            captured.contains("backfills were not replayed or verified"),
-            "{captured}"
-        );
-        assert!(captured.contains("adopted"), "{captured}");
-        assert!(
-            captured.contains(&format!("migrated={}", catalog.len())),
-            "{captured}"
-        );
-    })
+    database(
+        catalog_statements(&PACKAGED_CATALOGS).unwrap(),
+        |database| async move {
+            let expected = read_contract(&database.pool).await;
+            let catalog = runtime_catalog().await;
+            let schema_prisma = schema_prisma_bytes();
+            let inputs = baseline_input(&catalog, &schema_prisma, Some(&expected));
+            let coordinator = acquired_coordinator(&database.pool, Duration::from_secs(30)).await;
+            let (logs, subscriber) = capture_logs();
+            let guard = set_default(subscriber);
+            baseline_current_schema(&coordinator, &inputs, &DrawingJitter(0))
+                .await
+                .unwrap();
+            coordinator.finish().await.unwrap();
+            drop(guard);
+            let captured = logs.contents();
+            assert!(
+                captured.contains("Legacy migration history was missing"),
+                "{captured}"
+            );
+            assert!(
+                captured.contains("backfills were not replayed or verified"),
+                "{captured}"
+            );
+            assert!(captured.contains("adopted"), "{captured}");
+            assert!(
+                captured.contains(&format!("migrated={}", catalog.len())),
+                "{captured}"
+            );
+        },
+    )
     .await;
 }
 
 #[tokio::test]
 async fn postgres_pinned_rows() {
     database_pair(|live, reference| async move {
-        apply_history(&reference.pool, HistorySource::Pinned).await;
         let expected = read_contract(&reference.pool).await;
         let catalog = accepted_baseline(&live, &expected).await;
         let rows = ledger_rows(&live.pool).await;
@@ -253,7 +253,7 @@ async fn postgres_pinned_rows() {
 
 #[tokio::test]
 async fn postgres_failure_effects() {
-    database(|database| async move {
+    database(vec![BASELINE.to_owned()], |database| async move {
         let expected = read_contract(&database.pool).await;
         let catalog = runtime_catalog().await;
         let schema_prisma = schema_prisma_bytes();

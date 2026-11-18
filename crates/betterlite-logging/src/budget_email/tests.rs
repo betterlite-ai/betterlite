@@ -7,7 +7,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use async_trait::async_trait;
 use betterlite_config::sections::alert_settings::types::AlertType;
 use betterlite_db::postgres_store::session::PostgresStore;
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
@@ -485,20 +486,14 @@ async fn database() -> (PostgresFixture, Pool) {
     let url = PostgresEnvironment::parse_from(["budget-email-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let mut task = PostgresFixture::provision_with_name_generator(
+        url.as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    );
+    let fixture = task.resolve().await.unwrap();
     let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
-    let client = pool.get().await.unwrap();
-    client
-        .batch_execute(include_str!(
-            "../../../../tools/postgres-fixture/fixtures/baseline.sql"
-        ))
-        .await
-        .unwrap();
-    drop(client);
     (fixture, pool)
 }
 

@@ -67,18 +67,6 @@ struct Environment {
     url: Option<String>,
 }
 
-async fn database() -> (PostgresFixture, PostgresStore) {
-    let url = Environment::parse_from(["spend-reset-unit-of-work-tests"])
-        .url
-        .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
-    let pool = pool(&fixture.options.url);
-    (fixture, PostgresStore { pool: Some(pool) })
-}
-
 fn pool(url: &SecretString) -> Pool {
     let config = url.expose_secret().parse().unwrap();
     let manager = Manager::new(config, NoTls);
@@ -91,15 +79,21 @@ async fn finish(fixture: PostgresFixture, store: PostgresStore, client: Client) 
     fixture.close_async().await.unwrap();
 }
 
+const RESET_TABLES: &str = "CREATE TABLE \"LiteLLM_VerificationToken\" (token TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), budget_id TEXT, budget_duration TEXT, label TEXT NOT NULL DEFAULT 'kept'); CREATE TABLE \"LiteLLM_UserTable\" (user_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), total_spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TeamTable\" (team_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3)); CREATE TABLE \"LiteLLM_TeamMembership\" (user_id TEXT, team_id TEXT, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0, PRIMARY KEY (user_id, team_id)); CREATE TABLE \"LiteLLM_OrganizationTable\" (organization_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TagTable\" (tag_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ModelAccessGroupBudgetTable\" (access_group_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ProjectTable\" (project_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_EndUserTable\" (user_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_BudgetTable\" (budget_id TEXT PRIMARY KEY, budget_reset_at TIMESTAMP(3));";
+
 async fn schema() -> (PostgresFixture, PostgresStore, Client) {
-    let (fixture, store) = database().await;
+    let url = Environment::parse_from(["spend-reset-unit-of-work-tests"])
+        .url
+        .map(SecretString::from);
+    let fixture =
+        PostgresFixture::provision_with_statements(url.as_ref(), vec![RESET_TABLES.to_owned()])
+            .resolve()
+            .await
+            .unwrap();
+    let store = PostgresStore {
+        pool: Some(pool(&fixture.options.url)),
+    };
     let client = store.session().await.unwrap();
-    client
-        .batch_execute(
-            "CREATE TABLE \"LiteLLM_VerificationToken\" (token TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), budget_id TEXT, budget_duration TEXT, label TEXT NOT NULL DEFAULT 'kept'); CREATE TABLE \"LiteLLM_UserTable\" (user_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3), total_spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TeamTable\" (team_id TEXT PRIMARY KEY, spend DOUBLE PRECISION NOT NULL DEFAULT 0, budget_reset_at TIMESTAMP(3)); CREATE TABLE \"LiteLLM_TeamMembership\" (user_id TEXT, team_id TEXT, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0, PRIMARY KEY (user_id, team_id)); CREATE TABLE \"LiteLLM_OrganizationTable\" (organization_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_TagTable\" (tag_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ModelAccessGroupBudgetTable\" (access_group_name TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_ProjectTable\" (project_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_EndUserTable\" (user_id TEXT PRIMARY KEY, budget_id TEXT, spend DOUBLE PRECISION NOT NULL DEFAULT 0); CREATE TABLE \"LiteLLM_BudgetTable\" (budget_id TEXT PRIMARY KEY, budget_reset_at TIMESTAMP(3));",
-        )
-        .await
-        .unwrap();
     (fixture, store, client)
 }
 
