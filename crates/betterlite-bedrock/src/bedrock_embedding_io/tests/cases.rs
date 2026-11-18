@@ -19,8 +19,8 @@ use crate::bedrock_embedding_io::error::EmbeddingIoError;
 use crate::bedrock_embedding_io::response::{EmbeddingReply, transform_response};
 use crate::bedrock_embedding_io::signed_get::sign_get_request;
 use crate::bedrock_embedding_io::transport::{
-    ClientKind, EmbeddingCall, EmbeddingRequest, SuppliedClient, Timeout, TransferError,
-    post_embedding,
+    ClientKind, EmbeddingCall, EmbeddingReply as TransportReply, EmbeddingRequest, SuppliedClient,
+    Timeout, TransferError, post_embedding,
 };
 use crate::bedrock_settings::{ErrorHeaders, ResponseBody};
 use crate::signing::request::AwsSignedRequest;
@@ -351,6 +351,22 @@ fn malformed_success_body_is_a_decode_error() {
     assert!(matches!(error, EmbeddingIoError::Decode { .. }));
 }
 
+fn non_utf8_error_body_names_the_byte_count() {
+    let data = object(BODY);
+    let reply = Reply::Answer(TransportReply {
+        status: 400,
+        headers: Vec::new(),
+        body: vec![0xff, 0xfe],
+    });
+    let error = run_direct(false, &Factory::new(reply), &data, None)
+        .expect_err("a non-UTF-8 error body is still a provider error");
+    let EmbeddingIoError::Provider { error, .. } = error else {
+        panic!("a non-UTF-8 error body is a provider error");
+    };
+    assert_eq!(error.error.message, "2 bytes that are not UTF-8");
+    assert_eq!(error.error.status_code, 400);
+}
+
 fn http_error() {
     provider_status_is_a_bedrock_error();
     provider_status_on_the_async_path_is_a_bedrock_error();
@@ -358,6 +374,7 @@ fn http_error() {
     timeout_is_a_408_bedrock_error();
     transport_failure_stays_a_transport_error();
     malformed_success_body_is_a_decode_error();
+    non_utf8_error_body_names_the_byte_count();
 }
 
 fn reply_json(reply: &EmbeddingReply) -> Json {
