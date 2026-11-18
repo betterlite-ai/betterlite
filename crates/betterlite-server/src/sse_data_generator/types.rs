@@ -13,15 +13,9 @@ use crate::stream_keepalive::KeepaliveRouter;
 
 pub type ItemStream = BoxStream<'static, Result<StreamItem, StreamFailure>>;
 
+// getattr(e, "param", "None") as a JSON field: the attribute is absent, present and null, or text
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FailureParam {
-    Missing,
-    Null,
-    Text(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FailureType {
     Missing,
     Null,
     Text(String),
@@ -36,7 +30,7 @@ pub enum FailureKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamFailure {
     pub message: String,
-    pub error_type: FailureType,
+    pub error_type: Option<String>,
     pub param: FailureParam,
     pub status_code: Option<u16>,
     pub kind: FailureKind,
@@ -52,7 +46,7 @@ pub trait StreamSnapshot: Send + Sync {
     fn collected(&self) -> CollectedStream;
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CollectedStream {
     pub chunks: Vec<JsonObject>,
     pub messages: Option<Vec<Json>>,
@@ -62,8 +56,11 @@ pub struct CollectedStream {
 #[async_trait]
 pub trait StreamHooks<Key: Sync>: Send + Sync {
     fn needs_iterator_wrap(&self) -> bool;
+
     fn needs_per_chunk_hook(&self) -> bool;
+
     fn wrap_iterator(&self, items: ItemStream, key: &Key, request_data: &JsonObject) -> ItemStream;
+
     async fn chunk_hook(
         &self,
         item: StreamItem,
@@ -71,18 +68,22 @@ pub trait StreamHooks<Key: Sync>: Send + Sync {
         request_data: &JsonObject,
         str_so_far: Option<&str>,
     ) -> Result<StreamItem, StreamFailure>;
+
     async fn failure_hook(
         &self,
         key: &Key,
         failure: &StreamFailure,
         request_data: &JsonObject,
     ) -> Result<(), StreamFailure>;
+
     fn fire_deferred_stream_logging(&self, request_data: &JsonObject);
 }
 
 pub trait StreamErrorState: Send {
     fn observe_chunk(&mut self, item: &StreamItem);
+
     fn mark_emitted(&mut self, frame: String) -> String;
+
     fn format_failure(&mut self, failure: &StreamFailure) -> Option<String>;
 }
 

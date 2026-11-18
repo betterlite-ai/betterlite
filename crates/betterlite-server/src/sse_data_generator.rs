@@ -6,9 +6,9 @@ mod stream;
 mod types;
 
 pub use types::{
-    CleanupOutcome, CollectedStream, ErrorStateSource, FailureKind, FailureParam, FailureType,
-    ItemStream, SseDataGenerator, StreamCleanup, StreamErrorState, StreamFailure, StreamHooks,
-    StreamSnapshot, StreamSource,
+    CleanupOutcome, CollectedStream, ErrorStateSource, FailureKind, FailureParam, ItemStream,
+    SseDataGenerator, StreamCleanup, StreamErrorState, StreamFailure, StreamHooks, StreamSnapshot,
+    StreamSource,
 };
 
 #[cfg(test)]

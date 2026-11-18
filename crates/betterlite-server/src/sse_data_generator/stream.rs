@@ -238,7 +238,7 @@ pub(super) fn generate<Key: Send + Sync + 'static>(
                             if too_large {
                                 let failure = StreamFailure {
                                     message: "Raw SSE stream exceeded maximum buffered size without a frame delimiter".to_owned(),
-                                    error_type: FailureType::Missing,
+                                    error_type: None,
                                     param: FailureParam::Missing,
                                     status_code: None,
                                     kind: FailureKind::Other,

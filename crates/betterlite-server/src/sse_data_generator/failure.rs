@@ -6,7 +6,7 @@ use betterlite_error::proxy_exception::{ExceptionCode, ProxyException, ProxyExce
 use bytes::Bytes;
 
 use super::cleanup::CleanupGuard;
-use super::{FailureKind, FailureParam, FailureType, StreamErrorState, StreamFailure, StreamHooks};
+use super::{FailureKind, FailureParam, StreamErrorState, StreamFailure, StreamHooks};
 use crate::stream_chunks::DONE_FRAME;
 use crate::stream_chunks::frames::sse_data_frame;
 use betterlite_models::model_registration::JsonObject;
@@ -66,8 +66,8 @@ pub(super) fn failure_frame(failure: &StreamFailure) -> String {
     let exception = ProxyException::new(ProxyExceptionInit {
         message: failure.message.clone(),
         error_type: match &failure.error_type {
-            FailureType::Missing | FailureType::Null => "None".to_owned(),
-            FailureType::Text(value) => value.clone(),
+            None => "None".to_owned(),
+            Some(value) => value.clone(),
         },
         param: match &failure.param {
             FailureParam::Missing | FailureParam::Null => None,
@@ -79,9 +79,8 @@ pub(super) fn failure_frame(failure: &StreamFailure) -> String {
     let error = ErrorObject {
         message: exception.message,
         error_type: match &failure.error_type {
-            FailureType::Missing => WireField::Missing(NoneMarker::None),
-            FailureType::Null => WireField::Null,
-            FailureType::Text(value) => WireField::Text(value.clone()),
+            None => WireField::Missing(NoneMarker::None),
+            Some(value) => WireField::Text(value.clone()),
         },
         param: match &failure.param {
             FailureParam::Missing => WireField::Missing(NoneMarker::None),

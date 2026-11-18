@@ -56,7 +56,7 @@ fn text_error_before_done() {
 fn plain_failure_frame() {
     let failure = StreamFailure {
         message: "upstream failed".to_owned(),
-        error_type: FailureType::Missing,
+        error_type: None,
         param: FailureParam::Missing,
         status_code: None,
         kind: FailureKind::Other,

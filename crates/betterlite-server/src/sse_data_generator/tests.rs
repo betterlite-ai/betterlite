@@ -222,7 +222,7 @@ impl StreamHooks<()> for RecordingHooks {
 fn other_failure(message: &str) -> StreamFailure {
     StreamFailure {
         message: message.to_owned(),
-        error_type: FailureType::Missing,
+        error_type: None,
         param: FailureParam::Missing,
         status_code: None,
         kind: FailureKind::Other,
@@ -233,7 +233,7 @@ fn other_failure(message: &str) -> StreamFailure {
 fn failure_frame_fields() {
     let failure = StreamFailure {
         message: "bad request".to_owned(),
-        error_type: FailureType::Missing,
+        error_type: None,
         param: FailureParam::Null,
         status_code: Some(422),
         kind: FailureKind::Other,
@@ -245,13 +245,13 @@ fn failure_frame_fields() {
     assert!(!frame.contains("[DONE]"));
     let missing_param = StreamFailure {
         message: "missing parameter".to_owned(),
-        error_type: FailureType::Null,
+        error_type: None,
         param: FailureParam::Missing,
         status_code: None,
         kind: FailureKind::Other,
     };
     let missing_frame = failure_frame(&missing_param);
-    assert!(missing_frame.contains("\"type\":null"));
+    assert!(missing_frame.contains("\"type\":\"None\""));
     assert!(missing_frame.contains("\"param\":\"None\""));
 }
 
@@ -259,11 +259,12 @@ fn failure_frame_fields() {
 fn failure_frame_status() {
     let mut failure = StreamFailure {
         message: "No deployments available".to_owned(),
-        error_type: FailureType::Text("Unavailable".to_owned()),
+        error_type: Some("Unavailable".to_owned()),
         param: FailureParam::Missing,
         status_code: Some(500),
         kind: FailureKind::Other,
     };
+    assert!(failure_frame(&failure).contains("\"type\":\"Unavailable\""));
     assert!(failure_frame(&failure).contains("\"code\":\"429\""));
     failure.message = "Not allowed to access model due to tags configuration".to_owned();
     assert!(failure_frame(&failure).contains("\"code\":\"401\""));
@@ -282,7 +283,7 @@ fn keepalive_source_hidden() {
     assert_eq!(item.hidden_params(), Some(&hidden));
     let failure: Result<StreamItem, StreamFailure> = Err(StreamFailure {
         message: "failure".to_owned(),
-        error_type: FailureType::Missing,
+        error_type: None,
         param: FailureParam::Missing,
         status_code: None,
         kind: FailureKind::Other,
