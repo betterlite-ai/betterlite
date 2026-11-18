@@ -4,22 +4,27 @@ use std::sync::Arc;
 
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
-use betterlite_logging::passthrough_stream_logging::types::{CollectedChunksHandler, HandlerError};
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink};
+use betterlite_logging::passthrough_stream_logging::types::{
+    CollectedChunksHandler as _, HandlerError,
+};
+use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::UsageNumber;
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
 use betterlite_streaming::stream_usage_assembly::wire::Usage as WireUsage;
-use betterlite_streaming::streamed_response_assembly::cost::{CostInput, StreamCostCalculator};
+use betterlite_streaming::streamed_response_assembly::cost::{
+    CostInput, StreamCostCalculator as _,
+};
 use betterlite_vertex::vertex_relay_metadata::types::{CustomLlmProvider, ResponseLoggingKwargs};
+use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::GeminiPassthroughError;
 use super::assembly;
 use super::cost::PassthroughCostError;
-use super::payload::create_gemini_response_logging_payload;
+use super::payload::{GeminiPayload, create_gemini_response_logging_payload};
 use super::relay::{RelayLogging, relay_kwargs};
 use super::reply;
 use support::{
@@ -51,10 +56,9 @@ const MISSING_RESPONSE: &str =
 #[test]
 fn route_interactions_never_reaches_the_generate_content_decode() {
     let mut fixture = fixture(INTERACTIONS_ROUTE, INTERACTIONS_BODY);
-    fixture.request_body.insert(
-        "model".to_owned(),
-        serde_json::Value::String("request-model".to_owned()),
-    );
+    fixture
+        .request_body
+        .insert("model".to_owned(), Json::Text("request-model".to_owned()));
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let outcome = logger(Arc::clone(&cost))
         .gemini_passthrough_handler(gemini_input(&fixture))
@@ -97,7 +101,7 @@ fn route_interactions_without_a_usage_object_keeps_the_input_kwargs() {
 }
 
 #[test]
-fn route_predict_long_running_builds_and_prices_the_video() {
+fn route_predict_long_running_builds_the_video() {
     let fixture = fixture(VIDEO_ROUTE, VIDEO_BODY);
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let outcome = logger(Arc::clone(&cost))
@@ -112,6 +116,15 @@ fn route_predict_long_running_builds_and_prices_the_video() {
     };
     assert!(!fields.contains_key("_hidden_params"));
     assert!(!fields.contains_key("hidden_params"));
+}
+
+#[test]
+fn route_predict_long_running_logs_the_model_and_kwargs() {
+    let fixture = fixture(VIDEO_ROUTE, VIDEO_BODY);
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the video operation is logged");
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "1.25");
     assert_eq!(as_text(kwarg(&outcome, "model")), "veo-3.0-generate-001");
     assert_eq!(as_text(kwarg(&outcome, "custom_llm_provider")), "gemini");
@@ -131,6 +144,15 @@ fn route_predict_long_running_builds_and_prices_the_video() {
     let recorded =
         detail(&fixture.logging_obj, "response_cost").expect("the details carry the cost");
     assert_eq!(number_text(&recorded), "1.25");
+}
+
+#[test]
+fn route_predict_long_running_prices_the_create_call() {
+    let fixture = fixture(VIDEO_ROUTE, VIDEO_BODY);
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the video operation is logged");
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "veo-3.0-generate-001");
@@ -144,7 +166,7 @@ fn route_predict_long_running_builds_and_prices_the_video() {
 }
 
 #[test]
-fn route_generate_content_decodes_and_prices_the_response() {
+fn route_generate_content_decodes_the_reply() {
     let fixture = fixture(GENERATE_ROUTE, GENERATE_BODY);
     let cost = FakeCost::priced(Decimal::new(25, 3));
     let outcome = logger(Arc::clone(&cost))
@@ -154,16 +176,25 @@ fn route_generate_content_decodes_and_prices_the_response() {
     assert_eq!(text(&result, "id"), "call-1");
     assert_eq!(text(&result, "object"), "chat.completion");
     assert_eq!(text(&result, "model"), "gemini-2.0-flash");
-    let choices = choices(&result);
-    assert_eq!(text(choices, "finish_reason"), "stop");
-    assert_eq!(integer(choices, "index"), 0);
-    let message = field(choices, "message");
+    let choice = choices(&result);
+    assert_eq!(text(choice, "finish_reason"), "stop");
+    assert_eq!(integer(choice, "index"), 0);
+    let message = field(choice, "message");
     assert_eq!(text(message, "content"), "hello");
     assert_eq!(text(message, "role"), "assistant");
     let usage = field(&result, "usage");
     assert_eq!(integer(usage, "prompt_tokens"), 3);
     assert_eq!(integer(usage, "completion_tokens"), 2);
     assert_eq!(integer(usage, "total_tokens"), 5);
+}
+
+#[test]
+fn route_generate_content_logs_and_prices_the_reply() {
+    let fixture = fixture(GENERATE_ROUTE, GENERATE_BODY);
+    let cost = FakeCost::priced(Decimal::new(25, 3));
+    let outcome = logger(Arc::clone(&cost))
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the generateContent reply is logged");
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "0.025");
     assert_eq!(as_text(kwarg(&outcome, "model")), "gemini-2.0-flash");
     assert_eq!(as_text(kwarg(&outcome, "custom_llm_provider")), "gemini");
@@ -258,7 +289,13 @@ fn route_cost_error_is_returned() {
             assert_eq!(model, "veo-3.0-generate-001");
             assert!(matches!(source, PassthroughCostError::Unavailable { .. }));
         }
-        other => panic!("the error is a cost failure, not {other:?}"),
+        other @ (GeminiPassthroughError::Decode { .. }
+        | GeminiPassthroughError::Relay(_)
+        | GeminiPassthroughError::Video(_)
+        | GeminiPassthroughError::RequestBody { .. }
+        | GeminiPassthroughError::Encode { .. }) => {
+            panic!("the error is a cost failure, not {other:?}")
+        }
     }
     assert_eq!(logged_provider(&fixture.logging_obj), None);
 }
@@ -270,11 +307,13 @@ fn payload_prices_with_the_literal_gemini_provider() {
     let mut response = json(USAGE_BODY);
     create_gemini_response_logging_payload(
         cost.as_ref(),
-        &mut response,
-        "request-model",
+        GeminiPayload {
+            response: &mut response,
+            model: "request-model",
+            logging_obj: &logging_obj,
+            custom_llm_provider: "vertex_ai",
+        },
         PassThroughLoggingKwargs::default(),
-        &logging_obj,
-        "vertex_ai",
     )
     .expect("the payload is built");
     let calls = cost.calls();
@@ -293,11 +332,13 @@ fn payload_sets_the_id_model_and_call_details() {
     let mut response = json(USAGE_BODY);
     let built = create_gemini_response_logging_payload(
         cost.as_ref(),
-        &mut response,
-        "request-model",
+        GeminiPayload {
+            response: &mut response,
+            model: "request-model",
+            logging_obj: &logging_obj,
+            custom_llm_provider: "vertex_ai",
+        },
         PassThroughLoggingKwargs::default(),
-        &logging_obj,
-        "vertex_ai",
     )
     .expect("the payload is built");
     assert_eq!(text(&response, "id"), "call-1");
@@ -340,11 +381,13 @@ fn payload_falls_back_to_the_argument_model(#[case] response: &str) {
     let mut body = json(response);
     create_gemini_response_logging_payload(
         cost.as_ref(),
-        &mut body,
-        "request-model",
+        GeminiPayload {
+            response: &mut body,
+            model: "request-model",
+            logging_obj: &logging_obj,
+            custom_llm_provider: "gemini",
+        },
         PassThroughLoggingKwargs::default(),
-        &logging_obj,
-        "gemini",
     )
     .expect("the payload is built");
     assert_eq!(logged_model(&logging_obj), "request-model");
@@ -361,11 +404,13 @@ fn payload_keeps_the_caller_kwargs() {
     let mut response = json(USAGE_BODY);
     let built = create_gemini_response_logging_payload(
         cost.as_ref(),
-        &mut response,
-        "request-model",
+        GeminiPayload {
+            response: &mut response,
+            model: "request-model",
+            logging_obj: &logging_obj,
+            custom_llm_provider: "gemini",
+        },
         kwargs(&[("request_id", Json::Text("r1".to_owned()))]),
-        &logging_obj,
-        "gemini",
     )
     .expect("the payload is built");
     assert_eq!(
@@ -382,11 +427,13 @@ fn payload_returns_a_cost_error() {
     let mut response = json(USAGE_BODY);
     let error = create_gemini_response_logging_payload(
         cost.as_ref(),
-        &mut response,
-        "request-model",
+        GeminiPayload {
+            response: &mut response,
+            model: "request-model",
+            logging_obj: &logging_obj,
+            custom_llm_provider: "gemini",
+        },
         PassThroughLoggingKwargs::default(),
-        &logging_obj,
-        "gemini",
     )
     .expect_err("an unresolved price is an error");
     assert!(matches!(error, GeminiPassthroughError::Cost { .. }));
@@ -424,6 +471,31 @@ fn chunks_build_a_response_from_sse_lines() {
     assert_eq!(logged_model(&fixture.logging_obj), "gemini-2.0-flash");
     assert_eq!(logged_provider(&fixture.logging_obj), None);
     assert_eq!(cost.calls()[0].usage, Some((3, 2, 5)));
+}
+
+#[test]
+fn chunks_keep_the_served_model_when_a_later_chunk_names_none() {
+    let fixture = collected(
+        STREAM_ROUTE
+            .replace("gemini-2.0-flash", "url-model")
+            .as_str(),
+        &[
+            r#"data: {"responseId":"r1","modelVersion":"served-model","candidates":[{"content":{"parts":[{"text":"he"}],"role":"model"},"index":0}]}"#,
+            r#"data: {"responseId":"r1","candidates":[{"content":{"parts":[{"text":"llo"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#,
+        ],
+        Some("given-model"),
+    );
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let outcome = logger(Arc::clone(&cost))
+        .handle(&fixture.call())
+        .expect("the chunk builds a response");
+    let result = result_json(&outcome);
+    assert_eq!(text(&result, "model"), "served-model");
+    assert_eq!(logged_model(&fixture.logging_obj), "served-model");
+    assert_eq!(
+        detail(&fixture.logging_obj, "model"),
+        Some(Json::Text("served-model".to_owned()))
+    );
 }
 
 #[test]
@@ -580,10 +652,9 @@ fn route_interactions_uses_the_request_model_when_the_reply_names_none() {
         INTERACTIONS_ROUTE,
         r#"{"usage":{"total_input_tokens":3,"total_output_tokens":2}}"#,
     );
-    fixture.request_body.insert(
-        "model".to_owned(),
-        serde_json::Value::String("request-model".to_owned()),
-    );
+    fixture
+        .request_body
+        .insert("model".to_owned(), Json::Text("request-model".to_owned()));
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let outcome = logger(Arc::clone(&cost))
         .gemini_passthrough_handler(gemini_input(&fixture))
@@ -595,10 +666,10 @@ fn route_interactions_uses_the_request_model_when_the_reply_names_none() {
 #[test]
 fn route_predict_long_running_keeps_the_request_resolution() {
     let mut fixture = fixture(VIDEO_ROUTE, VIDEO_BODY);
-    fixture.request_body.insert(
-        "parameters".to_owned(),
-        serde_json::json!({"resolution": " "}),
-    );
+    let parameters = IndexMap::from([("resolution".to_owned(), Json::Text(" ".to_owned()))]);
+    fixture
+        .request_body
+        .insert("parameters".to_owned(), Json::Object(parameters));
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let outcome = logger(Arc::clone(&cost))
         .gemini_passthrough_handler(gemini_input(&fixture))

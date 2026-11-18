@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use betterlite_core::routes::CallType;
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
-use betterlite_logging::passthrough_stream_logging::types::CollectedChunksHandler;
+use betterlite_logging::passthrough_stream_logging::types::CollectedChunksHandler as _;
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 
@@ -96,7 +96,7 @@ fn build_raw_predict_strips_both_prefixes_and_skips_bad_lines() {
     .expect("a response is built");
     assert_eq!(content(&body), " hi");
     assert_eq!(
-        text(&choice(&body), "finish_reason"),
+        text(choice(&body), "finish_reason"),
         "stop",
         "the message delta closes the reply"
     );
@@ -169,20 +169,34 @@ fn chunks_vertex_host_uses_the_vertex_ai_provider() {
     let outcome = collector
         .handle(&fixture.call())
         .expect("the chunks build a response");
-    let result = result_json(&outcome);
-    assert_eq!(text(&result, "id"), "call-1");
-    assert_eq!(text(&result, "model"), "gemini-2.0-flash");
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "1.25");
     assert_eq!(as_text(kwarg(&outcome, "model")), "gemini-2.0-flash");
     assert_eq!(outcome.kwargs.entries.len(), 2);
+    assert_eq!(
+        detail(&fixture.logging_obj, "custom_llm_provider"),
+        Some(Json::Text("vertex_ai".to_owned()))
+    );
+    let calls = cost.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].provider, "vertex_ai");
+    assert_eq!(calls[0].vertex_location.as_deref(), Some("us-central1"));
+}
+
+#[test]
+fn chunks_vertex_host_logs_the_response() {
+    let fixture = collected(VERTEX_GENERATE_ROUTE, &[CHUNK], None);
+    let cost = FakeCost::priced(Decimal::new(125, 2));
+    let collector = stream_collector(Arc::clone(&cost));
+    let outcome = collector
+        .handle(&fixture.call())
+        .expect("the chunks build a response");
+    let result = result_json(&outcome);
+    assert_eq!(text(&result, "id"), "call-1");
+    assert_eq!(text(&result, "model"), "gemini-2.0-flash");
     assert_eq!(logged_model(&fixture.logging_obj), "gemini-2.0-flash");
     assert_eq!(
         detail(&fixture.logging_obj, "model"),
         Some(Json::Text("gemini-2.0-flash".to_owned()))
-    );
-    assert_eq!(
-        detail(&fixture.logging_obj, "custom_llm_provider"),
-        Some(Json::Text("vertex_ai".to_owned()))
     );
     assert_eq!(detail(&fixture.logging_obj, "response_cost"), None);
     assert_eq!(
@@ -190,12 +204,9 @@ fn chunks_vertex_host_uses_the_vertex_ai_provider() {
         Some(Json::Text("us-central1".to_owned()))
     );
     let calls = cost.calls();
-    assert_eq!(calls.len(), 1);
-    assert_eq!(calls[0].provider, "vertex_ai");
     assert_eq!(calls[0].call_type, CallType::Completion);
     assert_eq!(calls[0].response_model.as_deref(), Some("gemini-2.0-flash"));
     assert_eq!(calls[0].usage, Some((3, 2, 5)));
-    assert_eq!(calls[0].vertex_location.as_deref(), Some("us-central1"));
 }
 
 #[test]

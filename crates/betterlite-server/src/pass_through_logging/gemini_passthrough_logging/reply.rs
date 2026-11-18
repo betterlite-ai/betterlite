@@ -41,19 +41,19 @@ fn insert_metadata_lists(fields: &mut IndexMap<String, Json>, metadata: Option<&
     for (name, values) in [
         (
             "vertex_ai_grounding_metadata",
-            metadata.map(|metadata| &metadata.grounding_metadata),
+            metadata.map(|found| &found.grounding_metadata),
         ),
         (
             "vertex_ai_url_context_metadata",
-            metadata.map(|metadata| &metadata.url_context_metadata),
+            metadata.map(|found| &found.url_context_metadata),
         ),
         (
             "vertex_ai_safety_results",
-            metadata.map(|metadata| &metadata.safety_results),
+            metadata.map(|found| &found.safety_results),
         ),
         (
             "vertex_ai_citation_metadata",
-            metadata.map(|metadata| &metadata.citation_metadata),
+            metadata.map(|found| &found.citation_metadata),
         ),
     ] {
         fields.insert(
@@ -161,7 +161,7 @@ pub(crate) fn usage_json(usage: &Usage) -> Json {
     Json::Object(fields)
 }
 
-fn prompt_counts(details: &PromptTokensDetails) -> [(&'static str, Option<i64>); 7] {
+const fn prompt_counts(details: &PromptTokensDetails) -> [(&'static str, Option<i64>); 7] {
     [
         ("text_tokens", details.text_tokens),
         ("audio_tokens", details.audio_tokens),
@@ -177,8 +177,8 @@ fn prompt_counts(details: &PromptTokensDetails) -> [(&'static str, Option<i64>);
 }
 
 fn insert_counts(fields: &mut IndexMap<String, Json>, counts: &[(&str, Option<i64>)]) {
-    for (name, count) in counts {
-        if let Some(count) = count {
+    for (name, value) in counts {
+        if let Some(count) = value {
             fields.insert((*name).to_owned(), Json::Number(Number::from(*count)));
         }
     }

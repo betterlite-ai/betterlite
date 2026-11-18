@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::io::Error as IoError;
 use std::sync::Arc;
 
 use betterlite_anthropic::stream_events::StreamEventConverter;
@@ -62,7 +63,7 @@ pub(crate) enum CollectedStreamError {
     #[error("the stream assembler runtime could not be started: {source}")]
     Runtime {
         #[source]
-        source: std::io::Error,
+        source: IoError,
     },
     #[error("the bundled cl100k tokenizer could not be built")]
     Tokenizer,
@@ -161,10 +162,11 @@ pub(crate) fn complete_response(
     let tokenizer = counter.ok_or(CollectedStreamError::Tokenizer)?;
     // B2227 needs a model on the first chunk; LiteLLM's builder accepts a stream without one and logs no model at all.
     let named = chunks.iter().any(|chunk| chunk.model.is_some());
-    for chunk in &mut chunks {
-        if chunk.model.is_none() {
-            chunk.model = Some(model.to_owned());
-        }
+    // LiteLLM reads the first chunk's model and takes a later one only when it differs, so a later missing model stays unset.
+    if let Some(first) = chunks.first_mut()
+        && first.model.is_none()
+    {
+        first.model = Some(model.to_owned());
     }
     let costs = NoCosts;
     let request = Request {
@@ -190,7 +192,10 @@ pub(crate) fn complete_response(
 }
 
 // The handler is synchronous: a blocking task or a plain thread drives the assembler, never an async worker.
-fn block_on<F: Future>(future: F) -> Result<F::Output, CollectedStreamError> {
+fn block_on<F>(future: F) -> Result<F::Output, CollectedStreamError>
+where
+    F: Future,
+{
     match Handle::try_current() {
         Ok(handle) => Ok(block_in_place(|| handle.block_on(future))),
         Err(_outside) => {

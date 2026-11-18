@@ -27,7 +27,6 @@ use chrono::{DateTime, FixedOffset};
 use http::HeaderMap;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::{Map, Value};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::MakeWriter;
@@ -42,7 +41,7 @@ pub(crate) struct Fixture {
     pub(crate) url_route: String,
     pub(crate) headers: HeaderMap,
     pub(crate) body: Vec<u8>,
-    pub(crate) request_body: Map<String, Value>,
+    pub(crate) request_body: IndexMap<String, Json>,
 }
 
 struct NoopDispatch;
@@ -58,7 +57,7 @@ pub(crate) fn fixture(url_route: &str, body: &str) -> Fixture {
         url_route: url_route.to_owned(),
         headers: HeaderMap::new(),
         body: body.as_bytes().to_vec(),
-        request_body: Map::new(),
+        request_body: IndexMap::new(),
     }
 }
 
@@ -327,9 +326,7 @@ pub(crate) fn logged_model(logging_obj: &StreamLoggingObject) -> String {
 }
 
 pub(crate) fn logged_provider(logging_obj: &StreamLoggingObject) -> Option<String> {
-    logging_obj
-        .read(&mut |state| state.custom_llm_provider.clone())
-        .expect("the logging state is present")
+    logging_obj.read(&mut |state| state.custom_llm_provider.clone())?
 }
 
 pub(crate) fn kwargs(entries: &[(&str, Json)]) -> PassThroughLoggingKwargs {

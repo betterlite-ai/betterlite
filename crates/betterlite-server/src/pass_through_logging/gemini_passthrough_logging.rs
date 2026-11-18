@@ -11,12 +11,13 @@ use std::sync::Arc;
 
 use betterlite_logging::passthrough_logging_state::dispatch::PassThroughLoggingKwargs;
 use betterlite_logging::passthrough_stream_logging::object::StreamLoggingObject;
+use betterlite_models::decisions::Json;
 use betterlite_vertex::model_policy::error::VertexAiError;
 use betterlite_vertex::studio_veo_operation::error::StudioVeoOperationError;
 use betterlite_vertex::vertex_relay_metadata::error::VertexRelayError;
 use chrono::{DateTime, FixedOffset};
 use http::HeaderMap;
-use serde_json::{Map, Value};
+use indexmap::IndexMap;
 use thiserror::Error;
 
 use self::cost::{PassthroughCompletionCost, PassthroughCostError};
@@ -27,7 +28,7 @@ pub struct GeminiPassthroughInput<'input> {
     pub url_route: &'input str,
     pub response_headers: &'input HeaderMap,
     pub response_body: &'input [u8],
-    pub request_body: &'input Map<String, Value>,
+    pub request_body: &'input IndexMap<String, Json>,
     pub start_time: DateTime<FixedOffset>,
     pub end_time: DateTime<FixedOffset>,
     pub kwargs: PassThroughLoggingKwargs,
@@ -65,14 +66,4 @@ pub enum GeminiPassthroughError {
 pub struct GeminiPassthroughLogger {
     cost: Arc<dyn PassthroughCompletionCost>,
     counter: Option<CollectedCounter>,
-}
-
-impl GeminiPassthroughLogger {
-    // ast-grep-ignore: no-one-line-functions - B8931 constructs the logger through this fixed name
-    pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
-        Self {
-            cost,
-            counter: CollectedCounter::bundled(),
-        }
-    }
 }

@@ -26,7 +26,7 @@ use chrono::DateTime;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
@@ -38,7 +38,7 @@ pub(crate) struct Input {
     #[serde(default)]
     body: Value,
     #[serde(default)]
-    request_body: Option<Map<String, Value>>,
+    request_body: Option<IndexMap<String, Json>>,
     #[serde(default)]
     lines: Vec<String>,
     #[serde(default)]
@@ -160,7 +160,7 @@ fn gemini_handler(
     logging_obj: &StreamLoggingObject,
 ) -> Result<HandlerOutcome, Box<HelperError>> {
     let bytes = serde_json::to_vec(&input.body).or_value_error()?;
-    let empty = Map::new();
+    let empty = IndexMap::new();
     let request_body = input.request_body.as_ref().unwrap_or(&empty);
     let headers = http::HeaderMap::new();
     let call_cost = Arc::clone(cost);

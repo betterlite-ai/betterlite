@@ -50,19 +50,18 @@ impl<'target> RelayLogging<'target> {
             if let Some(model) = &logging.model {
                 state.model.clone_from(model);
             }
-            if let Some(provider) = &provider {
-                state.custom_llm_provider = Some(provider.clone());
+            if let Some(named) = &provider {
+                state.custom_llm_provider = Some(named.clone());
             }
             if let Some(model) = &detail_model {
                 state
                     .model_call_details
                     .insert("model".to_owned(), Json::Text(model.clone()));
             }
-            if let Some(provider) = &detail_provider {
-                state.model_call_details.insert(
-                    "custom_llm_provider".to_owned(),
-                    Json::Text(provider.clone()),
-                );
+            if let Some(detail) = &detail_provider {
+                state
+                    .model_call_details
+                    .insert("custom_llm_provider".to_owned(), Json::Text(detail.clone()));
             }
         });
     }

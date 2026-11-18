@@ -15,6 +15,9 @@ deviations:
   - what: The logged usage object omits the null-valued keys LiteLLM's ModelResponse.model_dump() writes, such as cache_read_input_tokens and the unused prompt and completion detail counts.
     why: The Rust usage type carries an absence as no entry, and the logged counts are the ones a callback reads. The oracle compares the three token counts, which match.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2096-L2100
+  - what: When the first collected chunk carries no modelVersion, the model assembled into the logged body is the first later model that differs from the given or URL model filling that chunk, where LiteLLM takes the first non-empty later model and logs none when every later modelVersion is empty.
+    why: B2227's builder rejects a chunk list whose first chunk has no model, so complete_response fills only that first chunk; the builder's model_from_chunks then skips a later name equal to the fill. A stream needs two distinct non-empty modelVersion values, or an empty one, for the logged model to differ, which no working Gemini setup sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_chunk_builder_utils.py#L357-L371
 kept_bugs:
   - what: A non-SSE Gemini stream that arrives as one JSON array builds no logged response, because the array value is skipped as a non-object and every element behind it is consumed with it.
     why: LiteLLM's accumulated mode pops one complete JSON value at a time and only a dict becomes a chunk, so the whole array is skipped and the handler logs nothing. betterlite's B1315 decoder follows it, so a setup sees the same missing log row.
