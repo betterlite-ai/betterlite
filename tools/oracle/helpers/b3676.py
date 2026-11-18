@@ -21,6 +21,9 @@ class EventChunk(TypedDict):
 
 ChunkInput = BytesChunk | EventChunk
 
+BYTES_CHUNK: Final[TypeAdapter[BytesChunk]] = TypeAdapter(BytesChunk)
+EVENT_CHUNK: Final[TypeAdapter[EventChunk]] = TypeAdapter(EventChunk)
+
 
 class ShapeInput(TypedDict):
     name: str | None
@@ -92,9 +95,9 @@ def chunk_items(chunks: list[ChunkInput]) -> list[bytes | dict[str, JsonValue]]:
     items: list[bytes | dict[str, JsonValue]] = []
     for chunk in chunks:
         if "bytes" in chunk:
-            items.append(chunk["bytes"].encode("utf-8"))
+            items.append(BYTES_CHUNK.validate_python(chunk)["bytes"].encode("utf-8"))
         else:
-            items.append(chunk["event"])
+            items.append(EVENT_CHUNK.validate_python(chunk)["event"])
     return items
 
 
