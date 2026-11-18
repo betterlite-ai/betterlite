@@ -1,0 +1,37 @@
+task: B962
+deviations:
+  - what: >-
+      A Messages response body over the JSON boundary's 16 MiB limit is refused with a typed limit error
+      (status 413, code request_too_large) before it is parsed.
+    why: >-
+      B962 requires both byte inputs bounded; LiteLLM's transform_anthropic_messages_response hands the
+      body to httpx.json() whatever its size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L572-L585
+  - what: >-
+      A metadata.user_id string over the JSON boundary's 16 MiB limit is refused with the same typed limit
+      error instead of reading as no session key.
+    why: >-
+      B962 requires both byte inputs bounded; LiteLLM's prompt_cache_key_from_user_id parses any string it
+      was given.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L34-L46
+  - what: >-
+      A response body that uses Python's non-standard NaN, Infinity or -Infinity constants is not valid JSON
+      here, so it takes the AnthropicError path; Python's json accepts those constants and builds the record.
+    why: >-
+      The wire format is standard JSON, and betterlite's parser has no non-standard constants to accept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/transformation.py#L581-L585
+kept_bugs:
+  - what: >-
+      An effort outside the max, xhigh and minimal degradation chains is forwarded unchanged even when the
+      deployment's declared reasoning levels omit it, so "low" reaches a deployment that accepts only "high".
+    why: >-
+      LiteLLM only lowers along the three chains, and a working deployment may forward a level the chain does
+      not name; B962 copies the chain lookup as it stands.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L84-L101
+  - what: >-
+      A mapped deployment whose accepted set excludes every chain step, or is empty, receives the chain floor
+      even though no level of its accepted set matches it; "none" is never degraded to.
+    why: >-
+      LiteLLM documents the chain floor as the pre-metadata fallback every deployment kept, so a working
+      deployment may rely on receiving it; B962 copies the floor.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/utils.py#L96-L101
