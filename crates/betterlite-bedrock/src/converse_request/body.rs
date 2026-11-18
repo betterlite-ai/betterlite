@@ -13,7 +13,7 @@ use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::bedrock_model_capabilities::catalog_flags::supports_parallel_tools;
 use crate::converse_params::inference::handle_top_k_value;
 use crate::converse_params::merge::merge_parallel_tool_use_config;
-use crate::converse_params::wire::{carries_value, transcode};
+use crate::converse_params::wire::carries_value;
 use crate::converse_request::convert::request_value;
 use crate::converse_request::error::ConverseRequestError;
 use crate::converse_request::output_config::{self, OutputCandidates, OutputRequest};
@@ -112,10 +112,15 @@ fn filter_options(
     let already_normalized = optional_params
         .shift_remove(OUTPUT_CONFIG_MARKER)
         .is_some_and(|value| carries_value(&value));
+    // The record layer sorts object keys, and the metadata pair selection keeps only the first pairs in caller order.
+    let request_metadata = optional_params.get(REQUEST_METADATA_FIELD).cloned();
     let exceptions =
         RequestRecordProjection::filter_parameters(record_of(optional_params), MAX_DEPTH);
     let mut params = safe_copy(&params_of(&exceptions)?)?;
     params.shift_remove(JSON_MODE_FIELD);
+    if let Some(value) = request_metadata {
+        params.insert(REQUEST_METADATA_FIELD.to_owned(), value);
+    }
     Ok((params, already_normalized))
 }
 
@@ -181,10 +186,27 @@ fn metadata_value(value: Option<ParamValue>) -> Result<Option<Json>, ConverseReq
     match value {
         None | Some(ParamValue::Null) => Ok(None),
         Some(value) => {
-            let encoded: Json = transcode(&value)?;
+            // serde_json sorts an object's keys here, and the pair selection keeps the first pairs in caller order.
+            let encoded = json_of(&value);
             validate_request_metadata(&request_value(&encoded))?;
             Ok(Some(encoded))
         }
+    }
+}
+
+fn json_of(value: &ParamValue) -> Json {
+    match value {
+        ParamValue::Null => Json::Null,
+        ParamValue::Bool(flag) => Json::Bool(*flag),
+        ParamValue::Number(number) => Json::Number(number.clone()),
+        ParamValue::Text(text) => Json::Text(text.clone()),
+        ParamValue::List(items) => Json::List(items.iter().map(json_of).collect()),
+        ParamValue::Mapping(fields) => Json::Object(
+            fields
+                .iter()
+                .map(|(key, entry)| (key.clone(), json_of(entry)))
+                .collect(),
+        ),
     }
 }
 

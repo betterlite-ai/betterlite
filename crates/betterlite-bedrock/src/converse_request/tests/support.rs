@@ -110,7 +110,7 @@ pub(super) fn field<'value>(value: &'value Json, name: &str) -> Option<&'value J
     value.as_object().and_then(|fields| fields.get(name))
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub(super) struct Settings {
     pub(super) global_drop: bool,
     pub(super) modify_params: bool,
@@ -140,7 +140,11 @@ impl<'request> Call<'request> {
             model_cost: MODEL_COST,
             policy: None,
             answers: "{}",
-            settings: Settings::default(),
+            settings: Settings {
+                global_drop: false,
+                modify_params: false,
+                neutralize: false,
+            },
         }
     }
 }
