@@ -165,3 +165,10 @@ path = "fuzz_targets/bedrock_services_passthrough.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_embedding_io"
+path = "fuzz_targets/bedrock_embedding_io.rs"
+test = false
+doc = false
+bench = false
