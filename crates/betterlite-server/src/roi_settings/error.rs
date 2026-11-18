@@ -137,9 +137,7 @@ impl IntoResponse for RoiSettingsError {
 }
 
 fn internal_response(error: &InternalError) -> Response {
-    if let InternalError::Config(source) = error
-        && is_database_outage(source)
-    {
+    if matches!(error, InternalError::Config(source) if is_database_outage(source)) {
         return database_unavailable();
     }
     if let InternalError::DbNotConnected = error {
