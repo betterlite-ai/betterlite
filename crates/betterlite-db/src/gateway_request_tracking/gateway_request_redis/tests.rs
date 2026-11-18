@@ -10,6 +10,7 @@ use crate::gateway_request_tracking::test_support::FakeDatabase;
 use crate::gateway_request_tracking::test_support::FakeLease;
 use crate::gateway_request_tracking::test_support::FakeList;
 use crate::gateway_request_tracking::test_support::buffer_with;
+use crate::gateway_request_tracking::test_support::captured_logs;
 use crate::gateway_request_tracking::test_support::counts;
 use crate::gateway_request_tracking::test_support::key;
 use crate::gateway_request_tracking::test_support::snapshot;
@@ -284,6 +285,27 @@ async fn a_failed_commit_requeues_the_rows() {
             1
         )]
     );
+}
+
+#[tokio::test]
+async fn a_failed_commit_warns_with_the_error_text() {
+    let (logs, _guard) = captured_logs();
+    let list = Arc::new(FakeList::with_entries(&[
+        r#"[["2026-01-05","api","/v1/a",1,0]]"#,
+    ]));
+    let buffer = buffer_with(
+        Arc::clone(&list),
+        Arc::new(FakeLease::granting()),
+        MAX_REDIS_BUFFER_DEQUEUE_COUNT,
+    );
+    let database = FakeDatabase::failing();
+    buffer
+        .commit_if_leader(&database)
+        .await
+        .expect("the leader re-queues the rows");
+    assert!(logs.text().contains(
+        "failed to commit 1 buffered rows, re-queuing to Redis for the next flush: the fake database is unavailable"
+    ));
 }
 
 #[tokio::test]

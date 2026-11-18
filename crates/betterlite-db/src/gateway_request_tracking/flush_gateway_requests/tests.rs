@@ -9,6 +9,7 @@ use crate::gateway_request_tracking::test_support::FakeDatabase;
 use crate::gateway_request_tracking::test_support::FakeLease;
 use crate::gateway_request_tracking::test_support::FakeList;
 use crate::gateway_request_tracking::test_support::buffer_with;
+use crate::gateway_request_tracking::test_support::captured_logs;
 use crate::gateway_request_tracking::test_support::snapshot;
 use crate::gateway_requests::GatewayRequestSnapshot;
 
@@ -37,6 +38,18 @@ async fn the_flush_without_a_buffer_restores_the_counts_on_failure() {
     flush_gateway_requests(&database, &accumulator, None).await;
     assert_eq!(database.calls(), 1);
     assert_eq!(accumulator.drain(), initial);
+}
+
+#[tokio::test]
+async fn a_failed_flush_warns_with_the_error_text() {
+    let (logs, _guard) = captured_logs();
+    let database = FakeDatabase::failing();
+    let initial = snapshot(&[("2026-01-05", "api", "/v1/chat", 2, 1)]);
+    let accumulator = accumulator_with(&initial);
+    flush_gateway_requests(&database, &accumulator, None).await;
+    assert!(logs.text().contains(
+        "failed to commit 1 rows, retrying on the next flush: the fake database is unavailable"
+    ));
 }
 
 #[tokio::test]

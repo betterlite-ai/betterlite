@@ -9,6 +9,7 @@ use tokio_postgres::NoTls;
 use super::PostgresGatewayRequests;
 use super::commit_gateway_requests_to_db;
 use crate::gateway_request_tracking::test_support::FakeDatabase;
+use crate::gateway_request_tracking::test_support::captured_logs;
 use crate::gateway_request_tracking::test_support::snapshot;
 use crate::gateway_requests::GatewayRequestSnapshot;
 use crate::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
@@ -72,6 +73,23 @@ async fn a_snapshot_commits_one_statement_with_every_row() {
     let sql = database.last_sql().expect("the committed statement");
     assert!(sql.contains("ON CONFLICT (\"date\", \"category\", \"route\")"));
     assert!(sql.contains("$10::bigint"));
+}
+
+#[tokio::test]
+async fn a_commit_logs_the_number_of_aggregated_rows() {
+    let (logs, _guard) = captured_logs();
+    let database = FakeDatabase::default();
+    let rows = snapshot(&[
+        ("2026-01-05", "api", "/v1/chat", 2, 1),
+        ("2026-01-06", "api", "/v1/chat", 3, 0),
+    ]);
+    commit_gateway_requests_to_db(&database, &rows)
+        .await
+        .expect("the commit succeeds");
+    assert!(
+        logs.text()
+            .contains("committed 2 aggregated rows in one statement")
+    );
 }
 
 #[tokio::test]
