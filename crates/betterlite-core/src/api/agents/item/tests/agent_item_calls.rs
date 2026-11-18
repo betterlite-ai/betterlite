@@ -1,10 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::{Error as IoError, ErrorKind, Read, Result as IoResult, Write as _};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener};
 use std::sync::{Arc, Mutex, PoisonError};
-use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use betterlite_config::env_integer::timeout::RequestTimeout;
@@ -21,6 +19,8 @@ use betterlite_http::interactions::base::{
     ErrorClasses, Logging, Params, PreparedRequest, RequestHeaders, ResponseHeaders,
     UpstreamResponse,
 };
+use betterlite_http_fixture::reply::reply;
+use betterlite_http_fixture::server::serve;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -45,8 +45,7 @@ use crate::agents::provider::{
     AgentCreateResponse, AgentDeleteResult, AgentVersionsResponse, Deleted,
 };
 
-const TIMEOUT: Duration = Duration::from_secs(5);
-const RETRY: Duration = Duration::from_millis(10);
+const TIMEOUT: Duration = Duration::from_secs(60);
 const GET_BODY: &str = r#"{"id": "agent-1"}"#;
 
 // one request the fixture handler recorded, in the order the operation reaches it
@@ -524,79 +523,6 @@ impl<'call> Call<'call> {
     }
 }
 
-struct Serving {
-    address: SocketAddr,
-    request: JoinHandle<String>,
-}
-
-fn serve(answer: Vec<u8>) -> Serving {
-    serve_on(TcpListener::bind("127.0.0.1:0").unwrap(), answer)
-}
-
-fn serve_on(listener: TcpListener, answer: Vec<u8>) -> Serving {
-    let address = listener.local_addr().unwrap();
-    let request = thread::Builder::new()
-        .spawn(move || {
-            let mut stream = accept(&listener);
-            stream.set_read_timeout(Some(TIMEOUT)).unwrap();
-            let received = read_head(&mut stream).unwrap();
-            stream.write_all(&answer).unwrap();
-            received
-        })
-        .unwrap();
-    Serving { address, request }
-}
-
-fn accept(listener: &TcpListener) -> TcpStream {
-    listener.set_nonblocking(true).unwrap();
-    let started = Instant::now();
-    loop {
-        match listener.accept() {
-            Ok((stream, _peer)) => {
-                stream.set_nonblocking(false).unwrap();
-                return stream;
-            }
-            Err(error) if error.kind() == ErrorKind::WouldBlock => {
-                assert!(
-                    started.elapsed() < TIMEOUT,
-                    "the client never connected to the fixture"
-                );
-                thread::park_timeout(RETRY);
-            }
-            Err(error) => panic!("the fixture listener failed: {error}"),
-        }
-    }
-}
-
-fn read_head<R>(stream: &mut R) -> IoResult<String>
-where
-    R: Read,
-{
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
-        let mut byte = [0];
-        stream.read_exact(&mut byte)?;
-        received.extend_from_slice(&byte);
-    }
-    String::from_utf8(received).map_err(IoError::other)
-}
-
-fn reply(status: u16, body: &str) -> Vec<u8> {
-    format!(
-        "HTTP/1.1 {status} fixture\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    )
-    .into_bytes()
-}
-
-fn head_of(serving: Serving) -> String {
-    serving.request.join().unwrap()
-}
-
-fn request_line(head: &str) -> &str {
-    head.lines().next().unwrap_or_default()
-}
-
 fn base(address: SocketAddr) -> String {
     format!("http://{address}")
 }
@@ -607,7 +533,7 @@ fn text(value: &str) -> Json {
 
 #[test]
 fn the_default_provider_is_gemini() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -621,7 +547,7 @@ fn the_default_provider_is_gemini() {
         Some(&JsonValue::Text("gemini".to_owned()))
     );
     assert_eq!(
-        request_line(&head_of(serving)),
+        serving.finish().unwrap().line,
         "GET /v1beta/agents/agent-1 HTTP/1.1"
     );
 }
@@ -641,7 +567,7 @@ fn a_kwargs_provider_reaches_the_agents_config() {
 
 #[test]
 fn a_null_kwargs_provider_stays_null_in_the_parameters() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -651,12 +577,12 @@ fn a_null_kwargs_provider_stays_null_in_the_parameters() {
     let params = environment_params(&config);
     assert_eq!(params.get("custom_llm_provider"), Some(&JsonValue::Null));
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
 fn the_argument_provider_wins_over_kwargs() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -665,7 +591,7 @@ fn the_argument_provider_wins_over_kwargs() {
         .kwarg("custom_llm_provider", text("cohere"));
     get(&config, harness.deps(), &call.request()).expect("the argument provider is gemini");
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
@@ -684,7 +610,7 @@ fn a_non_string_kwargs_provider_is_a_bad_request_naming_the_field() {
 
 #[test]
 fn the_agent_name_is_the_only_optional_parameter() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-7").kwarg("api_base", text(&base(serving.address)));
@@ -699,12 +625,12 @@ fn the_agent_name_is_the_only_optional_parameter() {
         harness.state.model_call_details.get("name"),
         Some(&text("agent-7"))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
 fn delete_sends_a_delete_and_forwards_the_extra_headers() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -723,7 +649,7 @@ fn delete_sends_a_delete_and_forwards_the_extra_headers() {
         vec![("x-extra".to_owned(), "yes".to_owned())]
     );
     assert_eq!(
-        request_line(&head_of(serving)),
+        serving.finish().unwrap().line,
         "DELETE /v1beta/agents/agent-1 HTTP/1.1"
     );
 }
@@ -744,7 +670,7 @@ fn delete_forwards_the_caller_timeout() {
 #[test]
 fn list_versions_forwards_the_pagination_parameters() {
     let body = r#"{"agentVersions": [{"name": "v1"}], "nextPageToken": "n"}"#;
-    let serving = serve(reply(200, body));
+    let serving = serve(reply("200 fixture", &[], body), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -767,14 +693,14 @@ fn list_versions_forwards_the_pagination_parameters() {
         Some(&JsonValue::Number(Number::from(2_i64)))
     );
     assert_eq!(
-        request_line(&head_of(serving)),
+        serving.finish().unwrap().line,
         "GET /v1beta/agents/agent-1/versions?pageSize=2&pageToken=tok HTTP/1.1"
     );
 }
 
 #[test]
 fn get_pops_the_aget_agent_flag_before_the_parameters() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -783,12 +709,12 @@ fn get_pops_the_aget_agent_flag_before_the_parameters() {
     get(&config, harness.deps(), &call.request()).expect("the fixture answers");
     let params = environment_params(&config);
     assert!(!params.contains_key("aget_agent"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
 fn delete_pops_the_adelete_agent_flag_before_the_parameters() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -797,12 +723,16 @@ fn delete_pops_the_adelete_agent_flag_before_the_parameters() {
     delete(&config, harness.deps(), &call.request()).expect("the fixture answers");
     let params = environment_params(&config);
     assert!(!params.contains_key("adelete_agent"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
 fn list_versions_pops_the_alist_agent_versions_flag_before_the_parameters() {
-    let serving = serve(reply(200, r#"{"agentVersions": []}"#));
+    let serving = serve(
+        reply("200 fixture", &[], r#"{"agentVersions": []}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -811,7 +741,7 @@ fn list_versions_pops_the_alist_agent_versions_flag_before_the_parameters() {
     list_versions(&config, harness.deps(), &call.request()).expect("the fixture answers");
     let params = environment_params(&config);
     assert!(!params.contains_key("alist_agent_versions"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
@@ -852,7 +782,11 @@ fn an_unsupported_provider_is_a_named_bad_request() {
 
 #[test]
 fn a_missing_agent_is_a_not_found_error_with_the_agent_name() {
-    let serving = serve(reply(404, r#"{"error": {"message": "missing"}}"#));
+    let serving = serve(
+        reply("404 fixture", &[], r#"{"error": {"message": "missing"}}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -863,12 +797,16 @@ fn a_missing_agent_is_a_not_found_error_with_the_agent_name() {
     assert_eq!(details.status.0, 404);
     assert_eq!(details.model.as_deref(), Some("agent-1"));
     assert_eq!(details.provider.as_deref(), Some("gemini"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
 fn a_failing_delete_is_an_internal_server_error_with_the_agent_name() {
-    let serving = serve(reply(500, r#"{"error": {"message": "broken"}}"#));
+    let serving = serve(
+        reply("500 fixture", &[], r#"{"error": {"message": "broken"}}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -878,7 +816,7 @@ fn a_failing_delete_is_an_internal_server_error_with_the_agent_name() {
     };
     assert_eq!(context.model.as_deref(), Some("agent-1"));
     assert_eq!(context.provider.as_deref(), Some("gemini"));
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[test]
@@ -897,7 +835,7 @@ fn a_request_that_cannot_be_built_is_an_api_connection_error() {
 
 #[test]
 fn get_records_the_pre_call_and_the_post_call() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -920,12 +858,12 @@ fn get_records_the_pre_call_and_the_post_call() {
         harness.record.model_call_details.get("additional_args"),
         Some(&JsonValue::Object(IndexMap::new()))
     );
-    drop(head_of(serving));
+    drop(serving.finish().unwrap());
 }
 
 #[tokio::test]
 async fn aget_sends_the_same_request_as_get() {
-    let serving = serve(reply(200, GET_BODY));
+    let serving = serve(reply("200 fixture", &[], GET_BODY), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -944,14 +882,14 @@ async fn aget_sends_the_same_request_as_get() {
         vec![("x-extra".to_owned(), "yes".to_owned())]
     );
     assert_eq!(
-        request_line(&head_of(serving)),
+        serving.finish().unwrap().line,
         "GET /v1beta/agents/agent-1 HTTP/1.1"
     );
 }
 
 #[tokio::test]
 async fn adelete_sends_the_same_request_as_delete() {
-    let serving = serve(reply(200, "{}"));
+    let serving = serve(reply("200 fixture", &[], "{}"), Duration::ZERO).unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1").kwarg("api_base", text(&base(serving.address)));
@@ -962,14 +900,18 @@ async fn adelete_sends_the_same_request_as_delete() {
     assert_eq!(harness.state.call_type, "delete_agent");
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
     assert_eq!(
-        request_line(&head_of(serving)),
+        serving.finish().unwrap().line,
         "DELETE /v1beta/agents/agent-1 HTTP/1.1"
     );
 }
 
 #[tokio::test]
 async fn alist_versions_sends_the_same_request_as_list_versions() {
-    let serving = serve(reply(200, r#"{"agentVersions": []}"#));
+    let serving = serve(
+        reply("200 fixture", &[], r#"{"agentVersions": []}"#),
+        Duration::ZERO,
+    )
+    .unwrap();
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("agent-1")
@@ -982,7 +924,7 @@ async fn alist_versions_sends_the_same_request_as_list_versions() {
     assert_eq!(harness.state.call_type, "list_agent_versions");
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
     assert_eq!(
-        request_line(&head_of(serving)),
+        serving.finish().unwrap().line,
         "GET /v1beta/agents/agent-1/versions?pageSize=3 HTTP/1.1"
     );
 }

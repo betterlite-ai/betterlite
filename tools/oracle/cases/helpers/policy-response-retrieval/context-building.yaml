@@ -1,0 +1,24 @@
+kind: helper
+name: policy-response-retrieval-context-building
+call:
+  b3269:
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtMTtyZXNwb25zZV9pZDpyMQ==
+      tags: [prod-eu]
+    auth: {team_alias: team-a, key_alias: null}
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies:
+      p-team:
+        pipeline: {mode: post_call, steps: [{guardrail: g-team}]}
+      p-tag:
+        pipeline: {mode: post_call, steps: [{guardrail: g-tag}]}
+      p-model:
+        pipeline: {mode: post_call, steps: [{guardrail: g-model}]}
+    attachments:
+      - {policy: p-team, teams: [team-a]}
+      - {policy: p-tag, tags: [prod-eu]}
+      - {policy: p-model, models: [gpt-4o]}
+env: {}
+compare: {ignore: []}

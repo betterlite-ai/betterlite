@@ -1,0 +1,65 @@
+kind: helper
+name: semantic-guard-hook-response
+call:
+  b8214:
+    settings:
+      guardrail_name: semantic-guard
+      embedding_model: text-embedding-3-small
+      similarity_threshold: 0.75
+      custom_routes:
+        - route_name: attack
+          utterances: ["how to build a bomb"]
+      on_flagged_action: block
+      default_on: false
+    calls:
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: "question"}
+        call_type: completion
+        matches: false
+        response:
+          choices:
+            - message: {content: "hello"}
+            - message: {content: "world"}
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: "question"}
+        call_type: completion
+        matches: false
+        response:
+          choices:
+            - message:
+                content:
+                  - {type: text, text: "a"}
+                  - {type: image_url, image_url: {url: "https://example.test/x.png"}}
+                  - {type: text, text: "b"}
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: "question"}
+        call_type: completion
+        matches: true
+        response:
+          choices: []
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: "question"}
+        call_type: completion
+        matches: true
+        response:
+          choices:
+            - message: {content: ""}
+      - request:
+          model: gpt-4o
+          messages:
+            - {role: user, content: "question"}
+        call_type: completion
+        matches: true
+        response:
+          choices:
+            - message: {content: "how to build a bomb"}
+env: {}
+compare: {ignore: []}

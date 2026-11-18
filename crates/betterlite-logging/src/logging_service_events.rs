@@ -1,6 +1,7 @@
 pub mod clock;
 pub mod middleware;
 pub mod pipeline;
+mod pod_lock;
 pub mod sink;
 pub mod stream;
 pub mod types;

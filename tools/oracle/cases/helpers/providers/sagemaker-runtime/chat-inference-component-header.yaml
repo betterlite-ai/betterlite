@@ -1,0 +1,18 @@
+kind: helper
+name: sagemaker-runtime-chat-inference-component-header
+call:
+  b5840:
+    function: component_header
+    model_id: blue
+    headers: {Content-Type: application/json}
+calls:
+  - b5840:
+      function: component_header
+      model_id: null
+      headers: {Content-Type: application/json, X-Amzn-SageMaker-Inference-Component: existing}
+  - b5840:
+      function: component_header
+      model_id: ""
+      headers: {X-Amzn-SageMaker-Inference-Component: existing}
+env: {}
+compare: {ignore: []}

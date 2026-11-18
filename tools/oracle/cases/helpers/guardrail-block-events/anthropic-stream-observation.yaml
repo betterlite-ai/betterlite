@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-stream-observation
+call:
+  b3673:
+    operation: anthropic_observation
+    message: blocked
+    model: claude-test
+    original_response: null
+    stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
+    events: []
+    chunks:
+      - |-
+        event: content_block_delta
+        data: {"delta":{"type":"text_delta","text":"hello "}}
+
+      - |-
+        event: message_delta
+        data: {"delta":{"stop_reason":"end_turn"}}
+
+    status_code: 400
+    message_id: msg_00000000-0000-0000-0000-000000000001
+env: {}
+compare: {ignore: []}

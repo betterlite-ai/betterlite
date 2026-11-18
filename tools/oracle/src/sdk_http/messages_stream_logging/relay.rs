@@ -23,7 +23,7 @@ use super::outcome::Flag;
 use super::recording::{StepClock, Warnings, drain, logging_object};
 use super::session::await_parked;
 use crate::sdk_http::error::SdkHttpError;
-use crate::sdk_http::result::SdkResult;
+use crate::sdk_http::result::kinds::SdkResult;
 use crate::sdk_http::vector_query_embedding::outbound_client;
 use call::{
     FailureCall, FrameRead, MessagesNativeStreamCall, RelayOp, RelayStep, StreamObservation,

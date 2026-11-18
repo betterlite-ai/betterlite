@@ -1,0 +1,23 @@
+kind: probe
+name: routing-state-success-counted-once
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_state:
+        env: {}
+        steps:
+          - {kind: success, now_millis: 0, deployment_id: dep-a}
+          - {kind: success, now_millis: 0, deployment_id: dep-a}
+          - {kind: outcomes, now_millis: 0, deployment_id: dep-a}
+          - kind: metadata
+            channels: '{"litellm_metadata": {"model_info": {"id": "a"}, "_litellm_router_usage_counted_tokens": 7}, "metadata": {"model_info": {"id": "b"}, "_litellm_router_usage_counted_tokens": 9}}'
+          - kind: metadata
+            channels: '{"litellm_metadata": {"model_info": {"id": "a"}}, "metadata": {"model_info": {"id": "b"}, "_litellm_router_usage_counted_tokens": 9}}'
+          - kind: metadata
+            channels: '{"litellm_metadata": {"model_info": {"id": "a"}, "_litellm_router_usage_counted_tokens": "8"}, "metadata": {"model_info": {"id": "b"}, "_litellm_router_usage_counted_tokens": 7}}'
+          - kind: metadata
+            channels: '{"litellm_metadata": {"model_info": null}, "metadata": {"model_info": {"id": "b"}}}'
+          - kind: metadata
+            channels: '{"litellm_metadata": "text", "metadata": {"deployment": "x"}}'
+compare: {ignore: []}

@@ -1,0 +1,24 @@
+kind: helper
+name: coordination-redis-boot-env-refs-resolved
+call:
+  b8377:
+    operation: env_refs
+    params:
+      host: os.environ/COORD_HOST
+      port: os.environ/COORD_PORT
+      password: os.environ/COORD_PASSWORD
+      username: coordinator
+      ssl: os.environ/COORD_SSL
+      sentinel_password: os.environ/MISSING_SENTINEL_PASSWORD
+      db: 3
+    environment:
+      COORD_HOST: coordinator.internal
+      COORD_PORT: "6380"
+      COORD_PASSWORD: s3cr3t
+      COORD_SSL: "true"
+env:
+  COORD_HOST: coordinator.internal
+  COORD_PORT: "6380"
+  COORD_PASSWORD: s3cr3t
+  COORD_SSL: "true"
+compare: {ignore: []}
