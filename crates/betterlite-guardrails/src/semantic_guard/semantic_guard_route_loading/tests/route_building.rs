@@ -263,7 +263,7 @@ fn a_file_scalar_pyyaml_reads_as_text_stays_text() {
 
 #[test]
 fn a_file_utterance_that_overflows_f64_stays_text() {
-    let (_folder, path) = routes_file("- route_name: overflow\n  utterances: [1e309, 1e999]\n");
+    let (_folder, path) = routes_file("- route_name: overflow\n  \"utterances\": [1e309, 1e999]\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);
     assert_eq!(
         build_routes(&sources).unwrap()[0].utterances,
@@ -296,6 +296,23 @@ fn a_file_merge_key_keeps_merged_route_fields() {
             &["merged utterance"],
             0.8
         )]
+    );
+}
+
+#[test]
+fn a_file_merge_alias_keeps_merged_route_fields() {
+    let (_folder, path) = routes_file(
+        "- &defaults {route_name: base_route, utterances: [base utterance], description: merged description, similarity_threshold: 0.8}\n- <<: *defaults\n  route_name: alias_route\n  utterances: [alias utterance]\n",
+    );
+    let sources = sources(&[], Some(&path), vec![], 0.5);
+    assert_eq!(
+        build_routes(&sources).unwrap()[1],
+        route(
+            "alias_route",
+            Some("merged description"),
+            &["alias utterance"],
+            0.8
+        )
     );
 }
 
