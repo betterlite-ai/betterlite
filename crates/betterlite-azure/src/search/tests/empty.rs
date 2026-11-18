@@ -7,10 +7,34 @@ use super::support::{model_settings, transform};
 
 pub(super) fn empty_search_response() {
     empty_outputs_succeed();
+    non_2xx_envelopes_are_reported_by_their_body();
     failed_status_always_raises();
     incomplete_without_results_raises();
     incomplete_with_results_succeeds();
     the_envelope_requires_output();
+}
+
+fn non_2xx_envelopes_are_reported_by_their_body() {
+    let settings = model_settings();
+    let config = AzureSearchConfig {
+        settings: &settings,
+        minter: None,
+    };
+    let empty = transform(&config, r#"{"output": []}"#, 500, &[]).unwrap();
+    assert!(empty.results.is_empty());
+    let body = json!({
+        "output": [{
+            "type": "message",
+            "content": [{
+                "type": "output_text",
+                "text": "kept",
+                "annotations": [{"type": "url_citation", "url": "https://a.example"}]
+            }]
+        }]
+    })
+    .to_string();
+    let found = transform(&config, &body, 404, &[]).unwrap();
+    assert_eq!(found.results.len(), 1_usize);
 }
 
 fn empty_outputs_succeed() {
