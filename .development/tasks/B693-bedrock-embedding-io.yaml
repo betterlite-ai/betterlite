@@ -13,7 +13,7 @@ description: >-
 
   Named case contracts: signed_embedding_request: _sign_get_request signs method GET with data=None, supplied headers
   and URL, SigV4 service bedrock and the supplied region, then returns the prepared request. Use the B595 signing
-  library implementation; no bearer override is applied. Missing boto3 is the Python-only ImportError Missing boto3
+  library implementation; no bearer override is applied. A caller-supplied Date header follows the shared signer's accepted deviation in docs/deviations/B595.yaml: it is dropped and the request is signed with X-Amz-Date, so list that row in docs/deviations/B693.yaml with the same LiteLLM link and change nothing under crates/betterlite-bedrock/src/signing. Missing boto3 is the Python-only ImportError Missing boto3
   to call bedrock. Run 'pip install boto3'.; the Rust signer is compiled in. provider_json_response: Create a B173
   client only when the supplied client is absent or the wrong sync/async handler type. Pass timeout only when not
   None; numeric int/float values become the equivalent HTTP timeout, while an existing timeout record is retained.
@@ -265,6 +265,6 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as bedrock_embedding_io in the bedrock group. Replace the stub Op in tools/oracle/src/helpers/bedrock/embedding_io.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_embedding_io.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Embedding JSON response normalization differs between family shapes even when the HTTP status is successful.
 budget:
-  max_changed_lines: 2250
+  max_changed_lines: 2400
   max_new_expects: 0
 review_level: security
