@@ -1,0 +1,17 @@
+kind: helper
+name: oidc-token-response-provider-error-in-success-status
+call:
+  oidc_token_response:
+    body: '{"error": "invalid_grant", "error_description": "the authorization code expired"}'
+calls:
+  - oidc_token_response:
+      body: '{"error": "invalid_client"}'
+  - oidc_token_response:
+      body: '{"error": "invalid_grant", "error_description": "", "access_token": ""}'
+  - oidc_token_response:
+      body: '{"error": {"code": "invalid_grant"}, "error_description": "expired"}'
+  - oidc_token_response:
+      body: '{"error": ""}'
+env: {}
+compare:
+  ignore: []

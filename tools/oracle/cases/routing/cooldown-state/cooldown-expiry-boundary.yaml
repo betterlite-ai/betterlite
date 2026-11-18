@@ -1,0 +1,33 @@
+kind: probe
+name: cooldown-expiry-boundary
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        steps:
+          - {kind: add, now_millis: 0, model_id: a, status_code: 429, cooldown_time: 5.0, exception: probe failure}
+          - {kind: read, now_millis: 4999, model_ids: [a]}
+          - {kind: read, now_millis: 5000, model_ids: [a]}
+          - {kind: read, now_millis: 5001, model_ids: [a]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        steps:
+          - {kind: add, now_millis: 0, model_id: a, status_code: 429, cooldown_time: 5.0, exception: probe failure}
+          - {kind: add, now_millis: 0, model_id: b, status_code: 500, cooldown_time: 2.0, exception: probe failure}
+          - {kind: read, now_millis: 1999, model_ids: [a, b]}
+          - {kind: read, now_millis: 2000, model_ids: [a, b]}
+          - {kind: read, now_millis: 2001, model_ids: [a, b]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        steps:
+          - {kind: add, now_millis: 0, model_id: a, status_code: 503, exception: probe failure}
+          - {kind: read, now_millis: 2500, model_ids: [a]}
+compare: {ignore: []}

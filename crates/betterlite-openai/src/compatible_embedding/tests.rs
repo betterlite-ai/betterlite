@@ -354,7 +354,7 @@ async fn a_reply_that_is_not_json_is_a_500() {
     assert_eq!(error.status_code(), Some(500));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_slow_answer_is_a_408_timeout() {
     let (sent, _) = exchange(
         200,

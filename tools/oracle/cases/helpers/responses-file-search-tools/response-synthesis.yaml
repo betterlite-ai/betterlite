@@ -1,0 +1,82 @@
+kind: helper
+name: responses-file-search-response-synthesis
+call:
+  responses_file_search_tools:
+    function: response_synthesis
+    call_id: fs_0123456789abcdef01234567
+    queries: ["q1"]
+    include_search_results: true
+    results:
+      - file_id: file_1
+        filename: report.txt
+        score: 0.87654
+        content:
+          - {text: hello}
+          - {text: world}
+    text: answer
+    original:
+      id: resp_original
+      created_at: 1700000000
+      model: gpt-test
+      usage: {input_tokens: 1, output_tokens: 2, total_tokens: 3}
+      _hidden_params: {response_cost: 2.5}
+    _hidden_params: {response_cost: 1.25}
+    uuid: 0123456789abcdef0123456789abcdef
+    now: "1700000000.75"
+calls:
+  - responses_file_search_tools:
+      function: response_synthesis
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: false
+      results: []
+      text: answer
+      original: null
+      _hidden_params: null
+      uuid: 0123456789abcdef0123456789abcdef
+      now: "1700000000.75"
+  - responses_file_search_tools:
+      function: response_synthesis
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: false
+      results: []
+      text: answer
+      original:
+        id: resp_original
+        created_at: 1700000000
+        model: null
+        usage: null
+        _hidden_params: {response_cost: 2.5, model_id: m1}
+      _hidden_params: null
+      uuid: 0123456789abcdef0123456789abcdef
+      now: "1700000000.75"
+  - responses_file_search_tools:
+      function: response_synthesis
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: false
+      results: []
+      text: answer
+      original:
+        id: resp_original
+        created_at: 1700000000
+        model: gpt-test
+        usage: null
+        _hidden_params: null
+      _hidden_params: {response_cost: 1.25}
+      uuid: 0123456789abcdef0123456789abcdef
+      now: "1700000000.75"
+  - responses_file_search_tools:
+      function: response_synthesis
+      call_id: fs_0123456789abcdef01234567
+      queries: ["q1"]
+      include_search_results: false
+      results: []
+      text: answer
+      original: null
+      _hidden_params: {response_cost: 1.25}
+      uuid: 0123456789abcdef0123456789abcdef
+      now: "1700000000.75"
+env: {}
+compare: {ignore: []}
