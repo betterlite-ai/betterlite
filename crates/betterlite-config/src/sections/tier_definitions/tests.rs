@@ -473,6 +473,21 @@ fn a_number_parameter_survives_as_a_number() {
 }
 
 #[test]
+fn a_fractional_parameter_round_trips_through_json() {
+    let source = concat!(
+        r#"{"tier_models":{"SIMPLE":{"model_name":"small","#,
+        r#""litellm_params":{"temperature":0.2}}}}"#
+    );
+    let config = serde_json::from_str::<Config>(source).expect("the config deserializes");
+    let rendered = serde_json::to_string(&config).expect("the config serializes");
+    assert!(rendered.contains(r#""temperature":0.2"#), "{rendered}");
+    assert!(
+        !rendered.contains(r#"$serde_json::private::Number"#),
+        "{rendered}"
+    );
+}
+
+#[test]
 fn absent_null_and_empty_parameters_are_one_empty_map() {
     let absent = only(
         "        tier_models:\n          SIMPLE:\n            model_name: small\n",

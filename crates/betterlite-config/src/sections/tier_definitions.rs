@@ -4,6 +4,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use serde_with::{DefaultOnNull, serde_as};
 use subtle::ConstantTimeEq as _;
 
@@ -65,6 +66,7 @@ pub struct TierDefinition {
 #[serde(untagged, into = "Json")]
 pub enum TierParam {
     Text(SecretString),
+    Number(Number),
     List(Vec<Self>),
     Object(IndexMap<String, Self>),
     Value(Json),
@@ -74,6 +76,7 @@ impl From<TierParam> for Json {
     fn from(value: TierParam) -> Self {
         match value {
             TierParam::Text(text) => Self::Text(text.expose_secret().to_owned()),
+            TierParam::Number(number) => Self::Number(number),
             TierParam::List(items) => Self::List(items.into_iter().map(Self::from).collect()),
             TierParam::Object(entries) => Self::Object(
                 entries
@@ -94,6 +97,7 @@ impl PartialEq for TierParam {
                     .as_bytes()
                     .ct_eq(right.expose_secret().as_bytes()),
             ),
+            (Self::Number(left), Self::Number(right)) => left == right,
             (Self::Value(left), Self::Value(right)) => left == right,
             (Self::List(left), Self::List(right)) => left == right,
             (Self::Object(left), Self::Object(right)) => left == right,
