@@ -109,28 +109,26 @@ impl<S: DeltaStore> SyncState<S> {
         let updated = self
             .local
             .increment(key, increment, Some(ttl.as_secs_f64()))?;
-        if self.store.is_none() {
-            drop(pending);
-            return Ok((updated, false));
-        }
-        let value = match increment {
-            RouteIncrement::Spend(value) => *value,
-            RouteIncrement::Counter(value) => Decimal::from(*value),
-        };
-        let delta = Delta {
-            key: key.clone(),
-            value,
-            ttl,
-        };
         let saturated = pending.len() >= MAX_PENDING_DELTAS;
-        if pending.len() < MAX_PENDING_DELTAS.saturating_mul(2) {
-            pending.push(delta);
-        } else {
-            tracing::warn!(
-                key = key.as_ref(),
-                "the routing delta queue is full; the observation is dropped"
-            );
+        if self.store.is_some() {
+            let value = match increment {
+                RouteIncrement::Spend(value) => *value,
+                RouteIncrement::Counter(value) => Decimal::from(*value),
+            };
+            if pending.len() < MAX_PENDING_DELTAS.saturating_mul(2) {
+                pending.push(Delta {
+                    key: key.clone(),
+                    value,
+                    ttl,
+                });
+            } else {
+                tracing::warn!(
+                    key = key.as_ref(),
+                    "the routing delta queue is full; the observation is dropped"
+                );
+            }
         }
+        drop(pending);
         Ok((updated, saturated))
     }
 }
