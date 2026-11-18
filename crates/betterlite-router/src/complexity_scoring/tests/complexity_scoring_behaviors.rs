@@ -406,13 +406,18 @@ fn the_resolved_config_carries_the_pinned_defaults() {
 }
 
 #[rstest]
-#[case::simple("SIMPLE", true)]
-#[case::medium("MEDIUM", true)]
-#[case::non_reasoning("NON_REASONING", true)]
-#[case::lower_case("simple", false)]
-#[case::custom("PREMIUM", false)]
-fn a_built_in_name_is_recognised_exactly(#[case] name: &str, #[case] built_in: bool) {
-    assert_eq!(ComplexityTier::built_in(name).is_some(), built_in);
+#[case::non_reasoning("NON_REASONING", Some(ComplexityTier::NonReasoning))]
+#[case::simple("SIMPLE", Some(ComplexityTier::Simple))]
+#[case::medium("MEDIUM", Some(ComplexityTier::Medium))]
+#[case::complex("COMPLEX", Some(ComplexityTier::Complex))]
+#[case::reasoning("REASONING", Some(ComplexityTier::Reasoning))]
+#[case::lower_case("simple", None)]
+#[case::custom("PREMIUM", None)]
+fn a_built_in_name_is_recognised_exactly(
+    #[case] name: &str,
+    #[case] expected: Option<ComplexityTier>,
+) {
+    assert_eq!(ComplexityTier::built_in(name), expected);
 }
 
 #[test]
