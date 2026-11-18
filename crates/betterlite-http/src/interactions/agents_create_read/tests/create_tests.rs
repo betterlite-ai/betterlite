@@ -28,7 +28,8 @@ fn create_agent_posts_the_configured_request_and_returns_the_transform() {
         ("content-type", "application/json"),
         ("x-goog-api-key", "key-1"),
     ]);
-    let mut request = support::create_request("agent-1", &params_at(serving.address));
+    let params = params_at(serving.address);
+    let mut request = support::create_request("agent-1", &params);
     request.extra_headers = caller_headers(&[("x-caller", "c1")]);
     request.timeout = Some(Duration::from_secs(1));
     let mut clients = clients();
