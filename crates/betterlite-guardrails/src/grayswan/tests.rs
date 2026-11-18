@@ -19,13 +19,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::with_default;
 
 use super::GraySwanGuardrail;
-use super::config_model::{
-    GraySwanGuardrailConfigModel, GraySwanGuardrailConfigModelOptionalParams,
-};
+use super::config_model::{GraySwanConfigOptionalParams, GraySwanGuardrailConfigModel};
 use super::construction::{DEFAULT_API_BASE, GraySwanGuardrailSetupError};
 use super::error::{GRAYSWAN_BLOCK_ERROR_MSG, GraySwanFailure, GraySwanGuardrailAPIError};
 use super::format::build_messages;
-use super::hooks::{SUPPORTED_EVENT_HOOKS, hook_name};
+use super::hooks::hook_name;
 use super::wire::{
     GraySwanResponse, GraySwanRuleNumber, GraySwanVerdict, GraySwanViolatedRule,
     GraySwanViolatedRuleFields,

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::grayswan::Configured;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, InvalidHeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::ExposeSecret as _;
 
 use crate::guardrail_base::inputs::GuardrailLogTarget;
@@ -16,19 +16,16 @@ pub const FORWARDED_HEADER_NAMES: [&str; 1] = ["shade_scan_id"];
 pub fn prepare_headers(settings: &Configured) -> Result<HeaderMap, GraySwanGuardrailAPIError> {
     let api_key = settings.api_key.expose_secret();
     let mut headers = HeaderMap::new();
-    let mut authorization =
-        HeaderValue::from_str(&format!("Bearer {api_key}")).map_err(invalid_header)?;
+    let mut authorization = HeaderValue::from_str(&format!("Bearer {api_key}"))
+        .map_err(|source| GraySwanFailure::InvalidHeader { source })?;
     authorization.set_sensitive(true);
     headers.insert(AUTHORIZATION, authorization);
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    let mut key_header = HeaderValue::from_str(api_key).map_err(invalid_header)?;
+    let mut key_header = HeaderValue::from_str(api_key)
+        .map_err(|source| GraySwanFailure::InvalidHeader { source })?;
     key_header.set_sensitive(true);
     headers.insert("grayswan-api-key", key_header);
     Ok(headers)
-}
-
-fn invalid_header(source: InvalidHeaderValue) -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::from_failure(GraySwanFailure::InvalidHeader { source })
 }
 
 // LiteLLM's _extract_inbound_headers: the first non-empty headers dict of four places, filtered to shade_scan_id
@@ -37,8 +34,10 @@ pub fn extract_inbound_headers(
     request_data: &Object,
     log_target: Option<&GuardrailLogTarget>,
 ) -> Option<BTreeMap<String, String>> {
-    let rows =
-        request_header_rows(request_data).or_else(|| log_target.and_then(logging_header_rows))?;
+    let rows = request_header_rows(request_data).or_else(|| {
+        let params = log_target?.model_call_params.as_ref()?;
+        nested_object(params, "metadata", "headers")
+    })?;
     let mut forwarded = BTreeMap::new();
     for (key, value) in rows {
         if !is_forwarded_name(key) {
@@ -60,11 +59,6 @@ fn request_header_rows(request_data: &Object) -> Option<&BTreeMap<String, Guardr
     .into_iter()
     .flatten()
     .next()
-}
-
-fn logging_header_rows(target: &GuardrailLogTarget) -> Option<&BTreeMap<String, GuardrailValue>> {
-    let params = target.model_call_params.as_ref()?;
-    nested_object(params, "metadata", "headers")
 }
 
 fn nested_object<'data>(

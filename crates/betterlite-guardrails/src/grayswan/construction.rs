@@ -12,19 +12,19 @@ pub const DEFAULT_API_BASE: &str = "https://api.grayswan.ai";
 pub const DEFAULT_VIOLATION_THRESHOLD: f64 = 0.5;
 // LiteLLM's `fail_open` default is true and `guardrail_timeout` defaults to 30.0 seconds
 pub const DEFAULT_FAIL_OPEN: bool = true;
-pub const DEFAULT_GUARDRAIL_TIMEOUT_SECONDS: f64 = 30.0;
+pub const DEFAULT_TIMEOUT_SECONDS: f64 = 30.0;
 // LiteLLM's on_flagged_action default is monitor; an unsupported value falls back to it
 pub const DEFAULT_ON_FLAGGED_ACTION: OnFlaggedAction = OnFlaggedAction::Monitor;
 
 // LiteLLM's GraySwanGuardrailMissingSecrets, raised when neither the argument nor the env var has a key
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("Gray Swan API key missing. Set `GRAYSWAN_API_KEY` or pass `api_key`.")]
-pub struct GraySwanGuardrailMissingSecrets;
+pub struct GraySwanMissingSecrets;
 
 #[derive(Debug, Error)]
 pub enum GraySwanGuardrailSetupError {
     #[error(transparent)]
-    MissingSecrets(#[from] GraySwanGuardrailMissingSecrets),
+    MissingSecrets(#[from] GraySwanMissingSecrets),
     #[error("guardrail_timeout must be a non-negative number of seconds: {seconds}")]
     Timeout {
         seconds: f64,
@@ -49,7 +49,7 @@ pub fn resolve_api_key(
     match env.lookup("GRAYSWAN_API_KEY") {
         Some(key) if !key.is_empty() => Ok(SecretString::from(key)),
         _ => Err(GraySwanGuardrailSetupError::MissingSecrets(
-            GraySwanGuardrailMissingSecrets,
+            GraySwanMissingSecrets,
         )),
     }
 }
@@ -69,7 +69,10 @@ pub fn resolve_api_base(api_base: Option<&str>, env: &dyn EnvironmentLookup) -> 
 
 #[must_use]
 pub fn resolve_threshold(value: Option<f64>, env: &dyn EnvironmentLookup) -> f64 {
-    value.unwrap_or_else(|| env_threshold(env))
+    if let Some(threshold) = value {
+        return threshold;
+    }
+    env_threshold(env)
 }
 
 fn env_threshold(env: &dyn EnvironmentLookup) -> f64 {
@@ -91,8 +94,10 @@ pub fn resolve_reasoning_mode(
 }
 
 fn parse_reasoning_mode(value: &str) -> Option<ReasoningMode> {
-    let lowered = value.to_ascii_lowercase();
-    ReasoningMode::deserialize(StrDeserializer::<ValueError>::new(&lowered)).ok()
+    ReasoningMode::deserialize(StrDeserializer::<ValueError>::new(
+        &value.to_ascii_lowercase(),
+    ))
+    .ok()
 }
 
 #[must_use]
@@ -115,7 +120,7 @@ pub fn resolve_on_flagged_action(action: Option<&str>) -> OnFlaggedAction {
 }
 
 pub fn resolve_timeout(value: Option<f64>) -> Result<Duration, GraySwanGuardrailSetupError> {
-    let seconds = value.unwrap_or(DEFAULT_GUARDRAIL_TIMEOUT_SECONDS);
+    let seconds = value.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
     Duration::try_from_secs_f64(seconds)
         .map_err(|source| GraySwanGuardrailSetupError::Timeout { seconds, source })
 }

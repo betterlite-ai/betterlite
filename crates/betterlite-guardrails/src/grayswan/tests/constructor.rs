@@ -56,7 +56,7 @@ fn grayswan_constructor_uses_litellm_defaults() {
     );
     assert_eq!(
         instance.base.settings.supported_event_hooks,
-        Some(SUPPORTED_EVENT_HOOKS.to_vec())
+        Some(GraySwanGuardrail::get_supported_event_hooks())
     );
 }
 
@@ -341,9 +341,7 @@ fn parse_model(json: &str) -> GraySwanGuardrailConfigModel {
     serde_json::from_str(json).expect("config model json")
 }
 
-fn optional_params(
-    model: &GraySwanGuardrailConfigModel,
-) -> &GraySwanGuardrailConfigModelOptionalParams {
+fn optional_params(model: &GraySwanGuardrailConfigModel) -> &GraySwanConfigOptionalParams {
     model.optional_params.as_ref().expect("optional params")
 }
 

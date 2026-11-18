@@ -88,8 +88,12 @@ fn resolve_call_type(
     logging_call_type: Option<&str>,
     routes: &RouteCatalog,
 ) -> Option<CallType> {
-    route_call_type(request_data, routes)
-        .or_else(|| first_call_type(logging_call_type, request_logging_call_type(request_data)))
+    route_call_type(request_data, routes).or_else(|| {
+        first_call_type(
+            logging_call_type,
+            nested_text(request_data, "litellm_logging_obj", "call_type"),
+        )
+    })
 }
 
 fn route_call_type(request_data: &Object, routes: &RouteCatalog) -> Option<CallType> {
@@ -100,10 +104,6 @@ fn route_call_type(request_data: &Object, routes: &RouteCatalog) -> Option<CallT
     )?;
     let call_types = routes.call_types_for(route).ok().flatten()?;
     call_types.first().copied()
-}
-
-fn request_logging_call_type(request_data: &Object) -> Option<&str> {
-    nested_text(request_data, "litellm_logging_obj", "call_type")
 }
 
 // The first non-empty name decides; an unknown name stops the chain instead of falling through

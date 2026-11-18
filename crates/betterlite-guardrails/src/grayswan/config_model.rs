@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // LiteLLM's GraySwanGuardrailConfigModelOptionalParams, whose pydantic Field defaults a missing key keeps
 #[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct GraySwanGuardrailConfigModelOptionalParams {
+pub struct GraySwanConfigOptionalParams {
     #[serde(default = "default_on_flagged_action")]
     pub on_flagged_action: Option<String>,
     #[serde(default = "default_violation_threshold")]
@@ -30,7 +30,7 @@ pub struct GraySwanGuardrailConfigModel {
     #[serde(default)]
     pub api_base: Option<String>,
     #[serde(default)]
-    pub optional_params: Option<GraySwanGuardrailConfigModelOptionalParams>,
+    pub optional_params: Option<GraySwanConfigOptionalParams>,
 }
 
 impl GuardrailConfigModelIdentity for GraySwanGuardrailConfigModel {

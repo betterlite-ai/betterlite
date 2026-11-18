@@ -55,12 +55,10 @@ async fn read_capped_body(
     while let Some(chunk) = response.chunk().await.map_err(request_failure)? {
         body.extend_from_slice(&chunk);
         if body.len() > limit {
-            return Err(too_large(limit));
+            return Err(GraySwanGuardrailAPIError::from_failure(
+                GraySwanFailure::ResponseTooLarge { limit },
+            ));
         }
     }
     Ok(body)
-}
-
-fn too_large(limit: usize) -> GraySwanGuardrailAPIError {
-    GraySwanGuardrailAPIError::from_failure(GraySwanFailure::ResponseTooLarge { limit })
 }

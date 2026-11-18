@@ -25,7 +25,7 @@ use super::grayswan_monitoring::call::call_grayswan_api;
 use super::grayswan_monitoring::failure::{GuardrailFailureLog, log_guardrail_failure};
 use super::grayswan_monitoring::helpers::{GuardrailException, is_grayswan_exception};
 use super::grayswan_monitoring::payload::{PreparePayloadRequest, prepare_payload};
-use super::hooks::{SUPPORTED_EVENT_HOOKS, hook_name};
+use super::hooks::hook_name;
 use super::wire::{
     GraySwanInput, GraySwanPayload, GraySwanResponse, GraySwanResult, GraySwanVerdict,
     GraySwanViolatedRule,
@@ -87,9 +87,14 @@ impl GraySwanGuardrail {
         Ok(result)
     }
 
+    // LiteLLM's GraySwanGuardrail.get_supported_event_hooks: pre_call, during_call and post_call
     #[must_use]
     pub fn get_supported_event_hooks() -> Vec<GuardrailEventHooks> {
-        SUPPORTED_EVENT_HOOKS.to_vec()
+        vec![
+            GuardrailEventHooks::PreCall,
+            GuardrailEventHooks::DuringCall,
+            GuardrailEventHooks::PostCall,
+        ]
     }
 
     pub async fn apply_guardrail(
@@ -239,7 +244,7 @@ fn initialized_base(mut base: GuardrailBase, name: &str) -> GuardrailBase {
     if base.settings.guardrail_name.is_none() {
         base.settings.guardrail_name = Some(name.to_owned());
     }
-    base.settings.supported_event_hooks = Some(SUPPORTED_EVENT_HOOKS.to_vec());
+    base.settings.supported_event_hooks = Some(GraySwanGuardrail::get_supported_event_hooks());
     base
 }
 

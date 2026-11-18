@@ -88,6 +88,6 @@ fn header_rows(inbound: BTreeMap<String, String>) -> BTreeMap<String, GuardrailV
 
 // LiteLLM's safe_json_loads(safe_dumps(...), default={}): NUL bytes go, a value over the depth limit becomes its marker
 fn sanitize(metadata: &BTreeMap<String, GuardrailValue>) -> BTreeMap<String, GuardrailValue> {
-    let text = safe_dumps(metadata, DEFAULT_MAX_RECURSE_DEPTH, None).unwrap_or_default();
-    serde_json::from_str(&text).unwrap_or_default()
+    serde_json::from_str(&safe_dumps(metadata, DEFAULT_MAX_RECURSE_DEPTH, None).unwrap_or_default())
+        .unwrap_or_default()
 }
