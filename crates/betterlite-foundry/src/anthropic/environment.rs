@@ -19,7 +19,7 @@ use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
-use crate::anthropic_messages::environment::{ParamsKey, TokenSource};
+use crate::anthropic_messages::environment::{ParamsKey, TokenSource, explicit_key};
 
 const ANTHROPIC_BETA_HEADER: &str = "anthropic-beta";
 const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
@@ -27,20 +27,6 @@ const ANTHROPIC_VERSION: &str = "2023-06-01";
 const TOOLS_FIELD: &str = "tools";
 const MCP_SERVERS_FIELD: &str = "mcp_servers";
 const IS_VERTEX_REQUEST_FIELD: &str = "is_vertex_request";
-
-// This matches the B564 input-shape precedence while the shared helper remains outside this task's scope.
-fn explicit_key<'data>(
-    params_key: ParamsKey<'data>,
-    argument: Option<&'data SecretString>,
-) -> Option<&'data SecretString> {
-    let usable = argument.filter(|key| !key.expose_secret().is_empty());
-    match params_key {
-        ParamsKey::DictNull => None,
-        ParamsKey::Dict(key) => Some(key),
-        ParamsKey::Typed(Some(key)) if !key.expose_secret().is_empty() => Some(key),
-        ParamsKey::DictAbsent | ParamsKey::Typed(_) => usable,
-    }
-}
 
 #[derive(Debug, Error)]
 pub enum EnvironmentError {
