@@ -33,8 +33,9 @@ fn full_row() -> UsageRow {
     ])
 }
 
-fn full_record() -> UsageRecord {
-    UsageRecord {
+#[test]
+fn cloudzero_schedule() {
+    let expected = UsageRecord {
         date: Some("2026-01-01".to_owned()),
         custom_llm_provider: "openai".to_owned(),
         team_id: "team-1".to_owned(),
@@ -55,16 +56,12 @@ fn full_record() -> UsageRecord {
         cache_creation_input_tokens: 2,
         cache_read_input_tokens: 7,
         spend: Decimal::new(125, 2),
-    }
-}
-
-#[test]
-fn cloudzero_schedule() {
+    };
     let nulls = row(&[("date", JsonData::Null), ("spend", JsonData::Null)]);
     let records =
         usage_records(&[full_row(), UsageRow::new(), nulls]).expect("three readable rows");
     assert_eq!(records.len(), 3);
-    assert_eq!(records[0], full_record());
+    assert_eq!(records[0], expected);
     assert_eq!(records[1], UsageRecord::default());
     assert_eq!(records[2], UsageRecord::default());
 }

@@ -95,17 +95,19 @@ where
     Sender: BillingTransport + Clone + Sync,
     Time: Clock + Clone,
 {
-    let Some(lease) = logger
+    match logger
         .lease
         .as_deref()
         .filter(|lease| lease.redis_available())
-    else {
-        return hourly_usage_data_export(logger).await;
-    };
-    if lease.acquire_lock(EXPORT_JOB_NAME).await != Some(true) {
-        return Ok(());
+    {
+        None => hourly_usage_data_export(logger).await,
+        Some(lease) => {
+            if lease.acquire_lock(EXPORT_JOB_NAME).await != Some(true) {
+                return Ok(());
+            }
+            let outcome = hourly_usage_data_export(logger).await;
+            lease.release_lock(EXPORT_JOB_NAME).await;
+            outcome
+        }
     }
-    let outcome = hourly_usage_data_export(logger).await;
-    lease.release_lock(EXPORT_JOB_NAME).await;
-    outcome
 }

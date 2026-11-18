@@ -68,20 +68,23 @@ pub(crate) fn text_field<'row>(
 }
 
 pub(crate) fn integer_field(row: &UsageRow, field: &'static str) -> Result<i64, UsageRowError> {
-    match row.get(field) {
-        None | Some(JsonData::Null) => Ok(0),
-        Some(JsonData::Number(number)) => {
-            number.as_i64().ok_or(UsageRowError::NotInteger { field })
-        }
-        Some(_) => Err(UsageRowError::NotInteger { field }),
+    let Some(value) = row.get(field) else {
+        return Ok(0);
+    };
+    if matches!(value, JsonData::Null) {
+        return Ok(0);
     }
+    let JsonData::Number(number) = value else {
+        return Err(UsageRowError::NotInteger { field });
+    };
+    number.as_i64().ok_or(UsageRowError::NotInteger { field })
 }
 
 pub(crate) fn decimal_field(row: &UsageRow, field: &'static str) -> Result<Decimal, UsageRowError> {
-    match row.get(field) {
-        None | Some(JsonData::Null) => Ok(Decimal::ZERO),
-        Some(JsonData::Number(number)) => Decimal::from_str(number.as_str())
-            .map_err(|source| UsageRowError::Decimal { field, source }),
-        Some(_) => Err(UsageRowError::NotDecimal { field }),
-    }
+    let number = match row.get(field) {
+        None | Some(JsonData::Null) => return Ok(Decimal::ZERO),
+        Some(JsonData::Number(number)) => number,
+        Some(_) => return Err(UsageRowError::NotDecimal { field }),
+    };
+    Decimal::from_str(number.as_str()).map_err(|source| UsageRowError::Decimal { field, source })
 }

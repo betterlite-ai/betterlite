@@ -26,13 +26,10 @@ impl LockCache for FakeCache {
         &self,
         key: &str,
     ) -> impl Future<Output = Result<Option<Vec<u8>>, LockCacheError>> + Send {
-        let owner = self
-            .owners
-            .lock()
-            .expect("an unsplit lock")
-            .get(key)
-            .cloned();
-        ready(Ok(owner))
+        match self.owners.lock().expect("an unsplit lock").get(key) {
+            Some(owner) => ready(Ok(Some(owner.clone()))),
+            None => ready(Ok(None)),
+        }
     }
 
     fn set_owner_if_absent(
@@ -52,19 +49,15 @@ impl LockCache for FakeCache {
     }
 
     fn delete(&self, key: &str) -> impl Future<Output = Result<i64, LockCacheError>> + Send {
-        let removed = self
-            .owners
+        let removed = self.owners.lock().expect("an unsplit lock").remove(key);
+        if removed.is_none() {
+            return ready(Ok(0));
+        }
+        self.deleted
             .lock()
             .expect("an unsplit lock")
-            .remove(key)
-            .is_some();
-        if removed {
-            self.deleted
-                .lock()
-                .expect("an unsplit lock")
-                .push(key.to_owned());
-        }
-        ready(Ok(if removed { 1 } else { 0 }))
+            .push(key.to_owned());
+        ready(Ok(1))
     }
 
     fn compare_and_delete_script(&self) -> Option<Arc<dyn LockScript>> {

@@ -163,32 +163,22 @@ pub(crate) fn cbf_summary(records: &[CbfRecord]) -> Result<DryRunSummary, DryRun
     })
 }
 
+// The sample summary reads the same totals as the CBF path, since a spend row carries no dimensions.
 pub(crate) fn sample_summary(sample: &[UsageRow]) -> Result<DryRunSummary, DryRunError> {
-    let mut total_cost = Decimal::ZERO;
-    let mut total_tokens = 0_i64;
+    let mut records = Vec::with_capacity(sample.len());
     for row in sample {
-        let spend = decimal_field(row, "spend")?;
-        total_cost = total_cost
-            .checked_add(spend)
-            .ok_or(DryRunError::TotalOverflow {
-                field: "total_cost",
-            })?;
-        let row_tokens = integer_field(row, "prompt_tokens")?
+        let tokens = integer_field(row, "prompt_tokens")?
             .checked_add(integer_field(row, "completion_tokens")?)
             .ok_or(DryRunError::TotalOverflow {
                 field: "total_tokens",
             })?;
-        total_tokens = total_tokens
-            .checked_add(row_tokens)
-            .ok_or(DryRunError::TotalOverflow {
-                field: "total_tokens",
-            })?;
+        records.push(CbfRecord::from([
+            (
+                "cost/cost".to_owned(),
+                CbfValue::Money(decimal_field(row, "spend")?),
+            ),
+            ("usage/amount".to_owned(), CbfValue::Integer(tokens)),
+        ]));
     }
-    Ok(DryRunSummary {
-        total_records: sample.len(),
-        total_cost,
-        total_tokens,
-        unique_accounts: 0,
-        unique_services: 0,
-    })
+    cbf_summary(&records)
 }
