@@ -1,0 +1,107 @@
+kind: helper
+name: bedrock-converse-request-thinking-history-policy
+call:
+  bedrock_converse_request:
+    model: anthropic.claude-4-5-test
+    messages:
+      - {role: user, content: go}
+      - role: assistant
+        content: ""
+        tool_calls:
+          - {id: call_1, type: function, function: {name: lookup, arguments: "{}"}}
+      - {role: tool, tool_call_id: call_1, content: "{}"}
+    model_cost:
+      anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+    optional_params:
+      thinking: {type: enabled, budget_tokens: 1024}
+      tools:
+        - type: function
+          function:
+            name: lookup
+            description: finds things
+            parameters: {type: object, properties: {}}
+    litellm_params: {}
+    global_drop: false
+    modify_params: true
+    neutralize_orphaned_blocks: true
+    request_metadata_fields: null
+calls:
+  - bedrock_converse_request:
+      model: anthropic.claude-4-5-test
+      messages:
+        - {role: user, content: go}
+        - role: assistant
+          content: plan
+          thinking_blocks:
+            - {type: thinking, thinking: t, signature: sig}
+        - role: assistant
+          content: ""
+          tool_calls:
+            - {id: call_1, type: function, function: {name: lookup, arguments: "{}"}}
+        - {role: tool, tool_call_id: call_1, content: "{}"}
+      model_cost:
+        anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+      optional_params:
+        thinking: {type: enabled, budget_tokens: 1024}
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+      litellm_params: {}
+      global_drop: false
+      modify_params: true
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-4-5-test
+      messages:
+        - {role: user, content: go}
+        - role: assistant
+          content: ""
+          tool_calls:
+            - {id: call_1, type: function, function: {name: lookup, arguments: "{}"}}
+        - {role: tool, tool_call_id: call_1, content: "{}"}
+      model_cost:
+        anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+      optional_params:
+        thinking: {type: enabled, budget_tokens: 1024}
+        tools:
+          - type: function
+            function:
+              name: lookup
+              description: finds things
+              parameters: {type: object, properties: {}}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-3-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-3-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, supports_native_structured_output: true, supports_output_config: true, supports_adaptive_thinking: false}
+      optional_params:
+        thinking: {type: disabled}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+  - bedrock_converse_request:
+      model: anthropic.claude-4-5-test
+      messages: [{role: user, content: hi}]
+      model_cost:
+        anthropic.claude-4-5-test: {litellm_provider: bedrock, supports_prompt_caching: true, cache_creation_input_token_cost_above_1hr: 0.0000024, supports_parallel_tool_use_config: true, thinking_always_on: true, supports_adaptive_thinking: false}
+      optional_params:
+        thinking: {type: disabled}
+      litellm_params: {}
+      global_drop: false
+      modify_params: false
+      neutralize_orphaned_blocks: true
+      request_metadata_fields: null
+env: {}
+compare: {ignore: []}

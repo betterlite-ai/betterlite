@@ -78,6 +78,13 @@ description: >-
   adapter lines plus 300 test lines. No new byte decoder is introduced.
 scope:
   paths:
+    - "crates/betterlite-logging/src/otel/v2_callback/callback.rs"
+    - "crates/betterlite-logging/src/otel/plumbing/exporters.rs"
+    - "crates/betterlite-logging/src/otel/logger/v2.rs"
+    - "crates/betterlite-logging/src/otel/langfuse_root.rs"
+    - "crates/betterlite-logging/src/otel/emitter/span_emission.rs"
+    - "crates/betterlite-logging/src/otel_provider_assembly/tracer_provider_assembly.rs"
+    - "crates/betterlite-logging/src/otel/fan_out/attach.rs"
     - crates/betterlite-logging/src/otel/logger_runtime.rs
     - crates/betterlite-logging/src/otel/logger_runtime/**
     - tools/oracle/cases/helpers/otel-logger-runtime/**
