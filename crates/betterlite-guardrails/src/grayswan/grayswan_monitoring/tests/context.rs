@@ -181,7 +181,8 @@ fn post_call_context_skips_system_messages_when_the_scope_asks() {
     let routes = route_catalog();
     let scope = ScopeFlags {
         skip_system_message: true,
-        ..ScopeFlags::default()
+        skip_tool_message: false,
+        scan: ScanScope::AllMessages,
     };
     let (messages, _tools) = run_context(
         &routed_data("/v1/chat/completions"),
@@ -201,8 +202,9 @@ fn post_call_context_skips_tool_messages_when_the_scope_asks() {
     let registry = registry_for(&translation, CallType::Completion);
     let routes = route_catalog();
     let scope = ScopeFlags {
+        skip_system_message: false,
         skip_tool_message: true,
-        ..ScopeFlags::default()
+        scan: ScanScope::AllMessages,
     };
     let (messages, _tools) = run_context(
         &routed_data("/v1/chat/completions"),
@@ -222,8 +224,9 @@ fn post_call_context_keeps_only_tool_results_in_a_tool_scope() {
     let registry = registry_for(&translation, CallType::Completion);
     let routes = route_catalog();
     let scope = ScopeFlags {
+        skip_system_message: false,
+        skip_tool_message: false,
         scan: ScanScope::ToolResultsOnly,
-        ..ScopeFlags::default()
     };
     let mut data = routed_data("/v1/chat/completions");
     data.insert(
@@ -249,7 +252,8 @@ fn post_call_context_returns_nothing_when_every_message_is_skipped() {
     );
     let scope = ScopeFlags {
         skip_system_message: true,
-        ..ScopeFlags::default()
+        skip_tool_message: false,
+        scan: ScanScope::AllMessages,
     };
     let (messages, tools) = run_context(&data, None, scope, &registry, &routes);
     assert!(messages.is_empty());

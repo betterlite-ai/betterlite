@@ -22,7 +22,9 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
     let empty = Object::new();
     let dynamic_categories = GraySwanDynamicParams {
         categories: Some(BTreeMap::from([("dynamic".to_owned(), "block".to_owned())])),
-        ..GraySwanDynamicParams::default()
+        policy_id: None,
+        reasoning_mode: None,
+        metadata: None,
     };
     assert_eq!(
         prepare_payload(
@@ -42,7 +44,9 @@ fn prepare_payload_prefers_dynamic_categories_and_falls_back_to_configured() {
     );
     let dynamic_empty = GraySwanDynamicParams {
         categories: Some(BTreeMap::new()),
-        ..GraySwanDynamicParams::default()
+        policy_id: None,
+        reasoning_mode: None,
+        metadata: None,
     };
     assert_eq!(
         prepare_payload(&settings, request_with(Vec::new(), &dynamic_empty, &empty)).categories,
@@ -64,8 +68,10 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
     settings.policy_id = "configured".to_owned();
     let empty = Object::new();
     let dynamic_policy = GraySwanDynamicParams {
+        categories: None,
         policy_id: Some("dynamic".to_owned()),
-        ..GraySwanDynamicParams::default()
+        reasoning_mode: None,
+        metadata: None,
     };
     assert_eq!(
         prepare_payload(&settings, request_with(Vec::new(), &dynamic_policy, &empty))
@@ -81,8 +87,10 @@ fn prepare_payload_prefers_the_dynamic_policy_and_falls_back_to_configured() {
         Some("configured")
     );
     let dynamic_empty = GraySwanDynamicParams {
+        categories: None,
         policy_id: Some(String::new()),
-        ..GraySwanDynamicParams::default()
+        reasoning_mode: None,
+        metadata: None,
     };
     assert_eq!(
         prepare_payload(&settings, request_with(Vec::new(), &dynamic_empty, &empty))
@@ -103,8 +111,10 @@ fn prepare_payload_prefers_the_dynamic_reasoning_mode_and_falls_back_to_configur
     settings.reasoning_mode = Some(ReasoningMode::Off);
     let empty = Object::new();
     let dynamic_thinking = GraySwanDynamicParams {
+        categories: None,
+        policy_id: None,
         reasoning_mode: Some(ReasoningMode::Thinking),
-        ..GraySwanDynamicParams::default()
+        metadata: None,
     };
     assert_eq!(
         prepare_payload(
@@ -130,8 +140,10 @@ fn prepare_payload_prefers_the_dynamic_reasoning_mode_and_falls_back_to_configur
 fn prepare_payload_keeps_the_dynamic_metadata() {
     let metadata = object(vec![("trace", text("t"))]);
     let dynamic = GraySwanDynamicParams {
+        categories: None,
+        policy_id: None,
+        reasoning_mode: None,
         metadata: Some(metadata.clone()),
-        ..GraySwanDynamicParams::default()
     };
     let payload = prepare_payload(
         &settings(),

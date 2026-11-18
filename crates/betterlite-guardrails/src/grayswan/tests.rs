@@ -32,7 +32,7 @@ use crate::generic_guardrail_contracts::{
     GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
 };
 use crate::guardrail_base::GuardrailBase;
-use crate::guardrail_base::settings::GuardrailSettings;
+use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::third_party_init_a::grayswan::GraySwanArgs;
 
 #[path = "grayswan_monitoring/tests.rs"]
@@ -325,7 +325,7 @@ fn grayswan_error_status_follows_litellm(
     #[case] status: StatusCode,
     #[case] carried: Option<u16>,
 ) {
-    assert_eq!(failure.http_status(), status);
+    assert_eq!(failure.statuses(), (status, carried));
     let error = GraySwanGuardrailAPIError::from_failure(failure);
     assert_eq!(error.status_code, carried);
     assert_eq!(error.http_status(), status);

@@ -33,36 +33,26 @@ pub enum GraySwanFailure {
 }
 
 impl GraySwanFailure {
+    // LiteLLM's getattr(exc, "status_code", None) beside the status its handler answers with
     #[must_use]
-    pub const fn http_status(&self) -> StatusCode {
+    pub const fn statuses(&self) -> (StatusCode, Option<u16>) {
         match self {
-            Self::Timeout { .. } => StatusCode::REQUEST_TIMEOUT,
+            Self::Timeout { .. } => (StatusCode::REQUEST_TIMEOUT, None),
             Self::HttpStatus { status } => {
                 if matches!(status.as_u16(), 400..=599) {
-                    *status
+                    (*status, Some(status.as_u16()))
                 } else {
-                    StatusCode::INTERNAL_SERVER_ERROR
+                    (StatusCode::INTERNAL_SERVER_ERROR, Some(status.as_u16()))
                 }
             }
-            Self::Blocked { .. } => StatusCode::BAD_REQUEST,
+            Self::Blocked { .. } => (
+                StatusCode::BAD_REQUEST,
+                Some(StatusCode::BAD_REQUEST.as_u16()),
+            ),
             Self::Request { .. }
             | Self::InvalidHeader { .. }
             | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    // LiteLLM's getattr(exc, "status_code", None): only an HTTP error or a block carries one
-    #[must_use]
-    pub const fn carried_status(&self) -> Option<u16> {
-        match self {
-            Self::HttpStatus { status } => Some(status.as_u16()),
-            Self::Blocked { .. } => Some(StatusCode::BAD_REQUEST.as_u16()),
-            Self::Timeout { .. }
-            | Self::Request { .. }
-            | Self::InvalidHeader { .. }
-            | Self::ResponseTooLarge { .. }
-            | Self::ResponseJson { .. } => None,
+            | Self::ResponseJson { .. } => (StatusCode::INTERNAL_SERVER_ERROR, None),
         }
     }
 }
@@ -89,19 +79,20 @@ impl GraySwanGuardrailAPIError {
 
     #[must_use]
     pub fn from_failure(failure: GraySwanFailure) -> Self {
+        let status_code = failure.statuses().1;
         Self {
             message: failure.to_string(),
-            status_code: failure.carried_status(),
+            status_code,
             cause: Some(failure),
         }
     }
 
     #[must_use]
     pub fn http_status(&self) -> StatusCode {
-        self.cause.as_ref().map_or(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            GraySwanFailure::http_status,
-        )
+        let Some(failure) = &self.cause else {
+            return StatusCode::INTERNAL_SERVER_ERROR;
+        };
+        failure.statuses().0
     }
 }
 
