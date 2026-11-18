@@ -179,7 +179,7 @@ async fn a_reentrant_acquire_succeeds_without_renewing_the_expiry() {
     let mut connection = raw(&fixture).await;
     let shortened: i64 = cmd("PEXPIRE")
         .arg(LEASE_KEY)
-        .arg(5000)
+        .arg(5_000_i64)
         .query_async(&mut connection)
         .await
         .unwrap();
@@ -237,7 +237,7 @@ async fn another_pod_acquires_after_the_key_expires() {
     let mut connection = raw(&fixture).await;
     let shortened: i64 = cmd("PEXPIRE")
         .arg(LEASE_KEY)
-        .arg(1)
+        .arg(1_i64)
         .query_async(&mut connection)
         .await
         .unwrap();
