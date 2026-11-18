@@ -307,6 +307,18 @@ async fn build_from_env_keeps_the_default_socket_timeout_for_an_empty_value() {
     assert_eq!(cache.transport.settings.socket_timeout, Some(5.0_f64));
 }
 
+// RedisCache's own socket_timeout default of 5.0 overrides REDIS_SOCKET_TIMEOUT on the block path, the way litellm's signature default does.
+#[tokio::test]
+async fn build_usage_redis_keeps_the_cache_default_timeout_over_the_environment() {
+    let port = closed_port();
+    let block = params(&format!(r#"{{"host": "127.0.0.1", "port": {port}}}"#));
+    let env = environment(&[("REDIS_SOCKET_TIMEOUT", "2.5")]);
+    let cache = build_usage_redis(&block, &wiring(), &env)
+        .await
+        .expect("the block client builds");
+    assert_eq!(cache.transport.settings.socket_timeout, Some(5.0_f64));
+}
+
 #[tokio::test]
 async fn build_usage_redis_keeps_the_credentials_secret() {
     let port = closed_port();
