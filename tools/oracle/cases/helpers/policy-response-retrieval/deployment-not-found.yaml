@@ -1,0 +1,18 @@
+kind: helper
+name: policy-response-retrieval-deployment-not-found
+call:
+  b3269:
+    data:
+      response_id: resp_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpkZXAtZ29uZTtyZXNwb25zZV9pZDpyMQ==
+      metadata: {caller: kept}
+    auth: {team_alias: null, key_alias: null}
+    router:
+      deployments: {dep-1: gpt-4o}
+      aliases: []
+    policies:
+      p1:
+        pipeline: {mode: post_call, steps: [{guardrail: g1}]}
+    attachments:
+      - {policy: p1, scope: "*"}
+env: {}
+compare: {ignore: []}

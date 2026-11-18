@@ -1,0 +1,17 @@
+kind: helper
+name: responses-stream-error-sequence-number
+call:
+  b3673:
+    operation: responses_stream_error
+    message: policy blocked
+    model: gpt-test
+    original_response: null
+    stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
+    events:
+      - {type: response.output_text.delta, sequence_number: 5}
+      - {type: response.output_item.done, output_index: 0}
+    chunks: []
+    status_code: 403
+    message_id: msg_00000000-0000-0000-0000-000000000001
+env: {}
+compare: {ignore: []}
