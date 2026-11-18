@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "service-logging-service-success", "call": {"service_logging": {"op": "service_success", "service": "redis", "call_type": "async_set_cache", "duration": 0.25, "caller": "get_cache"}}, "env": {}, "compare": {"ignore": []}}

@@ -1,0 +1,43 @@
+kind: helper
+name: console-placeholder-not-operator
+call:
+  b8910:
+    function: has_operator_exporter
+    config:
+      exporters:
+        - {}
+      mapper_names: [genai]
+      capture_message_content: no_content
+calls:
+  - b8910:
+      function: has_operator_exporter
+      config:
+        exporters:
+          - {}
+          - endpoint: https://collector.example/v1/traces
+            headers: authorization=Bearer operator
+        mapper_names: [genai]
+        capture_message_content: no_content
+  - b8910:
+      function: has_operator_exporter
+      config:
+        exporters:
+          - requires_headers: true
+        mapper_names: [genai]
+        capture_message_content: no_content
+  - b8910:
+      function: has_operator_exporter
+      config:
+        exporters: []
+        mapper_names: [genai]
+        capture_message_content: no_content
+  - b8910:
+      function: has_operator_exporter
+      config:
+        exporters:
+          - traces_endpoint: https://collector.example/v1/traces
+        mapper_names: [genai]
+        capture_message_content: no_content
+env: {}
+compare:
+  ignore: []

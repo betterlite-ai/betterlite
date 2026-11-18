@@ -1,0 +1,10 @@
+kind: helper
+name: sso-mappings-environment-missing-variable
+call:
+  sso_mapping_input:
+    environment:
+      GENERIC_USERINFO_ENDPOINT: https://idp.example.com/userinfo
+    calls:
+      - function: env_vars
+env: {}
+compare: {ignore: []}

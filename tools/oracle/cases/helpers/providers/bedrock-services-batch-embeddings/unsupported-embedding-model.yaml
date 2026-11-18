@@ -1,0 +1,44 @@
+kind: helper
+name: unsupported-embedding-model
+call:
+  bedrock_services_batch_embeddings:
+    function: map_embedding
+    model_cost:
+      "amazon.titan-embed-text-v1": {litellm_provider: bedrock, mode: embedding}
+      "amazon.titan-embed-text-v2:9":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: cohere_v3}}
+      "cohere.embed-english-v3":
+        {litellm_provider: bedrock, mode: embedding, provider_specific_entry: flat}
+    model: "amazon.titan-embed-text-v1"
+    body:
+      model: "amazon.titan-embed-text-v1"
+calls:
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "amazon.titan-embed-text-v2:9":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: {bedrock_invocation_schema: cohere_v3}}
+      model: "amazon.titan-embed-text-v2:9"
+      body:
+        model: "amazon.titan-embed-text-v2:9"
+        input: hello
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost:
+        "cohere.embed-english-v3":
+          {litellm_provider: bedrock, mode: embedding, provider_specific_entry: flat}
+      model: "cohere.embed-english-v3"
+      body:
+        model: "cohere.embed-english-v3"
+        input: hello
+  - bedrock_services_batch_embeddings:
+      function: map_embedding
+      model_cost: {}
+      model: "cohere.embed-v4"
+      body:
+        model: "cohere.embed-v4"
+        input: [first, second]
+        encoding_format: base64
+env: {}
+compare:
+  ignore: []
