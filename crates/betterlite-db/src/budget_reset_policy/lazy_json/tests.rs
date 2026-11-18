@@ -4,6 +4,7 @@ use super::LazyJson;
 use crate::budget_reset_policy::tests::logging::{Logs, subscriber};
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::fmt::write;
 use tracing::subscriber::set_default;
 
 #[derive(Serialize)]
@@ -36,7 +37,7 @@ fn lazy_json_renders_inside_a_log_record() {
 fn lazy_json_surfaces_a_serialization_failure_to_the_formatter() {
     let failing = BTreeMap::from([((1_u8, 2_u8), 3_u8)]);
     let mut out = String::new();
-    let result = std::fmt::write(
+    let result = write(
         &mut out,
         format_args!("{json:?}", json = LazyJson(&failing)),
     );
