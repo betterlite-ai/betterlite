@@ -13,12 +13,16 @@ description: >-
   unified ids fail before database/storage access. Remove the previous dependencies on managed
   repositories/backends; there is no reachable storage download branch here in the MIT proxy.
   Provider hints use path, custom-llm-provider header, custom_llm_provider query/body, then openai.
+  The header, query and body values come from B2400's get_custom_llm_provider_from_request_headers,
+  _query and _body accessors (betterlite-server api::proxy_endpoint_support); the route applies the order.
 
   Provider alone selects streaming, not a stream query parameter. Buffered replies return a new
   Response with upstream status/headers, losing the custom headers written on fastapi_response.
   Streaming replies default to 200 and merge provider headers then B004 custom headers, with
   application/octet-stream only as the fallback media type. Preserve this observable difference.
   Add HTTP oracle scenarios through B900/B1139 with master key sk-test and ordinary seeded keys;
+  a seeded key passes auth through B755's VirtualKeyValidation stage (betterlite-auth auth_key_validation,
+  registered in B732's server state), and
   no helper imports a FastAPI function. Tests use api::file_content_route::tests in both crates.
   The 337 nonblank/non-comment lines including the two moved methods need 285 implementation,
   185 tests, 220 cases and 40 wiring lines, 730 total. Existing body/ID/transport decoders are reused.

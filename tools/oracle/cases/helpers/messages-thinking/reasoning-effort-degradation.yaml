@@ -1,0 +1,87 @@
+kind: helper
+name: reasoning-effort-degradation
+call:
+  messages_thinking:
+    model_cost:
+      deployment-a: {litellm_provider: openai, supports_reasoning: true, reasoning_effort_levels: [high]}
+      deployment-b: {litellm_provider: openai, supports_reasoning: true, reasoning_effort_levels: [xhigh, high]}
+      deployment-c: {litellm_provider: openai, supports_reasoning: true, reasoning_effort_levels: [medium]}
+      deployment-d: {litellm_provider: openai, supports_reasoning: true, reasoning_effort_levels: [none]}
+      deployment-e: {litellm_provider: openai, supports_reasoning: true, reasoning_effort_levels: []}
+      deployment-f: {litellm_provider: openai, supports_reasoning: true, reasoning_effort_levels: [low]}
+      deployment-g: {litellm_provider: openai, supports_reasoning: true}
+    calls:
+      - function: normalize_effort
+        effort: max
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: xhigh
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: minimal
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: max
+        model: deployment-b
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: xhigh
+        model: deployment-b
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: minimal
+        model: deployment-f
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: max
+        model: deployment-c
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: max
+        model: deployment-d
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: xhigh
+        model: deployment-d
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: minimal
+        model: deployment-d
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: max
+        model: deployment-e
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: max
+        model: deployment-g
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: max
+        model: missing-model
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: low
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: medium
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: high
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: none
+        model: deployment-a
+        custom_llm_provider: openai
+      - function: normalize_effort
+        effort: bogus
+        model: deployment-a
+        custom_llm_provider: openai
+env: {}
+compare: {ignore: []}

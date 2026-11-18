@@ -1,0 +1,12 @@
+task: B3704
+deviations:
+  - what: >-
+      LITELLM_SENSITIVE_ROUTING_TTL must parse as an unsigned 64-bit number of seconds; a negative
+      value, or one above u64::MAX, fails the config load with an error naming the variable.
+    why: >-
+      LiteLLM's int(os.getenv(...)) accepts any Python integer. A negative TTL then reaches Redis as an
+      invalid expire time and the in-memory tier as an already-expired entry, so the override never
+      sticks; no working setup can rely on it. betterlite types the TTL as u64 and reads the value
+      through the shared environment number parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/sensitive_data_routing.py#L45-L52
+kept_bugs: []
