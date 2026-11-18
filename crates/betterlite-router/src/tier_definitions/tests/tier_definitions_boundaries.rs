@@ -8,13 +8,13 @@ use crate::tier_definitions::checks::{
     ClassifierFallback, ClassifierKind, OrderFeature, TierChecks,
 };
 use crate::tier_definitions::error::{DefinitionConflict, TierDefinitionsError};
+use crate::tier_definitions::model::label_for;
 use crate::tier_definitions::tests::{
-    blank, checked, custom, custom_with, error, labels, ladder, llm, order_features, pool, pools,
-    single,
+    base_checks, blank, checked, custom, custom_with, error, labels, ladder, llm, order_features,
+    pool, pools, single,
 };
 
-// a two-tier custom set whose first definition name and first pool key are given separately, so a
-// test can spell a padded name while the pool key stays the stripped one
+// a two-tier custom set whose definition name and pool key differ, so a test can spell a padded name
 fn named_definition(name: &str, pool_key: &str, description: Option<&str>) -> section::Config {
     let definitions = vec![
         section::TierDefinition {
@@ -47,7 +47,7 @@ fn the_definition_count_bounds_are_two_and_eight(#[case] count: usize, #[case] a
     let checks = llm("TIER_0");
     if accepted {
         let set = checked(config, &checks);
-        assert_eq!(set.definitions().unwrap().len(), count);
+        assert_eq!(set.definitions.as_deref().unwrap().len(), count);
         return;
     }
     assert!(matches!(
@@ -56,15 +56,33 @@ fn the_definition_count_bounds_are_two_and_eight(#[case] count: usize, #[case] a
     ));
 }
 
-#[test]
-fn a_definition_name_at_the_character_limit_is_accepted() {
-    let bare = "x".repeat(64);
-    let padded = format!("  {bare}  ");
-    for name in [bare.clone(), padded] {
-        let config = named_definition(&name, &bare, Some("asks"));
-        let set = checked(config, &llm("SECOND"));
-        assert_eq!(set.definitions().unwrap()[0].name(), bare);
+// the same value bare or wrapped in the spaces a definition strips
+fn spaced(value: &str, padded: bool) -> String {
+    if padded {
+        format!("  {value}  ")
+    } else {
+        value.to_owned()
     }
+}
+
+#[rstest]
+#[case::bare(false)]
+#[case::padded(true)]
+fn definition_fields_at_the_character_limit_are_accepted(#[case] padded: bool) {
+    let name = "x".repeat(64);
+    let description = "d".repeat(500);
+    let config = named_definition(
+        &spaced(&name, padded),
+        &name,
+        Some(&spaced(&description, padded)),
+    );
+    let set = checked(config, &llm("SECOND"));
+    let definition = &set.definitions.as_deref().unwrap()[0];
+    assert_eq!(definition.name, name);
+    assert_eq!(
+        definition.description.as_deref(),
+        Some(description.as_str())
+    );
 }
 
 #[rstest]
@@ -76,20 +94,6 @@ fn a_definition_name_over_the_character_limit_is_rejected(#[case] name: String) 
         error(config, &llm("SECOND")),
         TierDefinitionsError::NameTooLong { max: 64, .. }
     ));
-}
-
-#[test]
-fn a_description_at_the_character_limit_is_accepted() {
-    let bare = "d".repeat(500);
-    let padded = format!("  {bare}  ");
-    for description in [bare.clone(), padded] {
-        let config = named_definition("ECO", "ECO", Some(&description));
-        let set = checked(config, &llm("SECOND"));
-        assert_eq!(
-            set.definitions().unwrap()[0].description(),
-            Some(bare.as_str())
-        );
-    }
 }
 
 #[test]
@@ -127,12 +131,10 @@ fn a_custom_tier_needs_a_description(#[case] description: Option<&str>) {
 #[test]
 fn a_built_in_name_inherits_its_description_in_any_case() {
     let config = named_definition("simple", "simple", None);
-    let definitions = checked(config, &llm("SECOND"))
-        .definitions()
-        .unwrap()
-        .to_vec();
-    assert_eq!(definitions[0].name(), "simple");
-    assert_eq!(definitions[0].description(), None);
+    let set = checked(config, &llm("SECOND"));
+    let definitions = set.definitions.as_deref().unwrap();
+    assert_eq!(definitions[0].name, "simple");
+    assert_eq!(definitions[0].description.as_deref(), None);
 }
 
 #[rstest]
@@ -172,7 +174,7 @@ fn a_repeated_definition_name_is_rejected_case_insensitively() {
 fn a_custom_set_without_a_fallback_is_rejected() {
     let checks = TierChecks {
         classifier_type: ClassifierKind::Llm,
-        ..TierChecks::default()
+        ..base_checks()
     };
     assert!(matches!(
         error(custom(), &checks),
@@ -193,7 +195,7 @@ fn a_fallback_outside_the_defined_names_is_rejected() {
 fn a_fallback_without_a_custom_set_is_rejected() {
     let checks = TierChecks {
         fallback_tier: Some("ECO"),
-        ..TierChecks::default()
+        ..base_checks()
     };
     assert!(matches!(
         error(blank(), &checks),
@@ -279,7 +281,7 @@ fn an_enabled_non_reasoning_tier_needs_a_pool(#[case] configured: Option<section
     };
     let checks = TierChecks {
         classifier_type: ClassifierKind::Llm,
-        ..TierChecks::default()
+        ..base_checks()
     };
     assert!(matches!(
         error(config, &checks),
@@ -315,7 +317,7 @@ fn an_enabled_non_reasoning_tier_cannot_join_a_custom_set() {
 }
 
 #[test]
-fn blank_labels_are_rejected_sorted_by_tier_name() {
+fn blank_labels_are_rejected_in_severity_order() {
     let config = section::Config {
         tier_labels: labels(&[("SIMPLE", "  "), ("MEDIUM", "")]),
         ..blank()
@@ -323,7 +325,7 @@ fn blank_labels_are_rejected_sorted_by_tier_name() {
     assert!(matches!(
         error(config, &TierChecks::default()),
         TierDefinitionsError::BlankLabels { tiers }
-            if tiers == [ComplexityTier::Medium, ComplexityTier::Simple]
+            if tiers == [ComplexityTier::Simple, ComplexityTier::Medium]
     ));
 }
 
@@ -347,7 +349,7 @@ fn a_label_that_spells_its_own_tier_is_accepted() {
         ..blank()
     };
     let set = checked(config, &TierChecks::default());
-    assert_eq!(set.label(ComplexityTier::Simple), "simple");
+    assert_eq!(label_for(&set.labels, ComplexityTier::Simple), "simple");
 }
 
 #[test]
@@ -376,17 +378,28 @@ fn a_label_for_an_unknown_tier_is_rejected() {
 }
 
 #[rstest]
-#[case::heuristic(ClassifierKind::Heuristic)]
-#[case::heuristic_v2(ClassifierKind::HeuristicV2)]
-#[case::capability(ClassifierKind::Capability)]
-#[case::heuristic_first(ClassifierKind::HeuristicFirst)]
-#[case::hybrid(ClassifierKind::Hybrid)]
-fn a_classifier_that_cannot_emit_custom_tiers_is_rejected(#[case] classifier: ClassifierKind) {
+#[case::heuristic(ClassifierKind::Heuristic, false)]
+#[case::heuristic_v2(ClassifierKind::HeuristicV2, false)]
+#[case::capability(ClassifierKind::Capability, false)]
+#[case::heuristic_first(ClassifierKind::HeuristicFirst, false)]
+#[case::hybrid(ClassifierKind::Hybrid, false)]
+#[case::llm(ClassifierKind::Llm, true)]
+#[case::custom(ClassifierKind::Custom, true)]
+#[case::jev(ClassifierKind::Jev, true)]
+fn only_llm_custom_and_jev_classifiers_emit_custom_tiers(
+    #[case] classifier: ClassifierKind,
+    #[case] accepted: bool,
+) {
     let checks = TierChecks {
         classifier_type: classifier,
         fallback_tier: Some("ECO"),
-        ..TierChecks::default()
+        ..base_checks()
     };
+    if accepted {
+        let set = checked(custom(), &checks);
+        assert_eq!(set.tier_names(), ["ECO", "DEEP"]);
+        return;
+    }
     assert!(matches!(
         error(custom(), &checks),
         TierDefinitionsError::ClassifierCannotEmitTiers { classifier: reported }
@@ -395,55 +408,40 @@ fn a_classifier_that_cannot_emit_custom_tiers_is_rejected(#[case] classifier: Cl
 }
 
 #[rstest]
-#[case::llm(ClassifierKind::Llm)]
-#[case::custom(ClassifierKind::Custom)]
-#[case::jev(ClassifierKind::Jev)]
-fn a_classifier_that_can_emit_custom_tiers_is_accepted(#[case] classifier: ClassifierKind) {
+#[case::llm(ClassifierKind::Llm, true, true)]
+#[case::custom(ClassifierKind::Custom, false, true)]
+#[case::jev(ClassifierKind::Jev, false, true)]
+#[case::capability(ClassifierKind::Capability, true, false)]
+#[case::llm_v2(ClassifierKind::LlmV2, true, false)]
+#[case::heuristic_first(ClassifierKind::HeuristicFirst, true, false)]
+#[case::hybrid(ClassifierKind::Hybrid, true, false)]
+#[case::heuristic(ClassifierKind::Heuristic, false, false)]
+#[case::heuristic_v2(ClassifierKind::HeuristicV2, false, false)]
+fn the_llm_and_non_reasoning_classifier_sets_match_litellm(
+    #[case] classifier: ClassifierKind,
+    #[case] uses_llm: bool,
+    #[case] emits_non_reasoning: bool,
+) {
+    assert_eq!(classifier.uses_llm(), uses_llm);
+    let config = section::Config {
+        tier_models: pools(&[("NON_REASONING", single("mini"))]),
+        non_reasoning_tier: true,
+        ..blank()
+    };
     let checks = TierChecks {
         classifier_type: classifier,
-        fallback_tier: Some("ECO"),
-        ..TierChecks::default()
+        ..base_checks()
     };
-    let set = checked(custom(), &checks);
-    assert_eq!(set.tier_names(), ["ECO", "DEEP"]);
-}
-
-#[test]
-fn the_llm_and_non_reasoning_classifier_sets_match_liteellm() {
-    for kind in [
-        ClassifierKind::Llm,
-        ClassifierKind::Capability,
-        ClassifierKind::LlmV2,
-        ClassifierKind::HeuristicFirst,
-        ClassifierKind::Hybrid,
-    ] {
-        assert!(kind.uses_llm(), "{kind}");
+    if emits_non_reasoning {
+        let set = checked(config, &checks);
+        assert!(set.non_reasoning);
+        return;
     }
-    for kind in [
-        ClassifierKind::Heuristic,
-        ClassifierKind::HeuristicV2,
-        ClassifierKind::Custom,
-        ClassifierKind::Jev,
-    ] {
-        assert!(!kind.uses_llm(), "{kind}");
-    }
-    for kind in [
-        ClassifierKind::Llm,
-        ClassifierKind::Custom,
-        ClassifierKind::Jev,
-    ] {
-        assert!(kind.emits_non_reasoning(), "{kind}");
-    }
-    for kind in [
-        ClassifierKind::Heuristic,
-        ClassifierKind::HeuristicV2,
-        ClassifierKind::Capability,
-        ClassifierKind::LlmV2,
-        ClassifierKind::HeuristicFirst,
-        ClassifierKind::Hybrid,
-    ] {
-        assert!(!kind.emits_non_reasoning(), "{kind}");
-    }
+    assert!(matches!(
+        error(config, &checks),
+        TierDefinitionsError::NonReasoningClassifier { classifier: reported }
+            if reported == classifier
+    ));
 }
 
 #[test]
@@ -462,7 +460,7 @@ fn all_order_dependent_features_are_reported_in_one_conflict() {
         llm_system_prompt: Some("whole prompt"),
         classification_rubric: Some("agentic"),
         order_features: &features,
-        ..TierChecks::default()
+        ..base_checks()
     };
     let config = section::Config {
         tier_labels: labels(&[("SIMPLE", "Cheap")]),
@@ -492,7 +490,7 @@ fn a_classifier_conflict_names_the_configured_classifier() {
     let checks = TierChecks {
         classifier_type: ClassifierKind::Hybrid,
         fallback_tier: Some("ECO"),
-        ..TierChecks::default()
+        ..base_checks()
     };
     assert_eq!(
         error(custom(), &checks).to_string(),
@@ -508,7 +506,7 @@ fn every_conflict_is_joined_into_one_message() {
         fallback_tier: Some("ECO"),
         llm_system_prompt: Some("whole prompt"),
         order_features: &features,
-        ..TierChecks::default()
+        ..base_checks()
     };
     let config = section::Config {
         tier_labels: labels(&[("SIMPLE", "Cheap")]),
@@ -526,10 +524,10 @@ fn every_conflict_is_joined_into_one_message() {
 fn a_default_model_fallback_is_allowed_without_custom_tiers() {
     let checks = TierChecks {
         classifier_fallback: ClassifierFallback::DefaultModel,
-        ..TierChecks::default()
+        ..base_checks()
     };
     let set = checked(blank(), &checks);
-    assert!(!set.is_custom());
+    assert!(set.definitions.is_none());
 }
 
 #[test]

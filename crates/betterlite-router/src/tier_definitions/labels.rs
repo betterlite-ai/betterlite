@@ -42,34 +42,25 @@ pub(super) fn validate_labels(
 }
 
 fn blank_labels(labels: &BTreeMap<ComplexityTier, String>) -> Vec<ComplexityTier> {
-    let mut blank: Vec<ComplexityTier> = labels
+    labels
         .iter()
         .filter(|(_, label)| label.trim().is_empty())
         .map(|(tier, _)| *tier)
-        .collect();
-    blank.sort_by_key(|tier| tier.name());
-    blank
+        .collect()
 }
 
 // a label that spells another tier's canonical name, as the tier and the label it spelled
 fn shadowed_labels(labels: &BTreeMap<ComplexityTier, String>) -> Vec<(ComplexityTier, String)> {
-    let mut shadowed: Vec<(ComplexityTier, String)> = labels
-        .iter()
-        .filter_map(|(tier, label)| {
-            let trimmed = label.trim();
-            let named = ComplexityTier::built_in(&trimmed.to_uppercase())?;
-            if named == *tier {
-                return None;
-            }
-            Some((*tier, trimmed.to_owned()))
-        })
-        .collect();
-    shadowed.sort_by(|left, right| {
-        left.0
-            .name()
-            .cmp(right.0.name())
-            .then_with(|| left.1.cmp(&right.1))
-    });
+    let mut shadowed: Vec<(ComplexityTier, String)> = Vec::new();
+    for (tier, label) in labels {
+        let trimmed = label.trim();
+        let Some(named) = ComplexityTier::built_in(&trimmed.to_uppercase()) else {
+            continue;
+        };
+        if named != *tier {
+            shadowed.push((*tier, trimmed.to_owned()));
+        }
+    }
     shadowed
 }
 

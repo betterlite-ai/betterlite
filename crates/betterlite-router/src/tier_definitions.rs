@@ -22,7 +22,11 @@ impl TierSet {
         let ladder = input
             .tier_definitions
             .as_deref()
-            .map(definitions::normalize_definitions)
+            .map(|raw| {
+                raw.iter()
+                    .map(definitions::normalize_definition)
+                    .collect::<Result<Vec<_>, TierDefinitionsError>>()
+            })
             .transpose()?;
         let display = labels::resolve_labels(&input.tier_labels)?;
         definitions::validate_non_reasoning(

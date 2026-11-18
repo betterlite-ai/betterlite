@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::tier_definitions as section;
 use betterlite_models::decisions::Json;
 
-use crate::tier_definitions::checks::{ClassifierKind, OrderFeature, TierChecks};
+use crate::tier_definitions::checks::{
+    ClassifierFallback, ClassifierKind, OrderFeature, TierChecks,
+};
 use crate::tier_definitions::error::TierDefinitionsError;
 use crate::tier_definitions::model::TierSet;
 
@@ -15,6 +17,20 @@ mod tier_definitions_boundaries;
 // the section view of a deployment that configures nothing, so a test names only the keys it sets
 pub(crate) fn blank() -> section::Config {
     section::Config::default()
+}
+
+// every checks field, so a test names only the ones it varies
+pub(crate) fn base_checks() -> TierChecks<'static> {
+    TierChecks {
+        classifier_type: ClassifierKind::Heuristic,
+        classifier_fallback: ClassifierFallback::Heuristic,
+        fallback_tier: None,
+        classification_prompt: None,
+        classification_examples: None,
+        llm_system_prompt: None,
+        classification_rubric: None,
+        order_features: &[],
+    }
 }
 
 // a definition list in the shape the config section resolves to
@@ -81,7 +97,7 @@ pub(crate) fn custom() -> section::Config {
             ("ECO", single("eco-mini")),
             ("DEEP", pool(&["deep-a", "deep-b"])),
         ]),
-        ..section::Config::default()
+        ..blank()
     }
 }
 
@@ -104,7 +120,7 @@ pub(crate) fn custom_with(count: usize) -> section::Config {
     section::Config {
         tier_definitions: Some(definitions),
         tier_models: Some(mapped),
-        ..section::Config::default()
+        ..blank()
     }
 }
 
@@ -113,7 +129,7 @@ pub(crate) fn llm<'a>(fallback: &'a str) -> TierChecks<'a> {
     TierChecks {
         classifier_type: ClassifierKind::Llm,
         fallback_tier: Some(fallback),
-        ..TierChecks::default()
+        ..base_checks()
     }
 }
 
@@ -129,7 +145,7 @@ pub(crate) fn error(config: section::Config, checks: &TierChecks<'_>) -> TierDef
 pub(crate) fn order_features(features: &[OrderFeature]) -> Vec<&'static str> {
     TierChecks {
         order_features: features,
-        ..TierChecks::default()
+        ..base_checks()
     }
     .order_feature_labels()
 }

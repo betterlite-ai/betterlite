@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::tier_definitions as section;
 use betterlite_models::decisions::Json;
+use betterlite_router::complexity_scoring::tier::tier_severity_order;
 use betterlite_router::tier_definitions::checks::{
     ClassifierFallback, ClassifierKind, OrderFeature, TierChecks,
 };
@@ -52,8 +53,7 @@ struct Knobs {
     order_features: Vec<ProbeFeature>,
 }
 
-// the classifier kinds LiteLLM configures from the keys this probe sends, so a case never has to
-// carry another task's config section; the other kinds reach the same checks through the unit tests
+// the classifier kinds LiteLLM configures from this probe's keys; the other kinds reach the checks through the unit tests
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum ProbeClassifier {
@@ -175,13 +175,12 @@ fn resolved_config(configured: Option<&Json>) -> Result<section::Config, Operati
 
 fn fields(set: &TierSet, payload: &Payload) -> Fields {
     Fields {
-        custom: set.is_custom(),
-        non_reasoning: set.non_reasoning_enabled(),
+        custom: set.definitions.is_some(),
+        non_reasoning: set.non_reasoning,
         uses_llm_classifier: payload.knobs.classifier_type.production().uses_llm(),
         tier_names: set.tier_names().into_iter().map(str::to_owned).collect(),
         wire_labels: set.wire_labels().into_iter().map(str::to_owned).collect(),
-        severity_order: set
-            .severity_order()
+        severity_order: tier_severity_order(set.non_reasoning)
             .iter()
             .map(|tier| tier.name().to_owned())
             .collect(),
@@ -193,9 +192,9 @@ fn fields(set: &TierSet, payload: &Payload) -> Fields {
                 label: label.to_owned(),
             })
             .collect(),
-        fallback_tier: set.fallback_tier().map(str::to_owned),
+        fallback_tier: set.fallback.clone(),
         pools: set
-            .pools()
+            .pools
             .iter()
             .map(|(tier, pool)| (tier.clone(), pool_view(pool)))
             .collect(),
@@ -217,13 +216,13 @@ fn fields(set: &TierSet, payload: &Payload) -> Fields {
 
 fn pool_view(pool: &TierPool) -> PoolView {
     PoolView {
-        single: pool.is_single(),
+        single: matches!(pool, TierPool::Single(_)),
         entries: pool
             .models()
             .iter()
             .map(|entry| EntryView {
-                model_name: entry.model_name().to_owned(),
-                params: Json::Object(entry.params().clone()),
+                model_name: entry.model_name.clone(),
+                params: Json::Object(entry.params.clone()),
             })
             .collect(),
     }

@@ -1,5 +1,3 @@
-use std::fmt;
-
 use crate::complexity_scoring::tier::ComplexityTier;
 use crate::tier_definitions::checks::ClassifierKind;
 
@@ -22,7 +20,7 @@ pub enum TierDefinitionsError {
     TierCount { count: usize },
     #[error("tier_definitions names must be unique (case-insensitive): {names:?}")]
     DuplicateNames { names: Vec<String> },
-    #[error("tier_definitions requires an LLM, Jev or custom classifier, got {classifier}")]
+    #[error("tier_definitions requires an LLM, Jev or custom classifier, got {}", .classifier.name())]
     ClassifierCannotEmitTiers { classifier: ClassifierKind },
     #[error("{}", join_conflicts(.conflicts))]
     Conflicts { conflicts: Vec<DefinitionConflict> },
@@ -40,7 +38,7 @@ pub enum TierDefinitionsError {
     FallbackWithoutTiers,
     #[error("{field} cannot be combined with classifier_llm_config.system_prompt")]
     OpeningWithSystemPrompt { field: &'static str },
-    #[error("{field} requires an LLM classifier, got {classifier}")]
+    #[error("{field} requires an LLM classifier, got {}", .classifier.name())]
     OpeningRequiresClassifier {
         field: &'static str,
         classifier: ClassifierKind,
@@ -49,7 +47,7 @@ pub enum TierDefinitionsError {
     NonReasoningWithoutFlag { tier: &'static str },
     #[error("non_reasoning_tier cannot be combined with tier_definitions")]
     NonReasoningWithTiers,
-    #[error("non_reasoning_tier requires an LLM, Jev or custom classifier, got {classifier}")]
+    #[error("non_reasoning_tier requires an LLM, Jev or custom classifier, got {}", .classifier.name())]
     NonReasoningClassifier { classifier: ClassifierKind },
     #[error("non_reasoning_tier requires tiers to map {tier} to at least one model")]
     NonReasoningWithoutModel { tier: &'static str },
@@ -82,28 +80,28 @@ pub enum DefinitionConflict {
     TierLabels,
 }
 
-impl fmt::Display for DefinitionConflict {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::OrderFeatures(features) => write!(
-                formatter,
-                "{} cannot be combined with tier_definitions: these features rely on the built-in \
-                 tier severity order",
-                features.join(", ")
-            ),
-            Self::SystemPrompt => formatter.write_str(
-                "classifier_llm_config.system_prompt cannot be combined with tier_definitions",
-            ),
-            Self::ClassificationRubric => formatter.write_str(
-                "classifier_llm_config.classification_rubric cannot be combined with \
-                 tier_definitions",
-            ),
-            Self::DefaultModelFallback => formatter.write_str(
-                "classifier_fallback 'default_model' cannot be combined with tier_definitions",
-            ),
-            Self::TierLabels => {
-                formatter.write_str("tier_labels cannot be combined with tier_definitions")
-            }
+fn conflict_message(conflict: &DefinitionConflict) -> String {
+    match conflict {
+        DefinitionConflict::OrderFeatures(features) => format!(
+            "{} cannot be combined with tier_definitions: these features rely on the built-in \
+             tier severity order",
+            features.join(", ")
+        ),
+        DefinitionConflict::SystemPrompt => {
+            "classifier_llm_config.system_prompt cannot be combined with tier_definitions"
+                .to_owned()
+        }
+        DefinitionConflict::ClassificationRubric => {
+            "classifier_llm_config.classification_rubric cannot be combined with \
+             tier_definitions"
+                .to_owned()
+        }
+        DefinitionConflict::DefaultModelFallback => {
+            "classifier_fallback 'default_model' cannot be combined with tier_definitions"
+                .to_owned()
+        }
+        DefinitionConflict::TierLabels => {
+            "tier_labels cannot be combined with tier_definitions".to_owned()
         }
     }
 }
@@ -111,7 +109,7 @@ impl fmt::Display for DefinitionConflict {
 fn join_conflicts(conflicts: &[DefinitionConflict]) -> String {
     conflicts
         .iter()
-        .map(ToString::to_string)
+        .map(conflict_message)
         .collect::<Vec<_>>()
         .join("; ")
 }

@@ -54,7 +54,10 @@ fn reject_duplicate_names(
     tier: &str,
     entries: &[TierModelEntry],
 ) -> Result<(), TierDefinitionsError> {
-    let distinct: BTreeSet<&str> = entries.iter().map(TierModelEntry::model_name).collect();
+    let distinct: BTreeSet<&str> = entries
+        .iter()
+        .map(|entry| entry.model_name.as_str())
+        .collect();
     if distinct.len() == entries.len() {
         return Ok(());
     }
@@ -73,14 +76,8 @@ fn normalize_entry(entry: &section::TierEntry) -> TierModelEntry {
     }
 }
 
-pub(super) fn normalize_definitions(
-    raw: &[section::TierDefinition],
-) -> Result<Vec<TierDefinition>, TierDefinitionsError> {
-    raw.iter().map(normalize_definition).collect()
-}
-
 // TierDefinition._normalize: strip both fields, then enforce the name, description and line rules
-fn normalize_definition(
+pub(super) fn normalize_definition(
     raw: &section::TierDefinition,
 ) -> Result<TierDefinition, TierDefinitionsError> {
     let name = raw.name.trim().to_owned();
@@ -99,13 +96,14 @@ fn normalize_definition(
             max: MAX_TIER_NAME_CHARS,
         });
     }
-    if let Some(text) = &description {
-        if text.chars().count() > MAX_TIER_DESCRIPTION_CHARS {
-            return Err(TierDefinitionsError::DescriptionTooLong {
-                name,
-                max: MAX_TIER_DESCRIPTION_CHARS,
-            });
-        }
+    if description
+        .as_deref()
+        .is_some_and(|text| text.chars().count() > MAX_TIER_DESCRIPTION_CHARS)
+    {
+        return Err(TierDefinitionsError::DescriptionTooLong {
+            name,
+            max: MAX_TIER_DESCRIPTION_CHARS,
+        });
     }
     if description.is_none() && ComplexityTier::built_in(&name.to_uppercase()).is_none() {
         return Err(TierDefinitionsError::MissingDescription { name });
@@ -121,8 +119,7 @@ fn normalize_definition(
     Ok(TierDefinition { name, description })
 }
 
-// _validate_non_reasoning_tier: the flag and the NON_REASONING tier must agree, and only a
-// classifier that can emit the tier may route to it
+// _validate_non_reasoning_tier: the flag and the NON_REASONING tier must agree
 pub(super) fn validate_non_reasoning(
     non_reasoning: bool,
     custom: bool,
@@ -139,7 +136,10 @@ pub(super) fn validate_non_reasoning(
     if custom {
         return Err(TierDefinitionsError::NonReasoningWithTiers);
     }
-    if !classifier.emits_non_reasoning() {
+    if !matches!(
+        classifier,
+        ClassifierKind::Llm | ClassifierKind::Custom | ClassifierKind::Jev
+    ) {
         return Err(TierDefinitionsError::NonReasoningClassifier { classifier });
     }
     if pools.get(tier).is_none_or(TierPool::is_empty) {
@@ -161,7 +161,10 @@ pub(super) fn validate_definitions(
         }
         return validate_opening(checks);
     };
-    let names: Vec<&str> = ladder.iter().map(TierDefinition::name).collect();
+    let names: Vec<&str> = ladder
+        .iter()
+        .map(|definition| definition.name.as_str())
+        .collect();
     validate_definition_names(&names)?;
     if checks.classifier_type.rejects_custom_tiers() {
         return Err(TierDefinitionsError::ClassifierCannotEmitTiers {
