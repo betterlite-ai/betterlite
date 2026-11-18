@@ -1,10 +1,11 @@
+mod deadline;
+
 use std::error::Error;
 use std::future::Future;
 use std::time::Duration;
 
 use deadpool_postgres::{Client as PooledClient, Pool};
 use tokio::time::timeout;
-use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
 use crate::database_replica::client::DatabaseClient;
@@ -134,20 +135,13 @@ where
         sql: &str,
         parameters: &[&(dyn ToSql + Sync)],
     ) -> Result<Vec<String>, TableOpsError<Client::Error>> {
-        let client = self.connection(attribute, method).await?;
-        let outcome = bounded(
-            "query",
-            self.settings.query_timeout,
-            client.query(sql, parameters),
-        )
-        .await;
-        let rows = match outcome {
-            Ok(result) => result.map_err(|driver| TableOpsError::from(DriverError { driver }))?,
-            Err(error) => {
-                discard(client).await;
-                return Err(error);
-            }
-        };
+        let mut client = self.connection(attribute, method).await?;
+        let outcome =
+            deadline::query(&mut client, sql, parameters, self.settings.query_timeout).await;
+        if matches!(outcome, Err(TableOpsError::Timeout { .. })) {
+            drop(PooledClient::take(client));
+        }
+        let rows = outcome?;
         let mut texts = Vec::with_capacity(rows.len());
         for row in rows {
             texts.push(
@@ -210,7 +204,7 @@ where
         let mut client = self.connection(attribute, "update_many").await?;
         let outcome = run_batch(&mut client, statements, self.settings.query_timeout).await;
         if matches!(outcome, Err(TableOpsError::Timeout { .. })) {
-            discard(client).await;
+            drop(PooledClient::take(client));
         }
         outcome
     }
@@ -242,9 +236,7 @@ async fn run_batch<ClientError>(
 where
     ClientError: Error + Send + Sync + 'static,
 {
-    let transaction = bounded("begin", deadline, client.transaction())
-        .await?
-        .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
+    let transaction = deadline::begin(client, deadline).await?;
     for statement in statements {
         let parameters: Vec<&(dyn ToSql + Sync)> = statement
             .parameters
@@ -252,32 +244,13 @@ where
             .iter()
             .map(Bound::as_sql)
             .collect();
-        bounded(
+        deadline::statement(
             "statement",
             deadline,
             transaction.execute(&statement.sql, &parameters),
         )
-        .await?
-        .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
+        .await?;
     }
-    bounded("commit", deadline, transaction.commit())
-        .await?
-        .map_err(|driver| TableOpsError::from(DriverError { driver }))?;
+    deadline::statement("commit", deadline, transaction.commit()).await?;
     Ok(())
-}
-
-async fn discard(client: PooledClient) {
-    // Take removes the connection from the pool even if this cancellation future is dropped.
-    let detached = PooledClient::take(client);
-    let cancel = detached.cancel_token();
-    match timeout(Duration::from_secs(1), cancel.cancel_query(NoTls)).await {
-        Ok(Ok(())) => {}
-        Ok(Err(error)) => {
-            tracing::warn!(error = %error, "query cancellation failed; closing the connection")
-        }
-        Err(error) => {
-            tracing::warn!(error = %error, "query cancellation timed out; closing the connection")
-        }
-    }
-    drop(detached);
 }

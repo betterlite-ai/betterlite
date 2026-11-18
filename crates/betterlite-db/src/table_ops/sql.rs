@@ -69,7 +69,7 @@ impl Parameters {
         self.values.len()
     }
 
-    fn bind<ClientError>(
+    pub(super) fn bind<ClientError>(
         &mut self,
         column: &'static str,
         value: &TokenValue,

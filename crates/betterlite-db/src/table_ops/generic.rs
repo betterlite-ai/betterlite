@@ -1,13 +1,18 @@
+pub mod columns;
+
 use crate::table_ops::access::ReadQuery;
 use crate::table_ops::access::TableAccess as _;
 use secrecy::{ExposeSecret as _, SecretString};
 use std::future::Future;
 use tokio_postgres::types::ToSql;
 
+use super::sql::{Bound, Parameters};
 use crate::budget_permission_rows::Timestamp;
 use crate::database_replica::client::DatabaseClient;
 use crate::identity_rows::key::LiteLLMVerificationToken;
 use crate::identity_rows::user::LiteLLMUserTable;
+use crate::key_repository::table::TokenValue;
+use crate::key_repository::table::columns::TokenSqlType;
 
 use super::access::{
     CONFIG_ATTRIBUTE, CONFIG_TABLE, KEY_ATTRIBUTE, KEY_TABLE, SPEND_ATTRIBUTE, SPEND_TABLE,
@@ -41,6 +46,7 @@ pub enum FilterValue<'value> {
     Timestamp(&'value Timestamp),
     Integer(i64),
     Boolean(bool),
+    Typed(TokenSqlType, &'value TokenValue),
 }
 
 // LiteLLM picks the table and key column at runtime; each filter type names both, and its row type
@@ -112,7 +118,7 @@ where
         &self,
         attribute: &str,
         sql: &str,
-        value: &(dyn ToSql + Sync),
+        values: &[&(dyn ToSql + Sync)],
         parse: Parse,
     ) -> impl Future<Output = Result<Option<Row>, TableOpsError<Client::Error>>> + Send
     where
@@ -133,21 +139,21 @@ where
         Filter: GenericFilter<'value> + Send,
     {
         let (column, value) = filter.parts();
+        let (kind, payload) = value.binding();
+        let (parameters, marker) = self
+            .attempt_with(GENERIC_RETRY, OperationCallType::GetGenericData, || async {
+                let mut parameters = Parameters::default();
+                let marker = parameters.bind(column, &payload, kind)?;
+                Ok((parameters, marker))
+            })
+            .await?;
         let sql = format!(
-            "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{column}\" = $1 LIMIT 1",
+            "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{column}\" IS NOT DISTINCT FROM {marker} LIMIT 1",
             Filter::TABLE,
         );
-        let moment;
-        let bound: &(dyn ToSql + Sync) = match &value {
-            FilterValue::Text(text) => text,
-            FilterValue::Integer(number) => number,
-            FilterValue::Boolean(flag) => flag,
-            FilterValue::Timestamp(timestamp) => {
-                moment = timestamp.utc().naive_utc();
-                &moment
-            }
-        };
-        self.find_generic(Filter::ATTRIBUTE, &sql, bound, Filter::Row::decode_row)
+        let values: Vec<&(dyn ToSql + Sync)> =
+            parameters.values.iter().map(Bound::as_sql).collect();
+        self.find_generic(Filter::ATTRIBUTE, &sql, &values, Filter::Row::decode_row)
             .await
     }
 
@@ -161,7 +167,7 @@ where
             SPEND_TABLE,
             column.name(),
         );
-        self.find_generic(SPEND_ATTRIBUTE, &sql, &value, SpendLogRow::decode_row)
+        self.find_generic(SPEND_ATTRIBUTE, &sql, &[&value], SpendLogRow::decode_row)
             .await
     }
 
@@ -169,7 +175,7 @@ where
         &self,
         attribute: &str,
         sql: &str,
-        value: &(dyn ToSql + Sync),
+        values: &[&(dyn ToSql + Sync)],
         parse: Parse,
     ) -> Result<Option<Row>, TableOpsError<Client::Error>>
     where
@@ -182,7 +188,7 @@ where
                     attribute,
                     method: "find_first",
                     sql,
-                    parameters: &[value],
+                    parameters: values,
                 },
                 GENERIC_RETRY,
                 OperationCallType::GetGenericData,
@@ -190,5 +196,19 @@ where
             )
             .await?;
         Ok(rows.into_iter().next())
+    }
+}
+
+impl FilterValue<'_> {
+    fn binding(self) -> (TokenSqlType, TokenValue) {
+        match self {
+            Self::Text(text) => (TokenSqlType::Text, TokenValue::Text(text.to_owned())),
+            Self::Integer(number) => (TokenSqlType::BigInt, TokenValue::Integer(number)),
+            Self::Boolean(flag) => (TokenSqlType::Boolean, TokenValue::Bool(flag)),
+            Self::Timestamp(timestamp) => {
+                (TokenSqlType::Timestamp, TokenValue::Timestamp(*timestamp))
+            }
+            Self::Typed(kind, value) => (kind, value.clone()),
+        }
     }
 }

@@ -19,10 +19,12 @@ use super::{
 use support::{Ports, TableClient};
 
 mod failures;
+mod generic_filters;
 mod insert_team;
 mod reads;
-mod support;
+pub(super) mod support;
 mod timeouts;
+mod tls;
 mod writes;
 
 #[test]
