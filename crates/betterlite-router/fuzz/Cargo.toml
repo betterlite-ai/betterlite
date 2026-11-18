@@ -54,3 +54,10 @@ path = "fuzz_targets/lar1_meta.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "tier_data"
+path = "fuzz_targets/tier_data.rs"
+test = false
+doc = false
+bench = false
