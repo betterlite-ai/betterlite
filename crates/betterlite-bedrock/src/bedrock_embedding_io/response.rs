@@ -145,18 +145,18 @@ fn titan_embedding_reply(response: TitanEmbeddingResponse) -> EmbeddingReply {
             image_count: Some(u64::from(counts.image_count)),
             query_count: None,
         });
-    EmbeddingReply {
-        object: response.object,
-        data: response.data,
-        model: response.model,
-        usage: EmbeddingUsage {
+    finish_reply(
+        response.object,
+        response.model,
+        response.data,
+        EmbeddingUsage {
             prompt_tokens: response.usage.prompt_tokens,
             completion_tokens: response.usage.completion_tokens,
             total_tokens: response.usage.total_tokens,
             prompt_tokens_details: details,
         },
-        invocation_arn: Json::Null,
-    }
+        Json::Null,
+    )
 }
 
 enum ProviderResponse {
@@ -183,32 +183,11 @@ fn provider_embedding_reply(
 fn nova_embedding_reply(
     response: NovaEmbeddingResponse,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let records = response
-        .data
-        .into_iter()
-        .enumerate()
-        .map(|(position, record)| {
-            let index =
-                u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-            Ok((index, embedding_vector(&record.embedding)?))
-        });
-    let details = response
-        .usage
-        .prompt_tokens_details
-        .as_ref()
-        .map(|counts| PromptTokenCounts {
-            image_count: Some(u64::from(counts.image_count)),
-            query_count: None,
-        });
+    let records = response.data.into_iter().enumerate().map(nova_record);
     provider_reply(
         response.model,
         records,
-        ProviderUsage {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: 0,
-            total_tokens: response.usage.total_tokens,
-            prompt_tokens_details: details,
-        },
+        nova_usage(response.usage),
         response.invocation_arn.as_ref(),
     )
 }
@@ -216,40 +195,62 @@ fn nova_embedding_reply(
 fn marengo_embedding_reply(
     response: MarengoEmbeddingResponse,
 ) -> Result<EmbeddingReply, EmbeddingIoError> {
-    let records = response.data.into_iter().map(|record| {
-        let index =
-            u32::try_from(record.index).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
-        let numbers = record
-            .embedding
-            .into_iter()
-            .map(|value| Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok((index, EmbeddingVector::Floats(numbers)))
-    });
-    let details = response
-        .usage
-        .prompt_tokens_details
-        .as_ref()
-        .map(|counts| PromptTokenCounts {
-            image_count: counts.image_count,
-            query_count: counts.query_count,
-        });
+    let records = response.data.into_iter().map(marengo_record);
     provider_reply(
         response.model,
         records,
-        ProviderUsage {
-            prompt_tokens: response.usage.prompt_tokens,
-            completion_tokens: response.usage.completion_tokens,
-            total_tokens: response.usage.total_tokens,
-            prompt_tokens_details: details,
-        },
+        marengo_usage(response.usage),
         response.invocation_arn.as_ref(),
     )
 }
 
-fn embedding_records(
-    records: impl IntoIterator<Item = Result<(u32, EmbeddingVector), EmbeddingIoError>>,
-) -> Result<Vec<EmbeddingRecord>, EmbeddingIoError> {
+fn nova_record(
+    (position, record): (usize, nova::NovaEmbeddingRecord),
+) -> Result<(u32, EmbeddingVector), EmbeddingIoError> {
+    let index = u32::try_from(position).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+    Ok((index, embedding_vector(&record.embedding)?))
+}
+
+fn marengo_record(
+    record: marengo::EmbeddingRecord,
+) -> Result<(u32, EmbeddingVector), EmbeddingIoError> {
+    let index = u32::try_from(record.index).map_err(|_overflow| EmbeddingIoError::IndexOverflow)?;
+    let numbers = record
+        .embedding
+        .into_iter()
+        .map(|value| Number::from_f64(value).ok_or(EmbeddingIoError::Unrepresentable))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((index, EmbeddingVector::Floats(numbers)))
+}
+
+fn nova_usage(usage: nova::NovaUsage) -> ProviderUsage {
+    ProviderUsage {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: 0,
+        total_tokens: usage.total_tokens,
+        prompt_tokens_details: usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
+            image_count: Some(u64::from(counts.image_count)),
+            query_count: None,
+        }),
+    }
+}
+
+fn marengo_usage(usage: marengo::MarengoUsage) -> ProviderUsage {
+    ProviderUsage {
+        prompt_tokens: usage.prompt_tokens,
+        completion_tokens: usage.completion_tokens,
+        total_tokens: usage.total_tokens,
+        prompt_tokens_details: usage.prompt_tokens_details.map(|counts| PromptTokenCounts {
+            image_count: counts.image_count,
+            query_count: counts.query_count,
+        }),
+    }
+}
+
+fn embedding_records<I>(records: I) -> Result<Vec<EmbeddingRecord>, EmbeddingIoError>
+where
+    I: IntoIterator<Item = Result<(u32, EmbeddingVector), EmbeddingIoError>>,
+{
     records
         .into_iter()
         .map(|record| {
@@ -263,28 +264,47 @@ fn embedding_records(
         .collect()
 }
 
-fn provider_reply(
+fn provider_reply<I>(
     model: String,
-    records: impl IntoIterator<Item = Result<(u32, EmbeddingVector), EmbeddingIoError>>,
+    records: I,
     usage: ProviderUsage,
     invocation_arn: Option<&Field>,
-) -> Result<EmbeddingReply, EmbeddingIoError> {
+) -> Result<EmbeddingReply, EmbeddingIoError>
+where
+    I: IntoIterator<Item = Result<(u32, EmbeddingVector), EmbeddingIoError>>,
+{
     let arn = match invocation_arn {
         Some(field) => encode_json(field)?,
         None => Json::Null,
     };
-    Ok(EmbeddingReply {
-        object: RESPONSE_OBJECT,
-        data: embedding_records(records)?,
+    Ok(finish_reply(
+        RESPONSE_OBJECT,
         model,
-        usage: EmbeddingUsage {
+        embedding_records(records)?,
+        EmbeddingUsage {
             prompt_tokens: usage.prompt_tokens,
             completion_tokens: usage.completion_tokens,
             total_tokens: usage.total_tokens,
             prompt_tokens_details: usage.prompt_tokens_details,
         },
-        invocation_arn: arn,
-    })
+        arn,
+    ))
+}
+
+fn finish_reply(
+    object: &'static str,
+    model: String,
+    data: Vec<EmbeddingRecord>,
+    usage: EmbeddingUsage,
+    invocation_arn: Json,
+) -> EmbeddingReply {
+    EmbeddingReply {
+        object,
+        data,
+        model,
+        usage,
+        invocation_arn,
+    }
 }
 
 // Nova declares embedding as list | str, and the shared record carries only those two shapes
