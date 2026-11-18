@@ -46,6 +46,34 @@ fn converted_stream_flags_require_truthy_values() {
 }
 
 #[test]
+fn converted_stream_values_cover_json_shapes() {
+    let key = "_websearch_interception_converted_stream";
+    let mut kwargs = IndexMap::new();
+    for value in [
+        Json::Null,
+        Json::Bool(false),
+        Json::Number(0.into()),
+        Json::Text(String::new()),
+        Json::List(Vec::new()),
+        Json::Object(IndexMap::new()),
+    ] {
+        kwargs.insert(key.to_owned(), value);
+        assert!(!converted_stream_requested(&kwargs));
+    }
+    for value in [
+        Json::Bool(true),
+        Json::Number(1.into()),
+        Json::Number(serde_json::Number::from_f64(0.5).expect("finite number")),
+        Json::Text("yes".to_owned()),
+        Json::List(vec![Json::Null]),
+        Json::Object(IndexMap::from([("key".to_owned(), Json::Null)])),
+    ] {
+        kwargs.insert(key.to_owned(), value);
+        assert!(converted_stream_requested(&kwargs));
+    }
+}
+
+#[test]
 fn terminal_cache_requires_completed_event_and_all_dependencies() {
     let kwargs = IndexMap::new();
     let input = CacheEligibility {
@@ -66,6 +94,29 @@ fn terminal_cache_requires_completed_event_and_all_dependencies() {
     }));
     assert!(!is_stream_cache_eligible(&CacheEligibility {
         global_cache: false,
+        ..input
+    }));
+    assert!(!is_stream_cache_eligible(&CacheEligibility {
+        dependencies: CacheDependencies {
+            has_typed_response: false,
+            ..input.dependencies
+        },
+        ..input
+    }));
+    assert!(!is_stream_cache_eligible(&CacheEligibility {
+        dependencies: CacheDependencies {
+            has_cache_handler: false,
+            ..input.dependencies
+        },
+        ..input
+    }));
+    assert!(!is_stream_cache_eligible(&CacheEligibility {
+        store_allowed: false,
+        ..input
+    }));
+    let false_stream = Json::Bool(false);
+    assert!(!is_stream_cache_eligible(&CacheEligibility {
+        stream: Some(&false_stream),
         ..input
     }));
 }
