@@ -40,7 +40,7 @@ fn bucket_for(line: &str) -> Option<Bucket> {
 
 fn bullet_body(line: &str) -> Option<&str> {
     let rest = line.strip_prefix('*')?;
-    let body = rest.trim_start_matches(python_space);
+    let body = rest.trim_start_matches(source_space);
     if body.len() == rest.len() || body.is_empty() {
         return None;
     }
@@ -51,7 +51,7 @@ fn is_first_contribution(body: &str) -> bool {
     let Some(author) = body.strip_prefix('@') else {
         return false;
     };
-    let token_len = author.find(python_space).unwrap_or(author.len());
+    let token_len = author.find(source_space).unwrap_or(author.len());
     let Some((token, after)) = author.split_at_checked(token_len) else {
         return false;
     };
@@ -64,7 +64,7 @@ fn is_first_contribution(body: &str) -> bool {
     remaining
         .chars()
         .next()
-        .is_none_or(|next| !python_word(next))
+        .is_none_or(|next| !source_word(next))
 }
 
 fn prefix_bucket(body: &str) -> Bucket {
@@ -89,7 +89,7 @@ fn prefix_bucket(body: &str) -> Bucket {
         return Bucket::Other;
     };
     match after_space.chars().next() {
-        Some(next) if !python_space(next) => bucket_named(prefix),
+        Some(next) if !source_space(next) => bucket_named(prefix),
         Some(_) | None => Bucket::Other,
     }
 }
@@ -116,21 +116,21 @@ fn bucket_named(prefix: &str) -> Bucket {
 fn strip_one_space(text: &str) -> Option<&str> {
     let mut characters = text.chars();
     let first = characters.next()?;
-    if python_space(first) {
+    if source_space(first) {
         Some(characters.as_str())
     } else {
         None
     }
 }
 
-fn python_space(character: char) -> bool {
+fn source_space(character: char) -> bool {
     if matches!(character, '\u{1c}'..='\u{1f}') {
         return true;
     }
     character.is_whitespace()
 }
 
-fn python_word(character: char) -> bool {
+fn source_word(character: char) -> bool {
     if character == '_' {
         return true;
     }
