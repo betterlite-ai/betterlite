@@ -1,0 +1,89 @@
+kind: helper
+name: response-chat-result-result-recovery-and-errors
+call:
+  response_chat_result:
+    model: caller-model
+    response: not a response
+    caller_extra: {}
+    caller_hidden_params: {}
+    raw_hidden_params: {}
+    recorded: null
+calls:
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        error: {message: bad}
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: |-
+        data: {"type":"response.completed","response":{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}}
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output:
+          - type: message
+            role: assistant
+            content:
+              - {type: output_text, text: a, annotations: []}
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: |-
+        data: {"type":"response.completed","response":{"output":[{"type":"message","role":"assistant","content":[{"type":"output_text","text":"hi"}]}]}}
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: null
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: completed
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: |-
+        data: {"type":"response.output_text.delta","output_index":0,"delta":"hello"}
+  - response_chat_result:
+      model: caller-model
+      response:
+        id: resp_a
+        created_at: 1700000000
+        status: incomplete
+        output: []
+      caller_extra: {}
+      caller_hidden_params: {}
+      raw_hidden_params: {}
+      recorded: |-
+        data: {"type":"response.output_text.delta","output_index":0,"delta":"hello"}
+env: {}
+compare:
+  ignore: []

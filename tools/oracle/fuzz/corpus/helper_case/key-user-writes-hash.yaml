@@ -1,0 +1,5 @@
+kind: helper
+name: key-user-writes-hash-seed
+call: {key_user_writes: {function: class_hash, tokens: [sk-seed, "", "ключ"]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,30 @@
+task: B2362
+deviations:
+  - what: A failure event's delivery to the injected sink is bounded by a one second deadline, and an event that times out or panics is logged and dropped while the write retries or returns its original error.
+    why: The source detaches failure_handler with asyncio.create_task, so reporting never delays the write and never changes its exception; betterlite keeps that outcome and caps the wait rather than leaving an unbounded await in the retry loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5416-L5423
+  - what: The custom update map accepts typed set, increment, decrement, multiply and divide operations, so Prisma's list push and unset operations have no variant a caller can express.
+    why: The source forwards the map to Prisma as an untyped dict; betterlite compiles typed operations into atomic SQL so a custom value cannot reach a column through a mismatched JSON cast, and the proxy's own calls pass plain assignment values through this argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5479-L5488
+  - what: The failure event's traceback is the LiteLLM-style error line followed by the error's Rust source chain, not CPython's traceback.format_exc frames.
+    why: A Rust service has no Python frames to render; the event keeps the same error line, exception text and duration that a failure handler reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5410-L5422
+  - what: The insert debug payload is the typed field map with the token replaced by its hash, rendered with Rust's Debug formatting rather than Python's dict repr of the same mapping.
+    why: docs/compatibility.md keeps Python repr text out of parity; the columns logged and the token redaction are the same, and no Python object reaches the typed row.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5294-L5299
+  - what: The user insert debug payload shows the password column as a redaction marker, where the source logs the password value with the rest of the data.
+    why: A password in a debug log is a leak no working setup can rely on, and the source's own logging of the raw payload is a bug rather than behavior a caller needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5294-L5299
+  - what: The update path keeps its fixed success messages without the interpolated row dump, and its entry debug does not name table_name.
+    why: The row dump is a Python object repr, which docs/compatibility.md does not port, and the typed key and user update services take no table_name argument because the branch decision happens above them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5448-L5494
+  - what: The encoded JSON text a dict field becomes is serde_json's compact output, where Python's json.dumps writes a space after each colon and comma.
+    why: Both texts parse to the same JSON value, which is what the JSONB column stores, and docs/compatibility.md keeps json.dumps formatting out of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4179-L4189
+  - what: A key update that matches no row returns its lookup token with no row attached, where LiteLLM returns the token with an empty data object.
+    why: The typed result carries the decoded row or nothing, and the empty object LiteLLM returns is how its JSON response spells the absence the typed result records as None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5466-L5472
+kept_bugs:
+  - what: Every failed key or user write is retried three times, including failures no retry can fix, such as a missing token or a value the database rejects on every attempt.
+    why: The retry decorator catches Exception, and a working setup relies on it for transient database failures; skipping retries for deterministic errors would need a per-error classification LiteLLM never makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5276-L5283

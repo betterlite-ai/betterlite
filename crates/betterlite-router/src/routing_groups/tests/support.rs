@@ -3,7 +3,6 @@ use std::io;
 use std::sync::{Arc, Mutex};
 
 use betterlite_models::decisions::Json;
-use betterlite_models::model_metadata_resolution::names::ModelCostMap;
 use betterlite_models::model_registration::JsonObject;
 
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -72,20 +71,6 @@ pub(super) fn with_priorities(mut group: JsonMap, priorities: &[(&str, Json)]) -
 pub(super) fn with_args(mut group: JsonMap, args: &[(&str, Json)]) -> JsonMap {
     group.insert("routing_strategy_args".to_owned(), Json::Object(info(args)));
     group
-}
-
-pub(super) fn cost_map(entries: &[(&str, &str)]) -> ModelCostMap {
-    let mut source = String::from("{");
-    for (position, (key, entry)) in entries.iter().enumerate() {
-        if position > 0 {
-            source.push(',');
-        }
-        source.push_str(&serde_json::to_string(key).unwrap());
-        source.push(':');
-        source.push_str(entry);
-    }
-    source.push('}');
-    ModelCostMap::parse(source.as_bytes()).unwrap()
 }
 
 pub(super) fn deployment(model_name: &str, id: &str) -> DeploymentSpec {

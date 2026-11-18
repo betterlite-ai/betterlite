@@ -1,0 +1,69 @@
+kind: helper
+name: anthropic-chat-call-pre-stream-error
+call:
+  anthropic_chat_call:
+    scenario: pre_stream_error
+    api_base: https://api.anthropic.com/v1/messages
+    model: claude-3-5-sonnet-20241022
+    messages:
+      - role: user
+        content: hi
+    optional_params:
+      stream: true
+      max_tokens: 16
+    litellm_params: {}
+    caller_headers: {}
+    api_key: null
+    acompletion: true
+    transform_body:
+      model: claude-3-5-sonnet-20241022
+      max_tokens: 16
+      messages:
+        - role: user
+          content:
+            - type: text
+              text: hi
+    transform_failure: null
+    beta_matrix:
+      anthropic: {}
+    upstream_status: 200
+    upstream_headers: {}
+    upstream_body: null
+    upstream_lines: []
+    failure_message: null
+    request_header_names: []
+calls:
+  - anthropic_chat_call:
+      scenario: pre_stream_error
+      api_base: https://api.anthropic.com/v1/messages
+      model: claude-3-5-sonnet-20241022
+      messages:
+        - role: user
+          content: hi
+      optional_params:
+        stream: true
+        max_tokens: 16
+      litellm_params: {}
+      caller_headers: {}
+      api_key: null
+      acompletion: false
+      transform_body:
+        model: claude-3-5-sonnet-20241022
+        max_tokens: 16
+        messages:
+          - role: user
+            content:
+              - type: text
+                text: hi
+      transform_failure: null
+      beta_matrix:
+        anthropic: {}
+      upstream_status: 200
+      upstream_headers: {}
+      upstream_body: null
+      upstream_lines: []
+      failure_message: null
+      request_header_names: []
+env:
+  LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: "true"
+compare: {ignore: []}

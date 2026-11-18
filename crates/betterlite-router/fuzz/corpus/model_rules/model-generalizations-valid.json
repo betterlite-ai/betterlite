@@ -1,0 +1,1 @@
+[{"pattern":"^corpus-","model_info":{"litellm_provider":"corpus","mode":"chat"}},{"pattern":"corpus-cap","model_info":{"supports_vision":true},"fill_missing_for_providers":["corpus"]}]
