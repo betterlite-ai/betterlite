@@ -10,6 +10,7 @@ use betterlite_error::envelope::WireField;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
 use serde::Serialize;
 use thiserror::Error;
+use tokio_postgres::error::DbError as DriverDbError;
 
 use crate::tracing_routes::router::unauthenticated;
 
@@ -89,10 +90,7 @@ fn driver_message(error: &DbError) -> Option<&str> {
         | DbError::InvalidRecord { .. }
         | DbError::CreateNull => return None,
     };
-    source
-        .driver
-        .as_db_error()
-        .map(tokio_postgres::error::DbError::message)
+    source.driver.as_db_error().map(DriverDbError::message)
 }
 
 fn database_unavailable() -> Response {
