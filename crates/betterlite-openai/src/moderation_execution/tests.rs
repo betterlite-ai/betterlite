@@ -12,6 +12,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
+use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use uuid::Uuid;
@@ -143,6 +144,15 @@ fn the_retry_rules_follow_the_sdk(#[case] status: u16, #[case] retry: bool) {
 #[case::second_retry(1, Duration::from_secs(1))]
 fn the_retry_delay_doubles(#[case] attempts: u32, #[case] expected: Duration) {
     assert_eq!(super::retry_delay(attempts), expected);
+}
+
+// the transport cap bounds one provider answer, and a moderation answer for a bounded input is far smaller
+#[test]
+fn a_provider_reply_is_capped_at_32_mib() {
+    let (_, deployment) = moderation_executor("https://provider.test/v1", ", api_key: key");
+    let request = ModerationRequest::parse(br#"{"input":"hello"}"#).expect("request");
+    let post = super::post(&deployment, &request, "m", SecretString::from("key")).expect("post");
+    assert_eq!(post.body_limit, 0x0200_0000);
 }
 
 #[tokio::test]
