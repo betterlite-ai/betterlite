@@ -1,8 +1,13 @@
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::message_content::Message;
 
+use crate::context::{self, RouteStage};
 use crate::deployment_catalog::types::{AliasStep, Authority};
 use crate::deployment_clients::clients::{CachedClients, ClientKind};
+use crate::deployment_identity::spec::DeploymentSpec;
+use crate::router_core::candidates::CandidateSet;
+use crate::router_core::error::RoutingError;
+use crate::router_core::no_deployment::NoDeployment;
 use crate::router_core::services::RouteServices;
 use crate::router_predicates::params::ParamSupport;
 use crate::static_eligibility::request::RequestFacts;
@@ -63,4 +68,33 @@ pub(crate) struct ResolvedRoute {
     pub(crate) resolution: Resolution,
     pub(crate) override_pre_call: Option<SelectorId>,
     pub(crate) bindings: RequestBindings,
+}
+
+// One deployment through a stage that may drop it: what survived, or none, which the caller answers as no deployment.
+pub(crate) async fn stage_single(
+    route: &RouteContext<'_>,
+    stage: RouteStage,
+    deployment: DeploymentSpec,
+) -> Result<Option<DeploymentSpec>, RoutingError> {
+    let candidates = CandidateSet {
+        deployments: vec![deployment],
+    };
+    Ok(context::run(stage, candidates, route)
+        .await?
+        .deployments
+        .pop())
+}
+
+// async_raise_no_deployment_exception, in the fields the proxy and the caller read back
+pub(crate) fn no_deployment_error(
+    context: &RouteContext<'_>,
+    resolved: &ResolvedRoute,
+) -> RoutingError {
+    RoutingError::NoDeployment(NoDeployment::new(
+        resolved.group.clone(),
+        context.services.min_cooldown(&resolved.model_ids),
+        context.policy.enable_pre_call_checks,
+        context.services.cooldown_list(),
+        resolved.model_ids.clone(),
+    ))
 }
