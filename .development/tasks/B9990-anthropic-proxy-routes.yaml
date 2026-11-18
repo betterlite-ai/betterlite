@@ -156,7 +156,7 @@ checks:
   - id: one-runtime
     why: AnthropicRuntime::new runs outside the anthropic_runtime slot or more than once in the server, or the routes
       built from the slot do not answer.
-    run: test "$(grep -rn 'AnthropicRuntime::new(' crates/betterlite-server/src --include=*.rs | grep -v -e '/tests' -e 'tests.rs' | wc -l)" -eq 1 && grep -q 'AnthropicRuntime::new(' crates/betterlite-server/src/state/anthropic_runtime.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_buffered_reply$/)'
+    run: test "$(grep -rn 'AnthropicRuntime::new(' crates/betterlite-server/src --include=*.rs | grep -c -v -e '/tests' -e 'tests.rs')" -eq 1 && grep -q 'AnthropicRuntime::new(' crates/betterlite-server/src/state/anthropic_runtime.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_route_cases::case_[0-9]+_buffered_reply$/)'
   - id: regressions
     why: The new argument, the slot, the Shared client, ChatCallsError or the credential reset broke a chat setup,
       chat route, completions, route state, cost service or model list test.

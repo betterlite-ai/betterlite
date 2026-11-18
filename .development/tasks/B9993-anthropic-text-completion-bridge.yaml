@@ -93,7 +93,7 @@ checks:
   - id: regressions
     why: The routes built a second runtime, or the slot read, the reply arm or the frames_answer split broke a
       completions route test.
-    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_buffered_text$/)' && test "$(grep -rn 'AnthropicRuntime::new(' crates/betterlite-server/src --include=*.rs | grep -v -e '/tests' -e 'tests.rs' | wc -l)" -eq 1 && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::/) | binary(text_streaming)'
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/::anthropic_bridge_cases::case_[0-9]+_buffered_text$/)' && test "$(grep -rn 'AnthropicRuntime::new(' crates/betterlite-server/src --include=*.rs | grep -c -v -e '/tests' -e 'tests.rs')" -eq 1 && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::completions::/) | binary(text_streaming)'
 oracle_cases:
 - tools/oracle/cases/completions/anthropic-deployment-nonstream.yaml
 deviations: []
