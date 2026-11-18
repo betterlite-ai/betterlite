@@ -35,7 +35,6 @@ const SECRET_HEADERS: [&str; 2] = ["authorization", "x-amz-security-token"];
 // an error body is read only to report it, so a runaway reply cannot hold the call open past this
 const ERROR_BODY_BYTES: usize = 64 * 1024;
 
-// the environment reads B682 resolves; the runtime never touches the process environment itself
 #[derive(Debug, Clone, Default)]
 pub struct SagemakerEnvironment {
     pub region_name: Option<String>,

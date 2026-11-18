@@ -35,7 +35,6 @@ pub struct EmbeddingCall<'call> {
 
 pub struct PreparedEmbedding {
     pub call: PreparedCall,
-    // the request object B5961's readers take, in the order the transform wrote it
     pub body: Body,
 }
 

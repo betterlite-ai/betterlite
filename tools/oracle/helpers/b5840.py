@@ -1,6 +1,6 @@
 import os
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypedDict, cast
+from typing import Final, Literal, Protocol, TypedDict, Unpack, cast
 
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1691
 import litellm
@@ -46,16 +46,28 @@ Input = UrlInput | ComponentInput | SignedInput
 JSON = TypeAdapter(JsonValue)
 
 
+class UrlArgs(TypedDict):
+    api_base: str | None
+    api_key: str | None
+    model: str
+    optional_params: dict[str, JsonValue]
+    litellm_params: dict[str, JsonValue]
+    stream: bool
+
+
+class SignArgs(TypedDict):
+    headers: dict[str, str]
+    optional_params: dict[str, JsonValue]
+    request_data: dict[str, JsonValue]
+    api_base: str
+    api_key: str | None
+    model: str
+    stream: bool
+    fake_stream: bool
+
+
 class ChatConfig(Protocol):
-    def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        stream: bool | None = None,
-    ) -> str: ...
+    def get_complete_url(self, **kwargs: Unpack[UrlArgs]) -> str: ...
 
     def transform_request(
         self,
@@ -76,15 +88,7 @@ class ChatConfig(Protocol):
     ) -> dict[str, str]: ...
 
     def sign_request(
-        self,
-        headers: dict[str, str],
-        optional_params: dict[str, JsonValue],
-        request_data: dict[str, JsonValue],
-        api_base: str,
-        api_key: str | None = None,
-        model: str | None = None,
-        stream: bool | None = None,
-        fake_stream: bool | None = None,
+        self, **kwargs: Unpack[SignArgs]
     ) -> tuple[dict[str, str], bytes | None]: ...
 
 
@@ -103,13 +107,6 @@ class FrozenClock:
         return self.frozen
 
 
-def json_headers(headers: dict[str, str]) -> dict[str, JsonValue]:
-    converted: dict[str, JsonValue] = {}
-    for name, value in headers.items():
-        converted[name] = value
-    return converted
-
-
 def run(case: Input) -> JsonValue:
     if case["function"] == "url":
         return url_value(case)
@@ -120,7 +117,8 @@ def run(case: Input) -> JsonValue:
         merged = CONFIG.validate_environment(
             case["headers"], "model", [], optional_params, {}
         )
-        return {"headers": json_headers(merged)}
+        converted: dict[str, JsonValue] = dict(merged)
+        return {"headers": converted}
     return signed_value(case)
 
 
@@ -130,12 +128,12 @@ def url_value(case: UrlInput) -> JsonValue:
         optional_params["sagemaker_base_url"] = case["base_url"]
     litellm_params: dict[str, JsonValue] = {}
     url = CONFIG.get_complete_url(
-        None,
-        None,
-        case["model"],
-        optional_params,
-        litellm_params,
-        case["stream"],
+        api_base=None,
+        api_key=None,
+        model=case["model"],
+        optional_params=optional_params,
+        litellm_params=litellm_params,
+        stream=case["stream"],
     )
     return {"url": url}
 
@@ -169,7 +167,12 @@ def signed_value(case: SignedInput) -> JsonValue:
         case["headers"], case["model"], case["messages"], body_params, {}
     )
     url = CONFIG.get_complete_url(
-        None, None, case["model"], signing_params, litellm_params, False
+        api_base=None,
+        api_key=None,
+        model=case["model"],
+        optional_params=signing_params,
+        litellm_params=litellm_params,
+        stream=False,
     )
     signed_headers, signed_body = CONFIG.sign_request(
         headers=headers,
@@ -183,11 +186,10 @@ def signed_value(case: SignedInput) -> JsonValue:
     )
     if signed_body is None:
         raise ValueError("sign_request returned no body")
-    lowered = {name.lower(): value for name, value in signed_headers.items()}
     return {
         "ok": True,
         "method": "POST",
         "url": url,
-        "headers": json_headers(lowered),
+        "headers": {name.lower(): value for name, value in signed_headers.items()},
         "body": JSON.validate_json(signed_body),
     }

@@ -16,7 +16,6 @@ const NOVA_PREFIX: &str = "sagemaker_nova/";
 const INVOCATIONS: &str = "invocations";
 const RESPONSE_STREAM: &str = "invocations-response-stream";
 
-// the core dispatch removes the provider prefix before the handler sees the model; the runtime removes it too
 #[must_use]
 pub fn endpoint_name(model: &str) -> &str {
     model
@@ -34,7 +33,6 @@ pub struct EndpointRequest<'request> {
     pub stream: bool,
 }
 
-// _prepare_request and get_complete_url: the runtime endpoint, which sagemaker_base_url replaces whole
 #[must_use]
 pub fn runtime_url(request: &EndpointRequest<'_>) -> String {
     if let Some(base) = request.base_url {
@@ -55,7 +53,6 @@ pub fn runtime_url(request: &EndpointRequest<'_>) -> String {
     )
 }
 
-// Completion and embedding take aws_region_name, then AWS_REGION, then AWS_REGION_NAME, then us-west-2.
 pub fn call_region(params: &ParamMap, inputs: RegionInputs<'_>) -> Result<String, SigningError> {
     let explicit = params.get("aws_region_name").map_or(Ok(None), |raw| {
         serde_json::from_str::<Option<String>>(raw.get()).map_err(|source| {

@@ -54,7 +54,6 @@ where
     ) -> Result<PreparedCall, RuntimeError> {
         let region = endpoint::call_region(call.signing, self.environment.inputs())?;
         let credentials = self.credentials_for(call.signing, &region).await?;
-        // the handler reads the base url, the component and the stream flag off the same options the body carries
         let base_url = text_option(call.optional_params, BASE_URL_FIELD)?;
         let model_id = text_option(call.optional_params, MODEL_ID_FIELD)?;
         let stream = call

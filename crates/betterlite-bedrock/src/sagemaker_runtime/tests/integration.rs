@@ -452,13 +452,16 @@ async fn transmitted_sigv4_signature_covers_the_sent_request(#[case] chat: bool)
     let RequestBody::Json(body) = &sent.body else {
         panic!("a JSON body is expected");
     };
-    let mut headers = Vec::new();
-    for (name, value) in &sent.headers {
-        headers.push((
-            name.as_str().to_owned(),
-            Some(value.to_str().expect("a text header").to_owned()),
-        ));
-    }
+    let headers: Vec<_> = sent
+        .headers
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.as_str().to_owned(),
+                Some(value.to_str().expect("a text header").to_owned()),
+            )
+        })
+        .collect();
     let credentials = credentials();
     let signed = sign_request(&Signable {
         method: "POST",
