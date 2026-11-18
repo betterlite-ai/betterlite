@@ -1,15 +1,11 @@
-use super::model::{PyNode, class_atom_steps, is_atom};
+use super::model::{PyNode, class_atom_steps};
 use super::{
     MAX_CUSTOM_PATTERN_DEPTH, MAX_CUSTOM_PATTERN_REPEAT, MAX_CUSTOM_PATTERN_WORK, PatternProblem,
 };
 
 type Cost = (u64, u64);
 
-pub(super) fn work(nodes: &[PyNode]) -> Result<u64, PatternProblem> {
-    Ok(sequence_cost(nodes, 0)?.1)
-}
-
-fn sequence_cost(nodes: &[PyNode], depth: u64) -> Result<Cost, PatternProblem> {
+pub(super) fn sequence_cost(nodes: &[PyNode], depth: u64) -> Result<Cost, PatternProblem> {
     if depth > MAX_CUSTOM_PATTERN_DEPTH {
         return Err(PatternProblem::Depth);
     }
@@ -31,7 +27,9 @@ fn sequence_cost(nodes: &[PyNode], depth: u64) -> Result<Cost, PatternProblem> {
 
 fn node_cost(node: &PyNode, depth: u64) -> Result<Cost, PatternProblem> {
     match node {
-        PyNode::Literal(_) | PyNode::NotLiteral(_) | PyNode::Any | PyNode::Assertion => Ok((1, 1)),
+        PyNode::Literal(_) | PyNode::NotLiteral(_) | PyNode::Any | PyNode::Assertion(_) => {
+            Ok((1, 1))
+        }
         PyNode::Class { .. } => Ok((1, class_atom_steps(node))),
         PyNode::Unsupported => Err(PatternProblem::Unsupported),
         PyNode::Subpattern(body) => sequence_cost(body, depth.saturating_add(1)),
@@ -58,7 +56,11 @@ fn repeat_cost(min: u64, max: u64, body: &[PyNode]) -> Result<Cost, PatternProbl
     let [only] = body else {
         return Err(PatternProblem::Repeat);
     };
-    if !is_atom(only) {
+    let atom = matches!(
+        only,
+        PyNode::Literal(_) | PyNode::NotLiteral(_) | PyNode::Any | PyNode::Class { .. }
+    );
+    if !atom {
         return Err(PatternProblem::Repeat);
     }
     let choices = max.saturating_sub(min).saturating_add(1);

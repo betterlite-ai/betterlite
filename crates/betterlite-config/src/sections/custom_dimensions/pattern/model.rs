@@ -10,7 +10,7 @@ pub(super) enum PyNode {
     Literal(char),
     NotLiteral(char),
     Any,
-    Assertion,
+    Assertion(ast::AssertionKind),
     Class {
         negated: bool,
         items: Vec<ClassItem>,
@@ -29,14 +29,10 @@ pub(super) enum PyNode {
 pub(super) enum ClassItem {
     Literal(char),
     Range(char, char),
-    Category { negated: bool, kind: Category },
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Category {
-    Digit,
-    Space,
-    Word,
+    Category {
+        negated: bool,
+        kind: ast::ClassPerlKind,
+    },
 }
 
 pub(super) fn parse(pattern: &str) -> Result<Vec<PyNode>, PatternProblem> {
@@ -54,13 +50,7 @@ pub(super) fn parse(pattern: &str) -> Result<Vec<PyNode>, PatternProblem> {
 fn lower(ast: &Ast) -> Result<Vec<PyNode>, PatternProblem> {
     match ast {
         Ast::Empty(_) | Ast::Flags(_) => Ok(Vec::new()),
-        Ast::Concat(concat) => {
-            let mut nodes = Vec::new();
-            for child in &concat.asts {
-                nodes.extend(lower(child)?);
-            }
-            Ok(nodes)
-        }
+        Ast::Concat(concat) => lower_concat(&concat.asts),
         Ast::Alternation(alternation) => alternation::nodes(alternation),
         Ast::Group(group) if matches!(&group.kind, ast::GroupKind::NonCapturing(flags) if flags.items.is_empty()) => {
             lower(&group.ast)
@@ -69,30 +59,42 @@ fn lower(ast: &Ast) -> Result<Vec<PyNode>, PatternProblem> {
     }
 }
 
+fn lower_concat(asts: &[Ast]) -> Result<Vec<PyNode>, PatternProblem> {
+    let mut nodes = Vec::new();
+    for ast in asts {
+        nodes.extend(lower(ast)?);
+    }
+    Ok(nodes)
+}
+
 fn single(ast: &Ast) -> Result<PyNode, PatternProblem> {
     match ast {
         Ast::Literal(literal) => Ok(PyNode::Literal(literal.c)),
         Ast::Dot(_) => Ok(PyNode::Any),
-        Ast::Assertion(assertion) => match assertion.kind {
-            ast::AssertionKind::StartLine
-            | ast::AssertionKind::EndLine
-            | ast::AssertionKind::StartText
-            | ast::AssertionKind::EndText
-            | ast::AssertionKind::WordBoundary
-            | ast::AssertionKind::NotWordBoundary => Ok(PyNode::Assertion),
-            _ => Err(PatternProblem::Unsupported),
-        },
+        Ast::Assertion(assertion) => assertion_node(&assertion.kind),
         Ast::ClassPerl(perl) => Ok(PyNode::Class {
             negated: false,
             items: vec![ClassItem::Category {
                 negated: perl.negated,
-                kind: category(&perl.kind),
+                kind: perl.kind.clone(),
             }],
         }),
         Ast::ClassBracketed(bracketed) => class_decode::node(bracketed),
         Ast::Repetition(repetition) => repeat_node(repetition),
         Ast::Group(group) => Ok(PyNode::Subpattern(lower(&group.ast)?)),
         _ => Ok(PyNode::Unsupported),
+    }
+}
+
+fn assertion_node(kind: &ast::AssertionKind) -> Result<PyNode, PatternProblem> {
+    match kind {
+        ast::AssertionKind::StartLine
+        | ast::AssertionKind::EndLine
+        | ast::AssertionKind::StartText
+        | ast::AssertionKind::EndText
+        | ast::AssertionKind::WordBoundary
+        | ast::AssertionKind::NotWordBoundary => Ok(PyNode::Assertion(kind.clone())),
+        _ => Err(PatternProblem::Unsupported),
     }
 }
 
@@ -142,24 +144,12 @@ fn repetition_bounds(kind: &ast::RepetitionKind) -> Option<(u64, u64)> {
     Some(bounds)
 }
 
-pub(super) fn category(kind: &ast::ClassPerlKind) -> Category {
-    match kind {
-        ast::ClassPerlKind::Digit => Category::Digit,
-        ast::ClassPerlKind::Space => Category::Space,
-        ast::ClassPerlKind::Word => Category::Word,
-    }
-}
-
 fn explicit(count: u32) -> Option<u64> {
-    let value = u64::from(count);
-    (value < MAX_REPEAT).then_some(value)
-}
-
-pub(super) fn is_atom(node: &PyNode) -> bool {
-    matches!(
-        node,
-        PyNode::Literal(_) | PyNode::NotLiteral(_) | PyNode::Any | PyNode::Class { .. }
-    )
+    if u64::from(count) < MAX_REPEAT {
+        Some(u64::from(count))
+    } else {
+        None
+    }
 }
 
 pub(super) fn class_atom_steps(node: &PyNode) -> u64 {
@@ -173,12 +163,10 @@ pub(super) fn class_atom_steps(node: &PyNode) -> u64 {
 }
 
 fn prefix_eq(left: &PyNode, right: &PyNode) -> bool {
-    match left {
-        PyNode::Subpattern(_) | PyNode::Branch(_) | PyNode::Repeat { .. } | PyNode::Unsupported => {
-            false
-        }
-        _ => left == right,
-    }
+    !matches!(
+        left,
+        PyNode::Subpattern(_) | PyNode::Branch(_) | PyNode::Repeat { .. } | PyNode::Unsupported
+    ) && left == right
 }
 
 fn push_unique(items: &mut Vec<ClassItem>, item: ClassItem) {

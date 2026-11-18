@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::custom_dimensions as section;
 
+use self::ClassifierType::{Heuristic, HeuristicFirst, Hybrid};
 use crate::complexity_scoring::dimensions::{CustomDimension, ScoringMode};
 
 mod tests;
@@ -46,11 +47,6 @@ impl ClassifierType {
             "jev" => Some(Self::Jev),
             _ => None,
         }
-    }
-
-    #[must_use]
-    pub const fn accepts_custom_dimensions(self) -> bool {
-        matches!(self, Self::Heuristic | Self::HeuristicFirst | Self::Hybrid)
     }
 }
 
@@ -105,7 +101,7 @@ pub fn validate(
             work: 0,
         });
     }
-    if !classifier_type.accepts_custom_dimensions() {
+    if !matches!(classifier_type, Heuristic | HeuristicFirst | Hybrid) {
         return Err(DimensionsError::Classifier);
     }
     let reserved: BTreeSet<String> = BUILT_IN_DIMENSIONS
@@ -144,7 +140,7 @@ fn convert(checked: section::Checked) -> CustomDimension {
         name: checked.name,
         weight: checked.weight,
         keywords: checked.keywords,
-        patterns: checked.patterns,
+        patterns: checked.matcher_patterns,
         scoring_mode: match checked.scoring_mode {
             section::ScoringMode::Binary => ScoringMode::Binary,
             section::ScoringMode::MatchCount => ScoringMode::MatchCount,

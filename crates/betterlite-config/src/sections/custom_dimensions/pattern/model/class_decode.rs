@@ -1,7 +1,7 @@
 use regex_syntax::ast;
 
 use super::super::PatternProblem;
-use super::{ClassItem, PyNode, category};
+use super::{ClassItem, PyNode};
 
 pub(super) fn node(bracketed: &ast::ClassBracketed) -> Result<PyNode, PatternProblem> {
     let mut items = Vec::new();
@@ -36,7 +36,7 @@ fn decode_item(item: &ast::ClassSetItem, items: &mut Vec<ClassItem>) -> Result<(
         ast::ClassSetItem::Perl(perl) => {
             items.push(ClassItem::Category {
                 negated: perl.negated,
-                kind: category(&perl.kind),
+                kind: perl.kind.clone(),
             });
             Ok(())
         }
