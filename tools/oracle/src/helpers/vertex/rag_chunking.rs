@@ -1,11 +1,15 @@
+mod ops;
+mod tests;
+mod warnings;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = ops::Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("vertex_rag_chunking")
+    fn run(input: &Self::Input) -> HelperResult {
+        ops::run(input)
     }
 }

@@ -1,0 +1,12 @@
+kind: helper
+name: member-request-contracts-callback-invalid-variable
+call:
+  b8412: {record: AddTeamCallback, value: {callback_name: "langfuse", callback_vars: {bogus_host: "https://langfuse"}}}
+calls:
+  - b8412: {record: AddTeamCallback, value: {callback_name: "langfuse", callback_type: null, callback_vars: {langfuse_host: "os.environ/LANGFUSE_HOST"}}}
+  - b8412: {record: AddTeamCallback, value: {callback_name: "langfuse", callback_vars: {langfuse_environment: "Langfuse-prod"}}}
+  - b8412: {record: AddTeamCallback, value: {callback_name: "langfuse", callback_vars: {langfuse_span_scope: "traces"}}}
+  - b8412: {record: AddTeamCallback, value: {callback_name: "langfuse", callback_vars: {langfuse_prompt_version: 3, langfuse_host: "https://langfuse"}}}
+  - b8412: {record: AddTeamCallback, value: {callback_name: "langfuse", callback_type: "failure", callback_vars: {langfuse_host: "https://langfuse"}}}
+env: {}
+compare: {ignore: []}

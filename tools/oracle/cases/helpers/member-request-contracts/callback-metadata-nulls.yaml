@@ -1,0 +1,12 @@
+kind: helper
+name: member-request-contracts-callback-metadata-nulls
+call:
+  b8412: {record: TeamCallbackMetadata, value: {}}
+calls:
+  - b8412: {record: TeamCallbackMetadata, value: {success_callback: null, failure_callback: null, callbacks: null, callback_vars: null}}
+  - b8412: {record: TeamCallbackMetadata, value: {success_callback: ["slack"], failure_callback: null, callbacks: null}}
+  - b8412: {record: TeamCallbackMetadata, value: {callback_vars: {langfuse_host: "os.environ/LANGFUSE_HOST"}}}
+  - b8412: {record: TeamCallbackMetadata, value: {unknown: null}}
+  - b8412: {record: TeamCallbackMetadata, value: {callbacks: ["langfuse"], callback_vars: {langfuse_host: "https://langfuse"}}}
+env: {}
+compare: {ignore: []}
