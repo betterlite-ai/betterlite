@@ -128,7 +128,12 @@ fn entity_reset_advances_the_reset_time_from_the_schedule() {
         invocations: Arc::new(AtomicUsize::new(0)),
     };
     let values = reset_budget_values(
-        input(None, None, Some("30d"), None),
+        input(
+            None,
+            None,
+            Some("30d"),
+            Some(Utc.with_ymd_and_hms(2025, 12, 1, 0, 0, 0).unwrap()),
+        ),
         RolloverPolicy::default(),
         &schedule,
     )
