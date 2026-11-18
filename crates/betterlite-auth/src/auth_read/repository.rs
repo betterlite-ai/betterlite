@@ -1,3 +1,4 @@
+use std::slice::from_ref;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -32,16 +33,24 @@ enum ReadQuery<'query, Rows: Including> {
         Option<&'query Rows::Include>,
     ),
     Listed(
-        Option<&'query [Rows::Filter]>,
+        Option<&'query Rows::Filter>,
         Option<i64>,
         Option<&'query Rows::Include>,
     ),
 }
 
 impl<'query, Rows: Including> ReadQuery<'query, Rows> {
-    fn include(&self) -> Option<&'query Rows::Include> {
+    const fn include(&self) -> Option<&'query Rows::Include> {
         match self {
             Self::Keyed(_, _, include) | Self::Listed(_, _, include) => *include,
+        }
+    }
+
+    // B700 hands take by value, so the selecting table owns the limit and binds it into the statement.
+    const fn take(&self) -> Option<i64> {
+        match self {
+            Self::Keyed(..) => None,
+            Self::Listed(_, take, _) => *take,
         }
     }
 }
@@ -64,6 +73,7 @@ where
             table: SelectingTable {
                 table: self.table.clone(),
                 include: query.include().cloned(),
+                limit: query.take(),
             },
         };
         match query {
@@ -78,12 +88,12 @@ where
                     .map_err(AuthReadError::Repository)?;
                 Ok(found.into_iter().collect())
             }
-            ReadQuery::Listed(filter, take, _) => {
+            ReadQuery::Listed(filter, _, _) => {
                 let options = RowsFindMany {
-                    filter,
+                    filter: filter.map(from_ref),
                     order: None,
                     skip: None,
-                    take,
+                    take: None,
                 };
                 repository
                     .find_many(options)
@@ -103,6 +113,7 @@ where
             table: SelectingTable {
                 table: self.table.clone(),
                 include: include.cloned(),
+                limit: None,
             },
         };
         repository
@@ -125,7 +136,7 @@ where
 {
     type Row = Rows::Model;
     type Key = NativeKey<Rows::Column>;
-    type Filter = Vec<Rows::Filter>;
+    type Filter = Rows::Filter;
     type Include = Rows::Include;
     type Data = Rows::Data;
     type Failure = Rows::Error;
@@ -145,7 +156,7 @@ where
     }
 
     async fn find_many(&self, request: ManyRequest<Self>) -> ManyAnswer<Self> {
-        let filter = request.filter.value().map(Vec::as_slice);
+        let filter = request.filter.value();
         let take = request.take.value().copied();
         let include = request.include.value();
         self.read(ReadQuery::Listed(filter, take, include)).await
