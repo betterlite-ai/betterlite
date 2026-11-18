@@ -16,13 +16,11 @@ pub(crate) enum Input {
     CohereReply(CohereReply),
     DecodeStream(DecodeStream),
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ModelConfig {
     pub(crate) model: String,
 }
-
 // the caller's headers are the same input both LiteLLM methods drop
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -30,21 +28,18 @@ pub(crate) struct Headers {
     pub(crate) kind: ConfigKind,
     pub(crate) headers: BTreeMap<String, String>,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ConfigKind {
     HuggingFace,
     Cohere,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HfRequest {
     pub(crate) input: Json,
     pub(crate) optional_params: Object,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct HfReply {
@@ -53,14 +48,12 @@ pub(crate) struct HfReply {
     pub(crate) model: String,
     pub(crate) request: Object,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CohereMap {
     pub(crate) non_default: Object,
     pub(crate) optional_params: Object,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CohereRequest {
@@ -68,7 +61,6 @@ pub(crate) struct CohereRequest {
     pub(crate) input: Json,
     pub(crate) optional_params: Object,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CohereReply {
@@ -77,7 +69,6 @@ pub(crate) struct CohereReply {
     pub(crate) input: Json,
     pub(crate) request_data: Object,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct DecodeStream {

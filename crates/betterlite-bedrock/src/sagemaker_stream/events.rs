@@ -164,5 +164,4 @@ fn payload_text(payload: &[u8]) -> String {
         str::to_owned,
     )
 }
-
 mod tests;

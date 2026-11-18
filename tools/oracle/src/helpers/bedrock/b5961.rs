@@ -1,11 +1,9 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-
 mod input;
 mod ops;
 mod tests;
 
 pub(crate) struct Op;
-
 impl Helper for Op {
     type Input = input::Input;
 

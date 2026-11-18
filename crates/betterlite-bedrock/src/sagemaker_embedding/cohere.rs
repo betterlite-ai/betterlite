@@ -111,5 +111,4 @@ fn reply_input(
     };
     Ok(texts)
 }
-
 mod tests;

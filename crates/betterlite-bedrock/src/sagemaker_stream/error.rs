@@ -4,7 +4,6 @@ use betterlite_http::error::HttpError;
 use thiserror::Error;
 
 use crate::event_frames::error::EventFrameError;
-
 #[derive(Debug, Error)]
 pub enum SagemakerStreamError {
     #[error("the SageMaker event frame could not be read")]

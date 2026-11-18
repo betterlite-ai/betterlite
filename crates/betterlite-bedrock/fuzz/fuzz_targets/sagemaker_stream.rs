@@ -1,8 +1,6 @@
 #![no_main]
-
 use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerStreamDecoder};
 use libfuzzer_sys::fuzz_target;
-
 fuzz_target!(|bytes: &[u8]| {
     let size = usize::from(bytes.first().copied().unwrap_or(0)).max(1);
     let data = bytes.get(1..).unwrap_or_default();

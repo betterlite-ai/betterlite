@@ -146,5 +146,4 @@ fn count_input_words(inputs: Option<&Json>) -> Result<u64, SagemakerError> {
         headers: None,
     })
 }
-
 mod tests;

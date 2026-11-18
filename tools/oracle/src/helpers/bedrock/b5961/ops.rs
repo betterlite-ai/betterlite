@@ -4,9 +4,7 @@ use betterlite_bedrock::sagemaker_embedding::{self, EmbeddingConfig};
 use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerStreamDecoder};
 use betterlite_http::error::HttpError;
 use betterlite_openai::cohere_embedding::TextEncoding;
-use betterlite_openai::cohere_legacy_embedding::decode::{
-    LegacyEmbeddingRecord, LegacyEmbeddingResponse,
-};
+use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_tokenizer::engine::error::EngineError;
@@ -36,7 +34,6 @@ pub(crate) fn run(input: &Input) -> HelperResult {
         Input::DecodeStream(case) => decode_stream(case),
     }
 }
-
 fn model_config(case: &ModelConfig) -> Value {
     let config = match sagemaker_embedding::get_model_config(&case.model) {
         EmbeddingConfig::Voyage => "voyage",
@@ -48,7 +45,6 @@ fn model_config(case: &ModelConfig) -> Value {
         "supported": sagemaker_embedding::supported_openai_params(&case.model),
     })
 }
-
 // both LiteLLM methods return only the content type, whatever headers the caller brought
 fn headers(case: &Headers) -> Value {
     json!({

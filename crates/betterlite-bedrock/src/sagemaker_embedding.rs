@@ -43,5 +43,4 @@ pub fn validate_environment() -> Headers {
         String::from("application/json"),
     )])
 }
-
 mod tests;

@@ -1,5 +1,3 @@
 [default.extend-words]
-# LiteLLM's leftover-buffer log line says Unparseable, and this module repeats it in the test that asserts the line,
-# so this folder keeps the spelling the root typos.toml would correct.
 Unparseable = "Unparseable"
 unparseable = "unparseable"

@@ -71,5 +71,4 @@ pub fn token_chunk(value: &Json) -> Result<GenericChunk, SagemakerStreamError> {
         provider_specific_fields: None,
     })
 }
-
 mod tests;
