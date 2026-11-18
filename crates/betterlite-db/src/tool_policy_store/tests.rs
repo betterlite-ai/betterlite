@@ -426,7 +426,10 @@ async fn a_failed_reconnect_keeps_its_typed_cause() {
             let inner = cause.cause.expect("the reconnect cause chain");
             assert_eq!(inner.message, "the socket closed");
         }
-        other @ (ToolPolicyStoreError::ClassifiedRead { .. }
+        other @ (ToolPolicyStoreError::Read {
+            reconnect: None, ..
+        }
+        | ToolPolicyStoreError::ClassifiedRead { .. }
         | ToolPolicyStoreError::Deadline { .. }
         | ToolPolicyStoreError::Record { .. }) => {
             panic!("expected a typed read error with its reconnect cause, got {other:?}")
