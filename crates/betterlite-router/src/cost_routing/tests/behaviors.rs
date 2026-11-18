@@ -1,0 +1,569 @@
+use betterlite_models::decisions::Json;
+use betterlite_models::model_registration::JsonObject;
+use rstest::rstest;
+
+use super::support::{
+    FakeWindows, GROUP, MINUTE, MINUTE_MILLIS, MODEL, NEXT_MINUTE, ProbeCosts, TestClock,
+    deployment, entry, number, object, real_router, selection, spec, usage,
+};
+use crate::cost_routing::costs::DeploymentCosts;
+use crate::cost_routing::service::{CostRouter, SuccessEvent};
+use crate::deployment_identity::spec::DeploymentSpec;
+
+const INPUT_COST: &str = "input_cost_per_token";
+const OUTPUT_COST: &str = "output_cost_per_token";
+const TPM: &str = "tpm";
+
+#[derive(Clone, Copy)]
+enum Behavior {
+    RecordsBothCallbacks,
+    SkipsBatchRetrieve,
+    SkipsMissingMetadata,
+    IntegerIdKey,
+    SeparateMinutes,
+    FirstObservationOrder,
+    PicksLowestCost,
+    CustomPriceBeatsCatalog,
+    SumsInputAndOutput,
+    ZeroOverrideFallsBackToCatalog,
+    UnknownModelCostsTen,
+    UnknownModelTiesEvenlyPriced,
+    NullCatalogPriceTakesFive,
+    CatalogEntryFromUnpricedSibling,
+    CatalogEntryKeepsItsOwnFields,
+    CatalogPricesAnUnpricedDeployment,
+    NullOverrideKeepsTheCatalog,
+    EqualCatalogSourcesKeepTheFirst,
+    ScreensByCapacity,
+    AppendsUnseenDeployments,
+    KeepsDeploymentsGoneFromThePool,
+    UnstoredGroupKeepsNothing,
+    StoredOrderBeatsPoolOrder,
+    RealCountersFeedSelection,
+    SelectsNothingWhenEveryDeploymentIsFull,
+}
+
+#[rstest]
+#[case::records_both_callbacks(Behavior::RecordsBothCallbacks)]
+#[case::skips_batch_retrieve(Behavior::SkipsBatchRetrieve)]
+#[case::skips_missing_metadata(Behavior::SkipsMissingMetadata)]
+#[case::integer_id_key(Behavior::IntegerIdKey)]
+#[case::separate_minutes(Behavior::SeparateMinutes)]
+#[case::first_observation_order(Behavior::FirstObservationOrder)]
+#[case::picks_lowest_cost(Behavior::PicksLowestCost)]
+#[case::custom_price_beats_catalog(Behavior::CustomPriceBeatsCatalog)]
+#[case::sums_input_and_output(Behavior::SumsInputAndOutput)]
+#[case::zero_override_falls_back_to_catalog(Behavior::ZeroOverrideFallsBackToCatalog)]
+#[case::unknown_model_costs_ten(Behavior::UnknownModelCostsTen)]
+#[case::unknown_model_ties_evenly_priced(Behavior::UnknownModelTiesEvenlyPriced)]
+#[case::null_catalog_price_takes_five(Behavior::NullCatalogPriceTakesFive)]
+#[case::catalog_entry_from_unpriced_sibling(Behavior::CatalogEntryFromUnpricedSibling)]
+#[case::catalog_entry_keeps_its_own_fields(Behavior::CatalogEntryKeepsItsOwnFields)]
+#[case::catalog_prices_an_unpriced_deployment(Behavior::CatalogPricesAnUnpricedDeployment)]
+#[case::null_override_keeps_the_catalog(Behavior::NullOverrideKeepsTheCatalog)]
+#[case::equal_catalog_sources_keep_the_first(Behavior::EqualCatalogSourcesKeepTheFirst)]
+#[case::screens_by_capacity(Behavior::ScreensByCapacity)]
+#[case::appends_unseen_deployments(Behavior::AppendsUnseenDeployments)]
+#[case::keeps_deployments_gone_from_the_pool(Behavior::KeepsDeploymentsGoneFromThePool)]
+#[case::unstored_group_keeps_nothing(Behavior::UnstoredGroupKeepsNothing)]
+#[case::stored_order_beats_pool_order(Behavior::StoredOrderBeatsPoolOrder)]
+#[case::real_counters_feed_selection(Behavior::RealCountersFeedSelection)]
+#[case::selects_nothing_when_full(Behavior::SelectsNothingWhenEveryDeploymentIsFull)]
+#[tokio::test]
+async fn cost_routing_behaviors(#[case] behavior: Behavior) {
+    match behavior {
+        Behavior::RecordsBothCallbacks => records_both_callbacks().await,
+        Behavior::SkipsBatchRetrieve => skips_batch_retrieve().await,
+        Behavior::SkipsMissingMetadata => skips_missing_metadata().await,
+        Behavior::IntegerIdKey => integer_id_key().await,
+        Behavior::SeparateMinutes => separate_minutes().await,
+        Behavior::FirstObservationOrder => first_observation_order().await,
+        Behavior::PicksLowestCost => picks_lowest_cost(),
+        Behavior::CustomPriceBeatsCatalog => custom_price_beats_catalog(),
+        Behavior::SumsInputAndOutput => sums_input_and_output(),
+        Behavior::ZeroOverrideFallsBackToCatalog => zero_override_falls_back_to_catalog(),
+        Behavior::UnknownModelCostsTen => unknown_model_costs_ten(),
+        Behavior::UnknownModelTiesEvenlyPriced => unknown_model_ties_evenly_priced(),
+        Behavior::NullCatalogPriceTakesFive => null_catalog_price_takes_five(),
+        Behavior::CatalogEntryFromUnpricedSibling => catalog_entry_from_unpriced_sibling(),
+        Behavior::CatalogEntryKeepsItsOwnFields => catalog_entry_keeps_its_own_fields(),
+        Behavior::CatalogPricesAnUnpricedDeployment => catalog_prices_an_unpriced_deployment(),
+        Behavior::NullOverrideKeepsTheCatalog => null_override_keeps_the_catalog(),
+        Behavior::EqualCatalogSourcesKeepTheFirst => equal_catalog_sources_keep_the_first(),
+        Behavior::ScreensByCapacity => screens_by_capacity(),
+        Behavior::AppendsUnseenDeployments => appends_unseen_deployments().await,
+        Behavior::KeepsDeploymentsGoneFromThePool => keeps_deployments_gone_from_the_pool().await,
+        Behavior::UnstoredGroupKeepsNothing => unstored_group_keeps_nothing(),
+        Behavior::StoredOrderBeatsPoolOrder => stored_order_beats_pool_order().await,
+        Behavior::RealCountersFeedSelection => real_counters_feed_selection().await,
+        Behavior::SelectsNothingWhenEveryDeploymentIsFull => selects_nothing_when_full(),
+    }
+}
+
+fn router_at(millis: u64) -> (CostRouter<FakeWindows>, TestClock) {
+    let clock = TestClock::new(millis);
+    (
+        CostRouter::new(FakeWindows::default(), clock.io_clock()),
+        clock,
+    )
+}
+
+fn success(id: &str, tokens: i64) -> SuccessEvent<'_> {
+    SuccessEvent {
+        call_type: Some("acompletion"),
+        model_group: Some(GROUP),
+        deployment_id: Some(id),
+        total_tokens: tokens,
+    }
+}
+
+fn priced(id: &str, model: &str, input: &str, output: &str) -> DeploymentSpec {
+    spec(
+        id,
+        model,
+        &[(INPUT_COST, number(input)), (OUTPUT_COST, number(output))],
+        &[],
+        &[],
+    )
+}
+
+fn catalog<'model>(model: &'model str, input: &str, output: &str) -> (&'model str, JsonObject) {
+    (
+        model,
+        object(&[(INPUT_COST, number(input)), (OUTPUT_COST, number(output))]),
+    )
+}
+
+// log_success_event and async_log_success_event are one primitive, so both call types land in the same window.
+async fn records_both_callbacks() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let sync_only = SuccessEvent {
+        call_type: None,
+        ..success("a", 7)
+    };
+    router.record_success(&sync_only).await;
+    router.record_success(&success("a", 3)).await;
+    assert_eq!(router.entries(GROUP, MINUTE), vec![entry("a", 10, 2)]);
+}
+
+async fn skips_batch_retrieve() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    for call_type in ["aretrieve_batch", "retrieve_batch"] {
+        let event = SuccessEvent {
+            call_type: Some(call_type),
+            ..success("a", 9)
+        };
+        router.record_success(&event).await;
+    }
+    assert!(router.entries(GROUP, MINUTE).is_empty());
+}
+
+async fn skips_missing_metadata() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    for event in [
+        SuccessEvent {
+            model_group: None,
+            ..success("a", 9)
+        },
+        SuccessEvent {
+            deployment_id: None,
+            ..success("a", 9)
+        },
+    ] {
+        router.record_success(&event).await;
+    }
+    assert!(router.entries(GROUP, MINUTE).is_empty());
+}
+
+// an integer model_info id becomes the map key's decimal text, as the pinned callback's str(id) does
+async fn integer_id_key() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let mut params = JsonObject::new();
+    params.insert("model".to_owned(), Json::Text(MODEL.to_owned()));
+    let mut info = JsonObject::new();
+    info.insert("id".to_owned(), number("7"));
+    let deployment = DeploymentSpec::new(
+        GROUP.to_owned(),
+        params,
+        info,
+        JsonObject::new(),
+        String::new,
+    )
+    .unwrap();
+    let event = SuccessEvent {
+        deployment_id: deployment.id(),
+        ..success("7", 3)
+    };
+    router.record_success(&event).await;
+    assert_eq!(router.entries(GROUP, MINUTE), vec![entry("7", 3, 1)]);
+}
+
+async fn separate_minutes() {
+    let (router, clock) = router_at(MINUTE_MILLIS);
+    router.record_success(&success("a", 5)).await;
+    clock.set_millis(MINUTE_MILLIS + 60_000);
+    router.record_success(&success("a", 4)).await;
+    assert_eq!(router.entries(GROUP, MINUTE), vec![entry("a", 5, 1)]);
+    assert_eq!(router.entries(GROUP, NEXT_MINUTE), vec![entry("a", 4, 1)]);
+}
+
+async fn first_observation_order() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    router.record_success(&success("b", 1)).await;
+    router.record_success(&success("a", 1)).await;
+    assert_eq!(
+        router.entries(GROUP, MINUTE),
+        vec![entry("b", 1, 1), entry("a", 1, 1)]
+    );
+}
+
+fn picks_lowest_cost() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec("a", "openai/a", &[], &[], &[]),
+        spec("b", "openai/b", &[], &[], &[]),
+    ];
+    let costs = ProbeCosts::new(&[catalog("openai/a", "3", "1"), catalog("openai/b", "1", "1")]);
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+fn custom_price_beats_catalog() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [deployment("b"), priced("a", MODEL, "0.01", "0.01")];
+    let costs = ProbeCosts::new(&[catalog(MODEL, "0.5", "0.5")]);
+    // without the override both deployments read 0.5 + 0.5 and the tie keeps b
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+// item_cost is input_cost_per_token + output_cost_per_token, not a product with max_tokens or a single rate.
+fn sums_input_and_output() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec("a", "openai/input", &[], &[], &[]),
+        spec("b", "openai/output", &[], &[], &[]),
+        spec("c", "openai/balanced", &[], &[], &[]),
+    ];
+    let costs = ProbeCosts::new(&[
+        catalog("openai/input", "0.01", "0.9"),
+        catalog("openai/output", "0.9", "0.01"),
+        catalog("openai/balanced", "0.3", "0.3"),
+    ]);
+    // the sum picks c at 0.6, an input-only metric picks a and an output-only one picks b
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(2)));
+}
+
+// Python truthiness: a zero override is not a price, so the catalog entry fills both sides.
+fn zero_override_falls_back_to_catalog() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        priced("a", "openai/zero", "0", "0"),
+        spec("b", "openai/cheap", &[], &[], &[]),
+    ];
+    let costs = ProbeCosts::new(&[
+        catalog("openai/zero", "0.3", "0.4"),
+        catalog("openai/cheap", "0.1", "0.1"),
+    ]);
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+// a model the cost map does not know is priced 5.0 + 5.0, the pinned fallback for each side.
+fn unknown_model_costs_ten() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec("a", "openai/unknown", &[], &[], &[]),
+        spec("b", "openai/known", &[], &[], &[]),
+    ];
+    // the 5.0 default puts the unknown model at 10.0, just over the known model's 9.9
+    let costs = ProbeCosts::new(&[catalog("openai/known", "4.95", "4.95")]);
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+// a catalog entry at exactly 5.0 a side ties the unknown model's default, so the first pool entry wins either way round
+fn unknown_model_ties_evenly_priced() {
+    let costs = ProbeCosts::new(&[catalog("openai/known", "5", "5")]);
+    let forward = [
+        spec("a", "openai/unknown", &[], &[], &[]),
+        spec("b", "openai/known", &[], &[], &[]),
+    ];
+    assert_eq!(
+        router_at(MINUTE_MILLIS)
+            .0
+            .select(&costs, &selection(&forward, 0)),
+        Ok(Some(0))
+    );
+    let reversed = [
+        spec("b", "openai/known", &[], &[], &[]),
+        spec("a", "openai/unknown", &[], &[], &[]),
+    ];
+    assert_eq!(
+        router_at(MINUTE_MILLIS)
+            .0
+            .select(&costs, &selection(&reversed, 0)),
+        Ok(Some(0))
+    );
+}
+
+// a null catalog rate takes the declared default rather than failing the route
+fn null_catalog_price_takes_five() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec("a", "openai/null", &[], &[], &[]),
+        spec("b", "openai/known", &[], &[], &[]),
+    ];
+    let nulls = object(&[(INPUT_COST, Json::Null), (OUTPUT_COST, number("0.1"))]);
+    let costs = ProbeCosts::new(&[("openai/null", nulls), catalog("openai/known", "1", "1")]);
+    // a null input rate is the 5.0 default, so 5.1 loses to 2.0
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+}
+
+// get_model_info copies the catalog into model_info, and Deployment.__init__ mirrors custom prices over it.
+fn catalog_entry_from_unpriced_sibling() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let zero = spec(
+        "a",
+        "openai/shared",
+        &[(INPUT_COST, number("0")), (OUTPUT_COST, number("0"))],
+        &[],
+        &[],
+    );
+    let sibling = spec(
+        "d",
+        "openai/shared",
+        &[],
+        &[(INPUT_COST, number("0.3")), (OUTPUT_COST, number("0.4"))],
+        &[],
+    );
+    let other = spec(
+        "y",
+        "openai/other",
+        &[],
+        &[(INPUT_COST, number("0.5")), (OUTPUT_COST, number("0.4"))],
+        &[],
+    );
+    let pool = [zero, other, sibling];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // the zero override falls back to the sibling's catalog entry (0.7), which beats y at 0.9
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// a mirrored override hides only its own field, so the other side still reads the catalog for every sibling
+fn catalog_entry_keeps_its_own_fields() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec(
+            "d1",
+            MODEL,
+            &[(INPUT_COST, number("0.25"))],
+            &[(OUTPUT_COST, number("0.3"))],
+            &[],
+        ),
+        spec("d2", MODEL, &[(INPUT_COST, number("0.3"))], &[], &[]),
+        spec(
+            "y",
+            "openai/other",
+            &[],
+            &[(INPUT_COST, number("1.45")), (OUTPUT_COST, number("1.45"))],
+            &[],
+        ),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // d1 reads its own input and the entry's output at 0.55; hiding that output would put y ahead of both
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// a deployment that names no custom price is priced from its own catalog entry, which only the entry read supplies
+fn catalog_prices_an_unpriced_deployment() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec(
+            "a",
+            "openai/catalog",
+            &[],
+            &[(INPUT_COST, number("0.1")), (OUTPUT_COST, number("0.1"))],
+            &[],
+        ),
+        priced("b", MODEL, "0.25", "0.25"),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // a reads its catalog entry at 0.2 and beats b at 0.5; without the entry both sides default and b wins
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// Deployment.__init__ does not mirror a null price, so the catalog value the entry carries stays readable
+fn null_override_keeps_the_catalog() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let nulls = spec(
+        "a",
+        "openai/null",
+        &[(INPUT_COST, Json::Null)],
+        &[(INPUT_COST, number("0.3")), (OUTPUT_COST, number("0.3"))],
+        &[],
+    );
+    let pool = [
+        nulls,
+        spec(
+            "b",
+            "openai/other",
+            &[],
+            &[(INPUT_COST, number("2")), (OUTPUT_COST, number("2"))],
+            &[],
+        ),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // a null override leaves a at 0.6; treating the null as mirrored would make its input the 5.0 default
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+// the first deployment that overwrote the fewest catalog fields supplies the entry; an equally clean later one does not
+fn equal_catalog_sources_keep_the_first() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        spec(
+            "m1",
+            "openai/m",
+            &[],
+            &[(INPUT_COST, number("0.1")), (OUTPUT_COST, number("0.1"))],
+            &[],
+        ),
+        spec(
+            "m2",
+            "openai/m",
+            &[],
+            &[(INPUT_COST, number("0.2")), (OUTPUT_COST, number("0.2"))],
+            &[],
+        ),
+        spec(
+            "n",
+            "openai/n",
+            &[],
+            &[(INPUT_COST, number("0.15")), (OUTPUT_COST, number("0.15"))],
+            &[],
+        ),
+    ];
+    let costs = DeploymentCosts::from_deployments(&pool);
+    // m is priced from m1 at 0.2 and beats n at 0.3; taking m2 instead would price m at 0.4
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+}
+
+fn screens_by_capacity() {
+    let windows = FakeWindows::default();
+    windows.seed("a", MINUTE, usage(8, 0));
+    let clock = TestClock::new(MINUTE_MILLIS);
+    let router = CostRouter::new(windows, clock.io_clock());
+    let pool = [
+        spec(
+            "a",
+            MODEL,
+            &[
+                (INPUT_COST, number("0.01")),
+                (OUTPUT_COST, number("0.01")),
+                (TPM, number("10")),
+            ],
+            &[],
+            &[],
+        ),
+        deployment("b"),
+    ];
+    let costs = ProbeCosts::default();
+    // a would be the cheaper deployment, but 8 used + 5 estimated tokens pass its 10-token minute
+    assert_eq!(router.select(&costs, &selection(&pool, 5)), Ok(Some(1)));
+}
+
+async fn appends_unseen_deployments() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    router.record_success(&success("a", 5)).await;
+    let pool = [
+        priced("a", MODEL, "0.1", "0.1"),
+        priced("b", MODEL, "0.01", "0.01"),
+    ];
+    let costs = ProbeCosts::default();
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+    // the selector wrote b into the map with this minute's zero usage
+    assert_eq!(
+        router.entries(GROUP, MINUTE),
+        vec![entry("a", 5, 1), entry("b", 0, 0)]
+    );
+}
+
+async fn keeps_deployments_gone_from_the_pool() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    router.record_success(&success("gone", 5)).await;
+    router.record_success(&success("a", 1)).await;
+    let pool = [priced("a", MODEL, "0.5", "0.5")];
+    let costs = ProbeCosts::new(&[catalog(MODEL, "0.1", "0.1")]);
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+    assert_eq!(
+        router.entries(GROUP, MINUTE),
+        vec![entry("gone", 5, 1), entry("a", 1, 1)]
+    );
+}
+
+// The pinned map is stored by the first success, not by a selection: a fresh group's selection appends nothing.
+fn unstored_group_keeps_nothing() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    let pool = [
+        priced("b", MODEL, "0.1", "0.1"),
+        priced("a", MODEL, "0.1", "0.1"),
+    ];
+    let costs = ProbeCosts::default();
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(0)));
+    assert!(router.entries(GROUP, MINUTE).is_empty());
+    // the next selection rebuilds the map from the current pool, so the tie follows the new pool order
+    let reordered = [
+        priced("a", MODEL, "0.1", "0.1"),
+        priced("b", MODEL, "0.1", "0.1"),
+    ];
+    assert_eq!(
+        router.select(&costs, &selection(&reordered, 0)),
+        Ok(Some(0))
+    );
+}
+
+// Once a success stores the map, a deployment's first-observation place outranks the current pool order on a tie.
+async fn stored_order_beats_pool_order() {
+    let (router, _clock) = router_at(MINUTE_MILLIS);
+    router.record_success(&success("b", 1)).await;
+    let pool = [
+        priced("a", MODEL, "0.1", "0.1"),
+        priced("b", MODEL, "0.1", "0.1"),
+    ];
+    let costs = ProbeCosts::default();
+    // the map order is b then a, so the equal-cost tie keeps b at pool index 1
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(Some(1)));
+    assert_eq!(
+        router.entries(GROUP, MINUTE),
+        vec![entry("b", 1, 1), entry("a", 0, 0)]
+    );
+}
+
+async fn real_counters_feed_selection() {
+    let clock = TestClock::new(MINUTE_MILLIS);
+    let (router, _values) = real_router(&clock);
+    router.record_success(&success("a", 60)).await;
+    router.record_success(&success("b", 10)).await;
+    assert_eq!(
+        router.entries(GROUP, MINUTE),
+        vec![entry("a", 60, 1), entry("b", 10, 1)]
+    );
+    let pool = [
+        spec("a", MODEL, &[(TPM, number("100"))], &[], &[]),
+        spec("b", MODEL, &[(TPM, number("100"))], &[], &[]),
+    ];
+    let costs = ProbeCosts::default();
+    // 60 used + 50 estimated tokens pass a's 100-token minute, while b's 10 leave it eligible
+    assert_eq!(router.select(&costs, &selection(&pool, 50)), Ok(Some(1)));
+}
+
+fn selects_nothing_when_full() {
+    let windows = FakeWindows::default();
+    windows.seed("a", MINUTE, usage(6, 0));
+    windows.seed("b", MINUTE, usage(6, 0));
+    let clock = TestClock::new(MINUTE_MILLIS);
+    let router = CostRouter::new(windows, clock.io_clock());
+    let pool = [
+        spec("a", MODEL, &[(TPM, number("5"))], &[], &[]),
+        spec("b", MODEL, &[(TPM, number("5"))], &[], &[]),
+    ];
+    let costs = ProbeCosts::new(&[catalog(MODEL, "0.1", "0.1")]);
+    assert_eq!(router.select(&costs, &selection(&pool, 0)), Ok(None));
+}

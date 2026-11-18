@@ -75,3 +75,10 @@ path = "fuzz_targets/tier_data.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "class_reply"
+path = "fuzz_targets/class_reply.rs"
+test = false
+doc = false
+bench = false

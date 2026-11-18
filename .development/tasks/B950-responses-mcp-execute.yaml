@@ -1,9 +1,24 @@
 id: B950
 title: Responses mcp execute
 description: >-
-  Execute extracted MCP function/custom calls through B8465's MCPServerManager.call_tool (mcp::tool_call), with B8195's _resolve_display_name_to_original for display names, and B137 using typed parsed arguments and normalized
-  tool results. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
+  Execute extracted MCP function/custom calls through B8465's MCPServerManager.call_tool (mcp::tool_call), with B8195's _resolve_display_name_to_original for display names, using typed parsed arguments and normalized
+  tool results. The four MCP header values (mcp_auth_header, mcp_server_auth_headers, oauth2_headers, raw_headers)
+  arrive as arguments (B905's McpHeaders on main holds the same four) and go to call_tool unchanged; B8465's call_tool
+  turns them into upstream credentials through B8196's checks and B4667's resolver, so this task resolves no
+  credential. Preserve source authorization and failure logging for every call; do not treat a model-emitted tool
   name as permission to access another server.
+
+
+  call_tool, _resolve_display_name_to_original and the two proxy hooks live in betterlite-server, and betterlite-core
+  can't depend on it, so _execute_tool_calls reaches them through a port. Declare an async trait McpToolExecution in
+  responses_mcp_execute.rs with one method per gateway call: the server lookup (get_mcp_server_by_name, then
+  _get_mcp_server_from_tool_name), B8195's _resolve_display_name_to_original (mcp::ops_scoping), B8465's call_tool
+  (mcp::tool_call), B8394's post_mcp_call_hook and B8395's post_call_failure_hook with route
+  "/responses/mcp/call_tool". Its arguments and results are betterlite-core or betterlite-mcp types, never a betterlite-server one, and the service takes the
+  port through its constructor. B140 fills it: its McpLlmTools adapter in crates/betterlite-server/src/app/mcp/llm_tools/ports.rs
+  forwards each method to that owner. main already works this way, since betterlite-core's
+  passthrough_guardrail::traits::PassthroughPolicy is filled by betterlite-server's PassthroughPolicyBridge
+  (guardrails/unified_passthrough/endpoint.rs). The tests and the oracle adapter pass a scripted McpToolExecution.
 
 
   Implement crates/betterlite-core/src/api/responses_mcp_execute.rs. Use ResponsesMcpExecuteInput and ResponsesMcpExecuteResult
@@ -60,8 +75,8 @@ description: >-
   code.
 
 
-  Direct inputs come from B8465 (MCP upstream tool call dispatch), B8195 (display name resolution), B137 (MCP auth, OAuth flows,
-  BYOK and outbound credentials), B171 (Direct helper oracle and URL path encoding),
+  Direct inputs come from B8465 (the call_tool McpToolExecution mirrors), B8195 (the display name resolution it mirrors),
+  B171 (Direct helper oracle and URL path encoding),
   B1087 (Api boundaries), B732 (Typed authentication principals and grant resolution), B1106 (Principal metadata
   and tags), B002 (Load LiteLLM config.yaml into typed config). These are callable/type/config owners, not provider-family
   umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data branches.
@@ -212,6 +227,7 @@ out_of_scope:
   operations. Python package export/event-loop facades remain B158-B161.
 - Actual HTTP auth/route registration is owned by the route callers listed in this API family; pure helper cases
   never stand in for those HTTP comparisons.
+- The McpToolExecution adapter over the gateway's MCP area and proxy hooks is B140's (crates/betterlite-server/src/app/mcp/llm_tools/ports.rs).
 pitfalls:
 - 'The oracle helper for this task is pre-registered as responses_mcp_execute in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/responses_mcp_execute.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/responses_mcp_execute.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - 'litellm_proxy_mcp_handler.py:729 emits the diagnostic ''Tool call missing name: %s''; retain its level and fallback

@@ -1,0 +1,36 @@
+kind: probe
+name: decimal-small-increments
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_budget_state:
+        provider_budget_config:
+          openai: {budget_limit: "10", time_period: 1d}
+        steps:
+          - {kind: success, provider: openai, cost: "0.1"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: success, provider: openai, cost: "0.1"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: success, provider: openai, cost: "0.1"}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: sync}
+          - {kind: memory, key: "provider_spend:openai:1d"}
+          - {kind: redis, key: "provider_spend:openai:1d"}
+compare:
+  expected_difference:
+    - pointer: /output/routing_budget_state/steps/5/value
+      reference: "0.30000000000000004"
+      rust: "0.3"
+      why: LiteLLM adds the three 0.1 costs as floats and keeps the binary rounding in memory, while betterlite adds them as decimals.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L392-L412
+    - pointer: /output/routing_budget_state/steps/7/value
+      reference: "0.30000000000000004"
+      rust: "0.3"
+      why: The copy puts the shared total plus the queued increments into the memory cache, so LiteLLM keeps the float sum the store wrote while betterlite reads back the decimal it stored.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L686-L694
+    - pointer: /output/routing_budget_state/steps/8/value
+      reference: "0.30000000000000004"
+      rust: "0.3"
+      why: The probe's store writes floats for LiteLLM and decimals for betterlite; a real Redis INCRBYFLOAT holds the float either way, so this step pins only the probe double's own sum.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/budget_limiter.py#L471-L489

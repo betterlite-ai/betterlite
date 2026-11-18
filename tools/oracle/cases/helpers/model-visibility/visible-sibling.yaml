@@ -1,0 +1,29 @@
+kind: helper
+name: model-visibility-visible-sibling
+call:
+  model_visibility:
+    function: undiscoverable_model_names
+    model_list:
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: c
+          discoverable: false
+      - model_name: mixed
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: d
+      - model_name: hidden
+        litellm_params:
+          model: openai/gpt-4o
+        model_info:
+          id: a
+          discoverable: false
+    model_group_alias: {}
+    arguments:
+      model_names: [mixed, hidden]
+      user_role: internal_user
+env: {}
+compare: {ignore: []}
