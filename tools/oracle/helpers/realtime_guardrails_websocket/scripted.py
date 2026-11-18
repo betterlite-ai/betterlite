@@ -1,5 +1,5 @@
 from collections.abc import Sequence
-from typing import ClassVar, Literal, NotRequired, Protocol, TypedDict
+from typing import ClassVar, Literal, NotRequired, Protocol, TypedDict, cast
 
 from litellm.integrations.custom_guardrail import CustomGuardrail
 from litellm.integrations.custom_logger import CustomLogger
@@ -155,27 +155,30 @@ class ApplyScript:
     ) -> GenericGuardrailAPIInputs:
         del logging_obj
         record: dict[str, JsonValue] = {
-            "inputs": WIRE.validate_python(inputs),
+            "inputs": WIRE.validate_python(inputs),  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
             "request_data": request_data,
             "input_type": input_type,
         }
         self._records.applied.append(record)
         match self._document["outcome"]:
             case "clean":
-                return inputs
+                return inputs  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
             case "rewrite":
-                return {"texts": [REWRITE_TEXT]}
+                return {"texts": [REWRITE_TEXT]}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1312-L1318
             case "raise":
                 raise scripted_exception(self._document.get("raised"))
 
 
-class ScriptedGuardrail(ApplyScript, CustomGuardrail):
+class ScriptedGuardrail(
+    ApplyScript,
+    cast("type[CustomGuardrail]", CustomGuardrail)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190-L210
+):
     def __init__(self, document: GuardrailDocument, records: Records) -> None:
         self._document = document
         self._records = records
         policy = document.get("policy")
         settings: PolicyDocument = {} if policy is None else policy
-        CustomGuardrail.__init__(
+        CustomGuardrail.__init__(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L190-L210
             self,
             guardrail_name=document.get("name"),
             event_hook=[GuardrailEventHooks(name) for name in document["hooks"]],
@@ -191,7 +194,7 @@ class ScriptedGuardrail(ApplyScript, CustomGuardrail):
     ) -> bool:
         record: dict[str, JsonValue] = {"event": event_type.value, "data": data}
         self._records.checks.append(record)
-        return CustomGuardrail.should_run_guardrail(self, data, event_type)
+        return CustomGuardrail.should_run_guardrail(self, data, event_type)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1058-L1062
 
 
 class ScriptedNativeGuardrail(ScriptedGuardrail):

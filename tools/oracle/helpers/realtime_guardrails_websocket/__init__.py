@@ -184,10 +184,6 @@ async def session(input_value: Input) -> JsonValue:
     return state.snapshot(runs)
 
 
-async def bounded(input_value: Input) -> JsonValue:
-    return await asyncio.wait_for(session(input_value), DEADLINE_SECONDS)
-
-
 def run_sizes(runs: list[RunDocument]) -> list[int]:
     sizes: list[int] = []
     for run in runs:
@@ -252,4 +248,4 @@ def checked(input_value: Input) -> None:
 
 def run(input_value: Input) -> JsonValue:
     checked(input_value)
-    return asyncio.run(bounded(input_value))
+    return asyncio.run(asyncio.wait_for(session(input_value), DEADLINE_SECONDS))
