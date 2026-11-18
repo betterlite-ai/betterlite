@@ -57,7 +57,7 @@ pub(crate) fn drive(input: &Input) -> HelperResult {
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
     runtime
-        .block_on(timeout(DEADLINE, open(input)))
+        .block_on(async { timeout(DEADLINE, open(input)).await })
         .map_err(|_elapsed| {
             failure(
                 "TimeoutError",
