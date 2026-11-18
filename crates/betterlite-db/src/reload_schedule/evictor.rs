@@ -20,14 +20,6 @@ pub enum EvictError {
     },
 }
 
-impl EvictError {
-    pub fn param_name(&self) -> &str {
-        match self {
-            Self::Cache { param_name, .. } | Self::Io { param_name, .. } => param_name,
-        }
-    }
-}
-
 // LiteLLM's evict_config_param drops this process's cached row; invalidate_config_param adds the publish step
 pub trait ConfigParamEvictor: Send + Sync {
     fn evict_param<'call>(&'call self, param_name: &'call str) -> EvictFuture<'call>;
