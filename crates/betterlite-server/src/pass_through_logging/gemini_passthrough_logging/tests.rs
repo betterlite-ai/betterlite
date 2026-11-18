@@ -24,7 +24,7 @@ use rust_decimal::Decimal;
 use super::GeminiPassthroughError;
 use super::assembly;
 use super::cost::PassthroughCostError;
-use super::payload::{GeminiPayload, create_gemini_response_logging_payload};
+use super::payload::{GeminiPayload, gemini_log_payload};
 use super::relay::{RelayLogging, relay_kwargs};
 use super::reply;
 use support::{
@@ -305,7 +305,7 @@ fn payload_prices_with_the_literal_gemini_provider() {
     let logging_obj = support::logging_object();
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let mut response = json(USAGE_BODY);
-    create_gemini_response_logging_payload(
+    gemini_log_payload(
         cost.as_ref(),
         GeminiPayload {
             response: &mut response,
@@ -330,7 +330,7 @@ fn payload_sets_the_id_model_and_call_details() {
     let logging_obj = support::logging_object();
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let mut response = json(USAGE_BODY);
-    let built = create_gemini_response_logging_payload(
+    let built = gemini_log_payload(
         cost.as_ref(),
         GeminiPayload {
             response: &mut response,
@@ -369,7 +369,7 @@ fn payload_falls_back_to_the_argument_model(#[case] response: &str) {
     let logging_obj = support::logging_object();
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let mut body = json(response);
-    create_gemini_response_logging_payload(
+    gemini_log_payload(
         cost.as_ref(),
         GeminiPayload {
             response: &mut body,
@@ -392,7 +392,7 @@ fn payload_keeps_the_caller_kwargs() {
     let logging_obj = support::logging_object();
     let cost = FakeCost::priced(Decimal::new(125, 2));
     let mut response = json(USAGE_BODY);
-    let built = create_gemini_response_logging_payload(
+    let built = gemini_log_payload(
         cost.as_ref(),
         GeminiPayload {
             response: &mut response,
@@ -415,7 +415,7 @@ fn payload_returns_a_cost_error() {
     let logging_obj = support::logging_object();
     let cost = FakeCost::unpriced();
     let mut response = json(USAGE_BODY);
-    let error = create_gemini_response_logging_payload(
+    let error = gemini_log_payload(
         cost.as_ref(),
         GeminiPayload {
             response: &mut response,

@@ -19,8 +19,7 @@ pub(crate) struct GeminiPayload<'input> {
     pub(crate) custom_llm_provider: &'input str,
 }
 
-// ast-grep-ignore: no-long-names
-pub(crate) fn create_gemini_response_logging_payload(
+pub(crate) fn gemini_log_payload(
     cost: &dyn PassthroughCompletionCost,
     GeminiPayload {
         response,

@@ -26,17 +26,13 @@ use super::cost::{
     CostRequest, CostResponse, FactoryCost, PassthroughCompletionCost, completion_body,
 };
 use super::counter::CollectedCounter;
-// ast-grep-ignore: no-long-names - B3640 keeps the factory name LiteLLM's Gemini payload builder uses
-use super::payload::{
-    GeminiPayload, create_gemini_response_logging_payload, request_object, video_body,
-};
+use super::payload::{GeminiPayload, gemini_log_payload, request_object, video_body};
 use super::relay::{RelayLogging, relay_kwargs};
 use super::reply;
 use super::{GeminiPassthroughError, GeminiPassthroughInput, GeminiPassthroughLogger};
 use crate::media_relay_logging::write_spend;
 
 impl GeminiPassthroughLogger {
-    // ast-grep-ignore: no-one-line-functions - B8931 constructs the logger through this fixed name
     pub fn new(cost: Arc<dyn PassthroughCompletionCost>) -> Self {
         Self {
             cost,
@@ -56,7 +52,7 @@ impl GeminiPassthroughLogger {
             return self.predict_long_running(&input);
         }
         if input.url_route.contains("generateContent") {
-            return self.generate_content(input);
+            return generate_content(self.cost.as_ref(), input);
         }
         Ok(HandlerOutcome {
             result: None,
@@ -92,12 +88,10 @@ impl GeminiPassthroughLogger {
                 kwargs: input.kwargs,
             });
         };
-        Ok(HandlerOutcome {
-            result: Some(PassThroughResponse::ModelResponse(completion_body(
-                response,
-            ))),
-            kwargs: relay_kwargs(&input.kwargs, outcome.kwargs),
-        })
+        Ok(model_response_outcome(
+            completion_body(response),
+            relay_kwargs(&input.kwargs, outcome.kwargs),
+        ))
     }
 
     fn predict_long_running(
@@ -143,36 +137,15 @@ impl GeminiPassthroughLogger {
             kwargs: spend.kwargs(&input.kwargs),
         })
     }
-
-    fn generate_content(
-        &self,
-        input: GeminiPassthroughInput<'_>,
-    ) -> Result<HandlerOutcome, GeminiPassthroughError> {
-        let model = extract_model_from_url(input.url_route);
-        let mut body = decode_generate(&input, &model)?;
-        // ast-grep-ignore: no-long-names
-        let kwargs = create_gemini_response_logging_payload(
-            self.cost.as_ref(),
-            GeminiPayload {
-                response: &mut body,
-                model: &model,
-                logging_obj: input.logging_obj,
-                custom_llm_provider: "gemini",
-            },
-            input.kwargs,
-        )?;
-        Ok(HandlerOutcome {
-            result: Some(PassThroughResponse::ModelResponse(body)),
-            kwargs,
-        })
-    }
 }
 
-// The decoded body is the ModelResponse LiteLLM would have gotten from httpx_response.json().
-fn decode_generate(
-    input: &GeminiPassthroughInput<'_>,
-    model: &str,
-) -> Result<Json, GeminiPassthroughError> {
+// The generateContent branch decodes the buffered reply, logs and prices it, and returns the logged body.
+fn generate_content(
+    cost: &dyn PassthroughCompletionCost,
+    input: GeminiPassthroughInput<'_>,
+) -> Result<HandlerOutcome, GeminiPassthroughError> {
+    let model = extract_model_from_url(input.url_route);
+    // The body is the ModelResponse LiteLLM would have gotten from httpx_response.json().
     let mut ids = uuid::Uuid::new_v4;
     let response = transform_response(
         &RawResponse {
@@ -180,14 +153,33 @@ fn decode_generate(
             body: input.response_body,
         },
         &CompleteRequest {
-            model,
+            model: &model,
             now: input.end_time.timestamp(),
             call_mode: CallMode::Tools,
         },
         &mut ids,
     )?;
-    reply::logged_response(&response, input.end_time.timestamp())
-        .map_err(|source| GeminiPassthroughError::Encode { source })
+    let mut body = reply::logged_response(&response, input.end_time.timestamp())
+        .map_err(|source| GeminiPassthroughError::Encode { source })?;
+    let kwargs = gemini_log_payload(
+        cost,
+        GeminiPayload {
+            response: &mut body,
+            model: &model,
+            logging_obj: input.logging_obj,
+            custom_llm_provider: "gemini",
+        },
+        input.kwargs,
+    )?;
+    Ok(model_response_outcome(body, kwargs))
+}
+
+// Every branch that logs a body returns it as the logged ModelResponse with its priced kwargs.
+const fn model_response_outcome(body: Json, kwargs: PassThroughLoggingKwargs) -> HandlerOutcome {
+    HandlerOutcome {
+        result: Some(PassThroughResponse::ModelResponse(body)),
+        kwargs,
+    }
 }
 
 impl CollectedChunksHandler for GeminiPassthroughLogger {
@@ -216,8 +208,7 @@ impl CollectedChunksHandler for GeminiPassthroughLogger {
                 kwargs: PassThroughLoggingKwargs::default(),
             });
         };
-        // ast-grep-ignore: no-long-names
-        let kwargs = create_gemini_response_logging_payload(
+        let kwargs = gemini_log_payload(
             self.cost.as_ref(),
             GeminiPayload {
                 response: &mut body,
@@ -228,9 +219,6 @@ impl CollectedChunksHandler for GeminiPassthroughLogger {
             PassThroughLoggingKwargs::default(),
         )
         .map_err(HandlerError::leaf)?;
-        Ok(HandlerOutcome {
-            result: Some(PassThroughResponse::ModelResponse(body)),
-            kwargs,
-        })
+        Ok(model_response_outcome(body, kwargs))
     }
 }
