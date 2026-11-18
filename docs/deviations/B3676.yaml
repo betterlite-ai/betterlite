@@ -1,0 +1,30 @@
+task: B3676
+deviations:
+  - what: The rewriters are the enum EventRewriter with one variant per rewrite, not closures passed to _rewrite_ended_stream_events.
+    why: The project forbids closures and nested functions; each variant carries the same order-dependent state the closure held.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1413-L1448
+  - what: process_output_streaming_response has no stream_transform_sink argument.
+    why: This handler never reads it, and the caller passes it only to translations that set a flag.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1201-L1210
+  - what: The entry point takes the guardrail name as an Option<&str> instead of reading guardrail_to_apply.guardrail_name.
+    why: The generic G GuardrailContract carries no name accessor; the caller that owns the configured guardrail passes the name, and None becomes "unknown".
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1273-L1277
+  - what: A stream chunk is B3673's SseChunk (bytes, parsed event, other). A Python str chunk is not read, build_streaming_usage_response keeps only bytes chunks, and an Other chunk contributes nothing.
+    why: SseChunk is the one Anthropic stream item type; LiteLLM's other readers also ignore str items, and an Other item has no representation it could read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L316
+  - what: A parsed event chunk is assembled into the ended-stream response by rebuilding a `data: {json}` line and taking the first `data:` line, since the assembly reads SSE bytes.
+    why: LiteLLM's assembly parses dict items directly; betterlite's assembler takes SSE bytes, so the event is re-serialized first.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1517-L1536
+  - what: The ended-stream rebuild runs with a silent usage counter, silent costs and no logging object, so no token counts or costs are produced while assembling.
+    why: The rebuild only needs choices and message content, and betterlite computes no costs in a guardrail scan.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1221-L1228
+  - what: The undeliverable rewrite is ProcessStreamError::Undeliverable instead of a raised UndeliverableStreamRewrite, and a conversion or assembly failure is its own variant.
+    why: Rust has no exceptions; the policy pipeline matches on the variant and releases the original chunks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L52-L63
+  - what: The usage-only fallback returns None when the builder fails or finds no usage, instead of catching AttributeError, TypeError and ValueError.
+    why: The builder's failure is one typed error, and a missing usage record is a None, so the same fallback needs no exception matching.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L319-L325
+kept_bugs:
+  - what: A data line indented before `data:` still counts as a text_delta for the undeliverable check, and is never rewritten because the line writer requires the line to start with `data:` untrimmed.
+    why: A working setup only ships unindented SSE frames, and the project keeps the two readers' disagreement exactly as LiteLLM has it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L1551-L1564
