@@ -120,9 +120,9 @@ fn scripted_steps<T, U>(
     let mut scripted = Vec::with_capacity(steps.len());
     for step in steps {
         scripted.push(match step {
-            None => Ok(Ok(None)),
-            Some(Step::Failure { error }) => Ok(Err(DatabaseFailure::from(database_fault(error)?))),
-            Some(Step::Data { data }) => Ok(Ok(Some(convert(data)?))),
+            None => Ok(None),
+            Some(Step::Failure { error }) => Err(DatabaseFailure::from(database_fault(error)?)),
+            Some(Step::Data { data }) => Ok(Some(convert(data)?)),
         });
     }
     Ok(scripted)
@@ -222,8 +222,7 @@ fn reconnect_report(recorded: &RecordedReconnect) -> ReconnectReport {
         force_recreate: recorded.force_recreate,
         timeout_seconds: recorded.timeout.map(|timeout| timeout.as_secs_f64()),
         lock_timeout_seconds: recorded.lock_timeout.map(|timeout| timeout.as_secs_f64()),
-        stale_present: recorded.stale.is_some(),
-        stale_live: recorded.stale.unwrap_or_default(),
+        stale: recorded.stale,
     }
 }
 #[derive(Serialize)]
@@ -279,6 +278,5 @@ struct ReconnectReport {
     force_recreate: bool,
     timeout_seconds: Option<f64>,
     lock_timeout_seconds: Option<f64>,
-    stale_present: bool,
-    stale_live: bool,
+    stale: Option<bool>,
 }

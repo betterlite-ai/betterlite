@@ -197,13 +197,13 @@ class FakeClient(PrismaClient):
         force_recreate: bool = False,
         stale_read_engine: StaleEngine | None = None,
     ) -> bool:
-        stale_live = False
+        stale: bool | None = None
         if stale_read_engine is not None:
-            stale_live = stale_read_engine.is_still_live(self.session.reader)
+            stale = stale_read_engine.is_still_live(self.session.reader)
         self.session.reconnect_records.append({
             "reason": reason, "force": force, "force_recreate": force_recreate,
             "timeout_seconds": timeout_seconds, "lock_timeout_seconds": lock_timeout_seconds,
-            "stale_present": stale_read_engine is not None, "stale_live": stale_live,
+            "stale": stale,
         })
         step = self.session.reconnects.pop(0) if self.session.reconnects else None
         return True if step is None else step
