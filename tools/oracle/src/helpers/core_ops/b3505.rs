@@ -61,8 +61,11 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {
-        let answer = reply(&format!("{} fixture", input.status), &[], &input.body);
-        let serving = serve(answer, Duration::ZERO).map_err(|error| failed(&error))?;
+        let serving = serve(
+            reply(&format!("{} fixture", input.status), &[], &input.body),
+            Duration::ZERO,
+        )
+        .map_err(|error| failed(&error))?;
         let mut harness = Harness::new(&input.litellm_call_id)?;
         let runtime = Builder::new_current_thread()
             .enable_all()
