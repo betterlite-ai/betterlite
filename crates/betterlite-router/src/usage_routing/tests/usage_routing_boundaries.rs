@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_core::error::RoutingError;
@@ -77,6 +78,38 @@ fn usage_routing_boundaries_treat_a_missing_limit_as_unbounded() {
         select_counts(&windows, &deployments, i64::MAX).unwrap(),
         Some(0)
     );
+}
+
+// an explicit null limit reads like an absent one, so neither check rules the deployment out
+#[test]
+fn usage_routing_boundaries_treat_a_null_limit_as_unbounded() {
+    let deployments = [deployment(
+        "dep-a",
+        &[],
+        &[],
+        &[("tpm", Json::Null), ("rpm", Json::Null)],
+    )];
+    let stored = counts(&[("dep-a", 5)]);
+    let windows = WindowCounts {
+        tpm: Some(&stored),
+        rpm: Some(&stored),
+    };
+    assert_eq!(select_counts(&windows, &deployments, 0).unwrap(), Some(0));
+}
+
+// a number that is not a whole one is a limit this field cannot hold, and the error names the field
+#[test]
+fn usage_routing_boundaries_name_a_fractional_token_limit() {
+    let fractional = Number::from_f64(1.5).expect("1.5 is a finite number");
+    let deployments = [deployment(
+        "dep-a",
+        &[],
+        &[],
+        &[("tpm", Json::Number(fractional))],
+    )];
+    let error = select_counts(&WindowCounts::default(), &deployments, 0).unwrap_err();
+    assert!(matches!(error, RoutingError::Metric { field: "tpm" }));
+    assert_eq!(error.unbuilt_entry(), None);
 }
 
 // a count and an estimate that add past i64's maximum still exceed the limit instead of wrapping below it

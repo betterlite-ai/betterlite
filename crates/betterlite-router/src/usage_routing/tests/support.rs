@@ -81,6 +81,8 @@ pub(super) struct LocalWindows {
     ttls: Mutex<BTreeMap<String, i64>>,
     read_failures: AtomicBool,
     write_failures: AtomicBool,
+    failing_read: Mutex<Option<String>>,
+    failing_write: Mutex<Option<String>>,
 }
 
 impl LocalWindows {
@@ -106,18 +108,30 @@ impl LocalWindows {
     pub(super) fn fail_writes(&self, flag: bool) {
         self.write_failures.store(flag, Ordering::Relaxed);
     }
+
+    pub(super) fn fail_read_on(&self, key: &str) {
+        *self.failing_read.lock().unwrap() = Some(key.to_owned());
+    }
+
+    pub(super) fn fail_write_on(&self, key: &str) {
+        *self.failing_write.lock().unwrap() = Some(key.to_owned());
+    }
 }
 
 impl UsageWindows for LocalWindows {
     fn read(&self, key: &str) -> Result<Option<Counts>, WindowError> {
-        if self.read_failures.load(Ordering::Relaxed) {
+        if self.read_failures.load(Ordering::Relaxed)
+            || self.failing_read.lock().unwrap().as_deref() == Some(key)
+        {
             return Err(WindowError::Unavailable);
         }
         Ok(self.counts.lock().unwrap().get(key).cloned())
     }
 
     fn write(&self, key: &str, counts: &Counts, ttl_seconds: i64) -> Result<(), WindowError> {
-        if self.write_failures.load(Ordering::Relaxed) {
+        if self.write_failures.load(Ordering::Relaxed)
+            || self.failing_write.lock().unwrap().as_deref() == Some(key)
+        {
             return Err(WindowError::Unavailable);
         }
         self.counts

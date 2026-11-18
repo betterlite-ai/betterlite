@@ -25,6 +25,7 @@ enum Targets {
     AbsentGroup,
     NullId,
     NoModelInfo,
+    EmptyModelInfo,
     ModelInfoIsText,
 }
 
@@ -40,6 +41,7 @@ impl Targets {
             | Self::AbsentGroup
             | Self::NullId
             | Self::NoModelInfo
+            | Self::EmptyModelInfo
             | Self::ModelInfoIsText => text("dep-a"),
         }
     }
@@ -73,6 +75,9 @@ impl Targets {
             }
             Self::NoModelInfo => {
                 built.shift_remove("model_info");
+            }
+            Self::EmptyModelInfo => {
+                built.insert("model_info".to_owned(), Json::Object(JsonObject::default()));
             }
             Self::ModelInfoIsText => {
                 built.insert("model_info".to_owned(), text("x"));
@@ -121,6 +126,7 @@ struct RecordCase {
 #[case::model_info_is_text(RecordCase { targets: Targets::ModelInfoIsText, call_type: None, tokens: Some(120), seed: &[], tokens_window: None, requests_window: None })]
 #[case::existing_window(RecordCase { targets: Targets::First, call_type: None, tokens: Some(30), seed: &[("dep-a", 120)], tokens_window: Some(&[("dep-a", 150)]), requests_window: Some(&[("dep-a", 1)]) })]
 #[case::another_deployment(RecordCase { targets: Targets::Second, call_type: None, tokens: Some(30), seed: &[("dep-a", 120)], tokens_window: Some(&[("dep-a", 120), ("dep-b", 30)]), requests_window: Some(&[("dep-b", 1)]) })]
+#[case::empty_model_info(RecordCase { targets: Targets::EmptyModelInfo, call_type: None, tokens: Some(120), seed: &[], tokens_window: None, requests_window: None })]
 fn usage_routing_behaviors(#[case] case: RecordCase) {
     let windows = LocalWindows::default();
     let (tokens_key, requests_key) = window_keys(GROUP, instant(NOW));
@@ -199,6 +205,29 @@ fn a_failed_read_drops_the_update_instead_of_replacing_the_window() {
     record(&windows, Targets::Second, None, Some(50));
     assert_eq!(windows.window(&tokens_key), Some(counts(&[("dep-a", 100)])));
     assert_eq!(windows.window(&requests_key), Some(counts(&[("dep-a", 1)])));
+}
+
+// one window's failure does not skip the other window's update, the way each cache call fails on its own
+#[test]
+fn a_failed_token_read_still_records_the_request() {
+    let windows = LocalWindows::default();
+    let (tokens_key, requests_key) = window_keys(GROUP, instant(NOW));
+    windows.seed(&tokens_key, &[("dep-a", 100)]);
+    windows.fail_read_on(&tokens_key);
+    record(&windows, Targets::Second, None, Some(50));
+    assert_eq!(windows.window(&tokens_key), Some(counts(&[("dep-a", 100)])));
+    assert_eq!(windows.window(&requests_key), Some(counts(&[("dep-b", 1)])));
+}
+
+#[test]
+fn a_failed_token_write_still_records_the_request() {
+    let windows = LocalWindows::default();
+    let (tokens_key, requests_key) = window_keys(GROUP, instant(NOW));
+    windows.seed(&tokens_key, &[("dep-a", 100)]);
+    windows.fail_write_on(&tokens_key);
+    record(&windows, Targets::Second, None, Some(50));
+    assert_eq!(windows.window(&tokens_key), Some(counts(&[("dep-a", 100)])));
+    assert_eq!(windows.window(&requests_key), Some(counts(&[("dep-b", 1)])));
 }
 
 #[test]
