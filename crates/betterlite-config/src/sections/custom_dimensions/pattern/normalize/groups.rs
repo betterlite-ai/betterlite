@@ -66,8 +66,8 @@ fn flags_group(walker: &mut Walker<'_>) -> Result<(), PatternProblem> {
         .by_ref()
         .take_while(|letter| FLAG_LETTERS.contains(letter))
         .collect();
-    let terminator = probe.next().filter(|letter| matches!(letter, ':' | ')'));
-    let terminator = terminator.ok_or(PatternProblem::Syntax)?;
+    let candidate = probe.next().filter(|letter| matches!(letter, ':' | ')'));
+    let terminator = candidate.ok_or(PatternProblem::Syntax)?;
     apply_flags(walker, &spec, terminator)
 }
 
