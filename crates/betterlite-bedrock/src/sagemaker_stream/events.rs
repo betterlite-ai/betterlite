@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::str::from_utf8;
 
 use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use bytes::BytesMut;
@@ -133,13 +134,13 @@ fn event_text(event: &AwsEvent) -> Result<Option<&str>, SagemakerStreamError> {
     if event.payload.is_empty() {
         return Ok(None);
     }
-    std::str::from_utf8(&event.payload)
+    from_utf8(&event.payload)
         .map(Some)
         .map_err(SagemakerStreamError::Utf8)
 }
 
 fn payload_text(payload: &[u8]) -> String {
-    std::str::from_utf8(payload).map_or_else(
+    from_utf8(payload).map_or_else(
         |_not_text| format!("{} bytes that are not text", payload.len()),
         str::to_owned,
     )

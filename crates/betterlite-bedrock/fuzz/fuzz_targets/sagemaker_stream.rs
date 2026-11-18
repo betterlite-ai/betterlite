@@ -3,6 +3,7 @@ use std::collections::VecDeque;
 
 use betterlite_bedrock::sagemaker_stream::events::EventState;
 use betterlite_bedrock::sagemaker_stream::{ErrorPolicy, SagemakerEvents};
+use bytes::BytesMut;
 use libfuzzer_sys::fuzz_target;
 fuzz_target!(|bytes: &[u8]| {
     let size = usize::from(bytes.first().copied().unwrap_or(0)).max(1);
@@ -18,7 +19,7 @@ fuzz_target!(|bytes: &[u8]| {
                     model: String::from("sagemaker-model"),
                     is_messages_api: messages,
                     policy,
-                    frames: bytes::BytesMut::new(),
+                    frames: BytesMut::new(),
                     accumulated: String::new(),
                 },
                 chunks: chunks.into_iter(),

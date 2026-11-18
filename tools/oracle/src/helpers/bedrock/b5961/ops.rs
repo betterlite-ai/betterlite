@@ -10,6 +10,7 @@ use betterlite_openai::cohere_embedding::TextEncoding;
 use betterlite_openai::cohere_legacy_embedding::decode::LegacyEmbeddingRecord;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_tokenizer::engine::error::EngineError;
+use bytes::BytesMut;
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -115,7 +116,7 @@ fn decode_stream(case: &DecodeStream) -> HelperResult {
             model: case.model.clone(),
             is_messages_api: case.is_messages_api,
             policy,
-            frames: bytes::BytesMut::new(),
+            frames: BytesMut::new(),
             accumulated: String::new(),
         },
         chunks: chunks.into_iter(),

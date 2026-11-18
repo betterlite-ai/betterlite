@@ -10,8 +10,13 @@ use aws_smithy_types::str_bytes::StrBytes;
 use betterlite_http::error::HttpError;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
+use bytes::BytesMut;
+use futures_util::StreamExt;
+use futures_util::stream::iter;
 use rstest::rstest;
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
+use tracing::subscriber::DefaultGuard;
 use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
@@ -74,7 +79,7 @@ fn stream<Chunks>(chunks: Chunks, messages: bool, policy: ErrorPolicy) -> Sagema
             model: MODEL.to_owned(),
             is_messages_api: messages,
             policy,
-            frames: bytes::BytesMut::new(),
+            frames: BytesMut::new(),
             accumulated: String::new(),
         },
         chunks,
@@ -88,13 +93,11 @@ fn sync_items(chunks: Vec<Vec<u8>>, messages: bool, policy: ErrorPolicy) -> Vec<
 }
 
 fn async_items(chunks: Vec<Vec<u8>>, messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().build().unwrap();
     runtime.block_on(async move {
-        let mut events = stream(futures_util::stream::iter(source(chunks)), messages, policy);
+        let mut events = stream(iter(source(chunks)), messages, policy);
         let mut items = Vec::new();
-        while let Some(item) = futures_util::StreamExt::next(&mut events).await {
+        while let Some(item) = events.next().await {
             items.push(item);
         }
         items
@@ -165,7 +168,7 @@ impl<S: Subscriber> Layer<S> for Lines {
     }
 }
 
-fn capture() -> (Lines, tracing::subscriber::DefaultGuard) {
+fn capture() -> (Lines, DefaultGuard) {
     let lines = Lines::default();
     let guard = set_default(tracing_subscriber::registry().with(lines.clone()));
     (lines, guard)
@@ -370,7 +373,7 @@ fn invalid_utf8_ends_a_propagating_stream() {
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Utf8(_)
+        SagemakerStreamError::Utf8(_)
     ));
 }
 
@@ -406,7 +409,7 @@ fn a_frame_that_fails_its_checksum_ends_both_policies(#[case] policy: ErrorPolic
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Frame(_)
+        SagemakerStreamError::Frame(_)
     ));
 }
 
@@ -442,7 +445,7 @@ fn a_projection_failure_ends_a_propagating_stream() {
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Json(_)
+        SagemakerStreamError::Json(_)
     ));
 }
 
@@ -480,7 +483,7 @@ fn a_final_projection_failure_ends_a_propagating_stream() {
         model: MODEL.to_owned(),
         is_messages_api: false,
         policy: ErrorPolicy::Propagate,
-        frames: bytes::BytesMut::new(),
+        frames: BytesMut::new(),
         accumulated: String::new(),
     };
     let mut failed = VecDeque::new();
@@ -539,7 +542,7 @@ fn a_messages_chunk_without_choices_ends_a_propagating_stream() {
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Json(_)
+        SagemakerStreamError::Json(_)
     ));
 }
 
@@ -550,7 +553,7 @@ fn a_non_object_chunk_ends_a_propagating_stream() {
     assert_eq!(items.len(), 1);
     assert!(matches!(
         items[0].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Json(_)
+        SagemakerStreamError::Json(_)
     ));
 }
 
@@ -597,6 +600,6 @@ fn a_source_error_ends_the_stream_in_both_policies(#[case] policy: ErrorPolicy) 
     assert_eq!(token(&items[0]).index, Some(0));
     assert!(matches!(
         items[1].as_ref().unwrap_err(),
-        crate::sagemaker_stream::error::SagemakerStreamError::Body(_)
+        SagemakerStreamError::Body(_)
     ));
 }

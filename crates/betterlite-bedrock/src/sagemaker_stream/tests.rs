@@ -6,6 +6,7 @@ use std::io;
 use std::path::Path;
 
 use betterlite_http::error::HttpError;
+use bytes::BytesMut;
 
 use crate::sagemaker_stream::events::{EventItem, EventState};
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerChunk, SagemakerEvents};
@@ -26,7 +27,7 @@ fn decode(bytes: &[u8], messages: bool, policy: ErrorPolicy) -> Vec<EventItem> {
             model: MODEL.to_owned(),
             is_messages_api: messages,
             policy,
-            frames: bytes::BytesMut::new(),
+            frames: BytesMut::new(),
             accumulated: String::new(),
         },
         chunks: chunks.into_iter(),

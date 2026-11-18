@@ -3,6 +3,7 @@ use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::stream::chunk::{Choice, Chunk, Delta, Function, Logprobs, ToolCall};
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::sagemaker_stream::SagemakerChunk;
 use crate::sagemaker_stream::error::SagemakerStreamError;
@@ -68,7 +69,7 @@ pub fn project(
     is_messages_api: bool,
     text: &str,
 ) -> Result<Projection, SagemakerStreamError> {
-    if serde_json::from_str::<serde::de::IgnoredAny>(text).is_err() {
+    if serde_json::from_str::<IgnoredAny>(text).is_err() {
         return Ok(Projection::Pending);
     }
     if is_messages_api {
@@ -136,7 +137,7 @@ impl DeltaEvent {
                     Some(index) => index,
                     None => {
                         let index = next_index;
-                        next_index += 1;
+                        next_index = next_index.saturating_add(1);
                         index
                     }
                 };
