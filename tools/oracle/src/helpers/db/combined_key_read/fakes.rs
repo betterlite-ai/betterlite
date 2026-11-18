@@ -27,6 +27,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
+use tokio::task::yield_now;
 #[derive(Debug, thiserror::Error)]
 #[error("the helper's metric sink failed")]
 pub(crate) struct SinkFailure;
@@ -82,7 +83,7 @@ pub(crate) struct NoopPause;
 
 impl RetryPause for NoopPause {
     fn pause(&self, _delay: Duration) -> Pin<Box<dyn Future<Output = ()> + Send + '_>> {
-        Box::pin(async { tokio::task::yield_now().await })
+        Box::pin(async { yield_now().await })
     }
 }
 
