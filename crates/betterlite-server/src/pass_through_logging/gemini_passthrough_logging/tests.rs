@@ -51,9 +51,10 @@ fn route_interactions_never_reaches_the_generate_content_decode() {
     let result = result_json(&outcome);
     assert_eq!(text(&result, "id"), "call-1");
     assert_eq!(text(&result, "model"), "response-model");
-    assert_eq!(integer(&result, "prompt_tokens"), 3);
-    assert_eq!(integer(&result, "completion_tokens"), 2);
-    assert_eq!(integer(&result, "total_tokens"), 5);
+    let usage = field(&result, "usage");
+    assert_eq!(integer(usage, "prompt_tokens"), 3);
+    assert_eq!(integer(usage, "completion_tokens"), 2);
+    assert_eq!(integer(usage, "total_tokens"), 5);
     assert_eq!(number_text(kwarg(&outcome, "response_cost")), "1.25");
     assert_eq!(as_text(kwarg(&outcome, "custom_llm_provider")), "gemini");
     assert_eq!(
@@ -171,23 +172,19 @@ fn route_generate_content_decodes_and_prices_the_response() {
 }
 
 #[test]
-fn route_stream_generate_content_alone_is_not_the_generate_content_branch() {
+fn route_stream_generate_content_still_reaches_the_generate_content_branch() {
     let fixture = fixture(
         STREAM_ROUTE,
-        r#"{"candidates":[{"content":{"parts":[{"text":"hi"}]},"finishReason":"STOP"}]}"#,
+        r#"{"candidates":[{"content":{"parts":[{"text":"hi"}],"role":"model"},"finishReason":"STOP","index":0}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5},"modelVersion":"gemini-2.0-flash"}"#,
     );
     let cost = FakeCost::priced(Decimal::new(125, 2));
-    let mut input = gemini_input(&fixture);
-    input.kwargs = kwargs(&[("request_id", Json::Text("r1".to_owned()))]);
     let outcome = logger(Arc::clone(&cost))
-        .gemini_passthrough_handler(input)
-        .expect("the stream route is not a non-streaming branch");
-    assert_eq!(outcome.result, None);
-    assert_eq!(
-        outcome.kwargs,
-        kwargs(&[("request_id", Json::Text("r1".to_owned()))])
-    );
-    assert!(cost.calls().is_empty());
+        .gemini_passthrough_handler(gemini_input(&fixture))
+        .expect("the stream route carries generateContent");
+    let result = result_json(&outcome);
+    assert_eq!(text(&result, "model"), "gemini-2.0-flash");
+    assert_eq!(text(field(choices(&result), "message"), "content"), "hi");
+    assert_eq!(cost.calls().len(), 1);
 }
 
 #[test]

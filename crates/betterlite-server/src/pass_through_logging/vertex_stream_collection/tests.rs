@@ -158,6 +158,7 @@ fn chunks_vertex_host_uses_the_vertex_ai_provider() {
     assert_eq!(calls[0].call_type, CallType::Completion);
     assert_eq!(calls[0].response_model.as_deref(), Some("gemini-2.0-flash"));
     assert_eq!(calls[0].usage, Some((3, 2, 5)));
+    assert_eq!(calls[0].vertex_location.as_deref(), Some("us-central1"));
 }
 
 #[test]
@@ -175,6 +176,7 @@ fn chunks_gemini_host_uses_the_gemini_provider() {
     let calls = cost.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].provider, "gemini");
+    assert_eq!(calls[0].vertex_location, None);
 }
 
 #[test]

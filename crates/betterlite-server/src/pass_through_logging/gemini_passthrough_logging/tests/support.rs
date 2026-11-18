@@ -173,6 +173,7 @@ pub(crate) struct RecordedCost {
     pub(crate) kind: &'static str,
     pub(crate) response_model: Option<String>,
     pub(crate) usage: Option<(i64, i64, i64)>,
+    pub(crate) vertex_location: Option<String>,
 }
 
 pub(crate) struct FakeCost {
@@ -221,6 +222,7 @@ impl PassthroughCompletionCost for FakeCost {
                 kind,
                 response_model,
                 usage,
+                vertex_location: request.vertex_location.map(str::to_owned),
             });
         self.price.ok_or_else(|| PassthroughCostError::Unavailable {
             model: request.model.to_owned(),
@@ -330,10 +332,12 @@ pub(crate) fn logged_provider(logging_obj: &StreamLoggingObject) -> Option<Strin
         .expect("the logging state is present")
 }
 
-pub(crate) fn logged_call_type(logging_obj: &StreamLoggingObject) -> String {
-    logging_obj
-        .read(&mut |state| state.call_type.clone())
-        .expect("the logging state is present")
+pub(crate) fn kwargs(entries: &[(&str, Json)]) -> PassThroughLoggingKwargs {
+    let mut built = PassThroughLoggingKwargs::default();
+    for (name, value) in entries {
+        built.entries.insert((*name).to_owned(), value.clone());
+    }
+    built
 }
 
 pub(crate) fn detail(logging_obj: &StreamLoggingObject, name: &str) -> Option<Json> {
