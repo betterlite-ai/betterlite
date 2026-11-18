@@ -3,23 +3,20 @@ use crate::model_catalog_lookup::index::rebuild_names as rebuild_name_index;
 
 #[test]
 fn rebuild_names() {
-    let mut catalog = DeploymentCatalog {
-        models: vec![
-            named("gpt-4o", "a", "openai/gpt-4o"),
-            named("gpt-4o", "b", "azure/gpt-4o"),
-            team_named("internal", "t", "t1", "team-gpt"),
-            raw(
-                "",
-                "{\"id\": \"n\", \"team_id\": \"t2\", \"team_public_model_name\": \"team-two\"}",
-            ),
-        ],
-        ..DeploymentCatalog::default()
-    };
+    let mut catalog = catalog(&[
+        named("gpt-4o", "a", "openai/gpt-4o"),
+        named("gpt-4o", "b", "azure/gpt-4o"),
+        team_named("internal", "t", "t1", "team-gpt"),
+        raw(
+            "",
+            "{\"id\": \"n\", \"team_id\": \"t2\", \"team_public_model_name\": \"team-two\"}",
+        ),
+    ]);
     catalog.name_index.insert("stale".to_owned(), vec![9]);
     catalog
         .team_index
         .insert(("stale".to_owned(), "stale".to_owned()), vec![9]);
-    catalog.id_index.insert("a".to_owned(), 0);
+    catalog.id_index.insert("a".to_owned(), 9);
     rebuild_name_index(&mut catalog);
     assert_eq!(catalog.name_index.get("gpt-4o"), Some(&vec![0, 1]));
     assert_eq!(catalog.name_index.get("internal"), Some(&vec![2]));
@@ -37,7 +34,7 @@ fn rebuild_names() {
             .get(&("t2".to_owned(), "team-two".to_owned())),
         Some(&vec![3])
     );
-    assert_eq!(catalog.id_index.get("a"), Some(&0));
+    assert_eq!(catalog.id_index.get("a"), Some(&9));
     assert_eq!(catalog.models.len(), 4);
 }
 
