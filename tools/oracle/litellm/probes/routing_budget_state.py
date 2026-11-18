@@ -12,6 +12,7 @@ from litellm.caching.redis_cache import RedisCache
 from litellm.router import Router
 from litellm.types.caching import RedisPipelineIncrementOperation
 from litellm.types.utils import BudgetConfig
+from opentelemetry.trace import Span
 from pydantic import Field, JsonValue, TypeAdapter
 from redis.exceptions import ConnectionError as RedisConnectionError
 from typing_extensions import override
@@ -19,7 +20,6 @@ from typing_extensions import override
 from probes.protocol import Operation, ProbeError, Strict
 
 # pyright: strict, reportAny=true, reportExplicitAny=true, reportImplicitOverride=true
-# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnusedCallResult=false
 
 MONEY: Final = TypeAdapter(float | None)
 DEFAULT_MODEL: Final = "openai/gpt-4o-mini"
@@ -73,6 +73,10 @@ class Observation(Strict):
 
 class Output(Strict):
     steps: list[Observation]
+
+
+class MemoryCache(Protocol):
+    async def async_get_cache(self, key: str) -> float | None: ...
 
 
 class Limiter(Protocol):
@@ -144,8 +148,9 @@ class FakeStore(RedisCache):
     async def async_batch_get_cache(
         self,
         key_list: list[str] | list[str | None],
-        **_kwargs: JsonValue,
+        parent_otel_span: Span | None = None,
     ) -> dict[str, float | None]:
+        _ = parent_otel_span
         self.read_done.set()
         return {key: self.values.get(key) for key in key_list if key is not None}
 
@@ -157,8 +162,13 @@ class FakeStore(RedisCache):
         _ = key, value
 
     @override
-    async def async_get_cache(self, key: str, **_kwargs: JsonValue) -> float | None:
-        _ = key
+    async def async_get_cache(
+        self,
+        key: str,
+        parent_otel_span: Span | None = None,
+        **_kwargs: JsonValue,
+    ) -> float | None:
+        _ = key, parent_otel_span
         return None
 
 
@@ -268,7 +278,10 @@ async def success(index: int, step: Step, context: Context) -> Observation:
     if step.call_type is not None:
         payload["call_type"] = step.call_type
     if step.tags is not None:
-        payload["metadata"] = {"tags": step.tags}
+        tags: list[JsonValue] = []
+        tags.extend(step.tags)
+        metadata: dict[str, JsonValue] = {"tags": tags}
+        payload["metadata"] = metadata
     await context.limiter.async_log_success_event(payload, None, None, None)
     return Observation(kind=step.kind, step=index)
 
@@ -305,9 +318,8 @@ async def end_sync(index: int, step: Step, context: Context) -> Observation:
 
 async def memory(index: int, step: Step, context: Context) -> Observation:
     key = required(step.key, "a key")
-    value = MONEY.validate_python(
-        await context.cache.in_memory_cache.async_get_cache(key)
-    )
+    reader: MemoryCache = context.cache.in_memory_cache
+    value = MONEY.validate_python(await reader.async_get_cache(key))
     return Observation(
         kind=step.kind, step=index, value=None if value is None else money(value)
     )

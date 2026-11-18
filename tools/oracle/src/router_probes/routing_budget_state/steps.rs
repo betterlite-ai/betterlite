@@ -15,46 +15,43 @@ pub(super) async fn apply(
     step: &ScenarioStep,
     run: &mut Run,
 ) -> Result<Observation, ScenarioError> {
-    match step.kind {
-        StepKind::Success => success(index, step, run).await,
+    let spend = match step.kind {
+        StepKind::Success => success(step, run).await?,
         StepKind::Sync => {
             let _synced = run.state.sync_with_redis().await;
-            Ok(observed(index, step, None))
+            None
         }
-        StepKind::BeginSync => begin_sync(index, step, run).await,
-        StepKind::EndSync => end_sync(index, step, run).await,
+        StepKind::BeginSync => begin_sync(run).await?,
+        StepKind::EndSync => end_sync(run).await?,
         StepKind::Shutdown => {
             run.state.shutdown().await?;
-            Ok(observed(index, step, None))
+            None
         }
-        StepKind::Memory => Ok(observed(index, step, memory_value(step, run)?)),
-        StepKind::Redis => Ok(observed(index, step, redis_value(step, run)?)),
+        StepKind::Memory => memory_value(required_key(step)?, run)?,
+        StepKind::Redis => redis_value(required_key(step)?, run),
         StepKind::FailWrites => {
             run.store.fail.store(true, Ordering::SeqCst);
-            Ok(observed(index, step, None))
+            None
         }
         StepKind::SucceedWrites => {
             run.store.fail.store(false, Ordering::SeqCst);
-            Ok(observed(index, step, None))
+            None
         }
         StepKind::HoldWrites => {
             run.store.hold.store(true, Ordering::SeqCst);
-            Ok(observed(index, step, None))
+            None
         }
         StepKind::ReleaseWrites => {
             // one permit, so a release that lands before the write waits for it is not lost
             run.store.release.notify_one();
-            Ok(observed(index, step, None))
+            None
         }
-    }
+    };
+    Ok(observed(index, step, spend))
 }
 
 // async_log_success_event: the payload's provider, model id and tags name the windows the cost lands in
-async fn success(
-    index: usize,
-    step: &ScenarioStep,
-    run: &Run,
-) -> Result<Observation, ScenarioError> {
+async fn success(step: &ScenarioStep, run: &Run) -> Result<Option<Decimal>, ScenarioError> {
     let cost = money_text(
         step.cost
             .as_deref()
@@ -69,15 +66,11 @@ async fn success(
         tags: &tags,
     };
     run.state.log_success(&event).await?;
-    Ok(observed(index, step, None))
+    Ok(None)
 }
 
 // one sync while the store is held, so a success can land after the flush detached its batch
-async fn begin_sync(
-    index: usize,
-    step: &ScenarioStep,
-    run: &mut Run,
-) -> Result<Observation, ScenarioError> {
+async fn begin_sync(run: &mut Run) -> Result<Option<Decimal>, ScenarioError> {
     if !run.store.hold.load(Ordering::SeqCst) {
         return Err(ScenarioError::NotHeld);
     }
@@ -86,26 +79,24 @@ async fn begin_sync(
         .syncs
         .spawn(async move { state.sync_with_redis().await });
     run.store.entered.notified().await;
-    Ok(observed(index, step, None))
+    Ok(None)
 }
 
-async fn end_sync(
-    index: usize,
-    step: &ScenarioStep,
-    run: &mut Run,
-) -> Result<Observation, ScenarioError> {
+async fn end_sync(run: &mut Run) -> Result<Option<Decimal>, ScenarioError> {
     let Some(synced) = run.syncs.join_next().await else {
         return Err(ScenarioError::BeyondSync);
     };
     synced.map_err(|source| ScenarioError::Join { source })?;
-    Ok(observed(index, step, None))
+    Ok(None)
 }
 
-fn memory_value(step: &ScenarioStep, run: &Run) -> Result<Option<Decimal>, ScenarioError> {
-    let key = step
-        .key
+fn required_key(step: &ScenarioStep) -> Result<&str, ScenarioError> {
+    step.key
         .as_deref()
-        .ok_or(ScenarioError::Missing { what: "a key" })?;
+        .ok_or(ScenarioError::Missing { what: "a key" })
+}
+
+fn memory_value(key: &str, run: &Run) -> Result<Option<Decimal>, ScenarioError> {
     let value = run
         .memory
         .lock()
@@ -114,17 +105,13 @@ fn memory_value(step: &ScenarioStep, run: &Run) -> Result<Option<Decimal>, Scena
     Ok(value.as_ref().and_then(memory_spend))
 }
 
-fn redis_value(step: &ScenarioStep, run: &Run) -> Result<Option<Decimal>, ScenarioError> {
-    let key = step
-        .key
-        .as_deref()
-        .ok_or(ScenarioError::Missing { what: "a key" })?;
+fn redis_value(key: &str, run: &Run) -> Option<Decimal> {
     let spends = run
         .store
         .spends
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
-    Ok(spends.get(key).copied())
+    spends.get(key).copied()
 }
 
 // one answer per step: the kind it was asked for, its index, and the spend it made observable
