@@ -8,7 +8,7 @@ use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
 
-use super::postgres::{row_count, service, user_alias, user_column_text};
+use super::postgres::{row_count, service, user_column_text};
 use super::support::{
     BrokenSink, Harness, Ports, SinkBehaviour, alias_update, capture_logs, failing_key_write,
     fixed_now, key_column, key_write, user_alias_update, user_column, user_write,
@@ -18,6 +18,8 @@ use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
 use crate::key_user_writes::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
 use crate::key_user_writes::hash::hash_token;
+use crate::key_user_writes::retry::{CallType, FAILURE_REPORT_DEADLINE, FailureEvent};
+use crate::key_user_writes::writes::report_failure;
 use crate::key_user_writes::{KeyUserWriteError, KeyUserWrites, UserUpdate, WritePorts};
 
 #[tokio::test]
@@ -269,7 +271,9 @@ async fn explicit_user_id_renames_and_inserts() {
     assert_eq!(renamed.user_id, "user-old");
     assert_eq!(renamed.data.user_id, "user-new");
     assert_eq!(
-        user_alias(&client, "user-new").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-new")
+            .await
+            .as_deref(),
         Some("renamed")
     );
     assert_eq!(
@@ -288,7 +292,9 @@ async fn explicit_user_id_renames_and_inserts() {
     assert_eq!(created.user_id, "user-absent");
     assert_eq!(created.data.user_id, "user-created");
     assert_eq!(
-        user_alias(&client, "user-created").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-created")
+            .await
+            .as_deref(),
         Some("created")
     );
     assert_eq!(
@@ -298,33 +304,26 @@ async fn explicit_user_id_renames_and_inserts() {
     harness.close().await;
 }
 
-#[tokio::test]
-async fn stalled_failure_sink_keeps_original_error() {
-    let harness = Harness::start().await;
-    let client = harness.client().await;
-    let ports = Ports::new(Duration::ZERO);
+#[tokio::test(start_paused = true)]
+async fn stalled_failure_sink_is_bounded_by_the_deadline() {
     let sink = BrokenSink {
         calls: AtomicUsize::new(0),
         behaviour: SinkBehaviour::Stall,
     };
-    let writes = KeyUserWrites {
-        client: &client,
-        ports: WritePorts {
-            clock: &ports.clock,
-            jitter: &ports.jitter,
-            pause: &ports.pause,
-            sink: &sink,
+    let error = KeyUserWriteError::MissingField { field: "user_id" };
+    let started = tokio::time::Instant::now();
+    report_failure(
+        &sink,
+        FailureEvent {
+            call_type: CallType::InsertData,
+            error: &error,
+            traceback: String::from("traceback"),
+            duration: Duration::ZERO,
         },
-    };
-    tokio::time::pause();
-    let error = writes
-        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
-        .await
-        .unwrap_err();
-    assert!(matches!(error, KeyUserWriteError::Database { .. }));
-    assert_eq!(sink.calls.load(Ordering::SeqCst), 3);
-    tokio::time::resume();
-    harness.close().await;
+    )
+    .await;
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 1);
+    assert!(tokio::time::Instant::now().duration_since(started) >= FAILURE_REPORT_DEADLINE);
 }
 
 #[tokio::test]
@@ -335,6 +334,33 @@ async fn panicking_failure_sink_keeps_original_error() {
     let sink = BrokenSink {
         calls: AtomicUsize::new(0),
         behaviour: SinkBehaviour::Panic,
+    };
+    let writes = KeyUserWrites {
+        client: &client,
+        ports: WritePorts {
+            clock: &ports.clock,
+            jitter: &ports.jitter,
+            pause: &ports.pause,
+            sink: &sink,
+        },
+    };
+    let error = writes
+        .insert_key(&SecretString::from("sk-retry"), &failing_key_write())
+        .await
+        .unwrap_err();
+    assert!(matches!(error, KeyUserWriteError::Database { .. }));
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 3);
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn synchronous_failure_sink_panic_keeps_original_error() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let sink = BrokenSink {
+        calls: AtomicUsize::new(0),
+        behaviour: SinkBehaviour::PanicBeforeReturning,
     };
     let writes = KeyUserWrites {
         client: &client,

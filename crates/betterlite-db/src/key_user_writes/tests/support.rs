@@ -210,6 +210,17 @@ impl FailureSink for RecordingSink {
 pub(crate) enum SinkBehaviour {
     Stall,
     Panic,
+    PanicBeforeReturning,
+}
+
+impl SinkBehaviour {
+    fn future(self) -> FailureFuture<'static> {
+        match self {
+            Self::Stall => Box::pin(std::future::pending()),
+            Self::Panic => Box::pin(async { panic!("broken failure sink") }),
+            Self::PanicBeforeReturning => panic!("broken failure sink"),
+        }
+    }
 }
 
 pub(crate) struct BrokenSink {
@@ -220,10 +231,7 @@ pub(crate) struct BrokenSink {
 impl FailureSink for BrokenSink {
     fn record(&self, _event: FailureEvent<'_>) -> FailureFuture<'_> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        match self.behaviour {
-            SinkBehaviour::Stall => Box::pin(std::future::pending()),
-            SinkBehaviour::Panic => Box::pin(async { panic!("broken failure sink") }),
-        }
+        self.behaviour.future()
     }
 }
 

@@ -251,7 +251,12 @@ fn arithmetic_update_compiles_to_atomic_sql() {
         ),
     ]));
     let mut statement = sql::Statement::default();
-    let compiled = sql::upsert_user(&mut statement, &create_user_row(), &update).unwrap();
+    let compiled = sql::insert_user(
+        &mut statement,
+        &create_user_row(),
+        sql::UserConflict::Upsert(&update),
+    )
+    .unwrap();
     assert!(compiled.contains("\"spend\" = r.\"spend\" + $"));
     assert!(compiled.contains("\"max_budget\" = r.\"max_budget\" - $"));
     assert!(compiled.contains("\"max_parallel_requests\" = r.\"max_parallel_requests\" * $"));
@@ -268,7 +273,12 @@ fn non_numeric_update_rejected() {
         UserColumnOp::Increment(TokenValue::Number(Decimal::new(1, 0))),
     )]));
     let mut statement = sql::Statement::default();
-    let error = sql::upsert_user(&mut statement, &create_user_row(), &text_column).unwrap_err();
+    let error = sql::insert_user(
+        &mut statement,
+        &create_user_row(),
+        sql::UserConflict::Upsert(&text_column),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         KeyUserWriteError::NonNumericUpdate {
@@ -280,7 +290,12 @@ fn non_numeric_update_rejected() {
         UserColumnOp::Increment(TokenValue::Text(String::from("x"))),
     )]));
     let mut statement = sql::Statement::default();
-    let error = sql::upsert_user(&mut statement, &create_user_row(), &text_operand).unwrap_err();
+    let error = sql::insert_user(
+        &mut statement,
+        &create_user_row(),
+        sql::UserConflict::Upsert(&text_operand),
+    )
+    .unwrap_err();
     assert!(matches!(
         error,
         KeyUserWriteError::NonNumericUpdate { column: "spend" }

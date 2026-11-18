@@ -16,12 +16,10 @@ pub(super) const USER_LIST_COLUMNS: [&str; 4] =
     ["models", "teams", "allowed_cache_controls", "policies"];
 
 pub(super) fn row_text(row: &Row) -> Result<String, KeyUserWriteError> {
-    let text: String = row
-        .try_get(0)
+    row.try_get(0)
         .map_err(|driver| KeyUserWriteError::Database {
             source: backend::<WriteRowError>(driver),
-        })?;
-    Ok(text)
+        })
 }
 
 pub(super) fn row_json(row: &Row) -> Result<JsonData, KeyUserWriteError> {
@@ -47,9 +45,7 @@ pub(super) fn fill_null_lists(fields: &mut BTreeMap<String, JsonData>, names: &[
 }
 
 pub(super) fn decode_user_row(row: &Row) -> Result<LiteLLMUserTable, KeyUserWriteError> {
-    let JsonData::Object(mut fields) = row_json(row)? else {
-        return Err(KeyUserWriteError::Row(WriteRowError::NotAnObject));
-    };
+    let mut fields = row_object(row)?;
     fill_null_lists(&mut fields, &USER_LIST_COLUMNS);
     user_record_to_model(Some(&JsonData::Object(fields)))
         .map_err(|source| KeyUserWriteError::Row(WriteRowError::User(source)))?

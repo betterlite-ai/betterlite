@@ -105,34 +105,42 @@ pub(super) fn upsert_key(
     ))
 }
 
-pub(super) fn upsert_user(
-    statement: &mut Statement,
-    create: &UserWrite,
-    update: &UserUpdateOps,
-) -> Result<String, KeyUserWriteError> {
-    let (columns, placeholders) = insert_user_values(statement, create)?;
-    let conflict = if update.0.is_empty() {
-        String::from("\"user_id\" = EXCLUDED.\"user_id\"")
-    } else {
-        update_assignments(statement, update)?.join(", ")
-    };
-    Ok(format!(
-        "INSERT INTO {USER_TABLE} AS r ({}) VALUES ({}) ON CONFLICT (\"user_id\") DO UPDATE SET {conflict} RETURNING {ROW_JSON}",
-        columns.join(", "),
-        placeholders.join(", ")
-    ))
+pub(super) enum UserConflict<'update> {
+    Reject,
+    Upsert(&'update UserUpdateOps),
 }
 
 pub(super) fn insert_user(
     statement: &mut Statement,
     create: &UserWrite,
+    conflict: UserConflict<'_>,
 ) -> Result<String, KeyUserWriteError> {
     let (columns, placeholders) = insert_user_values(statement, create)?;
-    Ok(format!(
-        "INSERT INTO {USER_TABLE} AS r ({}) VALUES ({}) RETURNING {ROW_JSON}",
+    let insert = format!(
+        "INSERT INTO {USER_TABLE} AS r ({}) VALUES ({})",
         columns.join(", "),
         placeholders.join(", ")
-    ))
+    );
+    match conflict {
+        UserConflict::Reject => Ok(format!("{insert} RETURNING {ROW_JSON}")),
+        UserConflict::Upsert(update) => {
+            let sets = update_set(statement, update, "\"user_id\" = EXCLUDED.\"user_id\"")?;
+            Ok(format!(
+                "{insert} ON CONFLICT (\"user_id\") DO UPDATE SET {sets} RETURNING {ROW_JSON}"
+            ))
+        }
+    }
+}
+
+fn update_set(
+    statement: &mut Statement,
+    update: &UserUpdateOps,
+    unchanged: &str,
+) -> Result<String, KeyUserWriteError> {
+    if update.0.is_empty() {
+        return Ok(unchanged.to_owned());
+    }
+    Ok(update_assignments(statement, update)?.join(", "))
 }
 
 pub(super) fn update_user(
@@ -140,11 +148,7 @@ pub(super) fn update_user(
     lookup: &str,
     update: &UserUpdateOps,
 ) -> Result<String, KeyUserWriteError> {
-    let sets = if update.0.is_empty() {
-        String::from("\"user_id\" = r.\"user_id\"")
-    } else {
-        update_assignments(statement, update)?.join(", ")
-    };
+    let sets = update_set(statement, update, "\"user_id\" = r.\"user_id\"")?;
     let index = statement.parameters.len().saturating_add(1);
     statement
         .parameters

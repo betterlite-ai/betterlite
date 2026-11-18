@@ -11,6 +11,7 @@ use crate::postgres_store::errors::DbError;
 
 use super::columns::{UserColumn, UserColumnOp, UserUpdateOps, UserWrite};
 use super::hash::hash_token_if_needed;
+use super::retry::CallType;
 use super::rows;
 use super::sql::{self, Relation, Statement};
 use super::{
@@ -21,6 +22,17 @@ impl<Client> KeyUserWrites<'_, Client>
 where
     Client: GenericClient + Sync,
 {
+    pub async fn update_key(
+        &self,
+        token: &SecretString,
+        fields: &TokenWrite,
+    ) -> Result<KeyUpdateResult, KeyUserWriteError> {
+        self.run(CallType::UpdateData, || {
+            self.attempt_update_key(token, fields)
+        })
+        .await
+    }
+
     pub(super) async fn attempt_update_key(
         &self,
         token: &SecretString,
@@ -108,7 +120,7 @@ where
             return rows::decode_user_row(&row);
         }
         let mut statement = Statement::default();
-        let query = sql::insert_user(&mut statement, create)?;
+        let query = sql::insert_user(&mut statement, create, sql::UserConflict::Reject)?;
         let Some(row) = self.query_row(&query, &statement).await? else {
             return Err(KeyUserWriteError::Database {
                 source: DbError::CreateNull,

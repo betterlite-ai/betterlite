@@ -19,13 +19,12 @@ use crate::postgres_store::errors::{DbError, backend};
 use super::columns::{UserColumn, UserUpdateOps, UserWrite};
 use super::hash::hash_token;
 use super::retry::{
-    CallType, FAILURE_REPORT_DEADLINE, FailureEvent, MAX_TIME, MAX_TRIES, retry_wait, traceback,
+    CallType, FAILURE_REPORT_DEADLINE, FailureEvent, FailureSink, MAX_TIME, MAX_TRIES, retry_wait,
+    traceback,
 };
 use super::rows;
 use super::sql::{self, Relation, Statement};
-use super::{
-    KeyUpdateResult, KeyUserWriteError, KeyUserWrites, UserUpdate, UserUpdateResult, WriteRowError,
-};
+use super::{KeyUserWriteError, KeyUserWrites, UserUpdate, UserUpdateResult, WriteRowError};
 
 const ORGANIZATION_FOREIGN_KEY: &str = "LiteLLM_UserTable_organization_id_fkey";
 const REDACTED: &str = "[redacted]";
@@ -39,8 +38,9 @@ where
         token: &SecretString,
         fields: &TokenWrite,
     ) -> Result<LiteLLMVerificationToken, KeyUserWriteError> {
+        let hashed = hash_token(token.expose_secret());
         self.run(CallType::InsertData, || {
-            self.attempt_insert_key(token, fields)
+            self.attempt_insert_key(&hashed, fields)
         })
         .await
     }
@@ -53,17 +53,6 @@ where
             .await
     }
 
-    pub async fn update_key(
-        &self,
-        token: &SecretString,
-        fields: &TokenWrite,
-    ) -> Result<KeyUpdateResult, KeyUserWriteError> {
-        self.run(CallType::UpdateData, || {
-            self.attempt_update_key(token, fields)
-        })
-        .await
-    }
-
     pub async fn update_user(
         &self,
         request: &UserUpdate,
@@ -72,7 +61,7 @@ where
             .await
     }
 
-    async fn run<Output, Attempt, AttemptFuture>(
+    pub(super) async fn run<Output, Attempt, AttemptFuture>(
         &self,
         call_type: CallType,
         attempt: Attempt,
@@ -101,26 +90,16 @@ where
             let rendered = traceback(call_type, &error);
             let error_msg = rendered.lines().next().unwrap_or_default();
             tracing::debug!("{error_msg}");
-            let report = tokio::time::timeout(
-                FAILURE_REPORT_DEADLINE,
-                AssertUnwindSafe(self.ports.sink.record(FailureEvent {
+            report_failure(
+                self.ports.sink,
+                FailureEvent {
                     call_type,
                     error: &error,
                     traceback: rendered,
                     duration,
-                }))
-                .catch_unwind(),
+                },
             )
             .await;
-            match report {
-                Ok(Ok(())) => {}
-                Ok(Err(_panic)) => {
-                    tracing::warn!("the failure sink panicked while reporting the failed write");
-                }
-                Err(_elapsed) => {
-                    tracing::warn!("the failure sink did not report the failed write in time");
-                }
-            }
             if tries == MAX_TRIES || elapsed >= MAX_TIME {
                 return Err(error);
             }
@@ -132,13 +111,13 @@ where
 
     async fn attempt_insert_key(
         &self,
-        token: &SecretString,
+        hashed: &str,
         fields: &TokenWrite,
     ) -> Result<LiteLLMVerificationToken, KeyUserWriteError> {
-        let hashed = hash_token(token.expose_secret());
-        tracing::debug!(payload = ?debug_payload(fields, &hashed), "PrismaClient: insert_data");
+        tracing::debug!(payload = ?debug_payload(fields, hashed), "PrismaClient: insert_data");
         let mut data = fields.clone();
-        data.0.insert(TokenColumn::Token, TokenValue::Text(hashed));
+        data.0
+            .insert(TokenColumn::Token, TokenValue::Text(hashed.to_owned()));
         if matches!(
             data.0.get(&TokenColumn::BudgetLimits),
             Some(TokenValue::Null)
@@ -199,7 +178,7 @@ where
         update: &UserUpdateOps,
     ) -> Result<LiteLLMUserTable, KeyUserWriteError> {
         let mut statement = Statement::default();
-        let query = sql::upsert_user(&mut statement, fields, update)?;
+        let query = sql::insert_user(&mut statement, fields, sql::UserConflict::Upsert(update))?;
         let Some(row) = self.query_row(&query, &statement).await? else {
             return Err(KeyUserWriteError::Database {
                 source: DbError::CreateNull,
@@ -224,6 +203,27 @@ where
             .map_err(|driver| KeyUserWriteError::Database {
                 source: backend::<WriteRowError>(driver),
             })
+    }
+}
+
+// the report is built and polled inside the supervised future, so a sink that panics before returning its future is caught too
+pub(super) async fn report_failure(sink: &dyn FailureSink, event: FailureEvent<'_>) {
+    let report = tokio::time::timeout(
+        FAILURE_REPORT_DEADLINE,
+        AssertUnwindSafe(async move {
+            sink.record(event).await;
+        })
+        .catch_unwind(),
+    )
+    .await;
+    match report {
+        Ok(Ok(())) => {}
+        Ok(Err(_panic)) => {
+            tracing::warn!("the failure sink panicked while reporting the failed write");
+        }
+        Err(_elapsed) => {
+            tracing::warn!("the failure sink did not report the failed write in time");
+        }
     }
 }
 

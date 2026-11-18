@@ -53,17 +53,6 @@ pub(super) async fn row_count(client: &Client, table: &str, key: &str, value: &s
     row.get(0)
 }
 
-pub(super) async fn user_alias(client: &Client, user_id: &str) -> Option<String> {
-    let row = client
-        .query_opt(
-            "SELECT \"user_alias\" FROM \"LiteLLM_UserTable\" WHERE \"user_id\" = $1",
-            &[&user_id],
-        )
-        .await
-        .unwrap()?;
-    row.try_get::<_, Option<String>>(0).unwrap()
-}
-
 pub(super) async fn user_column_text(
     client: &Client,
     column: &str,
@@ -223,7 +212,9 @@ async fn user_conflict_no_update() {
         1
     );
     assert_eq!(
-        user_alias(&client, "user-a").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
         Some("first")
     );
     harness.close().await;
@@ -529,7 +520,9 @@ async fn user_update_map_precedence() {
     };
     writes.update_user(&explicit).await.unwrap();
     assert_eq!(
-        user_alias(&client, "user-a").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
         Some("explicit")
     );
     let custom = UserUpdate {
@@ -540,7 +533,9 @@ async fn user_update_map_precedence() {
     };
     writes.update_user(&custom).await.unwrap();
     assert_eq!(
-        user_alias(&client, "user-a").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
         Some("custom")
     );
     let plain = UserUpdate {
@@ -551,7 +546,9 @@ async fn user_update_map_precedence() {
     };
     writes.update_user(&plain).await.unwrap();
     assert_eq!(
-        user_alias(&client, "user-a").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
         Some("from-data")
     );
     harness.close().await;
@@ -576,7 +573,9 @@ async fn explicit_empty_update_map() {
     let result = writes.update_user(&request).await.unwrap();
     assert_eq!(result.data.user_alias.as_deref(), Some("first"));
     assert_eq!(
-        user_alias(&client, "user-a").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
         Some("first")
     );
     harness.close().await;
@@ -605,10 +604,17 @@ async fn user_id_dispatch_precedence() {
     let result = writes.update_user(&request).await.unwrap();
     assert_eq!(result.user_id, "user-a");
     assert_eq!(
-        user_alias(&client, "user-a").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
         Some("explicit")
     );
-    assert_eq!(user_alias(&client, "user-b").await.as_deref(), Some("b"));
+    assert_eq!(
+        user_column_text(&client, "user_alias", "user-b")
+            .await
+            .as_deref(),
+        Some("b")
+    );
     assert_eq!(
         row_count(&client, "LiteLLM_UserTable", "user_id", "user-b").await,
         1
@@ -642,7 +648,9 @@ async fn user_id_from_data_when_absent() {
     let result = writes.update_user(&request).await.unwrap();
     assert_eq!(result.user_id, "user-b");
     assert_eq!(
-        user_alias(&client, "user-b").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-b")
+            .await
+            .as_deref(),
         Some("from-data")
     );
     harness.close().await;
@@ -875,7 +883,12 @@ async fn earlier_write_survives_next_failure() {
     );
     let error = writes.insert_user(&broken).await.unwrap_err();
     assert!(matches!(error, KeyUserWriteError::Database { .. }));
-    assert_eq!(user_alias(&client, "user-a").await.as_deref(), Some("kept"));
+    assert_eq!(
+        user_column_text(&client, "user_alias", "user-a")
+            .await
+            .as_deref(),
+        Some("kept")
+    );
     assert_eq!(
         row_count(&client, "LiteLLM_UserTable", "user_id", "user-b").await,
         0
@@ -885,7 +898,9 @@ async fn earlier_write_survives_next_failure() {
         .await
         .unwrap();
     assert_eq!(
-        user_alias(&client, "user-c").await.as_deref(),
+        user_column_text(&client, "user_alias", "user-c")
+            .await
+            .as_deref(),
         Some("after")
     );
     harness.close().await;
