@@ -1,5 +1,4 @@
 import os
-from collections.abc import Callable
 from typing import Protocol, TypedDict
 
 import httpx
@@ -10,17 +9,33 @@ from pydantic import JsonValue, TypeAdapter
 
 REPLY: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
-ValidateEnvironment = Callable[[dict[str, str], str | None, str | None], dict[str, str]]
-CompleteUrl = Callable[[str | None, dict[str, JsonValue], dict[str, JsonValue]], str]
-TransformRequest = Callable[[str | list[str], dict[str, JsonValue]], dict[str, JsonValue]]
-TransformResponse = Callable[[httpx.Response, Logging | None], SearchResponse]
-
 
 class ApiserpentConfig(Protocol):
-    validate_environment: ValidateEnvironment
-    get_complete_url: CompleteUrl
-    transform_search_request: TransformRequest
-    transform_search_response: TransformResponse
+    def validate_environment(
+        self,
+        headers: dict[str, str],
+        api_key: str | None,
+        api_base: str | None,
+    ) -> dict[str, str]: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        optional_params: dict[str, JsonValue],
+        data: dict[str, JsonValue],
+    ) -> str: ...
+
+    def transform_search_request(
+        self,
+        query: str | list[str],
+        optional_params: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_search_response(
+        self,
+        raw_response: httpx.Response,
+        logging_obj: Logging | None,
+    ) -> SearchResponse: ...
 
 
 class Input(TypedDict):
@@ -40,6 +55,20 @@ def environment(values: dict[str, str]) -> None:
         os.environ[name] = value
 
 
+def request_values(
+    view: ApiserpentConfig,
+    input_value: Input,
+) -> tuple[dict[str, str], dict[str, JsonValue], str]:
+    headers = view.validate_environment(
+        input_value["headers"],
+        input_value["api_key"],
+        input_value["api_base"],
+    )
+    params = view.transform_search_request(input_value["query"], input_value["optional_params"])
+    url = view.get_complete_url(input_value["api_base"], input_value["optional_params"], params)
+    return headers, params, url
+
+
 def reply_value(text: str, view: ApiserpentConfig) -> JsonValue:
     response = httpx.Response(
         200,
@@ -52,13 +81,7 @@ def reply_value(text: str, view: ApiserpentConfig) -> JsonValue:
 def run(input_value: Input) -> JsonValue:
     environment(input_value["environment"])
     view: ApiserpentConfig = APISerpentSearchConfig()
-    headers = view.validate_environment(
-        input_value["headers"],
-        input_value["api_key"],
-        input_value["api_base"],
-    )
-    params = view.transform_search_request(input_value["query"], input_value["optional_params"])
-    url = view.get_complete_url(input_value["api_base"], input_value["optional_params"], params)
+    headers, params, url = request_values(view, input_value)
     text = input_value["reply"]
     response = None if text is None else reply_value(text, view)
     decoded_headers = REPLY.validate_python(headers)
