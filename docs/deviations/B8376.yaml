@@ -1,0 +1,39 @@
+task: B8376
+deviations:
+  - what: The batched spend read and both pipeline writes take no parent OTel span; read_cache_values accepts one and ignores it.
+    why: B733's cache tiers and B4294's batch reads carry no span, and this task's signatures do not add one, so the values read and written do not change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3907-L3910
+  - what: The armed read is one declaration per cache partition (ordinary objects, key objects) over the shared Redis, and arming does nothing unless every partition that holds a key has a Redis tier; the unarmed read likewise runs one batch get per partition.
+    why: betterlite's AuthCache keeps key objects in their own memory tier, while LiteLLM's UserApiKeyCache batch methods read the ordinary memory partition and Redis for every key, so a spend key that is a 64-character lowercase hex id is served from the key-object memory here instead of Redis, and a key set spanning both partitions costs two MGETs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/user_api_key_cache.py#L35-L55
+  - what: Spend additions are exact Decimal sums with a checked add; a sum Python's float would round or turn into inf is kept exactly, and an addition that overflows warns at its group and leaves that row unwritten (for the key branch it stops the update).
+    why: The row models declare Decimal and rule no-float-money keeps money out of floats; docs/compatibility.md does not copy Python's float arithmetic.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4021-L4023
+  - what: A cached tag row whose spend is null is treated as an undecodable row and skipped.
+    why: betterlite's TagTable declares spend as a required Decimal, so a null row fails validation and the cache reports a miss, where LiteLLM's `spend or 0.0` reads it as zero; docs/compatibility.md makes a null for a defined type an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4166
+  - what: A cached key object whose spend is null fails the auth cache's validation and reads as a miss, so no projected alert is sent.
+    why: the verification token row declares spend without a null form, so a null payload is invalid and B733's decode returns a miss, where LiteLLM's `spend or 0.0` reads it as zero and can still alert.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3959
+  - what: A global proxy spend cached as a JSON boolean is left untouched; LiteLLM's isinstance check accepts a bool as an int and increments it.
+    why: docs/compatibility.md sends input of the declared type, and the global spend's declared type is a number, so Python's bool-is-an-int habit is not copied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4034-L4035
+  - what: A batch read that returns no list at all (B4294's None, which its own caller logs) also logs the spend read warning; LiteLLM's update_cache turns a None read into an empty mapping without a warning of its own, because its DualCache already logged the failure.
+    why: The task's definition of done requires the failed-read warning, and the values used stay empty either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3918-L3919
+  - what: Projected spend is computed against the Clock passed in UpdateDeps instead of date.today().
+    why: betterlite injects the clock as a dependency, which lets tests pin 2024-06-15; the server passes its own clock, so the date is today's as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7936-L7941
+kept_bugs:
+  - what: The global proxy spend is only read and bumped when the request carries a user id; a request without one still adds its cost to the end-user, team and tag rows but leaves the global spend stale.
+    why: LiteLLM puts the global key behind user_id in update_cache_read_keys and bumps it only inside the user branch; copied because a setup that never saw a global update without a user keeps that behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3862
+  - what: A missing or undecodable cached user row returns from the user branch before the global spend is bumped, so a present global value stays unchanged when the user row is absent.
+    why: LiteLLM returns on a user-row miss instead of skipping ahead to the global update; copied because a setup that only sees the global move alongside a decoded user row keeps that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4010-L4013
+  - what: The key object's spend is never written back; the key branch reads the cached UserAPIKeyAuth, computes the new spend for the projected alert, and leaves the stored row as it was.
+    why: LiteLLM queues the user, end-user, team and tag rows in one list but appends nothing from the key branch; copied because key spend still belongs to the key manager that wrote it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3947-L3997
+  - what: The projected alert is sent on every response over the soft limit because the cooldown is never set; the branch carries LiteLLM's "# set cooldown on alert" comment and no code.
+    why: Copied because a working setup may alert per request rather than once per cooldown window.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L3991-L3997
