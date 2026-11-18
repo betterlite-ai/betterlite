@@ -15,6 +15,7 @@ use super::support::*;
 
 mod missing_target;
 mod stale_removal;
+mod trailing_slash;
 
 #[test]
 fn resolve_os_environ_in_headers_replaces_a_whole_value() {
