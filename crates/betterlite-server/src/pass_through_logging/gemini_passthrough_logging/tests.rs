@@ -342,23 +342,13 @@ fn payload_sets_the_id_model_and_call_details() {
     )
     .expect("the payload is built");
     assert_eq!(text(&response, "id"), "call-1");
-    assert_eq!(
-        as_text(built.entries.get("model").expect("a model")),
-        "request-model"
-    );
-    assert_eq!(
-        as_text(
-            built
-                .entries
-                .get("custom_llm_provider")
-                .expect("a provider")
-        ),
-        "vertex_ai"
-    );
-    assert_eq!(
-        number_text(built.entries.get("response_cost").expect("a cost")),
-        "1.25"
-    );
+    let entries = &built.entries;
+    let used_model = as_text(entries.get("model").expect("a model"));
+    let provider = as_text(entries.get("custom_llm_provider").expect("a provider"));
+    let response_cost = number_text(entries.get("response_cost").expect("a cost"));
+    assert_eq!(used_model, "request-model");
+    assert_eq!(provider, "vertex_ai");
+    assert_eq!(response_cost, "1.25");
     assert_eq!(logged_model(&logging_obj), "response-model");
     assert_eq!(
         detail(&logging_obj, "model"),
