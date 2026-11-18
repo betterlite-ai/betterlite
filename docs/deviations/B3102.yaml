@@ -18,4 +18,7 @@ deviations:
   - what: The flush and re-queue warnings append the error's display text to LiteLLM's message; LiteLLM logs the same message and passes exc_info for the traceback.
     why: A returned Rust error has no traceback to attach, and the cause chain's display text is what a log reader needs; every message keeps LiteLLM's prefix so existing log matching still finds it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/gateway_request_tracking.py#L265-L280
+  - what: A store query that fails with a database outage answers 503 with type no_db_connection, param "None", code as the string "503" and the message "the gateway activity database is unavailable", where LiteLLM's unhandled-exception handler wraps the fault through service_unavailable_proxy_exception and answers the same status, type and param with the number 503 and its own transient wording.
+    why: Every betterlite error envelope writes code as a JSON string and rule errors-match-litellm keeps messages betterlite's own; the status, type and param match LiteLLM's service_unavailable_proxy_exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/exception_handler.py#L383-L390
 kept_bugs: []
