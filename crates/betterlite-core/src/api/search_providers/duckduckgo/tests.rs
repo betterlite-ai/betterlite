@@ -612,6 +612,13 @@ fn a_reply_that_is_not_an_object_fails(#[case] body: &str) {
 }
 
 #[test]
+fn a_json_array_reply_is_not_an_object() {
+    let error = decode("[]", None).unwrap_err();
+
+    assert!(matches!(error, DuckDuckGoSearchError::ReplyNotObject));
+}
+
+#[test]
 fn a_reply_that_is_too_large_fails() {
     let bytes = vec![b' '; REPLY_MAX_BYTES.saturating_add(1)];
 
