@@ -1,7 +1,9 @@
 #![cfg(test)]
 
-#[path = "../budget_reset_policy/tests/logging.rs"]
-pub(crate) mod logging;
+pub(crate) mod logging {
+    include!("../budget_reset_policy/tests/logging.rs");
+}
+// the reset job's log capture, shared rather than copied: a second `mod` load of it is clippy::duplicate_mod
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
