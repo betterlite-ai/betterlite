@@ -8,10 +8,9 @@ use crate::deployment_catalog::scope::litellm_model;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use crate::model_catalog_lookup::error::LookupError;
+use crate::model_catalog_lookup::fields::text;
 use crate::model_catalog_lookup::index::deployment_ids;
-use crate::model_catalog_lookup::listing::{
-    get_all_deployments, is_team_specific_model, team_specific_model,
-};
+use crate::model_catalog_lookup::listing::{get_all_deployments, team_specific_model};
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_groups::priority::prioritized;
 
@@ -35,7 +34,8 @@ fn row_at(catalog: &DeploymentCatalog, index: usize) -> Result<&DeploymentSpec, 
 // The id filter both id listings share: a row that lost its id field and, when asked, a team row are left out.
 fn listed_id(row: &DeploymentSpec, exclude_team_models: bool) -> bool {
     row.model_info.contains_key("id")
-        && !(exclude_team_models && is_team_specific_model(&row.model_info))
+        && !(exclude_team_models
+            && text(&row.model_info, "team_id").is_some_and(|team| !team.is_empty()))
 }
 
 impl CatalogLookup<'_> {
@@ -163,7 +163,7 @@ impl CatalogLookup<'_> {
     pub fn get_model_names(&self, team_id: Option<&str>) -> Result<Vec<String>, LookupError> {
         let mut names = Vec::new();
         for deployment in self.get_model_list(None, None)? {
-            if is_team_specific_model(&deployment.model_info) {
+            if text(&deployment.model_info, "team_id").is_some_and(|team| !team.is_empty()) {
                 let public = team_specific_model(&deployment.model_info, team_id);
                 names.extend(public.filter(|name| !name.is_empty()).map(str::to_owned));
             } else {

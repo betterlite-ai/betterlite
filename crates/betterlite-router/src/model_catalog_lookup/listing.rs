@@ -42,12 +42,6 @@ pub fn get_all_deployments(
     rows
 }
 
-// Router._is_team_specific_model: a deployment names a team when its team_id is non-empty text.
-#[must_use]
-pub fn is_team_specific_model(model_info: &JsonObject) -> bool {
-    text(model_info, "team_id").is_some_and(|team| !team.is_empty())
-}
-
 // Router._get_team_specific_model: the public name of a deployment the caller's team owns.
 #[must_use]
 pub fn team_specific_model<'info>(

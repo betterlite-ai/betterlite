@@ -31,7 +31,14 @@ fn call_answer(
     let name = arguments.model_name.as_deref();
     let team = arguments.team_id.as_deref();
     match input.function {
-        Function::GetDeployment => deployment_value(lookup, arguments.model_id.as_deref()),
+        Function::GetDeployment => {
+            let id = arguments
+                .model_id
+                .as_deref()
+                .ok_or(Failure::Argument("model_id"))?;
+            let row = lookup.get_deployment(id)?;
+            Ok(row.map_or(Value::Null, deployment_row))
+        }
         Function::GetDeploymentByModelGroupName => group_value(lookup, name),
         Function::GetModelIds => Ok(json!(
             lookup.get_model_ids(name, arguments.exclude_team_models)
@@ -54,11 +61,6 @@ fn call_answer(
         }
         Function::ShouldIncludeDeployment => include_answer(snapshot, arguments),
     }
-}
-
-fn deployment_value(lookup: &CatalogLookup<'_>, model_id: Option<&str>) -> Result<Value, Failure> {
-    let row = lookup.get_deployment(model_id.ok_or(Failure::Argument("model_id"))?)?;
-    Ok(row.map_or(Value::Null, deployment_row))
 }
 
 fn group_value(lookup: &CatalogLookup<'_>, model_name: Option<&str>) -> Result<Value, Failure> {
