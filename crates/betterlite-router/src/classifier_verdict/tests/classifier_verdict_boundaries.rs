@@ -95,26 +95,27 @@ fn an_unrecognized_tier_keeps_the_raw_label() {
     }
 }
 
+#[rstest]
+#[case(r#"{"tier": "SIMPLE", "p": NaN}"#)]
+#[case(r#"{"tier": "SIMPLE", "p": Infinity}"#)]
+#[case(r#"{"tier": "SIMPLE", "p": -Infinity}"#)]
+#[case(r#"{"tier":"SIMPLE","p":NaN}"#)]
+#[case(r#"{"tier":"SIMPLE","p":NaN,"q":1}"#)]
+#[case(r#"{"tier":"SIMPLE","p":[NaN]}"#)]
+#[case(r#"{"tier":"SIMPLE","p":NaN }"#)]
+#[case(r#"NaN {"tier":"SIMPLE"}"#)]
+fn constants_are_masked_only_where_a_value_could_start(#[case] reply: &str) {
+    assert_eq!(
+        parse_class_reply(reply.as_bytes(), &blank_tiers())
+            .unwrap()
+            .tier,
+        Tier::BuiltIn(ComplexityTier::Simple),
+        "{reply}"
+    );
+}
+
 #[test]
-fn constants_are_masked_only_where_a_value_could_start() {
-    for reply in [
-        r#"{"tier": "SIMPLE", "p": NaN}"#,
-        r#"{"tier": "SIMPLE", "p": Infinity}"#,
-        r#"{"tier": "SIMPLE", "p": -Infinity}"#,
-        r#"{"tier":"SIMPLE","p":NaN}"#,
-        r#"{"tier":"SIMPLE","p":NaN,"q":1}"#,
-        r#"{"tier":"SIMPLE","p":[NaN]}"#,
-        r#"{"tier":"SIMPLE","p":NaN }"#,
-        r#"NaN {"tier":"SIMPLE"}"#,
-    ] {
-        assert_eq!(
-            parse_class_reply(reply.as_bytes(), &blank_tiers())
-                .unwrap()
-                .tier,
-            Tier::BuiltIn(ComplexityTier::Simple),
-            "{reply}"
-        );
-    }
+fn constants_inside_a_string_or_a_value_keep_the_reply_invalid() {
     assert!(matches!(
         parse_class_reply(br#"{"tier": "NaN"}"#, &blank_tiers()),
         Err(ClassifierVerdictError::UnknownTier { label }) if label == "NaN"

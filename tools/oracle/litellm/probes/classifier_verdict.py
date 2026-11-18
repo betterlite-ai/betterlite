@@ -247,5 +247,3 @@ def calibration(operation: ClassifierVerdict) -> str:
         ClassificationRubric(require(operation.rubric, "rubric")),
         labeled_pairs(operation.labeled_tiers),
     )
-
-

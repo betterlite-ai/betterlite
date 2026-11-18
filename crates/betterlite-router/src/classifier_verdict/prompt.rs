@@ -3,8 +3,7 @@ use crate::tier_definitions::model::TierDefinition;
 
 use super::error::ClassifierVerdictError;
 use super::rubric::{
-    CALIBRATION_EXAMPLES_HEADING, ClassificationRubric, built_in_criterion,
-    calibration_examples_section,
+    CALIBRATION_EXAMPLES_HEADING, ClassificationRubric, calibration_examples_section,
 };
 
 const LEGACY_INSTRUCTIONS: &str = "Classify the complexity of a user request into exactly one tier.
@@ -161,5 +160,5 @@ fn inherited_criterion(name: &str) -> Result<&'static str, ClassifierVerdictErro
             name: name.to_owned(),
         });
     };
-    Ok(built_in_criterion(tier))
+    Ok(ClassificationRubric::Legacy.criterion(tier))
 }

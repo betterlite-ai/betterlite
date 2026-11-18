@@ -1,36 +1,22 @@
-use std::fmt;
-
 use betterlite_logging::spend_bodies::redaction::should_redact_message_logging;
+use thiserror::Error;
 
 use super::call::{RequestKwargs, dynamic_params};
 use super::error::ClassifierVerdictError;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum RejectedReply {
+    #[error("raw reply withheld (message logging is off)")]
     Withheld,
+    #[error("raw reply: {0:?}")]
     Raw(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("ComplexityRouter: classifier verdict rejected ({problems}); {reply}")]
 pub struct RejectionDiagnostic {
-    pub problems: Vec<String>,
+    pub problems: String,
     pub reply: RejectedReply,
-}
-
-impl fmt::Display for RejectionDiagnostic {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let problems = self.problems.join("; ");
-        match &self.reply {
-            RejectedReply::Withheld => write!(
-                formatter,
-                "ComplexityRouter: classifier verdict rejected ({problems}); raw reply withheld (message logging is off)"
-            ),
-            RejectedReply::Raw(content) => write!(
-                formatter,
-                "ComplexityRouter: classifier verdict rejected ({problems}); raw reply: {content:?}"
-            ),
-        }
-    }
 }
 
 #[must_use]
@@ -84,7 +70,7 @@ pub fn rejection_diagnostic(
         RejectedReply::Raw(content.to_owned())
     };
     Some(RejectionDiagnostic {
-        problems: verdict_problems(error),
+        problems: verdict_problems(error).join("; "),
         reply,
     })
 }

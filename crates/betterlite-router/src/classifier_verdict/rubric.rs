@@ -23,7 +23,7 @@ const COMPLEX_CRITERION: &str =
 const REASONING_CRITERION: &str = "open-ended analysis, proofs, famous hard problems, step-by-step reasoning, \
     tradeoffs, or anything where a correct answer requires careful thought rather than a quick lookup.";
 
-const BUSINESS_NON_REASONING_CRITERION: &str = "operational requests whose whole job is to pass information along \
+const BUSINESS_RELAY_CRITERION: &str = "operational requests whose whole job is to pass information along \
     or put it in a requested shape: relaying or reformatting tool or system output, acknowledging a completed \
     action, or extracting a stated field. Use it only when no judgment about the content is asked for.";
 
@@ -132,31 +132,24 @@ impl ClassificationRubric {
 
     #[must_use]
     pub const fn criterion(self, tier: ComplexityTier) -> &'static str {
-        match self {
-            Self::Legacy | Self::Agentic | Self::Chat => built_in_criterion(tier),
-            Self::Business => business_criterion(tier),
+        match (self, tier) {
+            (Self::Business, ComplexityTier::NonReasoning) => BUSINESS_RELAY_CRITERION,
+            (Self::Business, ComplexityTier::Simple) => BUSINESS_SIMPLE_CRITERION,
+            (Self::Business, ComplexityTier::Medium) => BUSINESS_MEDIUM_CRITERION,
+            (Self::Business, ComplexityTier::Complex) => BUSINESS_COMPLEX_CRITERION,
+            (Self::Business, ComplexityTier::Reasoning) => BUSINESS_REASONING_CRITERION,
+            (Self::Legacy | Self::Agentic | Self::Chat, ComplexityTier::NonReasoning) => {
+                NON_REASONING_CRITERION
+            }
+            (Self::Legacy | Self::Agentic | Self::Chat, ComplexityTier::Simple) => SIMPLE_CRITERION,
+            (Self::Legacy | Self::Agentic | Self::Chat, ComplexityTier::Medium) => MEDIUM_CRITERION,
+            (Self::Legacy | Self::Agentic | Self::Chat, ComplexityTier::Complex) => {
+                COMPLEX_CRITERION
+            }
+            (Self::Legacy | Self::Agentic | Self::Chat, ComplexityTier::Reasoning) => {
+                REASONING_CRITERION
+            }
         }
-    }
-}
-
-#[must_use]
-pub const fn built_in_criterion(tier: ComplexityTier) -> &'static str {
-    match tier {
-        ComplexityTier::NonReasoning => NON_REASONING_CRITERION,
-        ComplexityTier::Simple => SIMPLE_CRITERION,
-        ComplexityTier::Medium => MEDIUM_CRITERION,
-        ComplexityTier::Complex => COMPLEX_CRITERION,
-        ComplexityTier::Reasoning => REASONING_CRITERION,
-    }
-}
-
-const fn business_criterion(tier: ComplexityTier) -> &'static str {
-    match tier {
-        ComplexityTier::NonReasoning => BUSINESS_NON_REASONING_CRITERION,
-        ComplexityTier::Simple => BUSINESS_SIMPLE_CRITERION,
-        ComplexityTier::Medium => BUSINESS_MEDIUM_CRITERION,
-        ComplexityTier::Complex => BUSINESS_COMPLEX_CRITERION,
-        ComplexityTier::Reasoning => BUSINESS_REASONING_CRITERION,
     }
 }
 

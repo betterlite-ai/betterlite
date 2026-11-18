@@ -34,16 +34,12 @@ pub(crate) fn blank_tiers() -> TierSet {
 }
 
 pub(crate) fn tiers_with_labels(pairs: &[(ComplexityTier, &str)]) -> TierSet {
-    TierSet {
-        definitions: None,
-        pools: BTreeMap::new(),
-        labels: pairs
-            .iter()
-            .map(|(tier, label)| (*tier, (*label).to_owned()))
-            .collect(),
-        non_reasoning: false,
-        fallback: None,
-    }
+    let mut tiers = blank_tiers();
+    tiers.labels = pairs
+        .iter()
+        .map(|(tier, label)| (*tier, (*label).to_owned()))
+        .collect();
+    tiers
 }
 
 pub(crate) fn tiers_with_definitions(

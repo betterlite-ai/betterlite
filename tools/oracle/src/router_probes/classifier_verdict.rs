@@ -40,7 +40,14 @@ pub(crate) fn run(
     let payload = &input.0;
     let mut fields = Fields::default();
     match payload.function {
-        Function::SystemPrompt => fields.prompt = Some(render_system_prompt(payload)?),
+        Function::SystemPrompt => {
+            fields.prompt = Some(invalid(classification_system_prompt(
+                *required(payload.window.as_ref(), "window")?,
+                payload.prompt.as_deref(),
+                &labeled_tiers(payload),
+                payload.rubric,
+            ))?);
+        }
         Function::BuiltInPrompt => fields.prompt = Some(render_built_in_prompt(payload)?),
         Function::CustomPrompt => fields.prompt = Some(render_custom_prompt(payload)?),
         Function::CalibrationExamples => {
@@ -49,7 +56,10 @@ pub(crate) fn run(
         Function::ResponseFormat => fields.response_format = Some(render_response_format()?),
         Function::ResolveLabel => fields.resolved = resolve_label(payload)?,
         Function::ParseReply => fields.parse = Some(parse_reply_outcome(payload)?),
-        Function::LoggingFlag => fields.logging_flag = effective_logging_flag(payload)?,
+        Function::LoggingFlag => {
+            fields.logging_flag =
+                invalid(effective_logging_off(request_kwargs(payload)?.as_ref()))?;
+        }
     }
     Ok(ProbeOutput::ClassifierVerdict(Output(Box::new(fields))))
 }
@@ -79,15 +89,6 @@ fn labeled_tiers(payload: &Payload) -> Vec<(ComplexityTier, &str)> {
     }
 }
 
-fn render_system_prompt(payload: &Payload) -> Result<String, OperationError> {
-    invalid(classification_system_prompt(
-        *required(payload.window.as_ref(), "window")?,
-        payload.prompt.as_deref(),
-        &labeled_tiers(payload),
-        payload.rubric,
-    ))
-}
-
 fn render_built_in_prompt(payload: &Payload) -> Result<String, OperationError> {
     invalid(built_in_tier_prompt(
         payload.prompt.as_deref(),
@@ -100,6 +101,7 @@ fn render_built_in_prompt(payload: &Payload) -> Result<String, OperationError> {
 
 fn render_custom_prompt(payload: &Payload) -> Result<String, OperationError> {
     let definitions = required(payload.definitions.as_ref(), "definitions")?;
+    let window = *required(payload.window.as_ref(), "window")?;
     let mapped: Vec<TierDefinition> = definitions
         .iter()
         .map(|definition| TierDefinition {
@@ -107,12 +109,13 @@ fn render_custom_prompt(payload: &Payload) -> Result<String, OperationError> {
             description: definition.description.clone(),
         })
         .collect();
-    invalid(custom_tier_prompt(
+    let prompt = custom_tier_prompt(
         &mapped,
         payload.prompt.as_deref(),
-        *required(payload.window.as_ref(), "window")?,
+        window,
         payload.examples.as_deref(),
-    ))
+    );
+    invalid(prompt)
 }
 
 fn render_calibration_examples(payload: &Payload) -> Result<String, OperationError> {
@@ -215,15 +218,9 @@ fn rejection(
     payload: &Payload,
     error: &ClassifierVerdictError,
 ) -> Result<ParseOutcome, OperationError> {
-    match error {
-        ClassifierVerdictError::UnknownTier { .. } => Ok(ParseOutcome::Rejected {
-            reason: RejectReason::UnknownTier,
-            withheld: false,
-        }),
-        ClassifierVerdictError::ReplyTooLarge { .. } => Ok(ParseOutcome::Rejected {
-            reason: RejectReason::TooLarge,
-            withheld: false,
-        }),
+    let reason = match error {
+        ClassifierVerdictError::UnknownTier { .. } => RejectReason::UnknownTier,
+        ClassifierVerdictError::ReplyTooLarge { .. } => RejectReason::TooLarge,
         ClassifierVerdictError::ReplyNotText { .. }
         | ClassifierVerdictError::NoVerdictObject
         | ClassifierVerdictError::VerdictSchema { .. }
@@ -233,13 +230,9 @@ fn rejection(
         | ClassifierVerdictError::OperatorSectionBlank { .. }
         | ClassifierVerdictError::OperatorSectionTooLong { .. }
         | ClassifierVerdictError::RequestKwargs { .. }
-        | ClassifierVerdictError::CallbackMetadata { .. } => Ok(ParseOutcome::Rejected {
-            reason: RejectReason::Schema,
-            withheld: classifier_reply_is_private(request_kwargs(payload)?.as_ref(), false),
-        }),
-    }
-}
-
-fn effective_logging_flag(payload: &Payload) -> Result<Option<bool>, OperationError> {
-    invalid(effective_logging_off(request_kwargs(payload)?.as_ref()))
+        | ClassifierVerdictError::CallbackMetadata { .. } => RejectReason::Schema,
+    };
+    let withheld = matches!(reason, RejectReason::Schema)
+        && classifier_reply_is_private(request_kwargs(payload)?.as_ref(), false);
+    Ok(ParseOutcome::Rejected { reason, withheld })
 }

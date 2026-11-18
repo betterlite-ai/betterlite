@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-pub const TIER_CLASSIFICATION_DESCRIPTION: &str =
+pub const TIER_SCHEMA_DESCRIPTION: &str =
     "Structured response schema for the LLM-based complexity classifier.";
 
 // declaration order is the packaged wrapper's order, so the serialized bytes match LiteLLM's
@@ -50,7 +50,7 @@ pub fn tier_classification_format(labels: &[&str]) -> TierClassificationFormat {
         kind: "json_schema",
         json_schema: Box::new(JsonSchemaFormat {
             schema: Box::new(ClassificationSchema {
-                description: TIER_CLASSIFICATION_DESCRIPTION,
+                description: TIER_SCHEMA_DESCRIPTION,
                 properties: Box::new(TierProperties {
                     tier: Box::new(TierSchema {
                         choices: labels.iter().map(|label| (*label).to_owned()).collect(),
