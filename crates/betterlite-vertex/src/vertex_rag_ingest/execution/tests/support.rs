@@ -98,6 +98,13 @@ impl Recorder {
         let retained = self.retained.lock().unwrap_or_else(PoisonError::into_inner);
         retained.clone()
     }
+
+    pub(super) fn record_step(&self, step: Step) {
+        self.steps
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(step);
+    }
 }
 
 pub(super) struct FakeUpload {
@@ -105,15 +112,12 @@ pub(super) struct FakeUpload {
     behavior: UploadBehavior,
 }
 
-impl NativeFileUpload for FakeUpload {
-    fn upload(&self, request: UploadRequest) -> UploadFuture<'_> {
+impl FakeUpload {
+    // The upload the fake records, answering with the object the GCS URI would name
+    fn record(&self, request: &UploadRequest) -> FileObject {
         let filename = request.file.filename.clone().unwrap_or_default();
         let uri = format!("gs://{}/{filename}", request.bucket);
-        self.recorder
-            .steps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Step::Upload);
+        self.recorder.record_step(Step::Upload);
         self.recorder
             .uploads
             .lock()
@@ -131,8 +135,8 @@ impl NativeFileUpload for FakeUpload {
                     .as_ref()
                     .map(|secret| secret.expose_secret().to_owned()),
             });
-        let object = FileObject {
-            id: uri.clone(),
+        FileObject {
+            id: uri,
             bytes: i64::try_from(request.file.data.len()).unwrap_or(i64::MAX),
             created_at: 0,
             filename,
@@ -141,14 +145,20 @@ impl NativeFileUpload for FakeUpload {
             status: Some(FileStatus::Uploaded),
             expires_at: None,
             status_details: None,
-        };
+        }
+    }
+}
+
+impl NativeFileUpload for FakeUpload {
+    fn upload(&self, request: UploadRequest) -> UploadFuture<'_> {
+        let object = self.record(&request);
         match self.behavior {
             UploadBehavior::Stored => {
                 self.recorder
                     .retained
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .push(uri);
+                    .push(object.id.clone());
                 Box::pin(ready(Ok(object)))
             }
             UploadBehavior::Pending => Box::pin(pending()),
@@ -166,11 +176,7 @@ impl CorpusImport for FakeImport {
     type Handle = Option<i64>;
 
     fn submit(&self, request: ImportRequest) -> SubmitFuture<'_, Self::Handle> {
-        self.recorder
-            .steps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Step::Import);
+        self.recorder.record_step(Step::Import);
         self.recorder
             .imports
             .lock()
@@ -198,11 +204,7 @@ impl CorpusImport for FakeImport {
     }
 
     fn wait(&self, handle: Self::Handle) -> ImportFuture<'_> {
-        self.recorder
-            .steps
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(Step::Wait);
+        self.recorder.record_step(Step::Wait);
         Box::pin(async move {
             match handle {
                 Some(count) => Ok(ImportOutcome {
@@ -271,6 +273,18 @@ pub(super) fn provider(
     let settings =
         resolve(&options(record, chunking_strategy)).expect("the required values resolve");
     provider_from_settings(settings, behavior, upload, limits)
+}
+
+pub(super) fn stored_provider(
+    record: VertexAIVectorStoreOptions,
+) -> (VertexRagIngest<FakeUpload, FakeImport>, Arc<Recorder>) {
+    provider(
+        record,
+        None,
+        ImportBehavior::Imported(1),
+        UploadBehavior::Stored,
+        StoreLimits::default(),
+    )
 }
 
 pub(super) fn provider_from_settings(

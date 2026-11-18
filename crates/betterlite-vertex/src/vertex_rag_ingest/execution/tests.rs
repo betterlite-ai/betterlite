@@ -13,7 +13,8 @@ use crate::vertex_rag_ingest::chunking::{
 use crate::vertex_rag_ingest::error::RagIngestError;
 use crate::vertex_rag_ingest::execution::{
     DEFAULT_CONTENT_TYPE, DEFAULT_IMPORT_SUBMIT_TIMEOUT, DEFAULT_UPLOAD_TIMEOUT,
-    MAX_CONTENT_TYPE_BYTES, MAX_FILENAME_BYTES, RagIngest, StoreLimits, StoreOutcome, StoreRequest,
+    MAX_CONTENT_TYPE_BYTES, MAX_FILENAME_BYTES, RagIngest as _, StoreLimits, StoreOutcome,
+    StoreRequest,
 };
 use crate::vertex_rag_ingest::options::{
     DEFAULT_IMPORT_TIMEOUT, DEFAULT_LOCATION, RagIngestOptions, RagIngestSettings,
@@ -26,7 +27,8 @@ mod support;
 use self::support::{
     BUCKET, CORPUS_ID, CORPUS_NAME, EMPTY_CONTENT_WARNING, GCS_URI, ImportBehavior, Imported,
     PROJECT, Step, UploadBehavior, Uploaded, corpus_record, options, provider,
-    provider_from_settings, resolve, resolve_at_deadline, store_request, vertex_settings,
+    provider_from_settings, resolve, resolve_at_deadline, store_request, stored_provider,
+    vertex_settings,
 };
 
 #[test]
@@ -224,22 +226,13 @@ async fn empty_source_warning(#[case] content: Option<&[u8]>, #[case] filename: 
 
 #[tokio::test]
 async fn upload_then_import() {
-    let (_guard, logs) = install();
-    let (ingest, recorder) = provider(
-        corpus_record(),
-        None,
-        ImportBehavior::Imported(1),
-        UploadBehavior::Stored,
-        StoreLimits::default(),
-    );
+    let (ingest, recorder) = stored_provider(corpus_record());
     let outcome = ingest
         .store(store_request(b"hello", "report.txt", None))
         .await
         .unwrap();
-    assert_eq!(
-        (outcome.corpus_id.as_deref(), outcome.file_id.as_deref()),
-        (Some(CORPUS_ID), Some(GCS_URI))
-    );
+    assert_eq!(outcome.corpus_id.as_deref(), Some(CORPUS_ID));
+    assert_eq!(outcome.file_id.as_deref(), Some(GCS_URI));
     assert_eq!(
         recorder.steps(),
         vec![Step::Upload, Step::Import, Step::Wait]
@@ -261,6 +254,16 @@ async fn upload_then_import() {
             },
         }
     );
+}
+
+#[tokio::test]
+async fn upload_then_import_logs() {
+    let (_guard, logs) = install();
+    let (ingest, _recorder) = stored_provider(corpus_record());
+    ingest
+        .store(store_request(b"hello", "report.txt", None))
+        .await
+        .unwrap();
     assert!(
         logs.infos()
             .contains(&"Import complete: 1 files imported".to_owned())
@@ -344,20 +347,8 @@ async fn supplied_chunks_and_embeddings_are_ignored() {
 async fn upload_identity_vs_adc() {
     let mut with_credentials = corpus_record();
     with_credentials.vertex_credentials = Some(SecretString::from("service-account.json"));
-    let (without, without_recorder) = provider(
-        corpus_record(),
-        None,
-        ImportBehavior::Imported(1),
-        UploadBehavior::Stored,
-        StoreLimits::default(),
-    );
-    let (with, with_recorder) = provider(
-        with_credentials,
-        None,
-        ImportBehavior::Imported(1),
-        UploadBehavior::Stored,
-        StoreLimits::default(),
-    );
+    let (without, without_recorder) = stored_provider(corpus_record());
+    let (with, with_recorder) = stored_provider(with_credentials);
     let first = without
         .store(store_request(b"hello", "report.txt", Some("text/plain")))
         .await
@@ -616,7 +607,8 @@ async fn inputs_at_each_limit_are_stored() {
         ))
         .await
         .unwrap();
-    assert_eq!(outcome.file_id.as_deref(), Some(GCS_URI));
+    let expected_uri = format!("gs://{BUCKET}/{filename}");
+    assert_eq!(outcome.file_id.as_deref(), Some(expected_uri.as_str()));
     assert_eq!(
         recorder.upload().filename.as_deref(),
         Some(filename.as_str())

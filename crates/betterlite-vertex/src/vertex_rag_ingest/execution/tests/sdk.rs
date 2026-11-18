@@ -19,7 +19,7 @@ use rstest::rstest;
 use crate::vertex_rag_ingest::chunking::{
     ChunkDefaults, ChunkingConfig, ChunkingRecord, RagChunkingStrategy, transform_chunking_strategy,
 };
-use crate::vertex_rag_ingest::ports::{CorpusImport, ImportRequest};
+use crate::vertex_rag_ingest::ports::{CorpusImport as _, ImportRequest};
 use crate::vertex_rag_ingest::sdk::VertexRagDataImport;
 
 const CORPUS_NAME: &str = "projects/project/locations/us-central1/ragCorpora/corpus";
@@ -35,13 +35,11 @@ struct CaptureImport {
 impl CaptureImport {
     // Every stub method records its request and replies with the operation the test set up
     fn record_and_reply<Request>(
-        &self,
         slot: &Mutex<Vec<Request>>,
         request: Request,
         operation: Operation,
     ) -> impl Future<Output = Result<Response<Operation>, Error>> + Send {
-        let mut requests = slot.lock().expect("the capture lock");
-        requests.push(request);
+        slot.lock().expect("the capture lock").push(request);
         ready(Ok(Response::from(operation)))
     }
 }
@@ -57,7 +55,7 @@ impl VertexRagDataStub for CaptureImport {
         } else {
             done_operation(3)
         };
-        self.record_and_reply(&self.requests, request, operation)
+        Self::record_and_reply(&self.requests, request, operation)
     }
 
     fn get_operation(
@@ -65,7 +63,7 @@ impl VertexRagDataStub for CaptureImport {
         request: GetOperationRequest,
         _options: RequestOptions,
     ) -> impl Future<Output = Result<Response<Operation>, Error>> + Send {
-        self.record_and_reply(&self.operations, request, done_operation(7))
+        Self::record_and_reply(&self.operations, request, done_operation(7))
     }
 }
 
@@ -112,6 +110,33 @@ fn the_adapter_takes_an_endpoint_and_optional_credentials() {
 }
 
 #[tokio::test]
+async fn import_request_carries_the_gcs_source() {
+    let capture = CaptureImport::default();
+    let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
+    let handle = port
+        .submit(import_request(fixed_length(512, 16)))
+        .await
+        .expect("the stubbed import starts");
+    let outcome = port.wait(handle).await.expect("the import completes");
+    assert_eq!(outcome.imported_rag_files_count, 3);
+    let request = capture
+        .requests
+        .lock()
+        .expect("the capture lock")
+        .pop()
+        .expect("the SDK sent one request");
+    assert_eq!(request.parent, CORPUS_NAME);
+    let config = request
+        .import_rag_files_config
+        .as_ref()
+        .expect("the request carries the config");
+    let Some(ImportSource::GcsSource(source)) = config.import_source.as_ref() else {
+        panic!("the import source is a GCS source");
+    };
+    assert_eq!(source.uris, vec![GCS_URI.to_owned()]);
+}
+
+#[tokio::test]
 async fn import_request_carries_the_chunking_config() {
     let capture = CaptureImport::default();
     let port = VertexRagDataImport::Existing(VertexRagDataService::from_stub(capture.clone()));
@@ -123,27 +148,18 @@ async fn import_request_carries_the_chunking_config() {
         .submit(import_request(chunking))
         .await
         .expect("the stubbed import starts");
-    let outcome = port
-        .wait(handle)
-        .await
-        .expect("the stubbed import completes");
+    let outcome = port.wait(handle).await.expect("the import completes");
     assert_eq!(outcome.imported_rag_files_count, 3);
-    let requests = capture.requests.lock().expect("the capture lock");
-    let request = requests.first().expect("the SDK sent one request");
-    assert_eq!(request.parent, CORPUS_NAME);
+    let request = capture
+        .requests
+        .lock()
+        .expect("the capture lock")
+        .pop()
+        .expect("the SDK sent one request");
     let config = request
         .import_rag_files_config
         .as_ref()
         .expect("the request carries the config");
-    let source = match config
-        .import_source
-        .as_ref()
-        .expect("the import source is set")
-    {
-        ImportSource::GcsSource(source) => source,
-        other => panic!("the import source is a GCS source, got {other:?}"),
-    };
-    assert_eq!(source.uris, vec![GCS_URI.to_owned()]);
     let wire_chunking = config
         .rag_file_transformation_config
         .as_ref()
@@ -157,8 +173,7 @@ async fn import_request_carries_the_chunking_config() {
     let WireChunkingConfig::FixedLengthChunking(fixed) = wire_chunking else {
         panic!("the chunking config is fixed length");
     };
-    assert_eq!(fixed.chunk_size, 512);
-    assert_eq!(fixed.chunk_overlap, 16);
+    assert_eq!((fixed.chunk_size, fixed.chunk_overlap), (512, 16));
 }
 
 #[rstest]

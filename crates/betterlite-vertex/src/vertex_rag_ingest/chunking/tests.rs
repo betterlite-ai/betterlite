@@ -80,5 +80,7 @@ fn empty_or_null_separators_do_not_warn(#[case] text: &str) {
 
 #[test]
 fn an_unknown_strategy_key_is_refused() {
-    assert!(serde_json::from_str::<RagChunkingStrategy>(r#"{"chunker":"words"}"#).is_err());
+    let error = serde_json::from_str::<RagChunkingStrategy>(r#"{"chunker":"words"}"#)
+        .expect_err("the unknown field is refused");
+    assert!(error.to_string().contains("unknown field `chunker`"));
 }
