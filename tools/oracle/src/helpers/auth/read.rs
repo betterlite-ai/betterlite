@@ -1,4 +1,3 @@
-use std::error::Error;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -77,16 +76,17 @@ fn failure_report(exact_exception: bool, message: &str) -> HelperResult {
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).or_config_error()?;
     with_default(subscriber, || {
-        let failure: Box<dyn Error + 'static> = if exact_exception {
-            Box::new(ExpectedLookupMiss {
+        if exact_exception {
+            let failure = ExpectedLookupMiss {
                 message: message.to_owned(),
-            })
+            };
+            log_budget_lookup_failure(&redactor, "user", &failure);
         } else {
-            Box::new(NamedFailure {
+            let failure = NamedFailure {
                 message: message.to_owned(),
-            })
-        };
-        log_budget_lookup_failure(&redactor, "user", failure.as_ref());
+            };
+            log_budget_lookup_failure(&redactor, "user", &failure);
+        }
     });
     let records = captured
         .0
