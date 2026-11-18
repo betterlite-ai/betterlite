@@ -15,6 +15,7 @@ from litellm.proxy.proxy_server import (
     _serialize_streaming_chunk,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9554
     _should_include_fallback_errors,  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9366
 )
+from litellm.types.llms import openai as openai_types
 from litellm.types.llms.base import BaseLiteLLMOpenAIResponseObject as CarrierBase
 from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
@@ -27,6 +28,31 @@ _JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
 class ModelCarrier(CarrierBase):
     model: str | None = None
+
+
+_EVENT_TYPE: TypeAdapter[str] = TypeAdapter(str)
+
+EVENT_CLASSES: Final[dict[str, type[CarrierBase]]] = {
+    "error": openai_types.ErrorEvent,
+    "response.content_part.added": openai_types.ContentPartAddedEvent,
+    "response.content_part.done": openai_types.ContentPartDoneEvent,
+    "response.completed": openai_types.ResponseCompletedEvent,
+    "response.created": openai_types.ResponseCreatedEvent,
+    "response.failed": openai_types.ResponseFailedEvent,
+    "response.in_progress": openai_types.ResponseInProgressEvent,
+    "response.incomplete": openai_types.ResponseIncompleteEvent,
+    "response.output_item.added": openai_types.OutputItemAddedEvent,
+    "response.output_item.done": openai_types.OutputItemDoneEvent,
+    "response.reasoning_summary_part.added": openai_types.ResponsePartAddedEvent,
+    "response.reasoning_summary_part.done": openai_types.ReasoningSummaryPartDoneEvent,
+}
+
+
+def event_object(body: JsonObject) -> CarrierBase:
+    event_class = EVENT_CLASSES.get(_EVENT_TYPE.validate_python(body["type"]))
+    if event_class is None:
+        return openai_types.GenericEvent.model_validate(body)
+    return event_class.model_validate(body)
 
 
 class FallbackView(TypedDict):
@@ -69,14 +95,8 @@ class ChunkCase(TypedDict):
 
 class Input(TypedDict):
     function: Literal[
-        "client_model",
-        "int_like",
-        "include_errors",
-        "fallback_meta",
-        "fallback_event",
-        "restamp",
-        "chunk_view",
-        "frames",
+        "client_model", "int_like", "include_errors", "fallback_meta",
+        "fallback_event", "restamp", "chunk_view", "frames",
     ]
     requests: list[JsonObject]
     values: list[JsonValue]
@@ -157,9 +177,7 @@ def include_errors_answer(input_value: Input) -> JsonValue:
 def fallback_meta_answer(input_value: Input) -> JsonValue:
     answers: list[JsonValue] = []
     for hidden in input_value["hidden"]:
-        attempted, model, errors = _get_streaming_fallback_metadata(
-            {"_hidden_params": hidden}
-        )
+        attempted, model, errors = _get_streaming_fallback_metadata({"_hidden_params": hidden})
         view: dict[str, JsonValue] = {"attempted": attempted, "model": model}
         view["errors"] = [_JSON.validate_python(error) for error in errors]
         answers.append(view)
@@ -194,12 +212,14 @@ def restamps_answer(input_value: Input) -> JsonValue:
 
 
 def serialized_chunk(case: ChunkCase) -> JsonValue:
-    chunk = chunk_object(case)
-    match chunk:
-        case dict():
-            return _JSON.validate_python(chunk)
-        case ModelResponseStream() | ModelResponse() | ModelCarrier():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9554
-            return _JSON.validate_json(_serialize_streaming_chunk(chunk))
+    if case["kind"] != "event":
+        chunk = chunk_object(case)
+        match chunk:
+            case dict():
+                return _JSON.validate_python(chunk)
+            case ModelResponseStream() | ModelResponse() | ModelCarrier():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9554
+                return _JSON.validate_json(_serialize_streaming_chunk(chunk))
+    return _JSON.validate_json(_serialize_streaming_chunk(event_object(case["body"])))
 
 
 def usage_chunk(case: ChunkCase) -> JsonValue:

@@ -628,13 +628,15 @@ fn serialize_drops_null_fields() {
         ChunkKind::ModelStream,
         r#"{"id": "chunk", "object": "chat.completion.chunk", "created": 1, "model": null,
             "choices": [{"index": 0, "delta": {"content": null, "role": "assistant"}, "finish_reason": null}],
-            "system_fingerprint": null}"#,
+            "system_fingerprint": null,
+            "usage": {"prompt_tokens": 3, "prompt_tokens_details": {"cached_tokens": 0, "audio_tokens": null, "cached_tokens_details": null, "nested": {"a": null}}, "completion_tokens_details": {"reasoning_tokens": 0, "audio_tokens": null}, "server_tool_use": {"web_search_requests": 1, "browser_open_requests": null}, "cost": null}}"#,
     );
     assert_eq!(
         serialize_chunk(&chunk),
         concat!(
             r#"{"id":"chunk","object":"chat.completion.chunk","created":1,"#,
-            r#""choices":[{"index":0,"delta":{"role":"assistant"}}]}"#
+            r#""choices":[{"index":0,"delta":{"role":"assistant"}}],"#,
+            r#""usage":{"prompt_tokens":3,"prompt_tokens_details":{"cached_tokens":0,"nested":{"a":null}},"completion_tokens_details":{"reasoning_tokens":0},"server_tool_use":{"web_search_requests":1}}}"#
         )
     );
 }
@@ -643,11 +645,11 @@ fn serialize_drops_null_fields() {
 fn serialize_keeps_null_array_items() {
     let chunk = typed_chunk(
         ChunkKind::ModelFull,
-        r#"{"choices": [null, {"message": {"content": null, "role": "assistant"}, "index": 0}]}"#,
+        r#"{"choices": [null, {"message": {"content": null, "role": "assistant"}, "index": 0}], "usage": {"total_tokens": 2, "prompt_tokens_details": {"audio_tokens": null, "cached_tokens": 1}}}"#,
     );
     assert_eq!(
         serialize_chunk(&chunk),
-        r#"{"choices":[null,{"message":{"role":"assistant"},"index":0}]}"#
+        r#"{"choices":[null,{"message":{"role":"assistant"},"index":0}],"usage":{"total_tokens":2,"prompt_tokens_details":{"cached_tokens":1}}}"#
     );
 }
 
@@ -664,15 +666,26 @@ fn serialize_plain_keeps_nulls() {
 }
 
 #[test]
-fn serialize_event_keeps_dictionary_nulls() {
-    // the carrier model drops its own null field and keeps the extra's dictionary as it came
-    let chunk = typed_chunk(
+fn serialize_event_models_drop_nulls() {
+    let created = typed_chunk(
         ChunkKind::Event,
-        r#"{"type": "response.created", "nullable": null, "response": {"id": null, "status": "in_progress"}}"#,
+        r#"{"type": "response.created", "nullable": null, "response": {"id": "resp_1", "created_at": 5, "error": null, "instructions": null, "metadata": {"trace": null}, "output": [{"type": "message", "id": "msg_1", "status": "completed", "role": "assistant", "content": [], "error": null}], "reasoning": {"effort": null}, "usage": {"input_tokens": 3, "input_tokens_details": {"cached_tokens": 0, "audio_tokens": null}, "output_tokens_details": {"reasoning_tokens": null, "text_tokens": 2}}, "tools": [{"type": "unknown_tool", "extra_null": null}]}}"#,
     );
     assert_eq!(
-        serialize_chunk(&chunk),
-        r#"{"type":"response.created","response":{"id":null,"status":"in_progress"}}"#
+        serialize_chunk(&created),
+        concat!(
+            r#"{"type":"response.created","response":{"id":"resp_1","created_at":5,"#,
+            r#""metadata":{"trace":null},"output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[],"error":null}],"reasoning":{"effort":null},"#,
+            r#""usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"text_tokens":2}},"tools":[{"type":"unknown_tool"}]}}"#
+        )
+    );
+    let summary = typed_chunk(
+        ChunkKind::Event,
+        r#"{"type": "response.reasoning_summary_part.added", "part": {"type": "summary_text", "text": "", "extra_null": null}}"#,
+    );
+    assert_eq!(
+        serialize_chunk(&summary),
+        r#"{"type":"response.reasoning_summary_part.added","part":{"type":"summary_text","text":"","extra_null":null}}"#
     );
 }
 
