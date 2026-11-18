@@ -1,7 +1,7 @@
 id: B715
 milestone: M4 keys, spend and management
 title: Bounded database lookups and safe database metrics
-status: in-progress
+status: done
 depends_on: [B002, B012, B3846, B3847, B3869, B171, B700, B856, B860, B872]
 file: tasks/B715-database-failures.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/db/log_db_metrics.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2372
