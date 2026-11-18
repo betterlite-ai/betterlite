@@ -1,51 +1,28 @@
 use std::collections::VecDeque;
 use std::pin::Pin;
 
-use betterlite_streaming::provider_chunk_decode::chunk::{
-    DecodeState, ProviderChunk, ProviderKind, RequestOptions,
-};
-use betterlite_streaming::provider_chunk_decode::creator::chunk_creator;
+use betterlite_streaming::provider_chunk_decode::chunk::ProviderChunk;
 use betterlite_streaming::provider_chunk_decode::error::ProviderChunkError;
-use betterlite_streaming::stream_chunk_shaping::ChunkShaper;
-use betterlite_streaming::stream_chunk_shaping::creation::{StreamInstant, build_chunk};
-use betterlite_streaming::stream_chunk_shaping::decision::is_delta_empty;
-use betterlite_streaming::stream_chunk_shaping::records::{
-    ChunkArguments, JsonObject, JsonValue, StreamChunk, StreamOptions,
-};
-use betterlite_streaming::stream_chunk_shaping::tokens::{
-    check_send_stream_usage, finish_reason_handler,
-};
-use betterlite_streaming::stream_chunk_shaping::usage_totals::calculate_total_usage;
+use betterlite_streaming::provider_chunk_decode::wrapper::{StreamWrapper, WrapperError};
+use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk};
 use futures_util::{Stream, StreamExt as _, stream};
-use uuid::Uuid;
 
 use super::error::{ErrorSource, TextCompletionError};
 use super::sdk::{ByteStream, SdkError};
 use crate::stream::SseParser;
 
+// clippy::pub_use is denied and the task's expect budget is zero, so the re-export reaches only this crate's callers
+pub(crate) use betterlite_streaming::provider_chunk_decode::wrapper::StreamSetup;
+
 // The OpenAI SDK stops after the [DONE] event, so later payloads are never shaped
 pub type CompletionStream =
     Pin<Box<dyn Stream<Item = Result<StreamChunk, TextCompletionError>> + Send>>;
-
-pub struct StreamSetup {
-    pub model: String,
-    pub stream_options: Option<StreamOptions>,
-    pub merge_reasoning_in_choices: bool,
-    pub is_function_call: bool,
-    pub base_hidden_params: JsonObject,
-    pub repeated_chunk_limit: usize,
-    pub now: fn() -> StreamInstant,
-    pub next_id: fn() -> Uuid,
-}
 
 struct StreamState {
     bytes: ByteStream,
     parser: SseParser,
     pending: VecDeque<Vec<u8>>,
-    shaper: ChunkShaper,
-    decode: DecodeState,
-    has_stream_options: bool,
-    sent_stream_usage: bool,
+    wrapper: StreamWrapper,
     phase: Phase,
 }
 
@@ -66,34 +43,13 @@ fn provider_chunk(payload: &[u8]) -> Result<ProviderChunk, ProviderChunkError> {
     Ok(ProviderChunk::Json(Box::new(value)))
 }
 
-// The running total goes on the chunk's hidden params, where litellm's wrapper puts it.
-fn attach_usage(state: &StreamState, chunk: &mut StreamChunk) -> Result<(), TextCompletionError> {
-    let usage: JsonValue = serde_json::to_value(calculate_total_usage(&state.shaper.chunks))
-        .and_then(serde_json::from_value)
-        .map_err(|source| TextCompletionError::wrapped(ErrorSource::Serialize(source)))?;
-    chunk.hidden_params.insert("usage".to_owned(), usage);
-    Ok(())
-}
-
-// The wrapper keeps every chunk for the totals and sends provider usage only in its closing chunk.
-fn record(
-    state: &mut StreamState,
-    mut chunk: StreamChunk,
-) -> Result<Option<StreamChunk>, TextCompletionError> {
-    state.shaper.chunks.push(chunk.clone());
-    let had_usage = chunk.usage.take().is_some();
-    let silent = chunk.provider_specific_fields.is_none()
-        && chunk
-            .choices
-            .iter()
-            .all(|choice| is_delta_empty(&choice.delta) && choice.finish_reason.is_none());
-    if had_usage && silent {
-        return Ok(None);
-    }
-    if state.shaper.progress.sent_last_chunk && !state.has_stream_options {
-        attach_usage(state, &mut chunk)?;
-    }
-    Ok(Some(chunk))
+// The wrapper's errors are the two sources this path has always reported.
+fn wrapper_error(error: WrapperError) -> TextCompletionError {
+    let source = match error {
+        WrapperError::Chunk(chunk) => ErrorSource::Chunk(chunk),
+        WrapperError::Usage(usage) => ErrorSource::Serialize(usage),
+    };
+    TextCompletionError::wrapped(source)
 }
 
 // None means the payload shaped no chunk and the next one is read; Some carries the item to yield.
@@ -102,32 +58,11 @@ fn process_payload(state: &mut StreamState, payload: &[u8]) -> Option<Item> {
         Ok(chunk) => chunk,
         Err(error) => return Some(Err(TextCompletionError::wrapped(ErrorSource::Chunk(error)))),
     };
-    match chunk_creator(&mut state.shaper, &mut state.decode, &chunk) {
-        Ok(Some(transformed)) => record(state, transformed).transpose(),
-        Ok(None) => None,
-        Err(error) => Some(Err(TextCompletionError::wrapped(ErrorSource::Chunk(error)))),
-    }
-}
-
-// The closing chunks: the finish reason when none went out yet, then the usage chunk when asked for.
-fn finalize(state: &mut StreamState) -> Option<Item> {
-    if state.shaper.progress.sent_last_chunk {
-        if state.sent_stream_usage || !state.decode.options.send_stream_usage {
-            return None;
-        }
-        state.sent_stream_usage = true;
-        let mut response = build_chunk(&mut state.shaper, ChunkArguments::default(), None);
-        response.usage = Some(calculate_total_usage(&state.shaper.chunks));
-        return Some(Ok(response));
-    }
-    state.shaper.progress.sent_last_chunk = true;
-    let mut chunk = finish_reason_handler(&mut state.shaper);
-    if !state.has_stream_options
-        && let Err(error) = attach_usage(state, &mut chunk)
-    {
-        return Some(Err(error));
-    }
-    Some(Ok(chunk))
+    state
+        .wrapper
+        .push(&chunk)
+        .map_err(wrapper_error)
+        .transpose()
 }
 
 // A byte read that is dropped here still advances the byte stream, so the loop in step ends.
@@ -184,7 +119,10 @@ async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
         let item = match advance(&mut state).await {
             Advance::Next => continue,
             Advance::Item(item) => *item,
-            Advance::Closing => finalize(&mut state)?,
+            Advance::Closing => state
+                .wrapper
+                .finish()
+                .map(|chunk| chunk.map_err(wrapper_error))?,
         };
         if item.is_err() {
             state.phase = Phase::Failed;
@@ -195,37 +133,11 @@ async fn step(mut state: StreamState) -> Option<(Item, StreamState)> {
 
 #[must_use]
 pub fn completion_stream(bytes: ByteStream, setup: StreamSetup) -> CompletionStream {
-    let mut shaper = ChunkShaper::new(
-        setup.model.clone(),
-        Some("text-completion-openai".to_owned()),
-        setup.merge_reasoning_in_choices,
-        setup.base_hidden_params,
-    );
-    shaper.now = setup.now;
-    shaper.next_id = setup.next_id;
-    let decode = DecodeState {
-        model: setup.model,
-        kind: ProviderKind::Builtin,
-        received_finish_reason: None,
-        intermittent_finish_reason: None,
-        sent_first_chunk: false,
-        complete_response: String::new(),
-        completion_stream: None,
-        options: RequestOptions {
-            send_stream_usage: check_send_stream_usage(setup.stream_options.as_ref()),
-            is_function_call: setup.is_function_call,
-        },
-        repeated_chunk_limit: setup.repeated_chunk_limit,
-        next_id: setup.next_id,
-    };
     let state = StreamState {
         bytes,
         parser: SseParser::default(),
         pending: VecDeque::new(),
-        shaper,
-        decode,
-        has_stream_options: setup.stream_options.is_some(),
-        sent_stream_usage: false,
+        wrapper: StreamWrapper::new("text-completion-openai", setup),
         phase: Phase::Reading,
     };
     Box::pin(stream::unfold(state, step))
