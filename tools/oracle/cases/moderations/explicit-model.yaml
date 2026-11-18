@@ -1,0 +1,30 @@
+name: moderations-explicit-model
+config: |
+  model_list:
+    - model_name: guard
+      litellm_params: {model: openai/omni-moderation-latest, api_base: "{{upstream}}/v1", api_key: oracle-key}
+    - model_name: other-moderation
+      litellm_params: {model: openai/other-moderation, api_base: "{{upstream}}/v1", api_key: other-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/moderations
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-moderation-explicit}
+  body: {model: other-moderation, input: Sample text goes here}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: modr-5
+      model: other-moderation
+      results:
+        - categories: {harassment: false, harassment/threatening: false, hate: false, hate/threatening: false, illicit: false, illicit/violent: false, self-harm: false, self-harm/instructions: false, self-harm/intent: false, sexual: false, sexual/minors: false, violence: false, violence/graphic: false}
+          category_applied_input_types: {harassment: [text], harassment/threatening: [text], hate: [text], hate/threatening: [text], illicit: [text], illicit/violent: [text], self-harm: [text], self-harm/instructions: [text], self-harm/intent: [text], sexual: [text], sexual/minors: [text], violence: [text], violence/graphic: [text]}
+          category_scores: {harassment: 0.0001, harassment/threatening: 0.0001, hate: 0.0001, hate/threatening: 0.0001, illicit: 0.0001, illicit/violent: 0.0001, self-harm: 0.0001, self-harm/instructions: 0.0001, self-harm/intent: 0.0001, sexual: 0.0001, sexual/minors: 0.0001, violence: 0.0001, violence/graphic: 0.0001}
+          flagged: false
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

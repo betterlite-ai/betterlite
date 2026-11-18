@@ -1,0 +1,22 @@
+name: moderations-upstream-400
+config: |
+  model_list:
+    - model_name: guard
+      litellm_params: {model: openai/omni-moderation-latest, api_base: "{{upstream}}/v1", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/moderations
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-moderation-400}
+  body: {model: guard, input: Sample text goes here}
+upstream:
+  - status: 400
+    headers: {content-type: application/json}
+    body: {error: {message: Invalid input, type: invalid_request_error, param: input, code: invalid_input}}
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /error/message, why: betterlite writes its own message}

@@ -1,0 +1,65 @@
+task: B015
+deviations:
+- what: >-
+    A model-less moderation request without an operator-configured default returns 400 invalid_request_error, param
+    model, code moderation_model_required before any network I/O.
+  why: Keep outbound destinations operator supplied; LiteLLM uses OPENAI_API_KEY and the SDK default public base.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7800-L7830
+- what: A finite moderation score that Decimal cannot hold exactly, including one below 1e-28, returns 502 bad_gateway,
+    param category_scores, code decimal_out_of_range instead of the rounded Python float.
+  why: Exact Decimal values have bounded scale and magnitude, and silently rounding a score to zero is forbidden.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7830-L7875
+- what: >-
+    A moderation body carrying any field other than input and model, including api_base or api_key, is refused with
+    400 invalid_request_error, and no provider call is made.
+  why: >-
+    The proxy merges the caller's body into the route data, and a deployment without api_base lets a caller-supplied
+    api_base reach GenericLiteLLMParams and become the provider client's base URL; betterlite keeps every outbound
+    destination and credential operator supplied.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1993-L2090
+- what: >-
+    A body that is not JSON, is not a moderation request, or lacks input answers 400 invalid_request_error before the
+    provider call; LiteLLM hands the dict to litellm.amoderation, where a missing input surfaces as a TypeError and a
+    500.
+  why: >-
+    A malformed caller request is a client error, and this entry's typed records refuse it at the boundary instead of
+    failing inside the provider call.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12398-L12490
+- what: >-
+    A provider answer missing a required moderation field, or carrying a category, score or applied input type of the
+    wrong type, answers 500 internal_server_error; LiteLLM's SDK raises a pydantic ValidationError that the exception
+    mapper turns into an APIConnectionError, whose body carries a null type.
+  why: >-
+    betterlite's records are typed, so a provider answer it cannot read is reported as a typed parse failure instead
+    of being guessed at.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L515-L524
+- what: >-
+    A deployment with no api_key and no OPENAI_API_KEY in the environment answers 401 with type authentication_error;
+    LiteLLM's AuthenticationError built from the SDK's missing-key error carries no type, so its body answers a null
+    type.
+  why: >-
+    The refusal is the same status either way, and naming the error type gives the caller the documented OpenAI
+    error shape; credentials still come only from the deployment or the operator's environment.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L164
+- what: >-
+    A moderation deployment whose model names a provider other than OpenAI answers 501 with the model named; LiteLLM
+    routes every moderation model through the OpenAI client, so it either calls OpenAI or fails inside that call.
+  why: >-
+    Alternative moderation providers belong to a later task, and answering an explicit 501 is clearer than calling a
+    provider that was never configured for the model.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7793-L7875
+kept_bugs:
+- what: >-
+    The error body's code is the stringified HTTP status, so a provider error's own code, such as invalid_input, is
+    dropped.
+  why: >-
+    LiteLLM's ProxyException stores the status as code and its handler writes that string, and clients that read the
+    OpenAI error envelope see the same value from a working setup.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4352
+- what: >-
+    A provider 401 answers a null error type and param even though OpenAI's contract types error.type as a required
+    string.
+  why: >-
+    The moderation handler forwards getattr(e, "type"/"param") with no fallback, and the ProxyException handler writes
+    the object it is given, so a client of a working LiteLLM setup can receive the nulls.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1893-L1907
