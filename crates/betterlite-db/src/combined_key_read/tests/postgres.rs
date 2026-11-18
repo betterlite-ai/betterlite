@@ -105,18 +105,18 @@ const INSERT_EXPIRED_DEPRECATED_ROW: &str = r#"INSERT INTO "LiteLLM_DeprecatedVe
     VALUES ($1, $2, $3, '2020-01-01 00:00:00')"#;
 
 // Postgres has no SELECT trigger, so the joined team table becomes a view whose predicate raises a chosen server message
-const RAISE_CACHED_PLAN: &str = r#"
+const RAISE_CACHED_PLAN: &str = r"
 CREATE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'cached plan must not change result type';
 END
-$$"#;
-const RAISE_ORDINARY_ERROR: &str = r#"
+$$";
+const RAISE_ORDINARY_ERROR: &str = r"
 CREATE OR REPLACE FUNCTION raise_select_error() RETURNS boolean LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'relation disappeared';
 END
-$$"#;
+$$";
 const RENAME_TEAM_TABLE: &str =
     r#"ALTER TABLE "LiteLLM_TeamTable" RENAME TO "LiteLLM_TeamTable_base""#;
 const CREATE_TEAM_VIEW: &str = r#"
