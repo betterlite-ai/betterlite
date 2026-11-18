@@ -19,7 +19,7 @@ use tokio::runtime::Builder;
 
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-enum Input {
+pub(crate) enum Input {
     EnvRefs {
         params: Value,
         environment: BTreeMap<String, String>,

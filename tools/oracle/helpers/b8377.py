@@ -1,8 +1,11 @@
 import os
-from typing import Final, Literal, NotRequired, TypedDict
+from typing import Final, Literal, TypedDict
 
 import litellm
+from litellm.caching.redis_cache import RedisCache
+from litellm.caching.redis_cluster_cache import RedisClusterCache
 from litellm.proxy import proxy_server
+from litellm.proxy._types import CoordinationRedisParams
 from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
@@ -13,26 +16,26 @@ _PICKED: Final[list[str]] = []
 
 class Input(TypedDict):
     operation: Literal["env_refs", "usage_family", "env_has_target", "config_error"]
-    params: NotRequired[dict[str, JsonValue]]
-    config: NotRequired[dict[str, JsonValue]]
+    params: dict[str, JsonValue]
+    config: dict[str, JsonValue]
     environment: dict[str, str]
 
 
 # litellm builds the chosen client eagerly, so the recorders keep the oracle off a Redis socket.
-class _PlainRecorder(proxy_server.RedisCache):
-    def __init__(self, *args: object, **kwargs: object) -> None:
+class _PlainRecorder(RedisCache):
+    def __init__(self, *args: JsonValue, **kwargs: JsonValue) -> None:
         del args, kwargs
         _PICKED.append("standalone")
 
 
-class _ClusterRecorder(proxy_server.RedisClusterCache):
-    def __init__(self, *args: object, **kwargs: object) -> None:
+class _ClusterRecorder(RedisClusterCache):
+    def __init__(self, *args: JsonValue, **kwargs: JsonValue) -> None:
         del args, kwargs
         _PICKED.append("cluster")
 
 
-proxy_server.RedisCache = _PlainRecorder
-proxy_server.RedisClusterCache = _ClusterRecorder
+proxy_server.RedisCache = _PlainRecorder  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4891
+proxy_server.RedisClusterCache = _ClusterRecorder  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4890
 
 
 def apply_environment(values: dict[str, str]) -> None:
@@ -42,23 +45,23 @@ def apply_environment(values: dict[str, str]) -> None:
 
 
 def resolved_env_refs(params: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    resolved = proxy_server._resolve_coordination_redis_env_refs(params)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4867
-    model = proxy_server.CoordinationRedisParams.model_validate(resolved)
+    resolved = proxy_server._resolve_coordination_redis_env_refs(params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4867
+    model = CoordinationRedisParams.model_validate(resolved)
     return PARAMS.validate_json(model.model_dump_json(exclude_none=True))
 
 
 def chosen_family(params: dict[str, JsonValue]) -> str:
-    model = proxy_server.CoordinationRedisParams.model_validate(params)
+    model = CoordinationRedisParams.model_validate(params)
     dumped = PARAMS.validate_json(model.model_dump_json(exclude_none=True))
     _PICKED.clear()
-    proxy_server._build_redis_usage_cache(dumped)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4875
+    proxy_server._build_redis_usage_cache(dumped)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4875
     return _PICKED[-1]
 
 
 def config_error_kind(config: dict[str, JsonValue]) -> str:
     proxy_config = proxy_server.ProxyConfig()
     try:
-        proxy_config._init_coordination_redis(config)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5862
+        proxy_config._init_coordination_redis(config)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5862
     except ValueError as error:
         message = str(error)
         if "must be a mapping" in message:
@@ -77,6 +80,6 @@ def run(input_value: Input) -> JsonValue:
         case "usage_family":
             return chosen_family(input_value["params"])
         case "env_has_target":
-            return proxy_server._environment_has_redis_connection_target()  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4894
+            return proxy_server._environment_has_redis_connection_target()  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L4894
         case "config_error":
             return config_error_kind(input_value["config"])
