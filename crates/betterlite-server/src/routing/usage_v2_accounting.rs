@@ -15,7 +15,7 @@ pub struct Resolved {
 }
 
 #[must_use]
-pub fn resolve(section: &config::Settings, state: &state_config::Settings) -> Resolved {
+pub const fn resolve(section: &config::Settings, state: &state_config::Settings) -> Resolved {
     Resolved {
         ttl: section.ttl,
         counters: CounterSettings {
