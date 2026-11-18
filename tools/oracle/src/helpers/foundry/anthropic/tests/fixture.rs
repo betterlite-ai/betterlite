@@ -161,12 +161,18 @@ fn mapped_system(request: &TransformRequest<'_>) -> Result<Option<Json>, ConfigE
 }
 
 // The message records and this JSON tree differ only in their field shapes, so one serde pass converts either way
-fn decode<Target: DeserializeOwned>(value: &Json) -> Result<Target, ConfigError> {
+fn decode<Target>(value: &Json) -> Result<Target, ConfigError>
+where
+    Target: DeserializeOwned,
+{
     let plain = serde_json::to_value(value).map_err(ConfigError::from)?;
     serde_json::from_value(plain).map_err(ConfigError::from)
 }
 
-fn encode<Source: Serialize>(value: &Source) -> Result<Json, ConfigError> {
+fn encode<Source>(value: &Source) -> Result<Json, ConfigError>
+where
+    Source: Serialize,
+{
     let plain = serde_json::to_value(value).map_err(ConfigError::from)?;
     serde_json::from_value(plain).map_err(ConfigError::from)
 }
