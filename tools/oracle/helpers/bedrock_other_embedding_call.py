@@ -8,11 +8,13 @@ from typing import Literal, NotRequired, Protocol, TypedDict, cast
 import botocore.auth  # type: ignore[import-untyped]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L51-L62
 import httpx
 import litellm
+from litellm.exceptions import Timeout
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.embed import embedding as embedding_module
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.types.utils import EmbeddingResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from typing_extensions import override
 
 
 class Reply(TypedDict):
@@ -72,26 +74,29 @@ class Tokenizer(Protocol):
 
 
 class FixedTokenizer(Tokenizer):
+    @override
     def encode(self, text: str, /) -> list[int]:
         return [ord(char) for char in text]
 
 
 class Calls(Protocol):
-    phases: list[str]
+    phases: list[JsonValue]
 
-    def pre_call(self, **arguments: JsonValue) -> None: ...
+    def pre_call(self, **_arguments: JsonValue) -> None: ...
 
-    def post_call(self, **arguments: JsonValue) -> None: ...
+    def post_call(self, **_arguments: JsonValue) -> None: ...
 
 
 class Logger(Calls):
     def __init__(self) -> None:
-        self.phases: list[str] = []
+        self.phases: list[JsonValue] = []
 
-    def pre_call(self, **arguments: JsonValue) -> None:
+    @override
+    def pre_call(self, **_arguments: JsonValue) -> None:
         self.phases.append("pre_api_call")
 
-    def post_call(self, **arguments: JsonValue) -> None:
+    @override
+    def post_call(self, **_arguments: JsonValue) -> None:
         self.phases.append("post_api_call")
 
 
@@ -158,7 +163,11 @@ class Fixture:
 
     def sync_client(self, params: dict[str, JsonValue] | None = None) -> HTTPHandler:
         timeout: JsonValue = None if params is None else params.get("timeout")
-        record = {"kind": "sync", "provider": None, "timeout": timeout_fields(timeout)}
+        record: dict[str, JsonValue] = {
+            "kind": "sync",
+            "provider": None,
+            "timeout": timeout_fields(timeout),
+        }
         self.factory.append(record)
         return self.client()
 
@@ -181,22 +190,14 @@ def supplied(case: Case, fixture: Fixture) -> HTTPHandler | None:
     return None
 
 
-def usage_value(usage: Usage) -> JsonValue:
+def response_value(response: EmbeddingResponse) -> JsonValue:
+    payload = PAYLOAD.validate_json(response.model_dump_json())
+    hidden = cast(dict[str, JsonValue], response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2311
+    usage = payload["usage"]
     details = usage["prompt_tokens_details"]
     counts: dict[str, JsonValue] | None = None
     if details is not None:
         counts = {name: value for name, value in details.items() if value is not None}
-    return {
-        "prompt_tokens": usage["prompt_tokens"],
-        "completion_tokens": usage["completion_tokens"],
-        "total_tokens": usage["total_tokens"],
-        "prompt_tokens_details": counts,
-    }
-
-
-def response_value(response: EmbeddingResponse) -> JsonValue:
-    payload = PAYLOAD.validate_json(response.model_dump_json())
-    hidden = cast(dict[str, JsonValue], response._hidden_params)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2311
     return {
         "object": payload["object"],
         "data": [
@@ -204,18 +205,25 @@ def response_value(response: EmbeddingResponse) -> JsonValue:
             for r in payload["data"]
         ],
         "model": payload["model"],
-        "usage": usage_value(payload["usage"]),
+        "usage": {
+            "prompt_tokens": usage["prompt_tokens"],
+            "completion_tokens": usage["completion_tokens"],
+            "total_tokens": usage["total_tokens"],
+            "prompt_tokens_details": counts,
+        },
         "invocation_arn": hidden.get("_invocation_arn"),
     }
 
 
-def probe(case: Case) -> JsonValue:
+def run(input_value: dict[str, JsonValue]) -> JsonValue:
+    case = CASE.validate_python(input_value)
     set_environment(case)
     raw = case.get("replies")
     fixture = Fixture([] if raw is None else list(raw), case["now"])
     configure(fixture)
     values = case.get("optional_params")
     optional_params: dict[str, JsonValue] = {} if values is None else dict(values)
+    litellm_params: dict[str, JsonValue] = {"drop_params": case.get("drop_params")}
     logger = Logger()
     ok = False
     kind: str | None = None
@@ -223,7 +231,7 @@ def probe(case: Case) -> JsonValue:
     message: str | None = None
     response: JsonValue = None
     try:
-        reply = embedding_module.BedrockEmbedding().embeddings(
+        reply = embedding_module.BedrockEmbedding().embeddings(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/embedding.py#L119
             model=case["model"],
             input=list(case["input"]),
             api_base=case.get("api_base"),
@@ -236,13 +244,13 @@ def probe(case: Case) -> JsonValue:
             aembedding=False,
             extra_headers=case.get("extra_headers"),
             optional_params=optional_params,
-            litellm_params={"drop_params": case.get("drop_params")},
+            litellm_params=litellm_params,
             api_key=case.get("api_key"),
         )
     except BedrockError as error:
         kind = "http"
         status = error.status_code
-    except litellm.Timeout:
+    except Timeout:
         kind = "bedrock"
         status = 408
     except httpx.TimeoutException:
@@ -273,7 +281,3 @@ def probe(case: Case) -> JsonValue:
         "phases": logger.phases,
         "remaining": optional_params,
     }
-
-
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    return probe(CASE.validate_python(input_value))

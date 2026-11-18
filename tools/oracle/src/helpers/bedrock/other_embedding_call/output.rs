@@ -1,17 +1,14 @@
 use betterlite_bedrock::bedrock_embedding_io::error::EmbeddingIoError;
-use betterlite_bedrock::bedrock_embedding_io::response::EmbeddingReply;
 use betterlite_bedrock::embedding_call::EmbeddingCallResponse;
 use betterlite_bedrock::embedding_call::error::EmbeddingCallError;
 use betterlite_logging::logging_state::LoggingStateError;
-use betterlite_openai::cohere_legacy_embedding::decode::{
-    LegacyEmbeddingRecord, LegacyEmbeddingResponse,
-};
 use betterlite_openai::cohere_legacy_embedding::error::CohereLegacyEmbeddingError;
-use betterlite_openai::embedding::{EmbeddingRecord, EmbeddingVector};
+use betterlite_openai::embedding::EmbeddingVector;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_redact::error::RedactionError;
 use serde::Serialize;
+use serde_json::Number;
 use serde_json::Value;
 use serde_json::json;
 use thiserror::Error;
@@ -82,8 +79,7 @@ pub(crate) fn probe(case: &Case) -> Result<Value, AdapterError> {
     }))
 }
 
-// LiteLLM's handlers differ in which exception class carries a failure, so the class is compared
-// while the free text stays with the two generic provider messages
+// LiteLLM's handlers name a failure by exception class, so the class is compared and the free text stays with the provider messages
 #[derive(Clone, Copy, Serialize)]
 #[serde(rename_all = "snake_case")]
 enum Kind {
@@ -139,34 +135,54 @@ fn message(error: &EmbeddingCallError) -> Value {
 
 fn response_value(reply: &EmbeddingCallResponse) -> Result<Value, AdapterError> {
     match reply {
-        EmbeddingCallResponse::Batch(reply) => batch_value(reply),
-        EmbeddingCallResponse::Legacy(reply) => legacy_value(reply),
+        EmbeddingCallResponse::Batch(reply) => Ok(json!({
+            "object": reply.object,
+            "data": records(&reply.data, |record| {
+                Ok(json!({
+                    "object": record.object,
+                    "index": record.index,
+                    "embedding": vector_value(&record.embedding)?,
+                }))
+            })?,
+            "model": reply.model,
+            "usage": usage_value(&reply.usage)?,
+            "invocation_arn": reply.invocation_arn,
+        })),
+        EmbeddingCallResponse::Legacy(reply) => Ok(json!({
+            "object": reply.object,
+            "data": records(&reply.data, |record| {
+                Ok(json!({
+                    "object": record.object,
+                    "index": record.index,
+                    "embedding": embedding_value(&record.embedding)?,
+                }))
+            })?,
+            "model": reply.model,
+            "usage": usage_value(&reply.usage)?,
+            "invocation_arn": Value::Null,
+        })),
     }
 }
 
-fn batch_value(reply: &EmbeddingReply) -> Result<Value, AdapterError> {
-    Ok(json!({
-        "object": reply.object,
-        "data": batch_records(&reply.data)?,
-        "model": reply.model,
-        "usage": usage_value(&reply.usage)?,
-        "invocation_arn": reply.invocation_arn,
-    }))
+fn records<Record, RecordValue>(
+    records: &[Record],
+    value: RecordValue,
+) -> Result<Value, AdapterError>
+where
+    RecordValue: Fn(&Record) -> Result<Value, AdapterError>,
+{
+    let mut values = Vec::with_capacity(records.len());
+    for record in records {
+        values.push(value(record)?);
+    }
+    Ok(Value::Array(values))
 }
 
-fn legacy_value(reply: &LegacyEmbeddingResponse) -> Result<Value, AdapterError> {
-    Ok(json!({
-        "object": reply.object,
-        "data": legacy_records(&reply.data)?,
-        "model": reply.model,
-        "usage": usage_value(&reply.usage)?,
-        "invocation_arn": Value::Null,
-    }))
-}
-
-// LiteLLM's Usage model dumps every details field, the unset ones as null, and the Rust types
-// name only the fields their family sets, so only set details survive on both sides
-fn usage_value(usage: &impl Serialize) -> Result<Value, AdapterError> {
+// LiteLLM dumps every Usage details field with the unset ones as null, and the Rust types name only the set ones
+fn usage_value<Usage>(usage: &Usage) -> Result<Value, AdapterError>
+where
+    Usage: Serialize,
+{
     let mut value = serde_json::to_value(usage)?;
     if let Value::Object(fields) = &mut value
         && let Some(Value::Object(details)) = fields.get_mut("prompt_tokens_details")
@@ -176,62 +192,34 @@ fn usage_value(usage: &impl Serialize) -> Result<Value, AdapterError> {
     Ok(value)
 }
 
-fn batch_records(records: &[EmbeddingRecord]) -> Result<Value, AdapterError> {
-    let mut values = Vec::with_capacity(records.len());
-    for record in records {
-        values.push(json!({
-            "object": record.object,
-            "index": record.index,
-            "embedding": vector_value(&record.embedding)?,
-        }));
-    }
-    Ok(Value::Array(values))
-}
-
 // pydantic reads every vector entry as a float, so the numbers compare as floats on both sides
 fn vector_value(vector: &EmbeddingVector) -> Result<Value, AdapterError> {
     match vector {
         EmbeddingVector::Base64(encoded) => Ok(Value::String(encoded.clone())),
-        EmbeddingVector::Floats(numbers) => numbers
-            .iter()
-            .map(|number| number.as_f64().map(Value::from).ok_or(AdapterError::Number))
-            .collect::<Result<Vec<Value>, AdapterError>>()
-            .map(Value::Array),
+        EmbeddingVector::Floats(numbers) => floats_value(numbers),
     }
 }
 
-fn legacy_records(records: &[LegacyEmbeddingRecord]) -> Result<Value, AdapterError> {
-    let mut values = Vec::with_capacity(records.len());
-    for record in records {
-        values.push(json!({
-            "object": record.object,
-            "index": record.index,
-            "embedding": legacy_embedding(&record.embedding)?,
-        }));
+fn floats_value(numbers: &[Number]) -> Result<Value, AdapterError> {
+    let mut values = Vec::with_capacity(numbers.len());
+    for number in numbers {
+        values.push(Value::from(number.as_f64().ok_or(AdapterError::Number)?));
     }
     Ok(Value::Array(values))
 }
 
-fn legacy_embedding(embedding: &Json) -> Result<Value, AdapterError> {
-    match embedding {
-        Json::List(items) => items
-            .iter()
-            .map(number_value)
-            .collect::<Result<Vec<Value>, AdapterError>>()
-            .map(Value::Array),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
-            Ok(serde_json::to_value(embedding)?)
-        }
+fn embedding_value(embedding: &Json) -> Result<Value, AdapterError> {
+    if let Json::List(items) = embedding {
+        return records(items, number_value);
     }
+    Ok(serde_json::to_value(embedding)?)
 }
 
 fn number_value(item: &Json) -> Result<Value, AdapterError> {
-    match item {
-        Json::Number(number) => number.as_f64().map(Value::from).ok_or(AdapterError::Number),
-        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            Ok(serde_json::to_value(item)?)
-        }
+    if let Json::Number(number) = item {
+        return number.as_f64().map(Value::from).ok_or(AdapterError::Number);
     }
+    Ok(serde_json::to_value(item)?)
 }
 
 fn requests_value(requests: &[Sent]) -> Result<Value, AdapterError> {
@@ -246,8 +234,7 @@ fn requests_value(requests: &[Sent]) -> Result<Value, AdapterError> {
     Ok(Value::Array(values))
 }
 
-// httpx adds transport headers the fixture client does not, and a SigV4 signature covers the
-// json.dumps text rather than the compact bytes, so the signature itself cannot match
+// httpx adds transport headers the fixture client does not, and a SigV4 signature covers the json.dumps text, so it cannot match
 const SKIPPED: [&str; 6] = [
     "host",
     "content-length",

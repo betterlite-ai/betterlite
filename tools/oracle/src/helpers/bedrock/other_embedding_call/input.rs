@@ -3,8 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 
-// one variant per named case contract; every variant carries the same call and the name only
-// records which contract the seed covers
+// one variant per named case contract; every variant carries the same call and the name records which seed covers it
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {

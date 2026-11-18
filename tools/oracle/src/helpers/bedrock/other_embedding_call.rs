@@ -1,6 +1,5 @@
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
-mod driver;
 mod fixtures;
 mod input;
 mod output;
@@ -12,6 +11,6 @@ impl Helper for Op {
     type Input = input::Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        driver::run(input)
+        Ok(output::probe(input.case())?)
     }
 }
