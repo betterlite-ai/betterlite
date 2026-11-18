@@ -85,16 +85,16 @@ fn build_report(
 pub(super) fn terminal_answer(row: &Row) -> HelperResult {
     let estimate = estimate_probe(row.estimate.as_ref());
     if row.kind == "dict" || row.kind == "other" {
-        return terminal_object_answer(row, estimate.as_ref());
+        return Ok(terminal_object_answer(row, estimate.as_ref()));
     }
     terminal_model_answer(row, estimate.as_ref())
 }
 
-fn terminal_object_answer(row: &Row, estimate: Option<&FixedEstimate>) -> HelperResult {
+fn terminal_object_answer(row: &Row, estimate: Option<&FixedEstimate>) -> Value {
     let object = serde_json::from_value(row.response.clone()).unwrap_or(Json::Null);
     let constructed = billed_terminal_object(&object, estimate);
     let calls = estimate.map_or(0, |held| held.calls.get());
-    Ok(json!({"same": false, "response": constructed, "estimate_calls": calls}))
+    json!({"same": false, "response": constructed, "estimate_calls": calls})
 }
 
 fn terminal_model_answer(row: &Row, estimate: Option<&FixedEstimate>) -> HelperResult {
