@@ -55,7 +55,7 @@ fn client() -> ProxiedClient {
 }
 
 fn exposed(token: Option<&SecretString>) -> Option<&str> {
-    token.map(|token| token.expose_secret())
+    token.map(|secret| secret.expose_secret())
 }
 
 struct Received {
@@ -321,7 +321,7 @@ async fn agentops_callback_keeps_the_project_id_without_a_token() {
         AgentOpsCallback::connect(config(&endpoint, Some("agentops-key")), &transport),
         served
     );
-    let auth = callback.auth.expect("the project id is kept");
+    let auth = callback.auth.as_ref().expect("the project id is kept");
     assert!(auth.token.is_none());
     assert_eq!(auth.project_id.as_deref(), Some("project-1"));
     assert!(callback.otel_config(&environment(&[])).headers.is_none());

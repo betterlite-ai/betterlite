@@ -39,6 +39,7 @@ use crate::otel_provider_assembly::proxy_registry::ProxyRegistry;
 const START: f64 = 1_704_067_200.0;
 const END: f64 = 1_704_067_201.5;
 
+#[derive(Debug)]
 struct NoServer;
 
 #[async_trait]
@@ -243,10 +244,10 @@ fn weave_start_primary_span_creates_a_child_where_the_base_reuses_the_parent() {
     );
     let base_parent = base_rig.parent(&base, "wrapper");
     let base_kwargs = simple_kwargs("call-base-parent");
-    let guard = attach(&base_parent.context).attach();
+    let base_guard = attach(&base_parent.context).attach();
     base.handle(&call(&base_kwargs), LifecycleEvent::Success)
         .expect("the base success lifecycle");
-    drop(guard);
+    drop(base_guard);
     assert_eq!(
         names(&base_rig.spans()),
         vec!["raw_gen_ai_request".to_owned()]

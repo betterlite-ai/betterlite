@@ -128,18 +128,6 @@ fn traceloop_sets_the_prompt_completion_and_usage_attributes() {
         Some(&Value::from("gpt-4o-2024-08-06"))
     );
     assert_eq!(
-        attributes.get("llm.usage.total_tokens"),
-        Some(&Value::I64(11))
-    );
-    assert_eq!(
-        attributes.get("gen_ai.usage.completion_tokens"),
-        Some(&Value::I64(3))
-    );
-    assert_eq!(
-        attributes.get("gen_ai.usage.prompt_tokens"),
-        Some(&Value::I64(8))
-    );
-    assert_eq!(
         attributes.get("gen_ai.completion.0.finish_reason"),
         Some(&Value::from("stop"))
     );
@@ -150,6 +138,27 @@ fn traceloop_sets_the_prompt_completion_and_usage_attributes() {
     assert_eq!(
         attributes.get("gen_ai.completion.0.content"),
         Some(&Value::from("Hi there"))
+    );
+}
+
+#[test]
+fn traceloop_sets_the_usage_attributes() {
+    let (logger, exporter) = logger();
+    logger
+        .log_success_event(&event())
+        .expect("the event is logged");
+    let attributes = attributes(&only_span(&exporter));
+    assert_eq!(
+        attributes.get("llm.usage.total_tokens"),
+        Some(&Value::I64(11))
+    );
+    assert_eq!(
+        attributes.get("gen_ai.usage.completion_tokens"),
+        Some(&Value::I64(3))
+    );
+    assert_eq!(
+        attributes.get("gen_ai.usage.prompt_tokens"),
+        Some(&Value::I64(8))
     );
 }
 
@@ -190,7 +199,7 @@ fn traceloop_marks_a_failure_with_an_error_status_and_an_exception_event() {
     let event = span
         .events
         .iter()
-        .find(|event| event.name.as_ref() == "exception")
+        .find(|recorded| recorded.name.as_ref() == "exception")
         .expect("the exception event");
     assert!(event.attributes.iter().any(|attribute| {
         attribute.key.as_str() == "exception.message" && attribute.value == Value::from("boom")
