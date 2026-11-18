@@ -52,6 +52,15 @@ fn model_group_reads_the_selected_metadata_bucket(
 )]
 #[case::model_group_number(r#"{"litellm_params":{"metadata":{"model_group":7}}}"#)]
 #[case::model_group_list(r#"{"litellm_params":{"metadata":{"model_group":["a"]}}}"#)]
+#[case::metadata_list(r#"{"litellm_params":{"metadata":[]}}"#)]
+#[case::litellm_metadata_list(
+    r#"{"litellm_metadata":{},"litellm_params":{"litellm_metadata":[]}}"#
+)]
+#[case::top_level_list("[]")]
 fn callback_kwargs_reject_a_value_the_field_cannot_hold(#[case] source: &str) {
-    assert!(serde_json::from_str::<CallbackKwargs>(source).is_err());
+    let error = serde_json::from_str::<CallbackKwargs>(source).unwrap_err();
+    assert!(
+        error.is_data(),
+        "{source} failed for the wrong reason: {error}"
+    );
 }
