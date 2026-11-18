@@ -3,13 +3,14 @@ use std::collections::BTreeSet;
 use betterlite_models::decisions::Json;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
+use crate::deployment_catalog::lookup::early_deployments;
 use crate::deployment_catalog::scope::litellm_model;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::model_catalog_lookup::alias::{AliasMap, AliasTarget};
 use crate::model_catalog_lookup::error::LookupError;
 use crate::model_catalog_lookup::index::deployment_ids;
 use crate::model_catalog_lookup::listing::{
-    PatternScope, get_all_deployments, is_team_specific_model, pattern_pool, team_specific_model,
+    get_all_deployments, is_team_specific_model, team_specific_model,
 };
 use crate::routing_groups::index::RoutingGroupIndex;
 use crate::routing_groups::priority::prioritized;
@@ -97,7 +98,13 @@ impl CatalogLookup<'_> {
         if let Some(members) = self.routing_group_deployments(resolved, team_id) {
             return Ok(deployment_ids(&members));
         }
-        if let Some(early) = self.early_deployments(resolved, team_id)? {
+        if let Some(early) = early_deployments(
+            self.catalog,
+            self.inferred_provider,
+            resolved,
+            team_id,
+            false,
+        )? {
             return Ok(deployment_ids(&early));
         }
         Ok(deployment_ids(&get_all_deployments(
@@ -122,44 +129,6 @@ impl CatalogLookup<'_> {
             }
         }
         Some(members)
-    }
-
-    // Router._try_early_resolve_deployments_for_model_not_in_names for a caller with one team: team deployments, then patterns, then the team's patterns.
-    fn early_deployments(
-        &self,
-        model: &str,
-        team_id: Option<&str>,
-    ) -> Result<Option<Vec<DeploymentSpec>>, LookupError> {
-        if self.catalog.model_names.contains(model) {
-            return Ok(None);
-        }
-        if let Some(team) = team_id {
-            let owned = get_all_deployments(self.catalog, model, None, Some(team));
-            if !owned.is_empty() {
-                return Ok(Some(owned));
-            }
-        }
-        let provider = (self.inferred_provider)(model);
-        let mut pool = pattern_pool(
-            self.catalog,
-            &self.catalog.pattern_router,
-            PatternScope::Global,
-            model,
-            provider.as_deref(),
-        )?;
-        if pool.is_empty()
-            && let Some(team) = team_id
-            && let Some(patterns) = self.catalog.team_pattern_routers.get(team)
-        {
-            pool = pattern_pool(
-                self.catalog,
-                &patterns.router,
-                PatternScope::Team(team),
-                model,
-                provider.as_deref(),
-            )?;
-        }
-        Ok(Some(pool).filter(|found| !found.is_empty()))
     }
 
     // Router.resolve_model_name_from_model_id: the public name, then the id, then a provider model that ends in the id.

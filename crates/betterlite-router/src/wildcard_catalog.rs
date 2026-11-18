@@ -19,6 +19,13 @@ pub struct Candidate {
     pub model: String,
 }
 
+// A candidate as registered, beside the model-list row the deployment it came from was pushed at.
+#[derive(Clone, Debug)]
+struct Registered {
+    candidate: Candidate,
+    row: Option<usize>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct PatternCatalog {
     patterns: Vec<Pattern>,
@@ -28,7 +35,7 @@ pub struct PatternCatalog {
 struct Pattern {
     key: String,
     matcher: Regex,
-    candidates: Vec<Candidate>,
+    candidates: Vec<Registered>,
     specificity: (usize, usize),
 }
 
@@ -40,7 +47,10 @@ impl PatternCatalog {
     ) -> Result<(), PatternCatalogError> {
         let key = compiled_pattern(pattern);
         if let Some(existing) = self.patterns.iter_mut().find(|entry| entry.key == key) {
-            existing.candidates.push(candidate);
+            existing.candidates.push(Registered {
+                candidate,
+                row: None,
+            });
             return Ok(());
         }
         let matcher = Regex::new(&matcher_source(pattern)).map_err(|source| {
@@ -60,18 +70,46 @@ impl PatternCatalog {
             Pattern {
                 key,
                 matcher,
-                candidates: vec![candidate],
+                candidates: vec![Registered {
+                    candidate,
+                    row: None,
+                }],
                 specificity,
             },
         );
         Ok(())
     }
 
+    // Record the model-list row the deployment of the pattern's last registration was pushed at.
+    pub fn set_last_row(&mut self, pattern: &str, row: usize) {
+        let key = compiled_pattern(pattern);
+        if let Some(entry) = self.patterns.iter_mut().find(|entry| entry.key == key)
+            && let Some(registered) = entry.candidates.last_mut()
+        {
+            registered.row = Some(row);
+        }
+    }
+
     pub fn remove_deployment(&mut self, model_id: &str) {
         for entry in &mut self.patterns {
             entry
                 .candidates
-                .retain(|candidate| candidate.model_id.as_deref() != Some(model_id));
+                .retain(|registered| registered.candidate.model_id.as_deref() != Some(model_id));
+        }
+        self.patterns.retain(|entry| !entry.candidates.is_empty());
+    }
+
+    // A removed model-list row drops the candidates it registered and moves every later row down.
+    pub fn removed_row(&mut self, removed: usize) {
+        for entry in &mut self.patterns {
+            entry
+                .candidates
+                .retain(|registered| registered.row != Some(removed));
+            for registered in &mut entry.candidates {
+                registered.row = registered
+                    .row
+                    .map(|row| row.saturating_sub(usize::from(row > removed)));
+            }
         }
         self.patterns.retain(|entry| !entry.candidates.is_empty());
     }
@@ -82,13 +120,28 @@ impl PatternCatalog {
         request: &str,
         filtered_model_names: Option<&[String]>,
     ) -> Option<Vec<Candidate>> {
+        let (entry, segments) = self.matched(request, filtered_model_names)?;
+        Some(
+            registered_candidates(entry, request, &segments)
+                .into_iter()
+                .map(|(candidate, _)| candidate)
+                .collect(),
+        )
+    }
+
+    // The first pattern the request matches, beside the text each of its wildcards captured.
+    fn matched<'catalog, 'request>(
+        &'catalog self,
+        request: &'request str,
+        filtered_model_names: Option<&[String]>,
+    ) -> Option<(&'catalog Pattern, Vec<&'request str>)> {
         let filtered = filtered_model_names.map(|names| {
             names
                 .iter()
                 .map(|name| compiled_pattern(name))
                 .collect::<Vec<_>>()
         });
-        let matched = self.patterns.iter().find_map(|entry| {
+        let found = self.patterns.iter().find_map(|entry| {
             let selected = filtered
                 .as_ref()
                 .is_none_or(|keys| keys.contains(&entry.key));
@@ -100,21 +153,32 @@ impl PatternCatalog {
                 .captures(request)
                 .map(|captures| (entry, captures))
         });
-        let (entry, captures) = matched?;
+        let (entry, captures) = found?;
         // every group of a wildcard pattern is (.*), which always captures, even an empty span
-        let segments: Vec<&str> = (1..captures.len())
+        let segments = (1..captures.len())
             .map(|index| captures.get(index).map_or("", |segment| segment.as_str()))
             .collect();
-        Some(
-            entry
-                .candidates
-                .iter()
-                .map(|candidate| Candidate {
-                    model_id: candidate.model_id.clone(),
-                    model: substitute_model(&candidate.model, request, &segments),
-                })
-                .collect(),
-        )
+        Some((entry, segments))
+    }
+
+    // The matched candidates, each beside the model-list row that registered it.
+    fn rows_for(&self, request: &str) -> Option<Vec<(Candidate, Option<usize>)>> {
+        let (entry, segments) = self.matched(request, None)?;
+        Some(registered_candidates(entry, request, &segments))
+    }
+
+    // get_pattern's candidates, each beside the model-list row that registered it.
+    #[must_use]
+    pub fn get_pattern_rows(
+        &self,
+        model: &str,
+        provider: Option<&str>,
+    ) -> Option<Vec<(Candidate, Option<usize>)>> {
+        if let Some(found) = self.rows_for(model) {
+            return Some(found);
+        }
+        let resolved_provider = provider?;
+        self.rows_for(&format!("{resolved_provider}/{model}"))
     }
 
     // the caller resolves custom_llm_provider or the inferred provider, as LiteLLM does before its fallback
@@ -162,6 +226,27 @@ fn pattern_specificity(key: &str) -> (usize, usize) {
         .filter(|letter| COMPLEXITY_CHARS.contains(letter))
         .count();
     (length, complexity)
+}
+
+// One pattern's candidates for the request, each beside the model-list row that registered it.
+fn registered_candidates(
+    entry: &Pattern,
+    request: &str,
+    segments: &[&str],
+) -> Vec<(Candidate, Option<usize>)> {
+    entry
+        .candidates
+        .iter()
+        .map(|registered| {
+            (
+                Candidate {
+                    model_id: registered.candidate.model_id.clone(),
+                    model: substitute_model(&registered.candidate.model, request, segments),
+                },
+                registered.row,
+            )
+        })
+        .collect()
 }
 
 fn substitute_model(model: &str, request: &str, segments: &[&str]) -> String {

@@ -272,9 +272,9 @@ fn unindexed_candidate() {
     let lookup = snapshot.lookup();
     assert!(matches!(
         lookup.get_model_list(Some("openai/gpt-4o"), None),
-        Err(LookupError::UnindexedCandidate {
+        Err(LookupError::Route(CatalogLookupError::UnindexedCandidate {
             model_id: Some(id)
-        }) if id == "ghost"
+        })) if id == "ghost"
     ));
 }
 

@@ -8,6 +8,7 @@ use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 
 use crate::catalog_updates::catalog::DeploymentCatalog;
+use crate::deployment_catalog::error::CatalogLookupError;
 use crate::deployment_catalog::scope::litellm_model;
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::deployment_identity::stable_id::generate_model_id;
@@ -749,6 +750,73 @@ fn reordered_rebuild() {
         snapshot.lookup().get_model_ids(None, false),
         vec![text("aaa"), text("zzz")]
     );
+}
+
+// The unfiltered ids follow the id map's insertion order, and replacing an id keeps the position of its first insertion.
+#[test]
+fn insertion_order_ids() {
+    let mut catalog = catalog(&[
+        named("gpt-4o", "z", "openai/gpt-4o"),
+        named("claude", "a", "anthropic/claude"),
+    ]);
+    catalog.push(named("gpt-4o", "z", "openai/gpt-4o"));
+    let snapshot = Snapshot {
+        catalog,
+        aliases: AliasMap::new(),
+        groups: RoutingGroupIndex::default(),
+        provider: Box::new(|_: &str| None),
+    };
+    assert_eq!(
+        snapshot.lookup().get_model_ids(None, false),
+        vec![text("z"), text("a")]
+    );
+}
+
+// Two wildcard patterns that share an id keep their own rows: a request for the anthropic pattern reads the anthropic row, not the later openai row its id ends on.
+#[test]
+fn wildcard_row_across_patterns() {
+    let snapshot = Snapshot::new(&[
+        deployment(
+            "anthropic/*",
+            "anthropic/claude-*",
+            object(vec![("id", text("x")), ("team_id", text("t1"))]),
+        ),
+        deployment("openai/*", "openai/*", object(vec![("id", text("x"))])),
+    ]);
+    let rows = snapshot
+        .lookup()
+        .get_model_list(Some("anthropic/claude-3"), None)
+        .unwrap();
+    assert_eq!(ids(&rows), vec!["x"]);
+    assert_eq!(rows[0].model_info.get("team_id"), Some(&text("t1")));
+    assert_eq!(provider_models(&rows), vec!["anthropic/claude-3"]);
+}
+
+// Removing a row before a wildcard's own row moves the pattern's recorded row down, so the pattern still reads its own deployment.
+#[test]
+fn removed_row_shifts_patterns() {
+    let mut catalog = catalog(&[
+        named("plain", "p", "openai/plain"),
+        deployment("openai/*", "openai/*", object(vec![("id", text("w"))])),
+        deployment(
+            "anthropic/*",
+            "anthropic/*",
+            object(vec![("id", text("v"))]),
+        ),
+    ]);
+    assert!(catalog.remove("p", 0).is_some());
+    let snapshot = Snapshot {
+        catalog,
+        aliases: AliasMap::new(),
+        groups: RoutingGroupIndex::default(),
+        provider: Box::new(|_: &str| None),
+    };
+    let rows = snapshot
+        .lookup()
+        .get_model_list(Some("openai/gpt-4o"), None)
+        .unwrap();
+    assert_eq!(ids(&rows), vec!["w"]);
+    assert_eq!(provider_models(&rows), vec!["openai/gpt-4o"]);
 }
 
 // A row that lost its model_info.id after the router built it is skipped by both id listings, while its id stays a literal map member for the name resolution.

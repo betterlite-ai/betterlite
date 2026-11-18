@@ -3,6 +3,7 @@ use std::mem::take;
 
 use arc_swap::ArcSwap;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::deployment_identity::construct::DeploymentInput;
 use crate::deployment_identity::spec::DeploymentSpec;
@@ -27,8 +28,8 @@ pub struct DeploymentCatalog {
     pub provider_unresolved: Vec<DeploymentInput>,
     pub pattern_router: PatternCatalog,
     pub team_pattern_routers: BTreeMap<String, TeamPatterns>,
-    // the last deployment pushed under an id wins, and removing that id drops the entry even when a twin remains
-    pub id_index: BTreeMap<String, usize>,
+    // the last deployment pushed under an id wins, a replacement keeps the id's first position, and removing that id drops the entry even when a twin remains
+    pub id_index: IndexMap<String, usize>,
     pub name_index: BTreeMap<String, Vec<usize>>,
     pub team_index: BTreeMap<(String, String), Vec<usize>>,
 }
@@ -64,6 +65,7 @@ impl DeploymentCatalog {
             _ => String::new(),
         };
         self.deployment_names.push(model.clone());
+        let row = self.models.len();
         let candidate = Candidate {
             model_id: spec.id().map(str::to_owned),
             model,
@@ -71,6 +73,7 @@ impl DeploymentCatalog {
         if spec.model_name.contains('*') {
             self.pattern_router
                 .add_pattern(&spec.model_name, candidate.clone())?;
+            self.pattern_router.set_last_row(&spec.model_name, row);
             if let Some(id) = spec.id().filter(|id| !id.is_empty()) {
                 self.provider_default_ids.push(id.to_owned());
             }
@@ -84,6 +87,7 @@ impl DeploymentCatalog {
                 .entry(team.to_owned())
                 .or_default();
             patterns.router.add_pattern(public_name, candidate)?;
+            patterns.router.set_last_row(public_name, row);
             patterns.model_ids.push(spec.id().map(str::to_owned));
         }
         Ok(())
@@ -120,7 +124,7 @@ impl DeploymentCatalog {
         for position in self.id_index.values_mut() {
             *position = position.saturating_sub(usize::from((*position).cmp(&index).is_gt()));
         }
-        self.id_index.remove(model_id);
+        self.id_index.shift_remove(model_id);
         for (name, indices) in take(&mut self.name_index) {
             let kept = shifted(&indices, index);
             if kept.is_empty() {
@@ -135,8 +139,10 @@ impl DeploymentCatalog {
             .filter(|(_, indices)| !indices.is_empty())
             .collect();
         self.pattern_router.remove_deployment(model_id);
+        self.pattern_router.removed_row(index);
         for patterns in self.team_pattern_routers.values_mut() {
             patterns.router.remove_deployment(model_id);
+            patterns.router.removed_row(index);
             patterns
                 .model_ids
                 .retain(|id| id.as_deref() != Some(model_id));
