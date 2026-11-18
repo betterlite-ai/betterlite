@@ -18,4 +18,7 @@ deviations:
   - what: The built-in templates are the two YAML documents embedded in the binary, so a third .yaml file a user drops into LiteLLM's route_templates directory is listed by list_builtin_templates and loadable by name there, while betterlite reports it as an unknown template.
     why: The task requires the built-in templates as static data so the binary needs no package directory of its own; a template a setup adds to the installed package is not shipped with betterlite.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/semantic_guard/route_loader.py#L43-L51
+  - what: A DEFAULT_SEMANTIC_GUARD_SIMILARITY_THRESHOLD that is not a decimal number, such as nan or inf, is refused when the variable is read, where Python's float() accepts it and every route inherits a non-finite threshold.
+    why: A non-finite threshold makes every similarity comparison meaningless, and betterlite's environment number parser takes only digits, a sign, a decimal point and an exponent; the error names the variable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L174
 kept_bugs: []

@@ -231,6 +231,14 @@ fn a_non_numeric_threshold_variable_is_an_error() {
 }
 
 #[test]
+fn a_non_finite_threshold_variable_is_an_error() {
+    assert!(matches!(
+        default_similarity_threshold(&environment("nan")),
+        Err(RouteLoadError::ThresholdEnv { .. })
+    ));
+}
+
+#[test]
 fn a_file_entry_that_is_not_a_mapping_is_rejected() {
     let (_folder, path) = routes_file("- 1\n");
     let sources = sources(&[], Some(&path), vec![], 0.5);
