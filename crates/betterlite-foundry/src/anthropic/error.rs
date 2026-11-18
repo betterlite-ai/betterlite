@@ -5,7 +5,6 @@ use betterlite_anthropic::anthropic_http_stream::error::StreamOpenError;
 use betterlite_anthropic::chat_call::error::{ChatCallError, ConfigError};
 use betterlite_anthropic::response::error::ResponseError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use http::HeaderMap;
 use thiserror::Error;
 
 use super::environment::EnvironmentError;
@@ -34,18 +33,6 @@ where
             Self::Environment(source) => source.status(),
             Self::Call(source) => source.status_code(),
         }
-    }
-
-    pub(super) fn prepare(source: ConfigError) -> Self {
-        Self::Call(ChatCallError::Prepare { source })
-    }
-
-    pub(super) fn failure(status_code: u16, message: String, headers: Option<HeaderMap>) -> Self {
-        Self::Call(ChatCallError::Anthropic {
-            status_code,
-            message,
-            headers,
-        })
     }
 }
 

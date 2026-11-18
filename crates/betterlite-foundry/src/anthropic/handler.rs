@@ -131,8 +131,9 @@ where
     let mut body = match style {
         Style::Async => async_transform_request(config, transform)
             .await
-            .map_err(ChatError::prepare)?,
-        Style::Sync => transform_request(config, transform).map_err(ChatError::prepare)?,
+            .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))?,
+        Style::Sync => transform_request(config, transform)
+            .map_err(|source| ChatError::Call(ChatCallError::Prepare { source }))?,
     };
     let mut header_values = transform.headers.values.clone();
     config

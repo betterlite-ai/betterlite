@@ -168,7 +168,11 @@ where
             env,
         );
     }
-    ChatError::failure(status_code, message, headers)
+    ChatError::Call(ChatCallError::Anthropic {
+        status_code,
+        message,
+        headers,
+    })
 }
 
 // httpx's errors="replace": each invalid sequence becomes one U+FFFD in the message the handler raises

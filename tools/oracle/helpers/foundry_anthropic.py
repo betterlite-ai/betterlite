@@ -1,5 +1,5 @@
 from collections.abc import Callable
-from typing import Final, Protocol, TypedDict, Unpack, runtime_checkable
+from typing import Final, Protocol, TypedDict, Unpack, override, runtime_checkable
 
 import httpx
 import litellm
@@ -59,7 +59,7 @@ class CompletionArguments(TypedDict):
     print_verbose: Callable[[str], None]
     encoding: None
     api_key: str | None
-    logging_obj: Recorder
+    logging_obj: "Recorder"
     optional_params: JsonObject
     timeout: float
     litellm_params: JsonObject
@@ -82,9 +82,11 @@ class Recorder(Logging):
     def __init__(self) -> None:
         self.model_call_details: JsonObject = {}
 
+    @override
     def pre_call(self, **kwargs: JsonValue) -> None:
         del kwargs
 
+    @override
     def post_call(self, **kwargs: JsonValue) -> None:
         del kwargs
 
@@ -134,7 +136,7 @@ class Endpoint:
         )
 
 
-def completion_answer(input_value: Input) -> JsonValue:
+def run(input_value: Input) -> JsonValue:
     endpoint = Endpoint(
         input_value["upstream_status"],
         input_value["upstream_headers"],
@@ -174,10 +176,6 @@ def completion_answer(input_value: Input) -> JsonValue:
         }
         fields = POSTED.validate_json(request.content)
         answer["body"] = {
-            name: fields[name] if name in fields else None for name in BODY_KEYS
+            name: fields.get(name, None) for name in BODY_KEYS
         }
     return answer
-
-
-def run(input_value: Input) -> JsonValue:
-    return completion_answer(input_value)
