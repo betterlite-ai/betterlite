@@ -5,7 +5,7 @@ use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
 
-use super::builder::{ItemContext, push_event};
+use super::builder::{BuildContext, ItemContext, push_event};
 use super::chunks::delta_chunks;
 use super::error::SyntheticEventsError;
 use super::python_value::text_or_empty;
@@ -14,10 +14,16 @@ pub(super) fn function_call_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
     context: &ItemContext<'_>,
     payload: &Extra,
-    chunk_size: i64,
+    build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
     let arguments = text_or_empty(payload.get("arguments"));
-    for delta in delta_chunks(&arguments, chunk_size)? {
+    let chunk_size = build.chunk_size;
+    for delta in delta_chunks(
+        &arguments,
+        chunk_size,
+        &mut build.budget,
+        context.item_id.len(),
+    )? {
         push_event!(
             events,
             KnownResponseEvent::FunctionCallArgumentsDelta(FunctionArgsDelta {

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::*;
 
 #[test]
@@ -169,43 +171,43 @@ fn unsupported_objects_project_to_empty_payloads() {
     assert!(events_of(&items, "response.output_text.delta").is_empty());
 }
 
-#[test]
-fn missing_or_falsy_item_id_falls_back_to_response_id() {
-    let cases = [
-        (
-            r#"{"type":"message","id":null,"status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
-            "resp_a",
-            true,
-        ),
-        (
-            r#"{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
-            "resp_a",
-            false,
-        ),
-        (
-            r#"{"type":"message","id":5,"status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
-            "5",
-            true,
-        ),
-        (
-            r#"{"type":"message","id":0,"status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
-            "resp_a",
-            true,
-        ),
-    ];
-    for (item, expected_id, has_id) in cases {
-        let output = format!("[{item}]");
-        let mut transformed = response(&output);
-        let items = build(&mut transformed, None, 5);
-        let part_added = event_of(&items, "response.content_part.added");
-        assert_eq!(text(field(part_added, "item_id")), expected_id);
-        let delta = event_of(&items, "response.output_text.delta");
-        assert_eq!(text(field(delta, "item_id")), expected_id);
-        let item_added = event_of(&items, "response.output_item.added");
-        assert_eq!(has_key(field(item_added, "item"), "id"), has_id);
-        let item_done = event_of(&items, "response.output_item.done");
-        assert_eq!(has_key(field(item_done, "item"), "id"), has_id);
-    }
+#[rstest]
+#[case::null_id(
+    r#"{"type":"message","id":null,"status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
+    "resp_a",
+    true
+)]
+#[case::missing_id(
+    r#"{"type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
+    "resp_a",
+    false
+)]
+#[case::numeric_id(
+    r#"{"type":"message","id":5,"status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
+    "5",
+    true
+)]
+#[case::zero_id(
+    r#"{"type":"message","id":0,"status":"completed","role":"assistant","content":[{"type":"output_text","text":"hi","annotations":[],"logprobs":null}]}"#,
+    "resp_a",
+    true
+)]
+fn missing_or_falsy_item_id_falls_back_to_response_id(
+    #[case] item: &str,
+    #[case] expected_id: &str,
+    #[case] has_id: bool,
+) {
+    let output = format!("[{item}]");
+    let mut transformed = response(&output);
+    let items = build(&mut transformed, None, 5);
+    let part_added = event_of(&items, "response.content_part.added");
+    assert_eq!(text(field(part_added, "item_id")), expected_id);
+    let delta = event_of(&items, "response.output_text.delta");
+    assert_eq!(text(field(delta, "item_id")), expected_id);
+    let item_added = event_of(&items, "response.output_item.added");
+    assert_eq!(has_key(field(item_added, "item"), "id"), has_id);
+    let item_done = event_of(&items, "response.output_item.done");
+    assert_eq!(has_key(field(item_done, "item"), "id"), has_id);
 }
 
 #[test]

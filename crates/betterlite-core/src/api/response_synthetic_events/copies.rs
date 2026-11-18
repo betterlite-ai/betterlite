@@ -1,7 +1,5 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_event_records::records::ResponsesAPIStreamingResponse;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
 
 pub enum LoggingEvent<'a> {
     Value(&'a Json),
@@ -17,24 +15,16 @@ pub enum LoggedCopy<'a> {
 pub fn logging_copy(event: LoggingEvent<'_>) -> LoggedCopy<'_> {
     match event {
         LoggingEvent::Value(value) => LoggedCopy::Same(value),
-        LoggingEvent::Event(ResponsesAPIStreamingResponse::Generic(generic)) => {
-            LoggedCopy::Detached(Box::new(ResponsesAPIStreamingResponse::Generic(
-                generic.clone(),
-            )))
+        LoggingEvent::Event(generic @ ResponsesAPIStreamingResponse::Generic(_)) => {
+            LoggedCopy::Detached(Box::new(generic.clone()))
         }
         LoggingEvent::Event(ResponsesAPIStreamingResponse::Known(known)) => {
-            let copied = round_trip(known.as_ref()).unwrap_or_else(|_error| known.as_ref().clone());
+            let copied = serde_json::to_value(known.as_ref())
+                .and_then(serde_json::from_value)
+                .unwrap_or_else(|_error| known.as_ref().clone());
             LoggedCopy::Detached(Box::new(ResponsesAPIStreamingResponse::Known(Box::new(
                 copied,
             ))))
         }
     }
-}
-
-pub(super) fn round_trip<T>(event: &T) -> Result<T, serde_json::Error>
-where
-    T: Serialize + DeserializeOwned,
-{
-    let serialized = serde_json::to_value(event)?;
-    serde_json::from_value(serialized)
 }

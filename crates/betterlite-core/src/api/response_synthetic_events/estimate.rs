@@ -56,11 +56,9 @@ pub fn estimate_usage_safely<T: UsageTokenization>(
     tokenization: &T,
     request: &EstimateRequest<'_>,
 ) -> Option<ResponseApiUsage> {
-    match estimate_usage_from_text(tokenization, request) {
-        Ok(usage) => Some(usage),
-        Err(error) => {
+    estimate_usage_from_text(tokenization, request)
+        .inspect_err(|error| {
             tracing::debug!("Could not estimate usage from stream text, billing $0: {error}");
-            None
-        }
-    }
+        })
+        .ok()
 }

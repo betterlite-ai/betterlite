@@ -2,6 +2,19 @@
 
 use super::*;
 
+fn assert_in_progress_event(event: &Json) {
+    let response = field(event, "response");
+    assert_eq!(text(field(response, "status")), "in_progress");
+    assert_eq!(field(response, "output"), &json("[]"));
+    assert_eq!(text(field(field(response, "error"), "code")), "previous");
+    assert_eq!(text(field(response, "instructions")), "be nice");
+    assert_eq!(text(field(response, "model")), "gpt-4o");
+    assert_eq!(text(field(field(response, "metadata"), "trace")), "t1");
+    assert_eq!(number_text(at(response, &["usage", "cost"])), "0.5");
+    assert_eq!(text(field(response, "id")), "resp_a");
+    assert_eq!(integer(field(response, "created_at")), 1_700_000_000);
+}
+
 #[test]
 fn synthetic_text_sequence_matches_litellm() {
     let output = concat!(
@@ -82,19 +95,8 @@ fn status_events_are_deep_copies_with_in_progress_status() {
     let mut transformed = response_with(&output, extra);
     let original = transformed.clone();
     let items = build(&mut transformed, None, 2);
-    for event_type in ["response.created", "response.in_progress"] {
-        let event = event_of(&items, event_type);
-        let response = field(event, "response");
-        assert_eq!(text(field(response, "status")), "in_progress");
-        assert_eq!(field(response, "output"), &json("[]"));
-        assert_eq!(text(field(field(response, "error"), "code")), "previous");
-        assert_eq!(text(field(response, "instructions")), "be nice");
-        assert_eq!(text(field(response, "model")), "gpt-4o");
-        assert_eq!(text(field(field(response, "metadata"), "trace")), "t1");
-        assert_eq!(number_text(at(response, &["usage", "cost"])), "0.5");
-        assert_eq!(text(field(response, "id")), "resp_a");
-        assert_eq!(integer(field(response, "created_at")), 1_700_000_000);
-    }
+    assert_in_progress_event(event_of(&items, "response.created"));
+    assert_in_progress_event(event_of(&items, "response.in_progress"));
     let completed = items.last().unwrap();
     let completed_output = at(completed, &["response", "output"]);
     let message = item_at(completed_output, 0);
@@ -122,8 +124,10 @@ fn added_payloads_keep_complete_content() {
     assert_eq!(text(field(item_at(content, 1), "refusal")), "not today");
     let first_part = event_of(&items, "response.content_part.added");
     assert_eq!(text(at(first_part, &["part", "text"])), "abcdef");
-    let part_done = event_of(&items, "response.content_part.done");
-    assert_eq!(text(at(part_done, &["part", "refusal"])), "not today");
+    let part_dones = events_of(&items, "response.content_part.done");
+    assert_eq!(part_dones.len(), 2);
+    assert_eq!(text(at(part_dones[0], &["part", "text"])), "abcdef");
+    assert_eq!(text(at(part_dones[1], &["part", "refusal"])), "not today");
     let item_done = event_of(&items, "response.output_item.done");
     assert_eq!(field(item_done, "item"), item);
 }
@@ -279,6 +283,37 @@ fn negative_chunk_size_emits_no_deltas() {
             "arguments"
         )),
         "{}"
+    );
+}
+
+#[test]
+fn event_budget_charges_events_and_bytes_up_to_each_limit() {
+    let mut budget = EventBudget::default();
+    budget.charge(MAX_SYNTHETIC_EVENTS, 0).unwrap();
+    assert!(matches!(
+        budget.charge(1, 0),
+        Err(SyntheticEventsError::EventBudgetExceeded)
+    ));
+    let mut budget = EventBudget::default();
+    budget.charge(0, MAX_SYNTHETIC_BYTES).unwrap();
+    assert!(matches!(
+        budget.charge(0, 1),
+        Err(SyntheticEventsError::EventBudgetExceeded)
+    ));
+}
+
+#[test]
+fn oversized_item_id_with_tiny_chunks_raises_the_event_budget() {
+    let item_id = "i".repeat(64 * 1024);
+    let text = "t".repeat(64 * 1024);
+    let output = format!("[{}]", message_with_text(&item_id, &text));
+    let mut transformed = response(&output);
+    let error =
+        build_synthetic_response_events(&mut transformed, None::<&FixedCost>, 1).unwrap_err();
+    assert!(matches!(error, SyntheticEventsError::EventBudgetExceeded));
+    assert_eq!(
+        error.to_string(),
+        "synthetic response events would exceed the size budget"
     );
 }
 

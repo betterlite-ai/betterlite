@@ -5,7 +5,6 @@ use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApi
 use indexmap::IndexMap;
 
 use super::error::SyntheticEventsError;
-use super::json_value;
 
 pub trait HasModelDump {
     fn model_dump(&self) -> Result<Extra, SyntheticEventsError>;
@@ -33,7 +32,8 @@ impl HasModelDump for ResponseOutputItem {
         if let Self::Unknown(fields) = self {
             return Ok(fields.clone());
         }
-        let Json::Object(mut fields) = json_value::to_json(self)? else {
+        let value = serde_json::to_value(self)?;
+        let Json::Object(mut fields) = serde_json::from_value(value)? else {
             return Ok(Extra::new());
         };
         if let Self::Sdk(output) = self

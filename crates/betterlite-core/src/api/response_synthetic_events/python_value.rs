@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use crate::api::responses_stream_primitives::python_text::value_text;
 
 #[must_use]
-pub fn truthy(value: &Json) -> bool {
+pub fn has_content(value: &Json) -> bool {
     match value {
         Json::Null => false,
         Json::Bool(value) => *value,
@@ -15,9 +15,17 @@ pub fn truthy(value: &Json) -> bool {
 }
 
 #[must_use]
+pub fn json_array_or_empty(value: Option<&Json>) -> &[Json] {
+    match value {
+        Some(Json::List(items)) => items,
+        _ => &[],
+    }
+}
+
+#[must_use]
 pub fn text_or_empty(value: Option<&Json>) -> String {
     match value {
-        Some(value) if truthy(value) => value_text(value),
+        Some(value) if has_content(value) => value_text(value),
         _ => String::new(),
     }
 }

@@ -7,28 +7,24 @@ use betterlite_openai::api::responses_event_records::event_types::{
 use betterlite_openai::api::responses_event_records::records::{
     KnownResponseEvent, ResponsesAPIStreamingResponse,
 };
-use indexmap::IndexMap;
+use serde_json::json;
 
-use super::builder::{ItemContext, PartContext, push_event};
-use super::chunks::delta_chunks;
+use super::builder::{BuildContext, ItemContext, PartContext, push_event};
+use super::chunks::{EventBudget, delta_chunks};
 use super::error::SyntheticEventsError;
-use super::json_value;
 use super::model_dump::{ResponseObject, dump_response_object};
-use super::python_value::{text_or_empty, truthy};
+use super::python_value::{has_content, json_array_or_empty, text_or_empty};
 
 pub(super) fn message_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
     context: &ItemContext<'_>,
     payload: &Extra,
-    chunk_size: i64,
+    build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
-    let content_parts: &[Json] = match payload.get("content") {
-        Some(Json::List(items)) => items,
-        _ => &[],
-    };
+    let content_parts = json_array_or_empty(payload.get("content"));
     for (content_index, part) in content_parts.iter().enumerate() {
         let content_index = i64::try_from(content_index).unwrap_or(i64::MAX);
-        content_part_events(events, context, part, content_index, chunk_size)?;
+        content_part_events(events, context, part, content_index, build)?;
     }
     Ok(())
 }
@@ -38,7 +34,7 @@ fn content_part_events(
     context: &ItemContext<'_>,
     part: &Json,
     content_index: i64,
-    chunk_size: i64,
+    build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
     let part_payload = dump_response_object(ResponseObject::Value(part))?;
     push_event!(
@@ -56,7 +52,7 @@ fn content_part_events(
         output_index: context.output_index,
         content_index,
     };
-    text_like_part_events(events, &part_context, &part_payload, chunk_size)?;
+    text_like_part_events(events, &part_context, &part_payload, build)?;
     if let Some(part) = content_part_done_part(&part_payload)? {
         push_event!(
             events,
@@ -76,62 +72,116 @@ fn text_like_part_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
     context: &PartContext<'_>,
     payload: &Extra,
-    chunk_size: i64,
+    build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
-    match payload.get("type") {
-        Some(Json::Text(kind)) if kind == "output_text" => {
-            output_text_part_events(events, context, payload, chunk_size)
-        }
-        Some(Json::Text(kind)) if kind == "refusal" => {
-            refusal_part_events(events, context, payload, chunk_size)
-        }
-        _ => Ok(()),
+    let Some(Json::Text(part_type)) = payload.get("type") else {
+        return Ok(());
+    };
+    let kind = if part_type == "output_text" {
+        DeltaKind::OutputText
+    } else if part_type == "refusal" {
+        DeltaKind::Refusal
+    } else {
+        return Ok(());
+    };
+    let text = if matches!(kind, DeltaKind::OutputText) {
+        text_or_empty(payload.get("text"))
+    } else {
+        text_or_empty(payload.get("refusal"))
+    };
+    push_delta_events(events, context, &text, build, kind)?;
+    if matches!(kind, DeltaKind::OutputText) {
+        annotation_events(
+            events,
+            context,
+            json_array_or_empty(payload.get("annotations")),
+            &mut build.budget,
+        )?;
     }
+    push_done_event(events, context, &text, kind);
+    Ok(())
 }
 
-fn output_text_part_events(
+#[derive(Clone, Copy)]
+enum DeltaKind {
+    OutputText,
+    Refusal,
+}
+
+fn push_delta_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
     context: &PartContext<'_>,
-    payload: &Extra,
-    chunk_size: i64,
+    text: &str,
+    build: &mut BuildContext,
+    kind: DeltaKind,
 ) -> Result<(), SyntheticEventsError> {
-    let text = text_or_empty(payload.get("text"));
-    for delta in delta_chunks(&text, chunk_size)? {
+    for delta in delta_chunks(
+        text,
+        build.chunk_size,
+        &mut build.budget,
+        context.item_id.len(),
+    )? {
         push_event!(
             events,
-            KnownResponseEvent::OutputTextDelta(OutputTextDeltaEvent {
-                item_id: context.item_id.to_owned(),
-                output_index: context.output_index,
-                content_index: context.content_index,
-                delta,
-                extra: Extra::new(),
-            })
+            match kind {
+                DeltaKind::OutputText =>
+                    KnownResponseEvent::OutputTextDelta(OutputTextDeltaEvent {
+                        item_id: context.item_id.to_owned(),
+                        output_index: context.output_index,
+                        content_index: context.content_index,
+                        delta,
+                        extra: Extra::new(),
+                    }),
+                DeltaKind::Refusal => KnownResponseEvent::RefusalDelta(RefusalDeltaEvent {
+                    item_id: context.item_id.to_owned(),
+                    output_index: context.output_index,
+                    content_index: context.content_index,
+                    delta,
+                    extra: Extra::new(),
+                }),
+            }
         );
     }
-    let annotations: &[Json] = match payload.get("annotations") {
-        Some(Json::List(items)) => items,
-        _ => &[],
-    };
-    annotation_events(events, context, annotations)?;
-    push_event!(
-        events,
-        KnownResponseEvent::OutputTextDone(OutputTextDoneEvent {
+    Ok(())
+}
+
+fn push_done_event(
+    events: &mut Vec<ResponsesAPIStreamingResponse>,
+    context: &PartContext<'_>,
+    text: &str,
+    kind: DeltaKind,
+) {
+    let done_event = match kind {
+        DeltaKind::OutputText => KnownResponseEvent::OutputTextDone(OutputTextDoneEvent {
             item_id: context.item_id.to_owned(),
             output_index: context.output_index,
             content_index: context.content_index,
-            text,
+            text: text.to_owned(),
             extra: Extra::new(),
-        })
-    );
-    Ok(())
+        }),
+        DeltaKind::Refusal => KnownResponseEvent::RefusalDone(RefusalDoneEvent {
+            item_id: context.item_id.to_owned(),
+            output_index: context.output_index,
+            content_index: context.content_index,
+            refusal: text.to_owned(),
+            extra: Extra::new(),
+        }),
+    };
+    push_event!(events, done_event);
 }
 
 fn annotation_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
     context: &PartContext<'_>,
     annotations: &[Json],
+    budget: &mut EventBudget,
 ) -> Result<(), SyntheticEventsError> {
+    budget.charge(
+        annotations.len(),
+        annotations.len().saturating_mul(context.item_id.len()),
+    )?;
     for (annotation_index, annotation) in annotations.iter().enumerate() {
+        let annotation_index = i64::try_from(annotation_index).unwrap_or(i64::MAX);
         let Json::Object(fields) = annotation else {
             return Err(SyntheticEventsError::NotAnObject {
                 field: "annotation",
@@ -143,7 +193,7 @@ fn annotation_events(
                 item_id: context.item_id.to_owned(),
                 output_index: context.output_index,
                 content_index: context.content_index,
-                annotation_index: i64::try_from(annotation_index).unwrap_or(i64::MAX),
+                annotation_index,
                 annotation: fields.clone().into_iter().collect(),
                 extra: Extra::new(),
             })
@@ -152,43 +202,23 @@ fn annotation_events(
     Ok(())
 }
 
-fn refusal_part_events(
-    events: &mut Vec<ResponsesAPIStreamingResponse>,
-    context: &PartContext<'_>,
-    payload: &Extra,
-    chunk_size: i64,
-) -> Result<(), SyntheticEventsError> {
-    let refusal = text_or_empty(payload.get("refusal"));
-    for delta in delta_chunks(&refusal, chunk_size)? {
-        push_event!(
-            events,
-            KnownResponseEvent::RefusalDelta(RefusalDeltaEvent {
-                item_id: context.item_id.to_owned(),
-                output_index: context.output_index,
-                content_index: context.content_index,
-                delta,
-                extra: Extra::new(),
-            })
-        );
-    }
-    push_event!(
-        events,
-        KnownResponseEvent::RefusalDone(RefusalDoneEvent {
-            item_id: context.item_id.to_owned(),
-            output_index: context.output_index,
-            content_index: context.content_index,
-            refusal,
-            extra: Extra::new(),
-        })
-    );
-    Ok(())
-}
-
 fn content_part_done_part(
     payload: &Extra,
 ) -> Result<Option<ContentPartDonePart>, SyntheticEventsError> {
     let part = match payload.get("type") {
-        Some(Json::Text(kind)) if kind == "output_text" => output_text_done_part(payload)?,
+        Some(Json::Text(kind)) if kind == "output_text" => {
+            let annotations = match payload.get("annotations") {
+                Some(value) if has_content(value) => value.clone(),
+                _ => Json::List(Vec::new()),
+            };
+            let logprobs = payload.get("logprobs").cloned().unwrap_or(Json::Null);
+            serde_json::from_value(json!({
+                "type": "output_text",
+                "text": text_or_empty(payload.get("text")),
+                "annotations": annotations,
+                "logprobs": logprobs,
+            }))?
+        }
         Some(Json::Text(kind)) if kind == "refusal" => ContentPartDonePart::Refusal {
             refusal: text_or_empty(payload.get("refusal")),
             extra: Extra::new(),
@@ -200,21 +230,4 @@ fn content_part_done_part(
         _ => return Ok(None),
     };
     Ok(Some(part))
-}
-
-fn output_text_done_part(payload: &Extra) -> Result<ContentPartDonePart, SyntheticEventsError> {
-    let annotations = match payload.get("annotations") {
-        Some(value) if truthy(value) => value.clone(),
-        _ => Json::List(Vec::new()),
-    };
-    let logprobs = payload.get("logprobs").cloned().unwrap_or(Json::Null);
-    let mut part = IndexMap::new();
-    part.insert("type".to_owned(), Json::Text("output_text".to_owned()));
-    part.insert(
-        "text".to_owned(),
-        Json::Text(text_or_empty(payload.get("text"))),
-    );
-    part.insert("annotations".to_owned(), annotations);
-    part.insert("logprobs".to_owned(), logprobs);
-    json_value::from_json(&Json::Object(part))
 }

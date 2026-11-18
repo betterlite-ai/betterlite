@@ -11,7 +11,7 @@ use super::builder::{BuildContext, ItemContext, push_event};
 use super::chunks::delta_chunks;
 use super::error::SyntheticEventsError;
 use super::model_dump::{ResponseObject, dump_response_object};
-use super::python_value::text_or_empty;
+use super::python_value::{json_array_or_empty, text_or_empty};
 
 pub(super) fn reasoning_events(
     events: &mut Vec<ResponsesAPIStreamingResponse>,
@@ -19,10 +19,7 @@ pub(super) fn reasoning_events(
     payload: &Extra,
     build: &mut BuildContext,
 ) -> Result<(), SyntheticEventsError> {
-    let summaries: &[Json] = match payload.get("summary") {
-        Some(Json::List(items)) => items,
-        _ => &[],
-    };
+    let summaries = json_array_or_empty(payload.get("summary"));
     for (summary_index, summary) in summaries.iter().enumerate() {
         let summary_index = i64::try_from(summary_index).unwrap_or(i64::MAX);
         reasoning_summary_events(events, context, summary, summary_index, build)?;
@@ -39,7 +36,13 @@ fn reasoning_summary_events(
 ) -> Result<(), SyntheticEventsError> {
     let summary_payload = dump_response_object(ResponseObject::Value(summary))?;
     let summary_text = text_or_empty(summary_payload.get("text"));
-    for delta in delta_chunks(&summary_text, build.chunk_size)? {
+    let chunk_size = build.chunk_size;
+    for delta in delta_chunks(
+        &summary_text,
+        chunk_size,
+        &mut build.budget,
+        context.item_id.len(),
+    )? {
         push_event!(
             events,
             KnownResponseEvent::ReasoningSummaryTextDelta(ReasoningSummaryTextDeltaEvent {

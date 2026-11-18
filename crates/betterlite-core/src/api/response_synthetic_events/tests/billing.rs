@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::*;
 
 #[test]
@@ -98,45 +100,69 @@ fn billed_dict_response_fills_defaulted_fields() {
             r#"{"input_tokens":3,"input_tokens_details":null,"output_tokens":4,"output_tokens_details":null,"total_tokens":7,"cost":null}"#
         ))
     );
-    let defaulted = [
-        "error",
-        "incomplete_details",
-        "instructions",
-        "metadata",
-        "model",
-        "object",
-        "parallel_tool_calls",
-        "temperature",
-        "tool_choice",
-        "tools",
-        "top_p",
-        "max_output_tokens",
-        "previous_response_id",
-        "reasoning",
-        "status",
-        "text",
-        "truncation",
-        "user",
-        "store",
-    ];
-    for name in defaulted {
-        assert_eq!(built.get(name), Some(&Json::Null));
-    }
     assert_eq!(built.len(), 24);
     let without_estimator = billed_terminal_object(&object, None).unwrap();
     assert_eq!(without_estimator.get("usage"), Some(&Json::Null));
     assert_eq!(estimate.calls(), 1);
 }
 
+#[rstest]
+#[case::error("error")]
+#[case::incomplete_details("incomplete_details")]
+#[case::instructions("instructions")]
+#[case::metadata("metadata")]
+#[case::model("model")]
+#[case::object("object")]
+#[case::parallel_tool_calls("parallel_tool_calls")]
+#[case::temperature("temperature")]
+#[case::tool_choice("tool_choice")]
+#[case::tools("tools")]
+#[case::top_p("top_p")]
+#[case::max_output_tokens("max_output_tokens")]
+#[case::previous_response_id("previous_response_id")]
+#[case::reasoning("reasoning")]
+#[case::status("status")]
+#[case::text("text")]
+#[case::truncation("truncation")]
+#[case::user("user")]
+#[case::store("store")]
+fn billed_dict_response_fills_defaulted_field(#[case] name: &str) {
+    let object = json(r#"{"id":"r4","created_at":3,"output":[],"unknown_key":"kept"}"#);
+    let estimate = FixedEstimate::returning(3, 4);
+    let built = billed_terminal_object(&object, Some(&estimate)).unwrap();
+    assert_eq!(built.get(name), Some(&Json::Null));
+}
+
 #[test]
-fn billed_nonresponse_values_yield_none() {
-    for object in [
-        json("null"),
-        json("true"),
-        json("7"),
-        json(r#""text""#),
-        json("[1,2]"),
-    ] {
-        assert!(billed_terminal_object(&object, None).is_none());
-    }
+fn billed_dict_response_filters_null_reasoning_fields() {
+    let object = json(
+        r#"{"id":"r7","created_at":5,"output":[{"type":"reasoning","id":"rs_1","summary":[],"status":null,"content":null,"encrypted_content":null,"namespace":null}],"usage":null}"#,
+    );
+    let built = billed_terminal_object(&object, None).unwrap();
+    assert_eq!(
+        built.get("output"),
+        Some(&json(
+            r#"[{"type":"reasoning","id":"rs_1","summary":[],"namespace":null}]"#
+        ))
+    );
+    let object = json(
+        r#"{"id":"r8","created_at":6,"output":[{"type":"message","id":"m1","status":null,"content":null},{"type":"reasoning","id":"rs_2","summary":[],"status":"completed","content":[]}]}"#,
+    );
+    let built = billed_terminal_object(&object, None).unwrap();
+    assert_eq!(
+        built.get("output"),
+        Some(&json(
+            r#"[{"type":"message","id":"m1","status":null,"content":null},{"type":"reasoning","id":"rs_2","summary":[],"status":"completed","content":[]}]"#
+        ))
+    );
+}
+
+#[rstest]
+#[case::null("null")]
+#[case::bool("true")]
+#[case::number("7")]
+#[case::text(r#""text""#)]
+#[case::list("[1,2]")]
+fn billed_nonresponse_values_yield_none(#[case] raw: &str) {
+    assert!(billed_terminal_object(&json(raw), None).is_none());
 }

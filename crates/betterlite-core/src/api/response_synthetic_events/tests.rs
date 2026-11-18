@@ -22,6 +22,7 @@ use super::billing::{
     usage_as_model,
 };
 use super::builder::build_synthetic_response_events;
+use super::chunks::{EventBudget, MAX_SYNTHETIC_BYTES, MAX_SYNTHETIC_EVENTS};
 use super::constants::TOOL_ARGUMENTS_DELTA_EVENTS;
 use super::copies::{LoggedCopy, LoggingEvent, logging_copy};
 use super::error::SyntheticEventsError;
@@ -29,14 +30,13 @@ use super::estimate::{
     EstimateRequest, TokenCountRequest, UsageTokenization, estimate_usage_from_text,
     estimate_usage_safely,
 };
-use super::json_value;
 use super::model_dump::{HasModelDumpJson, ResponseObject, dump_json_safely, dump_response_object};
-use super::python_value::{text_or_empty, truthy};
+use super::python_value::{has_content, text_or_empty};
 use super::stamping::{
     CostTarget, ResponsesCostCalculator, stamp_object_usage_cost, stamp_usage_cost,
 };
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct Capture(Arc<Mutex<Vec<String>>>);
 
 impl Capture {
@@ -72,7 +72,10 @@ impl<Inner: Subscriber> Layer<Inner> for Capture {
     }
 }
 
-fn capture<T>(call: impl FnOnce() -> T) -> (T, Vec<String>) {
+fn capture<T, Call>(call: Call) -> (T, Vec<String>)
+where
+    Call: FnOnce() -> T,
+{
     let captured = Capture::default();
     let guard = set_default(registry().with(captured.clone()));
     let value = call();
@@ -98,8 +101,12 @@ fn response(output: &str) -> ResponsesApiResponse {
     response_with(output, "")
 }
 
+fn to_json<T: serde::Serialize>(value: &T) -> Json {
+    serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
+}
+
 fn events_json(events: &[ResponsesAPIStreamingResponse]) -> Vec<Json> {
-    match json_value::to_json(&events).unwrap() {
+    match to_json(&events) {
         Json::List(items) => items,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
             panic!("serialized events are a list")
@@ -386,7 +393,7 @@ struct BrokenResponse;
 impl HasModelDumpJson for BrokenResponse {
     fn model_dump_json(&self) -> Result<String, SyntheticEventsError> {
         let source = serde_json::from_str::<u8>("not a number").unwrap_err();
-        Err(SyntheticEventsError::Payload { source })
+        Err(SyntheticEventsError::Payload(source))
     }
 }
 

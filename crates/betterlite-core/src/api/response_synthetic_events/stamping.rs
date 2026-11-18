@@ -6,7 +6,6 @@ use serde_json::Number;
 use std::str::FromStr;
 
 use super::billing::{UsageSource, usage_as_model};
-use super::json_value;
 
 pub enum CostTarget<'a> {
     Model(&'a ResponsesApiResponse),
@@ -41,7 +40,7 @@ pub fn stamp_usage_cost<C: ResponsesCostCalculator>(
         return;
     }
     if let Some(usage) = response.usage.as_mut() {
-        usage.cost = Some(cost_value(cost));
+        usage.cost = Some(normalized_cost(cost));
     }
 }
 
@@ -58,7 +57,9 @@ pub fn stamp_object_usage_cost<C: ResponsesCostCalculator>(
     let Some(usage) = usage_as_model(Some(UsageSource::Value(usage_value))) else {
         return;
     };
-    let Ok(usage_json) = json_value::to_json(&usage) else {
+    let Ok(usage_json) =
+        serde_json::to_value(&usage).and_then(|value| serde_json::from_value::<Json>(value))
+    else {
         return;
     };
     object.insert("usage".to_owned(), usage_json);
@@ -77,12 +78,16 @@ pub fn stamp_object_usage_cost<C: ResponsesCostCalculator>(
     }
 }
 
-fn cost_value(cost: Decimal) -> Json {
+fn normalized_cost(cost: Decimal) -> Decimal {
     let mut normalized = cost.normalize();
     if normalized.scale() == 0 {
         normalized.rescale(1);
     }
-    match Number::from_str(&normalized.to_string()) {
+    normalized
+}
+
+fn cost_value(cost: Decimal) -> Json {
+    match Number::from_str(&normalized_cost(cost).to_string()) {
         Ok(number) => Json::Number(number),
         Err(_error) => Json::Null,
     }
