@@ -1,8 +1,10 @@
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::request_body::DecodedJson;
+use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::api::request_form::{RequestFormBody, RequestFormError, get_request_body};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::projection::form_fields_value;
 use super::{Input, failure};
@@ -16,7 +18,7 @@ pub(super) fn body_dispatch(input: &Input) -> HelperResult {
     ) {
         Ok(RequestFormBody::Empty) => Ok(json!({})),
         Ok(RequestFormBody::Json(DecodedJson::Parsed { body, .. })) => {
-            Ok(Value::Object(body.into_iter().collect()))
+            serde_json::to_value(Json::Object(body)).or_value_error()
         }
         Ok(RequestFormBody::Json(DecodedJson::Unreadable(_error))) => Ok(json!({})),
         Ok(RequestFormBody::Form(fields)) => form_fields_value(&fields),
