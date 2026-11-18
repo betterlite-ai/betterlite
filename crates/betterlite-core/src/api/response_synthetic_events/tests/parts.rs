@@ -237,6 +237,28 @@ fn huge_reasoning_text_part_exceeds_the_event_budget() {
 }
 
 #[test]
+fn part_done_annotations_follow_python_truthiness() {
+    let parts = concat!(
+        r#"{"type":"output_text","text":"hi","annotations":null},"#,
+        r#"{"type":"output_text","text":"ho","annotations":[{"type":"url_citation","url":"https://example.test"}]}"#
+    );
+    let output = format!(
+        r#"[{{"type":"message","id":"msg_a","status":"completed","role":"assistant","content":[{parts}]}}]"#
+    );
+    let mut transformed = response(&output);
+    let items = build(&mut transformed, None, 5);
+    let done_parts = events_of(&items, "response.content_part.done");
+    assert_eq!(
+        at(done_parts[0], &["part", "annotations"]),
+        &Json::List(Vec::new())
+    );
+    assert_eq!(
+        at(done_parts[1], &["part", "annotations"]),
+        &json(r#"[{"type":"url_citation","url":"https://example.test"}]"#)
+    );
+}
+
+#[test]
 fn indices_preserve_source_positions() {
     let output = concat!(
         r#"[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"f","arguments":"{}","status":"completed"},"#,
