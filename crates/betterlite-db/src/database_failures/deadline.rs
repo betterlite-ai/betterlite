@@ -2,6 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use tokio::task::{AbortHandle, JoinError, JoinHandle};
+use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
@@ -29,7 +30,7 @@ pub enum DbLookupError {
     #[error(transparent)]
     Deadline(#[from] DbLookupDeadlineExceeded),
     #[error(transparent)]
-    Elapsed(#[from] tokio::time::error::Elapsed),
+    Elapsed(#[from] Elapsed),
     #[error(transparent)]
     Task(JoinError),
 }
@@ -138,7 +139,7 @@ enum LookupBudget {
 }
 
 fn lookup_budget(deadline_seconds: f64) -> LookupBudget {
-    if deadline_seconds <= 0.0 {
+    if deadline_seconds <= 0.0_f64 {
         return LookupBudget::Within(Duration::ZERO);
     }
     match Duration::try_from_secs_f64(deadline_seconds) {
@@ -168,7 +169,7 @@ pub(super) fn deadline_text(value: f64) -> String {
     let significant = digits.trim_end_matches('0');
     let body = if significant.is_empty() {
         "0".to_owned()
-    } else if (-4..6).contains(&exponent) {
+    } else if (-4_i32..6_i32).contains(&exponent) {
         fixed_notation(significant, exponent)
     } else {
         scientific_notation(significant, exponent)

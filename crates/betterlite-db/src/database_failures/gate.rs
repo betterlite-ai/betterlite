@@ -34,6 +34,7 @@ impl LoopBoundSemaphore {
         }
         let semaphore = Arc::new(Semaphore::new(self.value));
         *slot = Some((runtime_id, Arc::clone(&semaphore)));
+        drop(slot);
         Some(semaphore)
     }
 }
