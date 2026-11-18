@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Annotated, Final, Literal, NoReturn, TypeVar
+from typing import Annotated, Final, Literal, NoReturn
+from unittest.mock import patch
 
 from litellm import constants as litellm_constants
 from litellm.caching.caching import DualCache
@@ -43,7 +44,6 @@ MODEL_LIST: Final[list[dict[str, JsonValue]]] = [
         "model_info": {"id": "dep-a"},
     }
 ]
-SleepResult = TypeVar("SleepResult")
 
 
 class Step(Strict):
@@ -146,8 +146,8 @@ class SleepInterruptedError(BaseException):
         self.delay: float = delay
 
 
-# asyncio.sleep's second parameter is generic in the result; a fake that never returns fits every result type
-async def recorded_sleep(delay: float, result: SleepResult | None = None) -> NoReturn:
+# asyncio.sleep's second parameter carries any JSON value through to the caller; this fake never returns
+async def recorded_sleep(delay: float, result: JsonValue = None) -> NoReturn:
     _ = result
     raise SleepInterruptedError(delay)
 
@@ -235,14 +235,14 @@ def tracked(index: int, _step: Step, context: Context) -> Observation:
 
 
 async def sleep_once(strategy: LowestTPMLoggingHandler_v2, interval: float | None) -> float:
-    original = asyncio.sleep
-    asyncio.sleep = recorded_sleep
-    try:
-        await strategy.periodic_sync_in_memory_spend_with_redis(default_sync_interval=interval)
-    except SleepInterruptedError as error:
-        return error.delay
-    finally:
-        asyncio.sleep = original
+    # patch.object replaces the sleep for the loop without an assignment asyncio.sleep's overloaded type rejects
+    with patch.object(asyncio, "sleep", recorded_sleep):
+        try:
+            await strategy.periodic_sync_in_memory_spend_with_redis(
+                default_sync_interval=interval
+            )
+        except SleepInterruptedError as error:
+            return error.delay
     raise ProbeError("invalid_request", "the periodic sync returned without sleeping")
 
 
