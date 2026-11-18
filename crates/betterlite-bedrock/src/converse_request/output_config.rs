@@ -10,6 +10,7 @@ use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::Json;
+use indexmap::IndexMap;
 
 use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::bedrock_model_capabilities::effort::normalize_opus_effort;
@@ -132,30 +133,28 @@ where
         Some(value) => Some(transcode(value)?),
         None => None,
     };
-    let name = match fields.get(NAME_FIELD) {
-        Some(ParamValue::Text(text)) => Some(text.as_str()),
-        Some(
-            ParamValue::Null
-            | ParamValue::Bool(_)
-            | ParamValue::Number(_)
-            | ParamValue::List(_)
-            | ParamValue::Mapping(_),
-        )
-        | None => None,
-    };
-    let description = match fields.get(DESCRIPTION_FIELD) {
-        Some(ParamValue::Text(text)) => Some(text.as_str()),
-        Some(
-            ParamValue::Null
-            | ParamValue::Bool(_)
-            | ParamValue::Number(_)
-            | ParamValue::List(_)
-            | ParamValue::Mapping(_),
-        )
-        | None => None,
-    };
+    let name = text_field(fields, NAME_FIELD);
+    let description = text_field(fields, DESCRIPTION_FIELD);
     let created = create_output_config(schema.as_ref(), name, description);
     Ok(Some(transcode(&created)?))
+}
+
+// Only a text member names the output; any other value is the same as an absent one.
+fn text_field<'fields>(
+    fields: &'fields IndexMap<String, ParamValue>,
+    key: &str,
+) -> Option<&'fields str> {
+    match fields.get(key) {
+        Some(ParamValue::Text(text)) => Some(text.as_str()),
+        Some(
+            ParamValue::Null
+            | ParamValue::Bool(_)
+            | ParamValue::Number(_)
+            | ParamValue::List(_)
+            | ParamValue::Mapping(_),
+        )
+        | None => None,
+    }
 }
 
 async fn apply_anthropic<Source, Transport, Lookup>(

@@ -68,36 +68,14 @@ where
     Transport: ModelInfoClient,
     Lookup: ModelInfoLookup,
 {
-    let already_normalized = optional_params
-        .shift_remove(OUTPUT_CONFIG_MARKER)
-        .is_some_and(|value| carries_value(&value));
-    let exceptions =
-        RequestRecordProjection::filter_parameters(record_of(optional_params)?, MAX_DEPTH);
-    let mut inference_params = safe_copy(&params_of(&exceptions)?)?;
-    inference_params.shift_remove(JSON_MODE_FIELD);
-
+    let (mut inference_params, already_normalized) = filter_options(optional_params)?;
     let (anthropic_output, format_candidate) =
         split_output_config(inference_params.shift_remove(OUTPUT_CONFIG_FIELD));
     let request_metadata = metadata_value(inference_params.shift_remove(REQUEST_METADATA_FIELD))?;
     let native = inference_params
         .shift_remove(OUTPUT_CONFIG_CAMEL_FIELD)
         .filter(|value| !matches!(value, ParamValue::Null));
-
-    let mut additional = split_additional(&mut inference_params);
-    merge_parallel_config(request, &mut additional)?;
-    additional.shift_remove(PARALLEL_TOOL_CALLS_FIELD);
-    additional.shift_remove(CLIENT_METADATA_FIELD);
-    additional.extend(handle_top_k_value(
-        request.model,
-        &mut inference_params,
-        request.drop,
-        request.catalogs,
-    )?);
-    let internal =
-        RequestRecordProjection::filter_internal(record_of(&additional)?, &BTreeSet::new());
-    additional = params_of(&RequestRecordProjection::filter_parameters(
-        internal, MAX_DEPTH,
-    ))?;
+    let mut additional = request_additional(request, &mut inference_params)?;
 
     let decision = output_config::decide(
         &OutputRequest {
@@ -125,6 +103,45 @@ where
         request_metadata,
         output_config: decision.output_config,
     })
+}
+
+// The caller's own options lose only the internal marker; the returned copy takes every other key.
+fn filter_options(
+    optional_params: &mut ParamMap,
+) -> Result<(ParamMap, bool), ConverseRequestError> {
+    let already_normalized = optional_params
+        .shift_remove(OUTPUT_CONFIG_MARKER)
+        .is_some_and(|value| carries_value(&value));
+    let exceptions =
+        RequestRecordProjection::filter_parameters(record_of(optional_params)?, MAX_DEPTH);
+    let mut params = safe_copy(&params_of(&exceptions)?)?;
+    params.shift_remove(JSON_MODE_FIELD);
+    Ok((params, already_normalized))
+}
+
+fn request_additional<Lookup>(
+    request: &PrepareRequest<'_, Lookup>,
+    inference_params: &mut ParamMap,
+) -> Result<ParamMap, ConverseRequestError>
+where
+    Lookup: ModelInfoLookup,
+{
+    let mut additional = split_additional(inference_params);
+    merge_parallel_config(request, &mut additional)?;
+    additional.shift_remove(PARALLEL_TOOL_CALLS_FIELD);
+    additional.shift_remove(CLIENT_METADATA_FIELD);
+    additional.extend(handle_top_k_value(
+        request.model,
+        inference_params,
+        request.drop,
+        request.catalogs,
+    )?);
+    let internal =
+        RequestRecordProjection::filter_internal(record_of(&additional)?, &BTreeSet::new());
+    additional = params_of(&RequestRecordProjection::filter_parameters(
+        internal, MAX_DEPTH,
+    ))?;
+    Ok(additional)
 }
 
 // The supported fields keep the caller's order; everything else is a request field.

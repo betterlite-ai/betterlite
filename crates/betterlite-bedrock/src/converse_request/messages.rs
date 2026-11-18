@@ -8,8 +8,12 @@ use betterlite_prompts::bedrock_tools::capabilities::CachePointSupport;
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
 use betterlite_prompts::message_content::Message;
 
+use crate::converse_messages::TransformedMessages;
 use crate::converse_params::wire::transcode;
 use crate::converse_request::error::ConverseRequestError;
+use crate::converse_request::{ConverseMedia, ConverseRequestInput};
+
+const USER_CONTINUE_FIELD: &str = "user_continue_message";
 
 pub(super) struct MessagesRequest<'request, R, Ids> {
     pub(super) model: &'request str,
@@ -48,4 +52,36 @@ where
         modify_params: request.modify_params,
     };
     Ok(converse_messages(&projected, &conversion, request.new_id).await?)
+}
+
+// The continue message leaves litellm_params once and joins the conversion; the caller keeps every other key.
+pub(super) async fn convert_messages<Lookup, R, Ids>(
+    input: &mut ConverseRequestInput<'_, Lookup>,
+    transformed: &TransformedMessages,
+    mut names: ToolNameMap,
+    cache_points: CachePointSupport,
+    media: &ConverseMedia<'_, R, Ids>,
+) -> Result<Vec<Json>, ConverseRequestError>
+where
+    R: Resolve,
+    Ids: Fn() -> String + Sync,
+{
+    let user_continue_message = input
+        .litellm_params
+        .as_mut()
+        .and_then(|params| params.shift_remove(USER_CONTINUE_FIELD))
+        .filter(|value| !matches!(value, Json::Null));
+    convert(
+        &MessagesRequest {
+            model: input.model,
+            messages: &transformed.messages,
+            user_continue_message,
+            cache_points,
+            modify_params: input.settings.modify_params,
+            remote: media.remote,
+            new_id: media.new_id,
+        },
+        &mut names,
+    )
+    .await
 }

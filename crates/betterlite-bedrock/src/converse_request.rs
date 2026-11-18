@@ -21,7 +21,7 @@ use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::bedrock_images::remote::RemoteImage;
-use betterlite_prompts::bedrock_tools::capabilities::{BedrockToolCapabilities, CachePointSupport};
+use betterlite_prompts::bedrock_tools::capabilities::CachePointSupport;
 use betterlite_prompts::message_content::Message;
 use serde::Serialize;
 
@@ -29,18 +29,15 @@ use crate::bedrock_model_capabilities::ModelInfoLookup;
 use crate::bedrock_model_capabilities::catalog_flags::{
     accepts_cache_points, is_claude_4_5_on_bedrock,
 };
-use crate::bedrock_model_capabilities::strict_tools::converse_supports_strict_tools;
-use crate::converse_messages::{ConverseMessagePolicy, transform_messages};
-use crate::converse_request::body::PrepareRequest;
+use crate::converse_messages::{ConverseMessagePolicy, TransformedMessages, transform_messages};
+use crate::converse_request::body::{PrepareRequest, PreparedRequest};
 use crate::converse_request::convert::request_params;
 use crate::converse_request::error::ConverseRequestError;
-use crate::converse_request::tools::ToolsRequest;
 use crate::event_frames::beta::BetaHeader;
 use crate::model_routes::ParamMap;
 use crate::request_policy::{BedrockRequestPolicy, Params};
 
 const DROP_PARAMS_FIELD: &str = "drop_params";
-const USER_CONTINUE_FIELD: &str = "user_continue_message";
 
 // The Converse body fields every request carries, in the order the pinned module inserts them.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -120,14 +117,43 @@ where
     R: Resolve,
     Ids: Fn() -> String + Sync,
 {
-    let call_drop = input
-        .litellm_params
-        .as_ref()
-        .is_some_and(|params| matches!(params.get(DROP_PARAMS_FIELD), Some(Json::Bool(true))));
-    let drop = DropParams {
-        global: input.settings.global_drop,
-        call: call_drop,
-    };
+    let (transformed, mut prepared, cache_points) =
+        prepare_options(&mut input, environment).await?;
+    let outcome =
+        tools::process_tools(&mut input, &mut prepared, cache_points, environment).await?;
+    let converted = messages::convert_messages(
+        &mut input,
+        &transformed,
+        outcome.names,
+        cache_points,
+        &media,
+    )
+    .await?;
+    let mut common = assembly::common(prepared, transformed.system, outcome.tool_config)?;
+    metadata::resolve(
+        input.settings.request_metadata,
+        &input
+            .litellm_params
+            .as_deref()
+            .map_or_else(Params::new, request_params),
+        &mut common,
+    );
+    Ok(ConverseRequestBody {
+        messages: converted,
+        common,
+    })
+}
+
+// The message policies run on the caller's options before the option preparation reads them.
+async fn prepare_options<Source, Transport, Lookup>(
+    input: &mut ConverseRequestInput<'_, Lookup>,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<(TransformedMessages, PreparedRequest, CachePointSupport), ConverseRequestError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
     let transformed = transform_messages(
         input.messages,
         &mut *input.optional_params,
@@ -150,10 +176,10 @@ where
         input.catalogs,
     )
     .await?;
-    let mut prepared = body::prepare(
+    let prepared = body::prepare(
         &PrepareRequest {
             model: input.model,
-            drop,
+            drop: request_drop(input.litellm_params.as_deref(), input.settings.global_drop),
             model_cost: input.model_cost,
             lookup: input.lookup,
             packaged: input.packaged,
@@ -163,64 +189,15 @@ where
         environment,
     )
     .await?;
-
     let cache_points = cache_point_support(input.model, input.model_cost)?;
-    let capabilities = BedrockToolCapabilities {
-        cache_points,
-        supports_strict_tools: converse_supports_strict_tools(
-            input.model,
-            input.lookup,
-            input.packaged,
-        )
-        .await,
-    };
-    let outcome = tools::process(
-        &ToolsRequest {
-            model: input.model,
-            model_cost: input.model_cost,
-            headers: input.headers,
-            capabilities,
-            accepts_cache_points: !matches!(cache_points, CachePointSupport::Unsupported),
-        },
-        &mut prepared,
-        input.litellm_params.as_deref_mut(),
-        environment,
-        input.catalogs,
-    )
-    .await?;
+    Ok((transformed, prepared, cache_points))
+}
 
-    let user_continue_message = input
-        .litellm_params
-        .as_mut()
-        .and_then(|params| params.shift_remove(USER_CONTINUE_FIELD))
-        .filter(|value| !matches!(value, Json::Null));
-    let mut names = outcome.names;
-    let converted = messages::convert(
-        &messages::MessagesRequest {
-            model: input.model,
-            messages: &transformed.messages,
-            user_continue_message,
-            cache_points,
-            modify_params: input.settings.modify_params,
-            remote: media.remote,
-            new_id: media.new_id,
-        },
-        &mut names,
-    )
-    .await?;
-    let mut common = assembly::common(prepared, transformed.system, outcome.tool_config)?;
-    metadata::resolve(
-        input.settings.request_metadata,
-        &input
-            .litellm_params
-            .as_deref()
-            .map_or_else(Params::new, request_params),
-        &mut common,
-    );
-    Ok(ConverseRequestBody {
-        messages: converted,
-        common,
-    })
+// A call-level drop_params only joins the global setting; the two are never merged into one flag.
+fn request_drop(litellm_params: Option<&Object>, global: bool) -> DropParams {
+    let requested = litellm_params.and_then(|params| params.get(DROP_PARAMS_FIELD));
+    let call = matches!(requested, Some(Json::Bool(true)));
+    DropParams { global, call }
 }
 
 // An unsupported model places no cache points; Claude 4.5 on Bedrock additionally keeps a ttl.

@@ -6,15 +6,18 @@ use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::CapabilityEnvironment;
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_prompts::arguments::json::{Json, Object};
-use betterlite_prompts::bedrock_tools::capabilities::BedrockToolCapabilities;
+use betterlite_prompts::bedrock_tools::capabilities::{BedrockToolCapabilities, CachePointSupport};
 use betterlite_prompts::bedrock_tools::name::ToolNameMap;
 use betterlite_prompts::cache_defaults::attribution::record_gateway_injection;
 use indexmap::IndexMap;
 
 use crate::bedrock_converse_tools_beta::{ToolsAndBetaRequest, process_tools_and_beta};
+use crate::bedrock_model_capabilities::ModelInfoLookup;
+use crate::bedrock_model_capabilities::strict_tools::converse_supports_strict_tools;
 use crate::converse_params::cache_point::build_cache_point_block;
 use crate::converse_params::merge::drop_tool_choice_type;
 use crate::converse_params::wire::transcode;
+use crate::converse_request::ConverseRequestInput;
 use crate::converse_request::body::PreparedRequest;
 use crate::converse_request::error::ConverseRequestError;
 use crate::event_frames::beta::BetaHeader;
@@ -84,6 +87,42 @@ where
     })
 }
 
+pub(super) async fn process_tools<Source, Transport, Lookup>(
+    input: &mut ConverseRequestInput<'_, Lookup>,
+    prepared: &mut PreparedRequest,
+    cache_points: CachePointSupport,
+    environment: &mut CapabilityEnvironment<'_, Source, Transport>,
+) -> Result<ToolsOutcome, ConverseRequestError>
+where
+    Source: DynamicMetadataSource,
+    Transport: ModelInfoClient,
+    Lookup: ModelInfoLookup,
+{
+    let capabilities = BedrockToolCapabilities {
+        cache_points,
+        supports_strict_tools: converse_supports_strict_tools(
+            input.model,
+            input.lookup,
+            input.packaged,
+        )
+        .await,
+    };
+    process(
+        &ToolsRequest {
+            model: input.model,
+            model_cost: input.model_cost,
+            headers: input.headers,
+            capabilities,
+            accepts_cache_points: !matches!(cache_points, CachePointSupport::Unsupported),
+        },
+        prepared,
+        input.litellm_params.as_deref_mut(),
+        environment,
+        input.catalogs,
+    )
+    .await
+}
+
 fn original_tools(value: Option<ParamValue>) -> Result<Vec<DecisionsJson>, ConverseRequestError> {
     match value {
         None | Some(ParamValue::Null) => Ok(Vec::new()),
@@ -126,37 +165,53 @@ fn append_injection(
     if points.is_empty() || tools.is_empty() || !request.accepts_cache_points {
         return Ok(());
     }
-    for point in &points {
+    place_point(request, &points, tools, litellm_params)
+}
+
+fn place_point(
+    request: &ToolsRequest<'_>,
+    points: &[ParamValue],
+    tools: &mut Vec<Json>,
+    mut litellm_params: Option<&mut Object>,
+) -> Result<(), ConverseRequestError> {
+    for point in points {
         let ParamValue::Mapping(fields) = point else {
             return Err(ConverseRequestError::FieldType {
                 field: CACHE_INJECTION_FIELD,
                 expected: "a list of objects",
             });
         };
-        let is_tool_config = matches!(
-            fields.get(LOCATION_FIELD),
-            Some(ParamValue::Text(location)) if location == TOOL_CONFIG_LOCATION
-        );
-        if !is_tool_config {
+        if !tool_config_point(fields) {
             continue;
         }
-        let block = build_cache_point_block(
-            fields.get(CONTROL_FIELD),
-            Some(request.model),
-            request.model_cost,
-        )?;
-        let block: Json = transcode(&block)?;
-        tools.push(Json::Object(Object::from_iter([(
-            CACHE_POINT_FIELD.to_owned(),
-            block,
-        )])));
+        tools.push(cache_point(fields.get(CONTROL_FIELD), request)?);
         // Spend attribution credits only a breakpoint this stage actually placed.
-        if let Some(params) = litellm_params {
+        if let Some(params) = litellm_params.take() {
             record_gateway_injection(params, 1, false);
         }
         break;
     }
     Ok(())
+}
+
+fn tool_config_point(fields: &IndexMap<String, ParamValue>) -> bool {
+    matches!(
+        fields.get(LOCATION_FIELD),
+        Some(ParamValue::Text(location)) if location == TOOL_CONFIG_LOCATION
+    )
+}
+
+// B683's block for one breakpoint, wrapped as the cachePoint member the tool list carries.
+fn cache_point(
+    control: Option<&ParamValue>,
+    request: &ToolsRequest<'_>,
+) -> Result<Json, ConverseRequestError> {
+    let block = build_cache_point_block(control, Some(request.model), request.model_cost)?;
+    let block: Json = transcode(&block)?;
+    Ok(Json::Object(Object::from_iter([(
+        CACHE_POINT_FIELD.to_owned(),
+        block,
+    )])))
 }
 
 // Without converted tools no toolConfig exists, and tool_choice stays in inferenceConfig.
