@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use rust_decimal::Decimal;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
 
 use super::postgres::{row_count, service, user_alias, user_column_text};
@@ -390,6 +390,75 @@ async fn insert_payload_token_is_redacted() {
     let captured = logs.contents();
     assert!(!captured.contains("sk-raw-field"), "{captured}");
     assert!(captured.contains(&hash_token("sk-secret")), "{captured}");
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn key_update_overrides_data_token_with_lookup() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    writes
+        .insert_key(&SecretString::from("sk-abc"), &key_write("first"))
+        .await
+        .unwrap();
+    let stored = hash_token("sk-abc");
+    let result = writes
+        .update_key(
+            &SecretString::from("sk-abc"),
+            &key_column(
+                TokenColumn::Token,
+                TokenValue::Text(String::from("sk-other")),
+            ),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result.token.expose_secret(), &stored);
+    let data = result.data.expect("updated row");
+    assert!(
+        data.token
+            .as_ref()
+            .is_some_and(|token| token.expose_secret() == &stored)
+    );
+    assert_eq!(
+        row_count(&client, "LiteLLM_VerificationToken", "token", &stored).await,
+        1
+    );
+    assert_eq!(
+        row_count(&client, "LiteLLM_VerificationToken", "token", "sk-other").await,
+        0
+    );
+    harness.close().await;
+}
+
+#[tokio::test]
+async fn key_update_stamps_settings_updated_at_over_explicit() {
+    let harness = Harness::start().await;
+    let client = harness.client().await;
+    let ports = Ports::new(Duration::ZERO);
+    let writes = service(&client, &ports);
+    writes
+        .insert_key(&SecretString::from("sk-abc"), &key_write("first"))
+        .await
+        .unwrap();
+    let explicit = Timestamp::Aware((fixed_now() - chrono::Duration::hours(1)).fixed_offset());
+    let data = writes
+        .update_key(
+            &SecretString::from("sk-abc"),
+            &key_column(
+                TokenColumn::SettingsUpdatedAt,
+                TokenValue::Timestamp(explicit),
+            ),
+        )
+        .await
+        .unwrap()
+        .data
+        .expect("updated row");
+    assert_eq!(
+        data.settings_updated_at.map(Timestamp::utc),
+        Some(fixed_now())
+    );
     harness.close().await;
 }
 
