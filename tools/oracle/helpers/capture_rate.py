@@ -96,7 +96,7 @@ def report_json(record: ReportRecord) -> dict[str, JsonValue]:
             "capture_rate": day["capture_rate"],
         }
         days.append(entry)
-    fields: dict[str, JsonValue] = {
+    return {
         "provider": record["provider"],
         "start_date": record["start_date"],
         "end_date": record["end_date"],
@@ -107,7 +107,6 @@ def report_json(record: ReportRecord) -> dict[str, JsonValue]:
         "below_threshold": record["below_threshold"],
         "days": days,
     }
-    return fields
 
 
 def answer(case: Call) -> JsonValue:
