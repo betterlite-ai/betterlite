@@ -84,7 +84,25 @@ impl EmbeddingIoError {
         match self {
             Self::Provider { status, .. } => Some(*status),
             Self::Handler(class) => Some(class.metadata().status_code),
-            _ => None,
+            Self::Auth(_)
+            | Self::Region { .. }
+            | Self::RegionWorkerStart { .. }
+            | Self::RegionWorkerUnavailable
+            | Self::Secret(_)
+            | Self::Credential(_)
+            | Self::Header(_)
+            | Self::Encode { .. }
+            | Self::Decode { .. }
+            | Self::Params { .. }
+            | Self::Transport(_)
+            | Self::Titan(_)
+            | Self::Nova(_)
+            | Self::Marengo(_)
+            | Self::Unrepresentable
+            | Self::MalformedEmbedding
+            | Self::NotANumber
+            | Self::IndexOverflow
+            | Self::Unmapped { .. } => None,
         }
     }
 }
