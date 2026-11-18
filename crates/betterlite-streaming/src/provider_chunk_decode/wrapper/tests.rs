@@ -109,6 +109,23 @@ fn usage_chunk_when_asked() {
     assert!(!late.hidden_params.contains_key("usage"));
 }
 
+fn late_chunk_keeps_totals() {
+    let mut wrapper = StreamWrapper::new("text-completion-openai", setup(None));
+    wrapper
+        .push(&chunk(CONTENT))
+        .expect("the content chunk shapes")
+        .expect("the content chunk goes out");
+    closing_chunk(&mut wrapper);
+    let late = wrapper
+        .push(&chunk(CONTENT))
+        .expect("the late chunk shapes")
+        .expect("the late chunk goes out");
+    assert!(
+        late.hidden_params.contains_key("usage"),
+        "a chunk after the closing chunk keeps the running totals"
+    );
+}
+
 fn silent_usage_chunk_dropped() {
     let options = StreamOptions {
         include_usage: true,
@@ -123,6 +140,7 @@ fn silent_usage_chunk_dropped() {
 #[rstest]
 #[case::closing_finish_reason(closing_finish_reason)]
 #[case::usage_chunk_when_asked(usage_chunk_when_asked)]
+#[case::late_chunk_keeps_totals(late_chunk_keeps_totals)]
 #[case::silent_usage_chunk_dropped(silent_usage_chunk_dropped)]
 fn stream_wrapper_cases(#[case] scenario: fn()) {
     scenario();
