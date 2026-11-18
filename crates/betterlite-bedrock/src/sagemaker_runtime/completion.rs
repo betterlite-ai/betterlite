@@ -15,7 +15,6 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use serde_json::Value;
-use uuid::Uuid;
 
 use crate::sagemaker_stream::events::EventState;
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerEvents};
@@ -26,7 +25,7 @@ use super::endpoint::{self, EndpointRequest, ParamMap};
 use super::error::RuntimeError;
 use super::runtime::{
     ChunkStream, PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport,
-    body_text, epoch_seconds, stream_error, wire_error,
+    epoch_seconds, stream_error, unreadable_reply, wire_error,
 };
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
@@ -116,7 +115,7 @@ where
             reply: &reply,
             model: call.model,
             prompt: &prompt,
-            id: format!("chatcmpl-{}", Uuid::new_v4()),
+            id: format!("chatcmpl-{}", (self.identifier)()),
             created: epoch_seconds(self.clock.now()),
         };
         Ok(transform_response(&input, self.counter)?)
@@ -184,15 +183,6 @@ fn inputs(body: &IndexMap<String, Plain>) -> String {
     match body.get("inputs") {
         Some(Plain::Text(text)) => text.clone(),
         _ => String::new(),
-    }
-}
-
-// the transform_response json() call that runs before any field is read
-fn unreadable_reply(body: &[u8], source: &serde_json::Error) -> SagemakerError {
-    SagemakerError {
-        status_code: 500,
-        message: format!("the reply is not JSON: {source}: {}", body_text(body)),
-        headers: None,
     }
 }
 

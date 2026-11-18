@@ -17,6 +17,7 @@ use futures_util::{Stream, StreamExt as _};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use indexmap::IndexMap;
 use url::Url;
+use uuid::Uuid;
 
 use crate::aws_settings::pop_aws_auth_params;
 use crate::aws_settings::sources::Credentials;
@@ -108,6 +109,8 @@ pub struct SagemakerRuntime<'deps, T, C> {
     pub clock: SharedTimeSource,
     pub counter: &'deps (dyn TextTokenCounter + Sync),
     pub timeout: Duration,
+    // the reply ids come from here instead of a random source read inside the call
+    pub identifier: fn() -> Uuid,
 }
 
 // the signed call as it goes on the wire, with the body kept as an object for the log
@@ -226,6 +229,15 @@ pub fn reply_headers(headers: &HeaderMap) -> Headers {
                 .map(|text| (name.as_str().to_owned(), text.to_owned()))
         })
         .collect()
+}
+
+// the transform_response json() call that runs before any field is read
+pub fn unreadable_reply(body: &[u8], source: &serde_json::Error) -> SagemakerError {
+    SagemakerError {
+        status_code: 500,
+        message: format!("the reply is not JSON: {source}: {}", body_text(body)),
+        headers: None,
+    }
 }
 
 // LiteLLM reads response.text, which decodes any bytes; betterlite refuses bytes that are not UTF-8

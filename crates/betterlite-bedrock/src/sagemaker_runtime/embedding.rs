@@ -16,7 +16,8 @@ use super::convert;
 use super::endpoint::{self, EndpointRequest, ParamMap};
 use super::error::RuntimeError;
 use super::runtime::{
-    PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport, body_text, wire_error,
+    PreparedCall, SagemakerCredentials, SagemakerRuntime, SagemakerTransport, unreadable_reply,
+    wire_error,
 };
 use super::{CONTENT_TYPE, JSON_CONTENT_TYPE};
 
@@ -107,8 +108,10 @@ where
         if !(200..300).contains(&response.status) {
             return Err(wire_error(response.status, &response.body));
         }
+        let reply: Value = serde_json::from_slice(&response.body)
+            .map_err(|source| unreadable_reply(&response.body, &source))?;
         match sagemaker_embedding::get_model_config(call.model) {
-            EmbeddingConfig::Voyage => voyage_reply(&response.body),
+            EmbeddingConfig::Voyage => Ok(EmbeddingReply::Voyage(project_response(&reply))),
             EmbeddingConfig::HuggingFace => Ok(EmbeddingReply::HuggingFace(
                 hf::transform_response(&response.body, MOCK_STATUS, call.model, &prepared.body)
                     .map_err(SagemakerError::from)?,
@@ -149,16 +152,6 @@ fn voyage_body(model: &str, input: &EmbeddingInput, optional_params: &Body) -> B
     body.insert(String::from("model"), Json::Text(model.to_owned()));
     body.extend(optional_params.clone());
     body
-}
-
-// VoyageError carries the status of the mock response, which is 200 whatever the body held
-fn voyage_reply(body: &[u8]) -> Result<EmbeddingReply, SagemakerError> {
-    let parsed: Value = serde_json::from_slice(body).map_err(|_source| SagemakerError {
-        status_code: MOCK_STATUS,
-        message: body_text(body),
-        headers: None,
-    })?;
-    Ok(EmbeddingReply::Voyage(project_response(&parsed)))
 }
 
 mod tests;

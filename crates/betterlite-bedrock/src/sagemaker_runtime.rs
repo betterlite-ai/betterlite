@@ -3,8 +3,8 @@ pub mod completion;
 mod convert;
 pub mod embedding;
 pub mod endpoint;
-mod error;
-mod runtime;
+pub mod error;
+pub mod runtime;
 
 mod tests;
 

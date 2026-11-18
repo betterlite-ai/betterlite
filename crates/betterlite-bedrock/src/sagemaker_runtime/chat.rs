@@ -1,16 +1,18 @@
 use std::collections::VecDeque;
 
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::chat_content::ChatContentError;
 use betterlite_openai::compatible_wire::{
     CompatibleReply, ReplyOptions, decode_compatible_chat_reply,
 };
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::sagemaker_chat::nova;
 use betterlite_openai::sagemaker_chat::request::{self as chat_request, TransformInput};
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_prompts::arguments::json::{Json, Object as Body};
 use bytes::BytesMut;
 use http::HeaderMap;
-use secrecy::SecretString;
 
 use crate::sagemaker_stream::events::EventState;
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerEvents};
@@ -27,6 +29,12 @@ use super::runtime::{
 
 const BASE_URL_FIELD: &str = "sagemaker_base_url";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChatVariant {
+    Chat,
+    Nova,
+}
+
 pub struct ChatCall<'call> {
     pub model: &'call str,
     pub messages: &'call [ChatMessage],
@@ -34,8 +42,7 @@ pub struct ChatCall<'call> {
     pub signing: &'call ParamMap,
     pub headers: Headers,
     pub hf_model_name: Option<&'call str>,
-    pub api_key: Option<&'call SecretString>,
-    pub configured_bearer: Option<&'call SecretString>,
+    pub variant: ChatVariant,
     pub stream: bool,
     pub reply: ReplyOptions<'call>,
 }
@@ -54,12 +61,13 @@ where
             base_url,
             stream: call.stream,
         });
-        let body = chat_request::transform_request(&TransformInput {
+        let input = TransformInput {
             model: call.model,
             messages: call.messages,
             optional_params: call.optional_params,
             hf_model_name: call.hf_model_name,
-        })?;
+        };
+        let body = request_body(call.variant, &input)?;
         let body_json = convert::prompt_body(&body);
         let headers =
             chat_request::validate_environment(call.headers.clone(), call.optional_params);
@@ -75,8 +83,8 @@ where
                 request_data: &body_json,
                 api_base: &url,
                 model: Some(call.model),
-                api_key: call.api_key,
-                configured_bearer: call.configured_bearer,
+                api_key: None,
+                configured_bearer: None,
                 region_inputs: self.environment.inputs(),
                 now: self.clock.now(),
             },
@@ -102,8 +110,8 @@ where
     C: SagemakerCredentials,
 {
     pub async fn chat(&self, call: &ChatCall<'_>) -> Result<CompatibleReply, SagemakerError> {
-        let prepared = self.prepare_chat(call).await?;
-        let response = self.transport.send(self.outbound(&prepared)?).await?;
+        let request = self.chat_request(call).await?;
+        let response = self.transport.send(request).await?;
         read_chat_response(
             response.status,
             &response.body,
@@ -116,11 +124,8 @@ where
         &self,
         call: &ChatCall<'_>,
     ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
-        let prepared = self.prepare_chat(call).await?;
-        let (status, chunks) = self
-            .transport
-            .open_stream(self.outbound(&prepared)?)
-            .await?;
+        let request = self.chat_request(call).await?;
+        let (status, chunks) = self.transport.open_stream(request).await?;
         if status != 200 {
             return Err(stream_error(status, chunks).await);
         }
@@ -140,14 +145,36 @@ where
     }
 }
 
+impl<T, C> SagemakerRuntime<'_, T, C>
+where
+    C: SagemakerCredentials,
+{
+    async fn chat_request(&self, call: &ChatCall<'_>) -> Result<OutboundRequest, RuntimeError> {
+        let prepared = self.prepare_chat(call).await?;
+        let request = self.outbound(&prepared)?;
+        Ok(request)
+    }
+}
+
+// SagemakerNovaConfig.transform_request builds the chat body and drops the model field
+fn request_body(
+    variant: ChatVariant,
+    input: &TransformInput<'_>,
+) -> Result<Body, ChatContentError> {
+    match variant {
+        ChatVariant::Chat => chat_request::transform_request(input),
+        ChatVariant::Nova => nova::transform_request(input),
+    }
+}
+
 fn read_chat_response(
     status: u16,
     body: &[u8],
     headers: &HeaderMap,
     options: &ReplyOptions<'_>,
 ) -> Result<CompatibleReply, SagemakerError> {
-    // the shared handler's httpx client raises from 4xx on, so a 2xx or 3xx reply is read as the answer
-    if status >= 400 {
+    // only a 2xx reply is the answer; a redirect without a Location reaches here as a wire error
+    if !(200..300).contains(&status) {
         return Err(SagemakerError {
             status_code: status,
             message: body_text(body),

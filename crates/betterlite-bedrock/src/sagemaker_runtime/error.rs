@@ -1,9 +1,11 @@
+use aws_credential_types::provider::error::CredentialsError;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chat_content::ChatContentError;
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_openai::sagemaker_completion::request::RequestError;
 use thiserror::Error;
 
+use crate::aws_settings::sources::SourceError;
 use crate::credentials::error::CredentialError;
 use crate::sagemaker_embedding::cohere::{CohereReplyError, CohereRequestError};
 use crate::sagemaker_embedding::hf::HfReplyError;
@@ -43,17 +45,47 @@ impl From<RuntimeError> for SagemakerError {
         if let RuntimeError::Sagemaker(inner) = error {
             return inner;
         }
-        // LiteLLM reports a failed call that never reached HTTP with a synthesized 500
-        let status_code = match &error {
-            RuntimeError::HfReply(inner) => inner.status_code(),
-            _ => 500,
+        // botocore raises NoCredentialsError, which LiteLLM's exception mapping turns into a 400 BadRequest
+        let missing = match &error {
+            RuntimeError::Credential(inner) => not_loaded(inner),
+            RuntimeError::Signing(SigningError::NoCredentials) => true,
+            RuntimeError::Signing(SigningError::Credential(inner)) => not_loaded(inner),
+            _ => false,
+        };
+        // LiteLLM reports a failed call that never reached HTTP with a synthesized 500, and a timeout with a 408
+        let status_code = if missing {
+            400
+        } else {
+            match &error {
+                RuntimeError::HfReply(inner) => inner.status_code(),
+                RuntimeError::Transport(
+                    TransportError::ConnectTimeout(_) | TransportError::Deadline(_),
+                ) => 408,
+                _ => 500,
+            }
+        };
+        let message = if missing {
+            String::from("Unable to locate credentials")
+        } else {
+            error.to_string()
         };
         Self {
             status_code,
-            message: error.to_string(),
+            message,
             headers: None,
         }
     }
+}
+
+fn not_loaded(error: &CredentialError) -> bool {
+    matches!(
+        error,
+        CredentialError::MissingCredentials
+            | CredentialError::Source(
+                SourceError::MissingProvider
+                    | SourceError::Provider(CredentialsError::CredentialsNotLoaded(_))
+            )
+    )
 }
 
 mod tests;

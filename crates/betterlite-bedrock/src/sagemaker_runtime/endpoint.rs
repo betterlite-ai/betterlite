@@ -3,8 +3,10 @@ use std::collections::BTreeMap;
 use betterlite_context::aws_partition::get_aws_partition;
 use serde_json::value::RawValue;
 
+use crate::aws_endpoints::error::AwsEndpointError;
+use crate::aws_endpoints::region::non_llm_region_name;
 use crate::signing::error::SigningError;
-use crate::signing::target::{RegionInputs, resolve_region};
+use crate::signing::target::RegionInputs;
 
 pub type ParamMap = BTreeMap<String, Box<RawValue>>;
 
@@ -53,14 +55,20 @@ pub fn runtime_url(request: &EndpointRequest<'_>) -> String {
     )
 }
 
-// Completion skips model-ARN and boto3-session region sources.
+// Completion and embedding take aws_region_name, then AWS_REGION, then AWS_REGION_NAME, then us-west-2.
 pub fn call_region(params: &ParamMap, inputs: RegionInputs<'_>) -> Result<String, SigningError> {
-    resolve_region(
-        params,
-        None,
-        RegionInputs {
-            session_region: None,
-            ..inputs
-        },
+    let explicit = params.get("aws_region_name").map_or(Ok(None), |raw| {
+        serde_json::from_str::<Option<String>>(raw.get()).map_err(|source| {
+            SigningError::Endpoint(AwsEndpointError::Field {
+                field: "aws_region_name",
+                source,
+            })
+        })
+    })?;
+    non_llm_region_name(
+        explicit.as_deref(),
+        inputs.environment_region_name,
+        inputs.environment_region,
     )
+    .map_err(SigningError::Endpoint)
 }
