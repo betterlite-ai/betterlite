@@ -28,8 +28,14 @@ pub const DEFAULT_PREFIX: &str = "focus_exports";
 #[serde(transparent)]
 pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+// Boxed: Sections holds each Settings by value, and config snapshots live inside futures
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Settings {
+    pub inner: Box<Inner>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inner {
     pub provider: String,
     pub export_format: String,
     pub frequency: String,
@@ -38,7 +44,7 @@ pub struct Settings {
     pub prefix: String,
 }
 
-impl Default for Settings {
+impl Default for Inner {
     fn default() -> Self {
         Self {
             provider: DEFAULT_PROVIDER.to_owned(),
@@ -69,15 +75,17 @@ impl Settings {
             )
         });
         Ok(Self {
-            provider: lowercased(lookup, PROVIDER_VARIABLE, DEFAULT_PROVIDER),
-            export_format: lowercased(lookup, FORMAT_VARIABLE, DEFAULT_EXPORT_FORMAT),
-            frequency: lowercased(lookup, FREQUENCY_VARIABLE, DEFAULT_FREQUENCY),
-            cron_offset_minute,
-            interval_seconds,
-            prefix: match lookup.lookup(PREFIX_VARIABLE) {
-                Some(value) if !value.is_empty() => value,
-                _ => DEFAULT_PREFIX.to_owned(),
-            },
+            inner: Box::new(Inner {
+                provider: lowercased(lookup, PROVIDER_VARIABLE, DEFAULT_PROVIDER),
+                export_format: lowercased(lookup, FORMAT_VARIABLE, DEFAULT_EXPORT_FORMAT),
+                frequency: lowercased(lookup, FREQUENCY_VARIABLE, DEFAULT_FREQUENCY),
+                cron_offset_minute,
+                interval_seconds,
+                prefix: match lookup.lookup(PREFIX_VARIABLE) {
+                    Some(value) if !value.is_empty() => value,
+                    _ => DEFAULT_PREFIX.to_owned(),
+                },
+            }),
         })
     }
 }

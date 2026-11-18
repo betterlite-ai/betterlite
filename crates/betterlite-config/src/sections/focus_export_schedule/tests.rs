@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::mem::size_of;
 
 use crate::sections::Section as _;
-use crate::sections::focus_export_schedule::{Raw, Settings};
+use crate::sections::focus_export_schedule::{Inner, Raw, Settings};
 
 fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
     entries
@@ -16,12 +17,14 @@ fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 fn an_empty_environment_gives_the_documented_defaults() {
     let settings = Settings::from_environment(&BTreeMap::new()).unwrap();
     let documented = Settings {
-        provider: "s3".to_owned(),
-        export_format: "parquet".to_owned(),
-        frequency: "hourly".to_owned(),
-        cron_offset_minute: 5,
-        interval_seconds: None,
-        prefix: "focus_exports".to_owned(),
+        inner: Box::new(Inner {
+            provider: "s3".to_owned(),
+            export_format: "parquet".to_owned(),
+            frequency: "hourly".to_owned(),
+            cron_offset_minute: 5,
+            interval_seconds: None,
+            prefix: "focus_exports".to_owned(),
+        }),
     };
     assert_eq!(settings, documented);
     assert_eq!(Settings::default(), documented);
@@ -38,12 +41,12 @@ fn the_environment_supplies_every_field_in_lowercase() {
         ("FOCUS_PREFIX", "Exports"),
     ]))
     .unwrap();
-    assert_eq!(settings.provider, "vantage");
-    assert_eq!(settings.export_format, "csv");
-    assert_eq!(settings.frequency, "daily");
-    assert_eq!(settings.cron_offset_minute, 17);
-    assert_eq!(settings.interval_seconds, Some(120));
-    assert_eq!(settings.prefix, "Exports");
+    assert_eq!(settings.inner.provider, "vantage");
+    assert_eq!(settings.inner.export_format, "csv");
+    assert_eq!(settings.inner.frequency, "daily");
+    assert_eq!(settings.inner.cron_offset_minute, 17);
+    assert_eq!(settings.inner.interval_seconds, Some(120));
+    assert_eq!(settings.inner.prefix, "Exports");
 }
 
 #[test]
@@ -74,7 +77,12 @@ fn an_invalid_cron_offset_names_the_variable() {
 fn an_invalid_interval_reads_as_unset() {
     let settings =
         Settings::from_environment(&environment(&[("FOCUS_INTERVAL_SECONDS", "half")])).unwrap();
-    assert_eq!(settings.interval_seconds, None);
+    assert_eq!(settings.inner.interval_seconds, None);
+}
+
+#[test]
+fn the_settings_stay_behind_one_pointer() {
+    assert_eq!(size_of::<Settings>(), size_of::<usize>());
 }
 
 #[test]
@@ -83,5 +91,5 @@ fn the_section_converts_the_environment() {
     let settings = raw
         .convert(&environment(&[("FOCUS_PREFIX", "chosen")]))
         .unwrap();
-    assert_eq!(settings.prefix, "chosen");
+    assert_eq!(settings.inner.prefix, "chosen");
 }

@@ -126,23 +126,26 @@ impl<F: FocusEngineFactory> FocusLogger<F> {
     {
         let settings = focus_export_schedule::Settings::from_environment(environment)?;
         Ok(Self {
-            provider: params.provider.unwrap_or(settings.provider).to_lowercase(),
+            provider: params
+                .provider
+                .unwrap_or(settings.inner.provider)
+                .to_lowercase(),
             export_format: params
                 .export_format
-                .unwrap_or(settings.export_format)
+                .unwrap_or(settings.inner.export_format)
                 .to_lowercase(),
             frequency: params
                 .frequency
-                .unwrap_or(settings.frequency)
+                .unwrap_or(settings.inner.frequency)
                 .to_lowercase(),
             cron_offset_minute: params
                 .cron_offset_minute
-                .unwrap_or(settings.cron_offset_minute),
+                .unwrap_or(settings.inner.cron_offset_minute),
             interval_seconds: params
                 .interval_seconds
-                .or(settings.interval_seconds)
+                .or(settings.inner.interval_seconds)
                 .unwrap_or(focus_export_schedule::DEFAULT_INTERVAL_SECONDS),
-            prefix: params.prefix.unwrap_or(settings.prefix),
+            prefix: params.prefix.unwrap_or(settings.inner.prefix),
             destination_config: params.destination_config.unwrap_or_default(),
             pod_lock: deps.pod_lock,
             clock: deps.clock,
