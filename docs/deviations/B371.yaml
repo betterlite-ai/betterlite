@@ -1,0 +1,66 @@
+task: B371
+deviations:
+  - what: >-
+      With a shared store configured, the synchronous pre_call_check in betterlite decides its rpm
+      boundary on the local window count after the increment, exactly like the async path. LiteLLM
+      calls DualCache.increment_cache, which increments the in-memory cache and then the redis cache
+      and returns the redis reply, so its sync check rejects whenever the shared count passes the
+      limit even if this instance counted fewer requests.
+    why: >-
+      Betterlite's increments ride the batched delta queue B304 owns, so the sync facade has no redis
+      reply to compare against without opening a second write-through path. The shared count still
+      reaches the local counter on the next sync, so a request admitted over the shared limit is the
+      only one this instance admits before the merge catches up.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L155-L156
+  - what: >-
+      The sync pre-call increment, the sync success increment and the async success increment update
+      the local counters and the batched queue, and reach the shared store on the next sync flush.
+      LiteLLM's pre_call_check increment_cache call, log_success_event increment_cache call and
+      async_log_success_event async_increment_cache_post_call write the in-memory and the redis cache
+      in the same call, so a redis read right after a callback already sees the increment.
+    why: >-
+      The batched queue is the only write path a strategy here has; a dedicated write-through would
+      bypass B304's bound, merge and single flush. The stored totals converge on the next sync, so a
+      reader between the callback and the flush sees a lower shared total than LiteLLM shows.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L284-L285
+  - what: >-
+      A routing_strategy_args.ttl that is negative, fractional or otherwise not a whole number of
+      seconds is a config load error that names router_settings.routing_strategy_args.ttl. LiteLLM
+      validates the argument with pydantic's int field, which accepts a negative int and rejects a
+      fractional one.
+    why: >-
+      Betterlite holds the ttl as a positive Duration, and a shared load error that names the field
+      beats a timer whose sign silently changes what the window means.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L33-L34
+kept_bugs:
+  - what: >-
+      A pre-call that the post-increment check rejects keeps the increment it already made, so a
+      rejected request still counts against the window and against the shared store.
+    why: >-
+      The increment is the reservation that keeps concurrent requests from all passing the same last
+      slot; a working multi-instance setup relies on it, and rolling it back would need a decrement
+      the batched queue does not have. The pre-call boundary tests and the concurrent-last-slot case
+      pin the count after a rejection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L229-L230
+  - what: >-
+      A sync flush whose store pipeline fails discards the whole queued batch, so those increments
+      never reach the shared store. Betterlite logs a warning and drops the same batch.
+    why: >-
+      Replaying after a partial failure can double-count, and LiteLLM's discard is what a working
+      setup has always had; the pre-call-cache-failure case pins that both sides keep counting
+      locally after the failure and converge from the store's next accepted increment.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L164-L166
+  - what: >-
+      A sync tick with nothing queued returns before it reads store values back into memory, so the
+      read-back merge only runs on a tick that pushed at least one increment.
+    why: >-
+      The early return is in the function LiteLLM runs every interval; the pre-call-cache-failure and
+      success-counted-once cases tick an empty queue on both sides and depend on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/base_routing_strategy.py#L221-L223
+  - what: >-
+      Both success callbacks swallow every error, a missing standard logging object included, so a
+      malformed payload never fails the request that already succeeded.
+    why: >-
+      A success callback runs after the provider answered; a working setup relies on it not turning a
+      successful call into an error. Betterlite logs a warning and returns without a count.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/lowest_tpm_rpm_v2.py#L289-L292
