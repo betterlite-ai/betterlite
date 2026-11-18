@@ -1,12 +1,11 @@
 #![cfg(test)]
 
-pub(crate) mod logging {
-    include!("../budget_reset_policy/tests/logging.rs");
-}
-// the reset job's log capture, shared rather than copied: a second `mod` load of it is clippy::duplicate_mod
+pub(crate) mod logging;
+// the reset job's log capture, shared rather than copied: tests/logging.rs includes budget_reset_policy's fixture, and a second `mod` load of that file is clippy::duplicate_mod
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -235,34 +234,46 @@ impl FakeRows {
 impl LinkedRows for FakeRows {
     type Failure = String;
 
-    async fn team_memberships(
+    fn team_memberships(
         &self,
         _budget_ids: &[String],
-    ) -> Result<Vec<TeamMembershipRow>, String> {
-        self.team_memberships.clone()
+    ) -> impl Future<Output = Result<Vec<TeamMembershipRow>, String>> + Send {
+        ready(self.team_memberships.clone())
     }
 
-    async fn keys(&self, _budget_ids: &[String]) -> Result<Vec<KeyRow>, String> {
-        self.keys.clone()
-    }
-
-    async fn organizations(&self, _budget_ids: &[String]) -> Result<Vec<OrganizationRow>, String> {
-        self.organizations.clone()
-    }
-
-    async fn tags(&self, _budget_ids: &[String]) -> Result<Vec<TagRow>, String> {
-        self.tags.clone()
-    }
-
-    async fn model_access_groups(
+    fn keys(
         &self,
         _budget_ids: &[String],
-    ) -> Result<Vec<ModelAccessGroupRow>, String> {
-        self.model_access_groups.clone()
+    ) -> impl Future<Output = Result<Vec<KeyRow>, String>> + Send {
+        ready(self.keys.clone())
     }
 
-    async fn projects(&self, _budget_ids: &[String]) -> Result<Vec<ProjectRow>, String> {
-        self.projects.clone()
+    fn organizations(
+        &self,
+        _budget_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<OrganizationRow>, String>> + Send {
+        ready(self.organizations.clone())
+    }
+
+    fn tags(
+        &self,
+        _budget_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<TagRow>, String>> + Send {
+        ready(self.tags.clone())
+    }
+
+    fn model_access_groups(
+        &self,
+        _budget_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<ModelAccessGroupRow>, String>> + Send {
+        ready(self.model_access_groups.clone())
+    }
+
+    fn projects(
+        &self,
+        _budget_ids: &[String],
+    ) -> impl Future<Output = Result<Vec<ProjectRow>, String>> + Send {
+        ready(self.projects.clone())
     }
 }
 

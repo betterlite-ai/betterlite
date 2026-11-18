@@ -76,7 +76,7 @@ async fn cache_failures_do_not_undo_the_commit() {
         None,
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.expect("a failed cache invalidation still commits the reset");
     assert_eq!(
         spend_of(
             &database.client,
