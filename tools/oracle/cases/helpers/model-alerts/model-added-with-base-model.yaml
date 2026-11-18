@@ -1,0 +1,19 @@
+kind: helper
+name: model-alerts-model-added-with-base-model
+call:
+  b4030:
+    function: model_added
+    model_name: my-model
+    litellm_model_name: litellm_name
+    base_model: other/base
+    model_info:
+      litellm_name:
+        max_tokens: 128
+      other/base:
+        max_tokens: 4096
+        input_cost_per_token: 1.63e-06
+        output_cost_per_token: 2.0e-06
+        litellm_provider: openai
+    proxy_base_url: "https://proxy.example"
+env: {PROXY_BASE_URL: "https://proxy.example"}
+compare: {ignore: []}

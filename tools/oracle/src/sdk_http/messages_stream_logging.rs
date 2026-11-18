@@ -10,7 +10,7 @@ use tracing::subscriber::set_default;
 
 use super::error::SdkHttpError;
 use super::messages_header_stream::outbound;
-use super::result::SdkResult;
+use super::result::kinds::SdkResult;
 use super::vector_query_embedding::outbound_client;
 use call::MessagesStreamLoggingCall;
 use outcome::StreamLoggingRun;
