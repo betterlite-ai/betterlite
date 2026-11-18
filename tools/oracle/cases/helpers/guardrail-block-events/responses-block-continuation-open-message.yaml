@@ -1,0 +1,19 @@
+kind: helper
+name: responses-block-continuation-open-message
+call:
+  b3673:
+    operation: responses_continuation
+    message: blocked
+    model: gpt-test
+    original_response: null
+    stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
+    events:
+      - {type: response.created, response: {id: resp_stream, model: gpt-stream}}
+      - {type: response.output_item.added, output_index: 0, item: {type: message, id: msg_open, role: assistant}}
+      - {type: response.content_part.added, item_id: msg_open, output_index: 0, content_index: 0, part: {type: output_text, text: ""}}
+      - {type: response.output_text.delta, item_id: msg_open, output_index: 0, content_index: 0, delta: partial}
+    chunks: []
+    status_code: 400
+    message_id: msg_00000000-0000-0000-0000-000000000001
+env: {}
+compare: {ignore: []}

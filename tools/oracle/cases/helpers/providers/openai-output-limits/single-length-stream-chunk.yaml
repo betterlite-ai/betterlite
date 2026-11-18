@@ -1,0 +1,9 @@
+kind: helper
+name: output-limits-single-length-stream-chunk
+call:
+  openai_output_limits:
+    build:
+      data: {"model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "hello world"}], "stream": true}
+      headers: {"x-request-id": "req-stream-chunk"}
+env: {}
+compare: {ignore: []}
