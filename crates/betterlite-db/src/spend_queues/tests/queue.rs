@@ -31,11 +31,14 @@ async fn adds_keep_fifo_order_and_a_drain_takes_at_most_the_flush_count() {
 
 #[tokio::test]
 async fn a_nonpositive_flush_count_drains_nothing() {
-    let queue = BoundedUpdateQueue::new(8, 100, 0).unwrap();
+    let zero = BoundedUpdateQueue::new(8, 100, 0).unwrap();
     let observer = NoEnqueueObserver;
-    queue.add(1_i64, &observer).await;
-    assert!(queue.drain().is_empty());
-    assert!(queue.drain().is_empty());
+    zero.add(1_i64, &observer).await;
+    assert!(zero.drain().is_empty());
+
+    let negative = BoundedUpdateQueue::new(8, 100, -1).unwrap();
+    negative.add(1_i64, &observer).await;
+    assert!(negative.drain().is_empty());
 }
 
 #[tokio::test]
