@@ -37,7 +37,9 @@ where
     latch_fallback(drive, &item);
     let pending = pending(drive);
     restamp(drive, &mut item);
-    if strip_usage(drive, &item) {
+    if drive.session.setup.strip.0
+        && matches!(&item, StreamItem::Chunk(chunk) if is_usage_artifact(chunk))
+    {
         return output(drive, Output::Raw(Vec::new()), pending);
     }
     if let Some(state) = drive.session.error_state.as_mut() {
@@ -110,16 +112,6 @@ where
         is_model_router: setup.is_model_router,
     };
     drive.mismatch = Flag(restamp_chunk_model(item, &input, drive.mismatch.0));
-}
-
-fn strip_usage<Key>(drive: &Drive<Key>, item: &StreamItem) -> bool
-where
-    Key: Sync,
-{
-    if !drive.session.setup.strip.0 {
-        return false;
-    }
-    matches!(item, StreamItem::Chunk(chunk) if is_usage_artifact(chunk))
 }
 
 fn fallback_event<Key>(drive: &Drive<Key>) -> String
