@@ -58,6 +58,19 @@ fn an_enabled_non_reasoning_tier_leads_the_ladder() {
     );
 }
 
+// LiteLLM skips the flag check for a custom set, so a custom tier may spell the non-reasoning name itself
+#[test]
+fn a_custom_set_may_name_the_non_reasoning_tier_with_the_flag_off() {
+    let config = section::Config {
+        tier_definitions: ladder(&[("NON_REASONING", Some("relays")), ("DEEP", Some("hard"))]),
+        tier_models: pools(&[("NON_REASONING", single("mini")), ("DEEP", single("deep"))]),
+        ..blank()
+    };
+    let set = checked(config, &llm("DEEP"));
+    assert!(!set.non_reasoning);
+    assert_eq!(names(&set), ["NON_REASONING", "DEEP"]);
+}
+
 #[test]
 fn a_custom_ladder_keeps_the_definition_order() {
     let set = checked(custom(), &llm("ECO"));
