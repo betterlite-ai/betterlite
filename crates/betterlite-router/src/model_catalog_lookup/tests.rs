@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_config::sections::deployment_catalog::GroupAlias;
@@ -219,23 +221,10 @@ fn lookup_group() {
         .name_index
         .insert("empty".to_owned(), Vec::new());
     let lookup = snapshot.lookup();
-    let first = lookup
-        .get_deployment_by_model_group_name("gpt-4o")
-        .unwrap()
-        .unwrap();
+    let first = lookup.deployment_by_group_name("gpt-4o").unwrap().unwrap();
     assert_eq!(first.id(), Some("a"));
-    assert!(
-        lookup
-            .get_deployment_by_model_group_name("empty")
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        lookup
-            .get_deployment_by_model_group_name("claude")
-            .unwrap()
-            .is_none()
-    );
+    assert!(lookup.deployment_by_group_name("empty").unwrap().is_none());
+    assert!(lookup.deployment_by_group_name("claude").unwrap().is_none());
 }
 
 #[test]
@@ -302,24 +291,14 @@ fn unknown_id() {
     assert!(lookup.get_deployment("missing").unwrap().is_none());
     assert!(
         lookup
-            .get_deployment_by_model_group_name("missing")
+            .deployment_by_group_name("missing")
             .unwrap()
             .is_none()
     );
-    assert!(!lookup.has_model_id("missing"));
-    assert!(lookup.has_model_id("a"));
     assert!(lookup.get_model_ids(Some("missing"), false).is_empty());
-    assert_eq!(lookup.resolve_model_name_from_model_id(None).unwrap(), None);
-    assert_eq!(
-        lookup.resolve_model_name_from_model_id(Some("")).unwrap(),
-        None
-    );
-    assert_eq!(
-        lookup
-            .resolve_model_name_from_model_id(Some("missing"))
-            .unwrap(),
-        None
-    );
+    assert_eq!(lookup.resolve_model_name(None).unwrap(), None);
+    assert_eq!(lookup.resolve_model_name(Some("")).unwrap(), None);
+    assert_eq!(lookup.resolve_model_name(Some("missing")).unwrap(), None);
 }
 
 #[test]
@@ -365,27 +344,18 @@ fn alias_model_list() {
     )
     .with_alias("broken", AliasTarget::Unsupported(Json::Bool(false)));
     let lookup = snapshot.lookup();
-    let direct = lookup
-        .get_model_list_from_model_alias(Some("sonnet"))
-        .unwrap();
+    let direct = lookup.list_from_alias(Some("sonnet")).unwrap();
     assert_eq!(ids(&direct), vec!["a"]);
     assert_eq!(names(&direct), vec!["sonnet"]);
     assert_eq!(
         snapshot.catalog.models.first().unwrap().model_name,
         "gpt-4o"
     );
-    let hidden = lookup
-        .get_model_list_from_model_alias(Some("secret"))
-        .unwrap();
+    let hidden = lookup.list_from_alias(Some("secret")).unwrap();
     assert_eq!(ids(&hidden), vec!["c"]);
-    let everything = lookup.get_model_list_from_model_alias(None).unwrap();
+    let everything = lookup.list_from_alias(None).unwrap();
     assert_eq!(ids(&everything), vec!["a"]);
-    assert!(
-        lookup
-            .get_model_list_from_model_alias(Some("missing"))
-            .unwrap()
-            .is_empty()
-    );
+    assert!(lookup.list_from_alias(Some("missing")).unwrap().is_empty());
 }
 
 #[test]
@@ -416,9 +386,7 @@ fn malformed_aliases() {
         },
     );
     assert!(matches!(
-        no_hidden
-            .lookup()
-            .get_model_list_from_model_alias(Some("partial")),
+        no_hidden.lookup().list_from_alias(Some("partial")),
         Err(LookupError::MalformedAlias {
             field: "hidden",
             ..
@@ -432,7 +400,7 @@ fn malformed_aliases() {
         },
     );
     assert!(matches!(
-        no_model.lookup().get_model_list_from_model_alias(None),
+        no_model.lookup().list_from_alias(None),
         Err(LookupError::MalformedAlias { field: "model", .. })
     ));
 }
@@ -589,7 +557,7 @@ fn stale_map_precondition() {
         Err(LookupError::InvalidRow { index: 99 })
     ));
     assert!(matches!(
-        lookup.get_deployment_by_model_group_name("kept"),
+        lookup.deployment_by_group_name("kept"),
         Err(LookupError::InvalidRow { index: 7 })
     ));
 }
@@ -666,26 +634,19 @@ fn resolve_model_id() {
     ]);
     let lookup = snapshot.lookup();
     assert_eq!(
-        lookup
-            .resolve_model_name_from_model_id(Some("shared"))
-            .unwrap(),
+        lookup.resolve_model_name(Some("shared")).unwrap(),
         Some("shared".to_owned())
     );
     assert_eq!(
-        lookup.resolve_model_name_from_model_id(Some("p")).unwrap(),
+        lookup.resolve_model_name(Some("p")).unwrap(),
         Some("provider-model".to_owned())
     );
     assert_eq!(
-        lookup.resolve_model_name_from_model_id(Some("id")).unwrap(),
+        lookup.resolve_model_name(Some("id")).unwrap(),
         Some("id".to_owned())
     );
-    assert_eq!(lookup.resolve_model_name_from_model_id(None).unwrap(), None);
-    assert_eq!(
-        lookup
-            .resolve_model_name_from_model_id(Some("nope"))
-            .unwrap(),
-        None
-    );
+    assert_eq!(lookup.resolve_model_name(None).unwrap(), None);
+    assert_eq!(lookup.resolve_model_name(Some("nope")).unwrap(), None);
 }
 
 #[test]
@@ -698,20 +659,16 @@ fn resolve_provider_model() {
     let lookup = snapshot.lookup();
     assert_eq!(
         lookup
-            .resolve_model_name_from_model_id(Some("veo-2.0-generate-001"))
+            .resolve_model_name(Some("veo-2.0-generate-001"))
             .unwrap(),
         Some("suffix-id".to_owned())
     );
     assert_eq!(
-        lookup
-            .resolve_model_name_from_model_id(Some("seq-9"))
-            .unwrap(),
+        lookup.resolve_model_name(Some("seq-9")).unwrap(),
         Some("colon-model".to_owned())
     );
     assert_eq!(
-        lookup
-            .resolve_model_name_from_model_id(Some("plain"))
-            .unwrap(),
+        lookup.resolve_model_name(Some("plain")).unwrap(),
         Some("exact-model".to_owned())
     );
 }
@@ -727,21 +684,15 @@ fn candidate_routes() {
     .with_group("chat", &["claude"]);
     let lookup = snapshot.lookup();
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("sonnet", None)
-            .unwrap(),
+        lookup.candidate_model_ids("sonnet", None).unwrap(),
         BTreeSet::from(["a".to_owned(), "b".to_owned()])
     );
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("chat", None)
-            .unwrap(),
+        lookup.candidate_model_ids("chat", None).unwrap(),
         BTreeSet::from(["c".to_owned()])
     );
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("gpt-4o", None)
-            .unwrap(),
+        lookup.candidate_model_ids("gpt-4o", None).unwrap(),
         BTreeSet::from(["a".to_owned(), "b".to_owned()])
     );
 }
@@ -766,14 +717,12 @@ fn candidate_item_alias() {
         );
     let lookup = snapshot.lookup();
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("sonnet", None)
-            .unwrap(),
+        lookup.candidate_model_ids("sonnet", None).unwrap(),
         BTreeSet::from(["a".to_owned()])
     );
     assert!(
         lookup
-            .get_candidate_model_ids_for_route("blank", None)
+            .candidate_model_ids("blank", None)
             .unwrap()
             .is_empty()
     );
@@ -788,27 +737,23 @@ fn candidate_route_fallbacks() {
     ]);
     let lookup = snapshot.lookup();
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("openai/gpt-4o", None)
-            .unwrap(),
+        lookup.candidate_model_ids("openai/gpt-4o", None).unwrap(),
         BTreeSet::from(["w".to_owned()])
     );
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("numbers", None)
-            .unwrap(),
+        lookup.candidate_model_ids("numbers", None).unwrap(),
         BTreeSet::from(["42".to_owned()])
     );
     assert!(
         lookup
-            .get_candidate_model_ids_for_route("weird", None)
+            .candidate_model_ids("weird", None)
             .unwrap()
             .is_empty()
     );
     // A team with no owned row of this name falls through to the patterns, it does not stop the route.
     assert_eq!(
         lookup
-            .get_candidate_model_ids_for_route("openai/gpt-4o", Some("t1"))
+            .candidate_model_ids("openai/gpt-4o", Some("t1"))
             .unwrap(),
         BTreeSet::from(["w".to_owned()])
     );
@@ -825,14 +770,12 @@ fn candidate_empty_group_stops_the_route() {
     let lookup = snapshot.lookup();
     assert!(
         lookup
-            .get_candidate_model_ids_for_route("empty", None)
+            .candidate_model_ids("empty", None)
             .unwrap()
             .is_empty()
     );
     assert_eq!(
-        lookup
-            .get_candidate_model_ids_for_route("other", None)
-            .unwrap(),
+        lookup.candidate_model_ids("other", None).unwrap(),
         BTreeSet::from(["star".to_owned()])
     );
 }
@@ -929,20 +872,139 @@ fn alias_routing_group() {
     .with_group("chat", &["gpt-4o", "claude"])
     .with_alias("assistant", AliasTarget::Name("chat".to_owned()));
     let lookup = snapshot.lookup();
-    let aliased = lookup
-        .get_model_list_from_model_alias(Some("assistant"))
-        .unwrap();
+    let aliased = lookup.list_from_alias(Some("assistant")).unwrap();
     assert_eq!(ids(&aliased), vec!["a", "c"]);
     assert_eq!(names(&aliased), vec!["assistant", "assistant"]);
-    assert!(
-        lookup
-            .get_model_list_from_model_alias(Some("chat"))
-            .unwrap()
-            .is_empty()
-    );
+    assert!(lookup.list_from_alias(Some("chat")).unwrap().is_empty());
     let group_rows = lookup.get_model_list(Some("chat"), None).unwrap();
     assert_eq!(ids(&group_rows), vec!["a", "c"]);
     assert_eq!(names(&group_rows), vec!["chat", "chat"]);
     let everything = lookup.get_model_list(None, None).unwrap();
     assert_eq!(ids(&everything), vec!["a", "c", "a", "c", "a", "c"]);
+}
+
+// A wildcard row and a later team row that share an id stay two deployments: the wildcard result reads the row the pattern registered, not the row the id map last indexed.
+#[test]
+fn duplicate_wildcard_id() {
+    let snapshot = Snapshot::new(&[
+        deployment("openai/*", "openai/*", object(vec![("id", text("x"))])),
+        deployment(
+            "team-secret",
+            "azure/secret",
+            object(vec![("id", text("x")), ("team_id", text("t1"))]),
+        ),
+    ]);
+    let lookup = snapshot.lookup();
+    let rows = lookup
+        .get_model_list(Some("openai/gpt-4o"), Some("t1"))
+        .unwrap();
+    assert_eq!(ids(&rows), vec!["x"]);
+    assert_eq!(names(&rows), vec!["openai/gpt-4o"]);
+    assert_eq!(provider_models(&rows), vec!["openai/gpt-4o"]);
+    assert_eq!(rows[0].model_info.get("team_id"), None);
+    assert_eq!(
+        lookup
+            .candidate_model_ids("openai/gpt-4o", Some("t1"))
+            .unwrap(),
+        BTreeSet::from(["x".to_owned()])
+    );
+}
+
+// Two rows registered under one pattern keep their own model_info and their registration order when they share an id.
+#[test]
+fn duplicate_pattern_row() {
+    let snapshot = Snapshot::new(&[
+        deployment(
+            "openai/*",
+            "openai/*",
+            object(vec![("id", text("x")), ("team_id", text("t9"))]),
+        ),
+        deployment("openai/*", "openai/*", object(vec![("id", text("x"))])),
+    ]);
+    let rows = snapshot
+        .lookup()
+        .get_model_list(Some("openai/gpt-4o"), None)
+        .unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].model_info.get("team_id"), Some(&text("t9")));
+    assert_eq!(rows[1].model_info.get("team_id"), None);
+}
+
+// Each wildcard candidate resolves to the row registered with its id, not to a row at the candidate's position.
+#[test]
+fn pattern_row_by_id() {
+    let snapshot = Snapshot::new(&[
+        deployment("openai/*", "openai/*", object(vec![("id", text("a"))])),
+        deployment("openai/*", "openai/second", object(vec![("id", text("b"))])),
+    ]);
+    let rows = snapshot
+        .lookup()
+        .get_model_list(Some("openai/gpt-4o"), None)
+        .unwrap();
+    assert_eq!(ids(&rows), vec!["a", "b"]);
+}
+
+// Removing the indexed row of a duplicated id drops the map entry, so the unfiltered ids are empty while the surviving row still answers its own model name.
+#[test]
+fn removed_duplicate_id() {
+    let mut catalog = catalog(&[
+        named("gpt-4o", "dup", "openai/gpt-4o"),
+        named("claude", "dup", "anthropic/claude"),
+    ]);
+    assert!(catalog.remove("dup", 1).is_some());
+    let snapshot = Snapshot {
+        catalog,
+        aliases: AliasMap::new(),
+        groups: RoutingGroupIndex::default(),
+        provider: Box::new(|_: &str| None),
+    };
+    let lookup = snapshot.lookup();
+    assert!(lookup.get_model_ids(None, false).is_empty());
+    assert_eq!(
+        lookup.get_model_ids(Some("gpt-4o"), false),
+        vec![text("dup")]
+    );
+}
+
+// The unfiltered ids follow the id map, not the model list: a rebuild in the other order keeps the map's answer.
+#[test]
+fn reordered_rebuild() {
+    let mut catalog = catalog(&[
+        named("gpt-4o", "aaa", "openai/gpt-4o"),
+        named("claude", "zzz", "anthropic/claude"),
+    ]);
+    let reversed = vec![
+        named("claude", "zzz", "anthropic/claude"),
+        named("gpt-4o", "aaa", "openai/gpt-4o"),
+    ];
+    let slots = Slots::filled();
+    rebuild_ids(&mut catalog, reversed, &slots.caches()).unwrap();
+    assert_eq!(names(&catalog.models), vec!["claude", "gpt-4o"]);
+    let snapshot = Snapshot {
+        catalog,
+        aliases: AliasMap::new(),
+        groups: RoutingGroupIndex::default(),
+        provider: Box::new(|_: &str| None),
+    };
+    assert_eq!(
+        snapshot.lookup().get_model_ids(None, false),
+        vec![text("aaa"), text("zzz")]
+    );
+}
+
+// A row that lost its model_info.id after the router built it is skipped by both id listings, while its id stays a literal map member for the name resolution.
+#[test]
+fn missing_row_id() {
+    let mut snapshot = Snapshot::new(&[
+        named("gpt-4o", "a", "openai/gpt-4o"),
+        named("gpt-4o", "b", "azure/gpt-4o"),
+    ]);
+    snapshot.catalog.models[0].model_info.remove("id");
+    let lookup = snapshot.lookup();
+    assert_eq!(lookup.get_model_ids(Some("gpt-4o"), false), vec![text("b")]);
+    assert_eq!(lookup.get_model_ids(None, false), vec![text("b")]);
+    assert_eq!(
+        lookup.resolve_model_name(Some("a")).unwrap(),
+        Some("gpt-4o".to_owned())
+    );
 }
