@@ -167,7 +167,8 @@ def tool_answer(scenario: ToolScenario) -> JsonValue:
 
 def usage_answer(scenario: UsageScenario) -> JsonValue:
     items = chunk_items(scenario["responses_so_far"])
-    response = AnthropicMessagesHandler._build_streaming_usage_response(items, scenario["request_data"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L325
+    request_data = scenario["request_data"]
+    response = AnthropicMessagesHandler._build_streaming_usage_response(items, request_data)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/guardrail_translation/handler.py#L311-L325
     if response is None:
         return {"response": None}
     projected = RESPONSE.validate_json(response.model_dump_json())
