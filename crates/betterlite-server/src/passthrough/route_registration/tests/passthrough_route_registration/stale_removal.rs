@@ -105,6 +105,20 @@ fn stale_removal_removes_a_wildcard_when_only_an_exact_route_is_live() {
 }
 
 #[test]
+fn stale_removal_keeps_the_path_after_an_auth_flip() {
+    let routes = shared();
+    let enforced = parse_endpoint(
+        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":true,"methods":["GET"]}"#,
+    );
+    let open = parse_endpoint(
+        r#"{"id":"e1","path":"/custom","target":"https://upstream","auth":false,"methods":["GET"]}"#,
+    );
+    register_with(&routes, &[enforced], None, &[]);
+    register_with(&routes, &[open], None, &[]);
+    assert_eq!(route_count(&routes, "/custom"), 1);
+}
+
+#[test]
 fn stale_removal_removes_a_wildcard_when_the_subpath_route_is_dropped() {
     let routes = shared();
     let with_subpath = parse_endpoint(
