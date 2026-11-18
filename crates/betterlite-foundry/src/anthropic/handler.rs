@@ -72,8 +72,9 @@ where
         },
     };
     async move {
-        let prepared = prepared?;
-        finish(facts, prepared, deps).await.map_err(ChatError::Call)
+        finish(facts, prepared?, deps)
+            .await
+            .map_err(ChatError::Call)
     }
 }
 
