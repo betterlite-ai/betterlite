@@ -53,8 +53,7 @@ pub fn runtime_url(request: &EndpointRequest<'_>) -> String {
     )
 }
 
-// _load_credentials: the call argument, then AWS_REGION_NAME, then AWS_REGION, then us-west-2.
-// It has no model ARN step and no boto3 session, so the session region stays out of the rule.
+// Completion skips model-ARN and boto3-session region sources.
 pub fn call_region(params: &ParamMap, inputs: RegionInputs<'_>) -> Result<String, SigningError> {
     resolve_region(
         params,
@@ -64,13 +63,4 @@ pub fn call_region(params: &ParamMap, inputs: RegionInputs<'_>) -> Result<String
             ..inputs
         },
     )
-}
-
-// _get_aws_region_name: the model ARN is read before the environment, as the chat url and signer both do
-pub fn chat_region(
-    params: &ParamMap,
-    model: &str,
-    inputs: RegionInputs<'_>,
-) -> Result<String, SigningError> {
-    resolve_region(params, Some(model), inputs)
 }

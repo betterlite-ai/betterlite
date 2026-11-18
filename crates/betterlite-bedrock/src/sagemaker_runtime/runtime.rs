@@ -140,14 +140,6 @@ impl PreparedCall {
 }
 
 impl<T, C> SagemakerRuntime<'_, T, C> {
-    pub(crate) fn now(&self) -> SystemTime {
-        self.clock.now()
-    }
-
-    pub(crate) fn inputs(&self) -> RegionInputs<'_> {
-        self.environment.inputs()
-    }
-
     fn outbound(&self, prepared: &PreparedCall) -> Result<OutboundRequest, RuntimeError> {
         Ok(OutboundRequest {
             method: Method::POST,
@@ -179,25 +171,6 @@ where
             .credentials
             .resolve(settings, region.to_owned())
             .await?)
-    }
-}
-
-impl<T, C> SagemakerRuntime<'_, T, C>
-where
-    T: SagemakerTransport,
-{
-    pub(crate) async fn post(
-        &self,
-        prepared: &PreparedCall,
-    ) -> Result<UpstreamResponse, RuntimeError> {
-        Ok(self.transport.send(self.outbound(prepared)?).await?)
-    }
-
-    pub(crate) async fn open(
-        &self,
-        prepared: &PreparedCall,
-    ) -> Result<(u16, ChunkStream), RuntimeError> {
-        Ok(self.transport.open_stream(self.outbound(prepared)?).await?)
     }
 }
 
@@ -259,7 +232,7 @@ pub fn reply_headers(headers: &HeaderMap) -> Headers {
 #[must_use]
 pub fn body_text(body: &[u8]) -> String {
     std::str::from_utf8(body).map_or_else(
-        |error| format!("{} bytes that are not UTF-8", error.as_bytes().len()),
+        |_invalid| format!("{} bytes that are not UTF-8", body.len()),
         str::to_owned,
     )
 }
@@ -270,5 +243,4 @@ pub fn epoch_seconds(now: SystemTime) -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
-#[cfg(test)]
 mod tests;

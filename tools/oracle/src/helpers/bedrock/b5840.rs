@@ -31,7 +31,6 @@ impl Helper for Op {
                         base_url,
                         stream,
                     }),
-                    "region": region,
                 }))
             }
             Some("component_header") => {

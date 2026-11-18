@@ -84,11 +84,15 @@ impl FakeTransport {
             requests: Mutex::new(Vec::new()),
         }
     }
+
+    fn record(&self, request: OutboundRequest) {
+        self.requests.lock().expect("request lock").push(request);
+    }
 }
 
 impl SagemakerTransport for FakeTransport {
     async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
-        self.requests.lock().expect("request lock").push(request);
+        self.record(request);
         Ok(UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
@@ -100,7 +104,7 @@ impl SagemakerTransport for FakeTransport {
         &self,
         request: OutboundRequest,
     ) -> Result<(u16, ChunkStream), TransportError> {
-        self.requests.lock().expect("request lock").push(request);
+        self.record(request);
         let chunks = self
             .chunks
             .iter()
@@ -272,6 +276,25 @@ async fn prepare_calls_build_signed_completion_chat_and_embedding_requests() {
             .headers
             .iter()
             .any(|(name, _)| name == "Authorization")
+    );
+}
+
+#[tokio::test]
+async fn chat_region_comes_from_the_model_arn_before_the_environment() {
+    let counter = Counter;
+    let runtime = runtime(FakeTransport::new(200, "{}", &[]), &counter);
+    let messages: Vec<ChatMessage> =
+        serde_json::from_str(r#"[{"role":"user","content":"hi"}]"#).expect("messages");
+    let options = Body::new();
+    let signing = ParamMap::new();
+    let mut chat = chat_call(&messages, &options, &signing, false);
+    chat.model = "arn:aws:sagemaker:eu-central-1:123456789012:endpoint/example";
+    let prepared = runtime.prepare_chat(&chat).await.expect("chat request");
+    assert_eq!(prepared.region, "eu-central-1");
+    assert!(
+        prepared
+            .url
+            .starts_with("https://runtime.sagemaker.eu-central-1.")
     );
 }
 

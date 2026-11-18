@@ -56,7 +56,7 @@ where
         &self,
         call: &EmbeddingCall<'_>,
     ) -> Result<PreparedEmbedding, RuntimeError> {
-        let region = endpoint::call_region(call.signing, self.inputs())?;
+        let region = endpoint::call_region(call.signing, self.environment.inputs())?;
         let credentials = self.credentials_for(call.signing, &region).await?;
         let body = embedding_body(call.model, call.input, call.optional_params)?;
         let body_json = convert::prompt_body(&body);
@@ -78,7 +78,7 @@ where
                 (CUSTOM_ATTRIBUTES.to_owned(), ACCEPT_EULA.to_owned()),
             ],
             credentials: &credentials,
-            now: self.now(),
+            now: self.clock.now(),
         })?;
         Ok(PreparedEmbedding {
             call: PreparedCall {
@@ -103,7 +103,7 @@ where
         call: &EmbeddingCall<'_>,
     ) -> Result<EmbeddingReply, SagemakerError> {
         let prepared = self.prepare_embedding(call).await?;
-        let response = self.post(&prepared.call).await?;
+        let response = self.transport.send(self.outbound(&prepared.call)?).await?;
         if !(200..300).contains(&response.status) {
             return Err(wire_error(response.status, &response.body));
         }
@@ -161,5 +161,4 @@ fn voyage_reply(body: &[u8]) -> Result<EmbeddingReply, SagemakerError> {
     Ok(EmbeddingReply::Voyage(project_response(&parsed)))
 }
 
-#[cfg(test)]
 mod tests;

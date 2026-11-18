@@ -3,6 +3,7 @@
 use super::text_field;
 use crate::sagemaker_runtime::error::RuntimeError;
 use betterlite_prompts::arguments::json::Json;
+use indexmap::IndexMap;
 use serde_json::json;
 
 #[test]
@@ -20,7 +21,7 @@ fn reads_base_url_as_optional_text() {
         text_field(&text, "sagemaker_base_url").expect("text"),
         Some("https://example.test")
     );
-    let wrong = [(String::from("sagemaker_base_url"), Json::Bool(true))].into();
+    let wrong = IndexMap::from([(String::from("sagemaker_base_url"), Json::Bool(true))]);
     assert!(matches!(
         text_field(&wrong, "sagemaker_base_url"),
         Err(RuntimeError::Field {

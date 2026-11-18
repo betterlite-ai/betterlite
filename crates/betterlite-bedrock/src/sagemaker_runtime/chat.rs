@@ -9,11 +9,13 @@ use betterlite_openai::sagemaker_chat::request::{self as chat_request, Transform
 use betterlite_openai::sagemaker_completion::error::SagemakerError;
 use betterlite_prompts::arguments::json::{Json, Object as Body};
 use bytes::BytesMut;
+use http::HeaderMap;
 use secrecy::SecretString;
 
 use crate::sagemaker_stream::events::EventState;
 use crate::sagemaker_stream::{ErrorPolicy, SagemakerEvents};
 use crate::signing::service::{ServiceName, ServiceRequest, sign_service_request};
+use crate::signing::target::resolve_region;
 
 use super::convert;
 use super::endpoint::{self, EndpointRequest, ParamMap};
@@ -45,7 +47,7 @@ where
     // get_complete_url, validate_environment, transform_request and _sign_request, in the handler's order
     pub async fn prepare_chat(&self, call: &ChatCall<'_>) -> Result<PreparedCall, RuntimeError> {
         let base_url = text_field(call.optional_params, BASE_URL_FIELD)?;
-        let region = endpoint::chat_region(call.signing, call.model, self.inputs())?;
+        let region = resolve_region(call.signing, Some(call.model), self.environment.inputs())?;
         let url = endpoint::runtime_url(&EndpointRequest {
             model: call.model,
             region: &region,
@@ -75,8 +77,8 @@ where
                 model: Some(call.model),
                 api_key: call.api_key,
                 configured_bearer: call.configured_bearer,
-                region_inputs: self.inputs(),
-                now: self.now(),
+                region_inputs: self.environment.inputs(),
+                now: self.clock.now(),
             },
             |settings, region| {
                 self.credentials
@@ -101,20 +103,13 @@ where
 {
     pub async fn chat(&self, call: &ChatCall<'_>) -> Result<CompatibleReply, SagemakerError> {
         let prepared = self.prepare_chat(call).await?;
-        let response = self.post(&prepared).await?;
-        // the shared handler's httpx client raises from 4xx on, so a 2xx or 3xx reply is read as the answer
-        if response.status >= 400 {
-            return Err(SagemakerError {
-                status_code: response.status,
-                message: body_text(&response.body),
-                headers: Some(reply_headers(&response.headers)),
-            });
-        }
-        decode_compatible_chat_reply(&response.body, &call.reply).map_err(|error| SagemakerError {
-            status_code: response.status,
-            message: error.to_string(),
-            headers: Some(reply_headers(&response.headers)),
-        })
+        let response = self.transport.send(self.outbound(&prepared)?).await?;
+        read_chat_response(
+            response.status,
+            &response.body,
+            &response.headers,
+            &call.reply,
+        )
     }
 
     pub async fn chat_stream(
@@ -122,7 +117,10 @@ where
         call: &ChatCall<'_>,
     ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
         let prepared = self.prepare_chat(call).await?;
-        let (status, chunks) = self.open(&prepared).await?;
+        let (status, chunks) = self
+            .transport
+            .open_stream(self.outbound(&prepared)?)
+            .await?;
         if status != 200 {
             return Err(stream_error(status, chunks).await);
         }
@@ -142,6 +140,27 @@ where
     }
 }
 
+fn read_chat_response(
+    status: u16,
+    body: &[u8],
+    headers: &HeaderMap,
+    options: &ReplyOptions<'_>,
+) -> Result<CompatibleReply, SagemakerError> {
+    // the shared handler's httpx client raises from 4xx on, so a 2xx or 3xx reply is read as the answer
+    if status >= 400 {
+        return Err(SagemakerError {
+            status_code: status,
+            message: body_text(body),
+            headers: Some(reply_headers(headers)),
+        });
+    }
+    decode_compatible_chat_reply(body, options).map_err(|error| SagemakerError {
+        status_code: status,
+        message: error.to_string(),
+        headers: Some(reply_headers(headers)),
+    })
+}
+
 // a null entry is the absent one, as dict.get reads it; any other non-string names the field
 fn text_field<'body>(
     params: &'body Body,
@@ -154,5 +173,4 @@ fn text_field<'body>(
     }
 }
 
-#[cfg(test)]
 mod tests;

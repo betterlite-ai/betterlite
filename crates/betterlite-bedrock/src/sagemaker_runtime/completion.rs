@@ -55,13 +55,13 @@ where
         &self,
         call: &CompletionCall<'_>,
     ) -> Result<PreparedCall, RuntimeError> {
-        let region = endpoint::call_region(call.signing, self.inputs())?;
+        let region = endpoint::call_region(call.signing, self.environment.inputs())?;
         let credentials = self.credentials_for(call.signing, &region).await?;
         // the handler reads the base url, the component and the stream flag off the same options the body carries
         let base_url = text_option(call.optional_params, BASE_URL_FIELD)?;
         let model_id = text_option(call.optional_params, MODEL_ID_FIELD)?;
         let stream = matches!(call.optional_params.get("stream"), Some(Value::Bool(true)));
-        let body = completion_body(call, DateTime::<Utc>::from(self.now())).await?;
+        let body = completion_body(call, DateTime::<Utc>::from(self.clock.now())).await?;
         let body_json = convert::completion_body(&body);
         let text = dumps_object(&body_json);
         let url = endpoint::runtime_url(&EndpointRequest {
@@ -77,7 +77,7 @@ where
             body: &text,
             headers: &[(CONTENT_TYPE.to_owned(), JSON_CONTENT_TYPE.to_owned())],
             credentials: &credentials,
-            now: self.now(),
+            now: self.clock.now(),
         })?;
         // the component header is added after signing, so it stays outside SignedHeaders as it does there
         let mut headers = signed.headers;
@@ -105,7 +105,7 @@ where
         call: &CompletionCall<'_>,
     ) -> Result<ChatResponse, SagemakerError> {
         let prepared = self.prepare_completion(call).await?;
-        let response = self.post(&prepared).await?;
+        let response = self.transport.send(self.outbound(&prepared)?).await?;
         if response.status != 200 {
             return Err(wire_error(response.status, &response.body));
         }
@@ -117,7 +117,7 @@ where
             model: call.model,
             prompt: &prompt,
             id: format!("chatcmpl-{}", Uuid::new_v4()),
-            created: epoch_seconds(self.now()),
+            created: epoch_seconds(self.clock.now()),
         };
         Ok(transform_response(&input, self.counter)?)
     }
@@ -127,7 +127,10 @@ where
         call: &CompletionCall<'_>,
     ) -> Result<SagemakerEvents<ChunkStream>, SagemakerError> {
         let prepared = self.prepare_completion(call).await?;
-        let (status, chunks) = self.open(&prepared).await?;
+        let (status, chunks) = self
+            .transport
+            .open_stream(self.outbound(&prepared)?)
+            .await?;
         if status != 200 {
             return Err(stream_error(status, chunks).await);
         }
@@ -193,5 +196,4 @@ fn unreadable_reply(body: &[u8], source: &serde_json::Error) -> SagemakerError {
     }
 }
 
-#[cfg(test)]
 mod tests;

@@ -56,5 +56,4 @@ impl From<RuntimeError> for SagemakerError {
     }
 }
 
-#[cfg(test)]
 mod tests;

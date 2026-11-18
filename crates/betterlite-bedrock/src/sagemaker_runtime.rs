@@ -6,7 +6,6 @@ pub mod endpoint;
 mod error;
 mod runtime;
 
-#[cfg(test)]
 mod tests;
 
 pub const CONTENT_TYPE: &str = "Content-Type";

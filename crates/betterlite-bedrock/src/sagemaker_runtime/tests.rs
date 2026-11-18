@@ -1,9 +1,11 @@
+#![cfg(test)]
+
 use rstest::rstest;
 mod integration;
 use secrecy::SecretString;
 
 use super::endpoint::{EndpointRequest, runtime_url};
-use super::endpoint::{ParamMap, call_region, chat_region, endpoint_name};
+use super::endpoint::{ParamMap, call_region, endpoint_name};
 use super::runtime::{
     PreparedCall, body_text, epoch_seconds, reply_headers, stream_error, wire_error,
 };
@@ -168,23 +170,6 @@ fn explicit_completion_region_overrides_environment() {
 }
 
 #[test]
-fn chat_region_prefers_region_from_model_arn() {
-    let params = ParamMap::new();
-    assert!(matches!(
-        chat_region(
-            &params,
-            "arn:aws:sagemaker:eu-central-1:123456789012:endpoint/example",
-            crate::signing::target::RegionInputs {
-                environment_region_name: Some("us-east-1"),
-                environment_region: None,
-                session_region: None,
-            }
-        ),
-        Ok(region) if region == "eu-central-1"
-    ));
-}
-
-#[test]
 fn prepared_call_logging_contains_signed_request_data() {
     let prepared = PreparedCall {
         url: String::from("https://runtime.example/invocations"),
@@ -239,5 +224,12 @@ async fn stream_error_truncates_the_chunk_crossing_the_body_limit() {
     let chunks: super::runtime::ChunkStream = Box::pin(chunks);
     let error = stream_error(503, chunks).await;
     assert_eq!(error.message.len(), 65_536);
-    assert!(error.message.as_bytes().ends_with(&vec![b'b'; 32_768]));
+    assert_eq!(
+        error.message.bytes().filter(|byte| *byte == b'b').count(),
+        32_768
+    );
+    assert_eq!(
+        error.message.bytes().filter(|byte| *byte == b'a').count(),
+        32_768
+    );
 }

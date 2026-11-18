@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use super::{completion_body, plain, prompt_body};
+use super::{Source, completion_body, convert, prompt_body};
 use betterlite_models::decisions::Json as Plain;
 use betterlite_prompts::arguments::json::Json as Prompted;
 use indexmap::IndexMap;
@@ -93,7 +93,7 @@ fn converts_all_prompt_json_variants() {
 #[test]
 fn converts_individual_nested_values() {
     assert_eq!(
-        plain(&json!({"nested": [1, null]})),
+        convert(Source::Completion(&json!({"nested": [1, null]}))),
         Plain::Object(IndexMap::from([(
             String::from("nested"),
             Plain::List(vec![Plain::Number(Number::from(1)), Plain::Null]),

@@ -8,8 +8,10 @@ use crate::sagemaker_runtime::error::RuntimeError;
 use betterlite_logging::logging_pre_post::args::RawBody;
 use betterlite_models::decisions::Json;
 use betterlite_openai::sagemaker_completion::response::TextTokenCounter;
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use std::time::Duration;
+use url::Url;
 
 struct Counter;
 
@@ -34,33 +36,6 @@ fn environment_inputs_keep_each_region_source() {
         SagemakerEnvironment::default().inputs().environment_region,
         None
     );
-}
-
-#[test]
-fn runtime_reads_its_injected_clock_and_environment() {
-    let counter = Counter;
-    let runtime = SagemakerRuntime {
-        transport: (),
-        credentials: (),
-        environment: SagemakerEnvironment {
-            region_name: Some(String::from("eu-west-1")),
-            region: Some(String::from("us-east-1")),
-            session_region: None,
-        },
-        clock: aws_smithy_async::time::SharedTimeSource::new(
-            aws_smithy_async::time::StaticTimeSource::new(
-                std::time::UNIX_EPOCH + Duration::from_secs(12),
-            ),
-        ),
-        counter: &counter,
-        timeout: Duration::from_secs(3),
-    };
-    assert_eq!(
-        runtime.now(),
-        std::time::UNIX_EPOCH + Duration::from_secs(12)
-    );
-    assert_eq!(runtime.inputs().environment_region_name, Some("eu-west-1"));
-    assert_eq!(runtime.inputs().environment_region, Some("us-east-1"));
 }
 
 #[test]
@@ -120,7 +95,7 @@ fn outbound_validates_url_and_builds_post_request() {
         region: String::from("us-west-2"),
     };
     let request = runtime.outbound(&prepared).expect("valid outbound request");
-    assert_eq!(request.method, http::Method::POST);
+    assert_eq!(request.method, Method::POST);
     assert_eq!(request.url.as_str(), "https://runtime.example/invocations");
     assert_eq!(request.deadline, Duration::from_secs(3));
     assert!(matches!(
