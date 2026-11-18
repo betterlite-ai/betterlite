@@ -1,5 +1,4 @@
 use std::error::Error as StdError;
-use std::future::Future;
 
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -45,55 +44,53 @@ type PrepareResult<Client, Counter> = Result<
     >,
 >;
 
-pub(super) fn prepare<'request, 'deps, Config, Client, Counter>(
+pub(super) async fn prepare<'request, 'deps, Config, Client, Counter>(
     call: &'request ChatCall<'_>,
     deps: &'request mut ChatDeps<'deps, Config, Client, Counter>,
-) -> impl Future<Output = PrepareResult<Client, Counter>> + Send + 'request
+) -> PrepareResult<Client, Counter>
 where
     'deps: 'request,
     Config: ChatConfig,
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Send,
 {
-    async move {
-        let mut optional_params = call.optional_params.clone();
-        let stream = take_bool(&mut optional_params, "stream", false)?;
-        let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
-        let params = take_params(optional_params)?;
-        let validated = validated_headers(call, &params.optional, params.is_vertex_request)?;
-        let transform = TransformRequest {
-            model: call.model,
-            custom_llm_provider: Some(call.custom_llm_provider),
-            messages: &call.messages,
-            optional_params: &params.transform,
-            litellm_params: &call.litellm_params,
-            headers: &validated,
-            billing_header: BillingHeader::Keep,
-        };
-        let TransformOutcome {
-            mut body,
-            headers: mapped,
-        } = map_request(deps.config, &transform, call.style)
-            .await
-            .map_err(|source| ChatCallError::Prepare { source })?;
-        let mut headers = mapped.values;
-        deps.config
-            .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
-            .map_err(|source| ChatCallError::Filter { source })?;
-        // LiteLLM sets data["stream"] after filtering, and its stored pre_call body shares that dict and shows the key
-        if stream {
-            body.insert("stream".to_owned(), Json::Bool(true));
-        }
-        let header_map = header_map(&headers)?;
-        log_pre_call(call, &mut *deps.state, deps.env, &body, &headers)?;
-        Ok(Prepared {
-            body,
-            header_map,
-            optional_params: params.optional,
-            stream,
-            json_mode,
-        })
+    let mut optional_params = call.optional_params.clone();
+    let stream = take_bool(&mut optional_params, "stream", false)?;
+    let json_mode = take_bool(&mut optional_params, "json_mode", false)?;
+    let params = take_params(optional_params)?;
+    let validated = validated_headers(call, &params.optional, params.is_vertex_request)?;
+    let transform = TransformRequest {
+        model: call.model,
+        custom_llm_provider: Some(call.custom_llm_provider),
+        messages: &call.messages,
+        optional_params: &params.transform,
+        litellm_params: &call.litellm_params,
+        headers: &validated,
+        billing_header: BillingHeader::Keep,
+    };
+    let TransformOutcome {
+        mut body,
+        headers: mapped,
+    } = map_request(deps.config, &transform, call.style)
+        .await
+        .map_err(|source| ChatCallError::Prepare { source })?;
+    let mut headers = mapped.values;
+    deps.config
+        .filter_request_betas(call.custom_llm_provider, &mut headers, &mut body)
+        .map_err(|source| ChatCallError::Filter { source })?;
+    // LiteLLM sets data["stream"] after filtering, and its stored pre_call body shares that dict and shows the key
+    if stream {
+        body.insert("stream".to_owned(), Json::Bool(true));
     }
+    let header_map = header_map(&headers)?;
+    log_pre_call(call, &mut *deps.state, deps.env, &body, &headers)?;
+    Ok(Prepared {
+        body,
+        header_map,
+        optional_params: params.optional,
+        stream,
+        json_mode,
+    })
 }
 async fn map_request<Config>(
     config: &Config,

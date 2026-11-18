@@ -6,7 +6,6 @@ pub mod steps;
 mod tests;
 pub mod transport;
 
-use std::future::Future;
 use std::time::Duration;
 
 use betterlite_logging::logging_pre_post::env::PrePostEnv;
@@ -100,22 +99,20 @@ pub type ChatResult<Client, Counter> = Result<
         <Counter as ReasoningTokenCounter>::Failure,
     >,
 >;
-pub fn chat_call<'call, Config, Client, Counter>(
+pub async fn chat_call<'call, Config, Client, Counter>(
     call: ChatCall<'call>,
     mut deps: ChatDeps<'call, Config, Client, Counter>,
-) -> impl Future<Output = ChatResult<Client, Counter>> + Send + 'call
+) -> ChatResult<Client, Counter>
 where
     Config: ChatConfig,
     Client: ChatTransport,
     Counter: ReasoningTokenCounter + Unpin + Send + 'call,
 {
-    async move {
-        if call.style == CallStyle::Embedding {
-            return Ok(ChatOutcome::Embedding);
-        }
-        let prepared = prepare::prepare(&call, &mut deps).await?;
-        finish(CallFacts::from(call), prepared, deps).await
+    if call.style == CallStyle::Embedding {
+        return Ok(ChatOutcome::Embedding);
     }
+    let prepared = prepare::prepare(&call, &mut deps).await?;
+    finish(CallFacts::from(call), prepared, deps).await
 }
 
 impl<'call> From<ChatCall<'call>> for CallFacts<'call> {

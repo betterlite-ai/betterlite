@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::Future;
 use std::thread;
 
 use secrecy::SecretString;
@@ -12,6 +13,25 @@ use super::fixture::{
     CALLER_KEY, FixtureTransport, RecordingLogger, Silent, logging_env, logging_state, redactor,
 };
 use super::harness::{Outcome, Setup, call_of, deps_of, fixture_config, outcome_of, settings_of};
+
+// blocks on one call's future on the second thread and gives back what that thread received
+fn on_second_thread<Output, Call>(future: Call) -> Output
+where
+    Output: Send,
+    Call: Future<Output = Output> + Send,
+{
+    thread::scope(|scope| {
+        scope
+            .spawn(|| {
+                Builder::new_current_thread()
+                    .build()
+                    .unwrap()
+                    .block_on(future)
+            })
+            .join()
+            .unwrap()
+    })
+}
 
 // the buffered call completes on a thread that is not the one that built it
 #[test]
@@ -26,8 +46,11 @@ fn chat_call_completes_on_a_second_thread() {
     let pooled = FixtureTransport::new(setup.reply.clone(), setup.trip.clone());
     let logger = RecordingLogger::default();
     let settings = settings_of(&setup);
-    let caller_key = SecretString::from(CALLER_KEY.to_owned());
-    let call = call_of(&setup, Some(&caller_key), &settings);
+    let call = call_of(
+        &setup,
+        Some(&SecretString::from(CALLER_KEY.to_owned())),
+        &settings,
+    );
     let clients = ChatClients {
         supplied: setup.supplied.then_some(SuppliedChatClient {
             kind: setup.supplied_kind,
@@ -36,18 +59,7 @@ fn chat_call_completes_on_a_second_thread() {
         pooled: &pooled,
     };
     let deps = deps_of(&config, clients, &env, &mut state, &logger);
-    let future = chat_call(call, deps);
-    let result = thread::scope(|scope| {
-        scope
-            .spawn(|| {
-                Builder::new_current_thread()
-                    .build()
-                    .unwrap()
-                    .block_on(future)
-            })
-            .join()
-            .unwrap()
-    });
+    let result = on_second_thread(chat_call(call, deps));
     let outcome = outcome_of(result).expect("the fixture replies");
     let Outcome::Reply(envelope) = outcome else {
         panic!("a buffered call returns the reply");
@@ -55,6 +67,6 @@ fn chat_call_completes_on_a_second_thread() {
     let content = envelope
         .choices
         .first()
-        .and_then(|choice| choice.message.content.as_deref());
+        .and_then(|c| c.message.content.as_deref());
     assert_eq!(content, Some("hello"));
 }
