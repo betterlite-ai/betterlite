@@ -10,9 +10,10 @@ use std::collections::BTreeMap;
 
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use tokio_postgres::Client;
 
-use super::support::{Harness, ManualClock, Ports, TableClient, at, json, seed};
+use super::support::{
+    Harness, ManualClock, Ports, TableClient, at, json, seed, team_payload, text_column,
+};
 use crate::budget_permission_rows::JsonData;
 use crate::key_repository::table::TokenValue;
 use crate::key_repository::table::columns::TokenColumn;
@@ -30,62 +31,6 @@ const TEAM_INSERT: &str = "INSERT INTO \"LiteLLM_TeamTable\" (\"team_id\", \"adm
 const USER_INSERT: &str = "INSERT INTO \"LiteLLM_UserTable\" (\"user_id\", \"user_alias\", \"updated_at\") VALUES ($1, $2, '2000-01-01'::timestamp)";
 const BUDGET_INSERT: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (\"budget_id\", \"created_by\", \"updated_by\", \"updated_at\") VALUES ($1, 'created', 'updated', '2000-01-01'::timestamp)";
 const END_USER_INSERT: &str = "INSERT INTO \"LiteLLM_EndUserTable\" (\"user_id\") VALUES ($1)";
-
-fn team_payload(team_id: &str, alias: &str) -> BTreeMap<TeamColumn, TokenValue> {
-    BTreeMap::from([
-        (TeamColumn::TeamId, TokenValue::Text(team_id.to_owned())),
-        (TeamColumn::TeamAlias, TokenValue::Text(alias.to_owned())),
-        (TeamColumn::Admins, TokenValue::TextArray(Vec::new())),
-        (TeamColumn::Members, TokenValue::TextArray(Vec::new())),
-        (TeamColumn::Models, TokenValue::TextArray(Vec::new())),
-    ])
-}
-
-async fn text_column(db: &Client, sql: &str, parameter: &str) -> Option<String> {
-    db.query_opt(sql, &[&parameter])
-        .await
-        .expect("the column query runs")
-        .map(|row| row.get(0))
-}
-
-#[tokio::test]
-async fn insert_team_dumps_the_map_fields_to_json_text() {
-    let harness = Harness::start().await;
-    let db = harness.pool.get().await.expect("a fixture connection");
-    let client = TableClient::new(harness.pool.clone());
-    let ports = Ports::new();
-    let ops = ports.operations(&client);
-    let mut data = team_payload("team-2", "maps");
-    data.insert(
-        TeamColumn::Metadata,
-        TokenValue::Json(json(r#"{"department":"eng"}"#)),
-    );
-    data.insert(TeamColumn::MembersWithRoles, TokenValue::Json(json("[]")));
-    data.insert(TeamColumn::BudgetLimits, TokenValue::Json(json("[]")));
-    let created = ops.insert_team(&data).await.expect("the team insert runs");
-    let metadata = created
-        .fields
-        .base
-        .metadata
-        .expect("the stored metadata decodes");
-    assert_eq!(
-        metadata.get("department"),
-        Some(&JsonData::String(String::from("eng")))
-    );
-    assert!(created.fields.base.members_with_roles.is_empty());
-    assert_eq!(created.fields.base.budget_limits, Some(Vec::new()));
-    let row = db
-        .query_one(
-            "SELECT jsonb_typeof(metadata), jsonb_typeof(members_with_roles), jsonb_typeof(budget_limits) FROM \"LiteLLM_TeamTable\" WHERE team_id = 'team-2'",
-            &[],
-        )
-        .await
-        .expect("the type query runs");
-    assert_eq!(row.get::<_, Option<String>>(0).as_deref(), Some("string"));
-    assert_eq!(row.get::<_, Option<String>>(1).as_deref(), Some("string"));
-    assert_eq!(row.get::<_, Option<String>>(2).as_deref(), Some("string"));
-    harness.close().await;
-}
 
 #[tokio::test]
 async fn update_team_sets_the_values_and_keeps_budget_limits_raw() {

@@ -1,5 +1,8 @@
 #![cfg(test)]
 
+use crate::key_repository::table::TokenValue;
+use crate::table_ops::columns::TeamColumn;
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -33,7 +36,7 @@ struct Environment {
 }
 
 pub(crate) struct Harness {
-    fixture: PostgresFixture,
+    pub(crate) fixture: PostgresFixture,
     pub(crate) pool: Pool,
 }
 
@@ -322,4 +325,21 @@ impl Ports {
             invalidator: &self.invalidator,
         }
     }
+}
+
+pub(crate) fn team_payload(team_id: &str, alias: &str) -> BTreeMap<TeamColumn, TokenValue> {
+    BTreeMap::from([
+        (TeamColumn::TeamId, TokenValue::Text(team_id.to_owned())),
+        (TeamColumn::TeamAlias, TokenValue::Text(alias.to_owned())),
+        (TeamColumn::Admins, TokenValue::TextArray(Vec::new())),
+        (TeamColumn::Members, TokenValue::TextArray(Vec::new())),
+        (TeamColumn::Models, TokenValue::TextArray(Vec::new())),
+    ])
+}
+
+pub(crate) async fn text_column(db: &Client, sql: &str, parameter: &str) -> Option<String> {
+    db.query_opt(sql, &[&parameter])
+        .await
+        .expect("the column query runs")
+        .map(|row| row.get(0))
 }
