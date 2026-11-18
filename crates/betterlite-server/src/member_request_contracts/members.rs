@@ -232,13 +232,13 @@ impl OrganizationMemberUpdateRequest {
         let base = OrganizationMemberDeleteRequest::from_value(value)?;
         let fields: OrganizationMemberUpdateFields =
             serde_json::from_str(&serde_json::to_string(value)?)?;
-        Self::from_fields(base, fields)
+        Self::from_fields(base, &fields)
     }
 
     fn from_fields(
         // ast-grep-ignore: no-long-names
         base: OrganizationMemberDeleteRequest,
-        fields: OrganizationMemberUpdateFields,
+        fields: &OrganizationMemberUpdateFields,
     ) -> Result<Self, MemberContractError> {
         let role = checked_role(fields.role)?;
         Ok(Self {

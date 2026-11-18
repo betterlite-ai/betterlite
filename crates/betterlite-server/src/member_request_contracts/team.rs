@@ -13,7 +13,7 @@ pub struct DeleteTeamRequest {
 impl DeleteTeamRequest {
     pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
-        let team_ids: Vec<String> = field(object, "team_ids", Json::Null)?;
+        let team_ids: Vec<String> = field(object, "team_ids", &Json::Null)?;
         Ok(Self {
             team_ids: distinct_team_ids(team_ids),
         })

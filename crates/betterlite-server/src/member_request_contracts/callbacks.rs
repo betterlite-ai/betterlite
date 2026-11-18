@@ -109,7 +109,7 @@ impl AddTeamCallback {
     pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let object = json_object(value)?;
         validate_callback_vars(object)?;
-        let callback_name = field(object, "callback_name", Json::Null)?;
+        let callback_name = field(object, "callback_name", &Json::Null)?;
         let callback_type = match object.get("callback_type") {
             None => Some(CallbackType::SuccessAndFailure),
             Some(Json::Null) => None,
@@ -124,9 +124,9 @@ impl AddTeamCallback {
             });
         };
         let mut converted = IndexMap::new();
-        for (name, value) in fields {
-            let Json::Number(number) = value else {
-                converted.insert(name.clone(), value.clone());
+        for (name, field_value) in fields {
+            let Json::Number(number) = field_value else {
+                converted.insert(name.clone(), field_value.clone());
                 continue;
             };
             converted.insert(name.clone(), Json::Text(number.to_string()));
@@ -151,7 +151,10 @@ pub struct TeamCallbackMetadata {
 impl TeamCallbackMetadata {
     pub fn from_value(value: &Json) -> Result<Self, MemberContractError> {
         let fields = metadata_fields(value)?;
-        if fields.values().all(|value| matches!(value, Json::Null)) {
+        if fields
+            .values()
+            .all(|field_value| matches!(field_value, Json::Null))
+        {
             return Ok(Self::default());
         }
         metadata(&fields)
@@ -176,10 +179,10 @@ fn metadata(fields: &IndexMap<String, Json>) -> Result<TeamCallbackMetadata, Mem
             }
         }
     }
-    let success_callback: Option<Vec<String>> = field(fields, "success_callback", Json::Null)?;
-    let failure_callback: Option<Vec<String>> = field(fields, "failure_callback", Json::Null)?;
-    let callbacks: Option<Vec<String>> = field(fields, "callbacks", Json::Null)?;
-    let decoded_vars: Option<CallbackSecrets> = field(fields, "callback_vars", Json::Null)?;
+    let success_callback: Option<Vec<String>> = field(fields, "success_callback", &Json::Null)?;
+    let failure_callback: Option<Vec<String>> = field(fields, "failure_callback", &Json::Null)?;
+    let callbacks: Option<Vec<String>> = field(fields, "callbacks", &Json::Null)?;
+    let decoded_vars: Option<CallbackSecrets> = field(fields, "callback_vars", &Json::Null)?;
     Ok(TeamCallbackMetadata {
         success_callback: success_callback.unwrap_or_default(),
         failure_callback: failure_callback.unwrap_or_default(),

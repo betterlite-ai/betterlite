@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
+use serde::de::Error as _;
 
 pub mod callbacks;
 pub mod members;
@@ -35,19 +36,19 @@ impl From<serde_json::Error> for MemberContractError {
 
 pub(crate) fn missing_field(name: &str) -> MemberContractError {
     MemberContractError::Decode {
-        source: <serde_json::Error as serde::de::Error>::custom(format!("missing field `{name}`")),
+        source: serde_json::Error::custom(format!("missing field `{name}`")),
     }
 }
 
 pub(crate) fn field<T>(
     object: &IndexMap<String, Json>,
     name: &str,
-    fallback: Json,
+    fallback: &Json,
 ) -> Result<T, MemberContractError>
 where
     T: DeserializeOwned,
 {
-    let raw = object.get(name).unwrap_or(&fallback);
+    let raw = object.get(name).unwrap_or(fallback);
     let text = serde_json::to_string(raw)?;
     Ok(serde_json::from_str(&text)?)
 }

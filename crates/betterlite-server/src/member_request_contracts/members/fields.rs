@@ -11,7 +11,7 @@ use super::{OneOrMany, ROLES_WITHIN_ORG, TeamMemberUpdateRequest};
 use crate::member_request_contracts::{MemberContractError, field, missing_field};
 
 pub(super) fn org_role(object: &IndexMap<String, Json>) -> Result<UserRole, MemberContractError> {
-    let role: UserRole = field(object, "role", Json::Null)?;
+    let role: UserRole = field(object, "role", &Json::Null)?;
     if ROLES_WITHIN_ORG.contains(&role) {
         return Ok(role);
     }
@@ -61,8 +61,8 @@ where
 pub(super) fn member_identity(
     object: &IndexMap<String, Json>,
 ) -> Result<MemberIdentity, MemberContractError> {
-    let user_id: Option<String> = field(object, "user_id", Json::Null)?;
-    let user_email: Option<String> = field(object, "user_email", Json::Null)?;
+    let user_id: Option<String> = field(object, "user_id", &Json::Null)?;
+    let user_email: Option<String> = field(object, "user_email", &Json::Null)?;
     MemberIdentity::new(user_id, user_email).map_err(|source| MemberContractError::Validation {
         message: source.to_string(),
     })
@@ -71,7 +71,7 @@ pub(super) fn member_identity(
 pub(super) fn temp_budget_increase(
     object: &IndexMap<String, Json>,
 ) -> Result<Option<Decimal>, MemberContractError> {
-    let increase: Option<Decimal> = field(object, "temp_budget_increase", Json::Null)?;
+    let increase: Option<Decimal> = field(object, "temp_budget_increase", &Json::Null)?;
     match increase {
         Some(amount) if amount < Decimal::ZERO => Err(MemberContractError::Validation {
             message: "Input should be greater than or equal to 0".to_owned(),

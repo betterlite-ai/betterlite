@@ -78,15 +78,15 @@ impl OrganizationTableUpdate {
         let budget: LiteLLMBudgetTable = serde_json::from_str(&text)?;
         Ok(Self {
             budget,
-            organization_id: field(&fields, "organization_id", Json::Null)?,
-            organization_alias: field(&fields, "organization_alias", Json::Null)?,
-            spend: field(&fields, "spend", Json::Null)?,
-            metadata: field(&fields, "metadata", Json::Null)?,
-            models: field(&fields, "models", Json::Null)?,
-            updated_by: field(&fields, "updated_by", Json::Null)?,
-            object_permission: field(&fields, "object_permission", Json::Null)?,
-            model_tpm_limit: field(&fields, "model_tpm_limit", Json::Null)?,
-            model_rpm_limit: field(&fields, "model_rpm_limit", Json::Null)?,
+            organization_id: field(&fields, "organization_id", &Json::Null)?,
+            organization_alias: field(&fields, "organization_alias", &Json::Null)?,
+            spend: field(&fields, "spend", &Json::Null)?,
+            metadata: field(&fields, "metadata", &Json::Null)?,
+            models: field(&fields, "models", &Json::Null)?,
+            updated_by: field(&fields, "updated_by", &Json::Null)?,
+            object_permission: field(&fields, "object_permission", &Json::Null)?,
+            model_tpm_limit: field(&fields, "model_tpm_limit", &Json::Null)?,
+            model_rpm_limit: field(&fields, "model_rpm_limit", &Json::Null)?,
         })
     }
 }
@@ -107,7 +107,7 @@ pub struct OrganizationUpdateRequestV2 {
     pub budget_duration: Option<String>,
     pub object_permission: Option<LiteLLMObjectPermissionBase>,
     #[serde(skip)]
-    fields_set: BTreeSet<String>,
+    pub fields_set: BTreeSet<String>,
 }
 
 impl OrganizationUpdateRequestV2 {
