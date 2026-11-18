@@ -78,8 +78,8 @@ fn env_values_resolve_once_at_the_config_boundary() {
             ("PRIORITY", "3"),
         ],
     )
+    .unwrap()
     .unwrap();
-    let loaded = loaded.unwrap();
     let group = &loaded.groups[0];
     assert_eq!(group.group_name, "cheap");
     assert_eq!(group.models, vec![String::from("a")]);
