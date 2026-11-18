@@ -87,7 +87,9 @@ async fn push_reports_a_list_failure() {
         GatewayRequestRedisError::List { operation, .. } => {
             assert_eq!(operation, "async_rpush");
         }
-        other => panic!("unexpected error: {other}"),
+        other @ GatewayRequestRedisError::Entry(_)
+        | other @ GatewayRequestRedisError::Encode(_)
+        | other @ GatewayRequestRedisError::Decode(_) => panic!("unexpected error: {other}"),
     }
 }
 
@@ -177,7 +179,9 @@ async fn pop_reports_a_list_failure() {
         GatewayRequestRedisError::List { operation, .. } => {
             assert_eq!(operation, "async_lpop");
         }
-        other => panic!("unexpected error: {other}"),
+        other @ GatewayRequestRedisError::Entry(_)
+        | other @ GatewayRequestRedisError::Encode(_)
+        | other @ GatewayRequestRedisError::Decode(_) => panic!("unexpected error: {other}"),
     }
 }
 

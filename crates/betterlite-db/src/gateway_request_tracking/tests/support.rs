@@ -86,8 +86,13 @@ impl FakeList {
     }
 
     pub(crate) fn with_entries(entries: &[&str]) -> Self {
-        let mut state = ListState::default();
-        state.entries = entries.iter().map(|entry| (*entry).to_owned()).collect();
+        let state = ListState {
+            entries: entries.iter().map(|entry| (*entry).to_owned()).collect(),
+            pushed: Vec::new(),
+            take_calls: Vec::new(),
+            fail_take: false,
+            push_budget: None,
+        };
         Self {
             state: Mutex::new(state),
         }
@@ -147,6 +152,7 @@ impl FakeList {
         }
         state.pushed.push(entry.to_owned());
         state.entries.push_back(entry.to_owned());
+        drop(state);
         Ok(())
     }
 
@@ -299,6 +305,7 @@ impl GatewayRequestsDatabase for FakeDatabase {
             }
             state.last_sql = Some(sql.to_owned());
             state.last_parameters = parameters.len();
+            drop(state);
             Ok(u64::try_from(parameters.len()).unwrap_or_default())
         })
     }
