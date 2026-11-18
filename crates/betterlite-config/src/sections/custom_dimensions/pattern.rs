@@ -19,7 +19,7 @@ pub enum PatternProblem {
 
 impl PatternProblem {
     #[must_use]
-    const fn message(self) -> &'static str {
+    pub const fn message(self) -> &'static str {
         match self {
             Self::Syntax => "is not a valid regex",
             Self::Unsupported => "contains an unsupported regex construct",
