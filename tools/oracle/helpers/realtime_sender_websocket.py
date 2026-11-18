@@ -144,7 +144,7 @@ class WireBackend:
 
 
 class ClientSink:
-    def __init__(self, beta: bool, log: WireLog) -> None:
+    def __init__(self, log: WireLog, *, beta: bool) -> None:
         headers = [(b"openai-beta", b"realtime=v1")] if beta else []
         self.scope: dict[str, list[tuple[bytes, bytes]]] = {"headers": headers}
         self.log = log
@@ -247,18 +247,24 @@ async def apply(probe: Probe, op: Operation) -> JsonValue:
         return {"error": "non-object"}
 
 
-async def session(input_value: Input, upstream: Upstream, socket: ClientConnection) -> JsonValue:
+def callbacks_from(documents: list[GuardrailDocument]) -> list[CustomLogger]:
     callbacks: list[CustomLogger] = []
-    for document in input_value["guardrails"]:
+    for document in documents:
         hooks = [GuardrailEventHooks(name) for name in document["runs_for"]]
         custom = CustomGuardrail(guardrail_name=None, event_hook=hooks, default_on=True)
         callbacks.append(custom if document["custom"] else CustomLogger())
-    litellm.callbacks = callbacks
+    return callbacks
+
+
+async def session(input_value: Input, upstream: Upstream, socket: ClientConnection) -> JsonValue:
+    litellm.callbacks = [*callbacks_from(input_value["guardrails"])]
     timeline: list[str] = []
     provider_document = input_value["provider"]
     provider = None if provider_document is None else ScriptedProvider(provider_document, timeline)
     backend = WireBackend(socket, WireLog(input_value["backend_failures"]), timeline)
-    client = ClientSink(input_value["client_wants_beta"], WireLog(input_value["client_failures"]))
+    client = ClientSink(
+        WireLog(input_value["client_failures"]), beta=input_value["client_wants_beta"]
+    )
     probe = Probe(input_value, backend, client, provider)
     results: list[JsonValue] = []
     for op in input_value["operations"]:
