@@ -50,24 +50,15 @@ enum YamlCollection {
 }
 
 impl PyYamlTextSpans<'_> {
-    fn start_value(&mut self) -> bool {
+    fn scalar_context(&mut self, text: Option<&str>) -> bool {
         match self.collections.last_mut() {
-            Some(YamlCollection::Mapping { key }) => {
-                key.take().is_some_and(|field| is_route_text_field(&field))
-            }
-            Some(YamlCollection::Sequence { quote_text }) => *quote_text,
-            None => false,
-        }
-    }
-
-    fn scalar(&mut self, text: &str) -> bool {
-        match self.collections.last_mut() {
-            Some(YamlCollection::Mapping { key }) => match key.take() {
-                Some(field) => is_route_text_field(&field),
-                None => {
-                    *key = Some(text.to_owned());
+            Some(YamlCollection::Mapping { key }) => match (key.take(), text) {
+                (Some(field), _) => is_route_text_field(&field),
+                (None, Some(scalar)) => {
+                    *key = Some(scalar.to_owned());
                     false
                 }
+                (None, None) => false,
             },
             Some(YamlCollection::Sequence { quote_text }) => *quote_text,
             None => false,
@@ -79,11 +70,11 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
     fn on_event(&mut self, ev: Event<'input>, span: Span) {
         match ev {
             Event::MappingStart(..) => {
-                let _ = self.start_value();
+                let _ = self.scalar_context(None);
                 self.collections.push(YamlCollection::Mapping { key: None });
             }
             Event::SequenceStart(..) => {
-                let quote_text = self.start_value();
+                let quote_text = self.scalar_context(None);
                 self.collections
                     .push(YamlCollection::Sequence { quote_text });
             }
@@ -94,15 +85,17 @@ impl<'input> SpannedEventReceiver<'input> for PyYamlTextSpans<'_> {
                 let _ = self.collections.pop();
             }
             Event::Scalar(text, ScalarStyle::Plain, _, None) => {
-                if self.scalar(text.as_ref()) && !self.non_text.is_match(text.as_ref()) {
+                if self.scalar_context(Some(text.as_ref()))
+                    && !self.non_text.is_match(text.as_ref())
+                {
                     self.spans.push((span, text.into_owned()));
                 }
             }
             Event::Scalar(text, ..) => {
-                let _ = self.scalar(text.as_ref());
+                let _ = self.scalar_context(Some(text.as_ref()));
             }
-            Event::Alias(_) | Event::UnresolvedAlias(_) => {
-                let _ = self.start_value();
+            Event::Alias(_) => {
+                let _ = self.scalar_context(None);
             }
             _ => {}
         }
