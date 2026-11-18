@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
+use std::slice::from_ref;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -133,7 +135,7 @@ fn service(local: RoutingValueStore, shared: Option<RoutingStateStore>) -> Arc<L
 fn seed_local(store: &RoutingValueStore, deployment_id: &str, count: i64) {
     let key = request_count_key(GROUP, deployment_id).unwrap();
     store
-        .increment(&key, &RouteIncrement::Counter(count), Some(600.0))
+        .increment(&key, &RouteIncrement::Counter(count), Some(600.0_f64))
         .unwrap();
 }
 
@@ -279,8 +281,11 @@ async fn spend_shared_falls_back() {
     let selection = service.select(GROUP, &[deployment("a")]).await.unwrap();
     assert_eq!(selection.source, CountsSource::Fallback);
     match unreadable(selection.warning).1 {
-        UnreadableCounts::NotACount { key } => assert_eq!(key, "gpt_request_count:a"),
-        other => panic!("unexpected cause {other:?}"),
+        UnreadableCounts::NotACount { key: counter_key } => {
+            assert_eq!(counter_key, "gpt_request_count:a");
+        }
+        UnreadableCounts::Store { operation } => panic!("unexpected store cause {operation:?}"),
+        UnreadableCounts::Refused(source) => panic!("unexpected refused cause {source:?}"),
     }
 }
 
@@ -329,12 +334,13 @@ async fn clamp_after_reset() {
     assert!(reset.value.swapped);
     assert!(started.call.unwrap().release().await.is_none());
     assert_eq!(
-        service.local_count_values(&[key.clone()]).unwrap(),
+        service.local_count_values(from_ref(&key)).unwrap(),
         vec![Some(0)]
     );
     match service.shared_counts(&[key]).await {
         SharedCounts::Values(values) => assert_eq!(values, vec![Some(0)]),
-        other => panic!("unexpected shared counts {other:?}"),
+        SharedCounts::Absent => panic!("the shared tier is absent"),
+        SharedCounts::Unreadable(cause) => panic!("unexpected shared cause {cause:?}"),
     }
 }
 
@@ -385,7 +391,8 @@ async fn local_rejection_skips_shared() {
     ));
     match service.shared_counts(&[group_key("a")]).await {
         SharedCounts::Values(values) => assert_eq!(values, vec![None]),
-        other => panic!("unexpected shared counts {other:?}"),
+        SharedCounts::Absent => panic!("the shared tier is absent"),
+        SharedCounts::Unreadable(cause) => panic!("unexpected shared cause {cause:?}"),
     }
 }
 
@@ -474,7 +481,7 @@ fn counter_value_rule() {
     );
     assert_eq!(
         counter_values(
-            &[second.clone()],
+            from_ref(&second),
             vec![StoreRead::Value(RouteValue::Spend(Decimal::ONE))]
         )
         .unwrap_err(),
@@ -519,7 +526,7 @@ fn local_values_read() {
     };
     let key = group_key("a");
     assert_eq!(
-        service.local_count_values(&[key.clone()]).unwrap(),
+        service.local_count_values(from_ref(&key)).unwrap(),
         vec![None]
     );
     seed_local(&service.local, "a", 2);
@@ -556,47 +563,14 @@ async fn ttl_expiry() {
     let key = group_key("a");
     clock.at(601.0);
     assert_eq!(
-        service.local_count_values(&[key.clone()]).unwrap(),
+        service.local_count_values(from_ref(&key)).unwrap(),
         vec![Some(1)]
     );
     clock.at(3601.0);
-    assert_eq!(service.local_count_values(&[key]).unwrap(), vec![None]);
-}
-
-// every case the two tables name, run by the test that owns it
-async fn run_named_case(name: &str) -> bool {
-    match name {
-        "shared_counts_win" => shared_counts_win().await,
-        "local_without_shared" => local_without_shared().await,
-        "unavailable_falls_back" => unavailable_falls_back().await,
-        "circuit_open_falls_back" => circuit_open_falls_back().await,
-        "spend_shared_falls_back" => spend_shared_falls_back().await,
-        "increment_and_release" => increment_and_release().await,
-        "clamp_after_reset" => clamp_after_reset().await,
-        "down_shared_warns" => down_shared_warns().await,
-        "local_rejection_skips_shared" => local_rejection_skips_shared().await,
-        "batch_retrieve_skips" => batch_retrieve_skips().await,
-        "missing_halves_skip" => missing_halves_skip().await,
-        "first_minimum" => first_minimum(),
-        "missing_counts_are_zero" => missing_counts_are_zero(),
-        "local_counts_length_rule" => local_counts_length_rule(),
-        "counter_value_rule" => counter_value_rule(),
-        "attempt_facts_from_events" => attempt_facts_from_events(),
-        "local_values_read" => local_values_read(),
-        "shared_absent" => shared_absent().await,
-        "ttl_expiry" => ttl_expiry().await,
-        "key_lengths" => key_lengths(),
-        "missing_deployment_id_index" => missing_deployment_id_index().await,
-        "local_spend_is_error" => local_spend_is_error().await,
-        "empty_pool" => empty_pool().await,
-        "selection_bounds" => selection_bounds(),
-        "shared_missing_is_zero" => shared_missing_is_zero().await,
-        "cancel_drop" => cancel_drop().await,
-        "pre_call_over_limit" => pre_call_over_limit().await,
-        "guard_debug" => guard_debug().await,
-        _ => return false,
-    }
-    true
+    assert_eq!(
+        service.local_count_values(from_ref(&key)).unwrap(),
+        vec![None]
+    );
 }
 
 fn key_lengths() {
@@ -639,7 +613,7 @@ async fn local_spend_is_error() {
     let local = local_store(&TestClock::default());
     let key = group_key("a");
     local
-        .set(&key, &RouteValue::Spend(Decimal::ONE), Some(3600.0))
+        .set(&key, &RouteValue::Spend(Decimal::ONE), Some(3_600.0_f64))
         .unwrap();
     let service = LeastBusy {
         local,
@@ -648,7 +622,7 @@ async fn local_spend_is_error() {
     let error = service.select(GROUP, &[deployment("a")]).await.unwrap_err();
     assert!(matches!(
         error,
-        LeastBusyError::NotACount { key } if key == "gpt_request_count:a"
+        LeastBusyError::NotACount { key: counter_key } if counter_key == "gpt_request_count:a"
     ));
 }
 
@@ -685,7 +659,8 @@ async fn shared_missing_is_zero() {
     let keys = request_count_keys(GROUP, &deployments).unwrap();
     match service.shared_counts(&keys).await {
         SharedCounts::Values(values) => assert_eq!(values, vec![Some(2), None]),
-        other => panic!("unexpected shared counts {other:?}"),
+        SharedCounts::Absent => panic!("the shared tier is absent"),
+        SharedCounts::Unreadable(cause) => panic!("unexpected shared cause {cause:?}"),
     }
 }
 
@@ -752,45 +727,45 @@ async fn guard_debug() {
 }
 
 #[rstest]
-#[case::shared_counts_win("shared_counts_win")]
-#[case::local_without_shared("local_without_shared")]
-#[case::unavailable_falls_back("unavailable_falls_back")]
-#[case::circuit_open_falls_back("circuit_open_falls_back")]
-#[case::spend_shared_falls_back("spend_shared_falls_back")]
-#[case::increment_and_release("increment_and_release")]
-#[case::clamp_after_reset("clamp_after_reset")]
-#[case::down_shared_warns("down_shared_warns")]
-#[case::local_rejection_skips_shared("local_rejection_skips_shared")]
-#[case::batch_retrieve_skips("batch_retrieve_skips")]
-#[case::missing_halves_skip("missing_halves_skip")]
-#[case::first_minimum("first_minimum")]
-#[case::missing_counts_are_zero("missing_counts_are_zero")]
-#[case::local_counts_length_rule("local_counts_length_rule")]
-#[case::counter_value_rule("counter_value_rule")]
-#[case::attempt_facts_from_events("attempt_facts_from_events")]
-#[case::local_values_read("local_values_read")]
-#[case::shared_absent("shared_absent")]
-#[case::ttl_expiry("ttl_expiry")]
-fn least_busy_behaviors(#[case] name: &str) {
-    assert!(
-        runtime().block_on(run_named_case(name)),
-        "unknown case {name}"
-    );
+#[case::shared_counts_win(shared_counts_win())]
+#[case::local_without_shared(local_without_shared())]
+#[case::unavailable_falls_back(unavailable_falls_back())]
+#[case::circuit_open_falls_back(circuit_open_falls_back())]
+#[case::spend_shared_falls_back(spend_shared_falls_back())]
+#[case::increment_and_release(increment_and_release())]
+#[case::clamp_after_reset(clamp_after_reset())]
+#[case::down_shared_warns(down_shared_warns())]
+#[case::local_rejection_skips_shared(local_rejection_skips_shared())]
+#[case::batch_retrieve_skips(batch_retrieve_skips())]
+#[case::missing_halves_skip(missing_halves_skip())]
+#[case::first_minimum(ready(first_minimum()))]
+#[case::missing_counts_are_zero(ready(missing_counts_are_zero()))]
+#[case::local_counts_length_rule(ready(local_counts_length_rule()))]
+#[case::counter_value_rule(ready(counter_value_rule()))]
+#[case::attempt_facts_from_events(ready(attempt_facts_from_events()))]
+#[case::local_values_read(ready(local_values_read()))]
+#[case::shared_absent(shared_absent())]
+#[case::ttl_expiry(ttl_expiry())]
+fn least_busy_behaviors<Fut>(#[case] case: Fut)
+where
+    Fut: Future<Output = ()>,
+{
+    runtime().block_on(case);
 }
 
 #[rstest]
-#[case::key_lengths("key_lengths")]
-#[case::missing_deployment_id_index("missing_deployment_id_index")]
-#[case::local_spend_is_error("local_spend_is_error")]
-#[case::empty_pool("empty_pool")]
-#[case::selection_bounds("selection_bounds")]
-#[case::shared_missing_is_zero("shared_missing_is_zero")]
-#[case::cancel_drop("cancel_drop")]
-#[case::pre_call_over_limit("pre_call_over_limit")]
-#[case::guard_debug("guard_debug")]
-fn least_busy_boundaries(#[case] name: &str) {
-    assert!(
-        runtime().block_on(run_named_case(name)),
-        "unknown case {name}"
-    );
+#[case::key_lengths(ready(key_lengths()))]
+#[case::missing_deployment_id_index(missing_deployment_id_index())]
+#[case::local_spend_is_error(local_spend_is_error())]
+#[case::empty_pool(empty_pool())]
+#[case::selection_bounds(ready(selection_bounds()))]
+#[case::shared_missing_is_zero(shared_missing_is_zero())]
+#[case::cancel_drop(cancel_drop())]
+#[case::pre_call_over_limit(pre_call_over_limit())]
+#[case::guard_debug(guard_debug())]
+fn least_busy_boundaries<Fut>(#[case] case: Fut)
+where
+    Fut: Future<Output = ()>,
+{
+    runtime().block_on(case);
 }

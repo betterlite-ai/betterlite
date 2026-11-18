@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::Arc;
 
 use crate::routing_state_store::RoutingStateStore;
@@ -5,9 +6,8 @@ use crate::routing_value_store::{RouteIncrement, RouteKey, RouteValue, RoutingVa
 
 use crate::routing_state_store::error::Observed;
 
-use super::error::{LeastBusyError, LeastBusyWarning, UnwrittenCount};
-use super::identity::{AttemptFacts, deployment_ref, request_count_key};
-use super::{IN_FLIGHT_COUNT_TTL_SECONDS, LeastBusy};
+use super::LeastBusy;
+use super::error::{LeastBusyWarning, UnwrittenCount};
 
 // what one pre-call callback started: the release it owes, or none when the attempt names no counter
 pub struct Started {
@@ -22,10 +22,26 @@ pub struct InFlightCall {
     released: bool,
 }
 
-impl std::fmt::Debug for InFlightCall {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("InFlightCall")
+impl InFlightCall {
+    // the guard one pre-call hands back for an attempt that now holds a count
+    pub(super) fn started(service: Arc<LeastBusy>, key: RouteKey) -> Self {
+        Self {
+            service,
+            key,
+            released: false,
+        }
+    }
+
+    // log_success_event, log_failure_event and the closed stream all release the one call they own
+    pub async fn release(mut self) -> Option<LeastBusyWarning> {
+        self.released = true;
+        self.service.increment(&self.key, -1).await
+    }
+}
+
+impl fmt::Debug for InFlightCall {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InFlightCall")
             .field("key", &self.key)
             .field("released", &self.released)
             .finish_non_exhaustive()
@@ -33,61 +49,13 @@ impl std::fmt::Debug for InFlightCall {
 }
 
 // whether this worker's counter took the write, and the warning a rejected one raised
-enum LocalWrite {
+pub(super) enum LocalWrite {
     Written,
     Rejected(LeastBusyWarning),
 }
 
-impl LeastBusy {
-    // log_pre_api_call: one more call in flight under the deployment the attempt picked
-    pub async fn pre_call(
-        self: &Arc<Self>,
-        facts: &AttemptFacts<'_>,
-    ) -> Result<Started, LeastBusyError> {
-        let Some(reference) = deployment_ref(facts) else {
-            return Ok(Started {
-                call: None,
-                warning: None,
-            });
-        };
-        let key = request_count_key(&reference.model_group, &reference.deployment_id)?;
-        let warning = self.increment(&key, 1).await;
-        Ok(Started {
-            call: Some(InFlightCall {
-                service: Arc::clone(self),
-                key,
-                released: false,
-            }),
-            warning,
-        })
-    }
-
-    // _increment and _async_increment: this worker's count first, then the shared floor, and a failed write only warns
-    async fn increment(&self, key: &RouteKey, delta: i64) -> Option<LeastBusyWarning> {
-        let ttl = Some(IN_FLIGHT_COUNT_TTL_SECONDS);
-        match write_local(&self.local, key, delta, ttl) {
-            LocalWrite::Rejected(warning) => Some(warning),
-            LocalWrite::Written => match &self.shared {
-                None => None,
-                Some(shared) => write_shared(shared, key, delta, ttl).await,
-            },
-        }
-    }
-
-    // a dropped callback cannot await, so the shared count expires with its ttl while this worker's returns at once
-    fn release_locally(&self, key: &RouteKey) {
-        let ttl = Some(IN_FLIGHT_COUNT_TTL_SECONDS);
-        let outcome = self.local.increment(key, &RouteIncrement::Counter(-1), ttl);
-        if let Ok(RouteValue::Counter(value)) = outcome
-            && value.is_negative()
-        {
-            let _reset = self.local.set(key, &RouteValue::Counter(0), ttl);
-        }
-    }
-}
-
 // increment_cache with local_only: a counter driven below zero is written back as zero
-fn write_local(
+pub(super) fn write_local(
     store: &RoutingValueStore,
     key: &RouteKey,
     delta: i64,
@@ -107,7 +75,7 @@ fn write_local(
 }
 
 // increment_with_floor: the corrective write that clamps a negative shared count is the second half of the floor
-async fn write_shared(
+pub(super) async fn write_shared(
     store: &RoutingStateStore,
     key: &RouteKey,
     delta: i64,
@@ -118,8 +86,8 @@ async fn write_shared(
         .await
     {
         Ok(Observed { value, .. }) => match value {
-            RouteValue::Counter(value) if value.is_negative() => {
-                let floor = value.saturating_neg();
+            RouteValue::Counter(count) if count.is_negative() => {
+                let floor = count.saturating_neg();
                 store
                     .increment(key, &RouteIncrement::Counter(floor), ttl)
                     .await
@@ -127,7 +95,10 @@ async fn write_shared(
                     .map(UnwrittenCount::Shared)
             }
             RouteValue::Counter(_) => None,
-            _ => Some(UnwrittenCount::NotACount),
+            RouteValue::Spend(_)
+            | RouteValue::Pin(_)
+            | RouteValue::SchedulerTuple(_)
+            | RouteValue::Members(_) => Some(UnwrittenCount::NotACount),
         },
         Err(source) => Some(UnwrittenCount::Shared(source)),
     };
@@ -138,14 +109,6 @@ fn unwritable(key: &RouteKey, cause: UnwrittenCount) -> LeastBusyWarning {
     LeastBusyWarning::Unwritable {
         key: key.as_ref().to_owned(),
         cause,
-    }
-}
-
-impl InFlightCall {
-    // log_success_event, log_failure_event and the closed stream all release the one call they own
-    pub async fn release(mut self) -> Option<LeastBusyWarning> {
-        self.released = true;
-        self.service.increment(&self.key, -1).await
     }
 }
 

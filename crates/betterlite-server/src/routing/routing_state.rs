@@ -7,6 +7,7 @@ use betterlite_router::generalization_integration::model_generalizations::ModelG
 use betterlite_router::least_busy::LeastBusy;
 use betterlite_router::router_core::services::RouteServices;
 
+use crate::routing::least_busy::build;
 use crate::routing::model_generalizations::GeneralizationServices;
 
 mod tests;
@@ -31,7 +32,7 @@ impl RoutingState {
 
     // A failed reload leaves the served rules untouched, and a config naming none takes the loaded cost map's own.
     pub fn reload(&mut self, config: &Config) -> Result<(), GeneralizationError> {
-        self.least_busy = crate::routing::least_busy::build(config);
+        self.least_busy = build(config);
         let section = &config.sections.model_generalizations;
         if section.rules.is_empty() {
             let cost_map = BundledCatalog::default().get();

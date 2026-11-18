@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use rand::rngs::StdRng;
 
 use super::support::{
     Counted, Fixture, LastOnly, NoServices, RequestSetup, body, clock, deployment, group_and_ids,
@@ -418,20 +419,25 @@ pub(super) async fn least_busy_picks_lowest_count() {
         .expect("the attempt holds its count");
     assert!(started.release().await.is_none());
     assert_eq!(in_flight(&service, &picked_key), 0);
-    {
-        let dropped = run_route(
-            &fixture,
-            &setup,
-            &counted,
-            RoutingStrategy::LeastBusy,
-            &mut random,
-        )
+    dropped_attempt_returns_the_local_count(&fixture, &setup, &service, &mut random).await;
+}
+
+// a dropped attempt returns this worker's count even though nobody released it
+async fn dropped_attempt_returns_the_local_count(
+    fixture: &Fixture,
+    setup: &RequestSetup,
+    service: &Arc<LeastBusy>,
+    random: &mut StdRng,
+) {
+    let counted = Counted(Arc::clone(service));
+    let picked_key = request_count_key("gpt-4o", "b").unwrap();
+    let dropped = run_route(fixture, setup, &counted, RoutingStrategy::LeastBusy, random)
         .await
         .unwrap();
-        assert_eq!(picked(&dropped), "b");
-        assert_eq!(in_flight(&service, &picked_key), 1);
-    }
-    assert_eq!(in_flight(&service, &picked_key), 0);
+    assert_eq!(picked(&dropped), "b");
+    assert_eq!(in_flight(service, &picked_key), 1);
+    drop(dropped);
+    assert_eq!(in_flight(service, &picked_key), 0);
 }
 
 // every route attempt holds an in-flight count while it runs, whatever strategy the config names

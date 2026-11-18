@@ -62,6 +62,6 @@ fn wall_clock() -> Clock {
     Arc::new(|| {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_or(0.0, |since| since.as_secs_f64())
+            .map_or(0.0_f64, |since| since.as_secs_f64())
     })
 }

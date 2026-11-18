@@ -198,15 +198,7 @@ where
         };
         return Ok(attempt(context, resolved, deployment, None).await);
     }
-    let pick = select_index(
-        context,
-        dispatch,
-        &resolved.resolution,
-        &resolved.group,
-        &set,
-        random,
-    )
-    .await?;
+    let pick = select_index(context, dispatch, &resolved, &set, random).await?;
     let Some((strategy, index)) = pick else {
         return Err(no_deployment_error(context, &resolved));
     };
@@ -261,23 +253,22 @@ async fn narrowed_pool(
 async fn select_index<R>(
     context: &RouteContext<'_>,
     dispatch: &mut StrategyDispatch,
-    resolution: &Resolution,
-    group: &str,
+    resolved: &ResolvedRoute,
     set: &CandidateSet,
     random: &mut R,
 ) -> Result<Option<(Strategy, usize)>, RoutingError>
 where
     R: Rng + Send,
 {
-    let Some(strategy) = Strategy::of(resolution.strategy) else {
+    let Some(strategy) = Strategy::of(resolved.resolution.strategy) else {
         return Ok(None);
     };
     let strategy_context = StrategyContext {
         deployments: &set.deployments,
-        model_group: group,
+        model_group: &resolved.group,
         route: context,
         dispatch,
-        resolution,
+        resolution: &resolved.resolution,
     };
     let index = strategy::select(strategy, strategy_context, random).await?;
     Ok(Some((strategy, index)))

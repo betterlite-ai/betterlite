@@ -62,7 +62,7 @@ pub(crate) fn in_flight_store() -> RoutingValueStore {
             max_size_per_item: Some(1024),
             loaded_max_size_per_item_kib: 1024,
         },
-        Arc::new(|| 0.0),
+        Arc::new(|| 0.0_f64),
     )
     .unwrap()
 }

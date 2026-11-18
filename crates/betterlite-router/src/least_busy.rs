@@ -4,13 +4,18 @@ pub mod identity;
 
 mod tests;
 
+use std::sync::Arc;
+
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::routing_state_store::RoutingStateStore;
 use crate::routing_state_store::error::{Observed, StoreWarning};
-use crate::routing_value_store::{RouteKey, RouteValue, RoutingValueStore, StoreRead};
+use crate::routing_value_store::{
+    RouteIncrement, RouteKey, RouteValue, RoutingValueStore, StoreRead,
+};
 
 use self::error::{LeastBusyError, LeastBusyWarning, UnreadableCounts};
-use self::identity::request_count_keys;
+use self::guard::{InFlightCall, LocalWrite, Started, write_local, write_shared};
+use self::identity::{AttemptFacts, deployment_ref, request_count_key, request_count_keys};
 
 // IN_FLIGHT_COUNT_TTL_SECONDS: LiteLLM's one hour, counted from the call that created the counter
 pub const IN_FLIGHT_COUNT_TTL_SECONDS: f64 = 3600.0;
@@ -92,6 +97,48 @@ impl LeastBusy {
         })
     }
 
+    // log_pre_api_call: one more call in flight under the deployment the attempt picked
+    pub async fn pre_call(
+        self: &Arc<Self>,
+        facts: &AttemptFacts<'_>,
+    ) -> Result<Started, LeastBusyError> {
+        let Some(reference) = deployment_ref(facts) else {
+            return Ok(Started {
+                call: None,
+                warning: None,
+            });
+        };
+        let key = request_count_key(&reference.model_group, &reference.deployment_id)?;
+        let warning = self.increment(&key, 1).await;
+        Ok(Started {
+            call: Some(InFlightCall::started(Arc::clone(self), key)),
+            warning,
+        })
+    }
+
+    // _increment and _async_increment: this worker's count first, then the shared floor, and a failed write only warns
+    async fn increment(&self, key: &RouteKey, delta: i64) -> Option<LeastBusyWarning> {
+        let ttl = Some(IN_FLIGHT_COUNT_TTL_SECONDS);
+        match write_local(&self.local, key, delta, ttl) {
+            LocalWrite::Rejected(warning) => Some(warning),
+            LocalWrite::Written => match &self.shared {
+                None => None,
+                Some(shared) => write_shared(shared, key, delta, ttl).await,
+            },
+        }
+    }
+
+    // a dropped callback cannot await, so the shared count expires with its ttl while this worker's returns at once
+    fn release_locally(&self, key: &RouteKey) {
+        let ttl = Some(IN_FLIGHT_COUNT_TTL_SECONDS);
+        let outcome = self.local.increment(key, &RouteIncrement::Counter(-1), ttl);
+        if let Ok(RouteValue::Counter(value)) = outcome
+            && value.is_negative()
+        {
+            let _reset = self.local.set(key, &RouteValue::Counter(0), ttl);
+        }
+    }
+
     // the shared tier alone, reported as the store left it so a caller can log or probe it
     #[must_use]
     pub async fn shared_counts(&self, keys: &[RouteKey]) -> SharedCounts {
@@ -120,7 +167,6 @@ impl LeastBusy {
     }
 
     // the local tier alone, in pool order, with a key it never wrote left missing
-    #[must_use]
     pub fn local_count_values(
         &self,
         keys: &[RouteKey],
@@ -160,13 +206,12 @@ pub fn as_counts(values: &[Option<i64>]) -> Vec<i64> {
 #[must_use]
 pub fn local_counts(values: Option<&[Option<i64>]>, keys: usize) -> Vec<i64> {
     match values {
-        Some(values) if values.len() == keys => as_counts(values),
+        Some(counts) if counts.len() == keys => as_counts(counts),
         None | Some(_) => vec![0; keys],
     }
 }
 
 // every stored value in pool order, or the first key whose value is not a counter
-#[must_use]
 pub fn counter_values(
     keys: &[RouteKey],
     reads: Vec<StoreRead>,
