@@ -86,7 +86,7 @@ pub(crate) fn drive(input: &Input) -> HelperResult {
         .build()
         .map_err(|error| failure("OSError", error.to_string()))?;
     runtime
-        .block_on(timeout(DEADLINE, observe(input)))
+        .block_on(async { timeout(DEADLINE, observe(input)).await })
         .map_err(|elapsed| {
             failure(
                 "TimeoutError",
@@ -194,14 +194,14 @@ fn frame_log(session: &Session) -> (Vec<Value>, Vec<Value>) {
 }
 
 fn recorded_records(records: &Arc<Mutex<Records>>) -> (Vec<Value>, Vec<Value>) {
-    let records = records.locked();
-    let checks = records
+    let guard = records.locked();
+    let checks = guard
         .checks
         .iter()
         .map(|(event, data)| json!({"event": event, "data": data}))
         .collect();
-    let applied = records.applied.iter().map(recorded_input).collect();
-    drop(records);
+    let applied = guard.applied.iter().map(recorded_input).collect();
+    drop(guard);
     (checks, applied)
 }
 
@@ -227,7 +227,7 @@ fn recorded_frame(text: &str) -> Value {
     }
 }
 
-fn label(error: &RealtimeGuardrailsError<ScriptedError, ScriptedError>) -> &'static str {
+const fn label(error: &RealtimeGuardrailsError<ScriptedError, ScriptedError>) -> &'static str {
     match error {
         RealtimeGuardrailsError::Unexpected(_) => "unexpected",
         RealtimeGuardrailsError::Send(_) => "send",

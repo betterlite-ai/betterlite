@@ -83,10 +83,9 @@ impl RealtimeBackend for ScriptedBackend {
 
     async fn close(&mut self) -> Result<(), WebSocketError> {
         self.timeline.locked().push("backend-close");
-        {
-            let mut log = self.log.locked();
-            log.closes = log.closes.saturating_add(1);
-        }
+        let mut log = self.log.locked();
+        log.closes = log.closes.saturating_add(1);
+        drop(log);
         if self.close_failure {
             return Err(WebSocketError {
                 message: String::from("the scripted backend close failed"),

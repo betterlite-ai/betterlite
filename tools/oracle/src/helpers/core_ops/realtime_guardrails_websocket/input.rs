@@ -141,8 +141,8 @@ impl Input {
         let data = serde_json::to_string(&self.request_data).map_err(|error| error.to_string())?;
         sizes.push(data.len());
         if let Some(principal) = &self.user_api_key_dict {
-            let principal = serde_json::to_string(principal).map_err(|error| error.to_string())?;
-            sizes.push(principal.len());
+            let serialized = serde_json::to_string(principal).map_err(|error| error.to_string())?;
+            sizes.push(serialized.len());
         }
         Ok(sizes)
     }

@@ -45,15 +45,15 @@ impl ScriptedGuardrail {
 
     // A raised exception with a status_code or a ValueError blocks; every other exception is unexpected, detail or not
     fn failure(raised: Option<&Raised>) -> GuardrailFailure<ScriptedError> {
-        let raised = raised.cloned().unwrap_or_default();
-        if raised.status_code.is_some() || raised.value_error {
+        let fields = raised.cloned().unwrap_or_default();
+        if fields.status_code.is_some() || fields.value_error {
             GuardrailFailure::Blocked(GuardrailViolation {
-                detail: raised.detail.unwrap_or(Json::Null),
-                message: raised.message,
+                detail: fields.detail.unwrap_or(Json::Null),
+                message: fields.message,
             })
         } else {
             GuardrailFailure::Unexpected(ScriptedError {
-                message: raised.message,
+                message: fields.message,
             })
         }
     }
