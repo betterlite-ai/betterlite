@@ -268,6 +268,108 @@ model_list:
 }
 
 #[test]
+fn an_unquoted_hexadecimal_price_is_read_as_its_integer_value() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: 0x10
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+}
+
+#[test]
+fn a_tagged_hexadecimal_price_is_read_as_its_integer_value() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: !!int 0x10
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+}
+
+#[test]
+fn a_separated_hexadecimal_price_is_read_as_its_integer_value() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: 0x1_0
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+}
+
+#[test]
+fn a_quoted_hexadecimal_price_is_read_as_its_integer_value() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: \"0x10\"
+";
+    let resolved = settings(source, &[]).unwrap();
+    assert_eq!(
+        resolved.deployments[0].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+}
+
+#[test]
+fn octal_binary_and_signed_prices_are_read_as_their_integer_values() {
+    let source = "\
+model_list:
+  - model_name: octal
+    model_info:
+      input_cost_per_token: 0o20
+  - model_name: binary
+    model_info:
+      input_cost_per_token: 0b10000
+  - model_name: negative
+    model_info:
+      input_cost_per_token: -0x10
+";
+    let resolved = settings(source, &[]).unwrap();
+    let deployments = &resolved.deployments;
+    assert_eq!(
+        deployments[0].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+    assert_eq!(
+        deployments[1].input_cost_per_token,
+        Some(Decimal::new(16, 0))
+    );
+    assert_eq!(
+        deployments[2].input_cost_per_token,
+        Some(Decimal::new(-16, 0))
+    );
+}
+
+#[test]
+fn a_price_that_spells_no_number_names_the_key() {
+    let source = "\
+model_list:
+  - model_name: priced
+    model_info:
+      input_cost_per_token: 0x1.8
+";
+    let error = settings(source, &[]).unwrap_err();
+    assert!(error.contains("input_cost_per_token"), "{error}");
+}
+
+#[test]
 fn an_empty_environment_value_counts_as_unset() {
     let source = "\
 model_list:

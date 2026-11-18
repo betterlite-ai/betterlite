@@ -142,18 +142,43 @@ fn reject_quoted_number(value: &RawNumber, path: &str) -> Result<(), ConfigError
     }
 }
 
-// the price arrives as written text, so the shared number path keeps every digit and resolves os.environ once
+// the price arrives as written text, so a base-16, base-8 or base-2 integer resolves before the money parser
 pub(super) fn resolve_price(
     value: Option<RawPrice>,
     path: &str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<Option<Decimal>, ConfigError> {
-    resolve_number(
-        value.map(|price| RawNumber::Text(price.0)),
-        path,
-        lookup,
-        parse_money,
-    )
+    let Some(price) = value else {
+        return Ok(None);
+    };
+    // an os.environ reference reads its value through the shared number path
+    if price.0.starts_with("os.environ/") {
+        return resolve_number(Some(RawNumber::Text(price.0)), path, lookup, parse_money);
+    }
+    let text = integer_text(&price.0).unwrap_or(price.0);
+    parse_money(&text, path).map(Some)
+}
+
+// YAML writes an integer in base 16, 8 or 2 with a prefix; the decimal text goes on to the money parser
+fn integer_text(text: &str) -> Option<String> {
+    let (sign, unsigned) = match text.split_at_checked(1) {
+        Some((sign @ ("+" | "-"), rest)) => (sign, rest),
+        _ => ("", text),
+    };
+    let (radix, digits) = match unsigned.get(..2) {
+        Some("0x" | "0X") => (16, unsigned.get(2..)?),
+        Some("0o" | "0O") => (8, unsigned.get(2..)?),
+        Some("0b" | "0B") => (2, unsigned.get(2..)?),
+        _ => return None,
+    };
+    if !digits
+        .chars()
+        .all(|character| character == '_' || character.to_digit(radix).is_some())
+    {
+        return None;
+    }
+    let value = Decimal::from_str_radix(&format!("{sign}{digits}"), radix).ok()?;
+    Some(value.to_string())
 }
 
 fn invalid_scalar(path: &str) -> ConfigError {
