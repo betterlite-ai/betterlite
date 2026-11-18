@@ -188,5 +188,5 @@ pub(super) fn scanned_chat(response: Option<&Response>) -> Option<(&ChatResponse
         return None;
     };
     let message = &chat.choices.first()?.message;
-    Some((chat, message))
+    Some((chat.as_ref(), message))
 }
