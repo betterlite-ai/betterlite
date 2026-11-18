@@ -5,7 +5,11 @@ use std::io;
 use std::path::PathBuf;
 
 pub mod callback_settings;
+pub mod dev_reload;
+pub mod loop_type;
 mod temp_root;
+mod tests;
+pub mod uvicorn_settings;
 use callback_settings::CallbackSettings;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
