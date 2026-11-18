@@ -60,7 +60,7 @@ fn decodes_python_isoformats(#[case] source: &str, #[case] expected: &str) {
 #[case::leading_plus("+2026-01-02")]
 #[case::month_only("2026-01")]
 #[case::basic_month_only("202601")]
-#[case::non_ascii_digits("٢٠٢٦-01-02")]
+#[case::non_ascii_digits("\u{662}\u{660}\u{662}\u{666}-01-02")]
 #[case::empty("")]
 #[case::space_only("   ")]
 #[case::truncated("2026-0")]
@@ -95,7 +95,10 @@ fn json_dates_only_read_text() {
         parse_json_date(Some(&text("20260102"))),
         Some(calendar_date("2026-01-02"))
     );
-    assert_eq!(parse_json_date(Some(&Json::Number(Number::from(5)))), None);
+    assert_eq!(
+        parse_json_date(Some(&Json::Number(Number::from(5_i32)))),
+        None
+    );
     assert_eq!(parse_json_date(Some(&Json::Null)), None);
     assert_eq!(parse_json_date(Some(&Json::List(Vec::new()))), None);
     assert_eq!(parse_json_date(None), None);

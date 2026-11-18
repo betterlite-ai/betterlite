@@ -1,4 +1,4 @@
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, Weekday};
+use chrono::{DateTime, Datelike as _, NaiveDate, NaiveDateTime, Weekday};
 
 use betterlite_models::decisions::Json;
 
@@ -10,11 +10,11 @@ pub fn decode_deprecation_date(text: &str) -> Option<NaiveDate> {
     });
     // Week layouts match first: the basic calendar pattern matches any eight bytes
     let parsed = match trimmed.as_bytes() {
-        &[y0, y1, y2, y3, b'-', b'W', w0, w1, b'-', d] | &[y0, y1, y2, y3, b'W', w0, w1, d] => {
+        &[y0, y1, y2, y3, b'-', b'W', w0, w1, b'-', day] | &[y0, y1, y2, y3, b'W', w0, w1, day] => {
             NaiveDate::from_isoywd_opt(
                 calendar_year(&[y0, y1, y2, y3])?,
                 number(&[w0, w1])?,
-                iso_weekday(decimal(d)?)?,
+                iso_weekday(decimal(day)?)?,
             )?
         }
         &[y0, y1, y2, y3, b'-', b'W', w0, w1] | &[y0, y1, y2, y3, b'W', w0, w1] => {
@@ -63,7 +63,7 @@ fn number(digits: &[u8]) -> Option<u32> {
 
 fn calendar_year(digits: &[u8]) -> Option<i32> {
     let year = i32::try_from(number(digits)?).ok()?;
-    if year == 0 {
+    if year == 0_i32 {
         return None;
     }
     Some(year)

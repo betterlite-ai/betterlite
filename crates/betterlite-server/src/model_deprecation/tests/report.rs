@@ -240,7 +240,7 @@ fn negative_window() {
         -1,
         None,
     );
-    assert_eq!(response.warn_within_days, -1);
+    assert_eq!(response.warn_within_days, -1_i32);
     assert_eq!(names(&response.upcoming), ["today"]);
     assert_eq!(names(&response.deprecated), ["yesterday"]);
     assert!(response.imminent.is_empty());
@@ -320,7 +320,7 @@ fn response_defaults() {
 
 #[test]
 fn poll_constants() {
-    assert_eq!(DEFAULT_DEPRECATION_WARN_DAYS, 30);
+    assert_eq!(DEFAULT_DEPRECATION_WARN_DAYS, 30_i32);
     assert_eq!(DEFAULT_CHECK_INTERVAL_SECONDS, 86_400);
     assert_eq!(DEPRECATION_IDLE_POLL_SECONDS, 30);
 }

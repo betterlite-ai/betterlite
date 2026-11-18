@@ -1,6 +1,6 @@
 use chrono::Utc;
 
-use crate::model_deprecation::clock::{SystemClock, UtcClock};
+use crate::model_deprecation::clock::{SystemClock, UtcClock as _};
 
 #[test]
 fn system_clock_reads_the_wall_clock() {

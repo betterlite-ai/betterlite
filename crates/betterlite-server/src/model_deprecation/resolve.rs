@@ -71,7 +71,7 @@ fn cost_map_lookup(catalog: &dyn DeprecationCatalog, key: &str) -> Option<Resolv
 }
 
 fn text_field<'fields>(fields: Option<&'fields JsonObject>, key: &str) -> Option<&'fields str> {
-    match fields.and_then(|fields| fields.get(key)) {
+    match fields.and_then(|values| values.get(key)) {
         Some(Json::Text(text)) => Some(text),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
         | None => None,

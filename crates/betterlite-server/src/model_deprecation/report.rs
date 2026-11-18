@@ -82,7 +82,7 @@ fn bucket(
     warn_within_days: i32,
     checked_at: DateTime<Utc>,
 ) -> ModelDeprecationResponse {
-    models.sort_by(|left, right| left.deprecation_date.cmp(&right.deprecation_date));
+    models.sort_by_key(|left| left.deprecation_date);
     let mut response = ModelDeprecationResponse {
         deprecated: Vec::new(),
         imminent: Vec::new(),

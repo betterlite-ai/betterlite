@@ -59,7 +59,7 @@ fn deployment_date_override_takes_the_provider_only_from_model_info() {
 
 #[test]
 fn deployment_date_override_keeps_only_text_models() {
-    let params = object(vec![("model", Json::Number(Number::from(7)))]);
+    let params = object(vec![("model", Json::Number(Number::from(7_i32)))]);
     let info = object(vec![("deprecation_date", text("2026-03-01"))]);
     let catalog = TestCatalog::new(Vec::new());
     let resolved = resolve_deprecation(&view(Some("alpha"), &params, &info), &catalog)
@@ -128,7 +128,7 @@ fn first_slash_fallback() {
 #[case::impossible_day(text("2026-02-30"))]
 #[case::datetime_text(text("2026-04-01T00:00:00Z"))]
 #[case::null(Json::Null)]
-#[case::number(Json::Number(Number::from(20_260_401)))]
+#[case::number(Json::Number(Number::from(20_260_401_i32)))]
 fn invalid_override_falls_through(#[case] invalid: Json) {
     let catalog = TestCatalog::new(vec![("openai/raw-model", "2026-04-01", Some("openai"))]);
     let params = object(vec![("model", text("openai/raw-model"))]);

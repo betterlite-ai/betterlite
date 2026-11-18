@@ -1,6 +1,6 @@
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 
-use crate::model_deprecation::catalog::DeprecationCatalog;
+use crate::model_deprecation::catalog::DeprecationCatalog as _;
 
 use super::support::calendar_date;
 

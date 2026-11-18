@@ -32,7 +32,7 @@ pub fn format_alert_message(snapshot: &ModelDeprecationResponse) -> Option<Strin
     if snapshot.deprecated.is_empty() && snapshot.imminent.is_empty() {
         return None;
     }
-    let mut lines = vec!["*⚠️ Model Deprecation Warning*".to_owned()];
+    let mut lines = vec!["*\u{26a0}\u{fe0f} Model Deprecation Warning*".to_owned()];
     if !snapshot.deprecated.is_empty() {
         lines.push("\n*Already deprecated:*".to_owned());
         lines.extend(snapshot.deprecated.iter().map(format_entry));
