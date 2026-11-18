@@ -1,0 +1,32 @@
+kind: helper
+name: responses-file-search-argument-preparation
+call:
+  responses_file_search_tools:
+    function: argument_preparation
+    prepares:
+      - {include: ["file_search_call.results"], stream: 1}
+      - {include: null, stream: 0}
+      - {include: []}
+      - {stream: null}
+      - {}
+      - {include: ["message.output_text"], stream: false}
+    fallback_call_id: fs_fallback
+    tool_calls:
+      - {call_id: call_1, id: id_1, arguments: "{\"queries\":[\"q\"]}"}
+      - {id: id_2}
+      - {}
+      - {call_id: null, id: null}
+      - {call_id: 42}
+      - {call_id: call_4, arguments: 0}
+      - {call_id: call_5, arguments: {queries: ["q"]}}
+    query_args:
+      - {queries: ["q1", "q2"]}
+      - {queries: q}
+      - {queries: [], query: legacy}
+      - {}
+      - {query: single}
+      - {queries: null, query: null}
+      - {}
+    query_inputs: [null, x, null, 42, ignored, fallback, [1, 2]]
+env: {}
+compare: {ignore: []}

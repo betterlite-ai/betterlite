@@ -1,0 +1,60 @@
+kind: helper
+name: stream-error-fields
+call:
+  responses_stream_primitives:
+    operation: stream_error_fields
+    rows:
+      - kind: mapping
+        fields: {message: slow, type: rate_limit_exceeded, code: rate_limit_exceeded}
+      - kind: mapping
+        fields: {}
+      - kind: mapping
+        fields: {message: 42}
+      - kind: mapping
+        fields: {message: null}
+      - kind: mapping
+        fields: {message: "", type: 7, code: true}
+      - kind: mapping
+        fields: {message: true}
+      - kind: mapping
+        fields: {type: invalid_request_error, code: invalid_prompt}
+      - kind: mapping
+        fields: {code: 429}
+      - kind: mapping
+        fields: {code: 200}
+      - kind: mapping
+        fields: {code: "0399"}
+      - kind: mapping
+        fields: {code: "400"}
+      - kind: mapping
+        fields: {code: "599"}
+      - kind: mapping
+        fields: {code: "600"}
+      - kind: mapping
+        fields: {code: "-400"}
+      - kind: mapping
+        fields: {code: ""}
+      - kind: mapping
+        fields: {code: rate_limit_exceeded}
+      - kind: mapping
+        fields: {code: insufficient_quota}
+      - kind: mapping
+        fields: {type: context_length_exceeded}
+      - kind: mapping
+        fields: {type: server_error}
+      - kind: mapping
+        fields: {code: vector_store_timeout}
+      - kind: mapping
+        fields: {type: unknown_symbol}
+      - kind: mapping
+        fields: {type: 500, code: "500"}
+      - kind: attributes
+        fields: {message: attr, type: server_error, code: 500}
+      - kind: attributes
+        fields: {message: 9, type: 3}
+      - kind: attributes
+        fields: {}
+      - kind: mapping
+        fields: {message: 1.5, code: 1.5}
+env: {}
+compare: {ignore: []}

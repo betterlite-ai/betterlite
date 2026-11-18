@@ -1,0 +1,79 @@
+kind: helper
+name: request-option-precedence
+call:
+  response_chat_request:
+    model: gpt-4o
+    messages: [{role: user, content: hello}]
+    optional_params: {max_tokens: 4, max_completion_tokens: 7}
+    litellm_params: {}
+    headers: {}
+    reasoning_auto_summary: false
+    client: null
+calls:
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {max_completion_tokens: 7, max_tokens: 4}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {max_tokens: 4, max_output_tokens: 9}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {temperature: null, top_p: 0.5, max_tokens: null, store: null}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params:
+        vendor: {x: 1}
+        functions: [{name: f}]
+        parallel_tool_calls: false
+        include: [reasoning.encrypted_content]
+        service_tier: scale
+        top_logprobs: 2
+        truncation: auto
+        prompt_cache_key: k1
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {stream_options: {include_usage: true, include_obfuscation: false}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {tool_choice: {type: function, function: {name: lookup}}}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+  - response_chat_request:
+      model: gpt-4o
+      messages: [{role: user, content: hello}]
+      optional_params: {previous_response_id: resp_a, instructions: optional}
+      litellm_params: {}
+      headers: {}
+      reasoning_auto_summary: false
+      client: null
+env: {}
+compare:
+  ignore: []

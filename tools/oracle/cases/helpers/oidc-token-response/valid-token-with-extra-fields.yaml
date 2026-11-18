@@ -1,0 +1,13 @@
+kind: helper
+name: oidc-token-response-valid-token-with-extra-fields
+call:
+  oidc_token_response:
+    body: '{"access_token": "access-1", "token_type": "Bearer", "expires_in": 3600, "scope": "openid email"}'
+calls:
+  - oidc_token_response:
+      body: '{"access_token": "access-2", "id_token": "header.payload.signature", "refresh_token": "refresh-1", "user_id": "user-1", "custom": {"nested": [1, 2.5, null, true]}}'
+  - oidc_token_response:
+      body: '{"access_token": "", "access_token": "last-wins"}'
+env: {}
+compare:
+  ignore: []

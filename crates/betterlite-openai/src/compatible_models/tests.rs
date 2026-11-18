@@ -324,7 +324,7 @@ async fn silent_after_request(listener: &TcpListener) {
     sleep(Duration::from_secs(6)).await;
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_slow_models_endpoint_gives_up_after_five_seconds() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
