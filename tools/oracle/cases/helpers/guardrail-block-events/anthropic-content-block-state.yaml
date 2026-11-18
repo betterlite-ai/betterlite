@@ -1,0 +1,26 @@
+kind: helper
+name: anthropic-content-block-state
+call:
+  b3673:
+    operation: anthropic_continuation
+    message: blocked
+    model: claude-test
+    original_response: null
+    stamp: {response_id: resp_00000000-0000-0000-0000-000000000001, message_id: msg_00000000-0000-0000-0000-000000000001, created_at: 42}
+    events: []
+    chunks:
+      - |-
+        event: content_block_start
+        data: {"type":"content_block_start","index":2}
+
+      - |-
+        data: {"type":"content_block_start","index":5}
+
+      - |-
+        event: content_block_stop
+        data: {"type":"content_block_stop","index":5}
+
+    status_code: 400
+    message_id: msg_00000000-0000-0000-0000-000000000001
+env: {}
+compare: {ignore: []}

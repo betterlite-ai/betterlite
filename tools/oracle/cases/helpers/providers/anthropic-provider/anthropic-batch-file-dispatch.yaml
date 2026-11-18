@@ -1,0 +1,580 @@
+{
+  "kind": "helper",
+  "name": "anthropic-batch-file-dispatch",
+  "call": {
+    "anthropic_provider": {
+      "inputs": [
+        {
+          "action": "batch_create",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": null,
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{}",
+          "id": "file-1",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "batch_retrieve",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://batch.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {},
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"id\": \"msgbatch_one\", \"processing_status\": \"ended\", \"created_at\": \"2023-11-14T22:13:20Z\", \"request_counts\": {\"processing\": 0, \"succeeded\": 2, \"errored\": 1, \"canceled\": 1, \"expired\": 1}}",
+          "id": "msgbatch_one",
+          "purpose": null,
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "upload",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "forwarded"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"id\": \"file-1\", \"filename\": \"input.jsonl\", \"size_bytes\": 20, \"created_at\": \"2023-11-14T22:13:20Z\"}",
+          "id": "file-1",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "retrieve",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "file"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"id\": \"file-1\", \"filename\": \"input.jsonl\", \"size_bytes\": 20, \"created_at\": \"2023-11-14T22:13:20Z\"}",
+          "id": "file-1",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "list",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "file"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"data\": [{\"id\": \"file-1\", \"filename\": \"input.jsonl\", \"size_bytes\": 20, \"created_at\": \"2023-11-14T22:13:20Z\"}], \"has_more\": true, \"last_id\": \"file-1\"}",
+          "id": "file-1",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "delete",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "file"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"id\": \"file-1\", \"filename\": \"input.jsonl\", \"size_bytes\": 20, \"created_at\": \"2023-11-14T22:13:20Z\"}",
+          "id": "file-1",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "content",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "file"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "one\ntwo\n",
+          "id": "file-1",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "batch_results",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "file"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"custom_id\":\"one\",\"result\":{\"type\":\"succeeded\"}}\n",
+          "id": "msgbatch_one",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        },
+        {
+          "action": "retrieve",
+          "model": "claude-3-haiku-20240307",
+          "provider": "anthropic",
+          "api_base": "https://files.test",
+          "api_key": "sk-oracle-explicit",
+          "global_base": null,
+          "anthropic_key": null,
+          "global_key": null,
+          "environment": {},
+          "disable_suffix": false,
+          "config_present": true,
+          "messages": [
+            {
+              "role": "user",
+              "content": "hi"
+            }
+          ],
+          "optional_params": {},
+          "litellm_params": {},
+          "headers": {
+            "x-oracle": "file"
+          },
+          "custom_prompt_dict": {},
+          "global_prompt_dict": {},
+          "stream": false,
+          "acompletion": false,
+          "client": null,
+          "shared_session": null,
+          "encoding": "cl100k_base",
+          "expected_key": "sk-oracle-explicit",
+          "failure": null,
+          "response": "{\"id\": \"file-1\", \"filename\": \"input.jsonl\", \"size_bytes\": 20}",
+          "id": "file-1",
+          "purpose": "messages",
+          "file": "{\"custom_id\":\"one\"}\n",
+          "system": null,
+          "tools": null
+        }
+      ],
+      "expected": [
+        {
+          "result": {
+            "error": true,
+            "status": null
+          },
+          "post_call": false,
+          "request": null,
+          "post_matches": true
+        },
+        {
+          "result": {
+            "id": "msgbatch_one",
+            "status": "completed",
+            "output_file_id": "msgbatch_one",
+            "request_counts": {
+              "completed": 2,
+              "failed": 1,
+              "total": 5
+            }
+          },
+          "post_call": false,
+          "request": {
+            "method": "GET",
+            "url": "https://batch.test/v1/messages/batches/msgbatch_one",
+            "query": [],
+            "headers": {
+              "accept": "application/json",
+              "content-type": "application/json",
+              "anthropic-beta": "message-batches-2024-09-24",
+              "anthropic-version": "2023-06-01",
+              "x-api-key": "matched"
+            },
+            "body": null
+          },
+          "post_matches": true
+        },
+        {
+          "result": {
+            "id": "file-1",
+            "filename": "input.jsonl",
+            "bytes": 20,
+            "created_at": 1700000000,
+            "object": "file",
+            "purpose": "messages",
+            "status": "uploaded"
+          },
+          "post_call": false,
+          "request": {
+            "method": "POST",
+            "url": "https://files.test/v1/files",
+            "query": [],
+            "body": {
+              "boundary": "oracle-boundary",
+              "parts": [
+                {
+                  "name": "file",
+                  "filename": "input.jsonl",
+                  "content_type": "application/jsonl",
+                  "data": "{\"custom_id\":\"one\"}\n"
+                },
+                {
+                  "name": "purpose",
+                  "filename": null,
+                  "content_type": null,
+                  "data": "messages"
+                }
+              ]
+            },
+            "headers": {
+              "x-oracle": "forwarded",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        },
+        {
+          "result": {
+            "id": "file-1",
+            "filename": "input.jsonl",
+            "bytes": 20,
+            "created_at": 1700000000,
+            "object": "file",
+            "purpose": "messages",
+            "status": "uploaded"
+          },
+          "post_call": false,
+          "request": {
+            "method": "GET",
+            "url": "https://files.test/v1/files/file-1",
+            "query": [],
+            "body": null,
+            "headers": {
+              "x-oracle": "file",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        },
+        {
+          "result": [
+            {
+              "id": "file-1",
+              "filename": "input.jsonl",
+              "bytes": 20,
+              "created_at": 1700000000,
+              "object": "file",
+              "purpose": "messages",
+              "status": "uploaded"
+            }
+          ],
+          "post_call": false,
+          "request": {
+            "method": "GET",
+            "url": "https://files.test/v1/files",
+            "query": [
+              [
+                "purpose",
+                "messages"
+              ]
+            ],
+            "body": null,
+            "headers": {
+              "x-oracle": "file",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        },
+        {
+          "result": {
+            "id": "file-1",
+            "object": "file",
+            "deleted": true
+          },
+          "post_call": false,
+          "request": {
+            "method": "DELETE",
+            "url": "https://files.test/v1/files/file-1",
+            "query": [],
+            "body": null,
+            "headers": {
+              "x-oracle": "file",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        },
+        {
+          "result": "one\ntwo\n",
+          "post_call": false,
+          "request": {
+            "method": "GET",
+            "url": "https://files.test/v1/files/file-1/content",
+            "query": [],
+            "body": null,
+            "headers": {
+              "x-oracle": "file",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        },
+        {
+          "result": "{\"custom_id\":\"one\",\"result\":{\"type\":\"succeeded\"}}\n",
+          "post_call": false,
+          "request": {
+            "method": "GET",
+            "url": "https://files.test/v1/messages/batches/msgbatch_one/results",
+            "query": [],
+            "body": null,
+            "headers": {
+              "x-oracle": "file",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        },
+        {
+          "result": {
+            "id": "file-1",
+            "filename": "input.jsonl",
+            "bytes": 20,
+            "created_at": 1700000000,
+            "object": "file",
+            "purpose": "messages",
+            "status": "uploaded"
+          },
+          "post_call": false,
+          "request": {
+            "method": "GET",
+            "url": "https://files.test/v1/files/file-1",
+            "query": [],
+            "body": null,
+            "headers": {
+              "x-oracle": "file",
+              "x-api-key": "matched",
+              "anthropic-version": "2023-06-01",
+              "anthropic-beta": "files-api-2025-04-14"
+            }
+          },
+          "post_matches": true
+        }
+      ]
+    }
+  },
+  "env": {
+    "LITELLM_RUST": "false",
+    "LITELLM_LOCAL_MODEL_COST_MAP": "true"
+  },
+  "compare": {
+    "ignore": []
+  }
+}

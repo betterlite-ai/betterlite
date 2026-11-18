@@ -1,11 +1,21 @@
+mod tests;
+
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_provider::anthropic_dispatch::fixtures::{Case, execute};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Case;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("anthropic_provider")
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .or_value_error()?;
+        let observations = runtime.block_on(execute(input)).or_value_error()?;
+        serde_json::to_value(observations).or_value_error()
     }
 }

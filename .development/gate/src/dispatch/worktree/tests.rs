@@ -42,7 +42,7 @@ fn migration_preserves_commits_staging_and_working_files() {
     let status = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
     let before = git(&target, &status).unwrap();
     let head = git(&target, &["rev-parse", "HEAD"]).unwrap();
-    prepare(&root, &target, branch).unwrap();
+    prepare(&root, &target, "B123", branch).unwrap();
     assert!(target.join(".git").is_dir());
     assert_eq!(git(&target, &status).unwrap(), before);
     assert_eq!(git(&target, &["rev-parse", "HEAD"]).unwrap(), head);
@@ -76,7 +76,7 @@ fn migration_preserves_local_excludes_with_staged_and_unstaged_files() {
     let before = git(&target, &status).unwrap();
     let branch_head = git(&target, &["rev-parse", "HEAD"]).unwrap();
 
-    prepare(&root, &target, branch).unwrap();
+    prepare(&root, &target, "B123", branch).unwrap();
 
     assert_eq!(git(&target, &status).unwrap(), before);
     assert_eq!(git(&target, &["rev-parse", "HEAD"]).unwrap(), branch_head);
@@ -102,7 +102,7 @@ fn an_existing_task_branch_is_reused_in_a_private_checkout() {
     git(&root, &["commit", "-qam", "second counter"]).unwrap();
     let head = git(&root, &["rev-parse", "HEAD"]).unwrap();
     git(&root, &["switch", "-q", "main"]).unwrap();
-    prepare(&root, &target, branch).unwrap();
+    prepare(&root, &target, "B123", branch).unwrap();
     assert_eq!(git(&target, &["rev-parse", "HEAD"]).unwrap(), head);
     assert_eq!(git(&target, &["config", "user.name"]).unwrap(), "Fixture\n");
     assert_eq!(
@@ -110,7 +110,16 @@ fn an_existing_task_branch_is_reused_in_a_private_checkout() {
         "false\n"
     );
     assert_eq!(coordinator(&target).unwrap(), common_dir(&root).unwrap());
-    assert!(prepare(&root, &target, "task/B124-other").is_err());
+    let refused = prepare(&root, &target, "B124", "task/B124-other").unwrap_err();
+    assert!(refused.to_string().contains("different task branch"));
+    assert_eq!(
+        prepare(&root, &target, "B123", "task/B123-retitled-counter").unwrap(),
+        branch
+    );
+    assert_eq!(
+        git(&target, &["branch", "--show-current"]).unwrap(),
+        format!("{branch}\n")
+    );
 }
 
 #[test]
@@ -147,7 +156,7 @@ fn migration_refuses_a_checkout_used_by_a_process() {
         .current_dir(&target)
         .spawn()
         .unwrap();
-    let result = prepare(&root, &target, branch);
+    let result = prepare(&root, &target, "B123", branch);
     process.kill().unwrap();
     process.wait().unwrap();
     assert!(result.unwrap_err().to_string().contains("still used"));
@@ -168,7 +177,7 @@ fn migration_refuses_an_unfinished_git_operation() {
     let marker = PathBuf::from(directory.trim()).join("MERGE_HEAD");
     let head = git(&target, &["rev-parse", "HEAD"]).unwrap();
     fs::write(&marker, &head).unwrap();
-    let error = prepare(&root, &target, branch).unwrap_err();
+    let error = prepare(&root, &target, "B123", branch).unwrap_err();
     assert!(error.to_string().contains("unfinished Git operation"));
     assert!(target.join(".git").is_file());
     assert_eq!(fs::read_to_string(marker).unwrap(), head);
@@ -182,10 +191,10 @@ fn a_task_checkout_runs_no_git_hooks() {
     fs::write(hooks.join("pre-commit"), "#!/bin/sh\nexit 1\n").unwrap();
     let target = folder.path().join("B123");
     let branch = "task/B123-counter";
-    prepare(&root, &target, branch).unwrap();
+    prepare(&root, &target, "B123", branch).unwrap();
     assert!(!target.join(".git/hooks/pre-commit").exists());
     fs::write(target.join(".git/hooks/pre-push"), "#!/bin/sh\nexit 1\n").unwrap();
-    prepare(&root, &target, branch).unwrap();
+    prepare(&root, &target, "B123", branch).unwrap();
     assert!(!target.join(".git/hooks/pre-push").exists());
     fs::write(target.join("counter"), "two\n").unwrap();
     git(&target, &["commit", "-qam", "second counter"]).unwrap();
