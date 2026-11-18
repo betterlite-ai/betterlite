@@ -4,6 +4,7 @@ use betterlite_logging::analytics::{lunary, messages, params, python, wandb, wir
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use std::collections::BTreeMap;
 use std::error::Error;
 
@@ -310,4 +311,32 @@ fn structured_parameters_use_python_repr() {
         python::repr(&vec!["don't", "line\n\t\u{0}"]).unwrap(),
         "[\"don't\", 'line\\n\\t\\x00']"
     );
+}
+
+#[rstest]
+#[case::a_whole_number(2.0_f64, "2.0")]
+#[case::a_fraction(2.5_f64, "2.5")]
+#[case::zero(0.0_f64, "0.0")]
+#[case::negative_zero(-0.0_f64, "-0.0")]
+#[case::a_negative_number(-1.0_f64, "-1.0")]
+#[case::the_smallest_fixed_fraction(0.0001_f64, "0.0001")]
+#[case::just_below_the_fixed_range(0.00001_f64, "1e-05")]
+#[case::fifteen_digits(1e15_f64, "1000000000000000.0")]
+#[case::sixteen_digits(1e16_f64, "1e+16")]
+#[case::a_large_number(1e20_f64, "1e+20")]
+#[case::nan(f64::NAN, "nan")]
+#[case::infinity(f64::INFINITY, "inf")]
+#[case::negative_infinity(f64::NEG_INFINITY, "-inf")]
+fn float_text_matches_str(#[case] value: f64, #[case] expected: &str) {
+    assert_eq!(python::float_text(value), expected);
+}
+
+#[rstest]
+#[case::an_integer(Number::from(7_i32), "7")]
+#[case::a_float(Number::from_f64(1.5).expect("1.5 is finite"), "1.5")]
+#[case::a_large_float(Number::from_f64(1e20).expect("1e20 is finite"), "1e+20")]
+#[case::negative_zero_integer(serde_json::from_str("-0").expect("-0 is a number"), "0")]
+#[case::negative_zero_float(Number::from_f64(-0.0).expect("-0.0 is finite"), "-0.0")]
+fn number_text_matches_str(#[case] value: Number, #[case] expected: &str) {
+    assert_eq!(python::number_text(&value), expected);
 }

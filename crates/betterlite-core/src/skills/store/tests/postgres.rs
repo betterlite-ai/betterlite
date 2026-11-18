@@ -18,7 +18,6 @@ type Store<'db> = HostedSkillStore<PrismaSkillRepository<'db>>;
 async fn postgres_owner_roundtrip() {
     let fixture = support::provision().await;
     let writer = support::store(&fixture);
-    support::migrate(&writer).await;
     let availability = Availability::default();
     let store = managed_store(&writer, &availability);
     let created = create_row(&store).await;

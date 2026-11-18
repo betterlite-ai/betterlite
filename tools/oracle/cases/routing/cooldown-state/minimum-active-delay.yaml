@@ -1,0 +1,24 @@
+kind: probe
+name: minimum-active-delay
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_cooldowns:
+          a: {exception_received: probe failure, status_code: "429", timestamp: 0.0, cooldown_time: 30.0}
+          b: {exception_received: probe failure, status_code: "500", timestamp: 0.0, cooldown_time: 12.5}
+        steps:
+          - {kind: minimum, now_millis: 0, model_ids: [a, b]}
+          - {kind: add, now_millis: 1000, model_id: c, status_code: 503, cooldown_time: 7.0, exception: probe failure}
+          - {kind: minimum, now_millis: 2000, model_ids: [a, b, c]}
+          - {kind: minimum, now_millis: 3000, model_ids: [missing]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        steps:
+          - {kind: minimum, now_millis: 0, model_ids: []}
+compare: {ignore: []}

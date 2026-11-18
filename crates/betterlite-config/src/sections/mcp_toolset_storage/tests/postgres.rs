@@ -1,16 +1,10 @@
-use std::str::from_utf8;
 use std::sync::Arc;
 
 use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableError};
 use betterlite_db::database_replica::availability::Availability;
+use betterlite_db::migration_ledger::baseline::{PACKAGED_CATALOGS, catalog_statements};
 use betterlite_db::postgres_store::session::PostgresStore;
-use betterlite_db::{
-    schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
-    schema_identity_history, schema_managed_resources, schema_policy_resources,
-    schema_routing_state,
-};
-use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
-use betterlite_postgres_fixture::seed::FixtureSeed;
+use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use chrono::NaiveDateTime;
 use deadpool_postgres::{Manager, Pool};
@@ -48,20 +42,17 @@ struct Case {
 impl Case {
     async fn new() -> Self {
         let url = configured_url();
-        let mut generator = RandomDatabaseName;
-        let mut task = PostgresFixture::provision_with_name_generator(
-            url.as_ref(),
-            &FixtureSeed::default(),
-            &mut generator,
-        );
-        let fixture = task.resolve().await.unwrap();
+        let statements = catalog_statements(&PACKAGED_CATALOGS).unwrap();
+        let fixture = PostgresFixture::provision_with_statements(url.as_ref(), statements)
+            .resolve()
+            .await
+            .unwrap();
         let config = fixture.options.url.expose_secret().parse().unwrap();
         let pool = Pool::builder(Manager::new(config, NoTls))
             .max_size(2)
             .build()
             .unwrap();
         let store = PostgresStore { pool: Some(pool) };
-        migrate(&store).await;
         Self {
             fixture,
             store,
@@ -89,31 +80,6 @@ impl Case {
     async fn close(self) {
         self.store.pool.unwrap().close();
         self.fixture.close_async().await.unwrap();
-    }
-}
-
-async fn migrate(store: &PostgresStore) {
-    let client = store.session().await.unwrap();
-    client
-        .batch_execute("DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-        .await
-        .unwrap();
-    for catalog in [
-        schema_baseline::MIGRATION_CATALOG,
-        schema_daily_usage::MIGRATION_CATALOG,
-        schema_managed_resources::MIGRATION_CATALOG,
-        schema_identity_history::MIGRATION_CATALOG,
-        schema_policy_resources::MIGRATION_CATALOG,
-        schema_routing_state::MIGRATION_CATALOG,
-        schema_budget_windows::MIGRATION_CATALOG,
-        schema_agent_identity::MIGRATION_CATALOG,
-    ] {
-        for migration in catalog.files {
-            client
-                .batch_execute(from_utf8(migration.bytes).unwrap())
-                .await
-                .unwrap();
-        }
     }
 }
 

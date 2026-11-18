@@ -1,0 +1,7 @@
+model_list:
+  - model_name: google-sso-seed
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/GOOGLE_SSO_SEED_KEY
+general_settings:
+  master_key: sk-google-sso-seed

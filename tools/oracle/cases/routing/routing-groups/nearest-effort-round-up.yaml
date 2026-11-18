@@ -1,0 +1,17 @@
+kind: probe
+name: nearest-effort-round-up
+probes:
+  - clock: {unix_millis: 1700000001800, monotonic_millis: 0}
+    samples: []
+    operation:
+      routing_groups:
+        rounds:
+          - {requested: low, declared: [medium]}
+          - {requested: medium, declared: [low]}
+          - {requested: minimal, declared: [minimal, high]}
+          - {requested: high, declared: [low, medium]}
+          - {requested: xhigh, declared: [max]}
+          - {requested: max, declared: [minimal]}
+          - {requested: low, declared: []}
+          - {requested: none, declared: [high]}
+compare: {ignore: []}

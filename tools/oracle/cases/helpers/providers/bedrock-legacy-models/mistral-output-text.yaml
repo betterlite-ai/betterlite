@@ -1,0 +1,33 @@
+kind: helper
+name: bedrock-legacy-models-mistral-output-text
+call:
+  bedrock_legacy_models:
+    output_text:
+      response:
+        choices:
+          - message: {content: from choices}
+            finish_reason: tool_calls
+        outputs:
+          - text: from outputs
+            stop_reason: end_turn
+calls:
+  - bedrock_legacy_models:
+      output_text:
+        response:
+          outputs:
+            - text: from outputs
+              stop_reason: end_turn
+  - bedrock_legacy_models:
+      output_text:
+        response:
+          choices:
+            - message: {content: null}
+              finish_reason: null
+  - bedrock_legacy_models:
+      output_text:
+        response: {}
+  - bedrock_legacy_models:
+      output_text:
+        response: {choices: []}
+env: {}
+compare: {ignore: []}

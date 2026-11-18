@@ -26,6 +26,18 @@ description: >-
   bridges remain with B202/B203.
 scope:
   paths:
+  - "crates/betterlite-openai/src/text_completion_execution/http.rs"
+  - "crates/betterlite-server/src/routes/completions/streaming/tests.rs"
+  - "crates/betterlite-server/src/routes/completions/streaming.rs"
+  - "crates/betterlite-server/src/routes/completions.rs"
+  - "crates/betterlite-server/src/routes/chat/streaming/tests.rs"
+  - "crates/betterlite-server/src/routes/chat/streaming.rs"
+  - crates/betterlite-server/src/routes/completions/**
+  - crates/betterlite-server/src/routes/chat/streaming/**
+  - "crates/betterlite-openai/src/text_completion_execution/tests.rs"
+  - "crates/betterlite-openai/src/text_completion_execution.rs"
+  - "crates/betterlite-core/src/operation/text_completion.rs"
+  - "crates/betterlite-core/src/operation/chat.rs"
   - Cargo.toml
   - crates/betterlite-openai/src/text_completion_stream.rs
   - crates/betterlite-openai/src/text_completion_stream/**
@@ -112,5 +124,5 @@ pitfalls:
 - Terminal usage and DONE must each be emitted only when the pinned stream mapping emits them.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0

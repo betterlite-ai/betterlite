@@ -2,6 +2,8 @@
 
 use super::DeployError;
 use super::fixtures::{checkpoint, database};
+use crate::schema_policy_resources::HEALTH_CHECK_LATEST_PER_MODEL;
+use std::str::from_utf8;
 use std::time::Duration;
 use tokio::fs;
 use tokio::time::{Instant, sleep};
@@ -162,7 +164,7 @@ async fn earlier_migrations_survive() {
 async fn concurrent_index_outside_transaction() {
     database(async |db| {
         db.pool.get().await.unwrap().batch_execute("CREATE TABLE \"LiteLLM_HealthCheckTable\" (model_id text, model_name text, checked_at timestamptz)").await.unwrap();
-        db.run(&[("20260415120000_health_check_latest_per_model_index", include_str!("fixtures/health.sql"))]).await.unwrap();
+        db.run(&[(HEALTH_CHECK_LATEST_PER_MODEL.directory, from_utf8(HEALTH_CHECK_LATEST_PER_MODEL.bytes).unwrap())]).await.unwrap();
         assert_eq!(db.pool.get().await.unwrap().query_one("SELECT count(*) FROM pg_index WHERE indrelid='\"LiteLLM_HealthCheckTable\"'::regclass AND indisvalid", &[]).await.unwrap().get::<_, i64>(0), 1);
         let rows = db.pool.get().await.unwrap().query("SELECT id, migration_name, checksum, applied_steps_count, logs, finished_at IS NOT NULL AS finished, rolled_back_at IS NOT NULL AS rolled_back, started_at IS NOT NULL AS started FROM _prisma_migrations ORDER BY started_at, id", &[]).await.unwrap();
         assert_eq!(rows[0].get::<_, i32>("applied_steps_count"), 1_i32);

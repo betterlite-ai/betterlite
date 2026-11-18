@@ -1,0 +1,10 @@
+kind: helper
+name: responses-file-search-tools-seed
+call:
+  responses_file_search_tools:
+    function: tool_replacement
+    tools:
+      - {type: file_search, vector_store_ids: ["vs_seed", "vs_seed"]}
+      - {type: custom}
+env: {}
+compare: {ignore: []}

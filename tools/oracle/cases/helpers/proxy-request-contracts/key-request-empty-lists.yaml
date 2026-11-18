@@ -1,0 +1,18 @@
+kind: helper
+name: key_request_empty_lists
+call:
+  b8411:
+    calls:
+      - {function: key, body: {}}
+      - {function: key, body: {keys: null}}
+      - {function: key, body: {keys: []}}
+      - {function: key, body: {key_aliases: []}}
+      - {function: key, body: {keys: [], key_aliases: []}}
+      - {function: key, body: {keys: null, key_aliases: null}}
+      - {function: key, body: {keys: [""]}}
+      - {function: key, body: {keys: ["sk-1"]}}
+      - {function: key, body: {key_aliases: ["alias-1"]}}
+      - {function: key, body: {keys: null, key_aliases: ["alias-1"]}}
+      - {function: key, body: {keys: ["sk-1", "sk-2"], key_aliases: ["alias-1"]}}
+env: {}
+compare: {ignore: []}

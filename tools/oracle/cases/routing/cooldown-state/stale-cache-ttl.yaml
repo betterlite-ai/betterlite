@@ -1,0 +1,27 @@
+kind: probe
+name: stale-cache-ttl
+probes:
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_cooldowns:
+          a: {exception_received: probe failure, status_code: "429", timestamp: 0.0, cooldown_time: 120.0}
+          b: {exception_received: probe failure, status_code: "500", timestamp: 0.0, cooldown_time: 30.0}
+        steps:
+          - {kind: read, now_millis: 0, model_ids: [a, b]}
+          - {kind: read, now_millis: 59000, model_ids: [a]}
+          - {kind: read, now_millis: 61000, model_ids: [a]}
+          - {kind: read, now_millis: 61000, model_ids: [b]}
+  - clock: {unix_millis: 0, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_state:
+        settings: {default_cooldown_time: 5.0, redis_read_interval_seconds: 1.0, staleness_threshold: 10.0}
+        shared_cooldowns:
+          c: {exception_received: probe failure, status_code: "429", timestamp: 0.0, cooldown_time: 10.0}
+        steps:
+          - {kind: read, now_millis: 0, model_ids: [c]}
+          - {kind: read, now_millis: 4000, model_ids: [c]}
+compare: {ignore: []}

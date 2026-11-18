@@ -1,17 +1,27 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
+use std::io;
+use std::str::from_utf8;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use axum::body::{Body, to_bytes};
-use axum::http::{Request, StatusCode};
+use axum::body::{Body, Bytes, to_bytes};
+use axum::http::{HeaderMap, Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_core::dispatch::error::DispatchError;
-use betterlite_core::operation::chat::ChatFailure;
+use betterlite_core::operation::chat::{ChatFailure, ChatResult, TextCallMode};
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::stream::SseParser;
+use betterlite_openai::text_completion_execution::failure::CompletionFailure;
+use betterlite_openai::text_completion_execution::{
+    CompletionAnswer, CompletionCallAnswer, CompletionStreamAnswer,
+};
+use betterlite_openai::text_completion_response::CompletionResponse;
+use betterlite_openai::text_completion_transport::stream::CompletionStream;
+use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use futures_util::{StreamExt as _, stream};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
@@ -19,8 +29,11 @@ use rstest::rstest;
 use tower::ServiceExt as _;
 use uuid::Uuid;
 
-use super::{RelayState, next_sse};
+use super::answered_result;
+use super::completion_failure;
+use super::relay::{RelaySource, TextSource};
 use crate::routes::chat::{CallContext, ErrorLayer, chat_routes_with_call_id, dispatch_failure};
+use crate::routes::completions::streaming::pump::{Pump, next_frame};
 use crate::server::chat_setup::chat_executor;
 
 fn executor_for(source: &str) -> ChatExecutor {
@@ -277,17 +290,21 @@ async fn mock_calls_behavior_tests_behavior(
 #[case::oversized(Ok(vec![b'x'; 0x0010_0001]))]
 #[tokio::test]
 async fn stream_error_ends_relay(#[case] input: Result<Vec<u8>, HttpError>) {
-    let state = RelayState {
+    let source = RelaySource {
         upstream: stream::iter(vec![input, Ok(b"data: [DONE]\n\n".to_vec())]).boxed(),
         parser: SseParser::default(),
-        pending: VecDeque::new(),
-        finished: false,
         model: String::from("group"),
         include_usage: false,
     };
-    let (event, remaining) = next_sse(state).await.unwrap();
-    event.unwrap_err();
-    assert!(next_sse(remaining).await.is_none());
+    let (event, remaining) = next_frame::<RelaySource, io::Error>(Pump::new(source))
+        .await
+        .unwrap();
+    let _failure = event.unwrap_err();
+    assert!(
+        next_frame::<RelaySource, io::Error>(remaining)
+            .await
+            .is_none()
+    );
 }
 
 #[rstest]
@@ -312,4 +329,175 @@ async fn provider_framework_tests_behavior(#[case] failure: ChatFailure) {
     assert_eq!(reply.error.error_type, "internal_server_error");
     assert_eq!(reply.error.code, "500");
     assert_eq!(reply.error.litellm_call_id.as_deref(), Some("call-7"));
+}
+
+fn text_chunk(body: &str) -> StreamChunk {
+    serde_json::from_str(body).expect("text chunk")
+}
+
+async fn bridged(chunks: Vec<&str>, include_usage: bool) -> Vec<Result<Bytes, HttpError>> {
+    let items: Vec<_> = chunks
+        .into_iter()
+        .map(|body| Ok(text_chunk(body)))
+        .collect();
+    let source = TextSource {
+        stream: stream::iter(items).boxed(),
+        model: String::from("client"),
+        include_usage,
+    };
+    let mut frames = Vec::new();
+    let mut pump = Pump::new(source);
+    while let Some((frame, next)) = next_frame::<TextSource, HttpError>(pump).await {
+        frames.push(frame);
+        pump = next;
+    }
+    frames
+}
+
+// A frame the text bridge wrote, read as the chat chunk the client parses
+#[derive(serde::Deserialize)]
+struct BridgedFrame {
+    object: String,
+    model: String,
+    choices: Vec<FrameChoice>,
+    #[serde(default)]
+    usage: Option<BridgedUsage>,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgedUsage {
+    total_tokens: u64,
+    #[serde(default)]
+    completion_tokens_details: Option<BridgedDetails>,
+}
+
+#[derive(serde::Deserialize)]
+struct BridgedDetails {
+    text_tokens: u64,
+}
+
+fn payload(frame: &Result<Bytes, HttpError>) -> BridgedFrame {
+    let bytes = frame.as_ref().expect("frame");
+    let text = from_utf8(bytes).expect("utf8");
+    let body = text.strip_prefix("data: ").expect("data event").trim_end();
+    serde_json::from_str(body).expect("frame json")
+}
+
+#[tokio::test]
+async fn a_text_stream_becomes_chat_chunks_with_a_done_event() {
+    let frames = bridged(
+        vec![
+            r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"Hello"}}]}"#,
+            r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}"#,
+        ],
+        false,
+    )
+    .await;
+    assert_eq!(frames.len(), 3);
+    let first = payload(&frames[0]);
+    assert_eq!(first.object, "chat.completion.chunk");
+    assert_eq!(first.model, "client");
+    assert_eq!(first.choices[0].delta.content.as_deref(), Some("Hello"));
+    assert_eq!(first.choices[0].delta.role.as_deref(), Some("assistant"));
+    let second = payload(&frames[1]);
+    assert_eq!(second.choices[0].finish_reason.as_deref(), Some("stop"));
+    assert_eq!(second.choices[0].delta.role, None);
+    assert_eq!(second.choices[0].delta.content, None);
+    assert_eq!(&**frames[2].as_ref().expect("done"), b"data: [DONE]\n\n");
+}
+
+#[tokio::test]
+async fn a_text_usage_chunk_needs_the_client_usage_choice() {
+    let usage = r#"{"id":"cmpl-1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{}}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
+    let unasked = bridged(vec![usage], false).await;
+    assert_eq!(unasked.len(), 1);
+    let asked = bridged(vec![usage], true).await;
+    let frame = payload(&asked[0]);
+    let counted = frame.usage.expect("usage");
+    assert_eq!(counted.total_tokens, 5);
+    let details = counted.completion_tokens_details.expect("details");
+    assert_eq!(details.text_tokens, 2);
+}
+
+#[tokio::test]
+async fn a_text_provider_failure_is_a_chat_provider_failure() {
+    let failure = completion_failure(CompletionFailure {
+        status: 429,
+        error_type: Some(String::from("rate_limit_error")),
+        param: None,
+        message: String::from("slow down"),
+    });
+    let ChatFailure::Route(ChatError::Provider { response }) = failure else {
+        panic!("not a provider failure");
+    };
+    assert_eq!(response.status, 429);
+    let reply: ProviderReply = serde_json::from_slice(&response.body).expect("body");
+    assert_eq!(reply.error.message, "slow down");
+    assert_eq!(reply.error.error_type, "rate_limit_error");
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderReply {
+    error: ProviderFields,
+}
+
+#[derive(serde::Deserialize)]
+struct ConvertedTextAnswer {
+    object: String,
+    model: String,
+}
+
+const TEXT_CALL_CONFIG: &str = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n";
+
+const TEXT_CALL_REQUEST: &[u8] =
+    br#"{"model":"client","messages":[{"role":"user","content":"hi"}]}"#;
+
+const TEXT_CALL_RESPONSE: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"upstream","choices":[{"text":"Hello","index":0,"logprobs":null,"finish_reason":"stop"}]}"#;
+
+// The text endpoint's answer arrives in the shape the text call asked for; a crossed shape is a dispatch bug.
+#[tokio::test]
+async fn answered_result_takes_the_buffered_conversion_and_the_stream() {
+    let executor = executor_for(TEXT_CALL_CONFIG);
+    let request = ChatRequest::parse(TEXT_CALL_REQUEST).expect("chat request");
+    let response: CompletionResponse =
+        serde_json::from_str(TEXT_CALL_RESPONSE).expect("completion response");
+    let buffered = CompletionCallAnswer::Buffered(CompletionAnswer {
+        response: Box::new(response),
+        upstream_headers: HeaderMap::new(),
+        upstream_time: Duration::ZERO,
+    });
+    let ChatResult::Completion(answer) = answered_result(
+        &executor,
+        TextCallMode::Buffered { convert: true },
+        buffered,
+        &request,
+    )
+    .expect("buffered answer") else {
+        panic!("a buffered text answer cannot fill a stream");
+    };
+    let body: ConvertedTextAnswer = serde_json::from_slice(&answer.body).expect("body");
+    assert_eq!(body.object, "chat.completion");
+    assert_eq!(body.model, "client");
+    let empty_stream: CompletionStream = Box::pin(stream::empty());
+    let streamed = CompletionCallAnswer::Streamed(CompletionStreamAnswer {
+        stream: empty_stream,
+        upstream_headers: HeaderMap::new(),
+        upstream_time: Duration::ZERO,
+    });
+    let ChatResult::Stream(streamed_answer) =
+        answered_result(&executor, TextCallMode::Streamed, streamed, &request)
+            .expect("streamed answer")
+    else {
+        panic!("a text stream cannot fill a buffered answer");
+    };
+    let frames: Vec<_> = streamed_answer.body.collect().await;
+    assert_eq!(frames.len(), 1);
+    assert_eq!(&**frames[0].as_ref().expect("done"), b"data: [DONE]\n\n");
+}
+
+#[derive(serde::Deserialize)]
+struct ProviderFields {
+    message: String,
+    #[serde(rename = "type")]
+    error_type: String,
 }

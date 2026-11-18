@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-claude-invoke-transform
+call:
+  bedrock_claude_invoke:
+    function: transform
+    model_cost:
+      bedrock/claude-plain: {litellm_provider: bedrock}
+    calls:
+      - model: claude-plain
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 8}
+        litellm_params: {}
+        headers: {}
+        fetch: {}
+        inline: false
+env: {}
+compare: {ignore: []}

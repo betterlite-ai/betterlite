@@ -17,7 +17,7 @@ mod operations;
 pub mod resource;
 use resource::{Ownership, Resource};
 pub mod provision;
-use provision::ProvisionTask;
+use provision::{Contents, ProvisionTask};
 mod template;
 pub mod tls;
 use cleanup::{combine_errors, drain_drivers, timed};
@@ -133,18 +133,22 @@ impl PostgresFixture {
         let mut tasks = JoinSet::new();
         tasks.spawn(provision::provision_inner(
             configured_url.cloned(),
-            seed.clone(),
-            Resource::Database(generator.next_name()),
+            Contents::Seed(Box::new(seed.clone())),
+            Resource(generator.next_name()),
         ));
         ProvisionTask { tasks }
     }
 
-    pub fn provision_schema(configured_url: Option<&SecretString>) -> ProvisionTask {
+    // a database copied from a template built once per server from these statements, so a schema is never installed per test
+    pub fn provision_with_statements(
+        configured_url: Option<&SecretString>,
+        statements: Vec<String>,
+    ) -> ProvisionTask {
         let mut tasks = JoinSet::new();
         tasks.spawn(provision::provision_inner(
             configured_url.cloned(),
-            FixtureSeed::default(),
-            Resource::Schema(RandomDatabaseName.next_name()),
+            Contents::Statements(statements),
+            Resource(RandomDatabaseName.next_name()),
         ));
         ProvisionTask { tasks }
     }
