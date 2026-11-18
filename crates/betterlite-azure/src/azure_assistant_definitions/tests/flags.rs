@@ -5,6 +5,7 @@ use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::AssistantCreate;
 
 use crate::azure_assistant_definitions::error::DefinitionsError;
+use crate::azure_assistant_definitions::operations::DefinitionCall;
 
 use super::support::{
     ASSISTANT, ASSISTANTS_URL, Auth, CREATE_BODY, DELETE_URL, DELETED, ERROR_BODY, Fixture, KEY,
@@ -18,40 +19,35 @@ const KINDS: [(Option<bool>, ClientKind); 3] = [
 ];
 
 pub(super) async fn check() {
-    listed().await;
-    created().await;
-    deleted().await;
+    kinds().await;
     failures().await;
 }
 
-async fn listed() {
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    for (flag, kind) in KINDS {
-        let (api, transport) = harness(200, PAGE);
-        let listed = api.get_assistants(&request, None, flag).await.unwrap();
-        assert_eq!(listed.kind, kind, "{flag:?}");
-        assert_eq!(
-            transport.requests(),
-            vec![wire("GET", ASSISTANTS_URL, None, Auth::Key(KEY))],
-            "{flag:?}"
-        );
-    }
-}
-
-async fn created() {
+// The flag picks the client for every definition call; only the literal true makes it async.
+async fn kinds() {
     let fixture = Fixture::new();
     let request = fixture.request();
     let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
     for (flag, kind) in KINDS {
-        let (api, transport) = harness(200, ASSISTANT);
-        let created = api
-            .create_assistants(&request, &data, None, flag)
+        let (list_api, list_transport) = harness(200, PAGE);
+        let listed = list_api
+            .call(&request, None, flag, DefinitionCall::List)
+            .await
+            .unwrap();
+        assert_eq!(listed.kind, kind, "{flag:?}");
+        assert_eq!(
+            list_transport.requests(),
+            vec![wire("GET", ASSISTANTS_URL, None, Auth::Key(KEY))],
+            "{flag:?}"
+        );
+        let (create_api, create_transport) = harness(200, ASSISTANT);
+        let created = create_api
+            .call(&request, None, flag, DefinitionCall::Create(&data))
             .await
             .unwrap();
         assert_eq!(created.kind, kind, "{flag:?}");
         assert_eq!(
-            transport.requests(),
+            create_transport.requests(),
             vec![wire(
                 "POST",
                 ASSISTANTS_URL,
@@ -60,21 +56,14 @@ async fn created() {
             )],
             "{flag:?}"
         );
-    }
-}
-
-async fn deleted() {
-    let fixture = Fixture::new();
-    let request = fixture.request();
-    for (flag, kind) in KINDS {
-        let (api, transport) = harness(200, DELETED);
-        let gone = api
-            .delete_assistant(&request, "asst_1", None, flag)
+        let (delete_api, delete_transport) = harness(200, DELETED);
+        let gone = delete_api
+            .call(&request, None, flag, DefinitionCall::Delete("asst_1"))
             .await
             .unwrap();
         assert_eq!(gone.kind, kind, "{flag:?}");
         assert_eq!(
-            transport.requests(),
+            delete_transport.requests(),
             vec![wire("DELETE", DELETE_URL, None, Auth::Key(KEY))],
             "{flag:?}"
         );
@@ -92,7 +81,9 @@ async fn status_failure() {
     let fixture = Fixture::new();
     let request = fixture.request();
     let (api, transport) = harness(400, ERROR_BODY);
-    let failed = api.get_assistants(&request, None, Some(true)).await;
+    let failed = api
+        .call(&request, None, Some(true), DefinitionCall::List)
+        .await;
     assert!(
         matches!(
             failed,
@@ -112,7 +103,7 @@ async fn transport_failure() {
     let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
     let (api, transport) = failing_harness();
     let failed = api
-        .create_assistants(&request, &data, None, Some(true))
+        .call(&request, None, Some(true), DefinitionCall::Create(&data))
         .await;
     assert!(
         matches!(
@@ -132,7 +123,7 @@ async fn construction_failure() {
     let request = fixture.request();
     let (api, transport) = harness(200, DELETED);
     let failed = api
-        .delete_assistant(&request, "asst_1", None, Some(true))
+        .call(&request, None, Some(true), DefinitionCall::Delete("asst_1"))
         .await;
     assert!(
         matches!(failed, Err(DefinitionsError::MissingCredentials)),

@@ -3,10 +3,12 @@
 use std::sync::Arc;
 
 use betterlite_config::sections::azure_credentials::DEFAULT_SCOPE;
+use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 use secrecy::SecretString;
 
 use crate::azure_assistant_definitions::error::DefinitionsError;
+use crate::azure_assistant_definitions::operations::DefinitionCall;
 use crate::endpoints::projection::CallableProvider;
 
 use super::support::{
@@ -89,11 +91,15 @@ async fn refresh_identities() {
     fixture.sources.script(Arc::new(FixedToken(TOKEN_B)));
     let first_request = fixture.request();
     let (first_api, first_transport) = harness(200, PAGE);
-    let first_client = first_api.get_azure_client(&first_request, None).unwrap();
+    let first_client = first_api
+        .azure_client(&first_request, None, ClientKind::Sync)
+        .unwrap();
     first_client.list().await.unwrap();
     let second_request = fixture.request();
     let (second_api, second_transport) = harness(200, PAGE);
-    let second_client = second_api.get_azure_client(&second_request, None).unwrap();
+    let second_client = second_api
+        .azure_client(&second_request, None, ClientKind::Sync)
+        .unwrap();
     second_client.list().await.unwrap();
     let first_seen = one_request(&first_transport);
     let second_seen = one_request(&second_transport);
@@ -115,11 +121,15 @@ async fn refresh_identities() {
 async fn two_lists(first: &Fixture, second: &Fixture) -> (Seen, Seen) {
     let first_request = first.request();
     let (first_api, first_transport) = harness(200, PAGE);
-    let first_client = first_api.get_azure_client(&first_request, None).unwrap();
+    let first_client = first_api
+        .azure_client(&first_request, None, ClientKind::Sync)
+        .unwrap();
     first_client.list().await.unwrap();
     let second_request = second.request();
     let (second_api, second_transport) = harness(200, PAGE);
-    let second_client = second_api.get_azure_client(&second_request, None).unwrap();
+    let second_client = second_api
+        .azure_client(&second_request, None, ClientKind::Sync)
+        .unwrap();
     second_client.list().await.unwrap();
     (
         one_request(&first_transport),
@@ -145,8 +155,7 @@ fn one_request(transport: &Arc<Recorder>) -> Seen {
 async fn azure_assistant_definitions_secret_safe_failure() {
     debug_hides_credentials();
     status_reply_hides_credentials().await;
-    transport_failure_hides_credentials().await;
-    header_failure_hides_credentials().await;
+    failure_hides_credentials().await;
 }
 
 fn debug_hides_credentials() {
@@ -154,7 +163,9 @@ fn debug_hides_credentials() {
     keyed.api_key = Some(SecretString::from(KEY));
     let (keyed_api, _keyed_transport) = harness(200, PAGE);
     let keyed_request = keyed.request();
-    let keyed_client = keyed_api.get_azure_client(&keyed_request, None).unwrap();
+    let keyed_client = keyed_api
+        .azure_client(&keyed_request, None, ClientKind::Sync)
+        .unwrap();
     let shown = format!("{keyed_client:?}");
     assert!(shown.starts_with("AzureAssistantsClient"), "{shown}");
     assert_clean("client debug", &shown);
@@ -163,7 +174,7 @@ fn debug_hides_credentials() {
     let (tokened_api, _tokened_transport) = harness(200, PAGE);
     let tokened_request = tokened.request();
     let tokened_client = tokened_api
-        .get_azure_client(&tokened_request, None)
+        .azure_client(&tokened_request, None, ClientKind::Sync)
         .unwrap();
     assert_clean("client debug", &format!("{tokened_client:?}"));
 }
@@ -173,7 +184,10 @@ async fn status_reply_hides_credentials() {
     fixture.params.azure_ad_token = Some(SecretString::from(TOKEN_A));
     let request = fixture.request();
     let (api, transport) = harness(401, ERROR_BODY);
-    let failed = api.get_assistants(&request, None, None).await.unwrap_err();
+    let failed = api
+        .call(&request, None, None, DefinitionCall::List)
+        .await
+        .unwrap_err();
     assert!(
         matches!(
             failed,
@@ -189,12 +203,16 @@ async fn status_reply_hides_credentials() {
     assert_clean("request debug", &shown[0]);
 }
 
-async fn transport_failure_hides_credentials() {
+// A transport fault and a credential the SDK cannot turn into a header are both named, never echoed.
+async fn failure_hides_credentials() {
     let mut fixture = Fixture::new();
     fixture.params.azure_ad_token = Some(SecretString::from(TOKEN_A));
     let request = fixture.request();
     let (api, transport) = failing_harness();
-    let failed = api.get_assistants(&request, None, None).await.unwrap_err();
+    let failed = api
+        .call(&request, None, None, DefinitionCall::List)
+        .await
+        .unwrap_err();
     assert!(
         matches!(
             failed,
@@ -207,15 +225,14 @@ async fn transport_failure_hides_credentials() {
     for shown in transport.debug_texts() {
         assert_clean("transport request debug", &shown);
     }
-}
-
-// A credential the SDK cannot turn into a header is named, never echoed.
-async fn header_failure_hides_credentials() {
     let mut fixture = Fixture::new();
     fixture.api_key = Some(SecretString::from("sk-fixture\nbad"));
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
-    let failed = api.get_assistants(&request, None, None).await.unwrap_err();
+    let failed = api
+        .call(&request, None, None, DefinitionCall::List)
+        .await
+        .unwrap_err();
     assert!(
         matches!(
             failed,

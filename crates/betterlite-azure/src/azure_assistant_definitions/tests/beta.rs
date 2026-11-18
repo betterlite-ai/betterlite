@@ -2,7 +2,7 @@
 
 use betterlite_openai::assistants::records::AssistantCreate;
 
-use crate::azure_assistant_definitions::operations::ClientRequest;
+use crate::azure_assistant_definitions::operations::{ClientRequest, DefinitionCall};
 
 use super::support::{
     ASSISTANT, Auth, CREATE_BODY, DELETED, Fixture, KEY, PAGE, Seen, harness, wire,
@@ -67,7 +67,9 @@ async fn base_query_version() {
     ));
     let request = fixture.request();
     let (api, transport) = harness(200, PAGE);
-    api.get_assistants(&request, None, None).await.unwrap();
+    api.call(&request, None, None, DefinitionCall::List)
+        .await
+        .unwrap();
     assert_eq!(
         transport.requests(),
         vec![wire(
@@ -82,15 +84,18 @@ async fn base_query_version() {
 async fn exchange(request: &ClientRequest<'_>) -> Vec<Seen> {
     let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
     let (list_api, list_transport) = harness(200, PAGE);
-    list_api.get_assistants(request, None, None).await.unwrap();
+    list_api
+        .call(request, None, None, DefinitionCall::List)
+        .await
+        .unwrap();
     let (create_api, create_transport) = harness(200, ASSISTANT);
     create_api
-        .create_assistants(request, &data, None, None)
+        .call(request, None, None, DefinitionCall::Create(&data))
         .await
         .unwrap();
     let (delete_api, delete_transport) = harness(200, DELETED);
     delete_api
-        .delete_assistant(request, "asst_1", None, None)
+        .call(request, None, None, DefinitionCall::Delete("asst_1"))
         .await
         .unwrap();
     let mut seen = list_transport.requests();

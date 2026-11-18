@@ -3,6 +3,8 @@
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::records::AssistantCreate;
 
+use crate::azure_assistant_definitions::operations::{DefinitionCall, DefinitionReply};
+
 use super::support::{
     ASSISTANT, ASSISTANTS_URL, Auth, CREATE_BODY, Fixture, KEY, harness, parse, wire,
 };
@@ -16,14 +18,14 @@ pub(super) async fn check() {
     let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
     let (sync_api, sync_transport) = harness(200, ASSISTANT);
     let created = sync_api
-        .create_assistants(&request, &data, None, Some(false))
+        .call(&request, None, Some(false), DefinitionCall::Create(&data))
         .await
         .unwrap();
     assert_eq!(created.kind, ClientKind::Sync);
-    assert_eq!(
-        serde_json::to_value(&created.reply).unwrap(),
-        parse(ASSISTANT)
-    );
+    let DefinitionReply::Assistant(assistant) = created.reply else {
+        panic!("a create call returns an assistant");
+    };
+    assert_eq!(serde_json::to_value(&assistant).unwrap(), parse(ASSISTANT));
     assert_eq!(
         sync_transport.requests(),
         vec![wire(
@@ -35,7 +37,7 @@ pub(super) async fn check() {
     );
     let (async_api, async_transport) = harness(200, ASSISTANT);
     let awaited = async_api
-        .async_create_assistants(&request, &data, None)
+        .call(&request, None, Some(true), DefinitionCall::Create(&data))
         .await
         .unwrap();
     assert_eq!(awaited.kind, ClientKind::Async);
@@ -51,7 +53,7 @@ pub(super) async fn check() {
     let nulls: AssistantCreate = serde_json::from_str(NULL_BODY).unwrap();
     let (null_api, null_transport) = harness(200, ASSISTANT);
     null_api
-        .create_assistants(&request, &nulls, None, None)
+        .call(&request, None, None, DefinitionCall::Create(&nulls))
         .await
         .unwrap();
     assert_eq!(

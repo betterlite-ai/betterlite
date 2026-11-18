@@ -4,7 +4,9 @@ use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::assistants::error::AssistantsError;
 
 use crate::azure_assistant_definitions::error::DefinitionsError;
-use crate::azure_assistant_definitions::operations::ClientRequest;
+use crate::azure_assistant_definitions::operations::{
+    ClientRequest, DefinitionCall, DefinitionReply,
+};
 
 use super::support::{Auth, DELETED, Fixture, KEY, harness, wire};
 
@@ -23,11 +25,14 @@ pub(super) async fn check() {
     for (assistant_id, segment) in DELETE_CASES {
         let (api, transport) = harness(200, DELETED);
         let gone = api
-            .delete_assistant(&request, assistant_id, None, None)
+            .call(&request, None, None, DefinitionCall::Delete(assistant_id))
             .await
             .unwrap();
         assert_eq!(gone.kind, ClientKind::Sync);
-        assert!(gone.reply.deleted, "{assistant_id:?}");
+        let DefinitionReply::Deleted(deleted) = gone.reply else {
+            panic!("a delete call returns a deleted object");
+        };
+        assert!(deleted.deleted, "{assistant_id:?}");
         let url =
             format!("https://example.test/openai/assistants/{segment}?api-version=2024-02-01");
         assert_eq!(
@@ -44,7 +49,12 @@ async fn rejected_ids(request: &ClientRequest<'_>) {
     for assistant_id in ["", ".", ".."] {
         let (api, transport) = harness(200, DELETED);
         let failed = api
-            .delete_assistant(request, assistant_id, None, Some(true))
+            .call(
+                request,
+                None,
+                Some(true),
+                DefinitionCall::Delete(assistant_id),
+            )
             .await;
         assert!(
             matches!(
@@ -62,7 +72,9 @@ async fn rejected_ids(request: &ClientRequest<'_>) {
 // An empty 200 body is a decode failure; the Azure Files empty-response fallback does not apply here.
 async fn empty_reply(request: &ClientRequest<'_>) {
     let (api, transport) = harness(200, "");
-    let failed = api.delete_assistant(request, "asst_1", None, None).await;
+    let failed = api
+        .call(request, None, None, DefinitionCall::Delete("asst_1"))
+        .await;
     assert!(
         matches!(
             failed,

@@ -8,6 +8,7 @@ use betterlite_openai::assistants::records::{
 };
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use secrecy::SecretString;
+use serde::Serialize;
 
 use crate::azure_assistant_definitions::client::AzureAssistantsClient;
 use crate::azure_assistant_definitions::error::DefinitionsError;
@@ -37,133 +38,63 @@ pub struct AssistantsApi<T> {
     pub transport: Arc<T>,
 }
 
+// What one facade call asks the SDK client to do.
+pub enum DefinitionCall<'call> {
+    List,
+    Create(&'call AssistantCreate),
+    Delete(&'call str),
+}
+
+// The SDK object a facade call returns, each one exactly as the SDK built it.
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum DefinitionReply {
+    Page(Box<AssistantPage>),
+    Assistant(Box<AssistantObject>),
+    Deleted(Box<AssistantDeleted>),
+}
+
 // The SDK's reply stays untouched; the kind names which SDK client the call chose, as ClientOutcome does for B531.
 #[derive(Debug)]
-pub struct AssistantsReply<V> {
-    pub reply: V,
+pub struct AssistantsReply {
+    pub reply: DefinitionReply,
     pub kind: ClientKind,
 }
 
 impl<T: AssistantsTransport> AssistantsApi<T> {
-    pub fn get_azure_client<'data>(
+    // Only an absent supplied client constructs one; a supplied client is returned as-is, whatever its class.
+    pub fn azure_client<'data>(
         &self,
         request: &ClientRequest<'data>,
         supplied: Option<AzureAssistantsClient<'data, T>>,
+        kind: ClientKind,
     ) -> Result<AzureAssistantsClient<'data, T>, DefinitionsError> {
         match supplied {
             Some(client) => Ok(client),
-            None => self.construct(request, ClientKind::Sync),
+            None => self.construct(request, kind),
         }
     }
 
-    pub fn async_get_azure_client<'data>(
+    // Serves every definition facade: the flag picks the client kind and the call picks the SDK method.
+    pub async fn call<'data>(
         &self,
         request: &ClientRequest<'data>,
         supplied: Option<AzureAssistantsClient<'data, T>>,
-    ) -> Result<AzureAssistantsClient<'data, T>, DefinitionsError> {
-        match supplied {
-            Some(client) => Ok(client),
-            None => self.construct(request, ClientKind::Async),
-        }
-    }
-
-    pub async fn async_get_assistants<'data>(
-        &self,
-        request: &ClientRequest<'data>,
-        supplied: Option<AzureAssistantsClient<'data, T>>,
-    ) -> Result<AssistantsReply<AssistantPage>, DefinitionsError> {
-        let client = self.async_get_azure_client(request, supplied)?;
-        let reply = client.list().await?;
-        Ok(AssistantsReply {
-            reply,
-            kind: client.kind,
-        })
-    }
-
-    // Only the literal true flag selects the async client; a missing, false or other facade value stays sync.
-    pub async fn get_assistants<'data>(
-        &self,
-        request: &ClientRequest<'data>,
-        supplied: Option<AzureAssistantsClient<'data, T>>,
-        aget_assistants: Option<bool>,
-    ) -> Result<AssistantsReply<AssistantPage>, DefinitionsError> {
-        if requested_kind(aget_assistants) == ClientKind::Async {
-            return self.async_get_assistants(request, supplied).await;
-        }
-        let client = self.get_azure_client(request, supplied)?;
-        let reply = client.list().await?;
-        Ok(AssistantsReply {
-            reply,
-            kind: client.kind,
-        })
-    }
-
-    pub async fn async_create_assistants<'data>(
-        &self,
-        request: &ClientRequest<'data>,
-        data: &AssistantCreate,
-        supplied: Option<AzureAssistantsClient<'data, T>>,
-    ) -> Result<AssistantsReply<AssistantObject>, DefinitionsError> {
-        let client = self.async_get_azure_client(request, supplied)?;
-        let reply = client.create(data).await?;
-        Ok(AssistantsReply {
-            reply,
-            kind: client.kind,
-        })
-    }
-
-    // Serves create_assistants and async_create_assistants: the flag only selects the client type.
-    pub async fn create_assistants<'data>(
-        &self,
-        request: &ClientRequest<'data>,
-        data: &AssistantCreate,
-        supplied: Option<AzureAssistantsClient<'data, T>>,
-        async_create_assistants: Option<bool>,
-    ) -> Result<AssistantsReply<AssistantObject>, DefinitionsError> {
-        if requested_kind(async_create_assistants) == ClientKind::Async {
-            return self.async_create_assistants(request, data, supplied).await;
-        }
-        let client = self.get_azure_client(request, supplied)?;
-        let reply = client.create(data).await?;
-        Ok(AssistantsReply {
-            reply,
-            kind: client.kind,
-        })
-    }
-
-    pub async fn async_delete_assistant<'data>(
-        &self,
-        request: &ClientRequest<'data>,
-        assistant_id: &str,
-        supplied: Option<AzureAssistantsClient<'data, T>>,
-    ) -> Result<AssistantsReply<AssistantDeleted>, DefinitionsError> {
-        let client = self.async_get_azure_client(request, supplied)?;
-        let reply = client.delete(assistant_id).await?;
-        Ok(AssistantsReply {
-            reply,
-            kind: client.kind,
-        })
-    }
-
-    // Serves delete_assistant and async_delete_assistant: the flag only selects the client type.
-    pub async fn delete_assistant<'data>(
-        &self,
-        request: &ClientRequest<'data>,
-        assistant_id: &str,
-        supplied: Option<AzureAssistantsClient<'data, T>>,
-        async_delete_assistants: Option<bool>,
-    ) -> Result<AssistantsReply<AssistantDeleted>, DefinitionsError> {
-        if requested_kind(async_delete_assistants) == ClientKind::Async {
-            return self
-                .async_delete_assistant(request, assistant_id, supplied)
-                .await;
-        }
-        let client = self.get_azure_client(request, supplied)?;
-        let reply = client.delete(assistant_id).await?;
-        Ok(AssistantsReply {
-            reply,
-            kind: client.kind,
-        })
+        flag: Option<bool>,
+        definition: DefinitionCall<'_>,
+    ) -> Result<AssistantsReply, DefinitionsError> {
+        let client = self.azure_client(request, supplied, requested_kind(flag))?;
+        let kind = client.kind;
+        let reply = match definition {
+            DefinitionCall::List => DefinitionReply::Page(Box::new(client.list().await?)),
+            DefinitionCall::Create(data) => {
+                DefinitionReply::Assistant(Box::new(client.create(data).await?))
+            }
+            DefinitionCall::Delete(assistant_id) => {
+                DefinitionReply::Deleted(Box::new(client.delete(assistant_id).await?))
+            }
+        };
+        Ok(AssistantsReply { reply, kind })
     }
 
     fn construct<'data>(
@@ -198,6 +129,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
     }
 }
 
+// Only the literal true flag selects the async client; a missing, false or other facade value stays sync.
 const fn requested_kind(flag: Option<bool>) -> ClientKind {
     match flag {
         Some(true) => ClientKind::Async,

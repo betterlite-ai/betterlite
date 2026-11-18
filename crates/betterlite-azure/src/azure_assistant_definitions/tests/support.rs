@@ -311,8 +311,8 @@ pub(super) struct Fixture {
     pub(super) session: SessionKind,
 }
 
-impl Fixture {
-    pub(super) fn new() -> Self {
+impl Default for Fixture {
+    fn default() -> Self {
         Self {
             settings: Settings {
                 default_max_retries: 2,
@@ -336,6 +336,12 @@ impl Fixture {
             refresh_enabled: false,
             session: SessionKind::Dedicated,
         }
+    }
+}
+
+impl Fixture {
+    pub(super) fn new() -> Self {
+        Self::default()
     }
 
     pub(super) fn request(&self) -> ClientRequest<'_> {
