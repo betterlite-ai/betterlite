@@ -4,7 +4,7 @@ import logging
 import sys
 from datetime import UTC, datetime
 from types import ModuleType
-from typing import Final, Literal, Protocol, TypedDict
+from typing import Final, Generic, Literal, Protocol, TypedDict, TypeVar
 
 from litellm.proxy._types import LiteLLM_VerificationTokenView
 from litellm.proxy.common_utils.user_api_key_cache import UserApiKeyCache
@@ -43,18 +43,25 @@ class FailureStep(TypedDict):
     error: dict[str, str]
 
 
-class RowData(TypedDict):
+T = TypeVar("T")
+
+
+class StepData(TypedDict, Generic[T]):
     kind: Literal["data"]
-    data: dict[str, JsonValue]
+    data: T
 
 
-class DeprecatedData(TypedDict):
-    kind: Literal["data"]
-    data: DeprecatedFields
+RowStep = StepData[dict[str, JsonValue]] | FailureStep | None
+DeprecatedStep = StepData[DeprecatedFields] | FailureStep | None
 
 
-RowStep = RowData | FailureStep | None
-DeprecatedStep = DeprecatedData | FailureStep | None
+def take_step(steps: list[StepData[T] | FailureStep | None]) -> T | None:
+    step = steps.pop(0) if steps else None
+    if step is None:
+        return None
+    if step["kind"] == "failure":
+        raise ScriptedDatabaseError(step["error"]["message"])
+    return step["data"]
 
 
 class Input(TypedDict):
@@ -152,12 +159,10 @@ class FakeDeprecated(DeprecatedTable):
             "litellm_deprecatedverificationtoken", str(where["token"]),
             use_writer=self.use_writer, now_seconds=int(self.session.now.timestamp()),
         )
-        step = self.session.deprecated.pop(0) if self.session.deprecated else None
-        if step is None:
+        data = take_step(self.session.deprecated)
+        if data is None:
             return None
-        if step["kind"] == "failure":
-            raise ScriptedDatabaseError(step["error"]["message"])
-        row = DeprecatedRow(step["data"])
+        row = DeprecatedRow(data)
         # the case clock stands in for the source's wall clock, so both sides filter together
         return None if row.revoke_at <= self.session.now else row
 
@@ -173,12 +178,7 @@ class FakeWrapper(PrismaWrapper):
         await self.session.record_query(
             "combined_view", str(args[0]), use_writer=self.use_writer, now_seconds=None,
         )
-        step = self.session.rows.pop(0) if self.session.rows else None
-        if step is None:
-            return None
-        if step["kind"] == "failure":
-            raise ScriptedDatabaseError(step["error"]["message"])
-        return step["data"]
+        return take_step(self.session.rows)
 
 
 class FakeClient(PrismaClient):
