@@ -75,20 +75,23 @@ fn a_config_endpoint_without_defaults_takes_every_default() {
 }
 
 #[rstest]
-#[case::headers(r#""headers": null"#, true)]
-#[case::query_params(r#""default_query_params": null"#, true)]
-#[case::include_subpath(r#""include_subpath": null"#, true)]
-#[case::cost_per_request(r#""cost_per_request": null"#, true)]
-#[case::timeout(r#""timeout": null"#, true)]
-#[case::auth(r#""auth": null"#, true)]
-#[case::guardrails(r#""guardrails": null"#, true)]
-#[case::methods(r#""methods": null"#, true)]
-#[case::id(r#""id": null"#, false)]
-fn a_null_config_value_takes_its_default(#[case] defaulted: &str, #[case] generated_id: bool) {
+#[case::headers(r#""headers": null"#)]
+#[case::query_params(r#""default_query_params": null"#)]
+#[case::include_subpath(r#""include_subpath": null"#)]
+#[case::cost_per_request(r#""cost_per_request": null"#)]
+#[case::timeout(r#""timeout": null"#)]
+#[case::auth(r#""auth": null"#)]
+#[case::guardrails(r#""guardrails": null"#)]
+#[case::methods(r#""methods": null"#)]
+#[case::id(r#""id": null"#)]
+fn a_null_config_value_takes_its_default(#[case] defaulted: &str) {
     let entry = format!(r#"{{"path": "/a", "target": "https://target", {defaulted}}}"#);
     let read = config_endpoints(&FakeConfig::of(&[entry.as_str()]));
     let endpoint = &read[0];
-    assert_eq!(endpoint.id.is_some(), generated_id);
+    assert!(
+        endpoint.id.is_some(),
+        "a null id still gets an id at read time"
+    );
     assert!(endpoint.headers.is_empty());
     assert!(endpoint.default_query_params.is_empty());
     assert!(!endpoint.include_subpath.0);

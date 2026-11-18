@@ -137,7 +137,7 @@ impl GeneralSettingsReader for FakeSettings {
 
 pub(crate) struct FakeTeams {
     pub(crate) metadata: BTreeMap<String, JsonData>,
-    pub(crate) failing: bool,
+    pub(crate) fails: bool,
     pub(crate) lookups: Mutex<Vec<String>>,
 }
 
@@ -145,7 +145,7 @@ impl FakeTeams {
     pub(crate) fn new() -> Self {
         Self {
             metadata: BTreeMap::new(),
-            failing: false,
+            fails: false,
             lookups: Mutex::new(Vec::new()),
         }
     }
@@ -158,7 +158,7 @@ impl FakeTeams {
     pub(crate) fn failing() -> Self {
         Self {
             metadata: BTreeMap::new(),
-            failing: true,
+            fails: true,
             lookups: Mutex::new(Vec::new()),
         }
     }
@@ -175,7 +175,7 @@ impl TeamLookup for FakeTeams {
             .lock()
             .expect("team lookup lock")
             .push(team_id.to_owned());
-        if self.failing {
+        if self.fails {
             return Err(TeamQueryError::Record {
                 source: TeamRecordError::NotAnObject,
             });
