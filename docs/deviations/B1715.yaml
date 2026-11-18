@@ -12,3 +12,15 @@ deviations:
       that underflows to zero. The tiny_number case of
       spend_metadata::ocr::tests::extracts_pages_instead_of_tokens pins the answer.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L338
+  - what: >-
+      A float spend field, litellm_overhead_time_ms or autorouter_savings, keeps every digit of
+      the JSON number it was handed, where LiteLLM parses that number into a Python float and
+      writes back the rounded value: 0.1234567890123456789012345678 stays that text in
+      betterlite and becomes 0.12345678901234568 in LiteLLM.
+    why: >-
+      The two fields are declared float | None, but the records are stored and compared as JSON,
+      and betterlite decodes every spend metadata number at arbitrary precision so a value
+      LiteLLM itself wrote comes back unchanged. Rounding through an f64 would reproduce only a
+      loss no caller can rely on. The savings_preserve_decimal_precision test of
+      spend_metadata::projection::tests pins the betterlite answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4204
