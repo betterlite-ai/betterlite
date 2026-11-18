@@ -49,15 +49,11 @@ pub(super) fn stream_error(message: &str, class_name: &str) -> StreamError<FakeE
 }
 
 pub(super) struct FakeCredentials {
-    mode: CredentialMode,
-    auth: Option<Auth>,
+    pub(super) mode: CredentialMode,
+    pub(super) auth: Option<Auth>,
 }
 
 impl FakeCredentials {
-    pub(super) const fn new(mode: CredentialMode, auth: Option<Auth>) -> Self {
-        Self { mode, auth }
-    }
-
     // An empty identity is what boto3's frozen credentials report when nothing was configured
     fn resolved(&self) -> Credentials {
         let auth = self.auth.clone();
@@ -91,13 +87,7 @@ impl RealtimeCredentials for FakeCredentials {
     }
 }
 
-pub(super) struct FixedIds(AtomicU64);
-
-impl FixedIds {
-    pub(super) const fn new() -> Self {
-        Self(AtomicU64::new(1))
-    }
-}
+pub(super) struct FixedIds(pub(super) AtomicU64);
 
 impl IdSource for FixedIds {
     fn next_id(&self) -> Uuid {

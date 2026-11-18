@@ -4,6 +4,7 @@ from typing import Protocol
 
 from litellm.types.llms.bedrock import AwsAuthParams
 from pydantic import JsonValue
+from typing_extensions import override
 
 from .fakes import ClientGoneError, ClientSendError, CredentialLookupError
 from .models import COMMITTED_KEY, FAILURE_KEY, PENDING_KEY, Auth, Run
@@ -58,6 +59,7 @@ class FakeCredentials(FrozenProvider):
     def __init__(self, auth: Auth | None) -> None:
         self.frozen = Frozen(auth)
 
+    @override
     def get_frozen_credentials(self) -> Frozen:
         return self.frozen
 

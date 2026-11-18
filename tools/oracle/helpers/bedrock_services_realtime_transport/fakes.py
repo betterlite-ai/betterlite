@@ -4,6 +4,7 @@ from typing import Final, Self
 
 from litellm.llms.bedrock.realtime.handler import ClosableBedrockRuntimeClient
 from pydantic import JsonValue
+from typing_extensions import override
 
 from .models import JsonAdapter, Run
 
@@ -121,12 +122,15 @@ class FakeRuntimeClient(ClosableBedrockRuntimeClient):
         self.closed = False
         CLIENTS.append(self)
 
-    async def invoke_model_with_bidirectional_stream(self, operation: FakeOperation) -> FakeStream:
+    async def invoke_model_with_bidirectional_stream(  # ast-grep-ignore: no-long-names
+        self, operation: FakeOperation
+    ) -> FakeStream:
         RECORDING.model_ids.append(operation.model_id)
         if SCRIPT[-1].open_error:
             raise StreamOpenError("the invoke failed")
         return FakeStream()
 
+    @override
     async def close(self) -> None:
         self.closed = True
 

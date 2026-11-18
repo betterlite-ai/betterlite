@@ -129,7 +129,13 @@ pub(super) fn auth(access: &str, secret: &str, token: Option<&str>) -> AuthParam
         aws_access_key_id: Some(SecretString::from(access.to_owned())),
         aws_secret_access_key: Some(SecretString::from(secret.to_owned())),
         aws_session_token: token.map(|value| SecretString::from(value.to_owned())),
-        ..AuthParams::default()
+        aws_session_name: None,
+        aws_profile_name: None,
+        aws_role_name: None,
+        aws_web_identity_token: None,
+        aws_sts_endpoint: None,
+        aws_external_id: None,
+        aws_session_tags: None,
     }
 }
 
@@ -252,7 +258,7 @@ impl FakeCredentials {
     fn with_mode(mode: ResolveMode) -> Self {
         let state = ResolveState {
             mode: Mutex::new(mode),
-            ..ResolveState::default()
+            calls: Mutex::new(Vec::new()),
         };
         Self {
             state: Arc::new(state),
@@ -318,7 +324,9 @@ impl StreamPlan {
     pub(super) fn new(chunks: Vec<Chunk>) -> Self {
         Self {
             chunks,
-            ..Self::default()
+            receive_failure: None,
+            block_receive: false,
+            send_failures: Vec::new(),
         }
     }
 

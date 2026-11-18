@@ -14,14 +14,8 @@ pub(super) type ByteStream = Pin<Box<dyn Stream<Item = Result<Bytes, reqwest::Er
 
 // The drain token lives in the body, so the client is drained only once every direction released it
 pub(super) struct RequestBody {
-    body: SdkBody,
-    _io: TaskTrackerToken,
-}
-
-impl RequestBody {
-    pub(super) const fn new(body: SdkBody, io: TaskTrackerToken) -> Self {
-        Self { body, _io: io }
-    }
+    pub(super) body: SdkBody,
+    pub(super) _io: TaskTrackerToken,
 }
 
 impl HttpBody for RequestBody {

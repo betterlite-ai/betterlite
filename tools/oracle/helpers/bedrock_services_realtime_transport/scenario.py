@@ -1,10 +1,9 @@
-import asyncio
 import os
 import sys
 
+from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from litellm.llms.bedrock.common_utils import BedrockError
 from litellm.llms.bedrock.realtime.handler import BedrockRealtime
-from litellm.litellm_core_utils.logging_worker import GLOBAL_LOGGING_WORKER
 from pydantic import JsonValue
 
 from bedrock_services_realtime_session import make_logging
@@ -70,15 +69,15 @@ async def run_scenario(run: Run) -> ScenarioView:
     logging = make_logging(TRACE_ID)
     realtime = BedrockRealtime()
     auth = run["auth"]
-    BedrockRealtime.resolve_credentials = CredentialResolver(run)  # type: ignore[method-assign, assignment]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L280
-    GLOBAL_LOGGING_WORKER.ensure_initialized_and_enqueue = DiscardingWorker()  # type: ignore[method-assign, assignment, attr-defined]  # noqa: E501  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L448-L453
+    BedrockRealtime.resolve_credentials = CredentialResolver(run)  # type: ignore[method-assign, assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L280
+    GLOBAL_LOGGING_WORKER.ensure_initialized_and_enqueue = DiscardingWorker()  # type: ignore[method-assign, assignment]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/logging_worker.py#L448-L453
     os.environ.clear()
     error_kind: str | None = None
     status_code: int | None = None
     try:
-        await realtime.async_realtime(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L280
+        await realtime.async_realtime(  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L242-L280
             model=run["model"],
-            websocket=websocket,  # type: ignore[arg-type]  # noqa: E501  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L89-L98
+            websocket=websocket,  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/handler.py#L89-L98
             logging_obj=logging,
             api_base=run["api_base"],
             aws_region_name=run["region"],

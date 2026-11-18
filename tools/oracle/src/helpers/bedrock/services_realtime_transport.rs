@@ -1,6 +1,7 @@
 use std::error::Error as StdError;
 use std::fmt::Display;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
 
 use betterlite_bedrock::aws_settings::AuthParams;
 use betterlite_bedrock::realtime_events::failure::ProviderStreamError;
@@ -169,19 +170,31 @@ fn auth_params(auth: Option<&Auth>) -> AuthParams {
         aws_session_token: auth
             .and_then(|value| value.session_token.clone())
             .map(SecretString::from),
-        ..AuthParams::default()
+        aws_session_name: None,
+        aws_profile_name: None,
+        aws_role_name: None,
+        aws_web_identity_token: None,
+        aws_sts_endpoint: None,
+        aws_external_id: None,
+        aws_session_tags: None,
     }
 }
 
 async fn scenario(run: &Run, redactor: &Redactor) -> ScenarioView {
     let recorded = Arc::new(Recorded::default());
-    let runtime = FakeRuntime::new(Arc::clone(&recorded), Plan::from_run(run));
-    let credentials = FakeCredentials::new(run.credentials, run.auth.clone());
+    let runtime = FakeRuntime {
+        recorded: Arc::clone(&recorded),
+        plan: Plan::from_run(run),
+    };
+    let credentials = FakeCredentials {
+        mode: run.credentials,
+        auth: run.auth.clone(),
+    };
     let client = FakeWebSocket::new(run);
     let logging = FakeLogging::default();
     let accepting_queue = AcceptingQueue;
     let queue: &dyn RealtimeSuccessQueue = &accepting_queue;
-    let ids = FixedIds::new();
+    let ids = FixedIds(AtomicU64::new(1));
     let logged_types = LoggedEventTypes::Default;
     let mut scope = scope_for(run);
     let outcome = RealtimeTransport::new(&runtime, &credentials)
@@ -209,15 +222,16 @@ async fn scenario(run: &Run, redactor: &Redactor) -> ScenarioView {
             ("error", Some(kind), status)
         }
     };
+    let view = recorded.view();
     let (access_key_id, secret_access_key, session_token) = recorded.identity();
-    let configured = recorded.configured();
+    let configured = view.configured;
     ScenarioView {
-        endpoint: recorded.endpoint(),
-        region: recorded.region(),
+        endpoint: view.endpoint,
+        region: view.region,
         access_key_id,
         secret_access_key,
         session_token,
-        model_ids: recorded.model_ids(),
+        model_ids: view.model_ids,
         client_types: client.sent().iter().map(|text| event_type(text)).collect(),
         bedrock_keys: recorded.sent_to_bedrock().iter().map(bedrock_key).collect(),
         client_close: client.close_code(),

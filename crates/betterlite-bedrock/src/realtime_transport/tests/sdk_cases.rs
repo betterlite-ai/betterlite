@@ -8,15 +8,18 @@ use aws_smithy_runtime_api::client::result::ConnectorError;
 use aws_smithy_runtime_api::client::runtime_components::RuntimeComponents;
 
 use super::support::{
-    ACCESS, FakeCredentials, Fixture, Options, REGION, RESOLVED_ACCESS, RESOLVED_SECRET,
+    ACCESS, FakeCredentials, Fixture, MODEL, Options, REGION, RESOLVED_ACCESS, RESOLVED_SECRET,
     RESOLVED_TOKEN, SECRET, TOKEN, auth, credentials, full_auth,
 };
+use betterlite_config::api::realtime_session_state::LoggedEventTypes;
+
 use crate::aws_settings::AuthError;
 use crate::credentials::error::CredentialError;
 use crate::realtime_transport::error::NO_CREDENTIALS_MESSAGE;
 use crate::realtime_transport::runtime::{
     RealtimeClient, RealtimeRuntime, RuntimeConfig, SdkRuntime,
 };
+use crate::signing::target::RegionInputs;
 
 pub(super) async fn python_sdk_boundary() {
     the_prepared_config_reaches_the_seam().await;
@@ -30,9 +33,15 @@ async fn the_prepared_config_reaches_the_seam() {
     let result = fixture
         .run(Options {
             model,
+            pending: None,
+            committed: false,
+            committed_failure: None,
             api_base: Some("https://bedrock-runtime.us-east-1.amazonaws.com"),
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: auth(ACCESS, SECRET, Some(TOKEN)),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -189,24 +198,39 @@ pub(super) async fn credential_identity_isolation() {
     fixture.credentials = FakeCredentials::echoing();
     let first = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: auth(
                 "AKIDFIRSTIDENTITY",
                 "first-identity-secret",
                 Some("first-identity-token"),
             ),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(first.outcome.is_ok(), "{:?}", first.outcome);
     let second = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some("eu-west-2"),
+            region_inputs: RegionInputs::default(),
             auth: auth(
                 "AKIDSECONDIDENTITY",
                 "second-identity-secret",
                 Some("second-identity-token"),
             ),
-            region: Some("eu-west-2"),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(second.outcome.is_ok(), "{:?}", second.outcome);
@@ -244,8 +268,16 @@ pub(super) async fn secret_safe_failure() {
     fixture.credentials = FakeCredentials::failing(CredentialError::Auth(AuthError::SessionTags));
     let result = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: full_auth(),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     let calls = fixture.credentials.calls();
@@ -274,8 +306,16 @@ async fn absent_credentials_never_leak() {
     absent.credentials = FakeCredentials::absent();
     let result = absent
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: full_auth(),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     let error = result.outcome.unwrap_err();

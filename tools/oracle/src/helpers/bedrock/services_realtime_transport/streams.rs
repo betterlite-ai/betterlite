@@ -16,7 +16,7 @@ use super::fakes::{FakeError, stream_error};
 #[derive(Clone)]
 pub(super) struct StreamProfile {
     sent: Arc<Mutex<Vec<Json>>>,
-    closed: Arc<AtomicBool>,
+    pub(super) closed: Arc<AtomicBool>,
 }
 
 impl StreamProfile {
@@ -25,10 +25,6 @@ impl StreamProfile {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    pub(super) fn closed(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
     }
 }
 

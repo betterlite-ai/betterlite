@@ -28,11 +28,6 @@ pub struct AwsDuplexClient {
 
 impl AwsDuplexClient {
     #[must_use]
-    pub const fn new(client: Arc<ProxiedClient>) -> Self {
-        Self { client }
-    }
-
-    #[must_use]
     pub fn from_proxied(client: &ProxiedClient) -> Self {
         Self {
             client: Arc::new(client.clone()),
@@ -83,7 +78,9 @@ impl AwsDuplexConnector {
 
     fn build_request(&self, request: HttpRequest) -> Result<reqwest::Request, ConnectorError> {
         if self.client.tracker.is_closed() {
-            return Err(closed_client());
+            return Err(ConnectorError::io(Box::new(std::io::Error::other(
+                "the HTTP client is closed",
+            ))));
         }
         let uri = request.uri().to_owned();
         let method = Method::from_bytes(request.method().as_bytes())
@@ -99,7 +96,10 @@ impl AwsDuplexConnector {
             builder = builder.header(name, value);
         }
         let io = self.client.tracker.token();
-        let body = Body::wrap(RequestBody::new(request.into_body(), io));
+        let body = Body::wrap(RequestBody {
+            body: request.into_body(),
+            _io: io,
+        });
         builder
             .body(body)
             .build()
@@ -128,8 +128,4 @@ impl AwsDuplexConnector {
         *answer.headers_mut() = headers;
         Ok(answer)
     }
-}
-
-fn closed_client() -> ConnectorError {
-    ConnectorError::io(Box::new(std::io::Error::other("the HTTP client is closed")))
 }

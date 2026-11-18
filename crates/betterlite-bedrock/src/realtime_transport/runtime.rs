@@ -56,7 +56,10 @@ pub struct SdkRuntime {
 
 impl SdkRuntime {
     #[must_use]
-    pub fn new(http: impl HttpClient + 'static) -> Self {
+    pub fn new<H>(http: H) -> Self
+    where
+        H: HttpClient + 'static,
+    {
         Self {
             http: SharedHttpClient::new(http),
         }

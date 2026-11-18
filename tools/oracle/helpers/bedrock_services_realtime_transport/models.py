@@ -1,6 +1,6 @@
 from typing import Final, NotRequired, TypedDict
 
-import litellm.constants as constants
+from litellm import constants
 from pydantic import JsonValue, TypeAdapter
 
 COMMITTED_KEY: Final = constants.BEDROCK_REALTIME_SESSION_COMMITTED_SCOPE_KEY

@@ -1,6 +1,6 @@
 use std::future::{Future, ready};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_bedrock::realtime_events::stream::{
@@ -37,10 +37,6 @@ impl Plan {
     }
 }
 
-fn lock<T>(value: &Mutex<T>) -> MutexGuard<'_, T> {
-    value.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 #[derive(Default)]
 pub(super) struct Recorded {
     endpoint: Mutex<Option<String>>,
@@ -54,59 +50,80 @@ pub(super) struct Recorded {
     configured: AtomicBool,
 }
 
-impl Recorded {
-    pub(super) fn endpoint(&self) -> Option<String> {
-        lock(&self.endpoint).clone()
-    }
+pub(super) struct RecordedView {
+    pub(super) endpoint: Option<String>,
+    pub(super) region: Option<String>,
+    pub(super) model_ids: Vec<String>,
+    pub(super) configured: bool,
+}
 
-    pub(super) fn region(&self) -> Option<String> {
-        lock(&self.region).clone()
+impl Recorded {
+    pub(super) fn view(&self) -> RecordedView {
+        RecordedView {
+            endpoint: self
+                .endpoint
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            region: self
+                .region
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            model_ids: self
+                .model_ids
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            configured: self.configured.load(Ordering::SeqCst),
+        }
     }
 
     pub(super) fn identity(&self) -> (Option<String>, Option<String>, Option<String>) {
         (
-            lock(&self.access_key_id).clone(),
-            lock(&self.secret_access_key).clone(),
-            lock(&self.session_token).clone(),
+            self.access_key_id
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            self.secret_access_key
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
+            self.session_token
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone(),
         )
     }
 
-    pub(super) fn model_ids(&self) -> Vec<String> {
-        lock(&self.model_ids).clone()
-    }
-
     pub(super) fn sent_to_bedrock(&self) -> Vec<Json> {
-        lock(&self.stream)
+        self.stream
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
             .map_or_else(Vec::new, StreamProfile::sent)
     }
 
     pub(super) fn runtime_closed(&self) -> bool {
-        lock(&self.clients)
+        self.clients
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .last()
             .is_some_and(|client| client.closed.load(Ordering::SeqCst))
     }
 
     pub(super) fn input_closed(&self) -> bool {
-        lock(&self.stream)
+        self.stream
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
             .as_ref()
-            .is_some_and(StreamProfile::closed)
-    }
-
-    pub(super) fn configured(&self) -> bool {
-        self.configured.load(Ordering::SeqCst)
+            .is_some_and(|profile| profile.closed.load(Ordering::SeqCst))
     }
 }
 
 pub(super) struct FakeRuntime {
-    recorded: Arc<Recorded>,
-    plan: Plan,
-}
-
-impl FakeRuntime {
-    pub(super) const fn new(recorded: Arc<Recorded>, plan: Plan) -> Self {
-        Self { recorded, plan }
-    }
+    pub(super) recorded: Arc<Recorded>,
+    pub(super) plan: Plan,
 }
 
 impl RealtimeRuntime for FakeRuntime {
@@ -119,21 +136,45 @@ impl RealtimeRuntime for FakeRuntime {
         Output = Result<Box<dyn RealtimeClient<Error = FakeError>>, StreamError<FakeError>>,
     > + Send {
         self.recorded.configured.store(true, Ordering::SeqCst);
-        *lock(&self.recorded.endpoint) = Some(config.endpoint_uri);
-        *lock(&self.recorded.region) = Some(config.region);
+        *self
+            .recorded
+            .endpoint
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(config.endpoint_uri);
+        *self
+            .recorded
+            .region
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(config.region);
         let credentials = &config.credentials;
-        *lock(&self.recorded.access_key_id) =
+        *self
+            .recorded
+            .access_key_id
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
             Some(credentials.access_key_id.expose_secret().to_owned());
-        *lock(&self.recorded.secret_access_key) =
+        *self
+            .recorded
+            .secret_access_key
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
             Some(credentials.secret_access_key.expose_secret().to_owned());
-        *lock(&self.recorded.session_token) = credentials
+        *self
+            .recorded
+            .session_token
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = credentials
             .session_token
             .as_ref()
             .map(|token| token.expose_secret().to_owned());
         let state = Arc::new(ClientState {
             closed: AtomicBool::new(false),
         });
-        lock(&self.recorded.clients).push(Arc::clone(&state));
+        self.recorded
+            .clients
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Arc::clone(&state));
         let client: Box<dyn RealtimeClient<Error = FakeError>> = Box::new(FakeRuntimeClient {
             recorded: Arc::clone(&self.recorded),
             plan: self.plan.clone(),
@@ -176,7 +217,11 @@ impl RealtimeClient for FakeRuntimeClient {
         model_id: &str,
     ) -> Result<Box<dyn BedrockBidirectionalStream<Error = FakeError>>, StreamError<FakeError>>
     {
-        lock(&self.recorded.model_ids).push(model_id.to_owned());
+        self.recorded
+            .model_ids
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(model_id.to_owned());
         if self.plan.open_error {
             return Err(stream_error("the invoke failed", "StreamOpenError"));
         }
@@ -186,7 +231,11 @@ impl RealtimeClient for FakeRuntimeClient {
             self.plan.receive_failure,
             self.plan.send_failure,
         );
-        *lock(&self.recorded.stream) = Some(stream.profile());
+        *self
+            .recorded
+            .stream
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(stream.profile());
         Ok(Box::new(stream))
     }
 }

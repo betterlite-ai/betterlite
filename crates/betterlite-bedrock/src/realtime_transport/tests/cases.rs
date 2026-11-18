@@ -1,3 +1,4 @@
+use betterlite_config::api::realtime_session_state::LoggedEventTypes;
 use betterlite_core::api::realtime_session_state::logging::SUCCESS_LOGGED_KEY;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
@@ -10,7 +11,7 @@ use super::support::{
     SESSION_UPDATE, ScriptedClient, StreamPlan, TEXT_OUTPUT, TRACE_ID, USAGE_EVENT, event_key,
     event_type, field, full_auth, full_session_tags, stream_error,
 };
-use crate::aws_settings::AuthError;
+use crate::aws_settings::{AuthError, AuthParams};
 use crate::credentials::error::CredentialError;
 use crate::realtime_events::failure::ProviderStreamError;
 use crate::realtime_transport::error::{NO_CREDENTIALS_MESSAGE, RealtimeTransportError};
@@ -42,9 +43,16 @@ async fn committed_scope_rejects_before_preparation() {
     let mut fixture = Fixture::new();
     let result = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
             committed: true,
             committed_failure: Some("ModelStreamErrorException: the committed stream broke"),
-            ..Options::default()
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     let error = result.outcome.unwrap_err();
@@ -72,8 +80,16 @@ async fn explicit_region_is_retained() {
     let explicit = config_for(
         &mut fixture,
         Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
             region: Some("eu-west-1"),
-            ..Options::default()
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         },
     )
     .await;
@@ -87,8 +103,16 @@ async fn explicit_region_is_retained() {
     let retained = config_for(
         &mut invalid,
         Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
             region: Some("BAD_REGION"),
-            ..Options::default()
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         },
     )
     .await;
@@ -103,8 +127,16 @@ async fn an_empty_explicit_region_is_retained() {
     let blank = config_for(
         &mut fixture,
         Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
             region: Some(""),
-            ..Options::default()
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         },
     )
     .await;
@@ -149,9 +181,16 @@ async fn region_falls_back_through_the_environment() {
         let config = config_for(
             &mut fixture,
             Options {
+                model: MODEL,
+                pending: None,
+                committed: false,
+                committed_failure: None,
+                api_base: None,
+                endpoint: None,
                 region: None,
                 region_inputs,
-                ..Options::default()
+                auth: AuthParams::default(),
+                logged_types: LoggedEventTypes::Default,
             },
         )
         .await;
@@ -164,9 +203,16 @@ async fn an_invalid_environment_region_is_rejected() {
     let mut fixture = Fixture::new();
     let result = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
             region: None,
             region_inputs: region_inputs(Some("BAD_REGION"), None, None),
-            ..Options::default()
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     let error = result.outcome.unwrap_err();
@@ -182,8 +228,15 @@ async fn region_falls_back_through_the_model_arn() {
         &mut fixture,
         Options {
             model,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
             region: None,
-            ..Options::default()
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         },
     )
     .await;
@@ -214,9 +267,16 @@ async fn endpoint_precedence() {
         let config = config_for(
             &mut fixture,
             Options {
+                model: MODEL,
+                pending: None,
+                committed: false,
+                committed_failure: None,
                 api_base,
                 endpoint,
-                ..Options::default()
+                region: Some(REGION),
+                region_inputs: RegionInputs::default(),
+                auth: AuthParams::default(),
+                logged_types: LoggedEventTypes::Default,
             },
         )
         .await;
@@ -241,7 +301,15 @@ async fn model_id_is_passed_through() {
             &mut fixture,
             Options {
                 model,
-                ..Options::default()
+                pending: None,
+                committed: false,
+                committed_failure: None,
+                api_base: None,
+                endpoint: None,
+                region: Some(REGION),
+                region_inputs: RegionInputs::default(),
+                auth: AuthParams::default(),
+                logged_types: LoggedEventTypes::Default,
             },
         )
         .await;
@@ -288,8 +356,16 @@ async fn pending_update_suppresses_the_created_event() {
     let mut fixture = Fixture::new();
     let result = fixture
         .run(Options {
+            model: MODEL,
             pending: Some(SESSION_UPDATE),
-            ..Options::default()
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -321,8 +397,16 @@ async fn empty_pending_still_suppresses_the_created_event() {
     let mut fixture = Fixture::new();
     let result = fixture
         .run(Options {
+            model: MODEL,
             pending: Some(""),
-            ..Options::default()
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
+            auth: AuthParams::default(),
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -387,8 +471,16 @@ async fn auth_params_reach_the_resolver() {
     let mut fixture = Fixture::new();
     let result = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: full_auth(),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -422,8 +514,16 @@ async fn resolved_credentials_reach_the_sdk() {
     let mut fixture = Fixture::new();
     let result = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: full_auth(),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     assert!(result.outcome.is_ok(), "{:?}", result.outcome);
@@ -460,8 +560,16 @@ async fn source_errors_propagate() {
     fixture.credentials = FakeCredentials::failing(CredentialError::Auth(AuthError::SessionTags));
     let result = fixture
         .run(Options {
+            model: MODEL,
+            pending: None,
+            committed: false,
+            committed_failure: None,
+            api_base: None,
+            endpoint: None,
+            region: Some(REGION),
+            region_inputs: RegionInputs::default(),
             auth: full_auth(),
-            ..Options::default()
+            logged_types: LoggedEventTypes::Default,
         })
         .await;
     let error = result.outcome.unwrap_err();
