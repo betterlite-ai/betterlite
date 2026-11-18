@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::str;
 
 use super::ended::{rewrite_ended_stream_text, rewrite_ended_tool_calls};
-use super::events::rewrite_ended_stream_events;
+use super::events::{rewrite_ended_stream_events, rewritten_event};
 use super::json_dumps::dumped_json;
 use super::line::{rewrite_sse_events, rewrite_sse_line};
 use super::rewriter::EventRewriter;
@@ -98,6 +98,20 @@ fn text_rewrite_rewrites_a_dict_event_and_keeps_a_non_delta_one() {
         event(
             "{\"delta\": {\"text\": \"new\", \"type\": \"text_delta\"}, \"index\": 0, \"type\": \"content_block_delta\"}"
         )
+    );
+}
+
+#[test]
+fn text_rewrite_leaves_an_event_without_the_section_it_rewrites() {
+    let missing: Value =
+        serde_json::from_str("{\"index\": 0, \"type\": \"content_block_start\"}").unwrap();
+    let mut rewriter = EventRewriter::ToolUse {
+        rewrites_by_block: [(0_i64, shape(Some("search"), "{}"))].into_iter().collect(),
+        arguments_sent: BTreeSet::new(),
+    };
+    assert_eq!(
+        rewritten_event(missing.as_object().unwrap(), &mut rewriter),
+        None
     );
 }
 
@@ -278,6 +292,13 @@ fn bytes_rewrite_keeps_the_separators_of_the_input() {
     let mut chunks = vec![bytes(source)];
     rewrite_ended_stream_events(&mut chunks, &mut text_rewriter("new"));
     assert_eq!(text_of(&chunks[0]), source);
+}
+
+#[test]
+fn bytes_rewrite_keeps_an_other_chunk() {
+    let mut chunks = vec![SseChunk::Other];
+    rewrite_ended_stream_events(&mut chunks, &mut text_rewriter("new"));
+    assert_eq!(chunks, vec![SseChunk::Other]);
 }
 
 #[test]

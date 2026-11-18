@@ -427,6 +427,15 @@ async fn unended_writes_the_first_of_several_texts() {
 }
 
 #[tokio::test]
+async fn unended_writes_nothing_for_empty_texts() {
+    let guardrail = FakeGuardrail::replying(json!({"texts": []}));
+    let stream = vec![bytes(&[START, TEXT_1])];
+    let (result, responses, _) = process(stream, &guardrail, None, None, true).await;
+    result.unwrap();
+    assert_eq!(text_of(&responses), [START, TEXT_1].concat());
+}
+
+#[tokio::test]
 async fn unended_writes_the_first_when_more_texts_follow() {
     let guardrail = FakeGuardrail::replying(json!({"texts": ["Hello there", "extra"]}));
     let stream = vec![bytes(&[START, TEXT_1, TEXT_2])];
@@ -467,6 +476,24 @@ async fn unended_keeps_an_existing_key_in_the_request_data() {
     let data = stored.unwrap();
     assert_eq!(data["responses"], Value::Null);
     assert_eq!(data["keep"], json!(1));
+}
+
+#[tokio::test]
+async fn unended_keeps_an_existing_litellm_metadata() {
+    let guardrail = FakeGuardrail::echoing();
+    let stream = vec![bytes(&[START])];
+    let given = json!({"litellm_metadata": {"kept": true}});
+    let (result, _, stored) = process(
+        stream,
+        &guardrail,
+        Some(given),
+        Some(json!({"user_id": "u1"})),
+        false,
+    )
+    .await;
+    result.unwrap();
+    let data = stored.unwrap();
+    assert_eq!(data["litellm_metadata"], json!({"kept": true}));
 }
 
 #[tokio::test]
