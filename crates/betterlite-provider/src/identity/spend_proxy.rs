@@ -5,7 +5,7 @@ use betterlite_models::resolution::{ResolutionContext, ResolutionRequest, resolv
 
 pub const LITELLM_PROXY_PROVIDER: &str = "litellm_proxy";
 
-// should_use_litellm_proxy_by_default reads three switches: the environment, the global SDK setting and the deployment's own flag.
+// use_litellm_proxy_by_default reads three switches: the environment, the global SDK setting and the deployment's own flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ProxySelection {
     pub environment: bool,
@@ -46,11 +46,14 @@ impl<'a> DeploymentIdentity<'a> {
 }
 
 #[must_use]
-pub fn should_use_litellm_proxy_by_default(
+pub fn use_litellm_proxy_by_default(
     selection: &ProxySelection,
     deployment_use_litellm_proxy: bool,
 ) -> bool {
-    selection.environment || deployment_use_litellm_proxy || selection.global
+    if selection.environment || deployment_use_litellm_proxy {
+        return true;
+    }
+    selection.global
 }
 
 // _deployment_provider: the proxy flag first, then B209's declared provider resolution, then fallback inference.
@@ -60,7 +63,7 @@ pub fn deployment_provider(
     selection: &ProxySelection,
     resolution: &ResolutionContext<'_>,
 ) -> Option<String> {
-    if should_use_litellm_proxy_by_default(selection, deployment.use_litellm_proxy) {
+    if use_litellm_proxy_by_default(selection, deployment.use_litellm_proxy) {
         return Some(LITELLM_PROXY_PROVIDER.to_owned());
     }
     let custom_llm_provider = deployment
