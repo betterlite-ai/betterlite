@@ -1,7 +1,7 @@
 id: B2334
 milestone: M4 keys, spend and management
 title: User bulk wire records and query identity decoding
-status: todo
+status: done
 depends_on: [B003, B171, B720, B770, B856, B8411]
 file: tasks/B2334-user-wire-contracts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/management_endpoints/management_v1.py"
 parent: B056
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2360
