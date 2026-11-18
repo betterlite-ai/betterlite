@@ -1,0 +1,20 @@
+kind: helper
+name: response-json-behavior
+call:
+  messages_thinking:
+    model_cost: {}
+    calls:
+      - function: response
+        model: alias
+        status: 200
+        body: "{\"id\":\"msg_a\",\"model\":\"provider\",\"extra\":7}"
+      - function: response
+        model: alias
+        status: 200
+        body: "{}"
+      - function: response
+        model: alias
+        status: 429
+        body: "{\"type\":\"error\",\"error\":{\"type\":\"rate_limit_error\",\"message\":\"slow\"}}"
+env: {}
+compare: {ignore: []}
