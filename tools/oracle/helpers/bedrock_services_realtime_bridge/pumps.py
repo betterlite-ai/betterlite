@@ -39,7 +39,7 @@ async def consume(events: AsyncIterator[JsonValue], logged: list[JsonValue]) -> 
 
 
 async def bridge_run(run_value: Run, model: str) -> RunResult:
-    # Each run gets its own config, as a fresh session does: the config holds the three session names and the per-session flags
+    # Each run gets its own config, as a fresh session does: it holds the session names and flags
     config = BedrockRealtimeConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L83-L87
     state = empty_state()
     client = FakeClient(run_value)
