@@ -889,6 +889,29 @@ async fn refresh_fails_on_an_unreadable_tool_row() {
 }
 
 #[tokio::test]
+async fn refresh_fails_on_an_unreadable_permission_row() {
+    let db = Db::start().await;
+    db.batch(
+        "ALTER TABLE \"LiteLLM_ObjectPermissionTable\" ALTER COLUMN \"blocked_tools\" DROP DEFAULT; \
+         ALTER TABLE \"LiteLLM_ObjectPermissionTable\" ALTER COLUMN \"blocked_tools\" TYPE text \
+         USING array_to_string(\"blocked_tools\", ','); \
+         INSERT INTO \"LiteLLM_ObjectPermissionTable\" (\"object_permission_id\", \"blocked_tools\") \
+         VALUES ('perm-1', 'search')",
+    )
+    .await;
+    let registry = Mutex::new(ToolPolicyRegistry::default());
+    let result = sync(&db, &registry).await;
+    assert!(result.is_err());
+    assert!(
+        !registry
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .initialized
+    );
+    db.close().await;
+}
+
+#[tokio::test]
 async fn a_tls_required_cancel_stops_the_read_over_tls() {
     let db = Db::start().await;
     let server_url = db.fixture.options.url.expose_secret();
