@@ -123,7 +123,7 @@ class _EmbeddingRouter(Router):
     def embedding(
         self,
         model: str,
-        input: str | list[str],  # noqa: A002  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5863
+        input: str | list[str],  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5863
         is_async: bool | None = False,
         **_kwargs: JsonValue,
     ) -> EmbeddingResponse:

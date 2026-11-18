@@ -243,15 +243,29 @@ pub(super) fn guardrail_with_modes(
     builder: &FakeBuilder,
     strict_modes: bool,
 ) -> Result<SemanticGuardrail<FakeRouter>, SemanticGuardSetupError<BuildFailure>> {
-    let routes = load_routes(&args).unwrap();
+    let routes = load_routes(&args)?;
     block_on(SemanticGuardrail::new(args, routes, builder, strict_modes))
 }
 
-pub(super) fn failed<T: Debug>(outcome: Result<T, GuardrailFailure>) -> GuardrailFailure {
+pub(super) fn failed_typed<T, E>(outcome: Result<T, E>) -> E
+where
+    T: Debug,
+{
     outcome.expect_err("the guardrail passed the request")
 }
 
-pub(super) fn assert_passed(outcome: Result<(), GuardrailFailure>) {
+pub(super) fn failed<T, E>(outcome: Result<T, E>) -> GuardrailFailure
+where
+    T: Debug,
+    GuardrailFailure: From<E>,
+{
+    GuardrailFailure::from(failed_typed(outcome))
+}
+
+pub(super) fn assert_passed<E>(outcome: Result<(), E>)
+where
+    E: Debug,
+{
     if let Err(failure) = outcome {
         panic!("the guardrail blocked the request: {failure:?}");
     }

@@ -69,7 +69,7 @@ where
 {
     pub async fn new<B>(
         args: SemanticGuardArgs,
-        routes: Vec<Route>,
+        loaded_routes: Vec<Route>,
         builder: &B,
         strict_modes: bool,
     ) -> Result<Self, SemanticGuardSetupError<B::Error>>
@@ -77,11 +77,11 @@ where
         B: SemanticRouterBuilder<Router = R>,
     {
         let base = GuardrailBase::new(guardrail_settings(&args), strict_modes)?;
-        if routes.is_empty() {
+        if loaded_routes.is_empty() {
             return Err(SemanticGuardSetupError::NoRoutes);
         }
-        let route_count = routes.len();
-        let router = build_router(builder, routes, args.similarity_threshold).await?;
+        let route_count = loaded_routes.len();
+        let router = build_router(builder, loaded_routes, args.similarity_threshold).await?;
         tracing::info!(
             "SemanticGuardrail '{}' initialized with {} routes, embedding_model={}, threshold={}",
             args.name,
@@ -104,36 +104,35 @@ where
         data: &BTreeMap<String, GuardrailValue>,
         call_type: &str,
         tool_cache: &DualLocalCache,
-    ) -> Result<(), GuardrailFailure> {
-        let Some(text) = self.request_text(call_type, data, tool_cache)? else {
+    ) -> Result<(), SemanticGuardHookError<R::Error>> {
+        let Some(text) = Self::request_text(call_type, data, tool_cache)? else {
             return Ok(());
         };
         if text.is_empty() {
             return Ok(());
         }
-        match self.check(&text, data).await? {
-            Some(failure) => Err(failure),
-            None => Ok(()),
-        }
+        self.check(&text, data).await?.map_or_else(
+            || Ok(()),
+            |failure| Err(SemanticGuardHookError::Blocked(failure)),
+        )
     }
 
     pub async fn async_post_call_success_hook(
         &self,
         data: &BTreeMap<String, GuardrailValue>,
         response: GuardrailValue,
-    ) -> Result<GuardrailValue, GuardrailFailure> {
+    ) -> Result<GuardrailValue, SemanticGuardHookError<R::Error>> {
         let text = text::response_text(&response);
         if text.is_empty() {
             return Ok(response);
         }
-        match self.check(&text, data).await? {
-            Some(failure) => Err(failure),
-            None => Ok(response),
-        }
+        self.check(&text, data).await?.map_or_else(
+            || Ok(response),
+            |failure| Err(SemanticGuardHookError::Blocked(failure)),
+        )
     }
 
     fn request_text(
-        &self,
         call_type: &str,
         data: &BTreeMap<String, GuardrailValue>,
         tool_cache: &DualLocalCache,
@@ -238,7 +237,7 @@ fn guardrail_settings(args: &SemanticGuardArgs) -> GuardrailSettings {
         Some(LitellmParamsMode::Many(names)) if names.is_empty() => None,
         configured => configured.clone(),
     }
-    .unwrap_or(LitellmParamsMode::One(DEFAULT_EVENT_HOOK.to_owned()));
+    .unwrap_or_else(|| LitellmParamsMode::One(DEFAULT_EVENT_HOOK.to_owned()));
     GuardrailSettings {
         guardrail_name: Some(args.name.clone()),
         supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),

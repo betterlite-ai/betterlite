@@ -69,7 +69,7 @@ impl SemanticRouteScorer for ScriptedRouter {
         let choice = if matched {
             RouteChoice {
                 name: self.route_name.clone(),
-                similarity_score: Some(1.0),
+                similarity_score: Some(1.0_f64),
             }
         } else {
             RouteChoice {
@@ -186,20 +186,31 @@ async fn one_call(
         None => guardrail
             .async_pre_call_hook(&call.request, &call.call_type, tool_cache)
             .await
-            .map(|()| None),
+            .map(|()| None)
+            .map_err(GuardrailFailure::from),
         Some(response) => guardrail
             .async_post_call_success_hook(&call.request, response.clone())
             .await
-            .map(Some),
+            .map(Some)
+            .map_err(GuardrailFailure::from),
     };
     let texts = scored.lock().await.clone();
     call_report(&outcome, &texts)
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "snake_case")]
+enum OutcomeKind {
+    Passed,
+    Blocked,
+    Passthrough,
+    Error,
+}
+
+#[derive(Serialize)]
 struct CallReport<'a> {
     scored: &'a [String],
-    kind: &'a str,
+    kind: OutcomeKind,
     status: Option<u16>,
     detail: Option<&'a IndexMap<String, GuardrailValue>>,
     message: Option<&'a str>,
@@ -210,11 +221,56 @@ struct CallReport<'a> {
     returned: Option<&'a GuardrailValue>,
 }
 
-impl<'a> CallReport<'a> {
-    fn empty(scored: &'a [String], kind: &'a str) -> Self {
-        Self {
+fn call_report(
+    outcome: &Result<Option<GuardrailValue>, GuardrailFailure>,
+    scored: &[String],
+) -> Result<Value, Box<HelperError>> {
+    let report = match outcome {
+        Ok(returned) => CallReport {
             scored,
-            kind,
+            kind: OutcomeKind::Passed,
+            status: None,
+            detail: None,
+            message: None,
+            model: None,
+            guardrail_name: None,
+            request_data: None,
+            detection_info: None,
+            returned: returned.as_ref(),
+        },
+        Err(GuardrailFailure::HttpObject { status, detail }) => CallReport {
+            scored,
+            kind: OutcomeKind::Blocked,
+            status: Some(*status),
+            detail: Some(detail),
+            message: None,
+            model: None,
+            guardrail_name: None,
+            request_data: None,
+            detection_info: None,
+            returned: None,
+        },
+        Err(GuardrailFailure::ModifyResponse(failure)) => CallReport {
+            scored,
+            kind: OutcomeKind::Passthrough,
+            status: None,
+            detail: None,
+            message: Some(failure.message.as_str()),
+            model: Some(failure.model.as_str()),
+            guardrail_name: failure.guardrail_name.as_deref(),
+            request_data: Some(&failure.request_data),
+            detection_info: Some(&failure.detection_info),
+            returned: None,
+        },
+        Err(
+            GuardrailFailure::Http { .. }
+            | GuardrailFailure::GuardrailRaised { .. }
+            | GuardrailFailure::BlockedPii { .. }
+            | GuardrailFailure::SensitiveDataRoute(_)
+            | GuardrailFailure::Other(_),
+        ) => CallReport {
+            scored,
+            kind: OutcomeKind::Error,
             status: None,
             detail: None,
             message: None,
@@ -223,40 +279,7 @@ impl<'a> CallReport<'a> {
             request_data: None,
             detection_info: None,
             returned: None,
-        }
-    }
-}
-
-fn call_report(
-    outcome: &Result<Option<GuardrailValue>, GuardrailFailure>,
-    scored: &[String],
-) -> Result<Value, Box<HelperError>> {
-    let report = match outcome {
-        Ok(returned) => {
-            let mut report = CallReport::empty(scored, "passed");
-            report.returned = returned.as_ref();
-            report
-        }
-        Err(GuardrailFailure::HttpObject { status, detail }) => {
-            let mut report = CallReport::empty(scored, "blocked");
-            report.status = Some(*status);
-            report.detail = Some(detail);
-            report
-        }
-        Err(GuardrailFailure::ModifyResponse(failure)) => {
-            let mut report = CallReport::empty(scored, "passthrough");
-            report.message = Some(failure.message.as_str());
-            report.model = Some(failure.model.as_str());
-            report.guardrail_name = failure.guardrail_name.as_deref();
-            report.request_data = Some(&failure.request_data);
-            report.detection_info = Some(&failure.detection_info);
-            report
-        }
-        Err(GuardrailFailure::Http { .. })
-        | Err(GuardrailFailure::GuardrailRaised { .. })
-        | Err(GuardrailFailure::BlockedPii { .. })
-        | Err(GuardrailFailure::SensitiveDataRoute(_))
-        | Err(GuardrailFailure::Other(_)) => CallReport::empty(scored, "error"),
+        },
     };
     Ok(serde_json::to_value(&report)?)
 }

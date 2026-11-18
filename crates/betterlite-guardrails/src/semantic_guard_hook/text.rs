@@ -1,13 +1,6 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-// LiteLLM's join raises on a dict part whose text is not a string, and on text it cannot print
-#[derive(Debug, thiserror::Error)]
-pub enum TextExtractionError {
-    #[error("the content part at index {index} carries a text that is not a string")]
-    NonTextPart { index: usize },
-    #[error("the content part at index {index} could not be written as text")]
-    UnrepresentablePart { index: usize },
-}
+use super::error::TextExtractionError;
 
 // LiteLLM's _extract_user_text: the last user message whose content is a string or a list
 pub(crate) fn user_text(messages: &[GuardrailValue]) -> Result<String, TextExtractionError> {
@@ -22,7 +15,7 @@ pub(crate) fn user_text(messages: &[GuardrailValue]) -> Result<String, TextExtra
             None => return Ok(String::new()),
             Some(GuardrailValue::Text(text)) => return Ok(text.clone()),
             Some(GuardrailValue::Array(parts)) => return parts_text(parts),
-            Some(_other) => continue,
+            Some(_not_text) => {}
         }
     }
     Ok(String::new())
@@ -37,7 +30,13 @@ fn parts_text(parts: &[GuardrailValue]) -> Result<String, TextExtractionError> {
                 Some(GuardrailValue::Text(text)) => texts.push(text.clone()),
                 Some(_not_text) => return Err(TextExtractionError::NonTextPart { index }),
             },
-            other => texts.push(string_form(other, index)?),
+            GuardrailValue::Text(_)
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Null
+            | GuardrailValue::Array(_) => texts.push(string_form(part, index)?),
         }
     }
     Ok(texts.join(" "))
@@ -95,11 +94,22 @@ fn content_text(content: &GuardrailValue) -> String {
                         Some(GuardrailValue::Text(text)) if !text.is_empty() => Some(text.as_str()),
                         _ => None,
                     },
-                    _ => None,
+                    GuardrailValue::Text(_)
+                    | GuardrailValue::Boolean(_)
+                    | GuardrailValue::SignedInteger(_)
+                    | GuardrailValue::UnsignedInteger(_)
+                    | GuardrailValue::Decimal(_)
+                    | GuardrailValue::Null
+                    | GuardrailValue::Array(_) => None,
                 })
                 .collect();
             texts.join(" ")
         }
-        _ => String::new(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Object(_) => String::new(),
     }
 }

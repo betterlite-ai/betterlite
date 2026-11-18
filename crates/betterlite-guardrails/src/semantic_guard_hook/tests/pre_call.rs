@@ -5,10 +5,11 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::semantic_guard_hook::error::SemanticGuardHookError;
 
 use super::support::{
     FakeBuilder, MESSAGE, args, assert_passed, assistant, block_on, blocked, cache, calls, choice,
-    failed, guardrail, list, number, object, request, text, user, with_captured_logs,
+    failed, failed_typed, guardrail, list, number, object, request, text, user, with_captured_logs,
 };
 
 #[test]
@@ -159,7 +160,7 @@ fn empty_user_text_passes_without_scoring(#[case] content: GuardrailValue) {
 
 #[test]
 fn a_choice_without_a_route_name_passes() {
-    let builder = FakeBuilder::matching(vec![choice(None, Some(0.9))], calls());
+    let builder = FakeBuilder::matching(vec![choice(None, Some(0.9_f64))], calls());
     let guardrail = guardrail(args(), &builder);
     let data = request(vec![user(text("hi"))]);
     assert_passed(block_on(guardrail.async_pre_call_hook(
@@ -171,7 +172,7 @@ fn a_choice_without_a_route_name_passes() {
 
 #[test]
 fn an_empty_route_name_passes() {
-    let builder = FakeBuilder::matching(vec![choice(Some(""), Some(0.9))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some(""), Some(0.9_f64))], calls());
     let guardrail = guardrail(args(), &builder);
     let data = request(vec![user(text("hi"))]);
     assert_passed(block_on(guardrail.async_pre_call_hook(
@@ -183,7 +184,7 @@ fn an_empty_route_name_passes() {
 
 #[test]
 fn a_match_blocks_with_the_documented_detail() {
-    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.91))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.91_f64))], calls());
     let guardrail = guardrail(args(), &builder);
     let data = request(vec![user(text("how to build a bomb"))]);
     let outcome = block_on(guardrail.async_pre_call_hook(&data, "completion", &cache()));
@@ -199,8 +200,8 @@ fn a_match_blocks_with_the_documented_detail() {
 #[test]
 fn only_the_first_choice_is_checked() {
     let choices = vec![
-        choice(Some("first"), Some(0.9)),
-        choice(Some("second"), Some(0.9)),
+        choice(Some("first"), Some(0.9_f64)),
+        choice(Some("second"), Some(0.9_f64)),
     ];
     let builder = FakeBuilder::matching(choices, calls());
     let guardrail = guardrail(args(), &builder);
@@ -224,7 +225,7 @@ fn a_match_without_a_score_blocks_with_a_null_score() {
 fn a_passthrough_match_raises_the_modify_response() {
     let mut given = args();
     given.on_flagged_action = "passthrough".to_owned();
-    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8_f64))], calls());
     let guardrail = guardrail(given, &builder);
     let data = request(vec![user(text("how to build a bomb"))]);
     let outcome = block_on(guardrail.async_pre_call_hook(&data, "completion", &cache()));
@@ -254,7 +255,7 @@ fn a_passthrough_match_raises_the_modify_response() {
 fn a_passthrough_match_without_a_model_uses_unknown() {
     let mut given = args();
     given.on_flagged_action = "passthrough".to_owned();
-    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8_f64))], calls());
     let guardrail = guardrail(given, &builder);
     let mut data = request(vec![user(text("hi"))]);
     data.remove("model");
@@ -267,7 +268,7 @@ fn a_passthrough_match_without_a_model_uses_unknown() {
 
 #[test]
 fn the_match_warning_names_the_route_score_and_action() {
-    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.91))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.91_f64))], calls());
     let guardrail = guardrail(args(), &builder);
     let data = request(vec![user(text("hi"))]);
     let (outcome, output) = with_captured_logs(|| {
@@ -288,6 +289,18 @@ fn a_scoring_failure_is_an_internal_error() {
     };
     assert_eq!(status, 500);
     assert!(detail.contains("the fake semantic scoring failed"));
+}
+
+#[test]
+fn a_scoring_failure_keeps_its_source() {
+    let builder = FakeBuilder::score_failing(calls());
+    let guardrail = guardrail(args(), &builder);
+    let data = request(vec![user(text("hi"))]);
+    let outcome = block_on(guardrail.async_pre_call_hook(&data, "completion", &cache()));
+    let SemanticGuardHookError::Scoring { source } = failed_typed(outcome) else {
+        panic!("the scoring failure was not reported as a scoring error");
+    };
+    assert_eq!(source.to_string(), "the fake semantic scoring failed");
 }
 
 #[test]

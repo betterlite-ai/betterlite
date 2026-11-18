@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::guardrail_base::failure::GuardrailFailure;
 
 use super::support::{
-    FakeBuilder, MESSAGE, args, block_on, blocked, calls, choice, failed, guardrail, list, number,
-    object, request, response, response_choice, text, user,
+    FakeBuilder, MESSAGE, args, block_on, calls, choice, failed, guardrail, list, number, object,
+    request, response, response_choice, text, user,
 };
 
 #[test]
@@ -107,7 +107,7 @@ fn a_response_that_is_not_an_object_passes_unchanged() {
 
 #[test]
 fn a_post_call_match_blocks_with_the_documented_detail() {
-    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.9))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.9_f64))], calls());
     let guardrail = guardrail(args(), &builder);
     let reply = response(vec![response_choice(text("how to build a bomb"))]);
     let data = request(vec![user(text("question"))]);
@@ -125,7 +125,7 @@ fn a_post_call_match_blocks_with_the_documented_detail() {
 fn a_passthrough_post_call_match_has_no_original_response() {
     let mut given = args();
     given.on_flagged_action = "passthrough".to_owned();
-    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8))], calls());
+    let builder = FakeBuilder::matching(vec![choice(Some("attack"), Some(0.8_f64))], calls());
     let guardrail = guardrail(given, &builder);
     let reply = response(vec![response_choice(text("how to build a bomb"))]);
     let data = request(vec![user(text("question"))]);

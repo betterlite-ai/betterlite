@@ -82,8 +82,8 @@ fn the_defaults_fill_every_unset_field() {
 }
 
 #[rstest]
-#[case::zero(0.0)]
-#[case::negative_zero(-0.0)]
+#[case::zero(0.0_f64)]
+#[case::negative_zero(-0.0_f64)]
 fn an_explicit_zero_threshold_takes_the_default(#[case] value: f64) {
     let fields = format!(r#", "similarity_threshold": {value}"#);
     let built =

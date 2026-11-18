@@ -28,7 +28,7 @@ fn no_routes_are_refused_with_the_documented_message() {
 #[test]
 fn the_routes_reach_the_builder_with_the_global_threshold() {
     let mut given = args();
-    given.similarity_threshold = 0.6;
+    given.similarity_threshold = 0.6_f64;
     given.custom_routes.push(route("second", &["other text"]));
     let builder = FakeBuilder::matching(Vec::new(), calls());
     let built = guardrail(given, &builder);

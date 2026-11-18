@@ -66,7 +66,7 @@ pub fn initialize_semantic_guard(
         extras::read::<String>(extra, "embedding_model", None)?.unwrap_or(environment_model);
     let default_threshold = default_similarity_threshold(environment)?;
     let similarity_threshold = extras::read::<f64>(extra, "similarity_threshold", None)?
-        .filter(|value| *value != 0.0)
+        .filter(|value| *value != 0.0_f64)
         .unwrap_or(default_threshold);
     let route_templates =
         extras::read::<Vec<String>>(extra, "route_templates", None)?.unwrap_or_default();
