@@ -7,7 +7,7 @@ call:
     custom_routes_file: |-
       - route_name: file_route
         description: from the routes file
-        utterances: ["file one", "file two"]
+        utterances: ["file one", "file two", 1e3]
         similarity_threshold: 0.8
     custom_routes:
       - route_name: inline_route
